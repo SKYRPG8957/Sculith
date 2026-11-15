@@ -35,7 +35,7 @@ jobs:
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       PYTHONUTF8: '1'
-      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.6'
+      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.7'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/cache@v4

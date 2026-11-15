@@ -96,11 +96,18 @@ impl<T: Transport> TestClient<T> {
         self.finish_packs().await?;
         let id = self.receive_spawn().await?;
         self.conn
-            .send(&[V2225::SetLocalPlayerAsInitializedPacket(Box::new(
-                SetLocalPlayerAsInitializedPacket {
-                    player_id: ActorRuntimeID(id),
-                },
-            ))])
+            .send(&[
+                V2225::InteractPacket(Box::new(bedrock::protocol::v898::packets::InteractPacket {
+                    action: bedrock::protocol::v898::packets::InteractPacketAction::InteractUpdate,
+                    target_runtime_id: ActorRuntimeID(0),
+                    mouse_position: None,
+                })),
+                V2225::SetLocalPlayerAsInitializedPacket(Box::new(
+                    SetLocalPlayerAsInitializedPacket {
+                        player_id: ActorRuntimeID(id),
+                    },
+                )),
+            ])
             .await?;
         Ok(id)
     }
@@ -871,6 +878,11 @@ async fn loading_controls_and_radius_renegotiation_do_not_disconnect_or_mutate_p
     client
         .conn
         .send(&[
+            V2225::InteractPacket(Box::new(bedrock::protocol::v898::packets::InteractPacket {
+                action: bedrock::protocol::v898::packets::InteractPacketAction::InteractUpdate,
+                target_runtime_id: ActorRuntimeID(0),
+                mouse_position: None,
+            })),
             V2225::NetworkStackLatencyPacket(Box::new(NetworkStackLatencyPacket {
                 creation_time: 123456,
                 is_from_server: true,
@@ -952,6 +964,31 @@ async fn loading_controls_and_radius_renegotiation_do_not_disconnect_or_mutate_p
         panic!("expected live latency acknowledgement");
     };
     assert_eq!(echo.creation_time, 789);
+    client.conn.close().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn loading_notifications_cannot_restart_network_or_login_negotiation() {
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
+    let mut client = TestClient::connect(server.address).await.unwrap();
+    client.login().await.unwrap();
+    client.finish_packs().await.unwrap();
+    client.receive_spawn().await.unwrap();
+    client
+        .conn
+        .send(&[V2225::RequestNetworkSettingsPacket(Box::new(
+            RequestNetworkSettingsPacket {
+                client_network_version: V2225::PROTOCOL_VERSION as i32,
+            },
+        ))])
+        .await
+        .unwrap();
+    assert!(matches!(
+        client.next().await.unwrap(),
+        V2225::DisconnectPacket(_)
+    ));
+    assert_eq!(server.world.online_players(), 0);
     client.conn.close().await;
     server.stop().await;
 }

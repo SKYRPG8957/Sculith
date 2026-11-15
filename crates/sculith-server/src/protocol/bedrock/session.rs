@@ -405,6 +405,7 @@ async fn initialize<T: Transport>(
     *stage = "chunk-request";
     let mut interest = None;
     let mut side_packets = 0usize;
+    let mut ignored_notifications = 0usize;
     loop {
         let packet = packets.next(conn).await?;
         side_packets += 1;
@@ -449,7 +450,9 @@ async fn initialize<T: Transport>(
             // Unordered movement may race the reliable initialization ack.
             // Pending players cannot mutate the owner; fresh movement is
             // accepted only after activation in the gameplay loop.
-            V2225::PlayerAuthInputPacket(_) => {}
+            // Hover/inventory notifications are not authority to change a
+            // block, entity or inventory; ignore them while chunks load.
+            V2225::PlayerAuthInputPacket(_) | V2225::InteractPacket(_) => {}
             packet @ (V2225::MobEquipmentPacket(_)
             | V2225::PlayerHotbarPacket(_)
             | V2225::PlayerActionPacket(_)
@@ -458,7 +461,11 @@ async fn initialize<T: Transport>(
                 // gameplay intent until the reliable initialization ack.
                 super::input::decode(&packet, entity_id)?;
             }
-            packet => {
+            packet @ (V2225::LoginPacket(_)
+            | V2225::RequestNetworkSettingsPacket(_)
+            | V2225::ClientToServerHandshakePacket(_)
+            | V2225::ServerToClientHandshakePacket(_)
+            | V2225::SetLocalPlayerAsInitializedPacket(_)) => {
                 tracing::warn!(
                     packet_id = packet.id(),
                     stage = *stage,
@@ -468,6 +475,20 @@ async fn initialize<T: Transport>(
                     "unexpected packet {} before world initialization",
                     packet.id()
                 );
+            }
+            packet => {
+                // Auth and pack negotiation already finished. The official
+                // client may send ancillary status while rendering chunks.
+                // Discard bounded notifications: never queue/apply game intent
+                // or advance initialization on any of these packets.
+                ignored_notifications += 1;
+                if ignored_notifications <= 8 {
+                    tracing::debug!(
+                        packet_id = packet.id(),
+                        stage = *stage,
+                        "Bedrock notification ignored while awaiting initialization"
+                    );
+                }
             }
         }
     }
