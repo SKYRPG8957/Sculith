@@ -499,6 +499,10 @@ async fn session_control<T: Transport>(
     entity_id: u64,
 ) -> Result<bool> {
     match packet {
+        V2225::DisconnectPacket(disconnect) => {
+            tracing::info!(reason=?disconnect.reason, "Bedrock client disconnected");
+            bail!("Bedrock client disconnected");
+        }
         V2225::NetworkStackLatencyPacket(latency) => {
             if latency.is_from_server {
                 conn.send(&[V2225::NetworkStackLatencyPacket(Box::new(

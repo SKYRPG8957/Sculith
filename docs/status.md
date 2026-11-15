@@ -6,7 +6,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented
 
-- Loading controls and radius renegotiation are accepted before initialization and during play. Pending players cannot edit the owner. Spawn also supplies the plains biome definition used by chunk palettes and an empty creative catalog; unsupported general inventory mutations remain rejected.
+- Mandatory empty structure registries are sent before StartGame, correcting the missing data identified by native error 148. Loading controls and radius renegotiation are accepted before initialization and during play. Pending players cannot edit the owner. Spawn also supplies the plains biome definition used by chunk palettes and an empty creative catalog; unsupported general inventory mutations remain rejected.
 - Existing Java TCP and Bedrock UDP discovery, trusted executable Rust plugin prototype and explicit PNG conversion retained.
 - Opt-in RakNet sessions using pinned Rust libraries, compression, signed identity verification, encryption and ordered empty-pack negotiation.
 - Bounded session/message queues with byte budgets, login/spawn timeout and owned session cleanup.
@@ -54,7 +54,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Failed / externally constrained
 
-- Preview 5 official Windows GDK `1.26.63` retest reached `Bedrock login completed` with DTLS protection, then failed while loading: `Boat / InitialConnection-148`, `spawn-acknowledgement / protocol-state`. No flat-world screen was confirmed. The former log did not identify the offending packet; the current source supplies numeric packet/violation diagnostics and fixes concrete loading-sequence gaps. A successful official-client retest is still required.
+- Preview 5 official Windows GDK `1.26.63` retest reached `Bedrock login completed` with DTLS protection, then failed while loading: `Boat / InitialConnection-148`, `spawn-acknowledgement / protocol-state`. No flat-world screen was confirmed. Error 148 maps to `MissingStructureData` in the pinned V2225 failure enum; Sculith had omitted the structure registry that gophertunnel sends before StartGame. The current source corrects this and supplies numeric packet/violation/client-disconnect diagnostics. A successful official-client retest is still required.
 - Preview 4 official retest reached WebRTC and network settings with client/server protocol 2225, then failed at `encryption-handshake`, `InitialConnection-66`. NetherNet was incorrectly sent the RakNet cipher handshake. The current source uses DTLS directly, binds login to the signed transport key and rejects a valid login signed with another key. Independent clients now pass this stage and the Go/Pion client reaches the world; official-client retesting is pending.
 - Preview 3 official retest still failed: the user accepted the new trust/continue prompt, GET and POST reached Sculith, but Windows GDK returned `Door / InitialConnection-83` before a WebRTC-ready log. Two independently reproduced interoperability gaps are corrected in the current source; an official-client retest remains necessary.
 - The cloud Chromium probe gathered no UDP candidates because of its managed `WebRtcIPHandling` policy. The policy was preserved; the independent OpenSSL/aiortc runner was used instead.

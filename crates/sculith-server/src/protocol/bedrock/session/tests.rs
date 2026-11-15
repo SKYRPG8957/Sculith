@@ -255,6 +255,19 @@ impl<T: Transport> TestClient<T> {
     }
 
     async fn receive_spawn_with_radius(&mut self, requested_radius: i32) -> Result<u64> {
+        let V2225::JigsawStructureDataPacket(structure) = self.next().await? else {
+            anyhow::bail!("required structure data must precede StartGame");
+        };
+        let nbtx::Value::Compound(registry) = structure.jigsaw_structure_data_tag else {
+            anyhow::bail!("structure data must be a compound");
+        };
+        ensure!(registry.len() == 4);
+        for name in ["processors", "template_pools", "jigsaws", "structure_sets"] {
+            ensure!(matches!(
+                registry.get(name.as_bytes()),
+                Some(nbtx::Value::List(nbtx::ValueList::Compound(values))) if values.is_empty()
+            ));
+        }
         ensure!(matches!(self.next().await?, V2225::VoxelShapesPacket(_)));
         let V2225::StartGamePacket(game) = self.next().await? else {
             anyhow::bail!("expected StartGame");

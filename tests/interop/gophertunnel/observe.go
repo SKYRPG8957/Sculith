@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"reflect"
 	"sync"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -16,11 +17,11 @@ import (
 // Test-only independent decoding, using a pinned full vanilla registry rather
 // than copying the Rust encoder's block hashes or palette implementation.
 type observer struct {
-	mu               sync.Mutex
-	registry         world.BlockRegistry
-	chunks           map[protocol.ChunkPos]bool
-	biomes, creative bool
-	err              error
+	mu                           sync.Mutex
+	registry                     world.BlockRegistry
+	chunks                       map[protocol.ChunkPos]bool
+	biomes, creative, structures bool
+	err                          error
 }
 
 func newObserver(registry world.BlockRegistry) *observer {
@@ -42,6 +43,26 @@ func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
 	buf := bytes.NewBuffer(payload)
 	reader := protocol.NewReader(buf, 0, true)
 	switch header.PacketID {
+	case packet.IDJigsawStructureData:
+		p := new(packet.JigsawStructureData)
+		p.Marshal(reader)
+		if len(p.StructureData) != 4 {
+			o.err = fmt.Errorf("missing structure registries")
+			return
+		}
+		for _, name := range []string{"processors", "template_pools", "jigsaws", "structure_sets"} {
+			value := reflect.ValueOf(p.StructureData[name])
+			if value.Kind() != reflect.Slice || value.Len() != 0 {
+				o.err = fmt.Errorf("invalid structure registry %s", name)
+				return
+			}
+		}
+		o.structures = true
+	case packet.IDStartGame:
+		if !o.structures {
+			o.err = fmt.Errorf("StartGame preceded mandatory structure data (native error 148)")
+		}
+		return
 	case packet.IDBiomeDefinitionList:
 		p := new(packet.BiomeDefinitionList)
 		p.Marshal(reader)
@@ -124,8 +145,8 @@ func (o *observer) verify() error {
 	if o.err != nil {
 		return o.err
 	}
-	if !o.biomes || !o.creative || len(o.chunks) != 25 {
-		return fmt.Errorf("incomplete startup: biomes=%t creative=%t chunks=%d", o.biomes, o.creative, len(o.chunks))
+	if !o.structures || !o.biomes || !o.creative || len(o.chunks) != 25 {
+		return fmt.Errorf("incomplete startup: structures=%t biomes=%t creative=%t chunks=%d", o.structures, o.biomes, o.creative, len(o.chunks))
 	}
 	return nil
 }

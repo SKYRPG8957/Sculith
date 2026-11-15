@@ -36,6 +36,9 @@ pub type Interest = std::collections::BTreeMap<ChunkPos, u64>;
 
 pub fn initial_packets(player: &crate::game::PlayerSnapshot) -> Result<Vec<V2225>> {
     let mut packets = vec![
+        // V2225 clients fail with MissingStructureData (148) if StartGame
+        // precedes this registry, even when all four structure lists are empty.
+        structure_data(),
         V2225::VoxelShapesPacket(Box::new(VoxelShapesPacket {
             shapes: vec![],
             names: vec![],
@@ -64,6 +67,19 @@ pub fn initial_packets(player: &crate::game::PlayerSnapshot) -> Result<Vec<V2225
         },
     )));
     Ok(packets)
+}
+
+fn structure_data() -> V2225 {
+    use nbtx::{Value, ValueList};
+    let registry = ["processors", "template_pools", "jigsaws", "structure_sets"]
+        .into_iter()
+        .map(|name| (name.into(), Value::List(ValueList::Compound(vec![]))))
+        .collect();
+    V2225::JigsawStructureDataPacket(Box::new(
+        bedrock::protocol::v712::packets::JigsawStructureDataPacket {
+            jigsaw_structure_data_tag: Value::Compound(registry),
+        },
+    ))
 }
 
 /// V2225 definition layout from bedrock-rs 5221fcae; native plains parameters
