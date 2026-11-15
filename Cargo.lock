@@ -2880,6 +2880,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "if-addrs",
+ "md-5 0.10.6",
  "nbtx",
  "nethernet",
  "nethernet-tokio",

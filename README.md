@@ -16,7 +16,7 @@ A Bedrock-native Minecraft server engine written in Rust.
 
 Sculith is being built around **one authoritative Bedrock-native world**, with Java and Bedrock protocol adapters sharing the same server state. Its long-term goals include Rust plugins, region-owned simulation, and a shared Bedrock content pipeline.
 
-**This is an early, public development repository. It is not a playable crossplay server or a production-ready release.** The default mode provides server discovery; an opt-in Bedrock path exercises encrypted login, flat-world spawn and limited authoritative creative building with headless protocol clients. Official game-client entry and rendering have not yet been verified.
+**This is an early, public development repository, not a production-ready release.** The default mode provides server discovery. Opt-in local Java and Bedrock adapters share a flat world and limited authoritative creative building, verified with headless protocol clients. Official game-client entry and rendering have not yet been verified.
 
 ## Compatibility
 
@@ -25,13 +25,14 @@ The checked-in release references are:
 | Edition | Reference version | Protocol | Current implementation |
 | --- | --- | --- | --- |
 | Bedrock | 1.26.60 | 2225 | Discovery; RakNet and local NetherNet login, encryption, empty-pack negotiation, spawn and limited creative-builder preview |
-| Java | 26.3 | 777 | Server-list status and ping; world login is not implemented |
+| Java | 26.3 | 777 | Discovery; opt-in loopback login/configuration, flat-world chunks and limited creative building in the same owner |
 
 These numbers identify development targets, **not verified gameplay support**. The gameplay support lists in [`protocol-targets.json`](protocol-targets.json) remain empty. Preview/Beta versions are separate targets, and RakNet tests do not establish NetherNet support.
 
 ## Implemented so far
 
 - Java TCP and Bedrock UDP discovery in one Rust server process.
+- Local Java 26.3 shared-world login, negotiated vanilla registries/tags, full spawn chunks, initialization, keepalive and authoritative movement/building. [Scope, source configuration and wire-fact provenance](docs/java-preview.md).
 - Shared MOTD and initialized-session counts.
 - Bounded RakNet session handling, compression, signature verification and encryption using pinned Rust libraries.
 - Local NetherNet HTTP/WebRTC with signed answers and persistent operator keys; a real-socket headless test shares committed world changes with a RakNet client. See [transport scope and verification](docs/nethernet.md).
@@ -43,7 +44,7 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Explicit Bedrock PNG-to-Java texture overrides, with a conversion report describing unsupported assets.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
-Java world entry, multiplayer entity visibility, general inventory transactions, physics/gravity, content distribution, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
+Multiplayer entity visibility, general inventory transactions, physics/gravity, content distribution, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
 
 ## Windows quick start
 
@@ -51,7 +52,7 @@ For local testing, download the `windows-x86_64.zip` from the [development previ
 
 In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
 
-This selects the local, offline-identity Bedrock preview. **Official game-client entry/rendering remain unverified; Java world entry is not implemented.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
+The currently published Preview 7 selects the local, offline-identity Bedrock preview. It predates the source Java adapter above. **Official game-client entry/rendering remain unverified.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
 
 The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 handles the notification without applying game intent and accepts bounded ancillary loading status. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official game-client entry still requires a successful retest.
 
@@ -85,6 +86,8 @@ cargo run --locked -- run --config examples/bedrock-login-preview.toml
 This test configuration accepts self-signed identities. It does **not** prove online Microsoft account authentication or official Bedrock-client compatibility. Online authentication is required by default when sessions are enabled; it needs outbound HTTPS access to the official Minecraft discovery/OIDC public-key services. Authentication failures never silently enable offline mode.
 
 The preview supplies Stone, Dirt and Grass starter slots. The server checks movement timing/collision, building permission, reach, line of sight and held items before committing. This is a limited creative-builder implementation, not complete Minecraft movement or inventory behavior.
+
+To exercise both adapters against the same owner from current source, use `examples/crossplay-preview.toml`. Java 26.3 connects to `127.0.0.1:25565`; Bedrock uses `127.0.0.1:19132`. Both are explicitly offline, same-machine previews. Java online authentication and other Java versions are not implemented.
 
 The example stores its region in `world/region.sculith`. To enable persistence in another configuration, set `snapshot_path = "world/region.sculith"` under `[world]` (relative to the configuration file). Ctrl+C/SIGTERM triggers the final save; abrupt termination can lose changes since startup. Existing foreign or corrupt snapshots cause an error instead of being overwritten.
 

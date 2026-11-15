@@ -13,6 +13,7 @@ pub struct Config {
     pub server: Server,
     pub network: Network,
     pub bedrock: Bedrock,
+    pub java: Java,
     pub world: World,
     pub plugins: Vec<PluginConfig>,
 }
@@ -22,6 +23,24 @@ pub struct Config {
 pub struct World {
     /// Optional Sculith snapshot, loaded before listeners start and saved at orderly shutdown.
     pub snapshot_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Java {
+    pub sessions: bool,
+    pub require_authentication: bool,
+    pub login_timeout_secs: u64,
+}
+
+impl Default for Java {
+    fn default() -> Self {
+        Self {
+            sessions: false,
+            require_authentication: true,
+            login_timeout_secs: 30,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -176,6 +195,21 @@ impl Config {
     fn validate(&self) -> Result<()> {
         self.status()?;
         ensure!(
+            !self.java.sessions
+                || (self.network.java.enabled
+                    && self.network.java.bind.ip().is_loopback()
+                    && !self.java.require_authentication),
+            "Java preview requires an enabled loopback listener and explicit require_authentication = false; online Java login is pending"
+        );
+        ensure!(
+            (1..=60).contains(&self.java.login_timeout_secs),
+            "java.login_timeout_secs must be between 1 and 60"
+        );
+        ensure!(
+            !self.java.sessions || self.server.max_players <= 64,
+            "Java preview supports at most 64 simultaneous sessions"
+        );
+        ensure!(
             self.bedrock.nethernet != Some(true)
                 || (self.bedrock.sessions
                     && self.network.bedrock.enabled
@@ -223,6 +257,14 @@ impl Config {
         if self.network.bedrock.enabled && self.bedrock.sessions {
             status.stage = "bedrock-spawn-preview".into();
         }
+        if self.java.sessions {
+            status.stage = if self.bedrock.sessions && self.network.bedrock.enabled {
+                "shared-world-preview"
+            } else {
+                "java-spawn-preview"
+            }
+            .into();
+        }
         Ok(status)
     }
 
@@ -259,6 +301,26 @@ mod tests {
         let mut config = Config::default();
         config.network.java.enabled = false;
         config.network.bedrock.enabled = false;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn java_offline_preview_requires_explicit_local_scope_and_capacity() {
+        let mut config = Config::default();
+        config.java.sessions = true;
+        assert!(config.validate().is_err());
+        config.java.require_authentication = false;
+        config.validate().unwrap();
+        assert_eq!(config.status().unwrap().stage, "java-spawn-preview");
+        config.server.max_players = 65;
+        assert!(config.validate().is_err());
+        config.server.max_players = 20;
+        for address in ["0.0.0.0:25565", "192.168.1.2:25565", "[::]:25565"] {
+            config.network.java.bind = address.parse().unwrap();
+            assert!(config.validate().is_err());
+        }
+        config.network.java.bind = "127.0.0.1:25565".parse().unwrap();
+        config.network.java.enabled = false;
         assert!(config.validate().is_err());
     }
 

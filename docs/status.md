@@ -1,11 +1,12 @@
 # Development status — 2026-11-16 KST
 
-**Current Milestone:** Milestone 1, Bedrock-native login, spawn and authoritative creative-builder preview. The overall goal remains active.
+**Current Milestone:** Milestones 1–2, Bedrock-native spawn and the initial Java shared-world adapter. The overall goal remains active.
 Canonical repository: `SKYRPG8957/Sculith`. Existing MIT license and origin are preserved.
 The full requirements are in [engineering-directive.md](engineering-directive.md).
 
 ## Implemented
 
+- Opt-in loopback Java 26.3/protocol-777 login, known-core configuration with 32 registries/773 tags, full chunks/heightmaps/light, initialized-session counting, keepalive and limited creative movement/building through the existing owner. Both ready acknowledgements are required; replayed block sequences, unacknowledged corrections and client-proposed inventory cannot commit. Partial TCP framing survives cancellation. [Configuration, provenance and limits](java-preview.md).
 - Pre-initialization Interact/33 notifications are ignored without creating game intents. Ancillary loading status is discarded within the existing 4,096-packet/deadline bounds with capped identifier-only logs; login/network/cipher restarts and premature initialization acknowledgements still fail explicitly.
 - Mandatory empty structure registries are sent before StartGame, correcting the missing data identified by native error 148. Loading controls and radius renegotiation are accepted before initialization and during play. Pending players cannot edit the owner. Spawn also supplies the plains biome definition used by chunk palettes and an empty creative catalog; unsupported general inventory mutations remain rejected.
 - Existing Java TCP and Bedrock UDP discovery, trusted executable Rust plugin prototype and explicit PNG conversion retained.
@@ -24,6 +25,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Verified
 
+- Current Java source passes Linux workspace Clippy, 102 project tests and the ownership compile-fail doctest. The independent Python wire client verifies all 2,457,600 spawn voxels, lighting, initialization, accepted edits, replay/correction rejection, inventory reset and reconnect state. A real-socket Java/RakNet/NetherNet regression verifies three clients in one owner, bidirectional committed changes, final revision/snapshot and disconnect cleanup. Both built-executable smoke modes and the independent aiortc/OpenSSL and Go/Dragonfly probes pass against the new build. The checked-in Java facts reproduce byte-for-byte from the pinned official report tool. Native Windows verification of this Java addition is pending; public Preview 7 predates it.
 - [Preview 7](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.7) is public. Its immutable tag matches the tested source; a fresh unauthenticated HTTPS download passes exact metadata and SHA-256 verification. [Publication run 43766953840](https://github.com/SKYRPG8957/Sculith/actions/runs/43766953840) uploads the tested artifact. Installer defaults and download links select Preview 7. Windows PowerShell 5.1 installation, both launcher checks, existing-directory preservation and the documented one-command install pass in [run 43767186802](https://github.com/SKYRPG8957/Sculith/actions/runs/43767186802).
 - Preview 7's Interact/33 loading correction passes native Windows checks in [run 43766428256](https://github.com/SKYRPG8957/Sculith/actions/runs/43766428256), exact source `d9b85379939a1657b80e5237ec361b5e5238eb0a`. The real-socket regression, pending-player immutability, re-negotiation rejection, both Bedrock transports, independent aiortc/OpenSSL and Go/Dragonfly probes, full chunk decoding, executable smokes and packaging checks pass. The ZIP is 5,248,779 bytes, SHA-256 `575aeb3e4b5777da16dfd86e5c269a7d5e1607a49fb64247b91de98557dbce28`; exact metadata, licenses and system-DLL-only PE imports were inspected. Official Minecraft entry remains awaiting a successful retest.
 - [Preview 6](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.6) is public. The immutable tag matches the tested source, and a fresh unauthenticated HTTPS download passes exact-source metadata and SHA-256 verification. [Publication run 43764002266](https://github.com/SKYRPG8957/Sculith/actions/runs/43764002266) uploads the tested artifact. The default installer and documentation select Preview 6. Windows PowerShell 5.1 installation, both launcher checks, existing-directory preservation and the documented one-command install pass in [run 43764198665](https://github.com/SKYRPG8957/Sculith/actions/runs/43764198665).
@@ -100,7 +102,8 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 - Online authentication has not been end-to-end verified. Offline test identities are restricted to loopback binds.
 - Preview gameplay is limited to validated movement and creative building with fixed Stone/Dirt/Grass starter slots. General inventory transactions, gravity, simulation ticks, survival, combat and crafting are not implemented.
 - Region persistence runs only on orderly shutdown; periodic/crash recovery saving and persistent player state are pending.
-- Other players/entities are not displayed, and Java cannot yet enter the world. No complete crossplay claim is made.
+- Other players/entities are not displayed. The Java adapter is a local headless-tested preview; official entry/rendering and online Java authentication remain unverified/unimplemented. No complete crossplay claim is made.
+- Java currently maps only the five core block states, uses a fixed two-chunk view, and supplies direct vertical skylight without lateral light propagation. General inventory transactions, chat, Java encryption/compression and automatic content delivery are pending.
 - NetherNet uses loopback HTTP signaling and same-machine media sources only. Offer fingerprint ownership and expiry are checked; the signaling token issuer/signature is not authenticated in this preview. The inner Bedrock login policy remains in force. Official NetherNet client entry and public token trust remain unverified.
 - Both NetherNet channels now reach the validated owner. A real test commits valid unreliable movement and corrects a large tick/teleport attempt over the reliable channel. Official-client movement/rendering still require verification.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
@@ -112,5 +115,5 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 
 ## Next Action
 
-Retest the official Windows GDK client with public Preview 7 past the corrected Interact/33 rejection. Its native Windows protocol and public installer checks pass. The independent Go/Dragonfly probe decodes every block and biome in all 25 spawn chunks. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
+Retest the official Windows GDK client past the corrected Interact/33 rejection. Public Preview 7's native Windows protocol and installer checks pass. Complete native Windows checks and a reviewable portable release for the Java addition, then verify stock Java 26.3 entry/rendering and implement peer entity visibility. The independent Go/Dragonfly probe continues to check every block and biome in all 25 Bedrock spawn chunks.
 Continue online authentication and actual-client verification beyond the now-accessible discovery endpoint. Required gameplay/content features are not removed from the objective.

@@ -26,7 +26,7 @@ use config::Config;
 #[command(
     name = "sculith",
     version,
-    about = "Bedrock-first Rust server in development (Java discovery; opt-in Bedrock spawn preview)"
+    about = "Bedrock-first Rust server in development (opt-in local Java/Bedrock shared-world preview)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -191,7 +191,17 @@ async fn run(config: Config) -> Result<()> {
     let mut world_finished = false;
     if let Some(listener) = java {
         info!(address = %listener.local_addr()?, "Java TCP discovery listening");
-        services.spawn(protocol::java::serve(listener, status_rx.clone()));
+        let preview = config.java.sessions.then(|| protocol::java::Preview {
+            world: world.clone(),
+            timeout: Duration::from_secs(config.java.login_timeout_secs),
+            shutdown: shutdown_rx.clone(),
+        });
+        services.spawn(protocol::java::serve(
+            listener,
+            status_rx.clone(),
+            preview,
+            shutdown_rx.clone(),
+        ));
     }
     if let Some(server) = nethernet {
         info!(address = %server.local_addr()?, "NetherNet HTTP signaling listening");
@@ -239,7 +249,7 @@ async fn run(config: Config) -> Result<()> {
         }
     }
     warn!(stage = %state.stage,
-        "Development build: Java login, shared multiplayer simulation and content compatibility are not implemented");
+        "Development build: edition previews; multiplayer entity visibility and full content compatibility are pending");
     let mut ticker = tokio::time::interval(Duration::from_secs_f64(
         1.0 / f64::from(config.server.tick_rate),
     ));
@@ -276,7 +286,7 @@ async fn run(config: Config) -> Result<()> {
         }
     };
     shutdown_tx.send_replace(true);
-    // The Java/discovery tasks have no background driver and can be cancelled directly.
+    // Java drains its owned connections; discovery has no background driver.
     // Give the session driver a chance to dispose of all of its child tasks first.
     if tokio::time::timeout(Duration::from_millis(250), async {
         while services.join_next().await.is_some() {}

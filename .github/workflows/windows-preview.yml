@@ -17,6 +17,8 @@ on:
       - 'vendor/**'
       - 'examples/**'
       - 'scripts/smoke.py'
+      - 'scripts/java_smoke.py'
+      - 'scripts/generate_java_protocol_facts.py'
       - 'scripts/package_release.py'
       - 'scripts/webrtc_smoke.py'
       - 'scripts/gophertunnel_smoke.py'
@@ -35,7 +37,7 @@ jobs:
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       PYTHONUTF8: '1'
-      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.7'
+      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.8'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/cache@v4
@@ -75,6 +77,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/smoke.py --server target/release/sculith.exe --plugin target/release/sculith-welcome.exe --sessions
           exit $LASTEXITCODE
+      - name: Verify independent Java shared-world protocol client
+        run: python scripts/java_smoke.py --server target/release/sculith.exe
       - name: Parse the PowerShell installer
         run: |
           $Tokens = $null

@@ -994,6 +994,126 @@ async fn loading_notifications_cannot_restart_network_or_login_negotiation() {
 }
 
 #[tokio::test]
+async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_owner() {
+    use crate::protocol::java::{self, Preview, test_client::Probe};
+    use sculith_world::{BlockKind, BlockPos};
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(15)).await;
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = tcp.local_addr().unwrap();
+    let (stop, shutdown) = watch::channel(false);
+    let java = tokio::spawn(java::serve(
+        tcp,
+        server._status.subscribe(),
+        Some(Preview {
+            world: server.world.clone(),
+            timeout: Duration::from_secs(30),
+            shutdown: shutdown.clone(),
+        }),
+        shutdown,
+    ));
+    let mut bedrock = TestClient::connect(server.address).await.unwrap();
+    let bedrock_id = bedrock.enter().await.unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let nether = crate::protocol::bedrock::nethernet::prepare(
+        "127.0.0.1:0".parse().unwrap(),
+        &directory.path().join("identity.pem"),
+    )
+    .await
+    .unwrap();
+    let nether_address = nether.local_addr().unwrap();
+    let nether_task = tokio::spawn(nether.serve(
+        crate::protocol::bedrock::nethernet::ContextData {
+            authentication: Authentication::offline(),
+            timeout: Duration::from_secs(15),
+            world: server.world.clone(),
+            status: server._status.subscribe(),
+            shutdown: server.shutdown.subscribe(),
+        },
+    ));
+    let mut nethernet = nether_client(nether_address).await.unwrap();
+    nethernet.enter().await.unwrap();
+    let mut java_client = Probe::enter(address).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while server.world.online_players() != 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let target = BlockPos { x: 1, y: 3, z: 1 };
+    bedrock.request_break(bedrock_id, 1, 3, 1).await.unwrap();
+    assert!(matches!(
+        bedrock.next().await.unwrap(),
+        V2225::UpdateBlockPacket(_)
+    ));
+    assert!(matches!(
+        nethernet.next().await.unwrap(),
+        V2225::UpdateBlockPacket(_)
+    ));
+    assert_eq!(java_client.next_block().await.unwrap(), (target, 0));
+    java_client
+        .place_stone(BlockPos { x: 1, y: 2, z: 1 }, 1)
+        .await
+        .unwrap();
+    assert_eq!(java_client.next_block().await.unwrap(), (target, 1));
+    let V2225::UpdateBlockPacket(update) = bedrock.next().await.unwrap() else {
+        panic!("Bedrock did not receive the Java edit");
+    };
+    assert_eq!(
+        (
+            update.block_position.x,
+            update.block_position.y,
+            update.block_position.z
+        ),
+        (1, 3, 1)
+    );
+    assert_eq!(
+        update.block_runtime_id,
+        super::super::chunk::block_hash(BlockKind::Stone).unwrap()
+    );
+    let V2225::UpdateBlockPacket(update) = nethernet.next().await.unwrap() else {
+        panic!("NetherNet did not receive the Java edit");
+    };
+    assert_eq!(
+        update.block_runtime_id,
+        super::super::chunk::block_hash(BlockKind::Stone).unwrap()
+    );
+    assert_eq!(server.world.capture().await.unwrap().revision(), 2);
+    assert_eq!(
+        server
+            .world
+            .snapshot(target.chunk())
+            .await
+            .unwrap()
+            .get(1, 3, 1)
+            .unwrap(),
+        BlockKind::Stone
+    );
+    stop.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(2), java)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while server.world.online_players() != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    bedrock.conn.close().await;
+    nethernet.conn.close().await;
+    server.shutdown.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(2), nether_task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    server.stop().await;
+}
+
+#[tokio::test]
 async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
     let server = Harness::start(Authentication::offline(), Duration::from_secs(1)).await;
     let mut client = TestClient::connect(server.address).await.unwrap();

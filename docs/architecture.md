@@ -32,7 +32,7 @@ Java 어댑터는 서버 목록 조회까지 구현했습니다. Bedrock은 선�
 | `sculith-server::game` | 프로토콜과 독립된 플레이어·초기 슬롯·이동/건축 검증과 단일 region commit |
 | `sculith-server::world` | bounded mailbox로 요청을 받는 하나의 월드 소유자, 세션 lease와 committed event 전송 |
 | `sculith-server::protocol::bedrock` | discovery와 RakNet/로컬 NetherNet·암호화 로그인·평지 스폰·입력 해석·관심 청크와 변경 전송 |
-| `sculith-server::protocol::java` | 현대 Java 서버 목록 프로토콜과 로그인 미구현 안내 |
+| `sculith-server::protocol::java` | Java 목록 조회와 선택적 로컬 26.3 로그인·청크·입력을 같은 월드 소유자에 연결 |
 | `sculith-plugin-api` | 버전이 명시된 요청/응답 자료형과 Rust 플러그인 SDK |
 | `sculith-packs` | 베드락 매니페스트 검증과 명시적 PNG 텍스처 변환 |
 

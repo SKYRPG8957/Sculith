@@ -7,16 +7,19 @@ https://github.com/SKYRPG8957/Sculith
 3. 같은 PC의 Minecraft for Windows(Bedrock)에서 서버를 추가하세요.
    주소: 127.0.0.1   포트: 19132
    개발 참고 버전: Bedrock 1.26.60 / protocol 2225. Preview/Beta는 별도입니다.
+   Java 26.3에서는 멀티플레이 서버 주소에 127.0.0.1:25565를 입력하세요.
+   두 에디션은 하나의 월드와 승인된 블록 변경을 공유합니다.
 4. 종료할 때는 서버 창에서 Ctrl+C를 누르세요. 월드를 저장하고 종료합니다.
    창을 강제로 닫으면 시작 이후의 변경이 유실될 수 있습니다.
 
 현재 가능한 테스트: 평지 스폰, 제한된 크리에이티브 이동과 블록 설치/파괴.
 공식 Minecraft 클라이언트의 접속·렌더링은 아직 검증하지 못했습니다.
-Java는 서버 목록 조회만 가능하고 월드 접속은 아직 구현되지 않았습니다.
+Java 26.3의 로컬 로그인·평지 전송·제한된 건축 경로도 구현했습니다.
 일반 인벤토리, 생존/중력, 다른 플레이어 표시, 완전한 리소스팩 호환도 미완료입니다.
 이 배포는 완성된 서버나 크로스플레이 지원을 뜻하지 않습니다.
 
 start.cmd는 sculith.toml이 없을 때만 예제를 복사합니다.
+기존 설정을 옮기면 Java 접속은 자동 활성화되지 않습니다. 새 예제의 [java] 항목을 확인하세요.
 설정은 sculith.toml, 월드는 world/region.sculith에 저장합니다.
 NetherNet 연결용 서명 키는 world/nethernet-identity.pem에 저장하고 재시작 시 유지합니다.
 게임에서 첫 접속 신뢰 확인이 나타날 수 있습니다. 키 파일은 공유하지 마세요.
@@ -41,7 +44,9 @@ English
 Extract the entire ZIP, then double-click start.cmd. Add 127.0.0.1:19132 in
 Bedrock on the same PC. Ctrl+C saves the world and stops the server.
 This is a local, offline-identity development preview. Official Minecraft
-client entry/rendering remain unverified; Java world entry is not implemented.
+client entry/rendering remain unverified. Java 26.3 uses 127.0.0.1:25565 and
+the same authoritative world. Other versions and online Java authentication
+are not implemented. Existing settings are not automatically opted in.
 Settings and world data are preserved. No Rust, Java or Python install is needed.
 
 MIT License. Third-party notices and license texts are included.

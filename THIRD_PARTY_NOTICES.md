@@ -26,6 +26,14 @@ Sculith independently encodes a limited creative-builder permission set; operato
 Pumpkin, Folia and other reference projects are architectural references, not linked or copied server implementations.
 The example pack contains an original generated checkerboard PNG.
 
+The MIT-licensed [MCProtocolLib](https://github.com/GeyserMC/MCProtocolLib/tree/65efb9dac372709f49f4395ae4361642bc012328)
+was consulted for Java protocol-777 packet layouts and known-core registry negotiation.
+The independently implemented Rust adapter links no Java server or MCProtocolLib runtime.
+Its checked-in identifier, tag-membership and numeric wire facts are reproducibly extracted
+from official Java 26.3 reports and core file names; the pinned tool checksum and commands
+are recorded in [the Java preview guide](docs/java-preview.md). No Minecraft JAR,
+registry element definitions or game assets are included in the server distribution.
+
 Windows preview packages include `THIRD_PARTY_LICENSES.txt`, generated from the locked dependency graph and its source license files.
 For dual MIT/Apache-2.0 packages whose crate tarballs omit license texts (including legacy `MIT/Apache-2.0` declarations), the distribution selects their declared Apache-2.0 option and retains its full text.
 The `mutants` 0.0.3 crate's omitted MIT text is retained in `LICENSES/package-fallbacks/cargo-mutants-MIT.txt` from

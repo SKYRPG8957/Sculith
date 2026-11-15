@@ -1,36 +1,64 @@
-//! Modern Java server-list status and a deliberate login rejection.
-//! The -1 advertised protocol prevents claiming gameplay compatibility.
+//! Server-list discovery and an opt-in local protocol-777 shared-world adapter.
+
+mod chunk;
+mod codec;
+mod registry;
+mod session;
+#[cfg(test)]
+pub(in crate::protocol) mod test_client;
 
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use sculith_core::ServerStatus;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     net::{TcpListener, TcpStream},
     sync::{Semaphore, watch},
     task::JoinSet,
 };
 
-const MAX_PACKET_BYTES: usize = 8192;
+#[cfg(test)]
+const MAX_PACKET_BYTES: usize = codec::MAX_INBOUND;
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_CONNECTIONS: usize = 64;
 
-pub async fn serve(listener: TcpListener, status: watch::Receiver<ServerStatus>) -> Result<()> {
+#[derive(Clone)]
+pub struct Preview {
+    pub world: crate::world::WorldHandle,
+    pub timeout: Duration,
+    pub shutdown: watch::Receiver<bool>,
+}
+
+#[derive(Clone, Copy)]
+enum Phase {
+    Login,
+    Configuration,
+    Play,
+}
+
+pub async fn serve(
+    listener: TcpListener,
+    status: watch::Receiver<ServerStatus>,
+    preview: Option<Preview>,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<()> {
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     let mut connections = JoinSet::new();
     loop {
         tokio::select! {
+            changed=shutdown.changed()=>{
+                if changed.is_err() || *shutdown.borrow() { break; }
+            }
             accepted = listener.accept() => {
                 let (mut stream, address) = accepted?;
                 let Ok(permit) = slots.clone().try_acquire_owned() else { continue };
                 let status = status.clone();
+                let preview=preview.clone();
                 connections.spawn(async move {
                     let _permit = permit;
-                    match tokio::time::timeout(CONNECTION_TIMEOUT, handle(&mut stream, status)).await {
-                        Ok(Ok(())) => {},
-                        Ok(Err(error)) => tracing::debug!(%address, %error, "Java connection closed"),
-                        Err(_) => tracing::debug!(%address, "Java connection timed out"),
+                    if let Err(error)=handle_with_preview(&mut stream,status,preview).await {
+                        tracing::debug!(%address,%error,"Java connection closed");
                     }
                 });
             }
@@ -39,40 +67,111 @@ pub async fn serve(listener: TcpListener, status: watch::Receiver<ServerStatus>)
             }
         }
     }
+    connections.abort_all();
+    while let Some(result) = connections.join_next().await {
+        if let Err(error) = result {
+            ensure!(error.is_cancelled(), "Java child task panicked");
+        }
+    }
+    Ok(())
 }
 
+#[cfg(test)]
 async fn handle(stream: &mut TcpStream, status: watch::Receiver<ServerStatus>) -> Result<()> {
-    let handshake = read_frame(stream).await?;
-    let state = parse_handshake(&handshake)?;
+    handle_with_preview(stream, status, None).await
+}
+
+async fn handle_with_preview(
+    stream: &mut TcpStream,
+    status: watch::Receiver<ServerStatus>,
+    preview: Option<Preview>,
+) -> Result<()> {
+    let mut frames = codec::Frames::default();
+    let handshake = tokio::time::timeout(CONNECTION_TIMEOUT, frames.next(stream)).await??;
+    let (protocol, state) = parse_handshake(&handshake)?;
     if state == 2 {
+        if let Some(preview) = preview.as_ref().filter(|_| protocol == registry::PROTOCOL) {
+            ensure!(
+                stream.peer_addr()?.ip().is_loopback(),
+                "Java preview requires a loopback peer"
+            );
+            let max_players = status.borrow().max_players;
+            let mut phase = Phase::Login;
+            let started = tokio::time::timeout(
+                preview.timeout,
+                session::start(
+                    stream,
+                    &mut frames,
+                    preview.world.clone(),
+                    max_players,
+                    &mut phase,
+                ),
+            )
+            .await;
+            let result = match started {
+                Ok(Ok(session)) => {
+                    session
+                        .run(stream, &mut frames, preview.shutdown.clone())
+                        .await
+                }
+                Ok(Err(error)) => Err(error),
+                Err(error) => Err(error).context("Java startup timed out"),
+            };
+            if result.is_err() {
+                let _ = disconnect(
+                    stream,
+                    phase,
+                    "Sculith Java 26.3 preview: request rejected; check the server console.",
+                )
+                .await;
+            }
+            return result;
+        }
         // Consume Login Start before closing so queued client data does not cause
         // a TCP reset that hides the explanatory disconnect from vanilla clients.
-        let login_start = read_frame(stream).await?;
+        let login_start = tokio::time::timeout(CONNECTION_TIMEOUT, frames.next(stream)).await??;
         let mut fields = &login_start[..];
         ensure!(read_varint(&mut fields)? == 0, "expected login start");
-        let reason = serde_json::json!({"text": "Sculith development build: world login is not implemented yet."});
-        let mut disconnect = vec![0];
-        write_string(&reason.to_string(), &mut disconnect);
-        write_frame(stream, &disconnect).await?;
+        let reason = if preview.is_some() {
+            "Sculith local preview requires Java 26.3 (protocol 777)."
+        } else {
+            "Sculith development build: Java world login is disabled; enable the local preview explicitly."
+        };
+        disconnect(stream, Phase::Login, reason).await?;
         stream.shutdown().await?;
         return Ok(());
     }
 
-    let request = read_frame(stream).await?;
+    tokio::time::timeout(
+        CONNECTION_TIMEOUT,
+        status_exchange(stream, &mut frames, status, preview.is_some()),
+    )
+    .await?
+}
+
+async fn status_exchange(
+    stream: &mut TcpStream,
+    frames: &mut codec::Frames,
+    status: watch::Receiver<ServerStatus>,
+    preview: bool,
+) -> Result<()> {
+    let request = frames.next(stream).await?;
     ensure!(request == [0], "expected status request");
     let snapshot = status.borrow().clone();
     let reference = super::references().java;
     let response = serde_json::json!({
-        "version": {"name": "Sculith / discovery only", "protocol": -1},
+        "version": {"name": if preview {"Sculith / Java 26.3 local preview"} else {"Sculith / discovery only"},
+            "protocol": if preview {registry::PROTOCOL} else {-1}},
         "players": {"max": snapshot.max_players, "online": snapshot.online_players, "sample": []},
-        "description": {"text": format!("{}\nDevelopment build: world login unavailable", snapshot.motd)},
+        "description": {"text": format!("{}\n{}", snapshot.motd,
+            if preview {"Local shared-world preview; official gameplay unverified"} else {"Development build: world login unavailable"})},
         "sculith": {"stage": snapshot.stage, "reference_version": reference.version, "reference_protocol": reference.protocol}
     });
     let mut packet = vec![0];
     write_string(&response.to_string(), &mut packet);
     write_frame(stream, &packet).await?;
     // The optional ping is framed independently; the payload must be echoed unchanged.
-    let ping = read_frame(stream).await?;
+    let ping = frames.next(stream).await?;
     ensure!(
         ping.len() == 9 && ping[0] == 1,
         "expected status ping with an i64 payload"
@@ -81,9 +180,10 @@ async fn handle(stream: &mut TcpStream, status: watch::Receiver<ServerStatus>) -
     Ok(())
 }
 
-fn parse_handshake(mut packet: &[u8]) -> Result<i32> {
+fn parse_handshake(mut packet: &[u8]) -> Result<(i32, i32)> {
     ensure!(read_varint(&mut packet)? == 0, "expected handshake packet");
-    ensure!(read_varint(&mut packet)? >= 0, "negative client protocol");
+    let protocol = read_varint(&mut packet)?;
+    ensure!(protocol >= 0, "negative client protocol");
     let length = read_varint(&mut packet)?;
     ensure!(
         (1..=1024).contains(&length),
@@ -96,7 +196,20 @@ fn parse_handshake(mut packet: &[u8]) -> Result<i32> {
     let state = read_varint(&mut packet)?;
     ensure!(packet.is_empty(), "trailing handshake bytes");
     ensure!(state == 1 || state == 2, "unsupported handshake state");
-    Ok(state)
+    Ok((protocol, state))
+}
+
+async fn disconnect(stream: &mut TcpStream, phase: Phase, reason: &str) -> Result<()> {
+    let mut packet = codec::packet(match phase {
+        Phase::Login => 0,
+        Phase::Configuration => 2,
+        Phase::Play => 0x20,
+    });
+    match phase {
+        Phase::Login => write_string(&serde_json::json!({"text":reason}).to_string(), &mut packet),
+        _ => codec::text(reason, &mut packet)?,
+    }
+    codec::send(stream, &packet).await
 }
 
 pub fn read_varint(input: &mut &[u8]) -> Result<i32> {
@@ -133,33 +246,13 @@ fn write_string(value: &str, output: &mut Vec<u8>) {
     output.extend_from_slice(value.as_bytes());
 }
 
+#[cfg(test)]
 async fn read_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
-    let mut prefix = Vec::with_capacity(5);
-    loop {
-        let byte = stream.read_u8().await?;
-        prefix.push(byte);
-        ensure!(prefix.len() <= 5, "frame length exceeds five bytes");
-        if byte & 0x80 == 0 {
-            break;
-        }
-        ensure!(prefix.len() < 5, "frame length exceeds five bytes");
-    }
-    let length = read_varint(&mut &prefix[..])?;
-    ensure!(
-        (1..=MAX_PACKET_BYTES as i32).contains(&length),
-        "frame length out of bounds"
-    );
-    let mut frame = vec![0; length as usize];
-    stream.read_exact(&mut frame).await?;
-    Ok(frame)
+    codec::Frames::default().next(stream).await
 }
 
 async fn write_frame(stream: &mut TcpStream, payload: &[u8]) -> Result<()> {
-    let mut frame = Vec::new();
-    write_varint(payload.len() as i32, &mut frame);
-    frame.extend_from_slice(payload);
-    stream.write_all(&frame).await?;
-    Ok(())
+    codec::send(stream, payload).await
 }
 
 #[cfg(test)]
@@ -191,7 +284,7 @@ mod tests {
         write_string("localhost", &mut packet);
         packet.extend_from_slice(&25565u16.to_be_bytes());
         packet.push(1);
-        assert_eq!(parse_handshake(&packet).unwrap(), 1);
+        assert_eq!(parse_handshake(&packet).unwrap(), (777, 1));
         for length in 0..packet.len() {
             assert!(parse_handshake(&packet[..length]).is_err());
         }
@@ -272,7 +365,7 @@ mod tests {
             reason["text"]
                 .as_str()
                 .unwrap()
-                .contains("world login is not implemented")
+                .contains("Java world login is disabled")
         );
         server.await.unwrap();
     }

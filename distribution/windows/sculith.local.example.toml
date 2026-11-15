@@ -1,10 +1,15 @@
 # Local development preview; not a public server configuration.
 [server]
-motd = "Sculith / local Bedrock preview"
+motd = "Sculith / local shared-world preview"
 max_players = 20
 
 [world]
 snapshot_path = "world/region.sculith"
+
+[java]
+sessions = true
+require_authentication = false
+login_timeout_secs = 30
 
 [bedrock]
 sessions = true

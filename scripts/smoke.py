@@ -113,7 +113,7 @@ def check_java(port, stage="discovery-only"):
         login_start = b"\x00" + varint(len(username)) + username + bytes(16)
         client.sendall(handshake(port, 2) + frame(login_start))
         disconnect = json_packet(read_frame(client))
-        assert "world login is not implemented" in disconnect["text"]
+        assert "Java world login is disabled" in disconnect["text"]
 
     # A malformed connection must not kill the shared listener.
     with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
