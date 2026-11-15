@@ -22,7 +22,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 ## Verified
 
 - Rust 1.100.0 workspace build and Clippy for all targets with warnings denied.
-- Native Windows build, tests, executable network/persistence smoke checks and package validation are configured in `Windows preview`; first-run results are pending.
+- Native Windows x64 build, Clippy, unit/doc tests, both release-executable network/persistence smoke checks and package validation passed for `0e782d5` in [Windows preview run 43741364940](https://github.com/SKYRPG8957/Sculith/actions/runs/43741364940).
+- The extracted ZIP launcher passes configuration checks from a path with spaces and preserves edited user settings. Its x64 PE imports only Windows system DLLs; no separate VC++ runtime installation is required.
 - 82 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (83 total checks).
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
@@ -39,6 +40,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Failed / externally constrained
 
+- The first Windows smoke run found console shutdown killing a plugin before its lifecycle hook. Windows workers now run without the host console; the corrected run verifies the Stopping event and final world save.
 - Official discovery request to `client.discovery.minecraft-services.net` returned proxy HTTP 403.
   The running restricted network has no Minecraft-service domain allowed. No credentials are needed for this public-key request.
 - Only that required domain was added to the environment draft; the save was confirmed and returned `requires_publish: true`.

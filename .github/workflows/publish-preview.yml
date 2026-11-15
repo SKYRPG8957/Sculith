@@ -1,0 +1,48 @@
+name: Publish verified Windows preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download the successfully tested immutable build
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 43741364940
+          name: windows-preview
+          path: dist
+      - name: Verify archive integrity and exact source revision
+        run: |
+          cd dist
+          sha256sum --check SHA256SUMS.txt
+          python3 - <<'PY'
+          import json, zipfile
+          with zipfile.ZipFile('sculith-v0.1.0-preview.1-windows-x86_64.zip') as archive:
+              assert archive.testzip() is None
+              metadata = json.loads(archive.read('release.json'))
+              assert metadata['commit'] == '0e782d5c679fc323ecc3065c546d5f98aa32c5d8'
+              assert metadata['version'] == 'v0.1.0-preview.1'
+              assert metadata['target'] == 'x86_64-pc-windows-msvc'
+              assert metadata['official_client_verified'] is False
+          PY
+      - name: Publish the development preview and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.1.0-preview.1 \
+            --repo SKYRPG8957/Sculith \
+            --target 0e782d5c679fc323ecc3065c546d5f98aa32c5d8 \
+            --prerelease --latest=false \
+            --title 'Sculith v0.1.0-preview.1 (Windows)' \
+            --notes-file docs/releases/v0.1.0-preview.1.md \
+            dist/sculith-v0.1.0-preview.1-windows-x86_64.zip dist/SHA256SUMS.txt
