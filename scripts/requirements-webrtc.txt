@@ -1,0 +1,14 @@
+# Development-only independent WebRTC probe; not shipped with the server.
+aiortc==1.14.0
+aioice==0.13.0
+av==16.1.0
+cryptography==50.0.0
+google-crc32c==1.9.0
+pyee==13.0.1
+pylibsrtp==1.0.0
+pyOpenSSL==26.4.0
+dnspython==2.9.2
+ifaddr==0.2.0
+cffi==2.1.1
+typing_extensions==4.16.0
+pycparser==3.0

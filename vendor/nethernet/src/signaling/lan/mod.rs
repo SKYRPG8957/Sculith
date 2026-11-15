@@ -1,0 +1,743 @@
+//! LAN signaling: discovery broadcasts and signals sent as encrypted UDP datagrams.
+pub mod config;
+pub mod error;
+pub mod input;
+pub mod output;
+
+use crate::protocol::codec::NetherCodec;
+use crate::protocol::packet::discovery::{
+    MessagePacket, Packets, RequestPacket, ResponsePacket, ServerData, decode, encode,
+};
+use crate::protocol::{Signal, SignalType};
+use crate::sans::Sans;
+use config::LanSignalerConfig;
+use error::LanSignalerError;
+use input::LanSignalerInput;
+use output::LanSignalerOutput;
+use std::collections::{HashMap, VecDeque};
+use std::net::{Ipv4Addr, SocketAddr};
+use std::time::{Duration, Instant};
+
+const PING: &str = "Ping";
+
+/// Sans-io LAN signaler that answers discovery requests, tracks peer addresses and retransmits signals.
+///
+/// Discovery packets are unauthenticated (the key is public), so a network id
+/// stays pinned to the address it was last heard from until that address goes
+/// quiet for `address_timeout`. A host that claims an id first still wins it.
+pub struct LanSignaler {
+    network_id: u64,
+    config: LanSignalerConfig,
+
+    addresses: HashMap<u64, AddressEntry>,
+    discovered: HashMap<u64, ServerData>,
+    pending: Vec<PendingSignal>,
+    server_data: Option<ServerData>,
+
+    last_broadcast: Option<Instant>,
+    last_cleanup: Option<Instant>,
+
+    output: VecDeque<LanSignalerOutput>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AddressEntry {
+    addr: SocketAddr,
+    last_seen: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct PendingSignal {
+    signal: Signal,
+    target: u64,
+    attempts: u32,
+    next_send: Instant,
+}
+
+impl Sans for LanSignaler {
+    type Input = LanSignalerInput;
+    type Output = LanSignalerOutput;
+    type Error = LanSignalerError;
+
+    fn handle(&mut self, msg: Self::Input) -> Result<(), Self::Error> {
+        match msg {
+            LanSignalerInput::Datagram(buf, addr, now) => self.handle_datagram(&buf, addr, now)?,
+            LanSignalerInput::Signal(signal, now) => self.handle_signal(signal, now)?,
+            LanSignalerInput::SetServerData(data) => self.server_data = Some(*data),
+            LanSignalerInput::Update(now) => self.handle_update(now)?,
+        }
+        Ok(())
+    }
+
+    fn poll(&mut self) -> Option<Self::Output> {
+        self.output.pop_front()
+    }
+}
+
+impl LanSignaler {
+    pub fn new(network_id: u64, config: LanSignalerConfig) -> Self {
+        Self {
+            network_id,
+            config,
+            addresses: HashMap::new(),
+            discovered: HashMap::new(),
+            pending: Vec::new(),
+            server_data: None,
+            last_broadcast: None,
+            last_cleanup: None,
+            output: VecDeque::new(),
+        }
+    }
+
+    pub fn network_id(&self) -> u64 {
+        self.network_id
+    }
+
+    pub fn discovered(&self) -> &HashMap<u64, ServerData> {
+        &self.discovered
+    }
+
+    pub fn address(&self, network_id: u64) -> Option<SocketAddr> {
+        self.addresses.get(&network_id).map(|entry| entry.addr)
+    }
+
+    pub fn addresses(&self) -> impl Iterator<Item = (u64, SocketAddr)> + '_ {
+        self.addresses
+            .iter()
+            .map(|(&network_id, entry)| (network_id, entry.addr))
+    }
+
+    pub fn pending_signals(&self) -> usize {
+        self.pending.len()
+    }
+
+    fn handle_datagram(
+        &mut self,
+        buf: &[u8],
+        addr: SocketAddr,
+        now: Instant,
+    ) -> Result<(), LanSignalerError> {
+        let (packet, sender) = match decode(buf) {
+            Ok(decoded) => decoded,
+            Err(e) => {
+                tracing::trace!(
+                    "ignoring unrecognized packet from {}: {} ({})",
+                    addr,
+                    e,
+                    hex::encode(buf)
+                );
+                return Ok(());
+            }
+        };
+
+        if sender == self.network_id {
+            return Ok(());
+        }
+
+        if let Some(entry) = self.addresses.get(&sender)
+            && entry.addr != addr
+            && now.saturating_duration_since(entry.last_seen) < self.config.address_timeout
+        {
+            tracing::debug!(
+                "ignoring {} claiming network id {}, pinned to {}",
+                addr,
+                sender,
+                entry.addr
+            );
+            return Ok(());
+        }
+
+        self.addresses.insert(
+            sender,
+            AddressEntry {
+                addr,
+                last_seen: now,
+            },
+        );
+
+        match packet {
+            Packets::Request(_) => self.answer_request(addr)?,
+            Packets::Response(response) => {
+                let full = self.discovered.len() >= self.config.max_discovered;
+                if full && !self.discovered.contains_key(&sender) {
+                    return Ok(());
+                }
+                if let Ok(data) = ServerData::decode(&response.application_data) {
+                    self.discovered.insert(sender, data.clone());
+                    self.output
+                        .push_back(LanSignalerOutput::ServerDiscovered(sender, Box::new(data)));
+                }
+            }
+            Packets::Message(message) => {
+                if message.data.is_empty()
+                    || message.data == PING
+                    || message.recipient_id != self.network_id
+                {
+                    return Ok(());
+                }
+
+                let Ok(signal) = Signal::from_string(&message.data, sender.to_string()) else {
+                    tracing::debug!("ignoring malformed signal from {}", sender);
+                    return Ok(());
+                };
+
+                self.pending.retain(|pending| {
+                    pending.target != sender || pending.signal.connection_id != signal.connection_id
+                });
+
+                self.output.push_back(LanSignalerOutput::Signal(signal));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn answer_request(&mut self, addr: SocketAddr) -> Result<(), LanSignalerError> {
+        let Some(data) = self.server_data.as_ref() else {
+            tracing::debug!("no server data configured, not answering {}", addr);
+            return Ok(());
+        };
+
+        let mut application_data = Vec::new();
+        data.serialize(&mut application_data)?;
+        let response = ResponsePacket::new(application_data);
+        let buf = encode(&Packets::Response(response), self.network_id)?;
+        self.output
+            .push_back(LanSignalerOutput::Datagram(buf.into(), addr));
+
+        Ok(())
+    }
+
+    fn handle_signal(&mut self, signal: Signal, now: Instant) -> Result<(), LanSignalerError> {
+        let target = signal
+            .network_id
+            .parse::<u64>()
+            .map_err(|_| LanSignalerError::InvalidNetworkId(signal.network_id.clone()))?;
+
+        self.send_signal(&signal, target)?;
+
+        if self.config.signal_retries > 0 {
+            let next_send = now + retry_interval(&self.config, &signal);
+            self.pending.push(PendingSignal {
+                signal,
+                target,
+                attempts: 1,
+                next_send,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn send_signal(&mut self, signal: &Signal, target: u64) -> Result<(), LanSignalerError> {
+        let addr = self
+            .addresses
+            .get(&target)
+            .map(|entry| entry.addr)
+            .ok_or(LanSignalerError::UnknownNetwork(target))?;
+
+        let message = MessagePacket::new(target, signal.to_string());
+        let buf = encode(&Packets::Message(message), self.network_id)?;
+        self.output
+            .push_back(LanSignalerOutput::Datagram(buf.into(), addr));
+
+        Ok(())
+    }
+
+    fn handle_update(&mut self, now: Instant) -> Result<(), LanSignalerError> {
+        self.retransmit(now)?;
+        self.broadcast(now)?;
+        self.expire(now);
+
+        let wait = self.next_timer(now);
+        self.output.push_back(LanSignalerOutput::Wait(wait));
+
+        Ok(())
+    }
+
+    fn retransmit(&mut self, now: Instant) -> Result<(), LanSignalerError> {
+        let retries = self.config.signal_retries;
+        let config = &self.config;
+
+        let mut due = Vec::new();
+        self.pending.retain_mut(|pending| {
+            if pending.next_send > now {
+                return true;
+            }
+            if pending.attempts > retries {
+                return false;
+            }
+
+            due.push((pending.signal.clone(), pending.target));
+            pending.attempts += 1;
+            pending.next_send = now + retry_interval(config, &pending.signal);
+            true
+        });
+
+        for (signal, target) in due {
+            if self.send_signal(&signal, target).is_err() {
+                self.pending
+                    .retain(|pending| pending.target != target || pending.signal != signal);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn broadcast(&mut self, now: Instant) -> Result<(), LanSignalerError> {
+        let Some(addr) = self.config.broadcast_address else {
+            return Ok(());
+        };
+
+        let due = match self.last_broadcast {
+            Some(last) => now.saturating_duration_since(last) >= self.config.broadcast_interval,
+            None => true,
+        };
+        if !due {
+            return Ok(());
+        }
+
+        let buf: Box<[u8]> = encode(&Packets::Request(RequestPacket), self.network_id)?.into();
+        self.output
+            .push_back(LanSignalerOutput::Datagram(buf.clone(), addr));
+
+        let loopback = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), addr.port());
+        if loopback != addr {
+            self.output
+                .push_back(LanSignalerOutput::Datagram(buf, loopback));
+        }
+
+        self.last_broadcast = Some(now);
+
+        Ok(())
+    }
+
+    fn expire(&mut self, now: Instant) {
+        let timeout = self.config.address_timeout;
+        self.addresses
+            .retain(|_, entry| now.saturating_duration_since(entry.last_seen) < timeout);
+        let addresses = &self.addresses;
+        self.discovered.retain(|id, _| addresses.contains_key(id));
+        self.last_cleanup = Some(now);
+    }
+
+    fn next_timer(&self, now: Instant) -> Duration {
+        let mut wait = self.config.address_timeout;
+
+        if self.config.broadcast_address.is_some() {
+            let next = match self.last_broadcast {
+                Some(last) => {
+                    (last + self.config.broadcast_interval).saturating_duration_since(now)
+                }
+                None => Duration::ZERO,
+            };
+            wait = wait.min(next);
+        }
+
+        for pending in &self.pending {
+            wait = wait.min(pending.next_send.saturating_duration_since(now));
+        }
+
+        wait
+    }
+}
+
+fn retry_interval(config: &LanSignalerConfig, signal: &Signal) -> Duration {
+    match signal.signal_type {
+        SignalType::Offer => config.offer_retry_interval,
+        _ => config.signal_retry_interval,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::SignalType;
+
+    const CLIENT: u64 = 1;
+    const SERVER: u64 = 2;
+
+    fn addr(port: u16) -> SocketAddr {
+        SocketAddr::from(([127, 0, 0, 1], port))
+    }
+
+    fn client(config: LanSignalerConfig) -> LanSignaler {
+        LanSignaler::new(CLIENT, config)
+    }
+
+    fn server() -> LanSignaler {
+        let mut signaler = LanSignaler::new(SERVER, LanSignalerConfig::default());
+        signaler
+            .handle(LanSignalerInput::SetServerData(Box::new(ServerData::new(
+                "Server".to_string(),
+                "World".to_string(),
+            ))))
+            .unwrap();
+        signaler
+    }
+
+    fn datagrams(signaler: &mut LanSignaler) -> Vec<(Box<[u8]>, SocketAddr)> {
+        let mut out = Vec::new();
+        while let Some(output) = signaler.poll() {
+            if let LanSignalerOutput::Datagram(buf, addr) = output {
+                out.push((buf, addr));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_request_is_broadcast_on_the_first_update() {
+        let mut signaler = client(LanSignalerConfig {
+            broadcast_address: Some(addr(7551)),
+            ..Default::default()
+        });
+
+        signaler
+            .handle(LanSignalerInput::Update(Instant::now()))
+            .unwrap();
+
+        let sent = datagrams(&mut signaler);
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].1, addr(7551));
+    }
+
+    #[test]
+    fn a_server_answers_a_request_with_its_data() {
+        let now = Instant::now();
+        let mut client = client(LanSignalerConfig::default());
+        let mut server = server();
+
+        let request = encode(&Packets::Request(RequestPacket), CLIENT).unwrap();
+        server
+            .handle(LanSignalerInput::Datagram(request.into(), addr(40000), now))
+            .unwrap();
+
+        let sent = datagrams(&mut server);
+        assert_eq!(sent.len(), 1);
+
+        client
+            .handle(LanSignalerInput::Datagram(
+                sent[0].0.clone(),
+                addr(7551),
+                now,
+            ))
+            .unwrap();
+
+        let discovered = client.poll().expect("the response should be reported");
+        assert!(matches!(
+            discovered,
+            LanSignalerOutput::ServerDiscovered(SERVER, _)
+        ));
+        assert_eq!(client.address(SERVER), Some(addr(7551)));
+    }
+
+    #[test]
+    fn a_signal_reaches_the_network_it_names() {
+        let now = Instant::now();
+        let mut client = client(LanSignalerConfig::default());
+        let mut server = server();
+
+        let request = encode(&Packets::Request(RequestPacket), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(request.into(), addr(7551), now))
+            .unwrap();
+        let _ = datagrams(&mut client);
+
+        client
+            .handle(LanSignalerInput::Signal(
+                Signal::offer(42, "sdp".to_string(), SERVER.to_string()),
+                now,
+            ))
+            .unwrap();
+
+        let sent = datagrams(&mut client);
+        assert_eq!(sent.len(), 1);
+
+        server
+            .handle(LanSignalerInput::Datagram(
+                sent[0].0.clone(),
+                addr(40000),
+                now,
+            ))
+            .unwrap();
+
+        let LanSignalerOutput::Signal(signal) = server.poll().expect("a signal") else {
+            panic!("expected a signal");
+        };
+        assert_eq!(signal.signal_type, SignalType::Offer);
+        assert_eq!(signal.connection_id, 42);
+        assert_eq!(signal.network_id, CLIENT.to_string());
+    }
+
+    #[test]
+    fn a_signal_to_an_unknown_network_is_refused() {
+        let mut client = client(LanSignalerConfig::default());
+
+        let error = client
+            .handle(LanSignalerInput::Signal(
+                Signal::offer(42, "sdp".to_string(), SERVER.to_string()),
+                Instant::now(),
+            ))
+            .unwrap_err();
+
+        assert!(matches!(error, LanSignalerError::UnknownNetwork(SERVER)));
+    }
+
+    #[test]
+    fn an_unanswered_signal_is_retransmitted_until_it_is_given_up_on() {
+        let now = Instant::now();
+        let config = LanSignalerConfig {
+            signal_retries: 2,
+            offer_retry_interval: Duration::from_millis(100),
+            ..Default::default()
+        };
+        let mut client = client(config);
+
+        let request = encode(&Packets::Request(RequestPacket), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(request.into(), addr(7551), now))
+            .unwrap();
+        let _ = datagrams(&mut client);
+
+        client
+            .handle(LanSignalerInput::Signal(
+                Signal::offer(42, "sdp".to_string(), SERVER.to_string()),
+                now,
+            ))
+            .unwrap();
+        assert_eq!(datagrams(&mut client).len(), 1);
+
+        for step in 1..=2 {
+            let now = now + Duration::from_millis(100 * step);
+            client.handle(LanSignalerInput::Update(now)).unwrap();
+            assert_eq!(datagrams(&mut client).len(), 1, "step {}", step);
+        }
+
+        client
+            .handle(LanSignalerInput::Update(now + Duration::from_millis(300)))
+            .unwrap();
+        assert!(datagrams(&mut client).is_empty());
+        assert_eq!(client.pending_signals(), 0);
+    }
+
+    fn client_knowing_the_server(now: Instant) -> LanSignaler {
+        let mut client = client(LanSignalerConfig::default());
+        let request = encode(&Packets::Request(RequestPacket), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(request.into(), addr(7551), now))
+            .unwrap();
+        let _ = datagrams(&mut client);
+        client
+    }
+
+    fn resent_by(client: &mut LanSignaler, at: Instant) -> usize {
+        client.handle(LanSignalerInput::Update(at)).unwrap();
+        datagrams(client).len()
+    }
+
+    fn offer_destination(client: &mut LanSignaler, now: Instant) -> SocketAddr {
+        client
+            .handle(LanSignalerInput::Signal(
+                Signal::offer(42, "sdp".to_string(), SERVER.to_string()),
+                now,
+            ))
+            .unwrap();
+        datagrams(client)[0].1
+    }
+
+    #[test]
+    fn a_spoofed_sender_cannot_move_a_fresh_address() {
+        let now = Instant::now();
+        let mut client = client_knowing_the_server(now);
+
+        let spoof = encode(&Packets::Request(RequestPacket), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(spoof.into(), addr(9999), now))
+            .unwrap();
+        let _ = datagrams(&mut client);
+
+        assert_eq!(offer_destination(&mut client, now), addr(7551));
+    }
+
+    #[test]
+    fn a_stale_address_can_move() {
+        let now = Instant::now();
+        let mut client = client_knowing_the_server(now);
+        let later = now + LanSignalerConfig::default().address_timeout;
+
+        let moved = encode(&Packets::Request(RequestPacket), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(moved.into(), addr(9999), later))
+            .unwrap();
+        let _ = datagrams(&mut client);
+
+        assert_eq!(offer_destination(&mut client, later), addr(9999));
+    }
+
+    #[test]
+    fn an_offer_is_first_resent_after_two_seconds() {
+        let now = Instant::now();
+        let mut client = client_knowing_the_server(now);
+
+        client
+            .handle(LanSignalerInput::Signal(
+                Signal::offer(42, "sdp".to_string(), SERVER.to_string()),
+                now,
+            ))
+            .unwrap();
+        assert_eq!(datagrams(&mut client).len(), 1);
+
+        assert_eq!(resent_by(&mut client, now + Duration::from_millis(500)), 0);
+        assert_eq!(resent_by(&mut client, now + Duration::from_millis(1999)), 0);
+        assert_eq!(resent_by(&mut client, now + Duration::from_secs(2)), 1);
+    }
+
+    #[test]
+    fn a_candidate_is_resent_at_the_signal_retry_interval() {
+        let now = Instant::now();
+        let mut client = client_knowing_the_server(now);
+
+        client
+            .handle(LanSignalerInput::Signal(
+                Signal::candidate(42, "candidate".to_string(), SERVER.to_string()),
+                now,
+            ))
+            .unwrap();
+        assert_eq!(datagrams(&mut client).len(), 1);
+
+        assert_eq!(resent_by(&mut client, now + Duration::from_millis(500)), 1);
+    }
+
+    #[test]
+    fn an_answered_signal_is_not_retransmitted() {
+        let now = Instant::now();
+        let config = LanSignalerConfig {
+            signal_retry_interval: Duration::from_millis(100),
+            ..Default::default()
+        };
+        let mut client = client(config);
+
+        let request = encode(&Packets::Request(RequestPacket), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(request.into(), addr(7551), now))
+            .unwrap();
+        let _ = datagrams(&mut client);
+
+        client
+            .handle(LanSignalerInput::Signal(
+                Signal::offer(42, "sdp".to_string(), SERVER.to_string()),
+                now,
+            ))
+            .unwrap();
+        let _ = datagrams(&mut client);
+
+        let answer = MessagePacket::new(
+            CLIENT,
+            Signal::answer(42, "sdp".to_string(), CLIENT.to_string()).to_string(),
+        );
+        let buf = encode(&Packets::Message(answer), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(buf.into(), addr(7551), now))
+            .unwrap();
+
+        assert_eq!(client.pending_signals(), 0);
+
+        client
+            .handle(LanSignalerInput::Update(now + Duration::from_millis(200)))
+            .unwrap();
+        assert!(datagrams(&mut client).is_empty());
+    }
+
+    #[test]
+    fn an_address_is_forgotten_once_it_goes_quiet() {
+        let now = Instant::now();
+        let mut client = client(LanSignalerConfig {
+            address_timeout: Duration::from_secs(5),
+            ..Default::default()
+        });
+
+        let request = encode(&Packets::Request(RequestPacket), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(request.into(), addr(7551), now))
+            .unwrap();
+        assert!(client.address(SERVER).is_some());
+
+        client
+            .handle(LanSignalerInput::Update(now + Duration::from_secs(6)))
+            .unwrap();
+        assert!(client.address(SERVER).is_none());
+    }
+
+    #[test]
+    fn a_ping_is_not_reported_as_a_signal() {
+        let now = Instant::now();
+        let mut client = client(LanSignalerConfig::default());
+
+        let ping = MessagePacket::new(CLIENT, PING.to_string());
+        let buf = encode(&Packets::Message(ping), SERVER).unwrap();
+        client
+            .handle(LanSignalerInput::Datagram(buf.into(), addr(7551), now))
+            .unwrap();
+
+        assert!(client.poll().is_none());
+    }
+
+    fn response_from(network_id: u64) -> Box<[u8]> {
+        let data = ServerData::new("Server".to_string(), "World".to_string());
+        let mut application_data = Vec::new();
+        data.serialize(&mut application_data).unwrap();
+        encode(
+            &Packets::Response(ResponsePacket::new(application_data)),
+            network_id,
+        )
+        .unwrap()
+        .into()
+    }
+
+    #[test]
+    fn discovered_servers_expire_with_their_address() {
+        let now = Instant::now();
+        let config = LanSignalerConfig::default();
+        let timeout = config.address_timeout;
+        let mut client = client(config);
+
+        client
+            .handle(LanSignalerInput::Datagram(
+                response_from(SERVER),
+                addr(7551),
+                now,
+            ))
+            .unwrap();
+        assert_eq!(client.discovered().len(), 1);
+
+        client
+            .handle(LanSignalerInput::Update(
+                now + timeout + Duration::from_secs(1),
+            ))
+            .unwrap();
+        assert!(client.discovered().is_empty());
+    }
+
+    #[test]
+    fn discovered_servers_stop_at_max_discovered() {
+        let now = Instant::now();
+        let mut client = client(LanSignalerConfig {
+            max_discovered: 2,
+            ..Default::default()
+        });
+
+        for network_id in 10..13 {
+            client
+                .handle(LanSignalerInput::Datagram(
+                    response_from(network_id),
+                    addr(7551),
+                    now,
+                ))
+                .unwrap();
+        }
+
+        assert_eq!(client.discovered().len(), 2);
+        assert!(!client.discovered().contains_key(&12));
+    }
+}

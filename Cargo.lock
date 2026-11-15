@@ -1852,7 +1852,6 @@ dependencies = [
 [[package]]
 name = "nethernet"
 version = "0.0.1"
-source = "git+https://github.com/bedrock-crustaceans/nethernet.git?rev=ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99#ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99"
 dependencies = [
  "aes 0.9.4",
  "base64 0.23.1",
@@ -2880,6 +2879,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "if-addrs",
  "nbtx",
  "nethernet",
  "nethernet-tokio",

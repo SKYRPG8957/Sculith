@@ -2,6 +2,10 @@
 members = ["crates/*", "examples/welcome-plugin"]
 default-members = ["crates/sculith-server"]
 resolver = "3"
+exclude = ["vendor/nethernet"]
+
+[patch."https://github.com/bedrock-crustaceans/nethernet.git"]
+nethernet = { path = "vendor/nethernet" }
 
 [workspace.package]
 version = "0.1.0"

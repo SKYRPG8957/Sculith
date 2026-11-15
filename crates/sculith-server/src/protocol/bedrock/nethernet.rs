@@ -54,9 +54,13 @@ const QUEUED_BYTES: usize = 16 * 1024 * 1024;
 const NETHER_MESSAGE_BYTES: usize = 255 * 10_000;
 const IDENTITY_BYTES: u64 = 64 * 1024;
 
+mod media;
+use media::LocalMedia;
+
 pub struct Server {
     listener: TcpListener,
     identity: Arc<ServerIdentity>,
+    media: Arc<LocalMedia>,
 }
 
 pub struct ContextData {
@@ -77,12 +81,15 @@ pub async fn prepare(address: SocketAddr, identity_path: &Path) -> Result<Server
         .await
         .context("cannot bind NetherNet TCP signaling listener")?;
     let path = identity_path.to_owned();
-    let identity = tokio::task::spawn_blocking(move || load_identity(&path))
-        .await
-        .context("NetherNet identity worker failed")??;
+    let (identity, media) = tokio::task::spawn_blocking(move || -> Result<_> {
+        Ok((load_identity(&path)?, LocalMedia::detect(address.ip())?))
+    })
+    .await
+    .context("NetherNet identity worker failed")??;
     Ok(Server {
         listener,
         identity: Arc::new(identity),
+        media: Arc::new(media),
     })
 }
 
@@ -313,6 +320,8 @@ impl Server {
             while let Some(event) = signaling.poll() {
                 match event {
                     HttpSignalerOutput::Response {connection, response, ..} => {
+                        tracing::info!(connection, status = response.status().as_u16(),
+                            "NetherNet signaling response sent");
                         if let Some(reply) = responses.remove(&connection) { let _ = reply.send(*response); }
                         signaling.handle(HttpSignalerInput::Closed(connection))?;
                     }
@@ -326,11 +335,11 @@ impl Server {
                             signaling.handle(HttpSignalerInput::Reject {connection_id: offer.connection_id, reason: RejectReason::Unavailable})?;
                             continue;
                         }
-                        match answer(&offer, local_ip, &self.identity, context.timeout).await {
+                        match answer(&offer, local_ip, &self.identity, context.timeout, &self.media).await {
                             Ok((socket, connection, sdp)) => {
                                 signaling.handle(HttpSignalerInput::Answer {connection_id: offer.connection_id, sdp})?;
                                 *peers.entry(ip).or_default() += 1;
-                                let config = PeerContext { shutdown: context.shutdown.clone(), ready: ready.clone(),
+                                let config = PeerContext { shutdown: context.shutdown.clone(), ready: ready.clone(), media: self.media.clone(),
                                     incoming_budget: incoming_budget.clone(), outgoing_budget: outgoing_budget.clone() };
                                 workers.spawn(async move { (ip, drive(socket, connection, config).await) });
                             }
@@ -361,20 +370,29 @@ async fn answer(
     local_ip: IpAddr,
     identity: &ServerIdentity,
     timeout: Duration,
+    media: &LocalMedia,
 ) -> Result<(UdpSocket, Peer, String)> {
-    let socket = UdpSocket::bind(SocketAddr::new(local_ip, 0)).await?;
+    let socket = UdpSocket::bind(SocketAddr::new(media.bind_ip(), 0)).await?;
     // HttpSignaler already verified the offer's signed fingerprint assertion.
     let signal = offer.signal();
     let (mut remote, mut candidates) = Peer::parse_offer(&signal)?;
-    // A loopback-bound Windows socket cannot send connectivity checks to a LAN
-    // candidate. Keep reachable loopback candidates and infer the desktop's
-    // advertised host ports below, before allowing ICE to select a route.
+    let offered_candidates = candidates.len();
+    // Only same-machine destinations obtained from the OS are eligible.
     candidates.retain(|candidate| {
         candidate
             .address()
             .parse::<IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback() && ip.is_ipv4() == local_ip.is_ipv4())
+            .is_ok_and(|ip| media.allows(ip))
     });
+    tracing::debug!(
+        offered_candidates,
+        same_machine_candidates = candidates.len(),
+        "NetherNet offer candidate selection"
+    );
+    let retained_ports: Vec<_> = candidates
+        .iter()
+        .map(|candidate| candidate.port())
+        .collect();
     // Limit the underlying SCTP stack as well as our application queues, even
     // when a peer advertises zero (unlimited). NetherNet segments are 10 KB.
     const SCTP_LIMIT: u32 = 262_144;
@@ -383,7 +401,8 @@ async fn answer(
         n => n.min(SCTP_LIMIT),
     };
     let now = Instant::now();
-    let (mut session, local) = Session::new(socket.local_addr()?, false, now)?;
+    let advertised = SocketAddr::new(local_ip, socket.local_addr()?.port());
+    let (mut session, local) = Session::with_advertised(advertised, media.addresses(), false, now)?;
     session.set_establish_deadline(timeout);
     let (mut connection, signals) = Peer::accept(
         session,
@@ -394,10 +413,12 @@ async fn answer(
         IceMode::Full,
         now,
     )?;
-    // A desktop client can advertise a LAN interface while its loopback HTTP
-    // connection and UDP packets use 127.0.0.1. Teach ICE that observed address
-    // on the advertised host UDP ports; never invent ports or trust XFF.
-    if let Some(from) = offer.client_address.filter(|from| from.ip().is_loopback()) {
+    // An mDNS host candidate need not name a numeric IP. Try its advertised
+    // UDP port only on same-machine addresses, without DNS or forwarded headers.
+    if offer
+        .client_address
+        .is_some_and(|from| from.ip().is_loopback())
+    {
         let mut ports = Vec::new();
         for line in offer
             .sdp
@@ -408,17 +429,32 @@ async fn answer(
                 && candidate.kind() == nethernet::util::candidate::CandidateKind::Host
                 && candidate.transport().eq_ignore_ascii_case("udp")
                 && candidate.port() != 0
+                && !retained_ports.contains(&candidate.port())
                 && !ports.contains(&candidate.port())
                 && ports.len() < 8
             {
                 ports.push(candidate.port());
             }
         }
-        for (index, port) in ports.into_iter().enumerate() {
+        tracing::debug!(
+            inferred_ports = ports.len(),
+            "NetherNet loopback candidate inference"
+        );
+        for (index, (port, address)) in ports
+            .into_iter()
+            .flat_map(|port| {
+                media
+                    .addresses()
+                    .iter()
+                    .copied()
+                    .map(move |address| (port, address))
+            })
+            .enumerate()
+        {
             let candidate = format!(
                 "candidate:{} 1 UDP 1677721855 {} {} typ srflx raddr 0.0.0.0 rport 0",
                 90_100_000 + index,
-                from.ip(),
+                address,
                 port
             );
             connection.handle(ConnectionInput::Signal(
@@ -464,6 +500,16 @@ impl Drop for SessionTransport {
 }
 fn io_error(message: impl Into<String>) -> TransportLayerError {
     std::io::Error::other(message.into()).into()
+}
+
+fn candidate_path_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::NetworkUnreachable
+            | std::io::ErrorKind::HostUnreachable
+    )
 }
 
 impl Transport for SessionTransport {
@@ -519,6 +565,7 @@ struct PeerContext {
     incoming_budget: Arc<Semaphore>,
     outgoing_budget: Arc<Semaphore>,
     ready: mpsc::Sender<SessionTransport>,
+    media: Arc<LocalMedia>,
 }
 
 async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> Result<()> {
@@ -529,14 +576,38 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
     let mut tick = tokio::time::interval(Duration::from_millis(10));
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut buffer = vec![0u8; 65_535];
+    let mut observed_stun = false;
+    let mut observed_dtls = false;
+    let mut observed_path_error = false;
     loop {
         tokio::select! {
             changed = context.shutdown.changed() => {
                 if changed.is_err() || *context.shutdown.borrow() { break; }
             }
             packet = socket.recv_from(&mut buffer) => {
-                let (size, remote) = packet?;
-                if !remote.ip().is_loopback() { continue; }
+                let (size, remote) = match packet {
+                    Ok(packet) => packet,
+                    Err(error) if candidate_path_error(&error) => {
+                        if !observed_path_error {
+                            observed_path_error = true;
+                            tracing::debug!(%error, "NetherNet candidate path unavailable; continuing ICE");
+                        }
+                        continue;
+                    },
+                    Err(error) => return Err(error.into()),
+                };
+                if !context.media.allows(remote.ip()) { continue; }
+                let stun = size >= 20 && buffer[0] & 0xc0 == 0
+                    && buffer[4..8] == [0x21, 0x12, 0xa4, 0x42];
+                let dtls = size >= 13 && (20..=63).contains(&buffer[0]);
+                if stun && !observed_stun {
+                    observed_stun = true;
+                    tracing::debug!(%remote, "NetherNet first ICE/STUN datagram received");
+                }
+                if dtls && !observed_dtls {
+                    observed_dtls = true;
+                    tracing::debug!(%remote, "NetherNet first DTLS datagram received");
+                }
                 peer.handle(ConnectionInput::Packet(buffer[..size].into(), remote, Instant::now()))?;
             }
             _ = tick.tick() => {
@@ -551,7 +622,19 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
         while let Some(output) = peer.poll() {
             match output {
                 SessionOutput::Send(data, remote) => {
-                    socket.send_to(&data, remote).await?;
+                    ensure!(
+                        context.media.allows(remote.ip()),
+                        "NetherNet candidate outside same-machine policy"
+                    );
+                    if let Err(error) = socket.send_to(&data, remote).await {
+                        if !candidate_path_error(&error) {
+                            return Err(error.into());
+                        }
+                        if !observed_path_error {
+                            observed_path_error = true;
+                            tracing::debug!(%error, "NetherNet candidate path unavailable; continuing ICE");
+                        }
+                    }
                 }
                 SessionOutput::Event(SessionEvent::Ready) => {
                     let Some(receiver) = receiver.take() else {

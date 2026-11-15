@@ -64,6 +64,7 @@ async fn loopback_media_only_checks_loopback_candidates_on_advertised_ports() {
         "127.0.0.1".parse().unwrap(),
         &identity,
         Duration::from_secs(10),
+        &LocalMedia::from_addresses("127.0.0.1".parse().unwrap(), Vec::new()),
     )
     .await
     .unwrap();

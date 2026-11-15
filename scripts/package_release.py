@@ -30,10 +30,12 @@ def dependency_notices():
     records = ["Sculith Windows preview: locked dependency license texts.\n"
                "Includes build and test dependencies conservatively.\n"]
     for package in sorted(metadata["packages"], key=lambda p: (p["name"], p["version"], p["id"])):
-        if package["id"] not in selected or package["source"] is None:
-            continue
         root = Path(package["manifest_path"]).parent
-        parents = [root, *list(root.parents)[:2]] if package["source"].startswith("git+") else [root]
+        vendored = root.is_relative_to(ROOT / "vendor")
+        if package["id"] not in selected or (package["source"] is None and not vendored):
+            continue
+        source = package["source"] or package["metadata"].get("sculith", {}).get("upstream", "vendored source")
+        parents = [root, *list(root.parents)[:2]] if source.startswith("git+") else [root]
         files = set()
         for parent in parents:
             files.update(p for p in parent.iterdir() if p.is_file() and p.name.upper().startswith(
@@ -54,7 +56,7 @@ def dependency_notices():
             else:
                 raise RuntimeError(f"Missing license text: {package['name']} {package['version']}")
         header = (f"\n{'=' * 72}\n{package['name']} {package['version']}\n"
-                  f"Source: {package['source']}\nRepository: {package['repository']}\n"
+                  f"Source: {source}\nRepository: {package['repository']}\n"
                   f"Declared license: {package['license']}\nAuthors: {', '.join(package['authors'])}\n{selection}")
         records.append(header)
         for path in sorted(files):

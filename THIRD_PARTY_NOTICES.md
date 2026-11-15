@@ -2,14 +2,14 @@
 
 Sculith's existing source license remains MIT (`LICENSE`). No project license was changed.
 
-The following direct Git dependencies are used, rather than copied into Sculith's implementation:
+The following upstream libraries are used. The NetherNet core has a small, reproducible local interoperability patch; the other entries remain Git dependencies:
 
 | Project | Locked source | License |
 | --- | --- | --- |
 | bedrock-rs | [5221fcae8cc8468f523f3f58f129cb308e9d3369](https://github.com/bedrock-crustaceans/bedrock-rs/tree/5221fcae8cc8468f523f3f58f129cb308e9d3369) | Apache-2.0 |
 | RakNet | [9bd968ed3b72092f0817c29c6d065e026d9b2f1b](https://github.com/bedrock-crustaceans/raknet/tree/9bd968ed3b72092f0817c29c6d065e026d9b2f1b) | Apache-2.0 |
 | nbtx | [9bcb986cc7f17d9904c760947ca3491243b8e0b6](https://github.com/bedrock-crustaceans/nbtx/tree/9bcb986cc7f17d9904c760947ca3491243b8e0b6) | Apache-2.0 |
-| NetherNet (sans-IO core; Tokio wrapper for test clients only) | [ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99](https://github.com/bedrock-crustaceans/nethernet/tree/ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99) | Apache-2.0 |
+| NetherNet (vendored sans-IO core; Git Tokio wrapper for test clients only) | [ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99](https://github.com/bedrock-crustaceans/nethernet/tree/ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99), [local changes](vendor/nethernet/SCULITH_PATCHES.md) | Apache-2.0 |
 
 The Apache license is included in `LICENSES/Apache-2.0.txt`. These libraries are credited to their respective contributors.
 `Cargo.lock` records the complete Rust dependency graph. Binary distribution must also retain the applicable notices for the other transitive packages.

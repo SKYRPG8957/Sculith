@@ -16,15 +16,26 @@ jobs:
         run: rustup show
       - name: Format
         run: cargo fmt --all --check
+      - name: Format patched transport core
+        run: cargo fmt --manifest-path vendor/nethernet/Cargo.toml --all --check
       - name: Lint
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --all-targets --locked
       - name: Verify ownership compile-fail doctest
         run: cargo test --workspace --doc --locked
+      - name: Test patched transport core
+        run: cargo test --locked -p nethernet
       - name: Build server and Rust example plugin
         run: cargo build --workspace --locked
       - name: Exercise real network listeners and plugin
         run: python3 scripts/smoke.py
       - name: Exercise executable Bedrock session driver
         run: python3 scripts/smoke.py --sessions
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exercise independent WebRTC client
+        run: |
+          python -m pip install -r scripts/requirements-webrtc.txt
+          python scripts/webrtc_smoke.py
