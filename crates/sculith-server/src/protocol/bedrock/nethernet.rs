@@ -365,7 +365,16 @@ async fn answer(
     let socket = UdpSocket::bind(SocketAddr::new(local_ip, 0)).await?;
     // HttpSignaler already verified the offer's signed fingerprint assertion.
     let signal = offer.signal();
-    let (mut remote, candidates) = Peer::parse_offer(&signal)?;
+    let (mut remote, mut candidates) = Peer::parse_offer(&signal)?;
+    // A loopback-bound Windows socket cannot send connectivity checks to a LAN
+    // candidate. Keep reachable loopback candidates and infer the desktop's
+    // advertised host ports below, before allowing ICE to select a route.
+    candidates.retain(|candidate| {
+        candidate
+            .address()
+            .parse::<IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback() && ip.is_ipv4() == local_ip.is_ipv4())
+    });
     // Limit the underlying SCTP stack as well as our application queues, even
     // when a peer advertises zero (unlimited). NetherNet segments are 10 KB.
     const SCTP_LIMIT: u32 = 262_144;
@@ -527,6 +536,7 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
             }
             packet = socket.recv_from(&mut buffer) => {
                 let (size, remote) = packet?;
+                if !remote.ip().is_loopback() { continue; }
                 peer.handle(ConnectionInput::Packet(buffer[..size].into(), remote, Instant::now()))?;
             }
             _ = tick.tick() => {

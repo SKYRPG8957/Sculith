@@ -45,6 +45,47 @@ async fn exchange(address: SocketAddr, request: &[u8]) -> String {
 }
 
 #[tokio::test]
+async fn loopback_media_only_checks_loopback_candidates_on_advertised_ports() {
+    let (_session, description) =
+        Session::new("127.0.0.1:54321".parse().unwrap(), true, Instant::now()).unwrap();
+    let sdp = description.encode_full(&[])
+        + "a=candidate:1 1 UDP 2130706431 192.0.2.10 54321 typ host generation 0\r\n";
+    let identity = ServerIdentity::generate("test.operator", SystemTime::now()).unwrap();
+    let offer = Offer {
+        connection_id: 1,
+        network_id: "test.client".into(),
+        sdp: identity.augment(&sdp, SystemTime::now()).unwrap(),
+        client_address: Some("127.0.0.1:12345".parse().unwrap()),
+        host: None,
+        player: None,
+    };
+    let (_socket, mut peer, _answer) = answer(
+        &offer,
+        "127.0.0.1".parse().unwrap(),
+        &identity,
+        Duration::from_secs(10),
+    )
+    .await
+    .unwrap();
+    let now = Instant::now();
+    let mut checked = 0;
+    for offset in 0..10 {
+        peer.handle(ConnectionInput::Timeout(
+            now + Duration::from_millis(offset * 100),
+        ))
+        .unwrap();
+        while let Some(output) = peer.poll() {
+            if let SessionOutput::Send(_, remote) = output {
+                assert!(remote.ip().is_loopback(), "loopback socket tried {remote}");
+                assert_eq!(remote.port(), 54321);
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 0, "no loopback connectivity check was attempted");
+}
+
+#[tokio::test]
 async fn http_status_and_rejections_cross_tcp_without_admitting_invalid_offers() {
     let directory = tempfile::tempdir().unwrap();
     let server = prepare(

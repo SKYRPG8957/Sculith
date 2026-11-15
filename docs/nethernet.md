@@ -33,7 +33,7 @@ Its unbounded Tokio wrapper is used only by test clients.
 - Media: at most 64 concurrent transports, four per source IP, establishment deadline from `login_timeout_secs`.
 - Application queues: 16 incoming and 32 outgoing messages per transport, with separate 16 MiB aggregate ingress/egress budgets for this backend.
 - NetherNet reliable message limit: 2,550,000 bytes; decompressed Bedrock batch limit: 4 MiB. Remote SCTP message limits are capped at 262,144 bytes, including a remote value of zero (unlimited).
-- ICE uses complete offers/answers without STUN or TURN. For local desktop clients advertising a LAN candidate, only their advertised host UDP ports (up to eight) are also tried on the observed loopback source address. Forwarded headers are not trusted.
+- ICE uses complete offers/answers without STUN or TURN. Loopback media sockets keep only loopback candidates in the same address family. For local desktop clients advertising a LAN candidate, only their advertised host UDP ports (up to eight) are tried on the observed loopback source address. Forwarded headers are not trusted.
 
 These bounds are not a total process-memory limit or a throughput claim.
 Application tasks are cancelled and drained before final world capture, releasing their player leases.

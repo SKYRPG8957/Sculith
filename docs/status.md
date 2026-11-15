@@ -28,7 +28,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Preview 2's diagnostics and byte-level handshake test passed native Windows validation in [run 43745002586](https://github.com/SKYRPG8957/Sculith/actions/runs/43745002586), source `077bb56`. Its public release is a diagnostic update, not a confirmed fix for the reported official-client failure.
 - Preview 2's public download, PowerShell 5.1 installer, `start.cmd` and `diagnose.cmd` configuration checks, one-command install, and existing-directory preservation passed in [run 43747012301](https://github.com/SKYRPG8957/Sculith/actions/runs/43747012301).
 - [Windows preview v0.1.0-preview.1](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1) is public (3,858,243-byte ZIP plus SHA-256 checksums). Windows PowerShell 5.1 installation, refusal to overwrite an existing directory, and the documented one-command installation passed in [run 43742465897](https://github.com/SKYRPG8957/Sculith/actions/runs/43742465897).
-- Linux: 89 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (90 total checks). Native Windows verification of the new NetherNet code is pending.
+- Linux: 90 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (91 total checks). Native Windows verification of the new NetherNet code is pending.
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
 - Two encrypted UDP clients receive the same accepted placement/break delta. A rejected Bedrock break is corrected only for the requester; a forged held-item claim cannot commit. Valid eye-offset movement commits, while a large tick/teleport request is corrected.
@@ -46,6 +46,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Failed / externally constrained
 
+- The initial native Windows NetherNet test timed out during WebRTC setup, while HTTP status/signature/rejection tests passed. A regression test reproduced loopback media attempting a LAN candidate; candidate selection now stays on loopback and a Windows retest is pending. The failed build is not published.
 - The first official-client attempt reported by the user failed: Windows GDK `1.26.63`, `Terracotta`, `InitialConnection-149`. Account sign-in was already complete and other servers connect successfully. The exact Sculith transport/login failure is unresolved; successful headless tests are not treated as a substitute. Connection-stage and bounded handshake diagnostics are available in Preview 2.
 - The first Windows smoke run found console shutdown killing a plugin before its lifecycle hook. Windows workers now run without the host console; the corrected run verifies the Stopping event and final world save.
 - Official discovery initially returned proxy HTTP 403 under the earlier restricted network. The current environment reports enforced unrestricted networking; a fresh request to `client.discovery.minecraft-services.net` returned HTTP 200. Downstream OIDC/JWKS and actual account login remain unverified. No user credential is needed for the public discovery request.
