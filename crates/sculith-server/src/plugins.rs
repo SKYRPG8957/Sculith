@@ -99,14 +99,18 @@ impl Plugins {
 
 impl Process {
     async fn start(config: &PluginConfig, status: &ServerStatus) -> Result<Self> {
-        let mut child = Command::new(&config.path)
+        let mut command = Command::new(&config.path);
+        command
             .args(&config.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .kill_on_drop(true)
-            .spawn()
-            .context("cannot spawn plugin executable")?;
+            .kill_on_drop(true);
+        // Console Ctrl+C/Break belongs to the host. Keep Windows JSON-lines
+        // workers alive until they receive the ordered Stopping event and EOF.
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        let mut child = command.spawn().context("cannot spawn plugin executable")?;
         let input = child.stdin.take().context("missing plugin stdin")?;
         let output = BufReader::new(child.stdout.take().context("missing plugin stdout")?);
         let mut process = Self {
