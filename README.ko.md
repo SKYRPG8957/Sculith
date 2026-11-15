@@ -40,7 +40,7 @@ Java 로그인은 미구현 안내와 함께 종료합니다. Bedrock 세션은 
 
 ## Windows에서 바로 테스트
 
-1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.4)에서 `windows-x86_64.zip`을 받습니다.
+1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.5)에서 `windows-x86_64.zip`을 받습니다.
 2. ZIP 전체를 압축 해제하고 **`start.cmd`를 더블클릭**합니다. Rust·Python·Java 설치는 필요 없습니다.
 3. 같은 PC의 베드락에서 서버 주소 **`127.0.0.1`**, 포트 **`19132`**로 추가합니다.
 4. 종료할 때 서버 창에서 **Ctrl+C**를 누르면 월드를 저장합니다.
@@ -48,8 +48,9 @@ Java 로그인은 미구현 안내와 함께 종료합니다. Bedrock 세션은 
 기존 `sculith.toml`과 `world/region.sculith`는 보존합니다. 로컬 테스트 신원을 허용하는 개발 프리뷰이며,
 **공식 게임 클라이언트 접속·렌더링은 아직 미검증, Java 월드 입장은 미구현**입니다.
 설치 명령과 Windows loopback 문제는 [Windows 빠른 시작](docs/windows-quickstart.md)을 참고하세요.
-Windows GDK `1.26.63`의 Preview 3 재접속은 신뢰 창과 HTTP 신호 교환까지 진행됐지만 `Door / InitialConnection-83`으로 실패했습니다.
-Preview 4는 독립 클라이언트에서 재현한 주소 처리와 SCTP 역할 문제를 수정했고 Windows/OpenSSL 검사를 통과했습니다. 공식 게임 입장은 재접속 확인이 필요합니다.
+Windows GDK `1.26.63`의 Preview 4 재접속은 WebRTC 연결과 프로토콜 2225 확인 후 `encryption-handshake / InitialConnection-66`으로 실패했습니다.
+Preview 5는 NetherNet의 DTLS 연결에 RakNet용 추가 암호화를 요구하던 문제를 수정하고 로그인 키를 전송 서명 키와 대조합니다.
+독립 클라이언트는 Windows에서 로그인과 월드 스폰을 통과했습니다. 공식 게임 입장은 재접속 확인이 필요합니다.
 
 ## 소스에서 빌드와 실행
 
