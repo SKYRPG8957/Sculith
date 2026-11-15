@@ -2,6 +2,15 @@ name: Publish verified Windows preview
 
 on:
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Successful main-branch Windows preview build run ID'
+        required: true
+        type: string
+      version:
+        description: 'Preview version in the archive, e.g. v0.1.0-preview.2'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -18,31 +27,28 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 43741364940
+          run-id: ${{ inputs.run_id }}
           name: windows-preview
           path: dist
       - name: Verify archive integrity and exact source revision
+        id: verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_VERSION: ${{ inputs.version }}
+          PREVIEW_RUN_ID: ${{ inputs.run_id }}
         run: |
-          cd dist
-          sha256sum --check SHA256SUMS.txt
-          python3 - <<'PY'
-          import json, zipfile
-          with zipfile.ZipFile('sculith-v0.1.0-preview.1-windows-x86_64.zip') as archive:
-              assert archive.testzip() is None
-              metadata = json.loads(archive.read('release.json'))
-              assert metadata['commit'] == '0e782d5c679fc323ecc3065c546d5f98aa32c5d8'
-              assert metadata['version'] == 'v0.1.0-preview.1'
-              assert metadata['target'] == 'x86_64-pc-windows-msvc'
-              assert metadata['official_client_verified'] is False
-          PY
+          python3 scripts/verify_release.py --directory dist --version "$PREVIEW_VERSION" --run-id "$PREVIEW_RUN_ID"
       - name: Publish the development preview and checksums
         env:
           GH_TOKEN: ${{ github.token }}
+          PREVIEW_VERSION: ${{ inputs.version }}
+          SOURCE_COMMIT: ${{ steps.verified.outputs.commit }}
+          ARCHIVE: ${{ steps.verified.outputs.archive }}
         run: |
-          gh release create v0.1.0-preview.1 \
+          gh release create "$PREVIEW_VERSION" \
             --repo SKYRPG8957/Sculith \
-            --target 0e782d5c679fc323ecc3065c546d5f98aa32c5d8 \
+            --target "$SOURCE_COMMIT" \
             --prerelease --latest=false \
-            --title 'Sculith v0.1.0-preview.1 (Windows)' \
-            --notes-file docs/releases/v0.1.0-preview.1.md \
-            dist/sculith-v0.1.0-preview.1-windows-x86_64.zip dist/SHA256SUMS.txt
+            --title "Sculith $PREVIEW_VERSION (Windows)" \
+            --notes-file "docs/releases/$PREVIEW_VERSION.md" \
+            "dist/$ARCHIVE" dist/SHA256SUMS.txt
