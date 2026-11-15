@@ -47,13 +47,13 @@ Java world entry, multiplayer entity visibility, general inventory transactions,
 
 ## Windows quick start
 
-For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.2), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required.
+For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.3), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required.
 
 In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
 
 This selects the local, offline-identity Bedrock preview. **Official game-client entry/rendering remain unverified; Java world entry is not implemented.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
 
-The first reported Windows GDK `1.26.63` attempt failed with `Terracotta / InitialConnection-149`; the cause is still under investigation. Preview 2 improves diagnostics. The new local NetherNet backend is independently tested but still requires an official-client retest; neither result establishes a fix.
+The first reported Windows GDK `1.26.63` attempt failed with `Terracotta / InitialConnection-149`; the cause is still under investigation. Preview 3 adds local NetherNet HTTP/WebRTC and fixes a Windows loopback routing error found in automated tests. Official-client retesting is still required; the reported Terracotta failure is not declared resolved.
 
 ## Build from source
 

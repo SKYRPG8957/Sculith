@@ -40,7 +40,7 @@ Java 로그인은 미구현 안내와 함께 종료합니다. Bedrock 세션은 
 
 ## Windows에서 바로 테스트
 
-1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.2)에서 `windows-x86_64.zip`을 받습니다.
+1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.3)에서 `windows-x86_64.zip`을 받습니다.
 2. ZIP 전체를 압축 해제하고 **`start.cmd`를 더블클릭**합니다. Rust·Python·Java 설치는 필요 없습니다.
 3. 같은 PC의 베드락에서 서버 주소 **`127.0.0.1`**, 포트 **`19132`**로 추가합니다.
 4. 종료할 때 서버 창에서 **Ctrl+C**를 누르면 월드를 저장합니다.
@@ -49,7 +49,7 @@ Java 로그인은 미구현 안내와 함께 종료합니다. Bedrock 세션은 
 **공식 게임 클라이언트 접속·렌더링은 아직 미검증, Java 월드 입장은 미구현**입니다.
 설치 명령과 Windows loopback 문제는 [Windows 빠른 시작](docs/windows-quickstart.md)을 참고하세요.
 Windows GDK `1.26.63`의 첫 접속 시도에서 `Terracotta / InitialConnection-149`가 보고되어 조사 중입니다.
-Preview 2에는 초기 연결을 기록하는 `diagnose.cmd`가 추가됐습니다. 새 로컬 NetherNet 구현도 공식 게임 재접속으로 오류 해결을 확인해야 합니다.
+Preview 3에는 로컬 NetherNet HTTP/WebRTC와 자동 테스트에서 발견한 Windows loopback 경로 수정이 포함됐습니다. 공식 게임 재접속으로 Terracotta 오류 해결을 확인해야 합니다.
 
 ## 소스에서 빌드와 실행
 

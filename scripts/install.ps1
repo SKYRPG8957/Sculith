@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$')]
-    [string]$Version = 'v0.1.0-preview.2',
+    [string]$Version = 'v0.1.0-preview.3',
     [string]$Destination = (Join-Path (Get-Location) 'Sculith')
 )
 
