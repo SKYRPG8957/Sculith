@@ -256,7 +256,12 @@ def smoke(server):
                     time.sleep(.05)
                 else:
                     raise TimeoutError(text)
-                asyncio.run(asyncio.wait_for(probe("http://127.0.0.1:" + match[1]), timeout=20))
+                # This UDP-only fixture needs no Proactor subprocess/pipe I/O.
+                # Windows Proactor teardown may leave aioice waiting forever
+                # for a closed datagram transport after a successful login.
+                # Keep the existing connection assertions and close deadline.
+                with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop) as runner:
+                    runner.run(asyncio.wait_for(probe("http://127.0.0.1:" + match[1]), timeout=20))
                 process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
                 assert process.wait(timeout=5) == 0
             except Exception:
