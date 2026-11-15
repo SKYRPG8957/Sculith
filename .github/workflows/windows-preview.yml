@@ -103,6 +103,8 @@ jobs:
           & .\scripts\install.ps1 -Destination $InstallPath
           & (Join-Path $InstallPath 'start.cmd') --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & (Join-Path $InstallPath 'diagnose.cmd') --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $Settings = Join-Path $InstallPath 'sculith.toml'
           $Before = (Get-FileHash -LiteralPath $Settings).Hash
           $Refused = $false
