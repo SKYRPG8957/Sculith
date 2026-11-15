@@ -348,6 +348,13 @@ async fn nether_client(address: SocketAddr) -> Result<TestClient<TestNetherTrans
     };
     let identity = ServerIdentity::generate("sculith-test-client", std::time::SystemTime::now())?;
     let signaling = HttpSignaling::new(uuid::Uuid::new_v4().to_string())?;
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        signaling.server_data(&format!("http://{address}")),
+    )
+    .await
+    .context("NetherNet test client's HTTP status probe timed out")?
+    .context("NetherNet test client's HTTP status probe failed")?;
     let config = ConnectionConfig {
         identity: Some(std::sync::Arc::new(identity)),
         server_trust: Some(TokenTrust::Any),

@@ -41,10 +41,14 @@ jobs:
             ~/.cargo/git/db
             target
           key: windows-crt-static-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
-          restore-keys: windows-crt-static-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+          restore-keys: |
+            windows-crt-static-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            windows-crt-static-
       - name: Install pinned toolchain
         run: rustup show
       - name: Check and test native Windows build
+        env:
+          RUST_LOG: 'warn,sculith::protocol::bedrock::nethernet=debug,nethernet=debug,nethernet_tokio=debug,rtc_ice=debug'
         run: |
           cargo fmt --all --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
