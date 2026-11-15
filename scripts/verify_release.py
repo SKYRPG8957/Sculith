@@ -23,6 +23,19 @@ def verify(directory, version, run_id):
     commit = run["head_sha"]
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Invalid build source revision")
+    tag = json.loads(subprocess.check_output([
+        "gh", "api", f"repos/SKYRPG8957/Sculith/git/ref/tags/{version}",
+    ], text=True, encoding="utf-8"))["object"]
+    for _ in range(4):
+        if tag["type"] == "commit":
+            break
+        if tag["type"] != "tag" or not re.fullmatch(r"[0-9a-f]{40}", tag["sha"]):
+            raise ValueError("Invalid release tag object")
+        tag = json.loads(subprocess.check_output([
+            "gh", "api", f"repos/SKYRPG8957/Sculith/git/tags/{tag['sha']}",
+        ], text=True, encoding="utf-8"))["object"]
+    if tag["type"] != "commit" or tag["sha"] != commit:
+        raise ValueError("The existing release tag must point to the tested source revision")
     name = f"sculith-{version}-windows-x86_64.zip"
     checksum_lines = (directory / "SHA256SUMS.txt").read_text(encoding="ascii").splitlines()
     if len(checksum_lines) != 1:

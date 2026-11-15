@@ -42,12 +42,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PREVIEW_VERSION: ${{ inputs.version }}
-          SOURCE_COMMIT: ${{ steps.verified.outputs.commit }}
           ARCHIVE: ${{ steps.verified.outputs.archive }}
         run: |
           gh release create "$PREVIEW_VERSION" \
             --repo SKYRPG8957/Sculith \
-            --target "$SOURCE_COMMIT" \
+            --verify-tag \
             --prerelease --latest=false \
             --title "Sculith $PREVIEW_VERSION (Windows)" \
             --notes-file "docs/releases/$PREVIEW_VERSION.md" \
