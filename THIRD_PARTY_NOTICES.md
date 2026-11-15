@@ -32,3 +32,9 @@ The `mutants` 0.0.3 crate's omitted MIT text is retained in `LICENSES/package-fa
 [cargo-mutants commit 9685de346012afb9c379432eaf9c6960e22185df](https://github.com/sourcefrog/cargo-mutants/blob/9685de346012afb9c379432eaf9c6960e22185df/LICENSE).
 
 The development-only `tests/interop/gophertunnel` client links the pinned MIT-licensed gophertunnel (e2251a60f71d5faa9784d6a4bc817c117cb6af78) and Go/Pion stack through its own `go.mod`/`go.sum`. Its executable and Go runtime are not included in the Windows server ZIP. The MIT-licensed [go-nethernet 4c06b550](https://github.com/df-mc/go-nethernet/tree/4c06b550759d8b488ee209eb09ae87cefd6fe849) was consulted for DTLS-only Bedrock transport behavior and signed-key binding.
+
+That development client also links the pinned MIT Dragonfly above to decode chunks
+and resolve block hashes with its full vanilla registry. Its embedded registry is
+only in the test client. Sculith's Rust server independently encodes the plains
+biome parameters and loading controls checked against these versioned references;
+no reference server implementation or full Minecraft palette is shipped in the server ZIP.

@@ -1,0 +1,131 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"net"
+	"sync"
+
+	"github.com/df-mc/dragonfly/server/block/cube"
+	"github.com/df-mc/dragonfly/server/world"
+	"github.com/df-mc/dragonfly/server/world/chunk"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
+	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+)
+
+// Test-only independent decoding, using a pinned full vanilla registry rather
+// than copying the Rust encoder's block hashes or palette implementation.
+type observer struct {
+	mu               sync.Mutex
+	registry         world.BlockRegistry
+	chunks           map[protocol.ChunkPos]bool
+	biomes, creative bool
+	err              error
+}
+
+func newObserver(registry world.BlockRegistry) *observer {
+	return &observer{registry: registry, chunks: make(map[protocol.ChunkPos]bool)}
+}
+
+func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	// Gophertunnel's codec reports malformed input through panic.
+	defer func() {
+		if value := recover(); value != nil && o.err == nil {
+			o.err = fmt.Errorf("independent packet decoder: %v", value)
+		}
+	}()
+	if o.err != nil {
+		return
+	}
+	buf := bytes.NewBuffer(payload)
+	reader := protocol.NewReader(buf, 0, true)
+	switch header.PacketID {
+	case packet.IDBiomeDefinitionList:
+		p := new(packet.BiomeDefinitionList)
+		p.Marshal(reader)
+		if len(p.BiomeDefinitions) != 1 || len(p.StringList) != 5 {
+			o.err = fmt.Errorf("unexpected biome registry size")
+			return
+		}
+		b := p.BiomeDefinitions[0]
+		if b.NameIndex != 0 || p.StringList[0] != "plains" || b.BiomeID != -1 ||
+			b.Temperature != .8 || b.Downfall != .4 || !b.Rain {
+			o.err = fmt.Errorf("invalid plains definition")
+			return
+		}
+		o.biomes = true
+	case packet.IDCreativeContent:
+		p := new(packet.CreativeContent)
+		p.Marshal(reader)
+		if len(p.Groups) != 0 || len(p.Items) != 0 {
+			o.err = fmt.Errorf("unexpected creative catalog")
+			return
+		}
+		o.creative = true
+	case packet.IDLevelChunk:
+		p := new(packet.LevelChunk)
+		p.Marshal(reader)
+		if p.CacheEnabled || p.SubChunkCount != 24 || p.Dimension != 0 ||
+			p.Position[0] < -2 || p.Position[0] > 2 || p.Position[1] < -2 || p.Position[1] > 2 ||
+			o.chunks[p.Position] {
+			o.err = fmt.Errorf("invalid or duplicate chunk %+v", p.Position)
+			return
+		}
+		data := bytes.NewBuffer(p.RawPayload)
+		c, err := chunk.NetworkDecodeBuffer(o.registry, data, int(p.SubChunkCount), cube.Range{-64, 319})
+		if err != nil {
+			o.err = err
+			return
+		}
+		if data.Len() != 1 || data.Next(1)[0] != 0 {
+			o.err = fmt.Errorf("invalid chunk border/block-entity suffix")
+			return
+		}
+		for y := int16(-64); y <= 319; y++ {
+			want := "minecraft:air"
+			switch y {
+			case 0:
+				want = "minecraft:bedrock"
+			case 1, 2:
+				want = "minecraft:dirt"
+			case 3:
+				want = "minecraft:grass_block"
+			}
+			for x := uint8(0); x < 16; x++ {
+				for z := uint8(0); z < 16; z++ {
+					hash := c.Block(x, y, z, 0)
+					rid, ok := o.registry.HashToRuntimeID(hash)
+					if !ok {
+						o.err = fmt.Errorf("unrecognized native block hash %08x at %d,%d,%d", hash, x, y, z)
+						return
+					}
+					name, _, _ := o.registry.RuntimeIDToState(rid)
+					if name != want || c.Biome(x, y, z) != 1 {
+						o.err = fmt.Errorf("wrong block/biome at %d,%d,%d: %s", x, y, z, name)
+						return
+					}
+				}
+			}
+		}
+		o.chunks[p.Position] = true
+	default:
+		return
+	}
+	if buf.Len() != 0 {
+		o.err = fmt.Errorf("trailing bytes in server packet %d", header.PacketID)
+	}
+}
+
+func (o *observer) verify() error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.err != nil {
+		return o.err
+	}
+	if !o.biomes || !o.creative || len(o.chunks) != 25 {
+		return fmt.Errorf("incomplete startup: biomes=%t creative=%t chunks=%d", o.biomes, o.creative, len(o.chunks))
+	}
+	return nil
+}

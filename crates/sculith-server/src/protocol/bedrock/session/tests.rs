@@ -277,6 +277,15 @@ impl<T: Transport> TestClient<T> {
             inventory.slots.len() == 36 && inventory.slots[0].id == 1 && inventory.slots[1].id == 3
         );
         ensure!(matches!(self.next().await?, V2225::MobEquipmentPacket(_)));
+        let V2225::BiomeDefinitionListPacket(biomes) = self.next().await? else {
+            anyhow::bail!("expected biome definitions");
+        };
+        ensure!(biomes.biomes.len() == 1 && biomes.strings[0] == "plains");
+        ensure!(biomes.biomes[0].definition.id == u16::MAX);
+        ensure!(matches!(
+            self.next().await?,
+            V2225::CreativeContentPacket(_)
+        ));
         self.conn
             .send(&[V2225::RequestChunkRadiusPacket(Box::new(
                 RequestChunkRadiusPacket {
@@ -832,6 +841,104 @@ async fn valid_eye_offset_movement_is_committed_but_large_client_tick_cannot_tel
         panic!("expected position correction")
     };
     assert_eq!(correction.position, (1.0, 5.62, 0.5));
+    client.conn.close().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn loading_controls_and_radius_renegotiation_do_not_disconnect_or_mutate_pending_players() {
+    use bedrock::protocol::v662::packets::{EmoteListPacket, NetworkStackLatencyPacket};
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
+    let mut client = TestClient::connect(server.address).await.unwrap();
+    client.login().await.unwrap();
+    client.finish_packs().await.unwrap();
+    let id = client.receive_spawn().await.unwrap();
+    // This completion request is not allowed to mutate a pending player.
+    client.request_break(id, 1, 3, 1).await.unwrap();
+    client
+        .conn
+        .send(&[
+            V2225::NetworkStackLatencyPacket(Box::new(NetworkStackLatencyPacket {
+                creation_time: 123456,
+                is_from_server: true,
+            })),
+            V2225::EmoteListPacket(Box::new(EmoteListPacket {
+                runtime_id: ActorRuntimeID(id),
+                emote_piece_ids: vec![uuid::Uuid::new_v4()],
+            })),
+            V2225::RequestChunkRadiusPacket(Box::new(RequestChunkRadiusPacket {
+                chunk_radius: 32,
+                max_chunk_radius: 32,
+            })),
+        ])
+        .await
+        .unwrap();
+    let V2225::NetworkStackLatencyPacket(echo) = client.next().await.unwrap() else {
+        panic!("expected latency acknowledgement during loading");
+    };
+    assert_eq!(echo.creation_time, 123456);
+    assert!(!echo.is_from_server);
+    let V2225::ChunkRadiusUpdatedPacket(radius) = client.next().await.unwrap() else {
+        panic!("expected repeated radius acknowledgement without duplicated chunks");
+    };
+    assert_eq!(radius.chunk_radius, 2);
+    assert_eq!(server.world.online_players(), 0);
+    assert_eq!(server.world.capture().await.unwrap().revision(), 0);
+    client
+        .conn
+        .send(&[V2225::SetLocalPlayerAsInitializedPacket(Box::new(
+            SetLocalPlayerAsInitializedPacket {
+                player_id: ActorRuntimeID(id),
+            },
+        ))])
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while server.world.online_players() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    client.request_break(id, 1, 3, 1).await.unwrap();
+    assert!(matches!(
+        client.next().await.unwrap(),
+        V2225::UpdateBlockPacket(_)
+    ));
+    assert_eq!(server.world.capture().await.unwrap().revision(), 1);
+    // Renegotiation and control packets also remain live after initialization.
+    client
+        .conn
+        .send(&[V2225::RequestChunkRadiusPacket(Box::new(
+            RequestChunkRadiusPacket {
+                chunk_radius: 1,
+                max_chunk_radius: 32,
+            },
+        ))])
+        .await
+        .unwrap();
+    let V2225::ChunkRadiusUpdatedPacket(radius) = client.next().await.unwrap() else {
+        panic!("expected live radius acknowledgement");
+    };
+    assert_eq!(radius.chunk_radius, 1);
+    assert!(matches!(
+        client.next().await.unwrap(),
+        V2225::NetworkChunkPublisherUpdatePacket(_)
+    ));
+    client
+        .conn
+        .send(&[V2225::NetworkStackLatencyPacket(Box::new(
+            NetworkStackLatencyPacket {
+                creation_time: 789,
+                is_from_server: true,
+            },
+        ))])
+        .await
+        .unwrap();
+    let V2225::NetworkStackLatencyPacket(echo) = client.next().await.unwrap() else {
+        panic!("expected live latency acknowledgement");
+    };
+    assert_eq!(echo.creation_time, 789);
     client.conn.close().await;
     server.stop().await;
 }

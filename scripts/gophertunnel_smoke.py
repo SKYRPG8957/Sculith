@@ -45,6 +45,7 @@ def smoke(server, client):
                 )
                 assert result.returncode == 0, result.stdout + result.stderr
                 assert "PASS: independent gophertunnel NetherNet world spawn" in result.stdout
+                assert "PASS: independent Dragonfly decoding of 25 chunks, all 2457600 blocks" in result.stdout
                 deadline = time.monotonic() + 2
                 while time.monotonic() < deadline:
                     if "Bedrock client acknowledged the flat-world spawn" in log_path.read_text(encoding="utf-8"):
@@ -61,7 +62,7 @@ def smoke(server, client):
                 if process.poll() is None:
                     process.kill()
                     process.wait(timeout=5)
-    print("PASS: independent gophertunnel/Go/Pion signed NetherNet login, pack negotiation, world spawn and server-side activation")
+    print("PASS: independent gophertunnel/Go/Pion signed NetherNet login, pack negotiation, world spawn and server-side activation; Dragonfly decodes all 2457600 blocks, biomes and startup definitions")
 
 
 if __name__ == "__main__":

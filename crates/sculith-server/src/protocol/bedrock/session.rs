@@ -3,6 +3,7 @@
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
+use bedrock::protocol::Packets as _;
 use bedrock::{
     auth::{AuthOIDC, Login},
     network::{
@@ -117,25 +118,36 @@ impl Packets {
             return Ok(packet);
         }
         let packets = conn.recv_with_headers().await?;
-        ensure!(
-            !packets.is_empty() && packets.len() <= MAX_BATCH_PACKETS,
-            "invalid login packet batch size"
-        );
-        for (header, packet) in packets {
-            ensure!(
-                header.sender_sub_client_id == 0 && header.target_sub_client_id == 0,
-                "split-screen sub-clients are not implemented"
+        if packets.is_empty() || packets.len() > MAX_BATCH_PACKETS {
+            tracing::warn!(
+                packet_count = packets.len(),
+                limit = MAX_BATCH_PACKETS,
+                "Bedrock packet batch count out of bounds"
             );
+            bail!("invalid login packet batch size");
+        }
+        for (header, packet) in packets {
+            if header.sender_sub_client_id != 0 || header.target_sub_client_id != 0 {
+                tracing::warn!(
+                    sender_sub_client = header.sender_sub_client_id,
+                    target_sub_client = header.target_sub_client_id,
+                    "Bedrock split-screen sub-client is unsupported"
+                );
+                bail!("split-screen sub-clients are not implemented");
+            }
             self.pending.push_back(packet);
         }
         self.pending.pop_front().context("empty packet batch")
     }
 
     fn require_empty(&self) -> Result<()> {
-        ensure!(
-            self.pending.is_empty(),
-            "packets queued across a compression/encryption transition"
-        );
+        if !self.pending.is_empty() {
+            tracing::warn!(
+                pending_packets = self.pending.len(),
+                "Bedrock packets queued across a codec transition"
+            );
+            bail!("packets queued across a compression/encryption transition");
+        }
         Ok(())
     }
 }
@@ -204,7 +216,7 @@ pub async fn handle_with_protection<T: Transport>(
             return Err(error).context(format!("Bedrock login/spawn timed out at {stage}"));
         }
     };
-    let (lease, mut interest, radius) = match result {
+    let (lease, mut interest, mut radius) = match result {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(remote = %conn.get_socket_addr(), stage, failure = failure_kind(&error),
@@ -218,11 +230,24 @@ pub async fn handle_with_protection<T: Transport>(
         }
     };
     let id = lease.player.id;
+    let mut view_player = lease.player.clone();
     let mut view_center = (0, 0);
     loop {
         tokio::select! {
             packet = packets.next(conn) => {
                 let packet = packet?;
+                if session_control(conn, &packet, id).await? {
+                    continue;
+                }
+                if let V2225::RequestChunkRadiusPacket(request) = &packet {
+                    let requested = bounded_radius(request.chunk_radius)?;
+                    acknowledge_radius(conn, requested).await?;
+                    if requested != radius {
+                        spawn::refresh(conn, world, &mut interest, &view_player, requested).await?;
+                        radius = requested;
+                    }
+                    continue;
+                }
                 let intents = match super::input::decode(&packet,id) {
                     Ok(intents)=>intents,
                     Err(error)=>{let _=disconnect(conn,"Sculith: invalid or unsupported gameplay request.").await;return Err(error);}
@@ -240,6 +265,7 @@ pub async fn handle_with_protection<T: Transport>(
                                 MoveOutcome::Accepted {player,..}=>{
                                     let center=((player.feet.x.floor() as i32).div_euclid(16),(player.feet.z.floor() as i32).div_euclid(16));
                                     if center!=view_center {spawn::refresh(conn,world,&mut interest,&player,radius).await?;view_center=center;}
+                                    view_player=player;
                                 }
                                 _=>{},
                             }
@@ -378,33 +404,132 @@ async fn initialize<T: Transport>(
     conn.send(&spawn::initial_packets(&lease.player)?).await?;
     *stage = "chunk-request";
     let mut interest = None;
+    let mut side_packets = 0usize;
     loop {
-        match packets.next(conn).await? {
-            V2225::RequestChunkRadiusPacket(request) if interest.is_none() => {
-                ensure!(request.chunk_radius > 0, "invalid requested chunk radius");
-                let radius = request.chunk_radius.min(super::spawn::RADIUS);
-                interest = Some((spawn::send_chunks(conn, world, radius).await?, radius));
+        let packet = packets.next(conn).await?;
+        side_packets += 1;
+        ensure!(
+            side_packets <= 4096,
+            "too many packets before world initialization"
+        );
+        if session_control(conn, &packet, entity_id).await? {
+            continue;
+        }
+        match packet {
+            V2225::RequestChunkRadiusPacket(request) => {
+                let radius = bounded_radius(request.chunk_radius)?;
+                if let Some((ref mut chunks, ref mut current)) = interest {
+                    // Real clients may negotiate again while the first chunk
+                    // batch is loading. Do not resend spawn or duplicate chunks.
+                    acknowledge_radius(conn, radius).await?;
+                    if radius != *current {
+                        spawn::refresh(conn, world, chunks, &lease.player, radius).await?;
+                        *current = radius;
+                    }
+                } else {
+                    interest = Some((spawn::send_chunks(conn, world, radius).await?, radius));
+                }
                 *stage = "spawn-acknowledgement";
             }
             V2225::SetLocalPlayerAsInitializedPacket(initialized) if interest.is_some() => {
-                ensure!(
-                    initialized.player_id.0 == entity_id,
-                    "client initialized another entity ID"
-                );
+                if initialized.player_id.0 != entity_id {
+                    tracing::warn!(
+                        expected_entity_id = entity_id,
+                        received_entity_id = initialized.player_id.0,
+                        "Bedrock initialization entity ID mismatch"
+                    );
+                    bail!("client initialized another entity ID");
+                }
                 tracing::info!(player = %login.authentication.identity().display_name, entity_id,
                     "Bedrock client acknowledged the flat-world spawn");
                 world.activate(entity_id).await?;
                 let (interest, radius) = interest.expect("checked above");
                 return Ok((lease, interest, radius));
             }
-            V2225::ServerBoundLoadingScreenPacket(_) | V2225::ClientCacheStatusPacket(_) => {}
             // Unordered movement may race the reliable initialization ack.
             // Pending players cannot mutate the owner; fresh movement is
             // accepted only after activation in the gameplay loop.
             V2225::PlayerAuthInputPacket(_) => {}
-            _ => bail!("unexpected packet before world initialization"),
+            packet @ (V2225::MobEquipmentPacket(_)
+            | V2225::PlayerHotbarPacket(_)
+            | V2225::PlayerActionPacket(_)
+            | V2225::AnimatePacket(_)) => {
+                // Validate actor IDs and numeric inputs, but never apply any
+                // gameplay intent until the reliable initialization ack.
+                super::input::decode(&packet, entity_id)?;
+            }
+            packet => {
+                tracing::warn!(
+                    packet_id = packet.id(),
+                    stage = *stage,
+                    "Bedrock unexpected packet before world initialization"
+                );
+                bail!(
+                    "unexpected packet {} before world initialization",
+                    packet.id()
+                );
+            }
         }
     }
+}
+
+fn bounded_radius(requested: i32) -> Result<i32> {
+    ensure!(requested > 0, "invalid requested chunk radius");
+    Ok(requested.min(spawn::RADIUS))
+}
+
+async fn acknowledge_radius<T: Transport>(
+    conn: &mut Connection<V2225, T>,
+    radius: i32,
+) -> Result<()> {
+    conn.send(&[V2225::ChunkRadiusUpdatedPacket(Box::new(
+        bedrock::protocol::v662::packets::ChunkRadiusUpdatedPacket {
+            chunk_radius: radius,
+        },
+    ))])
+    .await?;
+    Ok(())
+}
+
+/// Non-mutating control messages can interleave with loading and gameplay.
+/// No credentials or arbitrary client diagnostic strings are written to logs.
+async fn session_control<T: Transport>(
+    conn: &mut Connection<V2225, T>,
+    packet: &V2225,
+    entity_id: u64,
+) -> Result<bool> {
+    match packet {
+        V2225::NetworkStackLatencyPacket(latency) => {
+            if latency.is_from_server {
+                conn.send(&[V2225::NetworkStackLatencyPacket(Box::new(
+                    bedrock::protocol::v662::packets::NetworkStackLatencyPacket {
+                        creation_time: latency.creation_time,
+                        is_from_server: false,
+                    },
+                ))])
+                .await?;
+            }
+        }
+        V2225::EmoteListPacket(emotes) => {
+            ensure!(
+                emotes.runtime_id.0 == entity_id,
+                "emote list targets another entity"
+            );
+            ensure!(emotes.emote_piece_ids.len() <= 512, "too many emotes");
+        }
+        V2225::ServerBoundLoadingScreenPacket(_)
+        | V2225::ClientCacheStatusPacket(_)
+        | V2225::ServerBoundDiagnosticsPacket(_) => {}
+        V2225::PacketViolationWarningPacket(warning) => {
+            tracing::warn!(violation_type=?warning.violation_type,
+                severity=?warning.violation_severity, violating_packet=?warning.violating_packet_id,
+                context_bytes=warning.violation_context.len(),
+                "Bedrock client reported a server packet violation");
+            bail!("client reported a server packet violation");
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
 }
 
 async fn login<T: Transport>(

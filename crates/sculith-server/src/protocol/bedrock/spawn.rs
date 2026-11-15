@@ -54,7 +54,50 @@ pub fn initial_packets(player: &crate::game::PlayerSnapshot) -> Result<Vec<V2225
     ];
     packets.extend(super::output::registry_and_abilities(player));
     packets.extend(super::output::inventory(player)?);
+    // Chunk biome palettes reference the native plains biome. Supply its
+    // definition before chunks, even though headless clients do not render it.
+    packets.push(plains_definition());
+    packets.push(V2225::CreativeContentPacket(Box::new(
+        bedrock::protocol::v2168::packets::CreativeContentPacket {
+            groups: vec![],
+            contents: vec![],
+        },
+    )));
     Ok(packets)
+}
+
+/// V2225 definition layout from bedrock-rs 5221fcae; native plains parameters
+/// and the -1 built-in-ID sentinel checked against Dragonfly 0f9a3a57,
+/// server/world/biome{_definition.go,/plains.go}. This preview generates its
+/// own terrain; no client-side biome generation data or assets are needed.
+fn plains_definition() -> V2225 {
+    use bedrock::protocol::{
+        v800::packets::{BiomeDefinitionListPacket, BiomeEntry},
+        v844::types::{BiomeDefinition, BiomeTagList},
+    };
+    V2225::BiomeDefinitionListPacket(Box::new(BiomeDefinitionListPacket {
+        biomes: vec![BiomeEntry {
+            name_index: 0,
+            definition: BiomeDefinition {
+                id: u16::MAX,
+                temperature: 0.8,
+                downfall: 0.4,
+                foliage_snow: 0.0,
+                depth: 0.125,
+                scale: 0.05,
+                map_water_color: 0xa544aff5u32 as i32,
+                rain: true,
+                tags: Some(BiomeTagList {
+                    tags: vec![1, 2, 3, 0, 4],
+                }),
+                chunk_gen_data: None,
+            },
+        }],
+        strings: ["plains", "animal", "monster", "overworld", "bee_habitat"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    }))
 }
 
 fn start_game(player: &crate::game::PlayerSnapshot) -> StartGamePacket<V2225> {

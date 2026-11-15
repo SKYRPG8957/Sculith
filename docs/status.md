@@ -6,6 +6,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented
 
+- Loading controls and radius renegotiation are accepted before initialization and during play. Pending players cannot edit the owner. Spawn also supplies the plains biome definition used by chunk palettes and an empty creative catalog; unsupported general inventory mutations remain rejected.
 - Existing Java TCP and Bedrock UDP discovery, trusted executable Rust plugin prototype and explicit PNG conversion retained.
 - Opt-in RakNet sessions using pinned Rust libraries, compression, signed identity verification, encryption and ordered empty-pack negotiation.
 - Bounded session/message queues with byte budgets, login/spawn timeout and owned session cleanup.
@@ -34,7 +35,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Preview 2's diagnostics and byte-level handshake test passed native Windows validation in [run 43745002586](https://github.com/SKYRPG8957/Sculith/actions/runs/43745002586), source `077bb56`. Its public release is a diagnostic update, not a confirmed fix for the reported official-client failure.
 - Preview 2's public download, PowerShell 5.1 installer, `start.cmd` and `diagnose.cmd` configuration checks, one-command install, and existing-directory preservation passed in [run 43747012301](https://github.com/SKYRPG8957/Sculith/actions/runs/43747012301).
 - [Windows preview v0.1.0-preview.1](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1) is public (3,858,243-byte ZIP plus SHA-256 checksums). Windows PowerShell 5.1 installation, refusal to overwrite an existing directory, and the documented one-command installation passed in [run 43742465897](https://github.com/SKYRPG8957/Sculith/actions/runs/43742465897).
-- Latest Linux and Preview 5 native Windows implementation: 95 project unit/integration-style tests, the region `!Sync` compile-fail doctest and 256 vendored transport tests pass.
+- Latest Linux implementation: 96 project unit/integration-style tests and the region `!Sync` compile-fail doctest pass. The unchanged vendored transport's 256 tests passed in Preview 5. The loading-sequence changes are awaiting native Windows Preview 6 verification; previous Windows results apply to their recorded source.
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
 - Two encrypted UDP clients receive the same accepted placement/break delta. A rejected Bedrock break is corrected only for the requester; a forged held-item claim cannot commit. Valid eye-offset movement commits, while a large tick/teleport request is corrected.
@@ -53,6 +54,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Failed / externally constrained
 
+- Preview 5 official Windows GDK `1.26.63` retest reached `Bedrock login completed` with DTLS protection, then failed while loading: `Boat / InitialConnection-148`, `spawn-acknowledgement / protocol-state`. No flat-world screen was confirmed. The former log did not identify the offending packet; the current source supplies numeric packet/violation diagnostics and fixes concrete loading-sequence gaps. A successful official-client retest is still required.
 - Preview 4 official retest reached WebRTC and network settings with client/server protocol 2225, then failed at `encryption-handshake`, `InitialConnection-66`. NetherNet was incorrectly sent the RakNet cipher handshake. The current source uses DTLS directly, binds login to the signed transport key and rejects a valid login signed with another key. Independent clients now pass this stage and the Go/Pion client reaches the world; official-client retesting is pending.
 - Preview 3 official retest still failed: the user accepted the new trust/continue prompt, GET and POST reached Sculith, but Windows GDK returned `Door / InitialConnection-83` before a WebRTC-ready log. Two independently reproduced interoperability gaps are corrected in the current source; an official-client retest remains necessary.
 - The cloud Chromium probe gathered no UDP candidates because of its managed `WebRtcIPHandling` policy. The policy was preserved; the independent OpenSSL/aiortc runner was used instead.
@@ -103,5 +105,5 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 
 ## Next Action
 
-Retest the official Windows GDK client with public Preview 5 past the corrected application-encryption stage. Its native Windows protocol and public installer checks pass. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
+Verify/package Preview 6 on native Windows, then retest the official Windows GDK client past loading. Inspect its numeric packet/violation diagnostics if initialization fails. The current independent Go/Dragonfly probe decodes every block and biome in all 25 spawn chunks. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
 Continue online authentication and actual-client verification beyond the now-accessible discovery endpoint. Required gameplay/content features are not removed from the objective.
