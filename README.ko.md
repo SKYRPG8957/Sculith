@@ -38,7 +38,18 @@
 Java 서버 목록에는 프로토콜 `-1`과 개발 단계 문구를 반환하여 플레이 가능한 서버로 광고하지 않습니다.
 Java 로그인은 미구현 안내와 함께 종료합니다. Bedrock 세션은 아래의 선택적 개발 설정에서만 처리합니다.
 
-## 빌드와 실행
+## Windows에서 바로 테스트
+
+1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1)에서 `windows-x86_64.zip`을 받습니다.
+2. ZIP 전체를 압축 해제하고 **`start.cmd`를 더블클릭**합니다. Rust·Python·Java 설치는 필요 없습니다.
+3. 같은 PC의 베드락에서 서버 주소 **`127.0.0.1`**, 포트 **`19132`**로 추가합니다.
+4. 종료할 때 서버 창에서 **Ctrl+C**를 누르면 월드를 저장합니다.
+
+기존 `sculith.toml`과 `world/region.sculith`는 보존합니다. 로컬 테스트 신원을 허용하는 개발 프리뷰이며,
+**공식 게임 클라이언트 접속·렌더링은 아직 미검증, Java 월드 입장은 미구현**입니다.
+설치 명령과 Windows loopback 문제는 [Windows 빠른 시작](docs/windows-quickstart.md)을 참고하세요.
+
+## 소스에서 빌드와 실행
 
 필요 도구는 Rust (`rust-toolchain.toml`에 고정), C 링커, 스모크 테스트용 Python 3입니다.
 외부 Minecraft 서버 프로세스, Java 런타임, 사용자 제공 Microsoft 비밀키는 이 단계에서 필요하지 않습니다.

@@ -44,7 +44,15 @@ These numbers identify development targets, **not verified gameplay support**. T
 
 Java world entry, multiplayer entity visibility, general inventory transactions, physics/gravity, content distribution, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
 
-## Build
+## Windows quick start
+
+For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1), extract the entire archive, and double-click **`start.cmd`**. No Rust, Python or Java installation is required.
+
+In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
+
+This selects the local, offline-identity Bedrock preview. **Official game-client entry/rendering remain unverified; Java world entry is not implemented.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
+
+## Build from source
 
 Install [Rust](https://www.rust-lang.org/tools/install) and a native linker. The repository pins its Rust toolchain and dependency lockfile. Python 3 is needed for the executable smoke tests.
 
@@ -54,7 +62,7 @@ cd Sculith
 cargo build --workspace --locked
 ```
 
-Development is currently validated on Linux x86_64. Windows execution is a release target and has not been validated yet.
+Linux x86_64 development checks and native Windows packaging checks are configured separately. Recorded results are in [development status](docs/status.md).
 
 ## Run
 

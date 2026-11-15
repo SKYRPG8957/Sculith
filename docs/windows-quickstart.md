@@ -1,0 +1,46 @@
+# Windows에서 바로 테스트
+
+Windows x64용 개발 프리뷰입니다. **공식 게임 클라이언트의 접속·렌더링은 아직 미검증이며, Java 월드 입장은 미구현입니다.**
+테스트 대상 참고 버전은 Bedrock `1.26.60 / protocol 2225`입니다. Preview/Beta는 별도입니다.
+
+1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1)에서 `windows-x86_64.zip` 파일을 받습니다.
+2. ZIP 전체를 새 폴더에 압축 해제하고 `start.cmd`를 더블클릭합니다. Rust·Python·Java 설치는 필요 없습니다.
+3. 같은 PC의 Minecraft for Windows에서 **플레이 → 서버 → 서버 추가**로 들어갑니다.
+4. 이름은 `Sculith`, 주소는 `127.0.0.1`, 포트는 `19132`로 입력합니다.
+5. 종료할 때 서버 창에서 **Ctrl+C**를 누릅니다. 최종 월드 스냅샷을 저장하고 종료합니다.
+
+설정은 `sculith.toml`, 월드는 `world/region.sculith`입니다. 첫 실행에서만 예제 설정을 복사하며 기존 파일은 보존합니다.
+주기적 자동 저장은 아직 없으므로 창을 강제로 닫으면 시작 이후의 변경이 유실될 수 있습니다.
+
+PowerShell에서 설치하려면 새 폴더를 만들 위치에서 다음 명령을 실행할 수도 있습니다.
+
+```powershell
+irm https://raw.githubusercontent.com/SKYRPG8957/Sculith/main/scripts/install.ps1 | iex
+```
+
+현재 위치에 `Sculith` 폴더를 만들고 SHA-256을 검증한 ZIP을 설치합니다. 같은 이름의 폴더가 있으면 덮어쓰지 않고 멈춥니다.
+설치 후 그 폴더의 `start.cmd`를 실행하세요. 설치기는 서버 실행·방화벽 변경·관리자 권한 요청을 자동으로 하지 않습니다.
+
+## 연결이 안 될 때
+
+- 서버 창의 첫 오류와 게임 버전을 확인합니다. 다른 프로그램이 UDP `19132`를 쓰고 있으면 충돌합니다.
+- 이 설정은 **같은 PC 전용**입니다. 다른 PC/휴대폰에서 접속하거나 `bind`를 공개 주소로 바꾸는 설정이 아닙니다.
+- Microsoft의 일부 UWP 앱은 localhost 접속을 기본으로 차단합니다. 해당 패키지가 있는지 일반 PowerShell에서 확인할 수 있습니다.
+
+```powershell
+Get-AppxPackage *Minecraft* | Select-Object Name, PackageFamilyName
+```
+
+실제 설치된 정식 Minecraft 앱이 UWP loopback 제한을 받는 경우, **관리자 PowerShell**에서 그 앱의 `PackageFamilyName`을 넣어 예외를 추가할 수 있습니다.
+다른 앱이나 Preview 패키지를 선택하지 않도록 위 결과를 확인하세요. 아래의 자리표시자를 실제 값으로 바꿔야 합니다.
+
+```powershell
+CheckNetIsolation.exe LoopbackExempt -a -n="실제_PackageFamilyName"
+```
+
+되돌릴 때는 같은 값으로 `-a` 대신 `-d`를 사용합니다. 데스크톱 앱으로 설치된 버전에는 이 절차가 해당하지 않을 수 있습니다.
+loopback 예외가 있어도 아직 미구현된 프로토콜이나 렌더링 동작을 해결해 주는 것은 아닙니다.
+
+문제가 계속되면 Minecraft 버전, ZIP의 `release.json`에 기록된 commit, 서버 창의 오류를 알려주세요.
+현재 평지 스폰·제한된 크리에이티브 이동/건축은 헤드리스 프로토콜 클라이언트로 검증했습니다.
+일반 인벤토리, 생존/중력, 다른 플레이어 표시, 완전한 팩 호환성은 아직 구현 중입니다.

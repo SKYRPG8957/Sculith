@@ -3,3 +3,5 @@
 /packs/generated/
 *.log
 /world/
+/dist/
+__pycache__/

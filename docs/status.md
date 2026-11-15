@@ -17,10 +17,12 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Versioned/checksummed immutable region snapshots with validated disk reload and conservative atomic file replacement. Optional runtime loading and orderly-shutdown saving are wired; periodic autosaving is pending.
 - Creative-builder preview with initialized session counting and cancellation-safe player leases. Login deadlines do not terminate already initialized sessions.
 - Explicit official online authentication initialization. Public-key lookup failure does not silently enable offline authentication.
+- Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified
 
 - Rust 1.100.0 workspace build and Clippy for all targets with warnings denied.
+- Native Windows build, tests, executable network/persistence smoke checks and package validation are configured in `Windows preview`; first-run results are pending.
 - 82 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (83 total checks).
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.

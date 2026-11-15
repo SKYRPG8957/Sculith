@@ -19,6 +19,18 @@ MAGIC = bytes.fromhex("00ffff00fefefefefdfdfdfd12345678")
 PLUGIN_MOTD = "Sculith Rust plugin / discovery only"
 
 
+def start_server(server, settings, log, env):
+    return subprocess.Popen(
+        [str(server), "run", "--config", str(settings)],
+        cwd=ROOT, stdout=log, stderr=log, env=env,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+    )
+
+
+def stop_server(process):
+    process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+
+
 def varint(number):
     number &= 0xFFFFFFFF
     result = bytearray()
@@ -187,7 +199,7 @@ def smoke(server, plugin, sessions=False):
         log_path = base / "server.log"
         env = dict(os.environ, NO_COLOR="1", RUST_LOG="info")
         with log_path.open("w") as log:
-            process = subprocess.Popen([str(server), "run", "--config", str(settings)], cwd=ROOT, stdout=log, stderr=log, env=env)
+            process = start_server(server, settings, log, env)
             try:
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:
@@ -202,7 +214,7 @@ def smoke(server, plugin, sessions=False):
                     raise AssertionError("server startup timed out: " + text)
                 check_java(int(java[1]), "bedrock-spawn-preview" if sessions else "discovery-only")
                 check_bedrock(int(bedrock[1]), versions["bedrock"], sessions)
-                process.send_signal(signal.SIGINT)
+                stop_server(process)
                 assert process.wait(timeout=5) == 0, log_path.read_text(encoding="utf-8")
                 text = log_path.read_text(encoding="utf-8")
                 assert "welcome plugin stopped" in text, text
@@ -216,7 +228,7 @@ def smoke(server, plugin, sessions=False):
         saved_snapshot = snapshot.read_bytes()
         restart_log = base / "restart.log"
         with restart_log.open("w") as log:
-            restarted = subprocess.Popen([str(server), "run", "--config", str(settings)], cwd=ROOT, stdout=log, stderr=log, env=env)
+            restarted = start_server(server, settings, log, env)
             try:
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:
@@ -229,7 +241,7 @@ def smoke(server, plugin, sessions=False):
                 else:
                     raise AssertionError("snapshot restart did not become ready: " + text)
                 check_java(int(java[1]), "bedrock-spawn-preview" if sessions else "discovery-only")
-                restarted.send_signal(signal.SIGINT)
+                stop_server(restarted)
                 assert restarted.wait(timeout=5) == 0, restart_log.read_text(encoding="utf-8")
             finally:
                 if restarted.poll() is None:
@@ -260,8 +272,9 @@ def smoke(server, plugin, sessions=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", type=Path, default=ROOT / "target/debug/sculith")
-    parser.add_argument("--plugin", type=Path, default=ROOT / "target/debug/sculith-welcome")
+    suffix = ".exe" if os.name == "nt" else ""
+    parser.add_argument("--server", type=Path, default=ROOT / ("target/debug/sculith" + suffix))
+    parser.add_argument("--plugin", type=Path, default=ROOT / ("target/debug/sculith-welcome" + suffix))
     parser.add_argument("--sessions", action="store_true", help="also enable the loopback-only Bedrock spawn preview and probe its RakNet driver")
     args = parser.parse_args()
     smoke(args.server.resolve(strict=True), args.plugin.resolve(strict=True), args.sessions)

@@ -24,3 +24,8 @@ Sculith independently encodes a limited creative-builder permission set; operato
 
 Pumpkin, Folia and other reference projects are architectural references, not linked or copied server implementations.
 The example pack contains an original generated checkerboard PNG.
+
+Windows preview packages include `THIRD_PARTY_LICENSES.txt`, generated from the locked dependency graph and its source license files.
+For dual MIT/Apache-2.0 facet packages whose crate tarballs omit license texts, the distribution selects their declared Apache-2.0 option and retains its full text.
+The `mutants` 0.0.3 crate's omitted MIT text is retained in `LICENSES/package-fallbacks/cargo-mutants-MIT.txt` from
+[cargo-mutants commit 9685de346012afb9c379432eaf9c6960e22185df](https://github.com/sourcefrog/cargo-mutants/blob/9685de346012afb9c379432eaf9c6960e22185df/LICENSE).
