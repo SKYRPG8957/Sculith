@@ -23,12 +23,13 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 ## Verified
 
 - Rust 1.100.0 workspace build and Clippy for all targets with warnings denied.
+- Preview 3's NetherNet implementation and loopback routing correction passed native Windows Clippy, unit/doc tests, HTTP/WebRTC shared-world tests, both release-executable smoke checks, package/launcher checks and dependency-license packaging in [run 43751492841](https://github.com/SKYRPG8957/Sculith/actions/runs/43751492841), source `ed8bc8c`. Its ZIP is 5,176,423 bytes; metadata and SHA-256 were independently verified. PE imports remain Windows system DLLs only.
 - Native Windows x64 build, Clippy, unit/doc tests, both release-executable network/persistence smoke checks and package validation passed for `0e782d5` in [Windows preview run 43741364940](https://github.com/SKYRPG8957/Sculith/actions/runs/43741364940).
 - The extracted ZIP launcher passes configuration checks from a path with spaces and preserves edited user settings. Its x64 PE imports only Windows system DLLs; no separate VC++ runtime installation is required.
 - Preview 2's diagnostics and byte-level handshake test passed native Windows validation in [run 43745002586](https://github.com/SKYRPG8957/Sculith/actions/runs/43745002586), source `077bb56`. Its public release is a diagnostic update, not a confirmed fix for the reported official-client failure.
 - Preview 2's public download, PowerShell 5.1 installer, `start.cmd` and `diagnose.cmd` configuration checks, one-command install, and existing-directory preservation passed in [run 43747012301](https://github.com/SKYRPG8957/Sculith/actions/runs/43747012301).
 - [Windows preview v0.1.0-preview.1](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1) is public (3,858,243-byte ZIP plus SHA-256 checksums). Windows PowerShell 5.1 installation, refusal to overwrite an existing directory, and the documented one-command installation passed in [run 43742465897](https://github.com/SKYRPG8957/Sculith/actions/runs/43742465897).
-- Linux: 90 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (91 total checks). Native Windows verification of the new NetherNet code is pending.
+- Linux: 90 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (91 total checks). The native Windows checks above also pass, with platform-specific tests selected by the compiler.
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
 - Two encrypted UDP clients receive the same accepted placement/break delta. A rejected Bedrock break is corrected only for the requester; a forged held-item claim cannot commit. Valid eye-offset movement commits, while a large tick/teleport request is corrected.
@@ -46,13 +47,13 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Failed / externally constrained
 
-- The initial native Windows NetherNet test timed out during WebRTC setup, while HTTP status/signature/rejection tests passed. A regression test reproduced loopback media attempting a LAN candidate; candidate selection now stays on loopback and a Windows retest is pending. The failed build is not published.
+- The initial native Windows NetherNet test timed out during WebRTC setup, while HTTP status/signature/rejection tests passed. [Diagnostic run 43751174972](https://github.com/SKYRPG8957/Sculith/actions/runs/43751174972) confirmed the loopback socket failed on a LAN candidate with `os error 10051`. A regression test reproduces the former routing error; candidate selection now stays on loopback and the corrected Windows run above passes. The failed builds are not published.
 - The first official-client attempt reported by the user failed: Windows GDK `1.26.63`, `Terracotta`, `InitialConnection-149`. Account sign-in was already complete and other servers connect successfully. The exact Sculith transport/login failure is unresolved; successful headless tests are not treated as a substitute. Connection-stage and bounded handshake diagnostics are available in Preview 2.
 - The first Windows smoke run found console shutdown killing a plugin before its lifecycle hook. Windows workers now run without the host console; the corrected run verifies the Stopping event and final world save.
-- Official discovery initially returned proxy HTTP 403 under the earlier restricted network. The current environment reports enforced unrestricted networking; a fresh request to `client.discovery.minecraft-services.net` returned HTTP 200. Downstream OIDC/JWKS and actual account login remain unverified. No user credential is needed for the public discovery request.
+- Official discovery initially returned proxy HTTP 403 under the earlier restricted network. With the current unrestricted networking, Python's normally verified HTTPS client received HTTP 200 for discovery, the official OIDC configuration and its JWKS (three public signing keys). This is public-metadata retrieval; actual account login remains unverified.
 - Running the authenticated executable in this cloud failed before listener startup with TLS `UnknownIssuer` in the Rust HTTP client. HTTPS validation was retained; no account-login success is inferred from the separate discovery HTTP 200 result. The local offline-identity preview does not use this initialization path.
 - Official Bedrock was attempted by the user and failed during initial connection. Official Java-client testing remains unrun; neither edition has verified world entry/rendering.
-- No automated test remains failing in the final recorded run. The expected compile-fail result above verifies ownership restrictions.
+- The latest Linux and native Windows automated checks pass after the routing correction. The expected compile-fail result verifies ownership restrictions.
 
 ## Performance
 
@@ -92,5 +93,5 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 
 ## Next Action
 
-Validate the new local NetherNet backend on native Windows, package a new preview, and retest the reported Windows GDK initial connection failure with the expanded transport/session logs. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
+Retest the reported Windows GDK initial connection failure using Preview 3 and the expanded transport/session logs. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
 Continue online authentication and actual-client verification beyond the now-accessible discovery endpoint. Required gameplay/content features are not removed from the objective.
