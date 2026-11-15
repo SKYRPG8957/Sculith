@@ -1,9 +1,10 @@
 # Windows에서 바로 테스트
 
-Windows x64용 개발 프리뷰입니다. **공식 게임 클라이언트의 접속·렌더링은 아직 미검증입니다.**
+Windows x64용 개발 프리뷰입니다. **공식 베드락 앱의 입장과 Windows 게임 렌더링은 아직 미확인입니다.**
+순정 Java 26.3의 로컬 입장·이동·마우스 편집은 [Linux에서 직접 확인](verification/2026-11-16-java26.3.md)했습니다.
 개발 대상은 Bedrock `1.26.60 / protocol 2225`와 Java `26.3 / 777`입니다. Preview/Beta는 별도입니다.
 
-1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.8)에서 `windows-x86_64.zip` 파일을 받습니다.
+1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.9)에서 `windows-x86_64.zip` 파일을 받습니다.
 2. ZIP 전체를 새 폴더에 압축 해제하고 `start.cmd`를 더블클릭합니다. Rust·Python·Java 설치는 필요 없습니다.
 3. 같은 PC의 Minecraft for Windows에서 **플레이 → 서버 → 서버 추가**로 들어갑니다.
 4. 이름은 `Sculith`, 주소는 `127.0.0.1`, 포트는 `19132`로 입력합니다.
