@@ -152,21 +152,30 @@ pub async fn handle<T: Transport>(
 ) -> Result<()> {
     let mut packets = Packets::new();
     let mut events = world.subscribe();
+    let mut stage = "network-settings";
     let result = tokio::time::timeout(
         timeout,
-        initialize(conn, &mut packets, authentication, world),
+        initialize(conn, &mut packets, authentication, world, &mut stage),
     )
-    .await
-    .context("Bedrock login/spawn timed out")?;
+    .await;
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::warn!(remote = %conn.get_socket_addr(), stage, "Bedrock login/spawn timed out");
+            return Err(error).context(format!("Bedrock login/spawn timed out at {stage}"));
+        }
+    };
     let (lease, mut interest, radius) = match result {
         Ok(value) => value,
         Err(error) => {
+            tracing::warn!(remote = %conn.get_socket_addr(), stage,
+                "Bedrock login/spawn failed; use RUST_LOG=info,sculith::protocol::bedrock=debug for details");
             let _ = disconnect(
                 conn,
                 "Sculith: login verification or protocol negotiation failed.",
             )
             .await;
-            return Err(error);
+            return Err(error).with_context(|| format!("Bedrock initialization failed at {stage}"));
         }
     };
     let id = lease.player.id;
@@ -262,11 +271,14 @@ async fn initialize<T: Transport>(
     packets: &mut Packets,
     authentication: &Authentication,
     world: &WorldHandle,
+    stage: &mut &'static str,
 ) -> Result<(PlayerLease, spawn::Interest, i32)> {
-    let login = login(conn, packets, authentication).await?;
+    let login = login(conn, packets, authentication, stage).await?;
     tracing::info!(player = %login.authentication.identity().display_name,
         authenticated = login.authentication.is_authenticated(), "Bedrock encrypted login completed");
+    *stage = "resource-packs";
     empty_pack_handshake(conn, packets).await?;
+    *stage = "world-spawn";
     let identity = login.authentication.identity();
     let subject = if login.authentication.is_authenticated() {
         format!("xuid:{}", identity.xuid)
@@ -286,6 +298,7 @@ async fn initialize<T: Transport>(
         .await?;
     let entity_id = lease.player.id;
     conn.send(&spawn::initial_packets(&lease.player)?).await?;
+    *stage = "chunk-request";
     let mut interest = None;
     loop {
         match packets.next(conn).await? {
@@ -293,6 +306,7 @@ async fn initialize<T: Transport>(
                 ensure!(request.chunk_radius > 0, "invalid requested chunk radius");
                 let radius = request.chunk_radius.min(super::spawn::RADIUS);
                 interest = Some((spawn::send_chunks(conn, world, radius).await?, radius));
+                *stage = "spawn-acknowledgement";
             }
             V2225::SetLocalPlayerAsInitializedPacket(initialized) if interest.is_some() => {
                 ensure!(
@@ -315,10 +329,13 @@ async fn login<T: Transport>(
     conn: &mut Connection<V2225, T>,
     packets: &mut Packets,
     authentication: &Authentication,
+    stage: &mut &'static str,
 ) -> Result<Login> {
     let V2225::RequestNetworkSettingsPacket(request) = packets.next(conn).await? else {
         bail!("expected RequestNetworkSettings before login");
     };
+    tracing::info!(remote = %conn.get_socket_addr(), client_protocol = request.client_network_version,
+        expected_protocol = PROTOCOL, "Bedrock network settings requested");
     if let Err(error) = check_protocol(request.client_network_version, PROTOCOL) {
         conn.send(&[status(if request.client_network_version < PROTOCOL {
             PlayStatus::LoginFailedClientOld
@@ -346,12 +363,15 @@ async fn login<T: Transport>(
     ))])
     .await?;
     conn.enable_compression(settings.compression);
+    *stage = "login-request";
     let V2225::LoginPacket(request) = packets.next(conn).await? else {
         bail!("expected Login after network settings");
     };
     check_protocol(request.client_network_version, PROTOCOL)?;
     packets.require_empty()?;
+    *stage = "identity-verification";
     let login = authentication.verify(request.connection_request).await?;
+    *stage = "encryption-handshake";
     let (token, encryption) = begin_encryption(&login)?;
     conn.send(&[V2225::ServerToClientHandshakePacket(Box::new(
         ServerToClientHandshakePacket {

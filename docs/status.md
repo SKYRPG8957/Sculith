@@ -25,11 +25,12 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Native Windows x64 build, Clippy, unit/doc tests, both release-executable network/persistence smoke checks and package validation passed for `0e782d5` in [Windows preview run 43741364940](https://github.com/SKYRPG8957/Sculith/actions/runs/43741364940).
 - The extracted ZIP launcher passes configuration checks from a path with spaces and preserves edited user settings. Its x64 PE imports only Windows system DLLs; no separate VC++ runtime installation is required.
 - [Windows preview v0.1.0-preview.1](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1) is public (3,858,243-byte ZIP plus SHA-256 checksums). Windows PowerShell 5.1 installation, refusal to overwrite an existing directory, and the documented one-command installation passed in [run 43742465897](https://github.com/SKYRPG8957/Sculith/actions/runs/43742465897).
-- 82 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (83 total checks).
+- 83 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (84 total checks).
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
 - Two encrypted UDP clients receive the same accepted placement/break delta. A rejected Bedrock break is corrected only for the requester; a forged held-item claim cannot commit. Valid eye-offset movement commits, while a large tick/teleport request is corrected.
 - A real UDP client crossing a negative chunk boundary retains its negotiated one-chunk radius; only the three newly visible chunks are sent, with no overlap retransmission.
+- An independent byte-level UDP client completes the cookie-checked OpenConnectionRequest1/2 exchange and confirms an invalid cookie is not admitted. It does not use the server's RakNet codec.
 - Domain tests exercise replay/speed/collision/reach/permission/budget checks, disconnected-player queue cleanup and immutable captures. Changed runtime state survives snapshot reload.
 - Every voxel of a flat chunk (98,304 blocks) independently decoded and compared; negative sections, asymmetric edits,
   1/2/3-bit packing and the latest `LevelChunkPacket` codec roundtrip verified.
@@ -41,6 +42,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Failed / externally constrained
 
+- The first official-client attempt reported by the user failed: Windows GDK `1.26.63`, `Terracotta`, `InitialConnection-149`. Account sign-in was already complete. The exact transport/login failure is unresolved; successful headless tests are not treated as a substitute. Connection-stage and bounded handshake diagnostics are being added for the next preview.
 - The first Windows smoke run found console shutdown killing a plugin before its lifecycle hook. Windows workers now run without the host console; the corrected run verifies the Stopping event and final world save.
 - Official discovery initially returned proxy HTTP 403 under the earlier restricted network. The current environment reports enforced unrestricted networking; a fresh request to `client.discovery.minecraft-services.net` returned HTTP 200. Downstream OIDC/JWKS and actual account login remain unverified. No user credential is needed for the public discovery request.
 - Official Java and Bedrock game clients have not been used to verify world entry or rendering.

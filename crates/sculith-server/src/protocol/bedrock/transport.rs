@@ -158,6 +158,7 @@ pub async fn serve(
         (0, address.port())
     };
     let mut limiter = super::RateLimiter::new(Instant::now());
+    let mut connection_logs = super::RateLimiter::new(Instant::now());
     let mut update = tokio::time::interval(Duration::from_millis(10));
     update.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let result = loop {
@@ -168,6 +169,8 @@ pub async fn serve(
             received = socket.recv_from(&mut buffer) => {
                 let (length, remote) = match received { Ok(value) => value, Err(error) => break Err(error.into()) };
                 let packet = &buffer[..length];
+                tracing::debug!(%remote, packet_id = ?packet.first(), bytes = length,
+                    "Bedrock UDP datagram received");
                 if matches!(packet.first(), Some(0x01 | 0x02)) {
                     if super::valid_ping(packet) && limiter.allow(remote.ip(), Instant::now()) {
                         let snapshot = status.borrow().clone();
@@ -176,8 +179,16 @@ pub async fn serve(
                             tracing::debug!(%remote, %error, "Bedrock discovery reply failed");
                         }
                     }
-                } else if let Err(error) = server.handle(RakServerInput::Datagram(packet.into(), remote, SystemTime::now())) {
-                    tracing::debug!(%remote, %error, "invalid RakNet datagram");
+                } else {
+                    if packet.first() == Some(&0x05) && packet.len() >= 18
+                        && packet[1..17] == super::MAGIC
+                        && connection_logs.allow(remote.ip(), Instant::now()) {
+                        tracing::info!(%remote, client_raknet_version = packet[17], expected_raknet_version = V2225::RAKNET_VERSION,
+                            "Bedrock connection request received");
+                    }
+                    if let Err(error) = server.handle(RakServerInput::Datagram(packet.into(), remote, SystemTime::now())) {
+                        tracing::debug!(%remote, packet_id = ?packet.first(), bytes = length, %error, "invalid RakNet datagram");
+                    }
                 }
             }
             _ = update.tick() => {
@@ -247,6 +258,7 @@ pub async fn serve(
                         }
                     };
                     let (input_tx, input_rx) = mpsc::channel(INGRESS_CAPACITY);
+                    tracing::info!(remote = %session.addr, "Bedrock transport connected");
                     let closed = Arc::new(AtomicBool::new(false));
                     let transport = SessionTransport {
                         id: session.id,

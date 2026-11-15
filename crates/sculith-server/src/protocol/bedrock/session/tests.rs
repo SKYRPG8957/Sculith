@@ -300,6 +300,61 @@ impl TestClient {
 }
 
 #[tokio::test]
+async fn independent_wire_client_completes_the_cookie_checked_open_handshake() {
+    // Independent wire client: deliberately do not use the same RakNet codec
+    // as the server. Preserve the advertised cookie challenge before the MTU.
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
+    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let magic = super::super::MAGIC;
+    let mut first = vec![0x05];
+    first.extend_from_slice(&magic);
+    first.push(11);
+    first.resize(548, 0);
+    socket.send_to(&first, server.address).await.unwrap();
+    let mut buffer = [0u8; 2048];
+    let (size, _) = tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut buffer))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(buffer[0], 0x06);
+    assert_eq!(&buffer[1..17], &magic);
+    assert_eq!(buffer[25], 1);
+    assert_eq!(size, 32);
+    let cookie = [buffer[26], buffer[27], buffer[28], buffer[29]];
+    let mtu = u16::from_be_bytes([buffer[30], buffer[31]]);
+    let std::net::SocketAddr::V4(address) = server.address else {
+        panic!("IPv4 fixture")
+    };
+    let mut second = vec![0x07];
+    second.extend_from_slice(&magic);
+    second.extend_from_slice(&cookie);
+    second.push(0); // No libcat security challenge.
+    second.push(4);
+    second.extend(address.ip().octets().map(|octet| !octet));
+    second.extend_from_slice(&address.port().to_be_bytes());
+    second.extend_from_slice(&mtu.to_be_bytes());
+    second.extend_from_slice(&12345u64.to_be_bytes());
+    let mut invalid = second.clone();
+    invalid[17] ^= 1;
+    socket.send_to(&invalid, server.address).await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), socket.recv_from(&mut buffer))
+            .await
+            .is_err()
+    );
+    socket.send_to(&second, server.address).await.unwrap();
+    let (size, _) = tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut buffer))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(buffer[0], 0x08);
+    assert_eq!(&buffer[1..17], &magic);
+    assert_eq!(size, 35);
+    assert_eq!(buffer[34], 0);
+    server.stop().await;
+}
+
+#[tokio::test]
 async fn crossing_a_chunk_boundary_keeps_the_negotiated_radius_and_sends_only_new_chunks() {
     let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
     let mut client = TestClient::connect(server.address).await.unwrap();

@@ -23,6 +23,17 @@ irm https://raw.githubusercontent.com/SKYRPG8957/Sculith/main/scripts/install.ps
 
 ## 연결이 안 될 때
 
+- 실행 중인 서버를 Ctrl+C로 종료한 뒤 `diagnose.cmd`가 포함된 배포에서는 그것을 실행하고 재접속합니다.
+  같은 서버를 두 번 켜면 포트 사용 중 오류(`os error 10048`)가 납니다.
+  이전 배포에서는 PowerShell에서 다음과 같이 전송 계층의 진단 로그까지 켤 수 있습니다.
+
+```powershell
+$env:RUST_LOG='info,sculith::protocol::bedrock=debug,raknet::server=debug,raknet::session=debug'
+.\start.cmd
+```
+
+진단 출력의 패킷 종류·크기, 프로토콜 번호와 실패 단계는 원인 구분에 사용합니다. 로그인 요청 원문을 공유할 필요는 없습니다.
+
 - 서버 창의 첫 오류와 게임 버전을 확인합니다. 다른 프로그램이 UDP `19132`를 쓰고 있으면 충돌합니다.
 - 이 설정은 **같은 PC 전용**입니다. 다른 PC/휴대폰에서 접속하거나 `bind`를 공개 주소로 바꾸는 설정이 아닙니다.
 - Microsoft의 일부 UWP 앱은 localhost 접속을 기본으로 차단합니다. 해당 패키지가 있는지 일반 PowerShell에서 확인할 수 있습니다.
