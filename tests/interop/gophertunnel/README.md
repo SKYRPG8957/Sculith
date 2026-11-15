@@ -11,6 +11,8 @@ and biome in all 25 spawn chunks. It resolves network hashes against that
 implementation's full vanilla block registry rather than copying Sculith's five
 hashes. Gophertunnel independently reads the plains biome definition and empty
 creative catalog. Missing or malformed startup data fails the probe.
+It also requires all four structure registries before StartGame, reproducing
+the protocol requirement behind the official client's MissingStructureData/148 failure.
 
 Go dependencies are pinned by go.mod and go.sum. The test overrides the upstream's retracted
 compress version with v1.20.4. No Go code or runtime is linked into the installed Rust server.

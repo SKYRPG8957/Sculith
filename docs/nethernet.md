@@ -58,6 +58,9 @@ An independent pinned gophertunnel/Go/Pion client also completes signed login, p
 Both independent clients pass against the native Windows Preview 5 release executable in [run 43760016108](https://github.com/SKYRPG8957/Sculith/actions/runs/43760016108), source `3b0113b`. This proves those protocol paths; official Minecraft world entry/rendering remains awaiting a successful retest.
 Preview 4 reached WebRTC and protocol 2225 in the official Windows GDK client, then failed at the incorrectly requested application-encryption handshake (`InitialConnection-66`). Official-client entry remains unresolved until a retest succeeds.
 
+Preview 5's official retest completed DTLS-protected login, then failed while loading with `Boat / InitialConnection-148`. The pinned V2225 enum identifies 148 as `MissingStructureData`; Sculith had omitted the four empty structure registries that must precede StartGame.
+Preview 6 corrects the sequence, supplies plains/creative definitions and accepts non-mutating loading controls. It logs client-disconnect reasons and packet/violation identifiers without diagnostic strings or credentials. Native Windows [run 43763379458](https://github.com/SKYRPG8957/Sculith/actions/runs/43763379458), source `d4e2d5a`, passes the independent startup-order, full-registry voxel/biome and world-activation checks. Actual Minecraft entry/rendering remains to be retested.
+
 - [Mojang NetherNet onboarding guide, 19e25de1](https://github.com/Mojang/bedrock-protocol-docs/blob/19e25de129227373e97dfa340af93ccf12c0feb9/additional_docs/NetherNetOnboardingGuide.md), retrieved 2026-11-16 KST: status/join endpoints, full ICE, framing and required signed server identity.
 - [NetherNet source ed552b0b](https://github.com/bedrock-crustaceans/nethernet/tree/ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99), Apache-2.0: protocol and sans-IO WebRTC implementation. See [third-party notices](../THIRD_PARTY_NOTICES.md).
 
