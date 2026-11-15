@@ -22,6 +22,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Verified
 
+- Preview 4's same-machine media policy and SCTP initiation correction passed native Windows checks in [run 43754939284](https://github.com/SKYRPG8957/Sculith/actions/runs/43754939284), source `7b0160a`. The release EXE also passes the independent aiortc/OpenSSL probe, both existing smoke modes, packaging and launcher checks. Its 5,205,853-byte ZIP and exact metadata/SHA-256 were independently verified; PE imports remain Windows system DLLs only.
 - Rust 1.100.0 workspace build and Clippy for all targets with warnings denied.
 - Preview 3's NetherNet implementation and loopback routing correction passed native Windows Clippy, unit/doc tests, HTTP/WebRTC shared-world tests, both release-executable smoke checks, package/launcher checks and dependency-license packaging in [run 43751492841](https://github.com/SKYRPG8957/Sculith/actions/runs/43751492841), source `ed8bc8c`. Its ZIP is 5,176,423 bytes; metadata and SHA-256 were independently verified. PE imports remain Windows system DLLs only.
 - [Preview 3](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.3) is public. Its release tag matches the exact tested source, and a fresh public asset download passed the same checksum/metadata verifier. Windows PowerShell 5.1 installation, both launcher configuration checks, existing-directory preservation and the documented one-command installation passed in [run 43752505074](https://github.com/SKYRPG8957/Sculith/actions/runs/43752505074). Official Minecraft entry remains unverified.
@@ -30,7 +31,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Preview 2's diagnostics and byte-level handshake test passed native Windows validation in [run 43745002586](https://github.com/SKYRPG8957/Sculith/actions/runs/43745002586), source `077bb56`. Its public release is a diagnostic update, not a confirmed fix for the reported official-client failure.
 - Preview 2's public download, PowerShell 5.1 installer, `start.cmd` and `diagnose.cmd` configuration checks, one-command install, and existing-directory preservation passed in [run 43747012301](https://github.com/SKYRPG8957/Sculith/actions/runs/43747012301).
 - [Windows preview v0.1.0-preview.1](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1) is public (3,858,243-byte ZIP plus SHA-256 checksums). Windows PowerShell 5.1 installation, refusal to overwrite an existing directory, and the documented one-command installation passed in [run 43742465897](https://github.com/SKYRPG8957/Sculith/actions/runs/43742465897).
-- Latest Linux implementation: 92 project unit/integration-style tests, the region `!Sync` compile-fail doctest and 256 vendored transport tests pass. Preview 4 native Windows verification is pending; the Preview 3 run above applies to its earlier implementation.
+- Latest Linux implementation: 92 project unit/integration-style tests, the region `!Sync` compile-fail doctest and 256 vendored transport tests pass. Native Windows verification, including the independent WebRTC probe, also passes in the Preview 4 run above.
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
 - Two encrypted UDP clients receive the same accepted placement/break delta. A rejected Bedrock break is corrected only for the requester; a forged held-item claim cannot commit. Valid eye-offset movement commits, while a large tick/teleport request is corrected.
@@ -97,5 +98,5 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 
 ## Next Action
 
-Verify and package Preview 4 on native Windows, including the independent WebRTC probe, then retest the reported Windows GDK initial connection failure. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
+Retest the reported Windows GDK initial connection failure with Preview 4 and its HTTP/ICE/DTLS/login-stage diagnostics. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
 Continue online authentication and actual-client verification beyond the now-accessible discovery endpoint. Required gameplay/content features are not removed from the objective.
