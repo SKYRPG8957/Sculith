@@ -31,6 +31,10 @@ pub struct Bedrock {
     pub sessions: bool,
     pub require_authentication: bool,
     pub login_timeout_secs: u64,
+    /// Experimental HTTP/WebRTC transport on the Bedrock TCP port; loopback only initially.
+    pub nethernet: Option<bool>,
+    /// Persistent operator key. Never automatically replace an existing invalid key.
+    pub nethernet_identity_path: PathBuf,
 }
 
 impl Default for Bedrock {
@@ -39,6 +43,8 @@ impl Default for Bedrock {
             sessions: false,
             require_authentication: true,
             login_timeout_secs: 15,
+            nethernet: None,
+            nethernet_identity_path: "world/nethernet-identity.pem".into(),
         }
     }
 }
@@ -124,6 +130,10 @@ impl Config {
                 toml::from_str(&content).context("invalid server configuration")?;
             let absolute = path.canonicalize()?;
             let base = absolute.parent().context("config path has no parent")?;
+            if config.bedrock.nethernet_identity_path.is_relative() {
+                config.bedrock.nethernet_identity_path =
+                    base.join(&config.bedrock.nethernet_identity_path);
+            }
             if let Some(snapshot) = &mut config.world.snapshot_path
                 && snapshot.is_relative()
             {
@@ -166,6 +176,13 @@ impl Config {
     fn validate(&self) -> Result<()> {
         self.status()?;
         ensure!(
+            self.bedrock.nethernet != Some(true)
+                || (self.bedrock.sessions
+                    && self.network.bedrock.enabled
+                    && self.network.bedrock.bind.ip().is_loopback()),
+            "NetherNet preview requires enabled Bedrock sessions and a loopback bind"
+        );
+        ensure!(
             (1..=60).contains(&self.bedrock.login_timeout_secs),
             "bedrock.login_timeout_secs must be between 1 and 60"
         );
@@ -207,6 +224,15 @@ impl Config {
             status.stage = "bedrock-spawn-preview".into();
         }
         Ok(status)
+    }
+
+    pub fn nethernet_enabled(&self) -> bool {
+        self.network.bedrock.enabled
+            && self.bedrock.sessions
+            && self
+                .bedrock
+                .nethernet
+                .unwrap_or_else(|| self.network.bedrock.bind.ip().is_loopback())
     }
 }
 
@@ -256,6 +282,47 @@ mod tests {
         config.validate().unwrap();
         config.server.max_players = 65;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn nethernet_defaults_to_local_sessions_and_explicit_opt_out_is_preserved() {
+        let mut config = Config::default();
+        assert!(!config.nethernet_enabled());
+        config.bedrock.sessions = true;
+        assert!(config.nethernet_enabled());
+        config.validate().unwrap();
+        config.bedrock.nethernet = Some(false);
+        assert!(!config.nethernet_enabled());
+        config.bedrock.nethernet = None;
+        config.network.bedrock.bind = "0.0.0.0:19132".parse().unwrap();
+        config.validate().unwrap();
+        assert!(!config.nethernet_enabled());
+        config.bedrock.nethernet = Some(true);
+        assert!(config.validate().is_err());
+        config.network.bedrock.bind = "127.0.0.1:19132".parse().unwrap();
+        config.validate().unwrap();
+        config.bedrock.sessions = false;
+        assert!(config.validate().is_err());
+        config.bedrock.sessions = true;
+        config.network.bedrock.enabled = false;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn identity_path_resolves_against_config_without_creating_a_key_during_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.toml");
+        std::fs::write(
+            &path,
+            "[bedrock]\nsessions = true\nnethernet_identity_path = 'keys/operator.pem'\n",
+        )
+        .unwrap();
+        let config = Config::load(Some(&path)).unwrap();
+        assert_eq!(
+            config.bedrock.nethernet_identity_path,
+            dir.path().canonicalize().unwrap().join("keys/operator.pem")
+        );
+        assert!(!dir.path().join("keys").exists());
     }
 
     #[test]

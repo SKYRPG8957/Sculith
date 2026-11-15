@@ -2,6 +2,7 @@
 """Exercise built server + Rust plugin over real TCP/UDP; no third-party packages."""
 
 import argparse
+import http.client
 import json
 import os
 from pathlib import Path
@@ -166,6 +167,30 @@ def check_bedrock(port, expected_reference, sessions=False):
             assert reply[0] == 0x06 and reply[1:17] == MAGIC
 
 
+def check_nethernet(port, reference):
+    client = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+    try:
+        client.request("GET", "/v1/join")
+        response = client.getresponse()
+        assert response.status == 200
+        status = json.loads(response.read())
+        assert status["name"] == PLUGIN_MOTD
+        assert status["protocol"] == reference["protocol"]
+        assert status["version"] == reference["version"]
+        assert status["players"] == 0 and status["maxPlayers"] == 32
+        assert status["gameType"] == 1
+    finally:
+        client.close()
+    client = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+    try:
+        client.request("POST", "/v1/join/smoke", b"v=0\r\n", {"Content-Type": "application/sdp"})
+        response = client.getresponse()
+        assert response.status == 401, "unsigned offer was not rejected"
+        response.read()
+    finally:
+        client.close()
+
+
 def run_cli(server, *args, ok=True):
     result = subprocess.run([str(server), *map(str, args)], cwd=ROOT, capture_output=True, text=True, timeout=10)
     assert (result.returncode == 0) == ok, (args, result.stdout, result.stderr)
@@ -192,6 +217,8 @@ def smoke(server, plugin, sessions=False):
             encoding="utf-8",
         )
         run_cli(server, "check", "--config", settings)
+        identity = base / "world" / "nethernet-identity.pem"
+        assert not identity.exists(), "config check must not create an operator key"
         invalid = base / "invalid.toml"
         invalid.write_text("[server]\nmax_player = 20\n", encoding="utf-8")
         run_cli(server, "check", "--config", invalid, ok=False)
@@ -214,6 +241,10 @@ def smoke(server, plugin, sessions=False):
                     raise AssertionError("server startup timed out: " + text)
                 check_java(int(java[1]), "bedrock-spawn-preview" if sessions else "discovery-only")
                 check_bedrock(int(bedrock[1]), versions["bedrock"], sessions)
+                if sessions:
+                    nether = re.search(r"NetherNet HTTP signaling listening.*?127\.0\.0\.1:(\d+)", text)
+                    assert nether, text
+                    check_nethernet(int(nether[1]), versions["bedrock"])
                 stop_server(process)
                 assert process.wait(timeout=5) == 0, log_path.read_text(encoding="utf-8")
                 text = log_path.read_text(encoding="utf-8")
@@ -226,6 +257,8 @@ def smoke(server, plugin, sessions=False):
 
         assert snapshot.read_bytes().startswith(b"SCULITHR"), "orderly shutdown did not save the world"
         saved_snapshot = snapshot.read_bytes()
+        saved_identity = identity.read_bytes() if sessions else None
+        assert sessions or not identity.exists(), "discovery mode created an unused key"
         restart_log = base / "restart.log"
         with restart_log.open("w") as log:
             restarted = start_server(server, settings, log, env)
@@ -234,13 +267,17 @@ def smoke(server, plugin, sessions=False):
                 while time.monotonic() < deadline:
                     text = re.sub(r"\x1b\[[0-9;]*m", "", restart_log.read_text(encoding="utf-8"))
                     java = re.search(r"Java TCP discovery listening.*?127\.0\.0\.1:(\d+)", text)
-                    if java:
+                    nether = re.search(r"NetherNet HTTP signaling listening.*?127\.0\.0\.1:(\d+)", text)
+                    if java and (not sessions or nether):
                         break
                     assert restarted.poll() is None, text
                     time.sleep(0.05)
                 else:
                     raise AssertionError("snapshot restart did not become ready: " + text)
                 check_java(int(java[1]), "bedrock-spawn-preview" if sessions else "discovery-only")
+                if sessions:
+                    check_nethernet(int(nether[1]), versions["bedrock"])
+                    assert identity.read_bytes() == saved_identity, "restart replaced the operator key"
                 stop_server(restarted)
                 assert restarted.wait(timeout=5) == 0, restart_log.read_text(encoding="utf-8")
             finally:
@@ -267,7 +304,7 @@ def smoke(server, plugin, sessions=False):
         run_cli(server, *command, ok=False)
         assert (destination / "assets/minecraft/textures/block/stone.png").read_bytes() == original
 
-    print("PASS: shared Java TCP + Bedrock UDP discovery, Rust plugin, ping, login rejection, malformed traffic, shutdown, world save/restart, foreign-world preservation, config and PNG pack conversion" + (", built-executable RakNet connection request" if sessions else ""))
+    print("PASS: shared Java TCP + Bedrock UDP discovery, Rust plugin, ping, login rejection, malformed traffic, shutdown, world save/restart, foreign-world preservation, config and PNG pack conversion" + (", built-executable RakNet connection request, NetherNet HTTP status, unsigned-offer rejection and persisted operator key" if sessions else ""))
 
 
 if __name__ == "__main__":
@@ -275,6 +312,6 @@ if __name__ == "__main__":
     suffix = ".exe" if os.name == "nt" else ""
     parser.add_argument("--server", type=Path, default=ROOT / ("target/debug/sculith" + suffix))
     parser.add_argument("--plugin", type=Path, default=ROOT / ("target/debug/sculith-welcome" + suffix))
-    parser.add_argument("--sessions", action="store_true", help="also enable the loopback-only Bedrock spawn preview and probe its RakNet driver")
+    parser.add_argument("--sessions", action="store_true", help="also probe the local Bedrock preview's RakNet and NetherNet HTTP endpoints")
     args = parser.parse_args()
     smoke(args.server.resolve(strict=True), args.plugin.resolve(strict=True), args.sessions)

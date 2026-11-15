@@ -42,10 +42,10 @@ def dependency_notices():
             files.add(root / package["license_file"])
         selection = ""
         if not files:
-            # Some facet crate tarballs declare a dual license but omit its text.
+            # Some crate tarballs declare a dual license but omit its text.
             # Select their Apache-2.0 option, whose unmodified text is retained.
             expression = (package["license"] or "").replace(" ", "")
-            if expression in {"MITORApache-2.0", "Apache-2.0ORMIT"}:
+            if expression in {"MITORApache-2.0", "Apache-2.0ORMIT", "MIT/Apache-2.0"}:
                 files.add(ROOT / "LICENSES/Apache-2.0.txt")
                 selection = "Distribution uses the declared Apache-2.0 option.\n"
             elif package["name"] == "mutants" and package["version"] == "0.0.3":

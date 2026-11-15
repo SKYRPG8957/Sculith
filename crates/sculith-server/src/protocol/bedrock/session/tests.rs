@@ -5,7 +5,11 @@ use bedrock::{
     auth::ClientData,
     network::{
         login::{ClientIdentity, LoginOptions, NetworkSettings},
-        tokio::{Client, Connection},
+        tokio::{
+            Client, Connection,
+            error::TransportLayerError,
+            transport::{Transport, TransportLayerConnection},
+        },
     },
     protocol::{
         ProtoVersion, V2225,
@@ -80,12 +84,12 @@ impl Harness {
     }
 }
 
-struct TestClient {
-    conn: Connection<V2225>,
+struct TestClient<T: Transport = TransportLayerConnection> {
+    conn: Connection<V2225, T>,
     pending: VecDeque<V2225>,
 }
 
-impl TestClient {
+impl<T: Transport> TestClient<T> {
     async fn enter(&mut self) -> Result<u64> {
         self.encrypted_login().await?;
         self.finish_packs().await?;
@@ -116,17 +120,6 @@ impl TestClient {
             .await?;
         Ok(())
     }
-    async fn connect(address: SocketAddr) -> Result<Self> {
-        let conn = Client::new()
-            .timeout(Duration::from_secs(2))
-            .connect::<V2225>(address)
-            .await?;
-        Ok(Self {
-            conn,
-            pending: VecDeque::new(),
-        })
-    }
-
     async fn next(&mut self) -> Result<V2225> {
         if let Some(packet) = self.pending.pop_front() {
             return Ok(packet);
@@ -297,6 +290,149 @@ impl TestClient {
         ensure!(matches!(status.status, PlayStatus::PlayerSpawn));
         Ok(id)
     }
+}
+
+impl TestClient {
+    async fn connect(address: SocketAddr) -> Result<Self> {
+        let conn = Client::new()
+            .timeout(Duration::from_secs(2))
+            .connect::<V2225>(address)
+            .await?;
+        Ok(Self {
+            conn,
+            pending: VecDeque::new(),
+        })
+    }
+}
+
+struct TestNetherTransport {
+    client: nethernet_tokio::NetherClient,
+    address: SocketAddr,
+    closed: std::sync::atomic::AtomicBool,
+}
+
+impl Transport for TestNetherTransport {
+    async fn send(&mut self, batch: &[u8]) -> Result<(), TransportLayerError> {
+        self.client
+            .send(bytes::Bytes::copy_from_slice(batch))
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()).into())
+    }
+    async fn recv(&mut self) -> Result<Vec<u8>, TransportLayerError> {
+        self.client
+            .recv()
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()))?
+            .map(|b| b.to_vec())
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into())
+    }
+    fn remote_addr(&self) -> SocketAddr {
+        self.address
+    }
+    fn max_message_len(&self) -> usize {
+        255 * 10_000
+    }
+    async fn close(&self) {
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Release);
+        let _ = self.client.close().await;
+    }
+    async fn is_closed(&self) -> bool {
+        self.closed.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+async fn nether_client(address: SocketAddr) -> Result<TestClient<TestNetherTransport>> {
+    use nethernet_tokio::{
+        ConnectionConfig, HttpSignaling, NetherClient, ServerIdentity, TokenTrust,
+    };
+    let identity = ServerIdentity::generate("sculith-test-client", std::time::SystemTime::now())?;
+    let signaling = HttpSignaling::new(uuid::Uuid::new_v4().to_string())?;
+    let config = ConnectionConfig {
+        identity: Some(std::sync::Arc::new(identity)),
+        server_trust: Some(TokenTrust::Any),
+        attempts: 1,
+        ..Default::default()
+    };
+    let client = tokio::time::timeout(
+        Duration::from_secs(10),
+        NetherClient::connect_with(signaling, format!("http://{address}"), config),
+    )
+    .await??;
+    let transport = TestNetherTransport {
+        client,
+        address,
+        closed: false.into(),
+    };
+    let conn = Connection::<V2225, _>::from_transport_conn(transport);
+    Ok(TestClient {
+        conn,
+        pending: VecDeque::new(),
+    })
+}
+
+#[tokio::test]
+async fn nethernet_http_webrtc_and_raknet_share_login_world_and_committed_block_changes() {
+    let _ = tracing_subscriber::fmt()
+        .with_test_writer()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+        )
+        .try_init();
+    use crate::protocol::bedrock::nethernet::{ContextData, prepare};
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(15)).await;
+    let directory = tempfile::tempdir().unwrap();
+    let nether = prepare(
+        "127.0.0.1:0".parse().unwrap(),
+        &directory.path().join("identity.pem"),
+    )
+    .await
+    .unwrap();
+    let address = nether.local_addr().unwrap();
+    let task = tokio::spawn(nether.serve(ContextData {
+        authentication: Authentication::offline(),
+        timeout: Duration::from_secs(10),
+        world: server.world.clone(),
+        status: server._status.subscribe(),
+        shutdown: server.shutdown.subscribe(),
+    }));
+    let mut raknet = TestClient::connect(server.address).await.unwrap();
+    let id = raknet.enter().await.unwrap();
+    let mut nethernet = nether_client(address).await.unwrap();
+    let other_id = nethernet.enter().await.unwrap();
+    assert_ne!(id, other_id);
+    raknet.request_break(id, 1, 3, 1).await.unwrap();
+    for packet in [
+        raknet.next().await.unwrap(),
+        nethernet.next().await.unwrap(),
+    ] {
+        let V2225::UpdateBlockPacket(update) = packet else {
+            panic!("expected shared block delta")
+        };
+        assert_eq!(
+            (
+                update.block_position.x,
+                update.block_position.y,
+                update.block_position.z
+            ),
+            (1, 3, 1)
+        );
+        assert_eq!(
+            update.block_runtime_id,
+            super::super::chunk::block_hash(sculith_world::BlockKind::Air).unwrap()
+        );
+    }
+    assert_eq!(server.world.online_players(), 2);
+    nethernet.conn.close().await;
+    raknet.conn.close().await;
+    server.shutdown.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    server.stop().await;
+    let _rebound = tokio::net::TcpListener::bind(address).await.unwrap();
 }
 
 #[tokio::test]

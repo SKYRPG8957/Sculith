@@ -10,6 +10,8 @@ snapshot_path = "world/region.sculith"
 sessions = true
 require_authentication = false
 login_timeout_secs = 30
+nethernet = true
+nethernet_identity_path = "world/nethernet-identity.pem"
 
 [network.java]
 enabled = true

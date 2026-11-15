@@ -24,7 +24,7 @@ The checked-in release references are:
 
 | Edition | Reference version | Protocol | Current implementation |
 | --- | --- | --- | --- |
-| Bedrock | 1.26.60 | 2225 | Discovery; opt-in RakNet login, encryption, empty-pack negotiation, spawn and limited creative-builder preview |
+| Bedrock | 1.26.60 | 2225 | Discovery; RakNet and local NetherNet login, encryption, empty-pack negotiation, spawn and limited creative-builder preview |
 | Java | 26.3 | 777 | Server-list status and ping; world login is not implemented |
 
 These numbers identify development targets, **not verified gameplay support**. The gameplay support lists in [`protocol-targets.json`](protocol-targets.json) remain empty. Preview/Beta versions are separate targets, and RakNet tests do not establish NetherNet support.
@@ -34,6 +34,7 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Java TCP and Bedrock UDP discovery in one Rust server process.
 - Shared MOTD and initialized-session counts.
 - Bounded RakNet session handling, compression, signature verification and encryption using pinned Rust libraries.
+- Local NetherNet HTTP/WebRTC with signed answers and persistent operator keys; a real-socket headless test shares committed world changes with a RakNet client. See [transport scope and verification](docs/nethernet.md).
 - An opt-in Bedrock flat-world spawn with 25 chunks, bounded view updates and session cleanup.
 - Authoritative movement checks and limited creative block placement/breaking, with server-owned starter items and committed block deltas shared between sessions.
 - A single region owner, revision-checked block commits, compact uniform/palette sections and immutable copy-on-write snapshots.
@@ -42,7 +43,7 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Explicit Bedrock PNG-to-Java texture overrides, with a conversion report describing unsupported assets.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
-Java world entry, multiplayer entity visibility, general inventory transactions, physics/gravity, content distribution, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
+Java world entry, multiplayer entity visibility, general inventory transactions, physics/gravity, content distribution, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
 
 ## Windows quick start
 
@@ -52,7 +53,7 @@ In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C
 
 This selects the local, offline-identity Bedrock preview. **Official game-client entry/rendering remain unverified; Java world entry is not implemented.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
 
-The first reported Windows GDK `1.26.63` attempt failed with `Terracotta / InitialConnection-149`; the cause is still under investigation. Preview 2 improves diagnostics and does not claim to fix that failure.
+The first reported Windows GDK `1.26.63` attempt failed with `Terracotta / InitialConnection-149`; the cause is still under investigation. Preview 2 improves diagnostics. The new local NetherNet backend is independently tested but still requires an official-client retest; neither result establishes a fix.
 
 ## Build from source
 
@@ -136,7 +137,7 @@ An initial public alpha is targeted for **December 31, 2026**. Work is tracked b
 
 ## References and licensing
 
-We study [Dragonfly](https://github.com/df-mc/dragonfly) for Bedrock-native server boundaries, [Geyser](https://github.com/GeyserMC/Geyser) for edition-translation constraints, and [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) for Rust server organization. [bedrock-rs](https://github.com/bedrock-crustaceans/bedrock-rs) and [RakNet](https://github.com/bedrock-crustaceans/raknet) are pinned Apache-2.0 dependencies.
+We study [Dragonfly](https://github.com/df-mc/dragonfly) for Bedrock-native server boundaries, [Geyser](https://github.com/GeyserMC/Geyser) for edition-translation constraints, and [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin) for Rust server organization. [bedrock-rs](https://github.com/bedrock-crustaceans/bedrock-rs) and [RakNet](https://github.com/bedrock-crustaceans/raknet) and [NetherNet](https://github.com/bedrock-crustaceans/nethernet) are pinned Apache-2.0 dependencies.
 
 Sculith's source remains under the existing **MIT License**. References are not a claim that another project's implementation was copied or that its features are implemented here. See [architecture and versioned sources](docs/architecture.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The example texture is original; Minecraft game assets are not bundled.
 

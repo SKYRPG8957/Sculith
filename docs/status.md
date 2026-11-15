@@ -9,6 +9,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Existing Java TCP and Bedrock UDP discovery, trusted executable Rust plugin prototype and explicit PNG conversion retained.
 - Opt-in RakNet sessions using pinned Rust libraries, compression, signed identity verification, encryption and ordered empty-pack negotiation.
 - Bounded session/message queues with byte budgets, login/spawn timeout and owned session cleanup.
+- Local NetherNet HTTP signaling and sans-IO WebRTC transport with signed answers and persistent operator keys, sharing the existing login/session and world owner. Local session configurations enable it by default; public NetherNet is not enabled. [Bounds and trust scope](nethernet.md).
 - Protocol-independent five-block registry, uniform/palette sections, a single region owner, revision-checked atomic edits and COW snapshots.
 - One bounded world-owner mailbox used by the Bedrock adapter; 24-section chunk encoding, 25 flat spawn chunks, bounded view updates and local-player initialization.
 - Server-owned player state, hotbar selection and limited creative placement/breaking, validated before revision commits.
@@ -27,24 +28,25 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Preview 2's diagnostics and byte-level handshake test passed native Windows validation in [run 43745002586](https://github.com/SKYRPG8957/Sculith/actions/runs/43745002586), source `077bb56`. Its public release is a diagnostic update, not a confirmed fix for the reported official-client failure.
 - Preview 2's public download, PowerShell 5.1 installer, `start.cmd` and `diagnose.cmd` configuration checks, one-command install, and existing-directory preservation passed in [run 43747012301](https://github.com/SKYRPG8957/Sculith/actions/runs/43747012301).
 - [Windows preview v0.1.0-preview.1](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1) is public (3,858,243-byte ZIP plus SHA-256 checksums). Windows PowerShell 5.1 installation, refusal to overwrite an existing directory, and the documented one-command installation passed in [run 43742465897](https://github.com/SKYRPG8957/Sculith/actions/runs/43742465897).
-- 83 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (84 total checks).
+- Linux: 89 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (90 total checks). Native Windows verification of the new NetherNet code is pending.
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
 - Two encrypted UDP clients receive the same accepted placement/break delta. A rejected Bedrock break is corrected only for the requester; a forged held-item claim cannot commit. Valid eye-offset movement commits, while a large tick/teleport request is corrected.
 - A real UDP client crossing a negative chunk boundary retains its negotiated one-chunk radius; only the three newly visible chunks are sent, with no overlap retransmission.
+- Independent real TCP tests verify NetherNet shared status, unsigned/tampered offer rejection, fixed/chunked body limits, signed answers carrying the persistent key, and listener cleanup. A real HTTP/WebRTC headless client and RakNet client enter the same owner and receive the same committed block change.
 - An independent byte-level UDP client completes the cookie-checked OpenConnectionRequest1/2 exchange and confirms an invalid cookie is not admitted. It does not use the server's RakNet codec.
 - Domain tests exercise replay/speed/collision/reach/permission/budget checks, disconnected-player queue cleanup and immutable captures. Changed runtime state survives snapshot reload.
 - Every voxel of a flat chunk (98,304 blocks) independently decoded and compared; negative sections, asymmetric edits,
   1/2/3-bit packing and the latest `LevelChunkPacket` codec roundtrip verified.
 - Both built-executable smoke modes passed: Java/Bedrock discovery, Rust plugin, ping, malformed traffic,
-  Java login rejection, shutdown, snapshot save/restart/load, existing foreign-file protection and pack conversion; `--sessions` also confirms a real RakNet connection-request reply.
+  Java login rejection, shutdown, snapshot save/restart/load, existing foreign-file protection and pack conversion; `--sessions` also confirms a real RakNet connection-request reply, NetherNet HTTP status and unsigned-offer rejection, and stable operator keys after restart.
 - Snapshot storage tests cover disk roundtrips, immutable captures, checksums, truncation, version/coordinate/revision validation,
   stale concurrent saves, and preservation of foreign/corrupt/read-only/symlink destinations.
 - Latest-release reference check still reports Java `26.3 / 777` and Bedrock `1.26.60 / 2225`. These are references, not full gameplay support declarations.
 
 ## Failed / externally constrained
 
-- The first official-client attempt reported by the user failed: Windows GDK `1.26.63`, `Terracotta`, `InitialConnection-149`. Account sign-in was already complete. The exact transport/login failure is unresolved; successful headless tests are not treated as a substitute. Connection-stage and bounded handshake diagnostics are available in Preview 2.
+- The first official-client attempt reported by the user failed: Windows GDK `1.26.63`, `Terracotta`, `InitialConnection-149`. Account sign-in was already complete and other servers connect successfully. The exact Sculith transport/login failure is unresolved; successful headless tests are not treated as a substitute. Connection-stage and bounded handshake diagnostics are available in Preview 2.
 - The first Windows smoke run found console shutdown killing a plugin before its lifecycle hook. Windows workers now run without the host console; the corrected run verifies the Stopping event and final world save.
 - Official discovery initially returned proxy HTTP 403 under the earlier restricted network. The current environment reports enforced unrestricted networking; a fresh request to `client.discovery.minecraft-services.net` returned HTTP 200. Downstream OIDC/JWKS and actual account login remain unverified. No user credential is needed for the public discovery request.
 - Official Bedrock was attempted by the user and failed during initial connection. Official Java-client testing remains unrun; neither edition has verified world entry/rendering.
@@ -77,7 +79,7 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 - Preview gameplay is limited to validated movement and creative building with fixed Stone/Dirt/Grass starter slots. General inventory transactions, gravity, simulation ticks, survival, combat and crafting are not implemented.
 - Region persistence runs only on orderly shutdown; periodic/crash recovery saving and persistent player state are pending.
 - Other players/entities are not displayed, and Java cannot yet enter the world. No complete crossplay claim is made.
-- NetherNet has not been integrated or tested. RakNet results do not imply NetherNet support.
+- NetherNet is loopback-only. Offer fingerprint ownership and expiry are checked; the signaling token issuer/signature is not authenticated in this preview. The inner Bedrock login policy remains in force. Official NetherNet client entry and public token trust remain unverified.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
 - Plugins currently expose lifecycle/MOTD through trusted executable processes. WASI Component execution, game APIs,
   commands, permissions, region/entity scheduling and isolation limits are not implemented.
@@ -87,5 +89,5 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 
 ## Next Action
 
-Diagnose the reported Windows GDK initial connection failure using the expanded transport/session logs. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
+Validate the new local NetherNet backend on native Windows, package a new preview, and retest the reported Windows GDK initial connection failure with the expanded transport/session logs. Resume Java login/registry/chunk mapping against the same region owner and peer entity visibility after the Bedrock connection path is established.
 Continue online authentication and actual-client verification beyond the now-accessible discovery endpoint. Required gameplay/content features are not removed from the objective.

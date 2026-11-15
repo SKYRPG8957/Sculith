@@ -18,6 +18,10 @@ bind = "127.0.0.1:19132"
 sessions = false
 require_authentication = true
 login_timeout_secs = 15
+# Local sessions also enable NetherNet HTTP/WebRTC on the Bedrock TCP port.
+# Set false to opt out. The current NetherNet preview requires a loopback bind.
+# nethernet = false
+# nethernet_identity_path = "world/nethernet-identity.pem"
 
 # Optional persistence: load at startup and save after sessions close on Ctrl+C/SIGTERM.
 # [world]

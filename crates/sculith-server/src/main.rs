@@ -160,6 +160,17 @@ async fn run(config: Config) -> Result<()> {
     } else {
         None
     };
+    let nethernet = if config.nethernet_enabled() {
+        Some(
+            protocol::bedrock::nethernet::prepare(
+                config.network.bedrock.bind,
+                &config.bedrock.nethernet_identity_path,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let mut state = config.status()?;
     let mut plugins = plugins::Plugins::load(&config.plugins, &state).await?;
     plugins
@@ -181,6 +192,20 @@ async fn run(config: Config) -> Result<()> {
     if let Some(listener) = java {
         info!(address = %listener.local_addr()?, "Java TCP discovery listening");
         services.spawn(protocol::java::serve(listener, status_rx.clone()));
+    }
+    if let Some(server) = nethernet {
+        info!(address = %server.local_addr()?, "NetherNet HTTP signaling listening");
+        services.spawn(
+            server.serve(protocol::bedrock::nethernet::ContextData {
+                authentication: authentication
+                    .clone()
+                    .context("NetherNet requires Bedrock login initialization")?,
+                timeout: Duration::from_secs(config.bedrock.login_timeout_secs),
+                world: world.clone(),
+                status: status_rx.clone(),
+                shutdown: shutdown_rx.clone(),
+            }),
+        );
     }
     if let Some(socket) = bedrock {
         info!(address = %socket.local_addr()?, "Bedrock UDP discovery listening");

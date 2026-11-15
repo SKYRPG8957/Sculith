@@ -8,7 +8,7 @@ Java 사용자의 입력은 베드락 기준 동작으로 바꾸고, 결과는 �
 
 ```mermaid
 flowchart LR
-    B[순정 Bedrock] <-->|UDP / RakNet| BA[Bedrock 어댑터]
+    B[순정 Bedrock] <-->|RakNet 또는 로컬 NetherNet| BA[Bedrock 어댑터]
     J[순정 Java] <-->|TCP| JA[Java 변환 어댑터]
     BA <--> C[공통 서버 코어 / 단일 소유자 평지 월드]
     JA <--> C
@@ -31,7 +31,7 @@ Java 어댑터는 서버 목록 조회까지 구현했습니다. Bedrock은 선�
 | `sculith-server` | 설정, TCP/UDP 수명주기, 이벤트 시계, 플러그인 호스트 |
 | `sculith-server::game` | 프로토콜과 독립된 플레이어·초기 슬롯·이동/건축 검증과 단일 region commit |
 | `sculith-server::world` | bounded mailbox로 요청을 받는 하나의 월드 소유자, 세션 lease와 committed event 전송 |
-| `sculith-server::protocol::bedrock` | discovery와 선택적인 RakNet·암호화 로그인·평지 스폰·입력 해석·관심 청크와 변경 전송 |
+| `sculith-server::protocol::bedrock` | discovery와 RakNet/로컬 NetherNet·암호화 로그인·평지 스폰·입력 해석·관심 청크와 변경 전송 |
 | `sculith-server::protocol::java` | 현대 Java 서버 목록 프로토콜과 로그인 미구현 안내 |
 | `sculith-plugin-api` | 버전이 명시된 요청/응답 자료형과 Rust 플러그인 SDK |
 | `sculith-packs` | 베드락 매니페스트 검증과 명시적 PNG 텍스처 변환 |
@@ -70,6 +70,7 @@ Player lease가 사라지면 대기 중이던 입력을 처리하기 전에 해�
 - 네트워크 프로토콜 ID, 블록/아이템 런타임 ID, 자바 리소스팩 형식은 별개의 버전 값입니다.
 - 최신 릴리스 확인은 메타데이터 수집 단계이며 지원 완료 판정이 아닙니다.
 - Bedrock 개발 경로는 RakNet 세션·신뢰성·순서 보장·압축·서명 검증·암호화를 구현했지만 공식 온라인 인증과 클라이언트 렌더링 검증이 남아 있습니다.
+- 로컬 NetherNet의 HTTP/WebRTC는 같은 로그인과 월드 소유자를 사용합니다. 운영자 서명 키를 보관하며 공개 전송과 공식 토큰 신뢰는 아직 미완료입니다. [구현 범위](nethernet.md)를 참고하세요.
 - Java는 정식 인증, 로그인/설정/플레이 상태 전이, 레지스트리·패킷 매핑이 필요합니다.
 - XUID와 Java UUID는 같은 식별자라고 가정하지 않습니다. 계정 연동을 구현하기 전에는 에디션을 포함한 별도 식별자가 필요합니다.
 - 클라이언트가 보낸 위치·인벤토리·블록 변경을 서버 판정 없이 공통 상태로 받아들이지 않습니다.

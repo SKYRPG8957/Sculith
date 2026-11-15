@@ -18,16 +18,18 @@ Java는 서버 목록 조회만 가능하고 월드 접속은 아직 구현되�
 
 start.cmd는 sculith.toml이 없을 때만 예제를 복사합니다.
 설정은 sculith.toml, 월드는 world/region.sculith에 저장합니다.
+NetherNet 연결용 서명 키는 world/nethernet-identity.pem에 저장하고 재시작 시 유지합니다.
+게임에서 첫 접속 신뢰 확인이 나타날 수 있습니다. 키 파일은 공유하지 마세요.
 기존 설정과 월드 파일을 삭제하지 마세요. 업데이트는 새 폴더에 압축을 풀어 옮기세요.
 테스트 신원은 같은 PC의 loopback에서만 허용됩니다. 공개 바인딩으로 바꾸면 거부됩니다.
 네트워크 방화벽 설정을 바꾸거나 관리자 권한으로 실행할 필요는 없습니다.
 
 접속 문제가 있으면:
 - 서버를 Ctrl+C로 종료한 뒤 diagnose.cmd를 실행하고 접속을 한 번 재시도하세요.
-  초기 UDP 패킷의 종류/크기와 실패 단계가 서버 창에 표시됩니다.
+  초기 UDP 패킷, NetherNet 신호/연결과 로그인 실패 단계가 서버 창에 표시됩니다.
   diagnose.cmd는 저장된 설정이나 Windows 방화벽 설정을 바꾸지 않습니다.
 - ZIP 안에서 직접 실행하지 말고 전체 압축을 해제했는지 확인하세요.
-- 서버 창의 첫 오류를 확인하세요. 다른 서버가 19132/UDP를 쓰면 먼저 종료하세요.
+- 서버 창의 첫 오류를 확인하세요. 다른 서버가 19132/TCP 또는 UDP를 쓰면 먼저 종료하세요.
 - 버전을 확인하세요. 지원되지 않는 프로토콜은 거부됩니다.
 - Windows의 일부 Minecraft 앱은 UWP loopback 제한을 적용합니다.
   https://github.com/SKYRPG8957/Sculith/blob/main/docs/windows-quickstart.md

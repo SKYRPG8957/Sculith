@@ -17,6 +17,12 @@ raknet = { git = "https://github.com/bedrock-crustaceans/raknet.git", version = 
 ureq = "3"
 uuid = { version = "1.18", features = ["v4"] }
 nbtx = { git = "https://github.com/bedrock-crustaceans/nbtx" }
+nethernet = { git = "https://github.com/bedrock-crustaceans/nethernet.git", rev = "ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99" }
+bytes = "1.12"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 clap.workspace = true
 sculith-core = { path = "../sculith-core" }
 sculith-packs = { path = "../sculith-packs" }
@@ -31,6 +37,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+nethernet-tokio = { git = "https://github.com/bedrock-crustaceans/nethernet.git", rev = "ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99" }
 
 [lints]
 workspace = true

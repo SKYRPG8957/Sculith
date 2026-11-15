@@ -31,7 +31,7 @@
 | 베드락 PNG → 명시적으로 대응시킨 자바 텍스처 팩 변환 | 구현 |
 | 온라인 계정 인증·정식 월드 입장 | 구현/검증 진행 중. 공식 discovery 조회 성공 확인, 실제 계정 로그인은 미검증 |
 | 멀티플레이 엔티티 표시·일반 인벤토리 거래·물리/중력 | 미구현 |
-| NetherNet 전송 | 미구현. RakNet 테스트 결과를 대체 검증으로 사용하지 않음 |
+| NetherNet HTTP/WebRTC 전송 | loopback 개발 경로 구현. 실제 소켓에서 RakNet 세션과 같은 월드 변경 수신 검증. 공식 클라이언트는 미검증 |
 | 게임 이벤트 플러그인 API / 팩 자동 배포 | 미구현 |
 | 베드락 모델·UI·스크립트의 자바 변환 | 미구현. 순정 클라이언트 제약에 따른 별도 설계 필요 |
 
@@ -49,7 +49,7 @@ Java 로그인은 미구현 안내와 함께 종료합니다. Bedrock 세션은 
 **공식 게임 클라이언트 접속·렌더링은 아직 미검증, Java 월드 입장은 미구현**입니다.
 설치 명령과 Windows loopback 문제는 [Windows 빠른 시작](docs/windows-quickstart.md)을 참고하세요.
 Windows GDK `1.26.63`의 첫 접속 시도에서 `Terracotta / InitialConnection-149`가 보고되어 조사 중입니다.
-Preview 2에는 초기 연결을 기록하는 `diagnose.cmd`가 추가됐으며, 해당 오류의 해결을 확인한 버전은 아닙니다.
+Preview 2에는 초기 연결을 기록하는 `diagnose.cmd`가 추가됐습니다. 새 로컬 NetherNet 구현도 공식 게임 재접속으로 오류 해결을 확인해야 합니다.
 
 ## 소스에서 빌드와 실행
 
@@ -98,6 +98,7 @@ cargo run --locked -- run --config examples/bedrock-login-preview.toml
 최대 64세션, IP당 4세션으로 제한하고, 메시지·압축 해제 배치·각 RakNet 신뢰성 큐는 최대 4 MiB입니다.
 앱의 전체 수신/송신 대기열에는 각각 16 MiB의 바이트 예산을 적용합니다. 이는 프로세스 전체 RAM 상한은 아닙니다.
 정식 온라인 신원을 쓰는 클라이언트는 공식 공개키 조회가 성공해야 합니다.
+로컬 세션은 NetherNet HTTP/WebRTC도 Bedrock TCP 포트에서 엽니다. 키 보관과 제한은 [NetherNet 문서](docs/nethernet.md)를 참고하세요.
 현재 환경의 제한과 검증 결과는 [개발 상태](docs/status.md)에 기록합니다.
 
 ## Rust 플러그인

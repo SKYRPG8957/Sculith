@@ -2,6 +2,7 @@
 
 mod chunk;
 mod input;
+pub mod nethernet;
 mod output;
 pub mod session;
 mod spawn;
