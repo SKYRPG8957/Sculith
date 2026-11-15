@@ -1,0 +1,25 @@
+{
+  "observed_date": "2026-11-16",
+  "stage": "development",
+  "java": {
+    "stage": "discovery-only",
+    "version": "26.3",
+    "protocol": 777,
+    "resource_pack_format": [97, 1],
+    "gameplay_supported_versions": []
+  },
+  "bedrock": {
+    "stage": "spawn-preview",
+    "official_client_verified": false,
+    "nethernet": "not implemented",
+    "version": "1.26.60",
+    "protocol": 2225,
+    "gameplay_supported_versions": []
+  },
+  "sources": [
+    "https://github.com/PrismarineJS/minecraft-data/blob/9b995542ab4a17837dee785439954e43d031b33e/data/pc/common/protocolVersions.json",
+    "https://github.com/PrismarineJS/minecraft-data/blob/9b995542ab4a17837dee785439954e43d031b33e/data/bedrock/common/protocolVersions.json",
+    "https://github.com/Sandertv/gophertunnel/blob/e2251a60f71d5faa9784d6a4bc817c117cb6af78/minecraft/protocol/info.go",
+    "https://github.com/misode/mcmeta/blob/26.3-summary/version.json"
+  ]
+}

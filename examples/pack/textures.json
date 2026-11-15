@@ -1,0 +1,8 @@
+{
+  "textures": [
+    {
+      "bedrock": "textures/blocks/sculith_demo.png",
+      "java": "minecraft:block/stone"
+    }
+  ]
+}

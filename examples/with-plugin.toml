@@ -1,0 +1,6 @@
+[server]
+motd = "Sculith / discovery only"
+
+[[plugins]]
+path = "../target/debug/sculith-welcome"
+timeout_ms = 1000

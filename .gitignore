@@ -1,0 +1,4 @@
+/target/
+/sculith.toml
+/packs/generated/
+*.log

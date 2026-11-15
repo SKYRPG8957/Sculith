@@ -1,0 +1,30 @@
+name: Rust
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup show
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --all-targets --locked
+      - name: Verify ownership compile-fail doctest
+        run: cargo test --workspace --doc --locked
+      - name: Build server and Rust example plugin
+        run: cargo build --workspace --locked
+      - name: Exercise real network listeners and plugin
+        run: python3 scripts/smoke.py
+      - name: Exercise executable Bedrock session driver
+        run: python3 scripts/smoke.py --sessions

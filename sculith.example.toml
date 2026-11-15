@@ -1,0 +1,26 @@
+[server]
+motd = "Sculith / discovery only"
+max_players = 20
+# Plugin event clock, not a world simulation yet.
+tick_rate = 20
+
+[network.java]
+enabled = true
+bind = "127.0.0.1:25565"
+
+[network.bedrock]
+enabled = true
+bind = "127.0.0.1:19132"
+
+# Optional native transport/spawn path. Online authentication is required by default.
+# It fetches public OIDC keys from official Minecraft services over HTTPS.
+[bedrock]
+sessions = false
+require_authentication = true
+login_timeout_secs = 15
+
+# Rust plugins are trusted executables; paths are relative to this config file.
+# Build the example first: cargo build -p sculith-welcome
+# [[plugins]]
+# path = "target/debug/sculith-welcome"
+# timeout_ms = 1000

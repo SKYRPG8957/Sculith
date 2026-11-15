@@ -1,0 +1,17 @@
+# Development preview: encrypted login, empty pack negotiation, read-only flat chunks.
+# Offline identities are accepted only because the listener is loopback-only.
+[server]
+motd = "Sculith / Bedrock spawn preview"
+
+[bedrock]
+sessions = true
+require_authentication = false
+login_timeout_secs = 15
+
+[network.java]
+enabled = true
+bind = "127.0.0.1:25565"
+
+[network.bedrock]
+enabled = true
+bind = "127.0.0.1:19132"
