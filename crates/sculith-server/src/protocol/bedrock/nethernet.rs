@@ -3,7 +3,7 @@
 //! ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99. Gameplay uses the existing owner.
 
 use super::{
-    session::{Authentication, handle},
+    session::{Authentication, Protection, handle_with_protection},
     transport::MAX_MESSAGE_BYTES,
 };
 use crate::world::WorldHandle;
@@ -296,10 +296,11 @@ impl Server {
                     let authentication = context.authentication.clone();
                     let world = context.world.clone();
                     let timeout = context.timeout;
+                    let protection = Protection::WebRtcDtls(transport.identity.clone());
                     applications.spawn(async move {
                         let mut conn = Connection::<V2225, _>::from_transport_conn(transport);
                         conn.max_batch_len = MAX_MESSAGE_BYTES;
-                        let result = handle(&mut conn, &authentication, &world, timeout).await;
+                        let result = handle_with_protection(&mut conn, &authentication, &world, timeout, protection).await;
                         conn.close().await;
                         result
                     });
@@ -335,11 +336,15 @@ impl Server {
                             signaling.handle(HttpSignalerInput::Reject {connection_id: offer.connection_id, reason: RejectReason::Unavailable})?;
                             continue;
                         }
+                        let Some(identity) = offer.player.as_deref().cloned().map(Arc::new) else {
+                            signaling.handle(HttpSignalerInput::Reject {connection_id: offer.connection_id, reason: RejectReason::Rejected})?;
+                            continue;
+                        };
                         match answer(&offer, local_ip, &self.identity, context.timeout, &self.media).await {
                             Ok((socket, connection, sdp)) => {
                                 signaling.handle(HttpSignalerInput::Answer {connection_id: offer.connection_id, sdp})?;
                                 *peers.entry(ip).or_default() += 1;
-                                let config = PeerContext { shutdown: context.shutdown.clone(), ready: ready.clone(), media: self.media.clone(),
+                                let config = PeerContext { shutdown: context.shutdown.clone(), ready: ready.clone(), media: self.media.clone(), identity,
                                     incoming_budget: incoming_budget.clone(), outgoing_budget: outgoing_budget.clone() };
                                 workers.spawn(async move { (ip, drive(socket, connection, config).await) });
                             }
@@ -492,6 +497,7 @@ struct SessionTransport {
     outgoing: mpsc::Sender<SendCommand>,
     budget: Arc<Semaphore>,
     closed: Arc<AtomicBool>,
+    identity: Arc<nethernet::identity::PlayerInfo>,
 }
 impl Drop for SessionTransport {
     fn drop(&mut self) {
@@ -566,6 +572,7 @@ struct PeerContext {
     outgoing_budget: Arc<Semaphore>,
     ready: mpsc::Sender<SessionTransport>,
     media: Arc<LocalMedia>,
+    identity: Arc<nethernet::identity::PlayerInfo>,
 }
 
 async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> Result<()> {
@@ -650,6 +657,7 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
                         outgoing: outgoing.clone(),
                         budget: context.outgoing_budget.clone(),
                         closed: closed.clone(),
+                        identity: context.identity.clone(),
                     };
                     context
                         .ready
@@ -659,7 +667,7 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
                 SessionOutput::Event(SessionEvent::Failed) => {
                     anyhow::bail!("NetherNet ICE/DTLS/SCTP establishment failed")
                 }
-                SessionOutput::Message(Channel::Reliable, data) => {
+                SessionOutput::Message(_, data) => {
                     ensure!(
                         data.len() <= NETHER_MESSAGE_BYTES,
                         "NetherNet incoming message too large"
@@ -676,7 +684,7 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
                         })
                         .map_err(|_| anyhow::anyhow!("NetherNet incoming queue exhausted"))?;
                 }
-                SessionOutput::Message(Channel::Unreliable, _) | SessionOutput::Wait(_) => {}
+                SessionOutput::Wait(_) => {}
             }
         }
     }

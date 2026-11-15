@@ -30,3 +30,5 @@ Windows preview packages include `THIRD_PARTY_LICENSES.txt`, generated from the 
 For dual MIT/Apache-2.0 packages whose crate tarballs omit license texts (including legacy `MIT/Apache-2.0` declarations), the distribution selects their declared Apache-2.0 option and retains its full text.
 The `mutants` 0.0.3 crate's omitted MIT text is retained in `LICENSES/package-fallbacks/cargo-mutants-MIT.txt` from
 [cargo-mutants commit 9685de346012afb9c379432eaf9c6960e22185df](https://github.com/sourcefrog/cargo-mutants/blob/9685de346012afb9c379432eaf9c6960e22185df/LICENSE).
+
+The development-only `tests/interop/gophertunnel` client links the pinned MIT-licensed gophertunnel (e2251a60f71d5faa9784d6a4bc817c117cb6af78) and Go/Pion stack through its own `go.mod`/`go.sum`. Its executable and Go runtime are not included in the Windows server ZIP. The MIT-licensed [go-nethernet 4c06b550](https://github.com/df-mc/go-nethernet/tree/4c06b550759d8b488ee209eb09ae87cefd6fe849) was consulted for DTLS-only Bedrock transport behavior and signed-key binding.

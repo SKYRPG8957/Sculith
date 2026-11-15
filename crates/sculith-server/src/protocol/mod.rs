@@ -1,4 +1,5 @@
 pub mod bedrock;
+mod http_client;
 pub mod java;
 
 use serde::Deserialize;

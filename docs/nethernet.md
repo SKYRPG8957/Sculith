@@ -1,7 +1,8 @@
 # Local NetherNet preview
 
 The Bedrock adapter accepts HTTP signaling and WebRTC data channels as well as RakNet.
-Both feed the same encrypted Bedrock login, pack negotiation, session handling and authoritative world owner.
+Both feed the same verified Bedrock login, pack negotiation, session handling and authoritative world owner.
+RakNet uses the Bedrock application cipher. NetherNet uses its established DTLS protection and sends LoginSuccess directly after verifying login and binding its identity key to the signed SDP key; it does not perform the RakNet application-cipher handshake.
 No other Minecraft server process is required.
 
 ## Configuration
@@ -38,8 +39,7 @@ Its unbounded Tokio wrapper is used only by test clients.
 
 These bounds are not a total process-memory limit or a throughput claim.
 Application tasks are cancelled and drained before final world capture, releasing their player leases.
-The current Bedrock adapter consumes and sends reliable-channel batches only. The unreliable data channel is established,
-but its payloads are not applied to the world; official-client movement on that channel needs separate validation and support.
+Both incoming data channels use the same bounded queues and owner validation. Valid unreliable movement commits; invalid movement is corrected over the reliable channel. Movement arriving before the reliable initialization acknowledgement is ignored until the player activates. Outgoing game batches currently use the reliable channel.
 
 This backend currently requires loopback HTTP signaling and same-machine media sources. It validates offer fingerprint ownership and expiry with `TokenTrust::Any`;
 this does **not** authenticate the signaling token's issuer/signature or establish an online account identity.
@@ -51,9 +51,12 @@ Real TCP tests cover shared status, unsigned/tampered offer rejection, fixed/chu
 persistent operator identity and shutdown port release.
 A real HTTP/WebRTC headless client and an encrypted RakNet client log in, spawn in the same owner and receive the same committed block delta.
 Executable smoke checks probe HTTP status, unsigned-offer rejection and unchanged keys after restart.
-An independent aiortc 1.14.0/OpenSSL probe verifies ICE, DTLS, SCTP, both data channels, the server JWT and fingerprint signatures, and an actual Bedrock NetworkSettings response. It reproduced the former interface-address and SCTP-role failures before the corrections. Run it with development dependencies from `scripts/requirements-webrtc.txt` and `python scripts/webrtc_smoke.py`. These dependencies are not required by the installed server.
+An independent aiortc 1.14.0/OpenSSL probe verifies ICE, DTLS, SCTP, both data channels, the server JWT and fingerprint signatures, network settings and transport-bound Bedrock login proceeding directly to resource-pack negotiation. It reproduced the former interface-address and SCTP-role failures before the corrections. Run it with development dependencies from `scripts/requirements-webrtc.txt` and `python scripts/webrtc_smoke.py`. These dependencies are not required by the installed server.
 These are transport tests, not proof that official Minecraft Windows GDK `1.26.63` can enter or render the world.
-Preview 3 reached GET/POST and the user accepted the trust prompt, but failed with `Door / InitialConnection-83`. Official-client entry remains unresolved until a retest succeeds.
+An independent pinned gophertunnel/Go/Pion client also completes signed login, pack negotiation, world spawn and server-side player activation. See `tests/interop/gophertunnel` and `scripts/gophertunnel_smoke.py`; this test client is not part of the server executable.
+Preview 4 reached WebRTC and protocol 2225 in the official Windows GDK client, then failed at the incorrectly requested application-encryption handshake (`InitialConnection-66`). Official-client entry remains unresolved until a retest succeeds.
 
 - [Mojang NetherNet onboarding guide, 19e25de1](https://github.com/Mojang/bedrock-protocol-docs/blob/19e25de129227373e97dfa340af93ccf12c0feb9/additional_docs/NetherNetOnboardingGuide.md), retrieved 2026-11-16 KST: status/join endpoints, full ICE, framing and required signed server identity.
 - [NetherNet source ed552b0b](https://github.com/bedrock-crustaceans/nethernet/tree/ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99), Apache-2.0: protocol and sans-IO WebRTC implementation. See [third-party notices](../THIRD_PARTY_NOTICES.md).
+
+The transport-specific login behavior and key binding were cross-checked against MIT-licensed [go-nethernet 4c06b550, Conn.DisableEncryption/PublicKey](https://github.com/df-mc/go-nethernet/blob/4c06b550759d8b488ee209eb09ae87cefd6fe849/conn.go) and [gophertunnel e2251a60, login handling](https://github.com/Sandertv/gophertunnel/blob/e2251a60f71d5faa9784d6a4bc817c117cb6af78/minecraft/conn.go). No reference server implementation is linked into Sculith.

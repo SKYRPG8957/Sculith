@@ -87,11 +87,12 @@ impl Harness {
 struct TestClient<T: Transport = TransportLayerConnection> {
     conn: Connection<V2225, T>,
     pending: VecDeque<V2225>,
+    dtls_identity: Option<ClientIdentity>,
 }
 
 impl<T: Transport> TestClient<T> {
     async fn enter(&mut self) -> Result<u64> {
-        self.encrypted_login().await?;
+        self.login().await?;
         self.finish_packs().await?;
         let id = self.receive_spawn().await?;
         self.conn
@@ -173,9 +174,34 @@ impl<T: Transport> TestClient<T> {
         Ok(())
     }
 
-    async fn encrypted_login(&mut self) -> Result<()> {
+    async fn login(&mut self) -> Result<()> {
         self.settings().await?;
-        let identity = self.identity("SculithTests")?;
+        let via_dtls = self.dtls_identity.is_some();
+        let identity = match self.dtls_identity.take() {
+            Some(identity) => identity,
+            None => self.identity("SculithTests")?,
+        };
+        if via_dtls {
+            self.conn
+                .send(&[
+                    V2225::LoginPacket(Box::new(LoginPacket {
+                        client_network_version: V2225::PROTOCOL_VERSION as i32,
+                        connection_request: identity.request().to_vec(),
+                    })),
+                    V2225::ClientCacheStatusPacket(Box::new(ClientCacheStatusPacket {
+                        is_cache_supported: false,
+                    })),
+                ])
+                .await?;
+            let V2225::PlayStatusPacket(status) = self.next().await? else {
+                anyhow::bail!(
+                    "expected direct NetherNet login success, without an application-cipher handshake"
+                );
+            };
+            ensure!(matches!(status.status, PlayStatus::LoginSuccess));
+            ensure!(self.conn.encryption.is_none());
+            return Ok(());
+        }
         self.request_login(&identity).await?;
         let V2225::ServerToClientHandshakePacket(handshake) = self.next().await? else {
             anyhow::bail!("expected encryption handshake");
@@ -301,6 +327,7 @@ impl TestClient {
         Ok(Self {
             conn,
             pending: VecDeque::new(),
+            dtls_identity: None,
         })
     }
 }
@@ -346,7 +373,15 @@ async fn nether_client(address: SocketAddr) -> Result<TestClient<TestNetherTrans
     use nethernet_tokio::{
         ConnectionConfig, HttpSignaling, NetherClient, ServerIdentity, TokenTrust,
     };
-    let identity = ServerIdentity::generate("sculith-test-client", std::time::SystemTime::now())?;
+    let data = ClientData::offline(V2225::GAME_VERSION, &address.to_string(), "SculithTests");
+    let dtls_identity =
+        ClientIdentity::offline(ClientIdentity::generate_key(), "SculithTests", &data)?;
+    let identity = ServerIdentity::from_key(
+        dtls_identity.key().clone().into(),
+        "sculith-test-client",
+        std::time::SystemTime::now(),
+        Some(Duration::from_secs(600)),
+    )?;
     let signaling = HttpSignaling::new(uuid::Uuid::new_v4().to_string())?;
     tokio::time::timeout(
         Duration::from_secs(3),
@@ -375,6 +410,7 @@ async fn nether_client(address: SocketAddr) -> Result<TestClient<TestNetherTrans
     Ok(TestClient {
         conn,
         pending: VecDeque::new(),
+        dtls_identity: Some(dtls_identity),
     })
 }
 
@@ -430,6 +466,56 @@ async fn nethernet_http_webrtc_and_raknet_share_login_world_and_committed_block_
         );
     }
     assert_eq!(server.world.online_players(), 2);
+    let mut events = server.world.subscribe();
+    let mut movement = super::super::input::tests::movement();
+    movement.player_position = (1.0, 5.62, 0.5);
+    movement.client_tick = 1;
+    let encoded = bedrock::network::codec::encode_packets(
+        &[V2225::PlayerAuthInputPacket(Box::new(movement.clone()))],
+        nethernet.conn.compression.as_ref(),
+        None,
+    )
+    .unwrap();
+    nethernet
+        .conn
+        .get_transport_conn()
+        .client
+        .send_unreliable(bytes::Bytes::from(encoded))
+        .await
+        .unwrap();
+    let moved = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let event = events.recv().await.unwrap();
+            if let crate::world::WorldEvent::Moved { player, .. } = event.as_ref()
+                && player.id == other_id
+            {
+                break player.clone();
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(moved.feet.x, 1.0);
+    assert_eq!(moved.feet.y, 4.0);
+    movement.player_position = (20.0, 5.62, 0.5);
+    movement.client_tick = u64::MAX;
+    let encoded = bedrock::network::codec::encode_packets(
+        &[V2225::PlayerAuthInputPacket(Box::new(movement))],
+        nethernet.conn.compression.as_ref(),
+        None,
+    )
+    .unwrap();
+    nethernet
+        .conn
+        .get_transport_conn()
+        .client
+        .send_unreliable(bytes::Bytes::from(encoded))
+        .await
+        .unwrap();
+    let V2225::MovePlayerPacket(correction) = nethernet.next().await.unwrap() else {
+        panic!("expected reliable correction of an invalid unreliable movement")
+    };
+    assert_eq!(correction.position, (1.0, 5.62, 0.5));
     nethernet.conn.close().await;
     raknet.conn.close().await;
     server.shutdown.send_replace(true);
@@ -498,10 +584,50 @@ async fn independent_wire_client_completes_the_cookie_checked_open_handshake() {
 }
 
 #[tokio::test]
+async fn nethernet_rejects_a_login_not_bound_to_its_signed_transport_key() {
+    use crate::protocol::bedrock::nethernet::{ContextData, prepare};
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(15)).await;
+    let directory = tempfile::tempdir().unwrap();
+    let nether = prepare(
+        "127.0.0.1:0".parse().unwrap(),
+        &directory.path().join("identity.pem"),
+    )
+    .await
+    .unwrap();
+    let address = nether.local_addr().unwrap();
+    let task = tokio::spawn(nether.serve(ContextData {
+        authentication: Authentication::offline(),
+        timeout: Duration::from_secs(10),
+        world: server.world.clone(),
+        status: server._status.subscribe(),
+        shutdown: server.shutdown.subscribe(),
+    }));
+    let mut client = nether_client(address).await.unwrap();
+    client.settings().await.unwrap();
+    // Both signatures are valid, but this login is for a different key than
+    // the one that signed the DTLS fingerprint assertion.
+    let unrelated = client.identity("ReplayedIdentity").unwrap();
+    client.request_login(&unrelated).await.unwrap();
+    assert!(matches!(
+        client.next().await.unwrap(),
+        V2225::DisconnectPacket(_)
+    ));
+    assert_eq!(server.world.online_players(), 0);
+    client.conn.close().await;
+    server.shutdown.send_replace(true);
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    server.stop().await;
+}
+
+#[tokio::test]
 async fn crossing_a_chunk_boundary_keeps_the_negotiated_radius_and_sends_only_new_chunks() {
     let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
     let mut client = TestClient::connect(server.address).await.unwrap();
-    client.encrypted_login().await.unwrap();
+    client.login().await.unwrap();
     client.finish_packs().await.unwrap();
     let id = client.receive_spawn_with_radius(1).await.unwrap();
     client
@@ -714,7 +840,7 @@ async fn valid_eye_offset_movement_is_committed_but_large_client_tick_cannot_tel
 async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
     let server = Harness::start(Authentication::offline(), Duration::from_secs(1)).await;
     let mut client = TestClient::connect(server.address).await.unwrap();
-    client.encrypted_login().await.unwrap();
+    client.login().await.unwrap();
     client.finish_packs().await.unwrap();
     let id = client.receive_spawn().await.unwrap();
     client
@@ -752,7 +878,7 @@ async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
 async fn another_entity_id_cannot_be_acknowledged_as_the_local_player() {
     let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
     let mut client = TestClient::connect(server.address).await.unwrap();
-    client.encrypted_login().await.unwrap();
+    client.login().await.unwrap();
     client.finish_packs().await.unwrap();
     let id = client.receive_spawn().await.unwrap();
     client
@@ -858,7 +984,7 @@ async fn unfinished_login_times_out_and_releases_the_session() {
 async fn cancelled_pack_handshake_does_not_advance_to_world() {
     let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
     let mut client = TestClient::connect(server.address).await.unwrap();
-    client.encrypted_login().await.unwrap();
+    client.login().await.unwrap();
     assert!(matches!(
         client.next().await.unwrap(),
         V2225::ResourcePacksInfoPacket(_)

@@ -19,7 +19,9 @@ on:
       - 'scripts/smoke.py'
       - 'scripts/package_release.py'
       - 'scripts/webrtc_smoke.py'
+      - 'scripts/gophertunnel_smoke.py'
       - 'scripts/requirements-webrtc.txt'
+      - 'tests/interop/**'
       - 'distribution/**'
       - 'LICENSES/**'
 
@@ -33,7 +35,7 @@ jobs:
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       PYTHONUTF8: '1'
-      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.4'
+      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.5'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/cache@v4
@@ -88,6 +90,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/webrtc_smoke.py --server target/release/sculith.exe
           exit $LASTEXITCODE
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: tests/interop/gophertunnel/go.sum
+      - name: Build independent Bedrock world-spawn client
+        working-directory: tests/interop/gophertunnel
+        run: go build -mod=readonly -o ../../../target/gophertunnel-probe.exe .
+      - name: Verify independent Bedrock login and world spawn
+        run: python scripts/gophertunnel_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Package Windows preview and dependency licenses
         run: python scripts/package_release.py --binary target/release/sculith.exe --version $env:SCULITH_PREVIEW_VERSION --output dist
       - name: Verify extracted package configuration and CLI

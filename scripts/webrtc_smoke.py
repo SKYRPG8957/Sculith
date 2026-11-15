@@ -8,10 +8,13 @@ import os
 from pathlib import Path
 import re
 import signal
+import struct
 import subprocess
 import tempfile
 import time
 import urllib.request
+import uuid
+import zlib
 
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from cryptography.hazmat.primitives import hashes, serialization
@@ -40,8 +43,7 @@ def fingerprint_payload(sdp):
     ]})
 
 
-def sign_offer(sdp):
-    key = ec.generate_private_key(ec.SECP384R1())
+def sign_offer(sdp, key):
     header = url64(b'{"alg":"ES384"}')
 
     def sign(data):
@@ -63,6 +65,60 @@ def sign_offer(sdp):
     }
     value = base64.b64encode(compact(envelope)).decode()
     return re.sub(r"^m=", "a=identity:" + value + "\r\nm=", sdp, count=1, flags=re.M)
+
+
+def login_request(key, address):
+    public = base64.b64encode(key.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)).decode()
+
+    def token(claims):
+        unsigned = url64(compact({"alg": "ES384", "x5u": public})) + "." + url64(compact(claims))
+        r, s = decode_dss_signature(key.sign(unsigned.encode(), ec.ECDSA(hashes.SHA384())))
+        return unsigned + "." + url64(r.to_bytes(48, "big") + s.to_bytes(48, "big"))
+
+    now = int(time.time())
+    identity = token({
+        "certificateAuthority": True, "identityPublicKey": public,
+        "iat": now, "nbf": now - 60, "exp": now + 600,
+        "extraData": {"XUID": "", "displayName": "SculithInterop", "identity": str(uuid.uuid4())},
+    })
+    auth = compact({"AuthenticationType": 2, "Certificate": compact({"chain": [identity]}).decode(), "Token": ""})
+    client = token({
+        "DeviceOS": 7, "GameVersion": "1.26.60", "LanguageCode": "en_US",
+        "ServerAddress": address.split("://", 1)[-1], "SkinId": "sculith-original-test-skin",
+        "SkinImageHeight": 64, "SkinImageWidth": 64,
+        "SkinData": base64.b64encode(bytes([141, 110, 76, 255]) * 4096).decode(),
+        "SkinResourcePatch": base64.b64encode(b'{"geometry":{"default":"geometry.humanoid.custom"}}').decode(),
+    }).encode()
+    return struct.pack("<I", len(auth)) + auth + struct.pack("<I", len(client)) + client
+
+
+def varint(value):
+    result = bytearray()
+    while value >= 128:
+        result.append((value & 127) | 128)
+        value >>= 7
+    return bytes(result) + bytes([value])
+
+
+def read_varint(data, offset=0):
+    value = 0
+    for index in range(5):
+        byte = data[offset + index]
+        value |= (byte & 127) << (7 * index)
+        if not byte & 128:
+            return value, offset + index + 1
+    raise AssertionError("oversized VarInt")
+
+
+def decode_batch(data):
+    packets = []
+    while data:
+        length, offset = read_varint(data)
+        assert 0 < length <= len(data) - offset
+        packets.append(data[offset:offset + length])
+        data = data[offset + length:]
+    return packets
 
 
 def verify_answer(sdp):
@@ -104,6 +160,7 @@ async def probe(address):
     received = asyncio.Event()
     both_open = asyncio.Event()
     data = []
+    messages = asyncio.Queue()
     opened = set()
     reliable = pc.createDataChannel("ReliableDataChannel", ordered=True)
     unreliable = pc.createDataChannel("UnreliableDataChannel", ordered=False, maxRetransmits=0)
@@ -126,12 +183,14 @@ async def probe(address):
     @reliable.on("message")
     def message(value):
         data.append(value)
+        messages.put_nowait(value)
         received.set()
 
     try:
+        key = ec.generate_private_key(ec.SECP384R1())
         await pc.setLocalDescription(await pc.createOffer())
         assert "a=candidate:" in pc.localDescription.sdp, "client gathered no host candidate"
-        answer = await asyncio.to_thread(exchange, address, sign_offer(pc.localDescription.sdp))
+        answer = await asyncio.to_thread(exchange, address, sign_offer(pc.localDescription.sdp, key))
         verify_answer(answer)
         clean = re.sub(r"^a=identity:[^\r\n]*\r?\n", "", answer, flags=re.M)
         await pc.setRemoteDescription(RTCSessionDescription(sdp=clean, type="answer"))
@@ -141,6 +200,30 @@ async def probe(address):
         # NetworkSettings ID 143; threshold 256 LE, zlib algorithm 0 LE.
         assert isinstance(data[0], bytes) and data[0][:8] == bytes([0, 12, 143, 1, 0, 1, 0, 0]), data
         assert len(data[0]) == 14
+        assert await messages.get() == data[0]
+        request = login_request(key, address)
+        packet = b"\x01" + struct.pack(">i", 2225) + varint(len(request)) + request
+        batch = varint(len(packet)) + packet
+        compressor = zlib.compressobj(wbits=-15)
+        batch = b"\x00" + compressor.compress(batch) + compressor.flush()
+        assert len(batch) <= 10000
+        reliable.send(b"\x00" + batch)
+        packets = []
+        while not packets:
+            frame = await asyncio.wait_for(messages.get(), timeout=5)
+            assert isinstance(frame, bytes) and frame[0] == 0
+            compressed = frame[1:]
+            assert compressed[0] in (0, 255)
+            raw = zlib.decompress(compressed[1:], wbits=-15) if compressed[0] == 0 else compressed[1:]
+            packets.extend(decode_batch(raw))
+        assert packets.pop(0) == b"\x02\x00\x00\x00\x00", "expected direct LoginSuccess over DTLS, not a RakNet cipher handshake"
+        while not packets:
+            frame = await asyncio.wait_for(messages.get(), timeout=5)
+            assert frame[0] == 0
+            raw = zlib.decompress(frame[2:], wbits=-15) if frame[1] == 0 else frame[2:]
+            packets.extend(decode_batch(raw))
+        packet_id, _ = read_varint(packets[0])
+        assert packet_id == 6, "login did not advance to resource-pack negotiation"
     finally:
         await asyncio.wait_for(pc.close(), timeout=3)
 
@@ -183,7 +266,7 @@ def smoke(server):
                 if process.poll() is None:
                     process.kill()
                     process.wait(timeout=5)
-    print("PASS: independent aiortc/OpenSSL ICE, DTLS, SCTP, both data channels, signed operator JWT/fingerprint assertion and Bedrock network settings")
+    print("PASS: independent aiortc/OpenSSL ICE, DTLS, SCTP, both channels, signed operator identity, Bedrock network settings and transport-bound login without an application-cipher handshake")
 
 
 if __name__ == "__main__":

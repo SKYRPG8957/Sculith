@@ -42,13 +42,28 @@ pub struct Authentication {
     http: Option<ureq::Agent>,
 }
 
+/// Chosen by the accepted transport, never by a client packet or configuration.
+pub enum Protection {
+    PacketEncryption,
+    WebRtcDtls(Arc<nethernet::identity::PlayerInfo>),
+}
+
+impl Protection {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::PacketEncryption => "bedrock-packet-cipher",
+            Self::WebRtcDtls(_) => "webrtc-dtls",
+        }
+    }
+}
+
 impl Authentication {
     pub async fn new(required: bool) -> Result<Self> {
         if !required {
             return Ok(Self::offline());
         }
         tokio::task::spawn_blocking(|| {
-            let http = bedrock::auth::http::ureq_agent();
+            let http = crate::protocol::http_client::authentication_metadata();
             let oidc = AuthOIDC::fetch(&http).context(
                 "cannot load Minecraft authentication public keys; check outbound access to the official discovery/OIDC endpoints"
             )?;
@@ -150,12 +165,36 @@ pub async fn handle<T: Transport>(
     world: &WorldHandle,
     timeout: Duration,
 ) -> Result<()> {
+    handle_with_protection(
+        conn,
+        authentication,
+        world,
+        timeout,
+        Protection::PacketEncryption,
+    )
+    .await
+}
+
+pub async fn handle_with_protection<T: Transport>(
+    conn: &mut Connection<V2225, T>,
+    authentication: &Authentication,
+    world: &WorldHandle,
+    timeout: Duration,
+    protection: Protection,
+) -> Result<()> {
     let mut packets = Packets::new();
     let mut events = world.subscribe();
     let mut stage = "network-settings";
     let result = tokio::time::timeout(
         timeout,
-        initialize(conn, &mut packets, authentication, world, &mut stage),
+        initialize(
+            conn,
+            &mut packets,
+            authentication,
+            world,
+            &mut stage,
+            &protection,
+        ),
     )
     .await;
     let result = match result {
@@ -168,7 +207,7 @@ pub async fn handle<T: Transport>(
     let (lease, mut interest, radius) = match result {
         Ok(value) => value,
         Err(error) => {
-            tracing::warn!(remote = %conn.get_socket_addr(), stage,
+            tracing::warn!(remote = %conn.get_socket_addr(), stage, failure = failure_kind(&error),
                 "Bedrock login/spawn failed; use RUST_LOG=info,sculith::protocol::bedrock=debug for details");
             let _ = disconnect(
                 conn,
@@ -250,6 +289,44 @@ pub async fn handle<T: Transport>(
     }
 }
 
+fn failure_kind(error: &anyhow::Error) -> &'static str {
+    use bedrock::network::{
+        error::{EncryptionError, NetworkCodecError},
+        tokio::error::ConnectionError,
+    };
+    if error
+        .downcast_ref::<nethernet::identity::error::IdentityError>()
+        .is_some()
+    {
+        return "transport-identity";
+    }
+    if let Some(error) = error.downcast_ref::<ConnectionError>() {
+        return match error {
+            ConnectionError::NetworkCodecError(NetworkCodecError::EncryptionError(
+                EncryptionError::InvalidTrailer,
+            )) => "packet-cipher-integrity",
+            ConnectionError::NetworkCodecError(NetworkCodecError::EncryptionError(
+                EncryptionError::InvalidLength(_),
+            )) => "packet-cipher-length",
+            ConnectionError::NetworkCodecError(NetworkCodecError::CompressionError(_)) => {
+                "compression-codec"
+            }
+            ConnectionError::NetworkCodecError(_) => "packet-codec",
+            ConnectionError::ConnectionClosed | ConnectionError::TransportError(_) => {
+                "transport-closed"
+            }
+            ConnectionError::IOError(_) => "connection-io",
+        };
+    }
+    if error
+        .downcast_ref::<bedrock::network::error::LoginError>()
+        .is_some()
+    {
+        return "login-verification";
+    }
+    "protocol-state"
+}
+
 async fn block_outcome<T: Transport>(
     conn: &mut Connection<V2225, T>,
     outcome: BlockOutcome,
@@ -272,10 +349,11 @@ async fn initialize<T: Transport>(
     authentication: &Authentication,
     world: &WorldHandle,
     stage: &mut &'static str,
+    protection: &Protection,
 ) -> Result<(PlayerLease, spawn::Interest, i32)> {
-    let login = login(conn, packets, authentication, stage).await?;
+    let login = login(conn, packets, authentication, stage, protection).await?;
     tracing::info!(player = %login.authentication.identity().display_name,
-        authenticated = login.authentication.is_authenticated(), "Bedrock encrypted login completed");
+        authenticated = login.authentication.is_authenticated(), protection = protection.label(), "Bedrock login completed");
     *stage = "resource-packs";
     empty_pack_handshake(conn, packets).await?;
     *stage = "world-spawn";
@@ -320,6 +398,10 @@ async fn initialize<T: Transport>(
                 return Ok((lease, interest, radius));
             }
             V2225::ServerBoundLoadingScreenPacket(_) | V2225::ClientCacheStatusPacket(_) => {}
+            // Unordered movement may race the reliable initialization ack.
+            // Pending players cannot mutate the owner; fresh movement is
+            // accepted only after activation in the gameplay loop.
+            V2225::PlayerAuthInputPacket(_) => {}
             _ => bail!("unexpected packet before world initialization"),
         }
     }
@@ -330,6 +412,7 @@ async fn login<T: Transport>(
     packets: &mut Packets,
     authentication: &Authentication,
     stage: &mut &'static str,
+    protection: &Protection,
 ) -> Result<Login> {
     let V2225::RequestNetworkSettingsPacket(request) = packets.next(conn).await? else {
         bail!("expected RequestNetworkSettings before login");
@@ -368,9 +451,18 @@ async fn login<T: Transport>(
         bail!("expected Login after network settings");
     };
     check_protocol(request.client_network_version, PROTOCOL)?;
-    packets.require_empty()?;
     *stage = "identity-verification";
     let login = authentication.verify(request.connection_request).await?;
+    if let Protection::WebRtcDtls(peer) = protection {
+        *stage = "transport-identity-verification";
+        let key = login.authentication.identity().public_key()?;
+        peer.verify_login_key(&(&key).into())?;
+        // DTLS already protects this connection. Vanilla NetherNet does not
+        // run the RakNet application-cipher handshake on top of it.
+        conn.send(&[status(PlayStatus::LoginSuccess)]).await?;
+        return Ok(login);
+    }
+    packets.require_empty()?;
     *stage = "encryption-handshake";
     let (token, encryption) = begin_encryption(&login)?;
     conn.send(&[V2225::ServerToClientHandshakePacket(Box::new(
