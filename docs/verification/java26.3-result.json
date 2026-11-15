@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "tested_at": "2026-11-16 KST",
+  "server_source_commit": "d48e7bdeafd2069b94c6cd3610ef2355690b0dce",
+  "edition": "Java",
+  "version": "26.3",
+  "protocol": 777,
+  "official_unmodified_client": true,
+  "official_client_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+  "unique_assets_hash_checked": 5149,
+  "platform": "Linux x86_64",
+  "runtime": "Eclipse Temurin 25.0.5+8",
+  "renderer": "Mesa 25.0.7 software Vulkan 1.4.305 / llvmpipe",
+  "authentication": "loopback offline identity; online account authentication not tested",
+  "checks": {
+    "world_entry_and_rendering": true,
+    "keyboard_movement": true,
+    "mouse_place_break_place": true,
+    "bedrock_headless_bidirectional_commits": true,
+    "ui_disconnect_cleans_online_count": true,
+    "server_restart_preserves_block": true,
+    "official_game_reconnect": true,
+    "independent_post_restart_spawn_voxels_checked": 2457600
+  },
+  "shared_block": {
+    "position": [
+      0,
+      3,
+      2
+    ],
+    "committed_sequence": [
+      "air",
+      "stone",
+      "air",
+      "stone"
+    ]
+  },
+  "bedrock_peer": "gophertunnel e2251a60 / Go/Pion; Dragonfly 0f9a3a57 decoder",
+  "official_bedrock_client_tested": false,
+  "windows_graphical_client_tested": false,
+  "screenshots": {
+    "java26.3-break.png": "6d9fb25e22edeeed669f3d310ef1378d3755ecb75bb67e5e38f5ac8d10cffbb1",
+    "java26.3-flat.png": "25b73296062af5c5e5ba3863c7941daead7ffaae6e7ee5800e7311fa40183f8c",
+    "java26.3-move.png": "4d044cb2f989c84b57a84fe0f529e1fe977921b103c2a62a16cf6a71e3ecdea0",
+    "java26.3-place.png": "1406bb9420976b6a064c864b34c5b330dcdd76e9edfb8795c97a807fc0c2e433",
+    "java26.3-restart.png": "890ff59d4ec5e2967d2407165a0ba83837b619ae0a9b4050dece7e3dc00a2685"
+  }
+}
