@@ -47,13 +47,13 @@ Java world entry, multiplayer entity visibility, general inventory transactions,
 
 ## Windows quick start
 
-For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.6), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required.
+For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.7), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required.
 
 In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
 
 This selects the local, offline-identity Bedrock preview. **Official game-client entry/rendering remain unverified; Java world entry is not implemented.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
 
-The Windows GDK `1.26.63` Preview 5 retest completed login but failed while loading with `Boat / InitialConnection-148` (`MissingStructureData`). Preview 6 sends the missing structure registries before StartGame, supplies plains/creative definitions and handles interleaved loading controls. Independent clients pass startup ordering, world spawn and full voxel/biome decoding on Windows; official game-client entry still requires a successful retest.
+The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 handles the notification without applying game intent and accepts bounded ancillary loading status. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official game-client entry still requires a successful retest.
 
 ## Build from source
 
