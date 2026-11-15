@@ -24,6 +24,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Rust 1.100.0 workspace build and Clippy for all targets with warnings denied.
 - Native Windows x64 build, Clippy, unit/doc tests, both release-executable network/persistence smoke checks and package validation passed for `0e782d5` in [Windows preview run 43741364940](https://github.com/SKYRPG8957/Sculith/actions/runs/43741364940).
 - The extracted ZIP launcher passes configuration checks from a path with spaces and preserves edited user settings. Its x64 PE imports only Windows system DLLs; no separate VC++ runtime installation is required.
+- [Windows preview v0.1.0-preview.1](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.1) is public (3,858,243-byte ZIP plus SHA-256 checksums). Windows PowerShell 5.1 installation, refusal to overwrite an existing directory, and the documented one-command installation passed in [run 43742465897](https://github.com/SKYRPG8957/Sculith/actions/runs/43742465897).
 - 82 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (83 total checks).
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
@@ -41,11 +42,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 ## Failed / externally constrained
 
 - The first Windows smoke run found console shutdown killing a plugin before its lifecycle hook. Windows workers now run without the host console; the corrected run verifies the Stopping event and final world save.
-- Official discovery request to `client.discovery.minecraft-services.net` returned proxy HTTP 403.
-  The running restricted network has no Minecraft-service domain allowed. No credentials are needed for this public-key request.
-- Only that required domain was added to the environment draft; the save was confirmed and returned `requires_publish: true`.
-  Runtime access has not changed. Applying it requires review/save/publication through environment settings; no publication was performed.
-  Downstream OIDC/JWKS destinations still need to be discovered and verified when the first request is allowed.
+- Official discovery initially returned proxy HTTP 403 under the earlier restricted network. The current environment reports enforced unrestricted networking; a fresh request to `client.discovery.minecraft-services.net` returned HTTP 200. Downstream OIDC/JWKS and actual account login remain unverified. No user credential is needed for the public discovery request.
 - Official Java and Bedrock game clients have not been used to verify world entry or rendering.
 - No automated test remains failing in the final recorded run. The expected compile-fail result above verifies ownership restrictions.
 
@@ -87,4 +84,4 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 ## Next Action
 
 Implement Java login/registry/chunk mapping against the same region owner, and add peer entity visibility, while advancing actual-client validation.
-Online public-key access remains an independent environment prerequisite. Required gameplay/content features are not removed from the objective.
+Continue online authentication and actual-client verification beyond the now-accessible discovery endpoint. Required gameplay/content features are not removed from the objective.
