@@ -3,14 +3,14 @@
 Windows x64용 개발 프리뷰입니다. **공식 게임 클라이언트의 접속·렌더링은 아직 미검증이며, Java 월드 입장은 미구현입니다.**
 테스트 대상 참고 버전은 Bedrock `1.26.60 / protocol 2225`입니다. Preview/Beta는 별도입니다.
 
-1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.3)에서 `windows-x86_64.zip` 파일을 받습니다.
+1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.4)에서 `windows-x86_64.zip` 파일을 받습니다.
 2. ZIP 전체를 새 폴더에 압축 해제하고 `start.cmd`를 더블클릭합니다. Rust·Python·Java 설치는 필요 없습니다.
 3. 같은 PC의 Minecraft for Windows에서 **플레이 → 서버 → 서버 추가**로 들어갑니다.
 4. 이름은 `Sculith`, 주소는 `127.0.0.1`, 포트는 `19132`로 입력합니다.
 5. 종료할 때 서버 창에서 **Ctrl+C**를 누릅니다. 최종 월드 스냅샷을 저장하고 종료합니다.
 
 설정은 `sculith.toml`, 월드는 `world/region.sculith`입니다. 첫 실행에서만 예제 설정을 복사하며 기존 파일은 보존합니다.
-새 NetherNet 경로는 TCP `19132`에서 신호를 교환하고 임시 loopback UDP 포트를 사용합니다.
+NetherNet은 TCP `19132`에서 신호를 교환하고 임시 UDP 미디어 포트를 사용합니다. HTTP는 loopback 전용이며 미디어는 자기 PC가 소유한 IPv4 주소만 송수신 대상으로 허용합니다.
 서명 키 `world/nethernet-identity.pem`은 재시작 시 유지합니다. 업데이트할 때는 서버를 종료하고 `world` 폴더 전체를 보존하세요.
 게임이 첫 접속 신뢰 확인을 표시할 수 있습니다. 키 파일은 공유하지 마세요. 자세한 범위는 [NetherNet 문서](nethernet.md)에 기록합니다.
 주기적 자동 저장은 아직 없으므로 창을 강제로 닫으면 시작 이후의 변경이 유실될 수 있습니다.
