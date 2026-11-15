@@ -18,7 +18,13 @@ pub(super) fn authentication_metadata() -> ureq::Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{io::Write, net::TcpListener, sync::Arc, thread, time::Instant};
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::Arc,
+        thread,
+        time::Instant,
+    };
 
     #[test]
     fn plaintext_metadata_is_rejected_before_any_network_connection() {
@@ -71,6 +77,10 @@ mod tests {
                 .unwrap();
             let conn = rustls::ServerConnection::new(Arc::new(config)).unwrap();
             let mut stream = rustls::StreamOwned::new(conn, socket);
+            // TLS writes may buffer before the client rejects our certificate.
+            // Require an application request to distinguish certificate acceptance.
+            let mut first = [0u8; 1];
+            stream.read_exact(&mut first)?;
             stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
         });
         let result = authentication_metadata()
@@ -83,7 +93,7 @@ mod tests {
         assert!(result.is_err(), "untrusted metadata endpoint was accepted");
         assert!(
             server.join().unwrap().is_err(),
-            "server unexpectedly completed untrusted TLS"
+            "client sent an HTTP request through untrusted TLS"
         );
     }
 }
