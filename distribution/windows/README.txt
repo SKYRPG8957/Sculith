@@ -13,7 +13,8 @@ https://github.com/SKYRPG8957/Sculith
    창을 강제로 닫으면 시작 이후의 변경이 유실될 수 있습니다.
 
 현재 가능한 테스트: 평지 스폰, 제한된 크리에이티브 이동과 블록 설치/파괴.
-공식 Minecraft 클라이언트의 접속·렌더링은 아직 검증하지 못했습니다.
+순정 Java 26.3의 로컬 입장·이동·마우스 건축은 Linux에서 확인했습니다.
+공식 베드락 앱의 입장과 Windows 게임 렌더링은 아직 확인하지 못했습니다.
 Java 26.3의 로컬 로그인·평지 전송·제한된 건축 경로도 구현했습니다.
 일반 인벤토리, 생존/중력, 다른 플레이어 표시, 완전한 리소스팩 호환도 미완료입니다.
 이 배포는 완성된 서버나 크로스플레이 지원을 뜻하지 않습니다.
@@ -43,8 +44,9 @@ NetherNet 연결용 서명 키는 world/nethernet-identity.pem에 저장하고 �
 English
 Extract the entire ZIP, then double-click start.cmd. Add 127.0.0.1:19132 in
 Bedrock on the same PC. Ctrl+C saves the world and stops the server.
-This is a local, offline-identity development preview. Official Minecraft
-client entry/rendering remain unverified. Java 26.3 uses 127.0.0.1:25565 and
+This is a local, offline-identity development preview. Unmodified Java 26.3
+entry, movement and building were checked on Linux; official Bedrock entry
+and Windows game rendering remain unverified. Java uses 127.0.0.1:25565 and
 the same authoritative world. Other versions and online Java authentication
 are not implemented. Existing settings are not automatically opted in.
 Settings and world data are preserved. No Rust, Java or Python install is needed.

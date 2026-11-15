@@ -110,7 +110,11 @@ impl<'a> Fields<'a> {
         Ok(value)
     }
     pub fn end(self) -> Result<()> {
-        ensure!(self.0.is_empty(), "trailing Java fields");
+        ensure!(
+            self.0.is_empty(),
+            "trailing Java fields ({} bytes)",
+            self.0.len()
+        );
         Ok(())
     }
     pub fn position(&mut self) -> Result<BlockPos> {

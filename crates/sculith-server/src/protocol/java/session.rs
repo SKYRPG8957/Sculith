@@ -253,7 +253,11 @@ impl Session {
         write_varint(registry::get().dimension, &mut packet);
         write_string("sculith:world", &mut packet);
         packet.extend_from_slice(&0i64.to_be_bytes());
-        packet.extend_from_slice(&[1, 255, 0, 1, 0]); // Creative, previous none, debug, flat, death pos absent.
+        // Official 26.3 GameType is a VarInt and previous GameType is an
+        // OPTIONAL_VAR_INT (zero = absent, otherwise id + 1), not legacy i8/-1.
+        write_varint(1, &mut packet); // Creative.
+        write_varint(0, &mut packet); // Previous game type absent.
+        packet.extend_from_slice(&[0, 1, 0]); // Debug, flat, death position absent.
         write_varint(0, &mut packet);
         write_varint(63, &mut packet);
         packet.extend_from_slice(&[0, 0]); // Offline mode, unsigned chat.
@@ -337,11 +341,28 @@ impl Session {
 
     fn confirm_teleport(&mut self, mut fields: Fields<'_>) -> Result<()> {
         let received = fields.int()?;
-        fields.end()?;
         let (expected, _) = self
             .pending_teleport
             .context("unexpected Java teleport confirmation")?;
         ensure!(received == expected, "Java teleport confirmation mismatch");
+        // Protocol 777 acknowledges position and rotation as well as the ID.
+        // These are confirmation data, never a new movement intent.
+        let position = [fields.double()?, fields.double()?, fields.double()?];
+        let yaw = f64::from(fields.float()?);
+        let pitch = f64::from(fields.float()?);
+        fields.end()?;
+        ensure!(
+            position
+                .into_iter()
+                .zip([self.player.feet.x, self.player.feet.y, self.player.feet.z])
+                .all(|(actual, expected)| actual.is_finite() && (actual - expected).abs() < 1e-5)
+                && yaw.is_finite()
+                && pitch.is_finite()
+                && ((yaw - self.player.rotation.yaw + 180.0).rem_euclid(360.0) - 180.0).abs()
+                    < 1e-3
+                && (pitch - self.player.rotation.pitch).abs() < 1e-3,
+            "Java teleport confirmation disagrees with the server correction"
+        );
         self.pending_teleport = None;
         Ok(())
     }

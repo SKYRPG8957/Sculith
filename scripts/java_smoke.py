@@ -161,7 +161,8 @@ def chunk(reader, edits=None):
 
 
 class Client:
-    def __init__(self, address, name="SculithJavaProbe", edits=None):
+    def __init__(self, address, name="SculithJavaProbe", edits=None,
+                 acknowledged_position=(.5, 4, .5)):
         self.socket = socket.create_connection(address, timeout=5)
         self.socket.settimeout(5)
         self.uuid = uuid.UUID(bytes=hashlib.md5(("OfflinePlayer:" + name).encode()).digest(), version=3)
@@ -221,7 +222,11 @@ class Client:
                 assert [r.varint() for _ in range(3)] == [20, 2, 2]
                 assert r.take(3) == bytes([0, 1, 0])
                 assert r.varint() == 0 and r.string() == "sculith:world"
-                assert r.number(">q") == 0 and r.take(5) == bytes([1, 255, 0, 1, 0])
+                assert r.number(">q") == 0
+                # 26.3 uses GameType VarInt and previous OPTIONAL_VAR_INT.
+                # The legacy -1 byte consumed the next field in the real client.
+                assert [r.varint(), r.varint()] == [1, 0]
+                assert r.take(3) == bytes([0, 1, 0])
                 assert [r.varint(), r.varint()] == [0, 63] and r.take(2) == bytes(2)
             elif id_ == 0x41:
                 assert r.number(">B") == 15
@@ -264,7 +269,7 @@ class Client:
                 r.end()
                 assert len(chunks) == 25 and len(inventory) == 41
                 assert [inventory[i] for i in range(3)] == [(64, 1), (64, 55), (64, 54)]
-                send(self.socket, 0, vi(teleport))
+                send(self.socket, 0, vi(teleport) + struct.pack(">dddff", *acknowledged_position, 0, 0))
                 send(self.socket, 0x2c)
                 return
             else:
@@ -346,7 +351,7 @@ def smoke(server):
                 id_, r = receive(client.socket)
                 assert id_ == 8 and r.take(8) == pos(2, 3, 1) and r.varint() == 9
                 r.end()
-                send(client.socket, 0, vi(correction))
+                send(client.socket, 0, vi(correction) + struct.pack(">dddff", 1, 4, .5, 0, 0))
                 # Select the existing server dirt slot, then rebuild the shared column.
                 send(client.socket, 0x36, struct.pack(">h", 1))
                 send(client.socket, 0x29, vi(0) + pos(1, 3, 1) + b"\x01" + vi(4))
@@ -372,6 +377,15 @@ def smoke(server):
                 # A second session sees the committed dirt and no replay/pending edits.
                 reader = Client(("127.0.0.1", int(match[1])), "JavaProbeReader", {(1, 3, 1): 10})
                 reader.socket.close()
+                # Confirmation data cannot authorize another position, including NaN.
+                for name, position in [("WrongAck", (1000, 4, .5)), ("NonfiniteAck", (float("nan"), 4, .5))]:
+                    invalid = Client(("127.0.0.1", int(match[1])), name,
+                                     {(1, 3, 1): 10}, acknowledged_position=position)
+                    id_, r = receive(invalid.socket)
+                    assert id_ == 0x20 and r.number(">B") == 8
+                    assert "request rejected" in r.take(r.number(">H")).decode()
+                    r.end()
+                    invalid.socket.close()
                 assert "Java client acknowledged the shared flat-world spawn" in log_path.read_text(encoding="utf-8")
                 process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
                 assert process.wait(timeout=5) == 0

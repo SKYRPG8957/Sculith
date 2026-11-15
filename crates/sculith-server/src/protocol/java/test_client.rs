@@ -63,6 +63,11 @@ impl Probe {
                     ensure!(chunks == 25, "Java fixture did not receive all chunks");
                     let mut confirm = vec![0];
                     write_varint(fields.int()?, &mut confirm);
+                    confirm.extend_from_slice(fields.take(24)?); // Confirmed coordinates.
+                    fields.take(24)?; // Server velocity is not in the acknowledgement.
+                    confirm.extend_from_slice(fields.take(8)?); // Yaw/pitch.
+                    ensure!(fields.take(4)? == [0; 4], "expected absolute teleport");
+                    fields.end()?;
                     codec::send(&mut client.stream, &confirm).await?;
                     codec::send(&mut client.stream, &[0x2c]).await?;
                     initialized = true;

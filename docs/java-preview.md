@@ -2,9 +2,12 @@
 
 Current source implements protocol **777** against the same `WorldHandle` and
 single region owner as Bedrock. This is an explicitly offline, loopback-only
-development path. Official stock Java entry/rendering has not been verified.
+development path. Unmodified stock Java entry, rendering, keyboard movement and
+mouse building have been verified on Linux. [Actual-client evidence](verification/2026-11-16-java26.3.md).
 [Windows Preview 8](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.8)
-includes this adapter and enables both local paths in new configurations.
+includes the initial adapter and enables both local paths in new configurations.
+Its Java path has two confirmed wire errors corrected in current source; use the
+corrected source until the next verified portable build is published.
 
 ## Run from source
 
@@ -58,9 +61,10 @@ python3 scripts/java_smoke.py
 cargo test --locked -p sculith-server java_and_both_bedrock_transports_share_bidirectional_commits_in_one_owner
 ```
 
-These are headless wire/owner checks. They do not prove the official client can
-render the world. Windows CI also runs the independent probe against the portable
-release executable.
+These commands are headless wire/owner checks. The separately recorded official
+Linux game test rendered the world and exchanged mouse-driven changes with the
+independent Bedrock client. Windows CI runs the independent probe against the
+portable release executable; official Windows game rendering remains unverified.
 
 ## Limits
 

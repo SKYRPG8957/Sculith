@@ -19,7 +19,7 @@ if /i "%~1"=="--check" goto check
 echo Sculith local shared-world preview
 echo Add a Bedrock server: 127.0.0.1  port 19132
 echo Add a Java 26.3 server: 127.0.0.1:25565
-echo Both previews need explicit settings. Official client rendering is unverified.
+echo Java local entry tested on Linux. Official Bedrock entry remains unverified.
 echo Press Ctrl+C to save the world and stop.
 echo.
 sculith.exe run --config "sculith.toml"

@@ -16,7 +16,7 @@ A Bedrock-native Minecraft server engine written in Rust.
 
 Sculith is being built around **one authoritative Bedrock-native world**, with Java and Bedrock protocol adapters sharing the same server state. Its long-term goals include Rust plugins, region-owned simulation, and a shared Bedrock content pipeline.
 
-**This is an early, public development repository, not a production-ready release.** The default mode provides server discovery. Opt-in local Java and Bedrock adapters share a flat world and limited authoritative creative building, verified with headless protocol clients. Official game-client entry and rendering have not yet been verified.
+**This is an early, public development repository, not a production-ready release.** The default mode provides server discovery. Opt-in local Java and Bedrock adapters share a flat world and limited authoritative creative building. An unmodified Java 26.3 game has entered, rendered, moved and exchanged mouse-driven edits with an independent Bedrock client on Linux. [Screenshots and verification scope](docs/verification/2026-11-16-java26.3.md). Official Bedrock-game entry remains unverified.
 
 ## Compatibility
 
@@ -54,7 +54,7 @@ In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C
 
 Java **26.3** uses **`127.0.0.1:25565`** and shares the same owner and committed block changes. Existing configurations do not automatically enable Java sessions; see [the Java preview guide](docs/java-preview.md).
 
-Preview 8 selects the local, offline-identity Java and Bedrock previews. **Official game-client entry/rendering remain unverified.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
+Preview 8 selects the local, offline-identity Java and Bedrock previews. **Its Java path has two confirmed wire errors corrected in current source; a corrected portable build is being verified.** Official Bedrock-game entry and Windows game rendering remain unverified. See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
 
 The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 corrected this; Preview 8 retains that handling. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official game-client entry still requires a successful retest.
 

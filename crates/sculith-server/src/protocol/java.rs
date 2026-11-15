@@ -58,7 +58,7 @@ pub async fn serve(
                 connections.spawn(async move {
                     let _permit = permit;
                     if let Err(error)=handle_with_preview(&mut stream,status,preview).await {
-                        tracing::debug!(%address,%error,"Java connection closed");
+                        tracing::debug!(%address,error = %format!("{error:#}"),"Java connection closed");
                     }
                 });
             }
