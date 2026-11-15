@@ -48,13 +48,15 @@ Multiplayer entity visibility, general inventory transactions, physics/gravity, 
 
 ## Windows quick start
 
-For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.7), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required.
+For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.8), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
 
 In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
 
-The currently published Preview 7 selects the local, offline-identity Bedrock preview. It predates the source Java adapter above. **Official game-client entry/rendering remain unverified.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
+Java **26.3** uses **`127.0.0.1:25565`** and shares the same owner and committed block changes. Existing configurations do not automatically enable Java sessions; see [the Java preview guide](docs/java-preview.md).
 
-The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 handles the notification without applying game intent and accepts bounded ancillary loading status. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official game-client entry still requires a successful retest.
+Preview 8 selects the local, offline-identity Java and Bedrock previews. **Official game-client entry/rendering remain unverified.** See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
+
+The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 corrected this; Preview 8 retains that handling. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official game-client entry still requires a successful retest.
 
 ## Build from source
 

@@ -41,16 +41,18 @@
 
 ## Windows에서 바로 테스트
 
-1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.7)에서 `windows-x86_64.zip`을 받습니다.
+1. [테스트 배포](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.8)에서 `windows-x86_64.zip`을 받습니다.
 2. ZIP 전체를 압축 해제하고 **`start.cmd`를 더블클릭**합니다. Rust·Python·Java 설치는 필요 없습니다.
 3. 같은 PC의 베드락에서 서버 주소 **`127.0.0.1`**, 포트 **`19132`**로 추가합니다.
+   Java **26.3**은 서버 주소에 **`127.0.0.1:25565`**를 입력합니다. 같은 월드와 승인된 블록 변경을 공유합니다.
 4. 종료할 때 서버 창에서 **Ctrl+C**를 누르면 월드를 저장합니다.
 
 기존 `sculith.toml`과 `world/region.sculith`는 보존합니다. 로컬 테스트 신원을 허용하는 개발 프리뷰이며,
-**공식 게임 클라이언트 접속·렌더링은 아직 미검증**입니다. 현재 공개 Preview 7에는 위 소스의 Java 접속 구현이 포함되지 않습니다.
+**공식 게임 클라이언트 접속·렌더링은 아직 미검증**입니다. Preview 8은 Java 로컬 접속 구현을 포함합니다.
+기존 설정을 옮기면 Java 세션은 자동으로 켜지지 않으므로 [Java 설정 안내](docs/java-preview.md)를 확인하세요.
 설치 명령과 Windows loopback 문제는 [Windows 빠른 시작](docs/windows-quickstart.md)을 참고하세요.
 Windows GDK `1.26.63`의 Preview 6 재접속은 로그인 후 서버가 초기화 전 Interact/33 알림을 거부하면서 `InitialConnection-40`으로 실패했습니다.
-Preview 7은 이 알림과 부가 로딩 상태를 월드 변경 없이 처리합니다. 로그인 절차 재시작과 초기화 전 게임 행동 적용은 허용하지 않습니다.
+Preview 7에서 수정했고 Preview 8도 이 알림과 부가 로딩 상태를 월드 변경 없이 처리합니다. 로그인 절차 재시작과 초기화 전 게임 행동 적용은 허용하지 않습니다.
 Windows에서 두 전송의 재현 테스트와 독립 클라이언트의 로그인·스폰·전체 청크 검사를 통과했습니다. 공식 게임 입장은 재접속 확인이 필요합니다.
 
 ## 소스에서 빌드와 실행

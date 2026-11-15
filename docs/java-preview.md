@@ -3,7 +3,8 @@
 Current source implements protocol **777** against the same `WorldHandle` and
 single region owner as Bedrock. This is an explicitly offline, loopback-only
 development path. Official stock Java entry/rendering has not been verified.
-The currently published Preview 7 predates this adapter.
+[Windows Preview 8](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.8)
+includes this adapter and enables both local paths in new configurations.
 
 ## Run from source
 
