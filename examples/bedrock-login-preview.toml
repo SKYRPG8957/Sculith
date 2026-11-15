@@ -1,7 +1,10 @@
-# Development preview: encrypted login, empty pack negotiation, read-only flat chunks.
+# Development preview: encrypted login, empty packs and authoritative creative building.
 # Offline identities are accepted only because the listener is loopback-only.
 [server]
 motd = "Sculith / Bedrock spawn preview"
+
+[world]
+snapshot_path = "../world/region.sculith"
 
 [bedrock]
 sessions = true

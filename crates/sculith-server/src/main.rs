@@ -1,7 +1,7 @@
 mod config;
 mod plugins;
 mod protocol;
-mod world;
+use sculith_server::{game, world};
 
 use std::{
     path::PathBuf,
@@ -119,6 +119,21 @@ async fn main() -> Result<()> {
 }
 
 async fn run(config: Config) -> Result<()> {
+    let region = if let Some(path) = config.world.snapshot_path.clone() {
+        tokio::task::spawn_blocking(move || -> Result<sculith_world::Region> {
+            match std::fs::symlink_metadata(&path) {
+                Ok(_) => Ok(sculith_world::storage::load(&path)?),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    Ok(sculith_world::Region::flat_origin())
+                }
+                Err(error) => Err(error.into()),
+            }
+        })
+        .await
+        .context("snapshot loading worker failed")??
+    } else {
+        sculith_world::Region::flat_origin()
+    };
     let authentication = if config.network.bedrock.enabled && config.bedrock.sessions {
         Some(
             protocol::bedrock::session::Authentication::new(config.bedrock.require_authentication)
@@ -158,8 +173,11 @@ async fn run(config: Config) -> Result<()> {
     let (status_tx, status_rx) = watch::channel(state.clone());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut services = JoinSet::new();
-    let (world, world_task) = world::create(shutdown_rx.clone());
-    services.spawn(world_task);
+    let (world_stop, world_stop_rx) = watch::channel(false);
+    let (world, world_task) =
+        world::with_region(region, config.server.max_players.min(64), world_stop_rx)?;
+    let mut world_task = tokio::spawn(world_task);
+    let mut world_finished = false;
     if let Some(listener) = java {
         info!(address = %listener.local_addr()?, "Java TCP discovery listening");
         services.spawn(protocol::java::serve(listener, status_rx.clone()));
@@ -174,7 +192,7 @@ async fn run(config: Config) -> Result<()> {
             ^ u64::from(std::process::id());
         match authentication {
             Some(authentication) => {
-                info!("Bedrock encrypted login and read-only flat-world spawn preview enabled");
+                info!("Bedrock encrypted login and authoritative creative-builder preview enabled");
                 if !config.bedrock.require_authentication {
                     warn!(
                         "Offline test identities enabled on loopback; this is not online account verification"
@@ -204,9 +222,17 @@ async fn run(config: Config) -> Result<()> {
     let mut tick = 0u64;
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
-    let result = loop {
+    let mut result = loop {
         tokio::select! {
             result = &mut shutdown => { break result; }
+            result = &mut world_task => {
+                world_finished = true;
+                break match result {
+                    Ok(Err(error)) => Err(error),
+                    Err(error) => Err(error.into()),
+                    _ => Err(anyhow::anyhow!("world owner stopped unexpectedly")),
+                };
+            }
             service = services.join_next() => {
                 break match service {
                     Some(Ok(Err(error))) => Err(error.context("discovery listener stopped")),
@@ -235,6 +261,34 @@ async fn run(config: Config) -> Result<()> {
     {
         services.abort_all();
         while services.join_next().await.is_some() {}
+    }
+    // Network sessions are now gone. Capture the final committed state while
+    // the owner is still alive; disk encoding and I/O run on a blocking worker.
+    if !world_finished {
+        if let Some(path) = config.world.snapshot_path {
+            let saved = async {
+                let snapshot = world.capture().await?;
+                tokio::task::spawn_blocking(move || -> Result<()> {
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    sculith_world::storage::save_snapshot(&path, &snapshot)?;
+                    Ok(())
+                })
+                .await
+                .context("snapshot saving worker failed")?
+            }
+            .await;
+            if let Err(error) = saved {
+                result = Err(error.context("final world snapshot was not saved"));
+            }
+        }
+        world_stop.send_replace(true);
+        match world_task.await {
+            Ok(Err(error)) => result = Err(error),
+            Err(error) => result = Err(error.into()),
+            _ => {}
+        }
     }
     plugins.stop(&mut state).await;
     info!(ticks = tick, "Sculith stopped");

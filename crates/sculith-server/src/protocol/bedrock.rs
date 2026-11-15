@@ -1,6 +1,8 @@
 //! RakNet discovery, plus the opt-in V2225 encrypted login and read-only spawn.
 
 mod chunk;
+mod input;
+mod output;
 pub mod session;
 mod spawn;
 mod transport;
@@ -67,7 +69,7 @@ fn make_pong(
         "Sculith / discovery only"
     };
     let game_mode = if status.stage == "bedrock-spawn-preview" {
-        "Adventure"
+        "Creative"
     } else {
         "Survival"
     };

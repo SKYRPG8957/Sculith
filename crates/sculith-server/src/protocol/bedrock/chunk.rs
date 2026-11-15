@@ -125,7 +125,7 @@ fn write_signed_varint(value: i32, output: &mut Vec<u8>) {
     output.push(encoded as u8);
 }
 
-fn block_hash(kind: BlockKind) -> Result<u32> {
+pub(super) fn block_hash(kind: BlockKind) -> Result<u32> {
     match kind {
         BlockKind::Air => network_hash("minecraft:air", &[]),
         BlockKind::Bedrock => network_hash("minecraft:bedrock", &[("infiniburn_bit", 0)]),

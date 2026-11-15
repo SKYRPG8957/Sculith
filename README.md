@@ -16,7 +16,7 @@ A Bedrock-native Minecraft server engine written in Rust.
 
 Sculith is being built around **one authoritative Bedrock-native world**, with Java and Bedrock protocol adapters sharing the same server state. Its long-term goals include Rust plugins, region-owned simulation, and a shared Bedrock content pipeline.
 
-**This is an early, public development repository. It is not a playable crossplay server or a production-ready release.** The default mode provides server discovery; an opt-in Bedrock path currently exercises encrypted login and a read-only flat-world spawn with headless protocol clients. Official game-client entry and rendering have not yet been verified.
+**This is an early, public development repository. It is not a playable crossplay server or a production-ready release.** The default mode provides server discovery; an opt-in Bedrock path exercises encrypted login, flat-world spawn and limited authoritative creative building with headless protocol clients. Official game-client entry and rendering have not yet been verified.
 
 ## Compatibility
 
@@ -24,7 +24,7 @@ The checked-in release references are:
 
 | Edition | Reference version | Protocol | Current implementation |
 | --- | --- | --- | --- |
-| Bedrock | 1.26.60 | 2225 | Discovery; opt-in RakNet login, encryption, empty-pack negotiation and read-only spawn preview |
+| Bedrock | 1.26.60 | 2225 | Discovery; opt-in RakNet login, encryption, empty-pack negotiation, spawn and limited creative-builder preview |
 | Java | 26.3 | 777 | Server-list status and ping; world login is not implemented |
 
 These numbers identify development targets, **not verified gameplay support**. The gameplay support lists in [`protocol-targets.json`](protocol-targets.json) remain empty. Preview/Beta versions are separate targets, and RakNet tests do not establish NetherNet support.
@@ -34,14 +34,15 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Java TCP and Bedrock UDP discovery in one Rust server process.
 - Shared MOTD and initialized-session counts.
 - Bounded RakNet session handling, compression, signature verification and encryption using pinned Rust libraries.
-- An opt-in, read-only Bedrock flat-world spawn with 25 chunks and session cleanup.
+- An opt-in Bedrock flat-world spawn with 25 chunks, bounded view updates and session cleanup.
+- Authoritative movement checks and limited creative block placement/breaking, with server-owned starter items and committed block deltas shared between sessions.
 - A single region owner, revision-checked block commits, compact uniform/palette sections and immutable copy-on-write snapshots.
-- Versioned, checksummed region snapshot storage in the world library. Automatic saving in the server runtime is not wired up yet.
+- Optional versioned, checksummed region snapshots loaded at startup and saved after sessions close on orderly shutdown. Periodic autosaving is pending.
 - An initial trusted-executable Rust plugin SDK with lifecycle hooks and a shared MOTD action.
 - Explicit Bedrock PNG-to-Java texture overrides, with a conversion report describing unsupported assets.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
-Authoritative movement and block interaction, Java world entry, multiplayer entity visibility, inventory transactions, content distribution, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
+Java world entry, multiplayer entity visibility, general inventory transactions, physics/gravity, content distribution, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
 
 ## Build
 
@@ -71,6 +72,10 @@ cargo run --locked -- run --config examples/bedrock-login-preview.toml
 ```
 
 This test configuration accepts self-signed identities. It does **not** prove online Microsoft account authentication or official Bedrock-client compatibility. Online authentication is required by default when sessions are enabled; it needs outbound HTTPS access to the official Minecraft discovery/OIDC public-key services. Authentication failures never silently enable offline mode.
+
+The preview supplies Stone, Dirt and Grass starter slots. The server checks movement timing/collision, building permission, reach, line of sight and held items before committing. This is a limited creative-builder implementation, not complete Minecraft movement or inventory behavior.
+
+The example stores its region in `world/region.sculith`. To enable persistence in another configuration, set `snapshot_path = "world/region.sculith"` under `[world]` (relative to the configuration file). Ctrl+C/SIGTERM triggers the final save; abrupt termination can lose changes since startup. Existing foreign or corrupt snapshots cause an error instead of being overwritten.
 
 ## Rust plugins
 

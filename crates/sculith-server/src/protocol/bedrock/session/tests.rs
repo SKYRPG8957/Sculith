@@ -86,6 +86,36 @@ struct TestClient {
 }
 
 impl TestClient {
+    async fn enter(&mut self) -> Result<u64> {
+        self.encrypted_login().await?;
+        self.finish_packs().await?;
+        let id = self.receive_spawn().await?;
+        self.conn
+            .send(&[V2225::SetLocalPlayerAsInitializedPacket(Box::new(
+                SetLocalPlayerAsInitializedPacket {
+                    player_id: ActorRuntimeID(id),
+                },
+            ))])
+            .await?;
+        Ok(id)
+    }
+
+    async fn request_break(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<()> {
+        use bedrock::protocol::{
+            v662::{enums::PlayerActionType, packets::PlayerActionPacket},
+            v944::types::NetworkBlockPosition,
+        };
+        self.conn
+            .send(&[V2225::PlayerActionPacket(Box::new(PlayerActionPacket {
+                player_runtime_id: ActorRuntimeID(id),
+                action: PlayerActionType::PredictDestroyBlock,
+                block_position: NetworkBlockPosition { x, y, z },
+                result_pos: NetworkBlockPosition { x, y, z },
+                face: 1,
+            }))])
+            .await?;
+        Ok(())
+    }
     async fn connect(address: SocketAddr) -> Result<Self> {
         let conn = Client::new()
             .timeout(Duration::from_secs(2))
@@ -202,6 +232,10 @@ impl TestClient {
     }
 
     async fn receive_spawn(&mut self) -> Result<u64> {
+        self.receive_spawn_with_radius(8).await
+    }
+
+    async fn receive_spawn_with_radius(&mut self, requested_radius: i32) -> Result<u64> {
         ensure!(matches!(self.next().await?, V2225::VoxelShapesPacket(_)));
         let V2225::StartGamePacket(game) = self.next().await? else {
             anyhow::bail!("expected StartGame");
@@ -212,10 +246,22 @@ impl TestClient {
             self.next().await?,
             V2225::UpdateAdventureSettingsPacket(_)
         ));
+        ensure!(matches!(self.next().await?, V2225::ItemComponentPacket(_)));
+        let V2225::UpdateAbilitiesPacket(abilities) = self.next().await? else {
+            anyhow::bail!("expected abilities")
+        };
+        ensure!(abilities.data.layers[0].ability_values & ((1 << 6) | (1 << 7) | (1 << 17)) == 0);
+        let V2225::InventoryContentPacket(inventory) = self.next().await? else {
+            anyhow::bail!("expected inventory")
+        };
+        ensure!(
+            inventory.slots.len() == 36 && inventory.slots[0].id == 1 && inventory.slots[1].id == 3
+        );
+        ensure!(matches!(self.next().await?, V2225::MobEquipmentPacket(_)));
         self.conn
             .send(&[V2225::RequestChunkRadiusPacket(Box::new(
                 RequestChunkRadiusPacket {
-                    chunk_radius: 8,
+                    chunk_radius: requested_radius,
                     max_chunk_radius: 32,
                 },
             ))])
@@ -223,21 +269,22 @@ impl TestClient {
         let V2225::ChunkRadiusUpdatedPacket(radius) = self.next().await? else {
             anyhow::bail!("expected radius acknowledgement");
         };
-        ensure!(radius.chunk_radius == 2);
+        let expected_radius = requested_radius.min(super::spawn::RADIUS);
+        ensure!(radius.chunk_radius == expected_radius);
         ensure!(matches!(
             self.next().await?,
             V2225::NetworkChunkPublisherUpdatePacket(_)
         ));
         let mut chunks = std::collections::BTreeSet::new();
-        for _ in 0..25 {
+        for _ in 0..(expected_radius * 2 + 1).pow(2) {
             let V2225::LevelChunkPacket(chunk) = self.next().await? else {
                 anyhow::bail!("expected LevelChunk");
             };
             ensure!(chunk.dimension_id == 0 && chunk.sub_chunk_count == 24 && !chunk.cache_enabled);
             ensure!(chunk.serialized_chunk_data.len() == 1282);
             ensure!(
-                (-2..=2).contains(&chunk.chunk_position.x)
-                    && (-2..=2).contains(&chunk.chunk_position.z)
+                (-expected_radius..=expected_radius).contains(&chunk.chunk_position.x)
+                    && (-expected_radius..=expected_radius).contains(&chunk.chunk_position.z)
             );
             ensure!(
                 chunks.insert((chunk.chunk_position.x, chunk.chunk_position.z)),
@@ -250,6 +297,219 @@ impl TestClient {
         ensure!(matches!(status.status, PlayStatus::PlayerSpawn));
         Ok(id)
     }
+}
+
+#[tokio::test]
+async fn crossing_a_chunk_boundary_keeps_the_negotiated_radius_and_sends_only_new_chunks() {
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
+    let mut client = TestClient::connect(server.address).await.unwrap();
+    client.encrypted_login().await.unwrap();
+    client.finish_packs().await.unwrap();
+    let id = client.receive_spawn_with_radius(1).await.unwrap();
+    client
+        .conn
+        .send(&[V2225::SetLocalPlayerAsInitializedPacket(Box::new(
+            SetLocalPlayerAsInitializedPacket {
+                player_id: ActorRuntimeID(id),
+            },
+        ))])
+        .await
+        .unwrap();
+    let mut movement = super::super::input::tests::movement();
+    movement.player_position = (-0.5, 5.62, 0.5);
+    movement.client_tick = 1;
+    client
+        .conn
+        .send(&[V2225::PlayerAuthInputPacket(Box::new(movement))])
+        .await
+        .unwrap();
+    let V2225::NetworkChunkPublisherUpdatePacket(publisher) = client.next().await.unwrap() else {
+        panic!("expected view update after accepted chunk crossing");
+    };
+    assert_eq!(publisher.new_view_position.x, -1);
+    assert_eq!(publisher.new_view_radius, 16);
+    let mut positions = std::collections::BTreeSet::new();
+    for _ in 0..3 {
+        let V2225::LevelChunkPacket(chunk) = client.next().await.unwrap() else {
+            panic!("expected newly visible chunk");
+        };
+        positions.insert((chunk.chunk_position.x, chunk.chunk_position.z));
+    }
+    assert_eq!(
+        positions,
+        [(-2, -1), (-2, 0), (-2, 1)].into_iter().collect()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), client.next())
+            .await
+            .is_err(),
+        "overlapping or out-of-radius chunks must not be resent"
+    );
+    client.conn.close().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn two_encrypted_clients_share_committed_block_deltas_and_rejected_corrections() {
+    use sculith_world::{BlockKind, ChunkPos};
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
+    let mut a = TestClient::connect(server.address).await.unwrap();
+    let id = a.enter().await.unwrap();
+    let mut b = TestClient::connect(server.address).await.unwrap();
+    b.enter().await.unwrap();
+    a.request_break(id, 1, 3, 1).await.unwrap();
+    for client in [&mut a, &mut b] {
+        let V2225::UpdateBlockPacket(update) = client.next().await.unwrap() else {
+            panic!("expected committed block delta")
+        };
+        assert_eq!(
+            (
+                update.block_position.x,
+                update.block_position.y,
+                update.block_position.z
+            ),
+            (1, 3, 1)
+        );
+        assert_eq!(
+            update.block_runtime_id,
+            super::super::chunk::block_hash(BlockKind::Air).unwrap()
+        );
+    }
+    assert_eq!(
+        server
+            .world
+            .snapshot(ChunkPos { x: 0, z: 0 })
+            .await
+            .unwrap()
+            .get(1, 3, 1)
+            .unwrap(),
+        BlockKind::Air
+    );
+    a.request_break(id, 1, 0, 1).await.unwrap();
+    let V2225::UpdateBlockPacket(update) = a.next().await.unwrap() else {
+        panic!("expected protected block correction")
+    };
+    assert_eq!(
+        update.block_runtime_id,
+        super::super::chunk::block_hash(BlockKind::Bedrock).unwrap()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), b.conn.recv())
+            .await
+            .is_err(),
+        "denials must not be broadcast as commits"
+    );
+    a.conn.close().await;
+    b.conn.close().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn placement_uses_server_inventory_and_broadcasts_only_accepted_changes() {
+    use bedrock::protocol::v662::types::InventoryTransactionData;
+    use sculith_world::{BlockKind, ChunkPos};
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
+    let mut a = TestClient::connect(server.address).await.unwrap();
+    a.enter().await.unwrap();
+    let mut b = TestClient::connect(server.address).await.unwrap();
+    b.enter().await.unwrap();
+    let mut forged = super::super::input::tests::transaction(0);
+    if let V2225::InventoryTransactionPacket(transaction) = &mut forged
+        && let InventoryTransactionData::ItemUse(data) = &mut transaction.data
+    {
+        data.held_item.id = 3;
+    }
+    a.conn.send(&[forged]).await.unwrap();
+    let V2225::UpdateBlockPacket(correction) = a.next().await.unwrap() else {
+        panic!("expected held-item correction")
+    };
+    assert_eq!(
+        correction.block_runtime_id,
+        super::super::chunk::block_hash(BlockKind::Air).unwrap()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), b.conn.recv())
+            .await
+            .is_err()
+    );
+    a.conn
+        .send(&[super::super::input::tests::transaction(0)])
+        .await
+        .unwrap();
+    for client in [&mut a, &mut b] {
+        let V2225::UpdateBlockPacket(update) = client.next().await.unwrap() else {
+            panic!("expected committed placement")
+        };
+        assert_eq!(
+            (
+                update.block_position.x,
+                update.block_position.y,
+                update.block_position.z
+            ),
+            (-1, 4, 0)
+        );
+        assert_eq!(
+            update.block_runtime_id,
+            super::super::chunk::block_hash(BlockKind::Stone).unwrap()
+        );
+    }
+    assert_eq!(
+        server
+            .world
+            .snapshot(ChunkPos { x: -1, z: 0 })
+            .await
+            .unwrap()
+            .get(15, 4, 0)
+            .unwrap(),
+        BlockKind::Stone
+    );
+    a.conn.close().await;
+    b.conn.close().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn valid_eye_offset_movement_is_committed_but_large_client_tick_cannot_teleport() {
+    let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
+    let mut client = TestClient::connect(server.address).await.unwrap();
+    client.enter().await.unwrap();
+    let mut events = server.world.subscribe();
+    let mut request = super::super::input::tests::movement();
+    request.player_position = (1.0, 5.62, 0.5);
+    request.client_tick = 1;
+    client
+        .conn
+        .send(&[V2225::PlayerAuthInputPacket(Box::new(request.clone()))])
+        .await
+        .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let event = events.recv().await.unwrap();
+            if matches!(event.as_ref(), crate::world::WorldEvent::Moved { .. }) {
+                break event;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let crate::world::WorldEvent::Moved { player, .. } = event.as_ref() else {
+        unreachable!()
+    };
+    assert_eq!(player.feet.x, 1.0);
+    assert_eq!(player.feet.y, 4.0);
+    request.player_position = (20.0, 5.62, 0.5);
+    request.client_tick = u64::MAX;
+    client
+        .conn
+        .send(&[V2225::PlayerAuthInputPacket(Box::new(request))])
+        .await
+        .unwrap();
+    let V2225::MovePlayerPacket(correction) = client.next().await.unwrap() else {
+        panic!("expected position correction")
+    };
+    assert_eq!(correction.position, (1.0, 5.62, 0.5));
+    client.conn.close().await;
+    server.stop().await;
 }
 
 #[tokio::test]

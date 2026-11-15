@@ -129,7 +129,7 @@ def check_bedrock(port, expected_reference, sessions=False):
         assert fields[4:6] == ["0", "32"]
         assert int(fields[6]) == struct.unpack(">Q", pong[9:17])[0]
         assert fields[7] == ("Sculith / Bedrock spawn preview" if sessions else "Sculith / discovery only")
-        assert fields[8] == ("Adventure" if sessions else "Survival")
+        assert fields[8] == ("Creative" if sessions else "Survival")
         assert fields[10:12] == [str(port), "0"]
 
         invalid = bytearray(ping)
@@ -168,10 +168,11 @@ def smoke(server, plugin, sessions=False):
 
     with tempfile.TemporaryDirectory(prefix="sculith-smoke-") as temporary:
         base = Path(temporary)
+        snapshot = base / "world" / "region.sculith"
         settings = base / "server.toml"
         preview = '[bedrock]\nsessions = true\nrequire_authentication = false\n' if sessions else ''
         settings.write_text(
-            preview +
+            '[world]\nsnapshot_path = ' + json.dumps(str(snapshot)) + '\n' + preview +
             '[server]\nmotd = "before plugin"\nmax_players = 32\n'
             '[network.java]\nbind = "127.0.0.1:0"\n'
             '[network.bedrock]\nbind = "127.0.0.1:0"\n'
@@ -211,6 +212,35 @@ def smoke(server, plugin, sessions=False):
                     process.kill()
                     process.wait(timeout=5)
 
+        assert snapshot.read_bytes().startswith(b"SCULITHR"), "orderly shutdown did not save the world"
+        saved_snapshot = snapshot.read_bytes()
+        restart_log = base / "restart.log"
+        with restart_log.open("w") as log:
+            restarted = subprocess.Popen([str(server), "run", "--config", str(settings)], cwd=ROOT, stdout=log, stderr=log, env=env)
+            try:
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    text = re.sub(r"\x1b\[[0-9;]*m", "", restart_log.read_text(encoding="utf-8"))
+                    java = re.search(r"Java TCP discovery listening.*?127\.0\.0\.1:(\d+)", text)
+                    if java:
+                        break
+                    assert restarted.poll() is None, text
+                    time.sleep(0.05)
+                else:
+                    raise AssertionError("snapshot restart did not become ready: " + text)
+                check_java(int(java[1]), "bedrock-spawn-preview" if sessions else "discovery-only")
+                restarted.send_signal(signal.SIGINT)
+                assert restarted.wait(timeout=5) == 0, restart_log.read_text(encoding="utf-8")
+            finally:
+                if restarted.poll() is None:
+                    restarted.kill(); restarted.wait(timeout=5)
+        assert snapshot.read_bytes() == saved_snapshot, "unchanged world must roundtrip deterministically"
+        foreign = base / "foreign-world"
+        foreign.write_bytes(b"existing non-Sculith world data")
+        settings.write_text('[world]\nsnapshot_path = ' + json.dumps(str(foreign)) + '\n', encoding="utf-8")
+        run_cli(server, "run", "--config", settings, ok=False)
+        assert foreign.read_bytes() == b"existing non-Sculith world data"
+
         destination = base / "java-pack"
         major, minor = versions["java"]["resource_pack_format"]
         command = ["pack", "convert", "--input", ROOT / "examples/pack/bedrock", "--mapping", ROOT / "examples/pack/textures.json", "--output", destination, "--pack-format", major, "--pack-format-minor", minor]
@@ -225,7 +255,7 @@ def smoke(server, plugin, sessions=False):
         run_cli(server, *command, ok=False)
         assert (destination / "assets/minecraft/textures/block/stone.png").read_bytes() == original
 
-    print("PASS: shared Java TCP + Bedrock UDP discovery, Rust plugin, ping, login rejection, malformed traffic, shutdown, config and PNG pack conversion" + (", built-executable RakNet connection request" if sessions else ""))
+    print("PASS: shared Java TCP + Bedrock UDP discovery, Rust plugin, ping, login rejection, malformed traffic, shutdown, world save/restart, foreign-world preservation, config and PNG pack conversion" + (", built-executable RakNet connection request" if sessions else ""))
 
 
 if __name__ == "__main__":

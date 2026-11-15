@@ -13,13 +13,21 @@ pub struct Config {
     pub server: Server,
     pub network: Network,
     pub bedrock: Bedrock,
+    pub world: World,
     pub plugins: Vec<PluginConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct World {
+    /// Optional Sculith snapshot, loaded before listeners start and saved at orderly shutdown.
+    pub snapshot_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Bedrock {
-    /// Opt-in transport/login preview until chunk loading is implemented.
+    /// Opt-in native preview until official-client compatibility is verified.
     pub sessions: bool,
     pub require_authentication: bool,
     pub login_timeout_secs: u64,
@@ -116,6 +124,11 @@ impl Config {
                 toml::from_str(&content).context("invalid server configuration")?;
             let absolute = path.canonicalize()?;
             let base = absolute.parent().context("config path has no parent")?;
+            if let Some(snapshot) = &mut config.world.snapshot_path
+                && snapshot.is_relative()
+            {
+                *snapshot = base.join(&*snapshot);
+            }
             for plugin in &mut config.plugins {
                 if plugin.path.is_relative() {
                     plugin.path = base.join(&plugin.path);

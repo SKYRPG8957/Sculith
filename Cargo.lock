@@ -1447,6 +1447,7 @@ dependencies = [
  "anyhow",
  "bedrock",
  "clap",
+ "nbtx",
  "raknet",
  "sculith-core",
  "sculith-packs",

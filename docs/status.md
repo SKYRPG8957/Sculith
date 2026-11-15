@@ -1,6 +1,6 @@
 # Development status — 2026-11-16 KST
 
-**Current Milestone:** Milestone 1, Bedrock-native login and first world spawn. The overall goal remains active.
+**Current Milestone:** Milestone 1, Bedrock-native login, spawn and authoritative creative-builder preview. The overall goal remains active.
 Canonical repository: `SKYRPG8957/Sculith`. Existing MIT license and origin are preserved.
 The full requirements are in [engineering-directive.md](engineering-directive.md).
 
@@ -10,21 +10,27 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Opt-in RakNet sessions using pinned Rust libraries, compression, signed identity verification, encryption and ordered empty-pack negotiation.
 - Bounded session/message queues with byte budgets, login/spawn timeout and owned session cleanup.
 - Protocol-independent five-block registry, uniform/palette sections, a single region owner, revision-checked atomic edits and COW snapshots.
-- One bounded world-owner mailbox used by the Bedrock adapter; 24-section chunk encoding, 25 flat spawn chunks and local-player initialization.
-- Versioned/checksummed immutable region snapshots with validated disk reload and conservative atomic file replacement. Server autosave integration is pending.
-- Read-only Adventure preview with initialized session counting. Login deadlines do not terminate already initialized sessions.
+- One bounded world-owner mailbox used by the Bedrock adapter; 24-section chunk encoding, 25 flat spawn chunks, bounded view updates and local-player initialization.
+- Server-owned player state, hotbar selection and limited creative placement/breaking, validated before revision commits.
+- Movement uses monotonic client ticks plus a server-clock speed budget, swept body collision and region bounds. Building checks permission, rate, reach, line of sight, selected slot, held item and player-body overlap; Bedrock is immutable.
+- Only committed block deltas reach interested sessions; stale events are skipped, revision gaps trigger snapshot resynchronization and a lagging subscriber disconnects explicitly.
+- Versioned/checksummed immutable region snapshots with validated disk reload and conservative atomic file replacement. Optional runtime loading and orderly-shutdown saving are wired; periodic autosaving is pending.
+- Creative-builder preview with initialized session counting and cancellation-safe player leases. Login deadlines do not terminate already initialized sessions.
 - Explicit official online authentication initialization. Public-key lookup failure does not silently enable offline authentication.
 
 ## Verified
 
 - Rust 1.100.0 workspace build and Clippy for all targets with warnings denied.
-- 54 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (55 total checks).
+- 82 unit/integration-style tests passed; the region `!Sync` compile-fail doctest also passed as expected (83 total checks).
 - Real UDP headless protocol-client tests cover compression/encryption, signed login rejection, stale protocol rejection,
   ordered packs, cancellation, spawn entity-ID validation, 25 decoded chunk packets, session lifetime and cleanup.
+- Two encrypted UDP clients receive the same accepted placement/break delta. A rejected Bedrock break is corrected only for the requester; a forged held-item claim cannot commit. Valid eye-offset movement commits, while a large tick/teleport request is corrected.
+- A real UDP client crossing a negative chunk boundary retains its negotiated one-chunk radius; only the three newly visible chunks are sent, with no overlap retransmission.
+- Domain tests exercise replay/speed/collision/reach/permission/budget checks, disconnected-player queue cleanup and immutable captures. Changed runtime state survives snapshot reload.
 - Every voxel of a flat chunk (98,304 blocks) independently decoded and compared; negative sections, asymmetric edits,
   1/2/3-bit packing and the latest `LevelChunkPacket` codec roundtrip verified.
 - Both built-executable smoke modes passed: Java/Bedrock discovery, Rust plugin, ping, malformed traffic,
-  Java login rejection, shutdown and pack conversion; `--sessions` also confirms a real RakNet connection-request reply.
+  Java login rejection, shutdown, snapshot save/restart/load, existing foreign-file protection and pack conversion; `--sessions` also confirms a real RakNet connection-request reply.
 - Snapshot storage tests cover disk roundtrips, immutable captures, checksums, truncation, version/coordinate/revision validation,
   stale concurrent saves, and preservation of foreign/corrupt/read-only/symlink destinations.
 - Latest-release reference check still reports Java `26.3 / 777` and Bedrock `1.26.60 / 2225`. These are references, not full gameplay support declarations.
@@ -55,11 +61,16 @@ The flat chunk's internal section records total 1,077 bytes; this excludes objec
 The separately encoded Bedrock payload is 1,282 bytes. These microbenchmarks do not establish TPS, network capacity,
 an optimization percentage, or a performance advantage over a complete Dragonfly/Pumpkin server.
 
+Authoritative kernel reproduction: `cargo run --release --locked -p sculith-server --example authority_bench`.
+One run measured 10,000 accepted movement operations in **750.358 µs** and 1,000 accepted placement/break pairs in **388.134 µs** (2,000 region revisions).
+This uses a synthetic monotonic clock and excludes sockets, rendering, physics ticks and persistence. It is a kernel baseline, not a gameplay load or TPS measurement.
+
 ## Known Limitations
 
 - Default mode remains discovery-only. Native spawn is an explicit loopback development preview until online and official-client checks pass.
 - Online authentication has not been end-to-end verified. Offline test identities are restricted to loopback binds.
-- Spawn preview is read-only: movement, block actions, inventories and physics do not yet commit authoritative game state.
+- Preview gameplay is limited to validated movement and creative building with fixed Stone/Dirt/Grass starter slots. General inventory transactions, gravity, simulation ticks, survival, combat and crafting are not implemented.
+- Region persistence runs only on orderly shutdown; periodic/crash recovery saving and persistent player state are pending.
 - Other players/entities are not displayed, and Java cannot yet enter the world. No complete crossplay claim is made.
 - NetherNet has not been integrated or tested. RakNet results do not imply NetherNet support.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
@@ -71,6 +82,5 @@ an optimization percentage, or a performance advantage over a complete Dragonfly
 
 ## Next Action
 
-Connect validated movement/block intents to the single region owner and send committed deltas; preserve bounds and revision semantics.
-Then wire the snapshot storage API into the runtime and implement Java login/registry/chunk mapping against that same owner, while advancing actual-client validation.
+Implement Java login/registry/chunk mapping against the same region owner, and add peer entity visibility, while advancing actual-client validation.
 Online public-key access remains an independent environment prerequisite. Required gameplay/content features are not removed from the objective.

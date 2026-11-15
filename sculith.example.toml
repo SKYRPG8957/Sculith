@@ -19,6 +19,10 @@ sessions = false
 require_authentication = true
 login_timeout_secs = 15
 
+# Optional persistence: load at startup and save after sessions close on Ctrl+C/SIGTERM.
+# [world]
+# snapshot_path = "world/region.sculith"
+
 # Rust plugins are trusted executables; paths are relative to this config file.
 # Build the example first: cargo build -p sculith-welcome
 # [[plugins]]

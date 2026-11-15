@@ -1,4 +1,4 @@
-//! Read-only flat-world spawn. Block interaction and movement commits follow separately.
+//! Flat-world initialization and bounded chunk interest for the builder preview.
 
 use anyhow::Result;
 use bedrock::{
@@ -32,33 +32,41 @@ use crate::world::WorldHandle;
 pub const RADIUS: i32 = 2;
 /// Bedrock wire positions use the player's base/eye offset above world feet.
 pub const EYE_OFFSET: f32 = 1.62;
+pub type Interest = std::collections::BTreeMap<ChunkPos, u64>;
 
-pub fn initial_packets(entity_id: u64) -> Vec<V2225> {
-    vec![
+pub fn initial_packets(player: &crate::game::PlayerSnapshot) -> Result<Vec<V2225>> {
+    let mut packets = vec![
         V2225::VoxelShapesPacket(Box::new(VoxelShapesPacket {
             shapes: vec![],
             names: vec![],
             custom_shape_count: 0,
         })),
-        V2225::StartGamePacket(Box::new(start_game(entity_id))),
+        V2225::StartGamePacket(Box::new(start_game(player))),
         V2225::UpdateAdventureSettingsPacket(Box::new(UpdateAdventureSettingsPacket {
             adventure_settings: AdventureSettings {
                 no_pvm: true,
                 no_mvp: true,
-                immutable_world: true,
+                immutable_world: !player.permissions.can_build,
                 show_name_tags: true,
                 auto_jump: false,
             },
         })),
-    ]
+    ];
+    packets.extend(super::output::registry_and_abilities(player));
+    packets.extend(super::output::inventory(player)?);
+    Ok(packets)
 }
 
-fn start_game(entity_id: u64) -> StartGamePacket<V2225> {
+fn start_game(player: &crate::game::PlayerSnapshot) -> StartGamePacket<V2225> {
     StartGamePacket {
-        target_actor_id: ActorUniqueID(entity_id as i64),
-        target_runtime_id: ActorRuntimeID(entity_id),
-        actor_game_type: GameType::Adventure,
-        position: (0.5, 4.0 + EYE_OFFSET, 0.5),
+        target_actor_id: ActorUniqueID(player.id as i64),
+        target_runtime_id: ActorRuntimeID(player.id),
+        actor_game_type: GameType::Creative,
+        position: (
+            player.feet.x as f32,
+            player.feet.y as f32 + EYE_OFFSET,
+            player.feet.z as f32,
+        ),
         rotation: (0.0, 0.0),
         settings: LevelSettings {
             seed: 0,
@@ -68,7 +76,7 @@ fn start_game(entity_id: u64) -> StartGamePacket<V2225> {
                 dimension: 0,
             },
             generator_type: GeneratorType::Overworld,
-            game_type: GameType::Adventure,
+            game_type: GameType::Creative,
             is_hardcore_enabled: false,
             game_difficulty: Difficulty::Peaceful,
             default_spawn_block_position: NetworkBlockPosition { x: 0, y: 4, z: 0 },
@@ -119,7 +127,7 @@ fn start_game(entity_id: u64) -> StartGamePacket<V2225> {
             },
             override_force_experimental_gameplay: None,
             chat_restriction_level: ChatRestrictionLevel::None,
-            disable_player_interactions: true,
+            disable_player_interactions: false,
             server_editor_connection_policy: 0,
             allow_anonymous_block_drops_in_editor_worlds: false,
         },
@@ -157,7 +165,8 @@ pub async fn send_chunks<T: Transport>(
     conn: &mut Connection<V2225, T>,
     world: &WorldHandle,
     radius: i32,
-) -> Result<()> {
+) -> Result<Interest> {
+    let mut interest = Interest::new();
     conn.send(&[
         V2225::ChunkRadiusUpdatedPacket(Box::new(ChunkRadiusUpdatedPacket {
             chunk_radius: radius,
@@ -173,6 +182,7 @@ pub async fn send_chunks<T: Transport>(
         for x in -radius..=radius {
             let snapshot = world.snapshot(ChunkPos { x, z }).await?;
             let packet = super::chunk::encode_chunk(&snapshot)?;
+            interest.insert(snapshot.position(), snapshot.revision());
             conn.send(&[V2225::LevelChunkPacket(Box::new(packet))])
                 .await?;
         }
@@ -181,5 +191,48 @@ pub async fn send_chunks<T: Transport>(
         status: PlayStatus::PlayerSpawn,
     }))])
     .await?;
+    Ok(interest)
+}
+
+pub async fn refresh<T: Transport>(
+    conn: &mut Connection<V2225, T>,
+    world: &WorldHandle,
+    interest: &mut Interest,
+    player: &crate::game::PlayerSnapshot,
+    radius: i32,
+) -> Result<()> {
+    let center = ChunkPos {
+        x: (player.feet.x.floor() as i32).div_euclid(16),
+        z: (player.feet.z.floor() as i32).div_euclid(16),
+    };
+    let bounds = world.capture().await?.bounds();
+    interest.retain(|position, _| {
+        (position.x - center.x).abs() <= radius && (position.z - center.z).abs() <= radius
+    });
+    conn.send(&[V2225::NetworkChunkPublisherUpdatePacket(Box::new(
+        NetworkChunkPublisherUpdatePacket {
+            new_view_position: BlockPos {
+                x: player.feet.x.floor() as i32,
+                y: player.feet.y.floor() as i32,
+                z: player.feet.z.floor() as i32,
+            },
+            new_view_radius: (radius * 16) as u32,
+            server_built_chunks: vec![],
+        },
+    ))])
+    .await?;
+    for z in center.z - radius..=center.z + radius {
+        for x in center.x - radius..=center.x + radius {
+            let position = ChunkPos { x, z };
+            if bounds.contains(position) && !interest.contains_key(&position) {
+                let snapshot = world.snapshot(position).await?;
+                conn.send(&[V2225::LevelChunkPacket(Box::new(
+                    super::chunk::encode_chunk(&snapshot)?,
+                ))])
+                .await?;
+                interest.insert(position, snapshot.revision());
+            }
+        }
+    }
     Ok(())
 }

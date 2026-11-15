@@ -26,7 +26,12 @@ use bedrock::{
 
 const PROTOCOL: i32 = V2225::PROTOCOL_VERSION as i32;
 const MAX_BATCH_PACKETS: usize = 64;
+use super::{input::Intent, output, spawn};
 use crate::world::WorldHandle;
+use crate::{
+    game::{BlockOutcome, Edition, MoveOutcome, Permissions, Position, Profile, Rotation},
+    world::{PlayerLease, WorldEvent},
+};
 
 #[cfg(test)]
 mod tests;
@@ -146,14 +151,15 @@ pub async fn handle<T: Transport>(
     timeout: Duration,
 ) -> Result<()> {
     let mut packets = Packets::new();
+    let mut events = world.subscribe();
     let result = tokio::time::timeout(
         timeout,
         initialize(conn, &mut packets, authentication, world),
     )
     .await
     .context("Bedrock login/spawn timed out")?;
-    match result {
-        Ok(()) => {}
+    let (lease, mut interest, radius) = match result {
+        Ok(value) => value,
         Err(error) => {
             let _ = disconnect(
                 conn,
@@ -162,13 +168,93 @@ pub async fn handle<T: Transport>(
             .await;
             return Err(error);
         }
-    }
-    let _lease = world.initialized_player();
-    // This first spawn is read-only. The owner remains authoritative; no client
-    // block/inventory/movement packet is applied as a world mutation yet.
+    };
+    let id = lease.player.id;
+    let mut view_center = (0, 0);
     loop {
-        let _packet = packets.next(conn).await?;
+        tokio::select! {
+            packet = packets.next(conn) => {
+                let packet = packet?;
+                let intents = match super::input::decode(&packet,id) {
+                    Ok(intents)=>intents,
+                    Err(error)=>{let _=disconnect(conn,"Sculith: invalid or unsupported gameplay request.").await;return Err(error);}
+                };
+                for intent in intents {
+                    match intent {
+                        Intent::Move {tick,position,rotation,head_yaw} => {
+                            let outcome=world.move_player(id,tick,Position {x:f64::from(position.0),y:f64::from(position.1-spawn::EYE_OFFSET),z:f64::from(position.2)},
+                                Rotation {pitch:f64::from(rotation.0),yaw:f64::from(rotation.1),head_yaw:f64::from(head_yaw)}).await?;
+                            match outcome {
+                                MoveOutcome::Rejected {correction:Some(player),reason}=>{
+                                    tracing::debug!(?reason,"movement corrected");
+                                    conn.send(&[output::movement(&player,tick,true)]).await?;
+                                }
+                                MoveOutcome::Accepted {player,..}=>{
+                                    let center=((player.feet.x.floor() as i32).div_euclid(16),(player.feet.z.floor() as i32).div_euclid(16));
+                                    if center!=view_center {spawn::refresh(conn,world,&mut interest,&player,radius).await?;view_center=center;}
+                                }
+                                _=>{},
+                            }
+                        }
+                        Intent::Break {position}=>{
+                            block_outcome(conn,world.break_block(id,position).await?).await?;
+                        }
+                        Intent::Place {against,face,hotbar_slot,claimed_item_network_id}=>{
+                            let claimed=output::claimed_block(claimed_item_network_id)?;
+                            block_outcome(conn,world.place_block(id,against,face,hotbar_slot,claimed).await?).await?;
+                        }
+                        Intent::SelectSlot {slot}=>{
+                            let player=world.select_slot(id,slot).await?;
+                            conn.send(&output::inventory(&player)?).await?;
+                        }
+                    }
+                }
+            }
+            event = events.recv() => {
+                let event=match event {
+                    Ok(event)=>event,
+                    Err(error)=>{let _=disconnect(conn,"Sculith: world event backlog; reconnect to resynchronize.").await;return Err(error.into());}
+                };
+                match event.as_ref() {
+                    WorldEvent::Blocks {batch,revisions}=>{
+                        for (position,revision) in revisions {
+                            let Some(known)=interest.get(position).copied() else {continue};
+                            if *revision<=known {continue;}
+                            if *revision!=known+1 {
+                                let snapshot=world.snapshot(*position).await?;
+                                conn.send(&[V2225::LevelChunkPacket(Box::new(super::chunk::encode_chunk(&snapshot)?))]).await?;
+                                interest.insert(*position,snapshot.revision());
+                            } else {
+                                let updates=batch.changes.iter().filter(|c|c.position.chunk()==*position)
+                                    .map(|change|output::block_update(change.position,change.after)).collect::<Result<Vec<_>>>()?;
+                                conn.send(&updates).await?;
+                                interest.insert(*position,*revision);
+                            }
+                        }
+                    }
+                    WorldEvent::Joined(player)=>tracing::debug!(player=player.id,"shared world player joined"),
+                    WorldEvent::Moved {player,tick}=>tracing::trace!(player=player.id,tick,"shared world player moved"),
+                    WorldEvent::Left {id}=>tracing::debug!(player=id,"shared world player left"),
+                }
+            }
+        }
     }
+}
+
+async fn block_outcome<T: Transport>(
+    conn: &mut Connection<V2225, T>,
+    outcome: BlockOutcome,
+) -> Result<()> {
+    if let BlockOutcome::Rejected {
+        position,
+        current: Some(block),
+        reason,
+    } = outcome
+    {
+        tracing::debug!(?reason, "block action corrected");
+        conn.send(&[output::block_update(position, block)?]).await?;
+    }
+    Ok(())
 }
 
 async fn initialize<T: Transport>(
@@ -176,30 +262,48 @@ async fn initialize<T: Transport>(
     packets: &mut Packets,
     authentication: &Authentication,
     world: &WorldHandle,
-) -> Result<()> {
+) -> Result<(PlayerLease, spawn::Interest, i32)> {
     let login = login(conn, packets, authentication).await?;
     tracing::info!(player = %login.authentication.identity().display_name,
         authenticated = login.authentication.is_authenticated(), "Bedrock encrypted login completed");
     empty_pack_handshake(conn, packets).await?;
-    let entity_id = world.entity_id().await?;
-    conn.send(&super::spawn::initial_packets(entity_id)).await?;
-    let mut chunks_sent = false;
+    let identity = login.authentication.identity();
+    let subject = if login.authentication.is_authenticated() {
+        format!("xuid:{}", identity.xuid)
+    } else {
+        format!("selfsigned:{}", identity.public_key)
+    };
+    let lease = world
+        .reserve(
+            Profile {
+                subject,
+                name: identity.display_name.clone(),
+                uuid: uuid::Uuid::new_v4(),
+                edition: Edition::Bedrock,
+            },
+            Permissions { can_build: true },
+        )
+        .await?;
+    let entity_id = lease.player.id;
+    conn.send(&spawn::initial_packets(&lease.player)?).await?;
+    let mut interest = None;
     loop {
         match packets.next(conn).await? {
-            V2225::RequestChunkRadiusPacket(request) if !chunks_sent => {
+            V2225::RequestChunkRadiusPacket(request) if interest.is_none() => {
                 ensure!(request.chunk_radius > 0, "invalid requested chunk radius");
                 let radius = request.chunk_radius.min(super::spawn::RADIUS);
-                super::spawn::send_chunks(conn, world, radius).await?;
-                chunks_sent = true;
+                interest = Some((spawn::send_chunks(conn, world, radius).await?, radius));
             }
-            V2225::SetLocalPlayerAsInitializedPacket(initialized) if chunks_sent => {
+            V2225::SetLocalPlayerAsInitializedPacket(initialized) if interest.is_some() => {
                 ensure!(
                     initialized.player_id.0 == entity_id,
                     "client initialized another entity ID"
                 );
                 tracing::info!(player = %login.authentication.identity().display_name, entity_id,
                     "Bedrock client acknowledged the flat-world spawn");
-                return Ok(());
+                world.activate(entity_id).await?;
+                let (interest, radius) = interest.expect("checked above");
+                return Ok((lease, interest, radius));
             }
             V2225::ServerBoundLoadingScreenPacket(_) | V2225::ClientCacheStatusPacket(_) => {}
             _ => bail!("unexpected packet before world initialization"),
