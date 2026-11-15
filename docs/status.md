@@ -49,6 +49,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - The first official-client attempt reported by the user failed: Windows GDK `1.26.63`, `Terracotta`, `InitialConnection-149`. Account sign-in was already complete and other servers connect successfully. The exact Sculith transport/login failure is unresolved; successful headless tests are not treated as a substitute. Connection-stage and bounded handshake diagnostics are available in Preview 2.
 - The first Windows smoke run found console shutdown killing a plugin before its lifecycle hook. Windows workers now run without the host console; the corrected run verifies the Stopping event and final world save.
 - Official discovery initially returned proxy HTTP 403 under the earlier restricted network. The current environment reports enforced unrestricted networking; a fresh request to `client.discovery.minecraft-services.net` returned HTTP 200. Downstream OIDC/JWKS and actual account login remain unverified. No user credential is needed for the public discovery request.
+- Running the authenticated executable in this cloud failed before listener startup with TLS `UnknownIssuer` in the Rust HTTP client. HTTPS validation was retained; no account-login success is inferred from the separate discovery HTTP 200 result. The local offline-identity preview does not use this initialization path.
 - Official Bedrock was attempted by the user and failed during initial connection. Official Java-client testing remains unrun; neither edition has verified world entry/rendering.
 - No automated test remains failing in the final recorded run. The expected compile-fail result above verifies ownership restrictions.
 
@@ -80,6 +81,7 @@ This uses a synthetic monotonic clock and excludes sockets, rendering, physics t
 - Region persistence runs only on orderly shutdown; periodic/crash recovery saving and persistent player state are pending.
 - Other players/entities are not displayed, and Java cannot yet enter the world. No complete crossplay claim is made.
 - NetherNet is loopback-only. Offer fingerprint ownership and expiry are checked; the signaling token issuer/signature is not authenticated in this preview. The inner Bedrock login policy remains in force. Official NetherNet client entry and public token trust remain unverified.
+- The NetherNet Bedrock adapter currently uses reliable-channel batches only; unreliable-channel game payloads are not applied. Official-client movement on that channel remains an explicit compatibility gap.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
 - Plugins currently expose lifecycle/MOTD through trusted executable processes. WASI Component execution, game APIs,
   commands, permissions, region/entity scheduling and isolation limits are not implemented.

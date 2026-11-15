@@ -37,6 +37,8 @@ Its unbounded Tokio wrapper is used only by test clients.
 
 These bounds are not a total process-memory limit or a throughput claim.
 Application tasks are cancelled and drained before final world capture, releasing their player leases.
+The current Bedrock adapter consumes and sends reliable-channel batches only. The unreliable data channel is established,
+but its payloads are not applied to the world; official-client movement on that channel needs separate validation and support.
 
 This backend is currently loopback-only. It validates offer fingerprint ownership and expiry with `TokenTrust::Any`;
 this does **not** authenticate the signaling token's issuer/signature or establish an online account identity.
@@ -51,5 +53,5 @@ Executable smoke checks probe HTTP status, unsigned-offer rejection and unchange
 These are independent transport tests, not proof that official Minecraft Windows GDK `1.26.63` can enter or render the world.
 The reported `Terracotta / InitialConnection-149` failure remains unresolved until an official-client retest succeeds.
 
-- [Mojang NetherNet onboarding guide](https://github.com/Mojang/bedrock-protocol-docs/blob/main/additional_docs/NetherNetOnboardingGuide.md), retrieved 2026-11-16 KST: status/join endpoints, full ICE, framing and required signed server identity.
+- [Mojang NetherNet onboarding guide, 19e25de1](https://github.com/Mojang/bedrock-protocol-docs/blob/19e25de129227373e97dfa340af93ccf12c0feb9/additional_docs/NetherNetOnboardingGuide.md), retrieved 2026-11-16 KST: status/join endpoints, full ICE, framing and required signed server identity.
 - [NetherNet source ed552b0b](https://github.com/bedrock-crustaceans/nethernet/tree/ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99), Apache-2.0: protocol and sans-IO WebRTC implementation. See [third-party notices](../THIRD_PARTY_NOTICES.md).
