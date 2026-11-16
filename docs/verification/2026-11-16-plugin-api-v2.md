@@ -3,6 +3,10 @@
 Tested source: [b64f81cc](https://github.com/SKYRPG8957/Sculith/tree/b64f81ccfb551918b6b225b5e209976183a8f16c).
 [Machine-readable results and retained executable/screenshot hashes](plugin-api-v2-result.json).
 Native Windows release/plugin checks also pass in [run 43783043722](https://github.com/SKYRPG8957/Sculith/actions/runs/43783043722).
+The exact build is available as [Preview 10](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.10).
+A fresh public download passes source/hash verification; Windows PowerShell 5.1
+installation, both launchers, preservation of existing directories and the
+documented one-command installer pass in [run 43785490869](https://github.com/SKYRPG8957/Sculith/actions/runs/43785490869).
 
 The Rust gameplay example received the initialized player's edition-independent
 join event and sent a private Korean/emoji welcome through the world owner.
