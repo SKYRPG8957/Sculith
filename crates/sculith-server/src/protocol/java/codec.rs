@@ -27,12 +27,18 @@ impl Frames {
         }
     }
 
+    pub fn trace(&self) -> crate::connections::Trace {
+        self.trace.clone()
+    }
+
     pub fn select_protocol(&mut self, protocol: u32) {
         self.protocol = Some(protocol);
+        self.trace.select_protocol(protocol);
     }
 
     pub fn set_phase(&mut self, phase: sculith_core::connections::PacketPhase) {
         self.phase = Some(phase);
+        self.trace.set_phase(phase);
     }
 
     pub fn attach(&mut self, player_id: u64) {
@@ -128,7 +134,10 @@ mod observation_tests {
     }
 }
 
-pub async fn send(stream: &mut (impl AsyncWrite + Unpin), payload: &[u8]) -> Result<()> {
+pub async fn send<S: AsyncWrite + Unpin>(
+    stream: &mut super::transport::Stream<S>,
+    payload: &[u8],
+) -> Result<()> {
     ensure!(
         !payload.is_empty() && payload.len() <= MAX_OUTBOUND,
         "outbound frame out of bounds"
@@ -139,6 +148,7 @@ pub async fn send(stream: &mut (impl AsyncWrite + Unpin), payload: &[u8]) -> Res
     tokio::time::timeout(Duration::from_secs(5), stream.write_all(&frame))
         .await
         .context("Java writer stalled")??;
+    stream.sent(payload);
     Ok(())
 }
 

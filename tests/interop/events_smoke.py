@@ -13,7 +13,7 @@ if __name__=="__main__":
     parser.add_argument("--server",type=Path,default=ROOT/("target/debug/sculith"+suffix))
     parser.add_argument("--plugin",type=Path,default=ROOT/("target/debug/sculith-events-plugin"+suffix))
     parser.add_argument("--client",type=Path,required=True)
-    parser.add_argument("--api-version",type=int,choices=(6,7,8),default=8)
+    parser.add_argument("--api-version",type=int,choices=(6,7,8,9),default=9)
     args=parser.parse_args();server=args.server.resolve(strict=True)
     entries=json.loads(subprocess.check_output([str(server),'packets'],text=True,encoding='utf-8'))
     java=[p for p in entries if p['edition']=='java'];native=[p for p in entries if p['edition']=='bedrock']

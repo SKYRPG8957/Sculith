@@ -27,7 +27,7 @@ def until(client, predicate):
             client.chat_messages.append(nbt_text(reader));assert reader.number('>B')==0;reader.end();continue
         assert wire.consume_peer(client,id_,reader),f"unexpected public peer packet {id_}"
 
-def smoke(server,native,plugin=None,api_version=8):
+def smoke(server,native,plugin=None,api_version=9):
     with tempfile.TemporaryDirectory(prefix="sculith peers ") as temporary:
         root=Path(temporary);log=root/"server.log";settings=root/"server.toml"
         settings.write_text('[java]\nsessions=true\nrequire_authentication=false\n'

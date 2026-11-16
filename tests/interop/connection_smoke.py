@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inbound connection metadata across Java phases and native transports."""
+"""Bidirectional metadata, lifecycle, and retained v8 connection subscribers."""
 import argparse
 from collections import defaultdict
 import json
@@ -31,15 +31,18 @@ def wait_for(log, process, condition, seconds=10):
     raise TimeoutError(log.read_text(encoding="utf-8"))
 
 
-def start(server, plugin, root, sessions=True, slow=False):
+def start(server, plugin, root, sessions=True, slow=False, legacy=False):
     config, log = root / "server.toml", root / "server.log"
     config.write_text(
         '[java]\nsessions=' + str(sessions).lower() + '\nrequire_authentication=false\nlogin_timeout_secs=3\n'
         '[bedrock]\nsessions=' + str(sessions).lower() + '\nrequire_authentication=false\n'
         'nethernet_identity_path=' + json.dumps(str(root / "identity.pem")) + '\n'
         '[network.java]\nbind="127.0.0.1:0"\n[network.bedrock]\nbind="127.0.0.1:0"\n'
-        '[[plugins]]\npath=' + json.dumps(str(plugin)) + '\n' + ('args=["--slow"]\n' if slow else ''),
+        '[[plugins]]\npath=' + json.dumps(str(plugin)) + '\n' + ('args=["--slow"]\n' if slow else 'args=["--api8"]\n' if legacy else ''),
         encoding="utf-8")
+    if not legacy and not slow:
+        with config.open("a", encoding="utf-8") as output:
+            output.write('\n[[plugins]]\npath=' + json.dumps(str(plugin)) + '\nargs=["--api8"]\n')
     with log.open("w", encoding="utf-8") as output:
         process = subprocess.Popen([str(server), "run", "--config", str(config)], cwd=ROOT,
             stdout=output, stderr=output, env=dict(os.environ, NO_COLOR="1", RUST_LOG="info"),
@@ -68,15 +71,17 @@ def status(address):
         assert id_ == 1 and reader.number(">q") == 42
 
 
-def observations(text):
-    return [json.loads("{" + line.split("connection-fixture {", 1)[1])
-            for line in text.splitlines() if 'connection-fixture {' in line]
+def observations(text, legacy=False):
+    marker = "connection-v8-fixture {" if legacy else "connection-fixture {"
+    return [json.loads("{" + line.split(marker, 1)[1])
+            for line in text.splitlines() if marker in line]
 
 
-def verify(text, sessions):
-    assert "api_version=8" in text
-    assert "plugin disabled" not in text and "connection fixture stopped" in text, text
-    events = observations(text)
+def verify(text, sessions, legacy=False):
+    assert f"api_version={8 if legacy else 9}" in text
+    assert "plugin disabled" not in text, text
+    assert ("connection v8 fixture stopped" if legacy else "connection fixture stopped") in text
+    events = observations(text, legacy)
     assert events, text
     grouped = defaultdict(list)
     for event in events:
@@ -91,10 +96,28 @@ def verify(text, sessions):
         packets = [e["packet"] for e in events if e["type"] == "packet_received"]
         assert [p["sequence"] for p in packets] == list(range(1, len(packets) + 1))
         assert all(set(p) == {"protocol", "phase", "id", "name", "dispatch", "sequence"} for p in packets)
+        sent = [e["packet"] for e in events if e["type"] == "packet_sent"]
+        assert [p["sequence"] for p in sent] == list(range(1, len(sent) + 1))
+        assert all(set(p) == {"protocol", "phase", "id", "name", "dispatch", "sequence"} for p in sent)
+        if legacy:
+            assert not sent, events
         sequences.append((events[0]["transport"], packets, events))
     assert any([p["phase"] for p in packets] == ["handshake", "status", "status"]
         and [p["name"] for p in packets] == ["minecraft:intention", "minecraft:status_request", "minecraft:ping_request"]
         for _, packets, _ in sequences)
+    if not legacy:
+        assert any([e["packet"]["name"] for e in events if e["type"] == "packet_sent"]
+            == ["minecraft:status_response", "minecraft:pong_response"] for _, _, events in sequences)
+        if sessions:
+            java_sent = next([e["packet"] for e in events if e["type"] == "packet_sent"]
+                for transport, _, events in sequences if transport == "java_tcp" and any(e["type"] == "player_attached" for e in events))
+            assert {"login", "configuration", "spawn", "play"} <= {p["phase"] for p in java_sent}
+            assert any(p["name"] == "minecraft:level_chunk_with_light" for p in java_sent)
+            native_sent = next([e["packet"] for e in events if e["type"] == "packet_sent"]
+                for transport, _, events in sequences if transport == "bedrock_nethernet" and any(e["type"] == "player_attached" for e in events))
+            assert {"network_settings", "login", "resource_packs", "spawn", "play"} <= {p["phase"] for p in native_sent}
+            assert any(p["name"] == "InventoryContentPacket" for p in native_sent)
+            assert any(p["name"] == "StartGamePacket" for p in native_sent)
     if sessions:
         java = next(packets for transport, packets, events in sequences
             if transport == "java_tcp" and any(e["type"] == "player_attached" for e in events))
@@ -112,9 +135,9 @@ def verify(text, sessions):
 
 
 def smoke(server, plugin, native):
-    for sessions in [True, False]:
+    for sessions, legacy in [(True, False), (False, False), (True, True)]:
         with tempfile.TemporaryDirectory(prefix="sculith connections ") as temporary:
-            process, log, address = start(server, plugin, Path(temporary), sessions)
+            process, log, address = start(server, plugin, Path(temporary), sessions, legacy=legacy)
             idle = None
             try:
                 status(address)
@@ -132,14 +155,16 @@ def smoke(server, plugin, native):
                     time.sleep(.1)
                     client.socket.close()
                     match = wait_for(log, process, lambda text: re.search(r"NetherNet listening.*?127\.0\.0\.1:(\d+)", text))
-                    result = subprocess.run([str(native), "http://127.0.0.1:" + match[1]], capture_output=True,
+                    result = subprocess.run([str(native), "http://127.0.0.1:" + match[1], "--connections"], capture_output=True,
                         text=True, encoding="utf-8", timeout=40)
                     assert result.returncode == 0, result.stdout + result.stderr
                 # Listener shutdown aborts this task; its RAII trace must close.
                 idle = socket.create_connection(address, timeout=5)
                 time.sleep(.1)
                 stop(process)
-                verify(log.read_text(encoding="utf-8"), sessions)
+                verify(log.read_text(encoding="utf-8"), sessions, legacy)
+                if not legacy:
+                    verify(log.read_text(encoding="utf-8"), sessions, True)
             except Exception:
                 print(log.read_text(encoding="utf-8"))
                 raise
@@ -173,7 +198,7 @@ def smoke(server, plugin, native):
                 connection.close()
             if process.poll() is None:
                 process.kill(); process.wait(timeout=5)
-    print("PASS: Rust API-v8 connection phases, status-only mode, login rejection/timeout, Java/native attachment, shutdown closes, redaction and explicit backlog isolation")
+    print("PASS: Rust API-v9 bidirectional connection metadata, retained v8 subscriber, phases, status-only mode, login rejection/timeout, Java/native attachment, shutdown closes, redaction and explicit backlog isolation")
 
 
 if __name__ == "__main__":

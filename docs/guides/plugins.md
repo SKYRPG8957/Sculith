@@ -99,6 +99,7 @@ timeout_ms = 1000
 | `PlayerChat { player_id, name, message }` | 초기화된 세션에서 검사한 공개 채팅. 작성자는 서버 프로필 기준. API v6 필요 |
 | `PacketReceived { player_id, packet }` | 초기화 완료 후 play 패킷의 에디션·버전·ID·이름·처리 분류·수신 순번. 본문과 계정 정보는 제외. API v6 필요 |
 | `Connection { event }` | 연결 열림·단계별 패킷 수신·활성 플레이어 연결·종료. API v8 필요 |
+| `Connection { event: PacketSent { .. } }` | 전송 계층이 패킷 전체를 받아들인 뒤의 메타데이터. `Hook::PacketSent`와 `Hook::Connection` 구독, API v9 필요 |
 | `CommandSubmitted { player_id, name, command, arguments }` | 명령어를 등록한 플러그인만 수신. 인자는 공개 채팅이나 다른 플러그인에 전달하지 않음. API v6 필요 |
 
 메타데이터의 `hooks`에 구독한 이벤트만 전송합니다. 같은 훅을 중복 구독할 수 없습니다.
@@ -184,17 +185,21 @@ Java 기본 명령 트리와 베드락 명령 목록에서 같은 이름과 선�
 기존 `PacketReceived`는 초기화 완료 후 play 입력이며 플레이어별 순번을 유지합니다.
 `Connection`은 별도 구독입니다. Java TCP의 handshake/status/login/configuration/spawn/play와,
 Bedrock 전송 연결 후 network_settings/login/encryption(해당 전송만)/resource_packs/spawn/play를 관찰합니다.
-RakNet 검색·재전송, NetherNet HTTP 신호, ICE/DTLS 자체와 송신 패킷은 이 훅의 대상이 아닙니다.
+RakNet 검색·재전송, NetherNet HTTP 신호와 ICE/DTLS 자체는 관찰 대상이 아닙니다.
+송신 메타데이터는 API v9의 `Hook::PacketSent`로 별도 구독합니다. 기존 v8 구독에는 새 이벤트를 보내지 않습니다.
 
-`ConnectionEvent`는 다음 네 종류입니다.
+`ConnectionEvent`는 다음 종류를 제공합니다.
 
 - `Opened { connection_id, transport }`: `java_tcp`, `bedrock_raknet`, `bedrock_nethernet` 중 하나입니다.
 - `PacketReceived { connection_id, packet }`: `protocol`, `phase`, `id`, `name`, `dispatch`, `sequence`만 제공합니다.
   Java handshake의 protocol은 아직 선택되지 않아 `None`입니다. 지원하지 않는 버전의 로그인에는 알려진 버전의 패킷 이름을 붙이지 않습니다.
+- `PacketSent { connection_id, packet }`: 수신과 같은 메타데이터 필드입니다. Java 프레임 전체 또는 Bedrock 배치의 전송 성공 뒤에만 발생합니다. 부분 송신·실패·취소에는 성공 이벤트를 만들지 않습니다. 클라이언트 수신·적용 확인을 뜻하지 않습니다.
 - `PlayerAttached { connection_id, player_id }`: 월드 소유자가 초기화를 승인한 뒤의 연결입니다. `connection_id`는 플레이어 ID와 별개이며 프로세스 안에서 재사용하지 않습니다.
 - `Closed { connection_id }`: 정상 종료·거절·시간 초과·서버 작업 취소 때 발생합니다. 머신 장애나 강제 프로세스 종료는 예외입니다.
 
-순번은 연결별 첫 수신부터 1로 시작하며 단계 변경 뒤에도 이어집니다. 프레이밍/디코딩이 끝난 패킷을 본문 검사 전에 관찰하므로, 훅 수신은 입력 승인이나 게임 동작 지원을 뜻하지 않습니다.
+순번은 연결별·방향별로 각각 1부터 시작하며 단계 변경 뒤에도 이어집니다. 송신 구독을 추가해도 기존 수신 순번에는 빈 번호가 생기지 않습니다.
+송신 `dispatch`는 설정·로그인 단계의 `control` 또는 생성된 게임 상태 알림의 `notification`이며, 입력 승인 분류와 구별합니다.
+수신은 프레이밍/디코딩이 끝난 패킷을 본문 검사 전에 관찰하므로, 훅 수신은 입력 승인이나 게임 동작 지원을 뜻하지 않습니다.
 Bedrock은 디코딩된 배치 전체를 처리 전에 관찰합니다. 같은 배치의 단계는 수신 당시 상태이며, 앞 패킷이 거절돼도 뒤의 디코딩된 패킷 기록은 남습니다. 배치 수량 한도를 넘긴 입력은 배치째 거절합니다.
 프레이밍·디코딩에 실패한 입력에는 패킷 훅이 없습니다. Java는 프레임과 식별자를, Bedrock은 배치 내 패킷 타입까지 디코딩한 뒤 관찰합니다. 본문·계정·프로필·IP 주소는 전달하지 않습니다.
 월드 이벤트 큐와 연결 큐 사이의 상대 순서는 보장하지 않습니다. 플레이어 조작은 여전히 소유자의 활성 세션 검사를 거칩니다.
@@ -203,8 +208,8 @@ Bedrock은 디코딩된 배치 전체를 처리 전에 관찰합니다. 같은 �
 
 ## 통신과 종료
 
-- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `8`, 기존 `1`~`7`도 협상할 수 있습니다.
-- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7,8], ... }`를 보냅니다.
+- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `9`, 기존 `1`~`8`도 협상할 수 있습니다.
+- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7,8,9], ... }`를 보냅니다.
   기존 v1 SDK는 추가 필드를 무시하고 그대로 동작합니다. SDK는 공통으로 지원하는 가장 높은 버전을 선택합니다.
   새 SDK의 기존 게임 훅은 v2 호스트에서도 동작하고, 폼 훅은 v3가 없는 호스트에서 로드를 거부합니다.
 - 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1~v7 Rust 실행 파일도 새 호스트에서 확인했습니다.

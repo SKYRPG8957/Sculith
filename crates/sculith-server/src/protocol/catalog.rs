@@ -105,6 +105,23 @@ pub fn java_connection_receipt(
     protocol: Option<u32>,
     phase: sculith_core::connections::PacketPhase,
 ) -> Result<sculith_core::connections::ConnectionPacket> {
+    java_connection_packet(id, protocol, phase, false)
+}
+
+pub fn java_connection_sent(
+    id: i32,
+    protocol: Option<u32>,
+    phase: sculith_core::connections::PacketPhase,
+) -> Result<sculith_core::connections::ConnectionPacket> {
+    java_connection_packet(id, protocol, phase, true)
+}
+
+fn java_connection_packet(
+    id: i32,
+    protocol: Option<u32>,
+    phase: sculith_core::connections::PacketPhase,
+    sent: bool,
+) -> Result<sculith_core::connections::ConnectionPacket> {
     use sculith_core::{
         PacketDispatch,
         connections::{ConnectionPacket, PacketPhase},
@@ -125,12 +142,20 @@ pub fn java_connection_receipt(
     let entry = known_protocol
         .then(|| {
             java().iter().find(|p| {
-                p.phase == catalog_phase && p.direction == "serverbound" && i32::from(p.id) == id
+                p.phase == catalog_phase
+                    && p.direction == (if sent { "clientbound" } else { "serverbound" })
+                    && i32::from(p.id) == id
             })
         })
         .flatten();
     let dispatch = if entry.is_none() {
         PacketDispatch::Unknown
+    } else if sent {
+        if matches!(phase, PacketPhase::Spawn | PacketPhase::Play) {
+            PacketDispatch::Notification
+        } else {
+            PacketDispatch::Control
+        }
     } else if phase == PacketPhase::Play {
         java_receipt(id, 1)?.dispatch
     } else {

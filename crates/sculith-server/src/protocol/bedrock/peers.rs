@@ -3,7 +3,7 @@
 use crate::game::PlayerSnapshot;
 use anyhow::Result;
 use bedrock::{
-    network::tokio::{Connection, transport::Transport},
+    network::tokio::transport::Transport,
     protocol::{
         ProtoCodec, V2225,
         v662::{
@@ -20,7 +20,7 @@ use bedrock::{
 use sculith_runtime::peers::Change;
 
 pub async fn send<T: Transport>(
-    conn: &mut Connection<V2225, T>,
+    conn: &mut super::session::Observed<'_, T>,
     changes: Vec<Change>,
 ) -> Result<()> {
     for change in changes {

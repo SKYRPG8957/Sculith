@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use bedrock::{
-    network::tokio::{Connection, transport::Transport},
+    network::tokio::transport::Transport,
     protocol::{
         ProtoVersion, V2225,
         v662::{
@@ -217,7 +217,7 @@ fn start_game(player: &crate::game::PlayerSnapshot) -> StartGamePacket<V2225> {
 }
 
 pub async fn send_chunks<T: Transport>(
-    conn: &mut Connection<V2225, T>,
+    conn: &mut super::session::Observed<'_, T>,
     world: &WorldHandle,
     radius: i32,
 ) -> Result<Interest> {
@@ -250,7 +250,7 @@ pub async fn send_chunks<T: Transport>(
 }
 
 pub async fn refresh<T: Transport>(
-    conn: &mut Connection<V2225, T>,
+    conn: &mut super::session::Observed<'_, T>,
     world: &WorldHandle,
     interest: &mut Interest,
     player: &crate::game::PlayerSnapshot,

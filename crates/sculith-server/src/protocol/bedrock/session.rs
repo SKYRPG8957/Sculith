@@ -31,7 +31,9 @@ use crate::{
     world::{PlayerLease, WorldEvent},
 };
 
+mod connection;
 mod packs;
+pub(super) use connection::Observed;
 #[cfg(test)]
 mod tests;
 
@@ -121,17 +123,20 @@ struct Packets {
 impl Packets {
     fn new(observer: &crate::connections::Observer, protection: &Protection) -> Self {
         use sculith_core::connections::{ConnectionTransport, PacketPhase};
+        let trace = observer.open(match protection {
+            Protection::PacketEncryption => ConnectionTransport::BedrockRaknet,
+            Protection::WebRtcDtls(_) => ConnectionTransport::BedrockNethernet,
+        });
+        trace.select_protocol(PROTOCOL as u32);
+        trace.set_phase(PacketPhase::NetworkSettings);
         Self {
             pending: VecDeque::new(),
-            trace: observer.open(match protection {
-                Protection::PacketEncryption => ConnectionTransport::BedrockRaknet,
-                Protection::WebRtcDtls(_) => ConnectionTransport::BedrockNethernet,
-            }),
+            trace,
             phase: PacketPhase::NetworkSettings,
         }
     }
 
-    async fn next<T: Transport>(&mut self, conn: &mut Connection<V2225, T>) -> Result<V2225> {
+    async fn next<T: Transport>(&mut self, conn: &mut Observed<'_, T>) -> Result<V2225> {
         if let Some(packet) = self.pending.pop_front() {
             return Ok(packet);
         }
@@ -175,6 +180,11 @@ impl Packets {
         self.pending.pop_front().context("empty packet batch")
     }
 
+    fn set_phase(&mut self, phase: sculith_core::connections::PacketPhase) {
+        self.phase = phase;
+        self.trace.set_phase(phase);
+    }
+
     fn require_empty(&self) -> Result<()> {
         if !self.pending.is_empty() {
             tracing::warn!(
@@ -191,10 +201,7 @@ fn status(status: PlayStatus) -> V2225 {
     V2225::PlayStatusPacket(Box::new(PlayStatusPacket { status }))
 }
 
-pub async fn disconnect<T: Transport>(
-    conn: &mut Connection<V2225, T>,
-    message: &str,
-) -> Result<()> {
+async fn disconnect<T: Transport>(conn: &mut Observed<'_, T>, message: &str) -> Result<()> {
     conn.send(&[V2225::DisconnectPacket(Box::new(DisconnectPacket {
         reason: ConnectionFailReason::NoReason,
         message: Some(DisconnectMessage {
@@ -221,6 +228,8 @@ pub async fn handle_with_protection<T: Transport>(
     protection: Protection,
 ) -> Result<()> {
     let mut packets = Packets::new(&settings.observer, &protection);
+    let mut observed = Observed::new(conn, packets.trace.clone());
+    let conn = &mut observed;
     let mut events = world.subscribe();
     let mut stage = "network-settings";
     let result = tokio::time::timeout(
@@ -479,7 +488,7 @@ fn failure_kind(error: &anyhow::Error) -> &'static str {
 }
 
 async fn block_outcome<T: Transport>(
-    conn: &mut Connection<V2225, T>,
+    conn: &mut Observed<'_, T>,
     outcome: BlockOutcome,
 ) -> Result<()> {
     if let BlockOutcome::Rejected {
@@ -495,7 +504,7 @@ async fn block_outcome<T: Transport>(
 }
 
 async fn initialize<T: Transport>(
-    conn: &mut Connection<V2225, T>,
+    conn: &mut Observed<'_, T>,
     packets: &mut Packets,
     authentication: &Authentication,
     world: &WorldHandle,
@@ -507,10 +516,10 @@ async fn initialize<T: Transport>(
     tracing::info!(player = %login.authentication.identity().display_name,
         authenticated = login.authentication.is_authenticated(), protection = protection.label(), "Bedrock login completed");
     *stage = "resource-packs";
-    packets.phase = sculith_core::connections::PacketPhase::ResourcePacks;
+    packets.set_phase(sculith_core::connections::PacketPhase::ResourcePacks);
     packs::negotiate(conn, packets, content).await?;
     *stage = "world-spawn";
-    packets.phase = sculith_core::connections::PacketPhase::Spawn;
+    packets.set_phase(sculith_core::connections::PacketPhase::Spawn);
     let identity = login.authentication.identity();
     let subject = if login.authentication.is_authenticated() {
         format!("xuid:{}", identity.xuid)
@@ -582,7 +591,7 @@ async fn initialize<T: Transport>(
                     "Bedrock client acknowledged the flat-world spawn");
                 world.activate(entity_id).await?;
                 packets.trace.attach(entity_id);
-                packets.phase = sculith_core::connections::PacketPhase::Play;
+                packets.set_phase(sculith_core::connections::PacketPhase::Play);
                 let (interest, radius) = interest.expect("checked above");
                 return Ok((lease, interest, radius));
             }
@@ -638,10 +647,7 @@ fn bounded_radius(requested: i32) -> Result<i32> {
     Ok(requested.min(spawn::RADIUS))
 }
 
-async fn acknowledge_radius<T: Transport>(
-    conn: &mut Connection<V2225, T>,
-    radius: i32,
-) -> Result<()> {
+async fn acknowledge_radius<T: Transport>(conn: &mut Observed<'_, T>, radius: i32) -> Result<()> {
     conn.send(&[V2225::ChunkRadiusUpdatedPacket(Box::new(
         bedrock::protocol::v662::packets::ChunkRadiusUpdatedPacket {
             chunk_radius: radius,
@@ -654,7 +660,7 @@ async fn acknowledge_radius<T: Transport>(
 /// Non-mutating control messages can interleave with loading and gameplay.
 /// No credentials or arbitrary client diagnostic strings are written to logs.
 async fn session_control<T: Transport>(
-    conn: &mut Connection<V2225, T>,
+    conn: &mut Observed<'_, T>,
     packet: &V2225,
     entity_id: u64,
 ) -> Result<bool> {
@@ -697,7 +703,7 @@ async fn session_control<T: Transport>(
 }
 
 async fn login<T: Transport>(
-    conn: &mut Connection<V2225, T>,
+    conn: &mut Observed<'_, T>,
     packets: &mut Packets,
     authentication: &Authentication,
     stage: &mut &'static str,
@@ -736,7 +742,7 @@ async fn login<T: Transport>(
     .await?;
     conn.enable_compression(settings.compression);
     *stage = "login-request";
-    packets.phase = sculith_core::connections::PacketPhase::Login;
+    packets.set_phase(sculith_core::connections::PacketPhase::Login);
     let V2225::LoginPacket(request) = packets.next(conn).await? else {
         bail!("expected Login after network settings");
     };
@@ -754,7 +760,7 @@ async fn login<T: Transport>(
     }
     packets.require_empty()?;
     *stage = "encryption-handshake";
-    packets.phase = sculith_core::connections::PacketPhase::Encryption;
+    packets.set_phase(sculith_core::connections::PacketPhase::Encryption);
     let (token, encryption) = begin_encryption(&login)?;
     conn.send(&[V2225::ServerToClientHandshakePacket(Box::new(
         ServerToClientHandshakePacket {

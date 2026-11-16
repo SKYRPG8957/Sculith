@@ -1554,6 +1554,7 @@ async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
     let observer = crate::connections::Observer::default();
     let mut events = observer.subscribe();
     observer.configure(true);
+    observer.configure_sent(true);
     let server = Harness::start_observed(
         Authentication::offline(),
         Duration::from_secs(1),
@@ -1604,6 +1605,7 @@ async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
     .await
     .unwrap();
     server.stop().await;
+    let mut sent = Vec::new();
     let mut sequence = 0;
     let mut phases = Vec::new();
     let mut attached = 0;
@@ -1626,6 +1628,14 @@ async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
                 sequence = packet.sequence;
                 phases.push(packet.phase);
             }
+            ConnectionEvent::PacketSent {
+                connection_id,
+                packet,
+            } => {
+                assert_eq!(connection_id, 1);
+                assert_eq!(packet.sequence, sent.len() as u64 + 1);
+                sent.push(packet);
+            }
             ConnectionEvent::PlayerAttached {
                 connection_id,
                 player_id,
@@ -1641,6 +1651,27 @@ async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
         }
     }
     assert_eq!((attached, closed), (1, 1));
+    assert!(
+        sent.iter()
+            .any(|p| p.phase == PacketPhase::NetworkSettings && p.name == "NetworkSettingsPacket")
+    );
+    assert!(
+        sent.iter().any(
+            |p| p.phase == PacketPhase::Encryption && p.name == "ServerToClientHandshakePacket"
+        )
+    );
+    assert!(
+        sent.iter()
+            .any(|p| p.phase == PacketPhase::ResourcePacks && p.name == "ResourcePackStackPacket")
+    );
+    assert!(
+        sent.iter()
+            .any(|p| p.phase == PacketPhase::Spawn && p.name == "StartGamePacket")
+    );
+    assert!(
+        sent.iter()
+            .any(|p| p.phase == PacketPhase::Spawn && p.name == "InventoryContentPacket")
+    );
     for phase in [
         PacketPhase::NetworkSettings,
         PacketPhase::Login,

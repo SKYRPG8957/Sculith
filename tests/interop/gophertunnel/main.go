@@ -21,8 +21,8 @@ func main() {
 	visual := len(os.Args) == 3 && (os.Args[2] == "--peer-visual" || os.Args[2] == "--equipment-visual" || os.Args[2] == "--chat-visual")
 	packOutput := len(os.Args) == 4 && os.Args[2] == "--pack-output"
 	modelOutput := len(os.Args) == 4 && os.Args[2] == "--model-output"
-	if len(os.Args) != 2 && !(len(os.Args) == 3 && (visual || os.Args[2] == "--plugin-inventory" || os.Args[2] == "--inventory" || os.Args[2] == "--events" || os.Args[2] == "--equipment" || os.Args[2] == "--peers" || os.Args[2] == "--model" || os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput && !modelOutput {
-		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--plugin-inventory|--inventory|--events|--chat-visual|--equipment-visual|--equipment|--peers|--peer-visual|--model|--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file|--model-output file]")
+	if len(os.Args) != 2 && !(len(os.Args) == 3 && (visual || os.Args[2] == "--connections" || os.Args[2] == "--plugin-inventory" || os.Args[2] == "--inventory" || os.Args[2] == "--events" || os.Args[2] == "--equipment" || os.Args[2] == "--peers" || os.Args[2] == "--model" || os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput && !modelOutput {
+		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--connections|--plugin-inventory|--inventory|--events|--chat-visual|--equipment-visual|--equipment|--peers|--peer-visual|--model|--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file|--model-output file]")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -86,7 +86,9 @@ func main() {
 	}
 	if len(os.Args) == 3 {
 		var err error
-		if os.Args[2] == "--plugin-inventory" {
+		if os.Args[2] == "--connections" {
+			err = connectionControl(conn)
+		} else if os.Args[2] == "--plugin-inventory" {
 			err = pluginInventory(conn)
 		} else if os.Args[2] == "--inventory" {
 			err = sharedInventory(conn)

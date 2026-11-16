@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- API v9 adds separately subscribed clientbound packet metadata for Java TCP and native RakNet/NetherNet. Complete writes/batches emit after transport acceptance; partial, failed and cancelled sends do not. Directions retain independent consecutive sequences and share one lifecycle. API-v8 subscribers receive only their original event set; disabled observations allocate no per-connection trace.
+
 - Authenticated NetherNet can bind non-loopback signaling with an explicit UDP media range and advertised IP. Per-peer candidate/datagram policy allows only the actual TCP peer IP; offline mode remains local, wildcard advertisements and capacity/port conflicts fail configuration, occupied UDP ports are preserved, and exhaustion is unavailable. Media and game tasks are bounded separately. Existing local endpoint behavior is retained. [Network setup](../guides/hosting.md).
 
 - Authenticated NetherNet signaling now requires Minecraft's RS256 signing authority before accepting the SDP's P-384 fingerprint proof. Fixed-endpoint HTTPS key loading is bounded, refreshes independently of signaling/gameplay, retries without downgrade and clears stale caches. Existing Bedrock login authentication and transport-key binding remain separate checks. Local offline fixtures retain their restricted policy; public media/routing is not enabled by this change. [Trust and bounds](../internals/nethernet.md).
@@ -67,6 +69,10 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- API-v9 local validation passes 219 project tests (two release benchmarks ignored), Clippy, the ownership doctest and architecture checks. Real RakNet checks cover compressed/ciphered outbound initialization; Java checks preserve ciphertext across partial writes and never emit successful sends for cancelled prefixes. A failed native transport emits no success event. The independent Go/Pion probe completes a bounded post-spawn control exchange. Actual v8-negotiated and v9 workers run concurrently against the same connections: v8 receives no new event, while both retain consecutive incoming sequences and one close per connection. Existing Java/native inventory, peers, forms, sounds, static models and configured pack-proxy checks pass. These are protocol/plugin tests, not new official-client rendering or account-validation evidence.
+
+- Direct-peer authenticated NetherNet source `c4393f7` and its stricter inner-account rejection test `531c25c` pass Linux and native Windows workflows. Latest checks: [Linux 43925411651](https://github.com/SKYRPG8957/Sculith/actions/runs/43925411651), [Windows 43925411983](https://github.com/SKYRPG8957/Sculith/actions/runs/43925411983). This remains same-host controlled-issuer transport/game authentication evidence, with real official-endpoint rejection checks; it is not positive Microsoft-account or Internet/NAT validation.
 
 - Public-media source passes 215 project tests, Clippy, ownership doctest and architecture checks. A real non-loopback HTTP/fixed-UDP/ICE/DTLS/SCTP fixture verifies an RSA account token through OIDC, P-384 client data, operator pinning, transport-key binding and initialized world entry; an injected foreign UDP candidate receives no packet, and ports are reusable after shutdown. The actual production authority also loads official keys on a non-loopback listener and rejects independent non-Microsoft/extreme-expiry offers. Existing Java/native transport, observation, form/sound/model and pack probes pass. This remains same-host fixture/negative-official evidence, not real-account or Internet/NAT verification.
   A valid signed transport carrying an offline game-account request is rejected before reservation; the fixture's online account subsequently enters the same server.
@@ -169,6 +175,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+API-v9 connection observer release microbenchmark (`cargo test -p sculith-server --release connection_observer_benchmark -- --ignored --nocapture`), median of five 10,000-cycle runs: disabled **377.418 µs**, inbound **3.327606 ms**, inbound plus outbound **4.160279 ms**. Each cycle opens/clones/attaches/drops/drains; enabled directions each create one metadata event. This measures local tracing and bounded-ring delivery, excluding sockets, encryption, plugin IPC and game work. The cases perform different work and are not a speedup or TPS comparison.
+
 The release signing-authority reference validates 1,000 warmed fixture RSA-2048
 tokens and their P-384 SDP proofs in 547.716 ms on this host. Run
 `cargo test --release -p sculith-server --bin sculith benchmark_microsoft_offer_validation -- --ignored --nocapture`.
@@ -212,7 +220,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 - NetherNet supports local compatibility and configured direct-peer media. Required-authentication mode checks Microsoft token signatures/claims and the P-384 fingerprint proof; offline local mode checks fingerprint ownership and expiry only. The inner Bedrock login policy remains separate. Official entry is user-reported; successful real-account entry, Internet/NAT routing, TURN and signaling proxy support remain unverified or unimplemented.
 - Both NetherNet channels now reach the validated owner. A real test commits valid unreliable movement and corrects a large tick/teleport attempt over the reliable channel. Official-client movement/rendering still require verification.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
-- Plugins expose lifecycle/MOTD, post-commit game hooks, connection and decoded inbound packet metadata, public player commands, private messages, simple forms, private sounds and static models through trusted executable processes. WASI Component execution, general world/entity APIs, outbound packet observations, inventory removal/arbitrary slot replacement, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
+- Plugins expose lifecycle/MOTD, post-commit game hooks, connection and bidirectional packet metadata, public player commands, private messages, simple forms, private sounds and static models through trusted executable processes. WASI Component execution, general world/entity APIs, inventory removal/arbitrary slot replacement, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
 - Conversion supports explicit static PNG overrides, bounded single-clip Vorbis sound events and explicit static cuboid models. Configured HTTP/proxy pack delivery and shared simple forms are implemented; rotated/animated models, arbitrary-UI conversion, content IR, Companion and hot reload are pending. Internet routing/TLS proxy deployment remains unverified.
 - Latest protocol types expose camera instruction, preset, aim-assist and spline packets, but Sculith has no camera API or scenario tests yet.
 - REA CLI/direct stdio MCP is usable. The active chat tool namespace does not refresh automatically, and no official Windows GDK binary is available here for artifact analysis.
@@ -221,6 +229,6 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 Remove the prototype starter loadout with explicit protocol/test fixture seeding; do not replace it with game-specific engine commands. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work rather than claiming the timed-out full static analysis succeeded.
 
-Continue owner-validated world APIs, outbound packet observations, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
+Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 
 Use the available Linux stock Java game and independent native clients without asking the away user for repeated manual testing. Official GDK gameplay still needs an available Windows client environment. Accumulate source toward 0.1.0; keep withdrawn releases/tags/artifacts withdrawn.

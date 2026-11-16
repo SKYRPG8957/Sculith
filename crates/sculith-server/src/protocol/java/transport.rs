@@ -30,6 +30,7 @@ pub struct Stream<S> {
     inner: S,
     encrypt: Option<Encryptor>,
     decrypt: Option<Decryptor>,
+    pub(super) trace: crate::connections::Trace,
 }
 
 impl<S> Stream<S> {
@@ -38,6 +39,22 @@ impl<S> Stream<S> {
             inner,
             encrypt: None,
             decrypt: None,
+            trace: crate::connections::Trace::default(),
+        }
+    }
+    pub fn observed(inner: S, trace: crate::connections::Trace) -> Self {
+        Self {
+            trace,
+            ..Self::new(inner)
+        }
+    }
+    pub fn sent(&self, payload: &[u8]) {
+        if self.trace.sent_enabled()
+            && let Some((protocol, phase)) = self.trace.context()
+            && let Ok(id) = super::read_varint(&mut &payload[..])
+            && let Ok(packet) = crate::protocol::catalog::java_connection_sent(id, protocol, phase)
+        {
+            self.trace.sent(packet);
         }
     }
     pub fn enable_encryption(&mut self, secret: &[u8; 16]) -> anyhow::Result<()> {
@@ -162,6 +179,74 @@ mod tests {
         fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
             Poll::Ready(Ok(()))
         }
+    }
+
+    #[tokio::test]
+    async fn observed_sends_commit_complete_frames_without_payload_or_encryption_changes() {
+        use sculith_core::connections::{ConnectionEvent, ConnectionTransport, PacketPhase};
+        let observer = crate::connections::Observer::default();
+        let mut events = observer.subscribe();
+        observer.configure(true);
+        observer.configure_sent(true);
+        let trace = observer.open(ConnectionTransport::JavaTcp);
+        trace.select_protocol(777);
+        trace.set_phase(PacketPhase::Login);
+        let mut stream = Stream::observed(
+            LimitedWriter {
+                bytes: Vec::new(),
+                allowed: 100,
+            },
+            trace.clone(),
+        );
+        let secret = [17; 16];
+        stream.enable_encryption(&secret).unwrap();
+        let payload = b"\x02private-profile-must-not-leak";
+        super::super::codec::send(&mut stream, payload)
+            .await
+            .unwrap();
+        let mut expected = vec![payload.len() as u8];
+        expected.extend_from_slice(payload);
+        encrypt(
+            &mut Encryptor::new(&secret.into(), &secret.into()),
+            &mut expected,
+        );
+        assert_eq!(stream.inner.bytes, expected);
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            ConnectionEvent::Opened { .. }
+        ));
+        let ConnectionEvent::PacketSent { packet, .. } = events.try_recv().unwrap() else {
+            panic!("missing send");
+        };
+        assert_eq!(
+            (packet.sequence, packet.phase, packet.name.as_str()),
+            (1, PacketPhase::Login, "minecraft:login_finished")
+        );
+        assert!(
+            !serde_json::to_string(&packet)
+                .unwrap()
+                .contains("private-profile")
+        );
+        // Start another frame but stall after accepting a strict prefix. Its
+        // cancelled future must not report a complete packet or close early.
+        stream.inner.allowed = 3;
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(5),
+                super::super::codec::send(&mut stream, payload)
+            )
+            .await
+            .is_err()
+        );
+        assert!(events.try_recv().is_err());
+        drop(trace);
+        assert!(events.try_recv().is_err());
+        drop(stream);
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            ConnectionEvent::Closed { .. }
+        ));
+        assert!(events.try_recv().is_err());
     }
 
     #[tokio::test]

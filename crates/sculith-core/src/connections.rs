@@ -1,4 +1,4 @@
-//! Metadata-only observations of decoded inbound connection packets.
+//! Metadata-only observations of connection packets in both directions.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,9 +31,10 @@ pub struct ConnectionPacket {
     pub phase: PacketPhase,
     pub id: u32,
     pub name: String,
-    /// Before body validation. Registration alone does not establish support.
+    /// Inbound dispatch before body validation; generated outbound packets use
+    /// Control or Notification. Registration alone does not establish support.
     pub dispatch: crate::PacketDispatch,
-    /// Starts at one and spans all phases of this connection.
+    /// Starts at one per direction and spans all phases of this connection.
     pub sequence: u64,
 }
 
@@ -62,6 +63,12 @@ pub enum ConnectionEvent {
         transport: ConnectionTransport,
     },
     PacketReceived {
+        connection_id: u64,
+        packet: ConnectionPacket,
+    },
+    /// Emitted after the transport writer accepts a complete packet. This is
+    /// not an acknowledgement that the remote client received or applied it.
+    PacketSent {
         connection_id: u64,
         packet: ConnectionPacket,
     },

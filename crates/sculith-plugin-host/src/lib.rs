@@ -48,6 +48,15 @@ impl Plugins {
         })
     }
 
+    pub fn observes_outgoing(&self) -> bool {
+        self.processes.iter().any(|p| {
+            !p.disabled
+                && p.metadata
+                    .hooks
+                    .contains(&sculith_plugin_api::Hook::PacketSent)
+        })
+    }
+
     pub async fn disable_connection_subscribers(&mut self, world: &WorldHandle) {
         for process in &mut self.processes {
             if !process.disabled
@@ -239,7 +248,12 @@ impl Plugins {
         for process in &mut self.processes {
             if !process.disabled
                 && process.metadata.hooks.iter().any(|hook| {
-                    hook.minimum_api() >= 2 && *hook != sculith_plugin_api::Hook::Connection
+                    hook.minimum_api() >= 2
+                        && !matches!(
+                            hook,
+                            sculith_plugin_api::Hook::Connection
+                                | sculith_plugin_api::Hook::PacketSent
+                        )
                 })
             {
                 tracing::warn!(plugin = %process.metadata.name, "plugin disabled after missing game events");
@@ -344,6 +358,15 @@ impl Process {
                 && metadata.version.len() <= 32
                 && !metadata.version.chars().any(char::is_control),
             "invalid plugin version"
+        );
+        ensure!(
+            !metadata
+                .hooks
+                .contains(&sculith_plugin_api::Hook::PacketSent)
+                || metadata
+                    .hooks
+                    .contains(&sculith_plugin_api::Hook::Connection),
+            "PacketSent requires Connection lifecycle subscription"
         );
         ensure!(
             metadata.hooks.len() <= sculith_plugin_api::Hook::ALL.len(),

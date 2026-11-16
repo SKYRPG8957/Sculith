@@ -1,5 +1,5 @@
 //! One bounded resource pack, with explicit download/cache/stack transitions.
-use super::{Connection, Packets, Transport, V2225};
+use super::{Observed, Packets, Transport, V2225};
 use anyhow::{Context, Result, bail, ensure};
 use bedrock::protocol::{
     ProtoVersion,
@@ -17,7 +17,7 @@ use bedrock::protocol::{
 const CHUNK_SIZE: usize = 32 * 1024;
 
 pub(super) async fn negotiate<T: Transport>(
-    conn: &mut Connection<V2225, T>,
+    conn: &mut Observed<'_, T>,
     packets: &mut Packets,
     content: Option<&crate::content::Content>,
 ) -> Result<()> {

@@ -288,6 +288,7 @@ async fn run(config: Config) -> Result<()> {
     world.configure_observations(plugins.observation_flags());
     let (status_tx, status_rx) = watch::channel(state.clone());
     observer.configure(plugins.observes_connections());
+    observer.configure_sent(plugins.observes_outgoing());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut services = JoinSet::new();
     if let Some(delivery) = delivery {
@@ -403,6 +404,7 @@ async fn run(config: Config) -> Result<()> {
                         plugins.dispatch_game(&event, &mut state, &world).await;
                         world.configure_observations(plugins.observation_flags());
                         observer.configure(plugins.observes_connections());
+                        observer.configure_sent(plugins.observes_outgoing());
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
                         warn!(missed, "game hook backlog; disabling subscribers rather than silently losing events");
@@ -418,11 +420,13 @@ async fn run(config: Config) -> Result<()> {
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
                         warn!(missed, "Connection event backlog");
                         observer.configure(false);
+                        observer.configure_sent(false);
                         plugins.disable_connection_subscribers(&world).await;
                     }
                     Err(error) => break Err(error.into()),
                 }
                 observer.configure(plugins.observes_connections());
+                observer.configure_sent(plugins.observes_outgoing());
                 world.configure_observations(plugins.observation_flags());
             }
             _ = ticker.tick() => {
@@ -431,6 +435,7 @@ async fn run(config: Config) -> Result<()> {
                 plugins.dispatch(Event::Tick { tick }, &mut state, &world).await;
                 world.configure_observations(plugins.observation_flags());
                 observer.configure(plugins.observes_connections());
+                observer.configure_sent(plugins.observes_outgoing());
                 status_tx.send_if_modified(|current| {
                     if *current == state { false } else { *current = state.clone(); true }
                 });
@@ -463,6 +468,7 @@ async fn run(config: Config) -> Result<()> {
             Err(tokio::sync::broadcast::error::TryRecvError::Lagged(missed)) => {
                 warn!(missed, "Connection event backlog during shutdown");
                 observer.configure(false);
+                observer.configure_sent(false);
                 plugins.disable_connection_subscribers(&world).await;
             }
             Err(_) => break,

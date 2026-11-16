@@ -6,7 +6,7 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 8;
+pub const API_VERSION: u32 = 9;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
@@ -15,6 +15,7 @@ pub const MODEL_API_VERSION: u32 = 5;
 pub const OBSERVATION_API_VERSION: u32 = 6;
 pub const INVENTORY_API_VERSION: u32 = 7;
 pub const CONNECTION_API_VERSION: u32 = 8;
+pub const PACKET_SENT_API_VERSION: u32 = 9;
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     LEGACY_API_VERSION,
     GAME_API_VERSION,
@@ -24,6 +25,7 @@ pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     OBSERVATION_API_VERSION,
     INVENTORY_API_VERSION,
     CONNECTION_API_VERSION,
+    PACKET_SENT_API_VERSION,
 ];
 pub use sculith_core::connections::{
     ConnectionEvent, ConnectionPacket, ConnectionTransport, PacketPhase,
@@ -39,6 +41,7 @@ pub const MAX_ACTIONS: usize = 32;
 #[serde(rename_all = "snake_case")]
 pub enum Hook {
     Connection,
+    PacketSent,
     Started,
     Tick,
     Stopping,
@@ -58,6 +61,7 @@ pub enum Hook {
 impl Hook {
     pub const ALL: &[Self] = &[
         Self::Connection,
+        Self::PacketSent,
         Self::Started,
         Self::Tick,
         Self::Stopping,
@@ -76,6 +80,7 @@ impl Hook {
     pub fn minimum_api(&self) -> u32 {
         match self {
             Self::Connection => CONNECTION_API_VERSION,
+            Self::PacketSent => PACKET_SENT_API_VERSION,
             Self::Started | Self::Tick | Self::Stopping => LEGACY_API_VERSION,
             Self::FormSubmitted => UI_API_VERSION,
             Self::InventoryResponse => INVENTORY_API_VERSION,
@@ -121,7 +126,8 @@ pub enum HostMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
-    /// Opt-in connection lifecycle and inbound metadata, including pre-login.
+    /// Opt-in lifecycle and packet metadata, including pre-login.
+    /// PacketSent is delivered only to the separate API-v9 hook.
     Connection {
         event: ConnectionEvent,
     },
@@ -236,6 +242,9 @@ pub struct InventoryChange {
 impl Event {
     pub fn hook(&self) -> Hook {
         match self {
+            Self::Connection {
+                event: ConnectionEvent::PacketSent { .. },
+            } => Hook::PacketSent,
             Self::Connection { .. } => Hook::Connection,
             Self::InventoryResponse { .. } => Hook::InventoryResponse,
             Self::PlayerInventoryChanged { .. } => Hook::PlayerInventoryChanged,
@@ -600,21 +609,45 @@ mod tests {
     }
 
     #[test]
-    fn connection_hook_requires_v8_without_changing_existing_player_hook() {
-        struct Observer;
+    fn outbound_metadata_routes_only_to_the_new_hook() {
+        let event = Event::Connection {
+            event: ConnectionEvent::PacketSent {
+                connection_id: 1,
+                packet: ConnectionPacket {
+                    protocol: Some(777),
+                    phase: PacketPhase::Login,
+                    id: 2,
+                    name: "minecraft:login_finished".into(),
+                    dispatch: PacketDispatch::Control,
+                    sequence: 1,
+                },
+            },
+        };
+        assert_eq!(event.hook(), Hook::PacketSent);
+        assert_eq!(event.hook().minimum_api(), 9);
+        assert_eq!(Hook::Connection.minimum_api(), 8);
+    }
+
+    #[test]
+    fn connection_hooks_negotiate_v8_and_v9_without_changing_player_hooks() {
+        struct Observer(bool);
         impl Plugin for Observer {
             fn metadata(&self) -> Metadata {
                 Metadata {
                     name: "connections".into(),
                     version: "1".into(),
-                    hooks: vec![Hook::Connection],
+                    hooks: if self.0 {
+                        vec![Hook::Connection, Hook::PacketSent]
+                    } else {
+                        vec![Hook::Connection]
+                    },
                 }
             }
             fn on_event(&mut self, _: Event) -> Vec<Action> {
                 vec![]
             }
         }
-        for version in [7, 8] {
+        for (version, outgoing) in [(7, false), (8, false), (8, true), (9, true)] {
             let mut input = serde_json::to_vec(&Request {
                 id: 1,
                 message: HostMessage::Hello {
@@ -626,8 +659,8 @@ mod tests {
             .unwrap();
             input.push(b'\n');
             assert_eq!(
-                serve_io(Observer, &input[..], &mut Vec::new()).is_ok(),
-                version == 8
+                serve_io(Observer(outgoing), &input[..], &mut Vec::new()).is_ok(),
+                version >= if outgoing { 9 } else { 8 }
             );
         }
         assert_eq!(Hook::PacketReceived.minimum_api(), 6);

@@ -107,7 +107,10 @@ async fn handle_with_preview(
     observer: &crate::connections::Observer,
 ) -> Result<()> {
     use sculith_core::connections::PacketPhase;
+    let peer = stream.peer_addr()?;
     let mut frames = codec::Frames::observed(observer);
+    let mut secured = transport::Stream::observed(stream, frames.trace());
+    let stream = &mut secured;
     let handshake = tokio::time::timeout(CONNECTION_TIMEOUT, frames.next(stream)).await??;
     let (protocol, state) = parse_handshake(&handshake)?;
     frames.select_protocol(protocol as u32);
@@ -119,12 +122,10 @@ async fn handle_with_preview(
     if state == 2 {
         if let Some(preview) = preview.as_ref().filter(|_| protocol == registry::PROTOCOL) {
             ensure!(
-                preview.authentication.is_some() || stream.peer_addr()?.ip().is_loopback(),
+                preview.authentication.is_some() || peer.ip().is_loopback(),
                 "Java offline sessions require a loopback peer"
             );
             let max_players = status.borrow().max_players;
-            let mut secured = transport::Stream::new(stream);
-            let stream = &mut secured;
             let mut phase = Phase::Login;
             let started = tokio::time::timeout(
                 preview.timeout,
@@ -180,7 +181,7 @@ async fn handle_with_preview(
 }
 
 async fn status_exchange(
-    stream: &mut TcpStream,
+    stream: &mut transport::Stream<&mut TcpStream>,
     frames: &mut codec::Frames,
     status: watch::Receiver<ServerStatus>,
     preview: bool,
@@ -198,14 +199,14 @@ async fn status_exchange(
     });
     let mut packet = vec![0];
     write_string(&response.to_string(), &mut packet);
-    write_frame(stream, &packet).await?;
+    codec::send(stream, &packet).await?;
     // The optional ping is framed independently; the payload must be echoed unchanged.
     let ping = frames.next(stream).await?;
     ensure!(
         ping.len() == 9 && ping[0] == 1,
         "expected status ping with an i64 payload"
     );
-    write_frame(stream, &ping).await?;
+    codec::send(stream, &ping).await?;
     Ok(())
 }
 
@@ -229,7 +230,7 @@ fn parse_handshake(mut packet: &[u8]) -> Result<(i32, i32)> {
 }
 
 async fn disconnect(
-    stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
+    stream: &mut transport::Stream<impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>,
     phase: Phase,
     reason: &str,
 ) -> Result<()> {
@@ -303,8 +304,9 @@ async fn read_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
     codec::Frames::default().next(stream).await
 }
 
+#[cfg(test)]
 async fn write_frame(stream: &mut TcpStream, payload: &[u8]) -> Result<()> {
-    codec::send(stream, payload).await
+    codec::send(&mut transport::Stream::new(stream), payload).await
 }
 
 #[cfg(test)]
@@ -396,9 +398,13 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             queued.await.unwrap();
-            disconnect(&mut stream, Phase::Play, "request rejected")
-                .await
-                .unwrap();
+            disconnect(
+                &mut transport::Stream::new(&mut stream),
+                Phase::Play,
+                "request rejected",
+            )
+            .await
+            .unwrap();
         });
         let mut client = TcpStream::connect(address).await.unwrap();
         client.write_all(&[0; 2048]).await.unwrap();
