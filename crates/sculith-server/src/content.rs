@@ -8,11 +8,7 @@ use http_body_util::Full;
 use hyper::{body::Incoming, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use sculith_packs::bundle::Bundle;
-use tokio::{
-    net::TcpListener,
-    sync::{Semaphore, watch},
-    task::JoinSet,
-};
+use tokio::{net::TcpListener, sync::watch, task::JoinSet};
 
 pub struct Content {
     pub bundle: Bundle,
@@ -44,20 +40,17 @@ impl Delivery {
     }
 
     pub async fn serve(self, mut shutdown: watch::Receiver<bool>) -> Result<()> {
-        let slots = Arc::new(Semaphore::new(8));
         let mut clients = JoinSet::new();
         loop {
             tokio::select! {
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() { break; }
                 }
-                accepted = self.listener.accept() => {
+                accepted = self.listener.accept(), if clients.len() < 8 => {
                     let (stream, remote) = accepted?;
                     if !remote.ip().is_loopback() { continue; }
-                    let Ok(permit) = slots.clone().try_acquire_owned() else { continue; };
                     let content = self.content.clone();
                     clients.spawn(async move {
-                        let _permit = permit;
                         let service = service_fn(move |request| {
                             let response = response(request, &content);
                             async move { Ok::<_, Infallible>(response) }
