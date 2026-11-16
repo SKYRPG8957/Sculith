@@ -200,5 +200,12 @@
   "linux_ci_runs": [
     "43801769062",
     "43801764466"
-  ]
+  ],
+  "publication": {
+    "run_id": "43802965625",
+    "version": "v0.1.0-preview.13",
+    "unauthenticated_https_verified": true,
+    "immutable_source_tag_verified": true,
+    "installer_run_id": null
+  }
 }

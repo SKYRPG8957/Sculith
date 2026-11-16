@@ -58,7 +58,10 @@ Nineteen members, metadata, original clip and license texts were inspected. All
 four EXEs import only Windows system DLLs; their sizes/hashes/imports are in the
 JSON record. No private key, game JAR, world snapshot or test log is bundled.
 The original MIT text is preserved (Windows checkout line endings differ).
-Public publication/installer validation will follow this tested immutable build. Official Windows Bedrock GDK world entry and sound rendering
+[Publication run 43802965625](https://github.com/SKYRPG8957/Sculith/actions/runs/43802965625)
+created public Preview 13 from this tested immutable build. A fresh unauthenticated
+HTTPS ZIP/checksum download passes exact source/tag/SHA-256 verification. Current
+installer/download defaults select Preview 13; native public installation is pending. Official Windows Bedrock GDK world entry and sound rendering
 remain unverified: the available native test is an independent client, not the
 official game.
 

@@ -10,6 +10,10 @@ cargo build --workspace --locked
 cargo run --locked -- run --config examples/sounds-preview.toml
 ```
 
+Public [Windows Preview 13](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.13)
+bundles the sound executable, gameplay/forms examples and original pack. New
+settings enable all three; existing settings are preserved.
+
 Use Java 26.3 at `127.0.0.1:25565`, or the native Bedrock preview at
 `127.0.0.1:19132`. The sound example plays a short original tone after player
 initialization. Accept/load the required pack first. The sample configuration
