@@ -62,6 +62,7 @@ logged without disabling an otherwise valid plugin.
 ## Client implementation and verification
 
 The unmodified Java game displayed Korean/emoji title, body and buttons:
+[Exact source, actual mouse/Escape outcomes and hashes](verification/2026-11-16-shared-forms.md).
 
 ![Actual stock Java shared menu](verification/shared-form-java.png)
 

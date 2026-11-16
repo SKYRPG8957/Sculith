@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "tested_at": "2026-11-16 UTC",
+  "source_commit": "2a5582163bb200bd8991aeed5991625e9808c210",
+  "plugin_api": 3,
+  "previous_versions_retained": [
+    1,
+    2
+  ],
+  "linux_project_tests": 120,
+  "clippy": true,
+  "ownership_doctest": true,
+  "independent_checks": {
+    "java_dialog_inline_holder_and_modified_utf8": true,
+    "native_form_json_matches": true,
+    "both_editions_selection_and_cancellation": true,
+    "cross_session_forgery_rejected": true,
+    "invalid_choice_retains_pending_form": true,
+    "replay_does_not_duplicate_callback": true,
+    "no_cross_player_private_presentation_or_result": true,
+    "only_owner_plugin_receives_submission": true,
+    "observer_plugin_receives_no_foreign_replies": true,
+    "four_exact_callbacks_and_graceful_stopping": true,
+    "retained_api_v1_rust_executable": true,
+    "retained_api_v2_rust_executable": true
+  },
+  "official_game": {
+    "edition": "Java",
+    "version": "26.3",
+    "platform": "Linux",
+    "unmodified_client": true,
+    "client_jar_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+    "authentication": "local offline identity; online account authentication not tested",
+    "korean_emoji_dialog_rendered": true,
+    "actual_mouse_help_click": true,
+    "actual_escape_cancellation": true,
+    "owning_rust_plugin_callback_and_private_result_rendered": true,
+    "server_delivered_texture_remains_visible": true,
+    "expired_actual_reply_rejected_in_earlier_probe": true
+  },
+  "official_windows_bedrock_game_tested": false,
+  "windows_run": 43795929884,
+  "windows_verified": true,
+  "windows_package": {
+    "version": "v0.1.0-preview.12",
+    "source_commit": "2a5582163bb200bd8991aeed5991625e9808c210",
+    "zip_bytes": 5982850,
+    "zip_sha256": "fcef010dc3bac3e725255fdc497a84a89f2dce10c27c4e68c17c555a6c0f1165",
+    "entries": 16,
+    "three_executables_system_dlls_only": true
+  },
+  "screenshots": {
+    "shared-form-java-cancel.png": "a856cd14a15e789a7fb1515fb8ba13785932cb3a40725ced5ac7de5cf758352a",
+    "shared-form-java-result.png": "bd56872c2dbebfb1237b4c75993f662204c97754af2ae83bff7b29597bcd8fcd",
+    "shared-form-java.png": "2b77f569b8bc3293e3fb6cadef821860cb9c688b153874085fa92931358f67fb"
+  },
+  "retained_binary_sha256": {
+    "sculith-welcome-api-v1": "d113e1e8cae36d26ccd279d018252c2e6e1122c14ee36e939cfcf872f63d1547",
+    "sculith-gameplay-plugin-preview11-api2": "1219a8b4f17353760c29945740265b8bfb607cabe05f1979af16117689f933dd"
+  }
+}
