@@ -29,7 +29,8 @@ pub async fn send<T: Transport>(
             Change::InfoRemove { uuid } => V2225::PlayerListPacket(Box::new(PlayerListPacket {
                 entries: vec![PlayerListEntry::Remove { uuid }],
             })),
-            Change::Spawn(player) => spawn(&player),
+            Change::Spawn(player) => spawn(&player)?,
+            Change::Equipment(player) => super::output::equipment(&player)?,
             Change::Move { player, tick } => super::output::movement(&player, tick, false),
             Change::Despawn { id } => super::output::remove_model(id),
         };
@@ -90,8 +91,9 @@ fn skin(player: &PlayerSnapshot) -> SerializedSkin<V2225> {
     }
 }
 
-fn spawn(player: &PlayerSnapshot) -> V2225 {
-    V2225::AddPlayerPacket(Box::new(AddPlayerPacket {
+fn spawn(player: &PlayerSnapshot) -> Result<V2225> {
+    let held = super::output::held(player)?;
+    Ok(V2225::AddPlayerPacket(Box::new(AddPlayerPacket {
         uuid: player.profile.uuid,
         player_name: player.profile.name.clone(),
         target_runtime_id: ActorRuntimeID(player.id),
@@ -105,13 +107,12 @@ fn spawn(player: &PlayerSnapshot) -> V2225 {
         rotation: (player.rotation.pitch as f32, player.rotation.yaw as f32),
         y_head_rotation: player.rotation.head_yaw as f32,
         carried_item: NetworkItemStackDescriptor {
-            id: 0,
-            stack_size: 0,
-            aux_value: 0,
-            net_id: None,
-            block_runtime_id: 0,
-            // Empty air has no NBT/placement/break/shield payload.
-            user_data_buffer: vec![],
+            id: held.id,
+            stack_size: held.stack_size,
+            aux_value: held.aux_value,
+            net_id: held.net_id,
+            block_runtime_id: held.block_runtime_id,
+            user_data_buffer: held.user_data_buffer,
         },
         player_game_type: GameType::Creative,
         entity_data: vec![],
@@ -124,5 +125,5 @@ fn spawn(player: &PlayerSnapshot) -> V2225 {
         passenger_of_block_data: None,
         device_id: String::new(),
         build_platform: BuildPlatform::Dedicated,
-    }))
+    })))
 }

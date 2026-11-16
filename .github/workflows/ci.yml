@@ -58,6 +58,8 @@ jobs:
         run: python scripts/sound_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared static models and private actor lifecycle
         run: python scripts/model_smoke.py --client target/gophertunnel-probe
+      - name: Verify authoritative cross-edition held items and empty hands
+        run: python scripts/equipment_smoke.py --client target/gophertunnel-probe
       - name: Verify cross-edition player visibility, movement and leave
         run: python scripts/peer_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared packs, native cache and consent keepalive

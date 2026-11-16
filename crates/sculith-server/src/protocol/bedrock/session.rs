@@ -357,7 +357,7 @@ pub async fn handle_with_protection<T: Transport>(
                     WorldEvent::ModelHidden {player_id,entity_id}=>{
                         if *player_id==id { conn.send(&[output::remove_model(*entity_id)]).await?; }
                     }
-                    WorldEvent::FormSubmitted(_)=>{},
+                    WorldEvent::FormSubmitted(_) | WorldEvent::Equipped(_)=>{},
                 }
             }
         }

@@ -19,6 +19,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 #[derive(Debug, Clone)]
 pub enum WorldEvent {
     Joined(PlayerSnapshot),
+    Equipped(PlayerSnapshot),
     Moved {
         player: PlayerSnapshot,
         tick: u64,
@@ -59,7 +60,7 @@ pub struct WorldHandle {
 }
 
 /// Snapshot and its continuation are created atomically inside the owner.
-/// Updates contain only Joined, Moved and Left, with no private presentation.
+/// Updates contain Joined, Moved, Equipped and Left, with no private presentation.
 pub struct PeerObservation {
     pub players: Vec<PlayerSnapshot>,
     pub updates: broadcast::Receiver<Arc<WorldEvent>>,
@@ -547,7 +548,16 @@ pub fn with_region_and_content(
                             publish_blocks(&mut state, &events, &game_events, id, &outcome)?;
                             let _ = reply.send(outcome);
                         }
-                        Some(Command::Select { id, slot, reply }) => { let _ = reply.send(state.select_slot(id, slot)); }
+                        Some(Command::Select { id, slot, reply }) => {
+                            let previous=state.player(id).map(|p|p.selected_slot);
+                            let result=state.select_slot(id,slot);
+                            if let Ok(player)=&result && previous!=Some(player.selected_slot) {
+                                // Public presentation only: no region revision or
+                                // plugin-game feedback for a selected hotbar slot.
+                                let _=peer_events.send(Arc::new(WorldEvent::Equipped(player.clone())));
+                            }
+                            let _=reply.send(result);
+                        }
                         Some(Command::SendMessage { id, message, reply }) => {
                             let result = sculith_core::validate_system_message(&message).map_err(anyhow::Error::msg)
                                 .and_then(|()| state.permit_message(id, Instant::now()));
@@ -600,6 +610,43 @@ pub fn create(
 mod tests {
     use super::*;
     use crate::game::Edition;
+
+    #[tokio::test]
+    async fn held_slot_changes_publish_only_committed_public_equipment() {
+        let (stop, receiver) = watch::channel(false);
+        let (world, task) = create(receiver);
+        let task = tokio::spawn(task);
+        let viewer = world
+            .reserve(profile("viewer"), Permissions::default())
+            .await
+            .unwrap();
+        let peer = world
+            .reserve(profile("peer"), Permissions::default())
+            .await
+            .unwrap();
+        world.activate(viewer.player.id).await.unwrap();
+        assert!(world.select_slot(peer.player.id, 1).await.is_err());
+        world.activate(peer.player.id).await.unwrap();
+        let mut observation = world.observe_players(viewer.player.id).await.unwrap();
+        let mut normal = world.subscribe();
+        let mut game = world.subscribe_game();
+        let revision = world.capture().await.unwrap().revision();
+        let selected = world.select_slot(peer.player.id, 1).await.unwrap();
+        assert_eq!(selected.hotbar[1], Some(BlockKind::Dirt));
+        assert!(
+            matches!(observation.updates.recv().await.unwrap().as_ref(),WorldEvent::Equipped(p) if p.id==peer.player.id && p.selected_slot==1 && p.hotbar[1]==Some(BlockKind::Dirt))
+        );
+        world.select_slot(peer.player.id, 1).await.unwrap();
+        assert!(world.select_slot(peer.player.id, 9).await.is_err());
+        assert!(observation.updates.try_recv().is_err());
+        assert!(normal.try_recv().is_err());
+        assert!(game.try_recv().is_err());
+        assert_eq!(world.capture().await.unwrap().revision(), revision);
+        let fresh = world.observe_players(viewer.player.id).await.unwrap();
+        assert_eq!(fresh.players[0].selected_slot, 1);
+        stop.send(true).unwrap();
+        task.await.unwrap().unwrap();
+    }
 
     pub fn profile(name: &str) -> Profile {
         Profile {

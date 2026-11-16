@@ -110,7 +110,6 @@ pub fn inventory(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
     for index in 0..36 {
         slots.push(stack(player.hotbar.get(index).copied().flatten())?);
     }
-    let selected = stack(player.hotbar[player.selected_slot as usize])?;
     Ok(vec![
         V2225::InventoryContentPacket(Box::new(InventoryContentPacket {
             inventory_id: 0,
@@ -121,14 +120,21 @@ pub fn inventory(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
             },
             storage_item: stack(None)?,
         })),
-        V2225::MobEquipmentPacket(Box::new(MobEquipmentPacket {
-            target_runtime_id: ActorRuntimeID(player.id),
-            item: selected,
-            slot: player.selected_slot as i8,
-            selected_slot: player.selected_slot as i8,
-            container_id: bedrock::protocol::v662::enums::ContainerID::INVENTORY,
-        })),
+        equipment(player)?,
     ])
+}
+pub fn held(player: &PlayerSnapshot) -> Result<NetworkItemStackDescriptorV2> {
+    anyhow::ensure!(player.selected_slot <= 8, "invalid owner hotbar slot");
+    stack(player.hotbar[player.selected_slot as usize])
+}
+pub fn equipment(player: &PlayerSnapshot) -> Result<V2225> {
+    Ok(V2225::MobEquipmentPacket(Box::new(MobEquipmentPacket {
+        target_runtime_id: ActorRuntimeID(player.id),
+        item: held(player)?,
+        slot: player.selected_slot as i8,
+        selected_slot: player.selected_slot as i8,
+        container_id: bedrock::protocol::v662::enums::ContainerID::INVENTORY,
+    })))
 }
 pub fn registry_and_abilities(player: &PlayerSnapshot) -> Vec<V2225> {
     let items = [

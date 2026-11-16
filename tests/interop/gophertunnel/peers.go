@@ -16,7 +16,9 @@ import (
 
 // Independent native decoding, including the current player-list/skin format.
 // This is not an official Bedrock rendering or account authentication test.
-func sharedPeers(conn *minecraft.Conn, visual bool) error {
+func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise bool) error {
+	done := make(chan struct{})
+	defer close(done)
 	if err := conn.SetReadDeadline(time.Now().Add(55 * time.Second)); err != nil {
 		return err
 	}
@@ -65,7 +67,7 @@ func sharedPeers(conn *minecraft.Conn, visual bool) error {
 			}
 		case *packet.AddPlayer:
 			entry, ok := listed[p.UUID]
-			if !ok || entry.Username != p.Username || uint64(entry.EntityUniqueID) != p.EntityRuntimeID || p.EntityRuntimeID == conn.GameData().EntityRuntimeID || p.GameType != 1 || p.HeldItem.Stack.Count != 0 || math.Abs(float64(p.Position[1])-5.62) > .00001 || p.AbilityData.EntityUniqueID != entry.EntityUniqueID || len(p.AbilityData.Layers) != 1 || p.AbilityData.Layers[0].Type != protocol.AbilityLayerTypeBase {
+			if !ok || entry.Username != p.Username || uint64(entry.EntityUniqueID) != p.EntityRuntimeID || p.EntityRuntimeID == conn.GameData().EntityRuntimeID || p.GameType != 1 || p.HeldItem.Stack.Count != 64 || p.HeldItem.Stack.NetworkID != 1 || math.Abs(float64(p.Position[1])-5.62) > .00001 || p.AbilityData.EntityUniqueID != entry.EntityUniqueID || len(p.AbilityData.Layers) != 1 || p.AbilityData.Layers[0].Type != protocol.AbilityLayerTypeBase {
 				return fmt.Errorf("invalid native peer spawn: %+v", p)
 			}
 			if _, ok := entities[p.EntityRuntimeID]; ok {
@@ -93,6 +95,24 @@ func sharedPeers(conn *minecraft.Conn, visual bool) error {
 						return err
 					}
 					fmt.Println("PEER_VISUAL_READY")
+					if equipmentExercise {
+						go func() {
+							for _, slot := range []uint32{1, 8} {
+								select {
+								case <-done:
+									return
+								case <-time.After(7 * time.Second):
+								}
+								if err := conn.WritePacket(&packet.PlayerHotBar{SelectedHotBarSlot: slot, SelectHotBarSlot: true}); err != nil {
+									return
+								}
+								if err := conn.Flush(); err != nil {
+									return
+								}
+							}
+						}()
+					}
+
 					visualEnd = time.Now().Add(30 * time.Second)
 					if err := conn.SetReadDeadline(visualEnd); err != nil {
 						return err
@@ -107,6 +127,11 @@ func sharedPeers(conn *minecraft.Conn, visual bool) error {
 				fmt.Println("PEER_LATE_JOINED")
 			} else {
 				return fmt.Errorf("unexpected peer %s", p.Username)
+			}
+
+		case *packet.MobEquipment:
+			if visual {
+				fmt.Printf("PEER_ACTUAL_EQUIPMENT: id=%d item=%d count=%d slot=%d\n", p.EntityRuntimeID, p.NewItem.Stack.NetworkID, p.NewItem.Stack.Count, p.HotBarSlot)
 			}
 		case *packet.MovePlayer:
 			if visual {

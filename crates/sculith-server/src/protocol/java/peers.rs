@@ -19,6 +19,7 @@ fn angle(value: f64) -> u8 {
 pub fn packets(change: &Change) -> Result<Vec<Vec<u8>>> {
     Ok(match change {
         Change::InfoAdd(player) => vec![info(player)?],
+        Change::Equipment(player) => vec![equipment(player)?],
         Change::InfoRemove { uuid } => {
             let mut out = codec::packet(70);
             write_varint(1, &mut out);
@@ -46,7 +47,7 @@ pub fn packets(change: &Change) -> Result<Vec<Vec<u8>>> {
                 angle(player.rotation.head_yaw),
             ]);
             write_varint(0, &mut out);
-            vec![out]
+            vec![out, equipment(player)?]
         }
         Change::Move { player, .. } => {
             let mut out = codec::packet(35);
@@ -64,6 +65,21 @@ pub fn packets(change: &Change) -> Result<Vec<Vec<u8>>> {
             vec![out, head]
         }
     })
+}
+
+fn equipment(player: &PlayerSnapshot) -> Result<Vec<u8>> {
+    ensure!(player.selected_slot <= 8, "invalid owner hotbar slot");
+    let mut out = codec::packet(104);
+    write_varint(id(player.id)?, &mut out);
+    out.push(0); // MAINHAND, ordinal zero, last equipment entry.
+    if let Some(kind) = player.hotbar[player.selected_slot as usize] {
+        write_varint(64, &mut out);
+        write_varint(super::registry::get().item(kind), &mut out);
+        out.extend_from_slice(&[0, 0]); // No component patches.
+    } else {
+        write_varint(0, &mut out);
+    }
+    Ok(out)
 }
 
 fn info(player: &PlayerSnapshot) -> Result<Vec<u8>> {

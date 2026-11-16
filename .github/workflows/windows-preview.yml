@@ -23,6 +23,7 @@ on:
       - 'scripts/sound_smoke.py'
       - 'scripts/model_smoke.py'
       - 'scripts/peer_smoke.py'
+      - 'scripts/equipment_smoke.py'
       - 'scripts/pack_delivery_smoke.py'
       - 'scripts/generate_java_protocol_facts.py'
       - 'scripts/package_release.py'
@@ -43,7 +44,7 @@ jobs:
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       PYTHONUTF8: '1'
-      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.15'
+      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.16'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/cache@v4
@@ -117,6 +118,8 @@ jobs:
         run: python scripts/sound_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-sound-plugin.exe
       - name: Verify shared models, private actors and show-replace-hide lifecycle
         run: python scripts/model_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-model-plugin.exe
+      - name: Verify authoritative cross-edition held items and empty hands
+        run: python scripts/equipment_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify cross-edition player visibility, movement and leave
         run: python scripts/peer_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify shared packs, native cache and consent keepalive

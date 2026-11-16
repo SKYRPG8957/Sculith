@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub enum Change {
     InfoAdd(PlayerSnapshot),
     Spawn(PlayerSnapshot),
+    Equipment(PlayerSnapshot),
     Move { player: PlayerSnapshot, tick: u64 },
     Despawn { id: u64 },
     InfoRemove { uuid: uuid::Uuid },
@@ -116,6 +117,20 @@ impl Peers {
                     out.push(Change::Despawn { id: player.id });
                 }
             }
+            WorldEvent::Equipped(player) if player.id != self.viewer => {
+                let previous = self
+                    .known
+                    .get(&player.id)
+                    .ok_or_else(|| anyhow::anyhow!("peer equipped without membership"))?;
+                ensure!(
+                    player.initialized && previous.profile == player.profile,
+                    "peer identity changed during equipment update"
+                );
+                self.known.insert(player.id, player.clone());
+                if self.visible.contains(&player.id) {
+                    out.push(Change::Equipment(player.clone()));
+                }
+            }
             WorldEvent::Left { id } if *id != self.viewer => {
                 let player = self
                     .known
@@ -128,7 +143,10 @@ impl Peers {
                     uuid: player.profile.uuid,
                 });
             }
-            WorldEvent::Joined(_) | WorldEvent::Moved { .. } | WorldEvent::Left { .. } => {}
+            WorldEvent::Joined(_)
+            | WorldEvent::Equipped(_)
+            | WorldEvent::Moved { .. }
+            | WorldEvent::Left { .. } => {}
             _ => bail!("non-membership event in peer stream"),
         }
         Ok(out)
@@ -207,6 +225,40 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn hidden_equipment_updates_the_next_spawn_without_creating_an_entity() {
+        let p = player();
+        let id = p.id;
+        let mut peers = Peers::new(u64::MAX, vec![p.clone()]).unwrap();
+        let mut interest = BTreeMap::new();
+        assert!(matches!(
+            peers.initial(&interest).as_slice(),
+            [Change::InfoAdd(_)]
+        ));
+        let mut selected = p;
+        selected.selected_slot = 1;
+        assert!(
+            peers
+                .event(&WorldEvent::Equipped(selected.clone()), &interest)
+                .unwrap()
+                .is_empty()
+        );
+        interest.insert(ChunkPos { x: 0, z: 0 }, 0);
+        assert!(
+            matches!(peers.refresh(&interest).as_slice(),[Change::Spawn(p)] if p.selected_slot==1)
+        );
+        selected.selected_slot = 8;
+        assert!(
+            matches!(peers.event(&WorldEvent::Equipped(selected.clone()),&interest).unwrap().as_slice(),[Change::Equipment(p)] if p.hotbar[p.selected_slot as usize].is_none())
+        );
+        peers.event(&WorldEvent::Left { id }, &interest).unwrap();
+        assert!(
+            peers
+                .event(&WorldEvent::Equipped(selected), &interest)
+                .is_err()
+        );
+    }
+
     #[test]
     fn pending_self_duplicate_and_private_events_do_not_enter_the_projection() {
         let mut p = player();

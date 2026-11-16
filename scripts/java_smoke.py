@@ -196,6 +196,16 @@ def consume_peer(client, id_, r):
         assert r.number(">B")==0
         rotation=r.take(3);assert r.varint()==0;r.end()
         client.peer_entities[entity]={'uuid':uuid_,'position':position,'rotation':rotation};return True
+    if id_==104:
+        start=r.i;entity=r.varint()
+        if entity not in client.peer_entities:r.i=start;return False
+        assert r.number(">B")==0
+        count=r.varint();assert count in (0,64)
+        item=0
+        if count:
+            item=r.varint();assert item in (1,55,54)
+            assert r.take(2)==bytes(2)
+        r.end();client.peer_entities[entity]['held']=(count,item);return True
     if id_==35:
         start=r.i;entity=r.varint()
         if entity not in client.peer_entities:r.i=start;return False

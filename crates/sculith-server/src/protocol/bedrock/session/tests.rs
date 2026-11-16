@@ -157,6 +157,7 @@ impl<T: Transport> TestClient<T> {
                 | V2225::AddPlayerPacket(_)
                 | V2225::RemoveActorPacket(_) => continue,
                 V2225::MovePlayerPacket(p) if p.player_runtime_id.0 != self.own_id => continue,
+                V2225::MobEquipmentPacket(p) if p.target_runtime_id.0 != self.own_id => continue,
                 _ => return Ok(packet),
             }
         }

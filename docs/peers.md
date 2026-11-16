@@ -26,7 +26,7 @@ had no shield entry. Peer abilities reuse the same owner-derived base layer as
 local abilities. Native wire player positions include the 1.62-block offset;
 Java positions use feet coordinates.
 
-Account skins, capes/persona, equipment, arm swings, damage/combat, player collision,
+Account skins, capes/persona, armour/offhand, arm swings, damage/combat, player collision,
 general entity AI and persistent player state are outside this preview. Public
 online hosting and official Windows Bedrock rendering remain unverified.
 
@@ -59,3 +59,23 @@ the actual-game verification records); Apache-2.0 bedrock-rs
 `5221fcae`, MIT gophertunnel `e2251a60f71d` and MIT Dragonfly
 `0f9a3a573626` pinned in the lockfiles. No official client code or assets are
 distributed. Existing MIT licensing is preserved.
+
+## Authoritative held-item candidate
+
+Peer spawn now includes the server's selected starter item. Changed hotbar slots
+publish a dedicated owner event to the peer stream only. A repeated selection
+produces no event; rejected or pending selections produce none. Hidden peers keep
+the latest selection for their next visible spawn and late joins see the current
+owner snapshot. Region revisions and plugin game hooks do not change.
+
+Java uses packet 104, main-hand equipment ordinal zero and its normal optional
+item stack codec. Native player spawn and MobEquipment both use the same selected
+stack as the local inventory correction. Stone/Dirt/Grass counts remain 64 in the
+existing creative preview. Client item/count claims cannot replace the canonical
+slot contents. Selecting an empty starter slot explicitly clears the hand.
+
+`python3 scripts/equipment_smoke.py --client target/gophertunnel-probe` verifies
+initial hands, both directions, a forged item/count claim, late joins, empty hands
+and cleanup with independent Python/Go codecs. Owner/projection tests cover event
+isolation, no-op/invalid/pending selections and hidden-peer re-entry. This is a
+bounded projection of the fixed hotbar, not general inventory or armour support.
