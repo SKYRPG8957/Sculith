@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "tested_at": "2026-11-16 UTC",
-  "automated_source_commit": "9d7003bee189722309ade9cb3a46041444ab4215",
+  "automated_source_commit": "d207998fff7cc3144affc0a90b3541df9d1afb56",
   "linux_project_tests": 114,
   "ownership_doctest": true,
   "clippy": true,
@@ -35,10 +35,29 @@
     "same_runtime_plugin_welcome_displayed": true
   },
   "official_windows_bedrock_game_tested": false,
-  "windows_run": 43789121642,
-  "windows_verified": false,
+  "windows_run": 43789669645,
+  "windows_verified": true,
   "screenshot": {
     "file": "shared-pack-java.png",
     "sha256": "30b8d9750d69556b13c69deb85d38de048f1064a25544f5a23a19643f0004f73"
+  },
+  "preparation_sample": {
+    "profile": "debug",
+    "source_commit": "9d7003bee189722309ade9cb3a46041444ab4215",
+    "platform": "Linux x86_64",
+    "synthetic_extra_source_bytes": 25165824,
+    "wall_seconds": 0.8982614339984138,
+    "peak_child_rss_kib": 89380,
+    "native_zip_bytes": 25167194,
+    "java_zip_bytes": 1361,
+    "scope": "one CLI preparation sample, not a server or gameplay benchmark"
+  },
+  "windows_package": {
+    "version": "v0.1.0-preview.11",
+    "source_commit": "d207998fff7cc3144affc0a90b3541df9d1afb56",
+    "zip_bytes": 5717597,
+    "zip_sha256": "9efd8b084e6ef8204961e9ebdda772195344ea432bc13a6d956f9a9087370253",
+    "entries": 15,
+    "both_executables_system_dlls_only": true
   }
 }

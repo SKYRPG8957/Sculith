@@ -11,8 +11,10 @@ No mod, proxy or separate Minecraft server was used.
 The exact actual-game source is [20115fec](https://github.com/SKYRPG8957/Sculith/tree/20115fec2795a438049333941ab43773c1ac2e03).
 The candidate adds a retained-worker bound in
 [9d7003be](https://github.com/SKYRPG8957/Sculith/tree/9d7003bee189722309ade9cb3a46041444ab4215)
-and passes the independent pack probe. Native Windows verification is running in
-[run 43789121642](https://github.com/SKYRPG8957/Sculith/actions/runs/43789121642).
+and passes the independent pack probe. Native Windows verification passes in
+[run 43789669645](https://github.com/SKYRPG8957/Sculith/actions/runs/43789669645),
+which includes the Windows fixture-path correction in
+[d207998f](https://github.com/SKYRPG8957/Sculith/tree/d207998fff7cc3144affc0a90b3541df9d1afb56).
 
 The stock client JAR SHA-1 remains
 `e877b6a07acd633fb3bb475002175cec036e7b87`, in the Linux/Temurin/software-Vulkan
@@ -57,3 +59,11 @@ hosting remain separate work. Native pack results here are independent protocol
 client results, not a claim that the official Bedrock app was run.
 
 [Configuration, archive/HTTP/protocol bounds and versioned references](../content-delivery.md).
+
+A single Linux debug CLI preparation sample added two 12 MiB files containing
+repeated bytes 0–255 to the authored example. Freezing, staging, hashing and
+exporting both packs took **0.898 seconds**; the kernel reported **89,380 KiB**
+maximum child-process RSS. The native ZIP was 25,167,194 bytes and the Java ZIP
+1,361 bytes. The result JSON retains the exact sample. This is an unoptimized
+startup/CLI observation, not a server memory limit, transport throughput or TPS
+benchmark; release-mode and representative content/load measurements remain work.
