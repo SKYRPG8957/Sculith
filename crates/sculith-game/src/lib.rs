@@ -418,17 +418,7 @@ impl GameState {
             inventory: *inventory.slots(),
             cursor: None,
             created_output: None,
-            hotbar: [
-                Some(BlockKind::Stone),
-                Some(BlockKind::Dirt),
-                Some(BlockKind::Grass),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            ],
+            hotbar: std::array::from_fn(|slot| inventory.slots()[slot].map(|stack| stack.kind)),
         };
         self.players.insert(
             id,

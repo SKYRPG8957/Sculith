@@ -264,9 +264,29 @@ func (s *nativeInventoryState) expect(slot byte, item int32, count uint16) error
 	return nil
 }
 
+func fixtureInventoryRequest() protocol.ItemStackRequest {
+	request := protocol.ItemStackRequest{RequestID: -1, FilterCause: -1}
+	for index := 0; index < 3; index++ {
+		request.Actions = append(request.Actions,
+			&protocol.CraftCreativeStackRequestAction{CreativeItemNetworkID: uint32(index + 1), NumberOfCrafts: 1},
+			nativeInventoryMove(nativeInventoryReference(protocol.ContainerCreatedOutput, 50, -1), nativeInventoryReference(protocol.ContainerInventory, byte(index), 0), 64, false))
+	}
+	return request
+}
+
+func seedFixtureInventory(conn *minecraft.Conn) error {
+	if err := conn.WritePacket(&packet.ItemStackRequest{Requests: []protocol.ItemStackRequest{fixtureInventoryRequest()}}); err != nil {
+		return err
+	}
+	return conn.Flush()
+}
+
 func sharedInventory(conn *minecraft.Conn) error {
 	s := new(nativeInventoryState)
-	id := int32(0)
+	if err := s.exchange(conn, fixtureInventoryRequest(), true); err != nil {
+		return err
+	}
+	id := int32(-1)
 	request := func(actions ...protocol.StackRequestAction) protocol.ItemStackRequest {
 		id--
 		return protocol.ItemStackRequest{RequestID: id, Actions: actions, FilterCause: -1}

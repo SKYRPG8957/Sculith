@@ -71,7 +71,11 @@ func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise, observeExercis
 			}
 		case *packet.AddPlayer:
 			entry, ok := listed[p.UUID]
-			if !ok || entry.Username != p.Username || uint64(entry.EntityUniqueID) != p.EntityRuntimeID || p.EntityRuntimeID == conn.GameData().EntityRuntimeID || p.GameType != 1 || p.HeldItem.Stack.Count != 64 || p.HeldItem.Stack.NetworkID != 1 || math.Abs(float64(p.Position[1])-5.62) > .00001 || p.AbilityData.EntityUniqueID != entry.EntityUniqueID || len(p.AbilityData.Layers) != 1 || p.AbilityData.Layers[0].Type != protocol.AbilityLayerTypeBase {
+			expectedItem, expectedCount := int32(1), uint16(64)
+			if p.Username == "PeerLateProbe" {
+				expectedItem, expectedCount = 0, 0
+			}
+			if !ok || entry.Username != p.Username || uint64(entry.EntityUniqueID) != p.EntityRuntimeID || p.EntityRuntimeID == conn.GameData().EntityRuntimeID || p.GameType != 1 || p.HeldItem.Stack.Count != expectedCount || p.HeldItem.Stack.NetworkID != expectedItem || math.Abs(float64(p.Position[1])-5.62) > .00001 || p.AbilityData.EntityUniqueID != entry.EntityUniqueID || len(p.AbilityData.Layers) != 1 || p.AbilityData.Layers[0].Type != protocol.AbilityLayerTypeBase {
 				return fmt.Errorf("invalid native peer spawn: %+v", p)
 			}
 			if _, ok := entities[p.EntityRuntimeID]; ok {

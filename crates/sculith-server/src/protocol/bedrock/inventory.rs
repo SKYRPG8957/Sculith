@@ -427,6 +427,9 @@ mod tests {
     #[test]
     fn creative_creation_uses_output_prediction_and_ignores_craft_boilerplate() {
         let mut inventory = Inventory::default();
+        for kind in [BlockKind::Stone, BlockKind::Dirt, BlockKind::Grass] {
+            inventory.give(kind, 64).unwrap();
+        }
         let wire = packet(
             -1,
             vec![
@@ -499,6 +502,9 @@ mod tests {
         let normalized = requests(&roundtrip(&embedded), 2).unwrap().unwrap();
         assert_eq!(Some(normalized.clone()), requests(&standalone, 2).unwrap());
         let mut inventory = Inventory::default();
+        for kind in [BlockKind::Stone, BlockKind::Dirt, BlockKind::Grass] {
+            inventory.give(kind, 64).unwrap();
+        }
         let before = inventory.clone();
         let response = inventory.apply(&normalized[0], true);
         assert_eq!(response.result.unwrap().len(), 1);
@@ -573,6 +579,9 @@ mod tests {
                 .unwrap()
                 .remove(0);
             let mut inventory = Inventory::default();
+            for kind in [BlockKind::Stone, BlockKind::Dirt, BlockKind::Grass] {
+                inventory.give(kind, 64).unwrap();
+            }
             let before = *inventory.slots();
             assert_eq!(
                 inventory.apply(&request, true).result,

@@ -25,6 +25,7 @@ type observer struct {
 	biomes, creative, structures bool
 	modelRegistry                bool
 	auxiliary                    map[uint32]bool
+	emptyInventory, emptyHand    bool
 	err                          error
 }
 
@@ -135,6 +136,19 @@ func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
 	case packet.IDInventoryContent:
 		p := new(packet.InventoryContent)
 		p.Marshal(reader)
+		if p.WindowID == protocol.WindowIDInventory && !o.emptyInventory {
+			if len(p.Content) != 36 {
+				o.err = fmt.Errorf("invalid empty inventory baseline size")
+				return
+			}
+			for _, item := range p.Content {
+				if item.Stack.NetworkID != 0 || item.Stack.Count != 0 || item.StackNetworkID != 0 {
+					o.err = fmt.Errorf("unexpected starter inventory")
+					return
+				}
+			}
+			o.emptyInventory = true
+		}
 		size, aux := map[uint32]int{120: 5, 124: 57, 119: 1}[p.WindowID]
 		if !aux {
 			return
@@ -151,6 +165,16 @@ func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
 			}
 		}
 		o.auxiliary[p.WindowID] = true
+	case packet.IDMobEquipment:
+		if !o.emptyHand {
+			p := new(packet.MobEquipment)
+			p.Marshal(reader)
+			if p.NewItem.Stack.NetworkID != 0 || p.NewItem.Stack.Count != 0 || p.NewItem.StackNetworkID != 0 {
+				o.err = fmt.Errorf("unexpected starter held item")
+				return
+			}
+			o.emptyHand = true
+		}
 	case packet.IDLevelChunk:
 		p := new(packet.LevelChunk)
 		p.Marshal(reader)
@@ -211,7 +235,7 @@ func (o *observer) verify() error {
 	if o.err != nil {
 		return o.err
 	}
-	if !o.structures || !o.biomes || !o.creative || len(o.chunks) != 25 || len(o.commands) == 0 || len(o.auxiliary) != 3 {
+	if !o.emptyInventory || !o.emptyHand || !o.structures || !o.biomes || !o.creative || len(o.chunks) != 25 || len(o.commands) == 0 || len(o.auxiliary) != 3 {
 		return fmt.Errorf("incomplete startup: structures=%t biomes=%t creative=%t chunks=%d auxiliary=%d", o.structures, o.biomes, o.creative, len(o.chunks), len(o.auxiliary))
 	}
 	return nil

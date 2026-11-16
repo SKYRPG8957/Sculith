@@ -155,6 +155,14 @@ impl Probe {
         bail!("Java fixture did not receive a block update")
     }
     pub async fn place_stone(&mut self, against: BlockPos, sequence: i32) -> Result<()> {
+        // Explicit creative fixture material; production sessions start empty.
+        let mut seed = codec::packet(0x39);
+        seed.extend_from_slice(&36i16.to_be_bytes());
+        write_varint(64, &mut seed);
+        write_varint(1, &mut seed);
+        seed.extend_from_slice(&[0, 0]);
+        codec::send(&mut self.stream, &seed).await?;
+
         let mut packet = codec::packet(0x42);
         write_varint(0, &mut packet);
         codec::position(against, &mut packet);

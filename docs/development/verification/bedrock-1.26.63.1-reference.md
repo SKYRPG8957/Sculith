@@ -60,8 +60,10 @@ The build and interoperability checks also passed for commit `a69a64e` on
 the Windows release executable with a static CRT. These are independent protocol
 clients, not verification with the official Windows game.
 
-Sculith still has its prototype main-inventory starter stacks. Removing that
-loadout requires explicit fixture seeding rather than another engine command.
+The prototype main-inventory starter stacks have since been removed. New
+production sessions start empty. Integration clients explicitly create their
+fixture items through creative inventory requests; no engine kit command was
+added. See [current validation](../status.md).
 No Minecraft executable, pack, registry asset or decompiled implementation is
 included in Sculith.
 

@@ -140,6 +140,61 @@ impl<T: Transport> TestClient<T> {
         Ok(id)
     }
 
+    async fn seed_stone(&mut self) -> Result<()> {
+        use bedrock::protocol::{
+            v662::{
+                enums::TextProcessingEventOrigin,
+                packets::{ItemStackRequestPacket, RequestsEntry},
+            },
+            v729::types::FullContainerName,
+            v2168::types::ItemStackRequestSlotInfo,
+            v2225::enums::{ContainerEnumName, ItemStackRequestActionType as Action},
+        };
+        let slot = |container, slot, raw_id| ItemStackRequestSlotInfo {
+            container_name: FullContainerName {
+                container,
+                dynamic_id: None,
+            },
+            slot,
+            raw_id,
+        };
+        self.conn
+            .send(&[V2225::ItemStackRequestPacket(Box::new(
+                ItemStackRequestPacket {
+                    requests: vec![RequestsEntry {
+                        client_request_id: -1,
+                        strings_to_filter: vec![],
+                        strings_to_filter_origin: TextProcessingEventOrigin::Unknown,
+                        actions: vec![
+                            Action::CraftCreative {
+                                creative_item_network_id: 1,
+                                number_of_requested_crafts: 1,
+                            },
+                            Action::Place {
+                                amount: 64,
+                                source: slot(ContainerEnumName::CreatedOutputContainer, 50, -1),
+                                destination: slot(ContainerEnumName::InventoryContainer, 0, 0),
+                            },
+                        ],
+                    }],
+                },
+            ))])
+            .await?;
+        ensure!(matches!(
+            self.next().await?,
+            V2225::ItemStackResponsePacket(_)
+        ));
+        let V2225::InventoryContentPacket(content) = self.next().await? else {
+            anyhow::bail!("missing fixture inventory");
+        };
+        ensure!(content.slots[0].id == 1 && content.slots[0].stack_size == 64);
+        ensure!(matches!(self.next().await?, V2225::MobEquipmentPacket(_)));
+        for _ in 0..2 {
+            ensure!(matches!(self.next().await?, V2225::InventorySlotPacket(_)));
+        }
+        Ok(())
+    }
+
     async fn request_break(&mut self, id: u64, x: i32, y: i32, z: i32) -> Result<()> {
         use bedrock::protocol::{
             v662::{enums::PlayerActionType, packets::PlayerActionPacket},
@@ -335,9 +390,7 @@ impl<T: Transport> TestClient<T> {
         let V2225::InventoryContentPacket(inventory) = self.next().await? else {
             anyhow::bail!("expected inventory")
         };
-        ensure!(
-            inventory.slots.len() == 36 && inventory.slots[0].id == 1 && inventory.slots[1].id == 3
-        );
+        ensure!(inventory.slots.len() == 36 && inventory.slots.iter().all(|slot| slot.id == 0));
         ensure!(matches!(self.next().await?, V2225::MobEquipmentPacket(_)));
         for (id, size) in [(120, 5), (124, 57), (119, 1)] {
             let V2225::InventoryContentPacket(window) = self.next().await? else {
@@ -1051,6 +1104,19 @@ async fn placement_uses_server_inventory_and_broadcasts_only_accepted_changes() 
     let server = Harness::start(Authentication::offline(), Duration::from_secs(10)).await;
     let mut a = TestClient::connect(server.address).await.unwrap();
     a.enter().await.unwrap();
+    // A new creative player has no implicit material for placing a block.
+    a.conn
+        .send(&[super::super::input::tests::transaction(0)])
+        .await
+        .unwrap();
+    let V2225::UpdateBlockPacket(empty_hand) = a.next().await.unwrap() else {
+        panic!("missing empty-hand correction");
+    };
+    assert_eq!(
+        empty_hand.block_runtime_id,
+        super::super::chunk::block_hash(BlockKind::Air).unwrap()
+    );
+    a.seed_stone().await.unwrap();
     let mut b = TestClient::connect(server.address).await.unwrap();
     b.enter().await.unwrap();
     let mut forged = super::super::input::tests::transaction(0);

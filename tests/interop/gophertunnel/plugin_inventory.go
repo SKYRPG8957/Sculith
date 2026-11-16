@@ -12,13 +12,16 @@ import (
 
 func pluginInventory(conn *minecraft.Conn) error {
 	s := new(nativeInventoryState)
-	if err := s.exchange(conn, protocol.ItemStackRequest{RequestID: -1, FilterCause: -1,
+	if err := s.exchange(conn, fixtureInventoryRequest(), true); err != nil {
+		return err
+	}
+	if err := s.exchange(conn, protocol.ItemStackRequest{RequestID: -2, FilterCause: -1,
 		Actions: []protocol.StackRequestAction{&protocol.CraftReservedStackRequestAction{ReservedID: "sculith:unsupported", NumberOfCrafts: 1}}}, false); err != nil {
 		return err
 	}
 	destroy := new(protocol.DestroyStackRequestAction)
 	destroy.Source, destroy.Count = s.reference(protocol.ContainerInventory, 0), 64
-	if err := s.exchange(conn, protocol.ItemStackRequest{RequestID: -2, FilterCause: -1, Actions: []protocol.StackRequestAction{destroy}}, true); err != nil {
+	if err := s.exchange(conn, protocol.ItemStackRequest{RequestID: -3, FilterCause: -1, Actions: []protocol.StackRequestAction{destroy}}, true); err != nil {
 		return err
 	}
 	command := func(line string) error {

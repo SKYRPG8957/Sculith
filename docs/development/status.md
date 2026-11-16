@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Production reservations/spawns now start with an empty 36-slot inventory and matching empty hotbar/hand. The prototype Stone/Dirt/Grass grants are removed; creative selection and plugin grants still use the existing owner validation. The bounded 64-entry transaction replay history allocates on first use. Test/benchmark setup explicitly creates its materials rather than adding an engine command or a special production mode.
+
 - API v9 adds separately subscribed clientbound packet metadata for Java TCP and native RakNet/NetherNet. Complete writes/batches emit after transport acceptance; partial, failed and cancelled sends do not. Directions retain independent consecutive sequences and share one lifecycle. API-v8 subscribers receive only their original event set; disabled observations allocate no per-connection trace.
 
 - Authenticated NetherNet can bind non-loopback signaling with an explicit UDP media range and advertised IP. Per-peer candidate/datagram policy allows only the actual TCP peer IP; offline mode remains local, wildcard advertisements and capacity/port conflicts fail configuration, occupied UDP ports are preserved, and exhaustion is unavailable. Media and game tasks are bounded separately. Existing local endpoint behavior is retained. [Network setup](../guides/hosting.md).
@@ -69,6 +71,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- Empty-start validation passes 221 project tests, Clippy, ownership doctests and independent Java/native startup/gameplay/inventory/peer/content probes. Every independent native spawn checks the empty main inventory, hand and auxiliary windows; Java verifies its empty baseline before optional creative fixture selection, and also enters without fixture items. A real RakNet request with an empty hand is corrected before explicit creative material is supplied. Both editions retain movement/building, grants, counted hands, forms, sounds, models and pack transfer.
 
 - API-v9 local validation passes 219 project tests (two release benchmarks ignored), Clippy, the ownership doctest and architecture checks. Real RakNet checks cover compressed/ciphered outbound initialization; Java checks preserve ciphertext across partial writes and never emit successful sends for cancelled prefixes. A failed native transport emits no success event. The independent Go/Pion probe completes a bounded post-spawn control exchange. Actual v8-negotiated and v9 workers run concurrently against the same connections: v8 receives no new event, while both retain consecutive incoming sequences and one close per connection. Existing Java/native inventory, peers, forms, sounds, static models and configured pack-proxy checks pass. These are protocol/plugin tests, not new official-client rendering or account-validation evidence.
   Source `2fcc5f6` completes [Linux workflow 43929394792](https://github.com/SKYRPG8957/Sculith/actions/runs/43929394792). Its native [Windows run 43929394847](https://github.com/SKYRPG8957/Sculith/actions/runs/43929394847) passes every configured build, runtime and interoperability step, including concurrent v8/v9 observers and public pack-proxy delivery. These workflows upload no packages or build artifacts.
@@ -155,6 +159,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Failed / externally constrained
 
+- The empty-start cleanup exposed assumptions in fixture setup: invalid teleport tests attempted creative seeding before activation, late-join probes expected an implicit held Stone stack, and the benchmark grant loop still relied on initial Dirt/Grass. Those fixtures now observe empty startup and prepare only the materials each scenario needs. All configured checks pass after these corrections; no production seed flag or engine command was added.
+
 - The first API-v7 Windows run correctly rejected invalid teleport confirmations, but immediate TCP close with unread input could hide the disconnect frame (`WinError 10053`). A real-socket Linux regression reproduces the reset before the fix. The disconnect path now half-closes and drains raw input for at most 200 ms/8192 bytes without interpreting further requests. The same regression passes after the change; rejection checks remain in place. Native Windows run 43872642970 passes the invalid-ack, inventory, plugin and pack checks after the correction.
 
 - The first shared-pack Windows run passed runtime/unit/interop/plugin checks, then the independent Python archive fixture used native Windows backslashes as dictionary keys and looked up a POSIX ZIP path. It failed before transfer with `KeyError`, not an engine assertion. The fixture now normalizes relative keys with `as_posix()` and the corrected full native Windows run passes above; those failed builds are not published.
@@ -175,6 +181,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - The latest Linux and native Windows automated checks pass after the routing correction. The expected compile-fail result verifies ownership restrictions.
 
 ## Performance
+
+After removing starter items, the release authority benchmark prepares Stone/Dirt/Grass explicitly before timing. One local sample measures 10,000 movement operations **779.723 µs**, 1,000 placement/break pairs **331.649 µs**, 10,000 inventory transfers **2.872583 ms**, and 10,000 plugin give/view/clear cycles **2.825661 ms**. It retains the same kernel assertions and synthetic clock, excluding sockets, rendering and persistence. These are local samples, not a claimed speedup; the replay cache's initially zero capacity is separately asserted.
 
 API-v9 connection observer release microbenchmark (`cargo test -p sculith-server --release connection_observer_benchmark -- --ignored --nocapture`), median of five 10,000-cycle runs: disabled **377.418 µs**, inbound **3.327606 ms**, inbound plus outbound **4.160279 ms**. Each cycle opens/clones/attaches/drops/drains; enabled directions each create one metadata event. This measures local tracing and bounded-ring delivery, excluding sockets, encryption, plugin IPC and game work. The cases perform different work and are not a speedup or TPS comparison.
 
@@ -228,7 +236,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Remove the prototype starter loadout with explicit protocol/test fixture seeding; do not replace it with game-specific engine commands. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work rather than claiming the timed-out full static analysis succeeded.
+Add owner-validated general world APIs and bounded region saving/recovery. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
 
 Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 

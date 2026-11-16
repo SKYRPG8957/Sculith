@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Independent byte-level protocol-777 client; not official Minecraft rendering."""
 import argparse
+from collections import deque
 import hashlib
 import json
 import os
@@ -68,7 +69,23 @@ class Read:
         assert self.i == len(self.data), f"{len(self.data) - self.i} trailing Java bytes"
 
 
+class BufferedSocket:
+    def __init__(self, inner):
+        self.inner = inner
+        self.frames = deque()
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
 def receive(sock):
+    frames = getattr(sock, "frames", None)
+    if frames:
+        return frames.popleft()
+    return receive_network(sock)
+
+
+def receive_network(sock):
     def exact(count):
         result = bytearray()
         while len(result) < count:
@@ -283,8 +300,8 @@ def receive_play(client):
 
 class Client:
     def __init__(self, address, name="SculithJavaProbe", edits=None,
-                 acknowledged_position=(.5, 4, .5), pack_handler=None):
-        self.socket = socket.create_connection(address, timeout=5)
+                 acknowledged_position=(.5, 4, .5), pack_handler=None, inventory_fixture=True):
+        self.socket = BufferedSocket(socket.create_connection(address, timeout=5))
         self.socket.settimeout(5)
         self.uuid = uuid.UUID(bytes=hashlib.md5(("OfflinePlayer:" + name).encode()).digest(), version=3)
         send(self.socket, 0, vi(777) + string("localhost") + struct.pack(">H", address[1]) + vi(2))
@@ -378,7 +395,7 @@ class Client:
                 assert r.varint() == 0
             elif id_ == 18:
                 inventory_content(self,r)
-                assert [self.menu[i] for i in range(36,39)]==[(64,1),(64,55),(64,54)]
+                assert all(item == (0, 0) for item in self.menu)
             elif id_ == 98:
                 self.cursor=item_stack(r);assert self.cursor==(0,0)
             elif id_ == 0x27:
@@ -400,14 +417,37 @@ class Client:
                 assert r.take(12) == bytes(12)
                 r.end()
                 assert len(chunks) == 25 and len(inventory) == 41
-                assert [inventory[i] for i in range(3)] == [(64, 1), (64, 55), (64, 54)]
+                assert all(item == (0, 0) for item in inventory.values())
                 send(self.socket, 0, vi(teleport) + struct.pack(">dddff", *acknowledged_position, 0, 0))
                 send(self.socket, 0x2c)
+                if inventory_fixture:
+                    self.seed_inventory()
                 return
             else:
                 raise AssertionError(("unexpected Java spawn packet", id_, r.take(len(r.data) - r.i)))
             r.end()
         raise AssertionError("Java spawn not completed")
+
+    def seed_inventory(self):
+        expected = {slot: (64, item) for slot, item in enumerate((1, 55, 54))}
+        for slot, (_, item) in expected.items():
+            send(self.socket, 0x39, struct.pack(">h", 36 + slot) + vi(64) + vi(item) + bytes(2))
+        pending_bytes = 0
+        for _ in range(128):
+            id_, reader = receive_network(self.socket)
+            if id_ == 0x6e:
+                slot = reader.varint()
+                stack = item_stack(reader)
+                reader.end()
+                assert expected.pop(slot) == stack
+                self.menu[36 + slot] = stack
+                if not expected:
+                    return
+            else:
+                pending_bytes += len(reader.data)
+                assert pending_bytes <= 256 * 1024, "fixture traffic budget exceeded"
+                self.socket.frames.append((id_, reader))
+        raise AssertionError("creative inventory fixture was not acknowledged")
 
     def block(self, expected_position, expected_state, edited):
         updated = False
@@ -455,6 +495,9 @@ def smoke(server):
                     time.sleep(.05)
                 else:
                     raise TimeoutError(text)
+                fresh = Client(("127.0.0.1", int(match[1])), "EmptyStartProbe", inventory_fixture=False)
+                assert all(item == (0, 0) for item in fresh.menu) and fresh.cursor == (0, 0)
+                fresh.socket.close()
                 client = Client(("127.0.0.1", int(match[1])))
                 send(client.socket, 0x1f, struct.pack(">dddffB", 1, 4, .5, 0, 0, 1))
                 send(client.socket, 0x29, vi(0) + pos(1, 3, 1) + b"\x01" + vi(1))
@@ -512,7 +555,7 @@ def smoke(server):
                 # Confirmation data cannot authorize another position, including NaN.
                 for name, position in [("WrongAck", (1000, 4, .5)), ("NonfiniteAck", (float("nan"), 4, .5))]:
                     invalid = Client(("127.0.0.1", int(match[1])), name,
-                                     {(1, 3, 1): 10}, acknowledged_position=position)
+                                     {(1, 3, 1): 10}, acknowledged_position=position, inventory_fixture=False)
                     id_, r = receive_play(invalid)
                     assert id_ == 0x20 and r.number(">B") == 8
                     assert "request rejected" in r.take(r.number(">H")).decode()

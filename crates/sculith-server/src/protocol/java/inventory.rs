@@ -346,6 +346,7 @@ mod tests {
             }
         );
         let mut owner = sculith_game::inventory::Inventory::default();
+        owner.give(sculith_world::BlockKind::Stone, 64).unwrap();
         owner.click(change.click, true).unwrap();
         assert_eq!(owner.cursor().unwrap().kind, BlockKind::Stone);
         assert_eq!(owner.cursor().unwrap().count, 64);

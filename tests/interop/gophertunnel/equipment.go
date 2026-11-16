@@ -21,8 +21,12 @@ func sharedEquipment(conn *minecraft.Conn) error {
 		}
 		switch p := pk.(type) {
 		case *packet.AddPlayer:
-			if p.HeldItem.Stack.NetworkID != 1 || p.HeldItem.Stack.Count != 64 {
-				return fmt.Errorf("initial peer did not carry authoritative Stone: %+v", p.HeldItem)
+			item, count := int32(1), uint16(64)
+			if p.EntityRuntimeID == 3 {
+				item, count = 0, 0
+			}
+			if p.HeldItem.Stack.NetworkID != item || p.HeldItem.Stack.Count != count {
+				return fmt.Errorf("initial peer carried unexpected inventory: %+v", p.HeldItem)
 			}
 			if p.EntityRuntimeID == 1 && !ready {
 				ready = true

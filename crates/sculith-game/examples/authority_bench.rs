@@ -25,6 +25,18 @@ fn main() {
         )
         .unwrap();
     game.activate(player.id).unwrap();
+    // Fixture preparation is outside the timed kernels.
+    for (slot, kind) in [
+        sculith_world::BlockKind::Stone,
+        sculith_world::BlockKind::Dirt,
+        sculith_world::BlockKind::Grass,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        game.creative_slot(player.id, slot as u8, Some(kind), 64, clock)
+            .unwrap();
+    }
     let started = Instant::now();
     for tick in 1..=10_000 {
         let result = game.move_player(

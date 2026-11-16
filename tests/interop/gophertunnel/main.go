@@ -50,6 +50,11 @@ func main() {
 	if err := conn.DoSpawn(); err != nil {
 		panic(fmt.Errorf("spawn: %w", err))
 	}
+	if visual || (len(os.Args) == 3 && (os.Args[2] == "--peers" || os.Args[2] == "--events" || os.Args[2] == "--equipment")) {
+		if err := seedFixtureInventory(conn); err != nil {
+			panic(err)
+		}
+	}
 	if !visual {
 		if err := observed.verify(); err != nil {
 			panic(err)

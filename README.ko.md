@@ -31,6 +31,8 @@ cargo run --locked -- run --config examples/configs/crossplay.toml
 | Bedrock | `127.0.0.1`, 포트 `19132` |
 | Java 26.3 | `127.0.0.1:25565` |
 
+새 플레이어는 빈 인벤토리로 시작합니다. 지원 블록은 크리에이티브 목록에서 선택하세요.
+
 Ctrl+C로 정상 종료하면 `world/region.sculith`에 지역을 저장합니다.
 플레이어 데이터 저장과 비정상 종료 복구는 아직 없습니다.
 이전 프리뷰 배포본은 철회했으며 새 바이너리는 게시하지 않습니다.

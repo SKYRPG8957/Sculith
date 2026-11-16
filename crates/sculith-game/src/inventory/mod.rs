@@ -222,22 +222,14 @@ pub struct Inventory {
 
 impl Default for Inventory {
     fn default() -> Self {
-        let mut slots = [None; INVENTORY_SLOTS];
-        for (index, kind) in CREATIVE_CATALOGUE[..3].iter().copied().enumerate() {
-            slots[index] = Some(ItemStack {
-                kind,
-                count: MAX_STACK,
-                net_id: index as i32 + 1,
-            });
-        }
         Self {
             state: State {
-                slots,
+                slots: [None; INVENTORY_SLOTS],
                 cursor: None,
                 created_output: None,
-                next_stack_id: 4,
+                next_stack_id: 1,
             },
-            history: VecDeque::with_capacity(REQUEST_HISTORY),
+            history: VecDeque::new(),
             lowest_request_id: None,
         }
     }

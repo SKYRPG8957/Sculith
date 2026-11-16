@@ -1,12 +1,66 @@
 use super::*;
 
+impl GameState {
+    // Explicit fixture setup: the production reservation always starts empty.
+    fn reserve_fixture(
+        &mut self,
+        profile: Profile,
+        permissions: Permissions,
+        now: Instant,
+    ) -> Result<PlayerSnapshot> {
+        let reserved = self.reserve(profile, permissions, now)?;
+        let player = self.players.get_mut(&reserved.id).unwrap();
+        for kind in [BlockKind::Stone, BlockKind::Dirt, BlockKind::Grass] {
+            player.inventory.give(kind, 64)?;
+        }
+        Ok(player
+            .finish_inventory(crate::inventory::Response {
+                request_id: 0,
+                result: Ok(vec![]),
+                replayed: false,
+            })
+            .player)
+    }
+}
+
+#[test]
+fn fresh_reservations_and_activation_do_not_create_gameplay_items() {
+    let now = Instant::now();
+    let mut game = GameState::new(Region::flat_origin(), 20).unwrap();
+    let pending = game
+        .reserve(profile(1), Permissions { can_build: true }, now)
+        .unwrap();
+    for player in [pending.clone(), game.activate(pending.id).unwrap()] {
+        assert!(player.inventory.iter().all(Option::is_none));
+        assert!(player.hotbar.iter().all(Option::is_none));
+        assert!(
+            player.held().is_none() && player.cursor.is_none() && player.created_output.is_none()
+        );
+    }
+    game.creative_slot(pending.id, 1, Some(BlockKind::Dirt), 5, now)
+        .unwrap();
+    let selected = game.select_slot(pending.id, 1).unwrap();
+    assert_eq!(
+        (
+            selected.held().unwrap().kind,
+            selected.held().unwrap().count
+        ),
+        (BlockKind::Dirt, 5)
+    );
+    game.retire(pending.id);
+    let rejoined = game
+        .reserve(profile(1), Permissions { can_build: true }, now)
+        .unwrap();
+    assert!(rejoined.inventory.iter().all(Option::is_none));
+}
+
 #[test]
 fn plugin_inventory_is_live_bounded_and_separate_from_client_permission_and_budget() {
     use sculith_core::inventory::{InventoryError, InventoryOperation};
     let now = Instant::now();
     let mut game = GameState::new(Region::flat_origin(), 20).unwrap();
     let player = game
-        .reserve(profile(1001), Permissions::default(), now)
+        .reserve_fixture(profile(1001), Permissions::default(), now)
         .unwrap();
     let give = InventoryOperation::Give {
         item: "minecraft:bedrock".into(),
@@ -91,7 +145,7 @@ fn profile(index: u128) -> Profile {
 fn active(region: Region, now: Instant) -> (GameState, u64) {
     let mut game = GameState::new(region, 20).unwrap();
     let player = game
-        .reserve(profile(1), Permissions { can_build: true }, now)
+        .reserve_fixture(profile(1), Permissions { can_build: true }, now)
         .unwrap();
     game.activate(player.id).unwrap();
     (game, player.id)
@@ -108,7 +162,7 @@ fn models_require_registered_live_players_and_owner_clock_without_world_mutation
     )
     .unwrap();
     let player = state
-        .reserve(profile(123), Permissions { can_build: true }, now)
+        .reserve_fixture(profile(123), Permissions { can_build: true }, now)
         .unwrap();
     let id = player.id;
     assert!(
@@ -213,7 +267,7 @@ fn message_budget_is_per_initialized_player_and_uses_the_owner_clock() {
         .permit_message(id, now + Duration::from_millis(250))
         .unwrap();
     let other = state
-        .reserve(profile(2), Permissions { can_build: true }, now)
+        .reserve_fixture(profile(2), Permissions { can_build: true }, now)
         .unwrap();
     assert!(state.permit_message(other.id, now).is_err());
     state.activate(other.id).unwrap();
@@ -232,7 +286,7 @@ fn forms_bind_replies_to_live_sessions_and_owner_without_replay_or_world_changes
     let now = Instant::now();
     let (mut state, id) = active(Region::flat_origin(), now);
     let other = state
-        .reserve(profile(2), Permissions::default(), now)
+        .reserve_fixture(profile(2), Permissions::default(), now)
         .unwrap();
     let form = sculith_core::SimpleForm {
         title: "Menu".into(),
@@ -384,24 +438,24 @@ fn lifecycle_reservations_capacity_namespaced_identity_and_cleanup_are_authorita
     let now = Instant::now();
     let mut game = GameState::new(Region::flat_origin(), 2).unwrap();
     let first = game
-        .reserve(profile(1), Permissions::default(), now)
+        .reserve_fixture(profile(1), Permissions::default(), now)
         .unwrap();
     assert_eq!(game.online_count(), 0);
     assert!(!first.initialized);
     let mut duplicate = profile(2);
     duplicate.subject = first.profile.subject.clone();
     assert!(
-        game.reserve(duplicate.clone(), Permissions::default(), now)
+        game.reserve_fixture(duplicate.clone(), Permissions::default(), now)
             .is_err()
     );
     duplicate.edition = Edition::Java;
     let second = game
-        .reserve(duplicate, Permissions::default(), now)
+        .reserve_fixture(duplicate, Permissions::default(), now)
         .unwrap();
     assert_ne!(first.id, second.id);
     assert!(first.id != 0 && second.id <= i64::MAX as u64);
     assert!(
-        game.reserve(profile(3), Permissions::default(), now)
+        game.reserve_fixture(profile(3), Permissions::default(), now)
             .is_err()
     );
     game.activate(first.id).unwrap();
@@ -412,7 +466,7 @@ fn lifecycle_reservations_capacity_namespaced_identity_and_cleanup_are_authorita
     assert!(game.retire(first.id).unwrap().initialized);
     assert_eq!(game.online_count(), 0);
     assert!(
-        game.reserve(profile(1), Permissions::default(), now)
+        game.reserve_fixture(profile(1), Permissions::default(), now)
             .is_ok()
     );
 }
@@ -431,7 +485,7 @@ fn invalid_profiles_capacity_and_id_exhaustion_fail_without_world_changes() {
             _ => candidate.subject = "x".repeat(257),
         }
         assert!(
-            game.reserve(candidate, Permissions::default(), now)
+            game.reserve_fixture(candidate, Permissions::default(), now)
                 .is_err()
         );
     }
@@ -448,7 +502,7 @@ fn pending_players_cannot_move_build_or_select_inventory() {
     let now = Instant::now();
     let mut game = GameState::new(Region::flat_origin(), 2).unwrap();
     let player = game
-        .reserve(profile(1), Permissions { can_build: true }, now)
+        .reserve_fixture(profile(1), Permissions { can_build: true }, now)
         .unwrap();
     rejected_move(
         &mut game,
@@ -770,7 +824,7 @@ fn new_reservations_find_clearance_after_persisted_or_recent_spawn_builds() {
         .unwrap();
     let mut game = GameState::new(region, 2).unwrap();
     let first = game
-        .reserve(profile(1), Permissions::default(), now)
+        .reserve_fixture(profile(1), Permissions::default(), now)
         .unwrap();
     assert_eq!(first.feet.y, 5.0);
     game.region
@@ -783,7 +837,7 @@ fn new_reservations_find_clearance_after_persisted_or_recent_spawn_builds() {
         )
         .unwrap();
     let second = game
-        .reserve(profile(2), Permissions::default(), now)
+        .reserve_fixture(profile(2), Permissions::default(), now)
         .unwrap();
     assert_eq!(second.feet.y, 6.0);
 }
@@ -843,7 +897,7 @@ fn permissions_and_immutable_bedrock_are_enforced_before_committing() {
     let result = game.break_block(id, BlockPos { x: 0, y: 0, z: 0 }, now);
     rejected_block(&mut game, result, RejectReason::Unbreakable, &before);
     let other = game
-        .reserve(profile(2), Permissions::default(), now)
+        .reserve_fixture(profile(2), Permissions::default(), now)
         .unwrap();
     game.activate(other.id).unwrap();
     let result = game.break_block(other.id, BlockPos { x: 1, y: 3, z: 0 }, now);
@@ -941,7 +995,7 @@ fn placing_cannot_intersect_any_active_or_pending_player_body() {
     let now = Instant::now();
     let (mut game, id) = active(Region::flat_origin(), now);
     let second = game
-        .reserve(profile(2), Permissions::default(), now)
+        .reserve_fixture(profile(2), Permissions::default(), now)
         .unwrap();
     game.activate(second.id).unwrap();
     accepted(game.move_player(
@@ -976,7 +1030,7 @@ fn placing_cannot_intersect_any_active_or_pending_player_body() {
         Rotation::default(),
         now,
     ));
-    game.reserve(profile(3), Permissions::default(), now)
+    game.reserve_fixture(profile(3), Permissions::default(), now)
         .unwrap();
     let result = game.place_block(
         id,

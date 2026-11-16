@@ -31,6 +31,9 @@ Connect on the same PC:
 | Bedrock | `127.0.0.1`, port `19132` |
 | Java 26.3 | `127.0.0.1:25565` |
 
+New players start with an empty inventory. Select the supported blocks from the
+creative inventory.
+
 Stop with Ctrl+C. The example saves the region to `world/region.sculith` on
 orderly shutdown. Player data and crash recovery are not yet persistent.
 The previous preview downloads have been withdrawn; no new binaries are published.

@@ -60,12 +60,12 @@ also reaches the actual official session endpoint and receives an encrypted
 rejection for an account that did not join. This does not establish successful
 sign-in with a real Microsoft account. The earlier actual-game evidence remains
 offline evidence. [Public pack delivery](packs.md) accepts an explicit HTTP(S)
-advertised URL; public NetherNet trust remains separate pending work.
+advertised URL; authenticated NetherNet hosting has its own [media configuration](hosting.md).
 
 ## Implemented and tested
 
 - Login/configuration with the matching negotiated vanilla core, 32 registries,
-  773 tags, creative abilities, clock, three server-owned starter slots and 25
+  773 tags, creative abilities, clock, an initially empty 36-slot inventory and 25
   chunks from owner snapshots.
 - Protocol-777 palettes, fluid counts, heightmaps and byte-mask lighting. Every
   one of the 2,457,600 spawn voxels is decoded by an independent Python client.

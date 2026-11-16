@@ -1,6 +1,26 @@
 use super::*;
 use sculith_game::Edition;
 
+async fn seed_inventory(world: &WorldHandle, id: u64) {
+    for (index, item) in ["minecraft:stone", "minecraft:dirt", "minecraft:grass_block"]
+        .iter()
+        .enumerate()
+    {
+        world
+            .plugin_inventory(
+                "fixture".into(),
+                id,
+                index as u32 + 1,
+                sculith_core::inventory::InventoryOperation::Give {
+                    item: (*item).into(),
+                    count: 64,
+                },
+            )
+            .await
+            .unwrap();
+    }
+}
+
 #[tokio::test]
 async fn plugin_inventory_results_are_private_and_notifications_read_current_owner_state() {
     use sculith_core::inventory::{InventoryError, InventoryOperation, InventoryResult};
@@ -18,6 +38,7 @@ async fn plugin_inventory_results_are_private_and_notifications_read_current_own
     let id = actor.player.id;
     world.activate(id).await.unwrap();
     world.activate(viewer.player.id).await.unwrap();
+    seed_inventory(&world, id).await;
     world.configure_observations(crate::observations::INVENTORY);
     let mut normal = world.subscribe();
     let mut hooks = world.subscribe_game();
@@ -131,6 +152,7 @@ async fn inventory_commits_are_private_with_counted_public_hands_and_idempotent_
     );
     world.activate(id).await.unwrap();
     world.activate(viewer.player.id).await.unwrap();
+    seed_inventory(&world, id).await;
     world.configure_observations(crate::observations::INVENTORY | crate::observations::EQUIPMENT);
     let mut hooks = world.subscribe_game();
     let mut normal = world.subscribe();
@@ -409,6 +431,7 @@ async fn held_slot_changes_publish_only_committed_public_equipment() {
     world.activate(viewer.player.id).await.unwrap();
     assert!(world.select_slot(peer.player.id, 1).await.is_err());
     world.activate(peer.player.id).await.unwrap();
+    seed_inventory(&world, peer.player.id).await;
     let mut observation = world.observe_players(viewer.player.id).await.unwrap();
     let mut normal = world.subscribe();
     let mut game = world.subscribe_game();

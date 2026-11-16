@@ -1,8 +1,42 @@
 use super::*;
 
+fn fixture_inventory() -> Inventory {
+    let mut inventory = Inventory::default();
+    for kind in CREATIVE_CATALOGUE[..3].iter().copied() {
+        inventory.give(kind, 64).unwrap();
+    }
+    inventory
+}
+
+#[test]
+fn new_inventory_is_empty_and_first_grant_allocates_fresh_stack_identity() {
+    let mut inventory = Inventory::default();
+    assert!(inventory.slots().iter().all(Option::is_none));
+    assert!(inventory.cursor().is_none() && inventory.created_output().is_none());
+    assert!(inventory.history.is_empty() && inventory.lowest_request_id.is_none());
+    assert_eq!(inventory.history.capacity(), 0);
+    inventory.give(BlockKind::Stone, 5).unwrap();
+    let first = inventory.slots()[0].unwrap();
+    assert_eq!(
+        (first.kind, first.count, first.net_id),
+        (BlockKind::Stone, 5, 1)
+    );
+    assert!(inventory.slots()[1..].iter().all(Option::is_none));
+    assert_eq!(inventory.history.capacity(), 0);
+    let rejected = inventory.apply(
+        &Request {
+            id: -1,
+            actions: vec![],
+        },
+        true,
+    );
+    assert_eq!(rejected.result, Err(RejectReason::EmptyRequest));
+    assert_eq!(inventory.history.len(), 1);
+}
+
 #[test]
 fn server_grants_merge_before_empty_slots_and_preserve_cursor_output_and_history() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     inventory.replace_creative(0, None, 0, true).unwrap();
     inventory
         .replace_creative(8, Some(BlockKind::Dirt), 60, true)
@@ -32,7 +66,7 @@ fn server_grants_merge_before_empty_slots_and_preserve_cursor_output_and_history
 
 #[test]
 fn server_grants_roll_back_full_inventory_and_allocator_exhaustion() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     for slot in 0..36 {
         inventory
             .replace_creative(slot, Some(BlockKind::Stone), 64, true)
@@ -53,7 +87,7 @@ fn server_grants_roll_back_full_inventory_and_allocator_exhaustion() {
         Err(RejectReason::InvalidCount)
     );
     assert_eq!(inventory, before);
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     inventory.state.next_stack_id = i32::MAX as u64;
     let before = inventory.clone();
     assert_eq!(
@@ -65,7 +99,7 @@ fn server_grants_roll_back_full_inventory_and_allocator_exhaustion() {
 
 #[test]
 fn server_grants_cannot_be_undone_by_replayed_client_requests() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     let request = Request {
         id: -1,
         actions: vec![Action::Transfer {
@@ -122,7 +156,7 @@ fn transfer(source: SlotRef, destination: SlotRef, count: u8) -> Action {
 
 #[test]
 fn split_merge_swap_and_destroy_preserve_counts_and_unique_ids() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     assert_eq!(inventory.slots().len(), 36);
     let source = exact(&inventory, Slot::Inventory(0));
     apply(
@@ -176,7 +210,7 @@ fn split_merge_swap_and_destroy_preserve_counts_and_unique_ids() {
 
 #[test]
 fn atomic_failure_restores_stacks_and_allocator() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     let before = inventory.state.clone();
     let request = Request {
         id: -1,
@@ -204,7 +238,7 @@ fn atomic_failure_restores_stacks_and_allocator() {
 
 #[test]
 fn unsupported_adapter_action_is_an_atomic_cached_rejection() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     let before = inventory.state.clone();
     let request = Request {
         id: -1,
@@ -224,7 +258,7 @@ fn unsupported_adapter_action_is_an_atomic_cached_rejection() {
 
 #[test]
 fn predictions_are_scoped_to_changed_slots_and_current_or_retained_request() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     apply(
         &mut inventory,
         -1,
@@ -286,7 +320,7 @@ fn predictions_are_scoped_to_changed_slots_and_current_or_retained_request() {
 
 #[test]
 fn stale_positive_empty_and_future_claims_reject() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     for (id, expected_id, expected_error) in [
         (-1, 12345, RejectReason::StackMismatch),
         (-2, 0, RejectReason::StackMismatch),
@@ -309,7 +343,7 @@ fn stale_positive_empty_and_future_claims_reject() {
 
 #[test]
 fn request_replay_is_equal_bounded_and_never_fresh_after_eviction() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     let first = Request {
         id: -1,
         actions: vec![Action::CraftCreative { catalogue_id: 1 }],
@@ -400,7 +434,7 @@ fn rejects_invalid_catalogue_count_slot_and_permissions() {
         ),
     ];
     for (action, error) in cases {
-        let mut inventory = Inventory::default();
+        let mut inventory = fixture_inventory();
         let before = inventory.state.clone();
         assert_eq!(
             inventory
@@ -416,7 +450,7 @@ fn rejects_invalid_catalogue_count_slot_and_permissions() {
         );
         assert_eq!(inventory.state, before);
     }
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     let before = inventory.state.clone();
     assert_eq!(
         inventory
@@ -435,7 +469,7 @@ fn rejects_invalid_catalogue_count_slot_and_permissions() {
 
 #[test]
 fn merge_overflow_and_excessive_removal_are_atomic() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     inventory
         .replace_creative(9, Some(BlockKind::Stone), 1, true)
         .unwrap();
@@ -472,7 +506,7 @@ fn merge_overflow_and_excessive_removal_are_atomic() {
 
 #[test]
 fn creative_replacement_and_removal_enforce_the_same_authority_and_allowlist() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     inventory
         .replace_creative(35, Some(BlockKind::Bedrock), 17, true)
         .unwrap();
@@ -508,7 +542,7 @@ fn creative_replacement_and_removal_enforce_the_same_authority_and_allowlist() {
 
 #[test]
 fn last_positive_id_is_usable_and_exhaustion_rolls_back_partial_allocation() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     inventory.state.next_stack_id = i32::MAX as u64;
     let source = exact(&inventory, Slot::Inventory(0));
     let before = inventory.state.clone();
@@ -538,7 +572,7 @@ fn last_positive_id_is_usable_and_exhaustion_rolls_back_partial_allocation() {
 
 #[test]
 fn action_and_sequence_limits_do_not_wrap_or_clone_oversized_requests() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     let before = inventory.state.clone();
     let action = Action::CraftCreative { catalogue_id: 1 };
     let request = Request {
@@ -583,7 +617,7 @@ fn action_and_sequence_limits_do_not_wrap_or_clone_oversized_requests() {
 
 #[test]
 fn pickup_clicks_split_place_merge_and_swap_from_owner_counts() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     inventory
         .replace_creative(9, Some(BlockKind::Stone), 5, true)
         .unwrap();
@@ -675,7 +709,7 @@ fn pickup_clicks_split_place_merge_and_swap_from_owner_counts() {
 
 #[test]
 fn pickup_full_empty_and_capacity_limits_have_exact_noop_behavior() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     let before = inventory.clone();
     assert!(
         inventory
@@ -744,7 +778,7 @@ fn pickup_full_empty_and_capacity_limits_have_exact_noop_behavior() {
 
 #[test]
 fn hotbar_swap_self_empty_and_bounds_preserve_authority() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     let before = inventory.clone();
     assert!(
         inventory
@@ -801,7 +835,7 @@ fn hotbar_swap_self_empty_and_bounds_preserve_authority() {
 
 #[test]
 fn click_stack_id_exhaustion_rolls_back_and_fresh_ids_are_unique() {
-    let mut inventory = Inventory::default();
+    let mut inventory = fixture_inventory();
     inventory.state.next_stack_id = i32::MAX as u64;
     let before = inventory.clone();
     assert!(

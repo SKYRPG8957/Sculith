@@ -60,22 +60,25 @@ the actual-game verification records); Apache-2.0 bedrock-rs
 `0f9a3a573626` pinned in the lockfiles. No official client code or assets are
 distributed. Existing MIT licensing is preserved.
 
-## Authoritative held items — Preview 16
+## Authoritative held items
 
-Peer spawn now includes the server's selected starter item. Changed hotbar slots
-publish a dedicated owner event to the peer stream only. A repeated selection
+Peer spawn includes the owner's selected item, including an empty hand. Changed hotbar slots
+publish a committed owner event to the peer stream. A repeated selection
 produces no event; rejected or pending selections produce none. Hidden peers keep
 the latest selection for their next visible spawn and late joins see the current
-owner snapshot. Region revisions and plugin game hooks do not change.
+owner snapshot. Region revisions do not change; opt-in `PlayerEquipped` hooks
+report committed selection and held-count changes.
 
 Java uses packet 104, main-hand equipment ordinal zero and its normal optional
 item stack codec. Native player spawn and MobEquipment both use the same selected
-stack as the local inventory correction. Stone/Dirt/Grass counts remain 64 in the
-existing creative preview. Client item/count claims cannot replace the canonical
-slot contents. Selecting an empty starter slot explicitly clears the hand.
+stack as the local inventory correction. Item kinds and counts come from the
+current owner inventory; production sessions start empty. Integration fixtures
+create their own creative stacks. Client claims cannot replace canonical slot
+contents. Selecting an empty slot explicitly clears the hand.
 
 `python3 tests/interop/equipment_smoke.py --client target/gophertunnel-probe` verifies
 initial hands, both directions, a forged item/count claim, late joins, empty hands
 and cleanup with independent Python/Go codecs. Owner/projection tests cover event
 isolation, no-op/invalid/pending selections and hidden-peer re-entry. This is a
-bounded projection of the fixed hotbar, not general inventory or armour support.
+bounded projection of the counted inventory; armour/offhand and general entity
+simulation remain unsupported.
