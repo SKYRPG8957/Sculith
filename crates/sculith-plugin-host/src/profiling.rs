@@ -23,6 +23,8 @@ pub struct Sample {
     pub hook: Option<Hook>,
     pub start_ns: u64,
     pub encode_ns: u64,
+    /// Attempts to serialize a full message body (not envelope copies).
+    pub message_encodes: u64,
     pub wall_ns: u64,
     pub sent_bytes: u64,
     pub received_bytes: u64,
@@ -41,6 +43,8 @@ pub struct Measurements {
     pub received_bytes: u64,
     pub timed_calls: u64,
     pub encode_ns: u64,
+    /// Lifetime attempts to serialize a full message body (not envelope copies).
+    pub message_encodes: u64,
     pub wall_ns: u64,
     pub maximum_ns: u64,
     /// Exact nearest-rank quantiles of the most recent 128 timed calls.
@@ -58,6 +62,8 @@ pub struct PluginProfile {
     pub api_version: u32,
     pub worker_pid: Option<u32>,
     pub disabled: bool,
+    pub request_buffer_capacity: usize,
+    pub reply_buffer_capacity: usize,
     pub ipc: Measurements,
 }
 
@@ -66,6 +72,7 @@ pub struct Snapshot {
     pub schema_version: u32,
     pub scope: &'static str,
     pub dispatcher: Measurements,
+    pub shared_event_buffer_capacity: usize,
     pub plugins: Vec<PluginProfile>,
 }
 
@@ -85,6 +92,7 @@ pub(super) struct Collector {
     received: u64,
     timed: u64,
     encode: u64,
+    message_encodes: u64,
     wall: u64,
     maximum: u64,
     overwritten: u64,
@@ -108,6 +116,7 @@ impl Default for Collector {
             received: 0,
             timed: 0,
             encode: 0,
+            message_encodes: 0,
             wall: 0,
             maximum: 0,
             overwritten: 0,
@@ -148,6 +157,7 @@ impl Collector {
     }
     pub fn finish(&mut self, token: Option<Token>, mut sample: Sample) {
         self.calls = self.calls.saturating_add(1);
+        self.message_encodes = self.message_encodes.saturating_add(sample.message_encodes);
         self.sent = self.sent.saturating_add(sample.sent_bytes);
         self.received = self.received.saturating_add(sample.received_bytes);
         self.failures = self.failures.saturating_add(u64::from(sample.failed));
@@ -190,6 +200,7 @@ impl Collector {
             received_bytes: self.received,
             timed_calls: self.timed,
             encode_ns: self.encode,
+            message_encodes: self.message_encodes,
             wall_ns: self.wall,
             maximum_ns: self.maximum,
             recent_p50_ns: quantile(50),
@@ -211,6 +222,7 @@ mod tests {
             hook: Some(Hook::Tick),
             start_ns: 0,
             encode_ns: 2,
+            message_encodes: 1,
             wall_ns,
             sent_bytes: 10,
             received_bytes: 20,

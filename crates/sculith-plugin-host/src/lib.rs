@@ -7,8 +7,8 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use sculith_core::{ServerStatus, validate_motd, validate_system_message};
 use sculith_plugin_api::{
-    API_VERSION, Action, Event, HostMessage, LEGACY_API_VERSION, MAX_ACTIONS, MAX_MESSAGE_BYTES,
-    Metadata, PluginMessage, Response, SUPPORTED_API_VERSIONS,
+    API_VERSION, Action, Event, HostMessage, LEGACY_API_VERSION, MAX_ACTIONS, Metadata,
+    PluginMessage, Response, SUPPORTED_API_VERSIONS,
 };
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -21,23 +21,15 @@ mod config;
 pub use config::PluginConfig;
 use sculith_runtime::{WorldEvent, WorldHandle};
 
-#[derive(serde::Serialize)]
-struct WireRequest<'a, T> {
-    id: u64,
-    message: &'a T,
-}
-
-#[derive(serde::Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum EventMessage<'a> {
-    Event { event: &'a Event },
-}
+mod framing;
+use framing::{Buffer, EventMessage};
 
 pub const MAX_PLUGINS: usize = 32;
 
 pub struct Plugins {
     processes: Vec<Process>,
     dispatch_metrics: Collector,
+    event_buffer: Buffer,
 }
 
 struct Process {
@@ -53,6 +45,8 @@ struct Process {
     inventory_clock: Instant,
     world_budget: Option<(f64, Instant)>,
     metrics: Collector,
+    request_buffer: Buffer,
+    reply_buffer: Buffer,
 }
 
 impl Plugins {
@@ -86,6 +80,7 @@ impl Plugins {
             schema_version: 1,
             scope: "plugin_ipc_wall_time",
             dispatcher: self.dispatch_metrics.snapshot(now),
+            shared_event_buffer_capacity: self.event_buffer.capacity(),
             plugins: self
                 .processes
                 .iter()
@@ -94,6 +89,8 @@ impl Plugins {
                     api_version: process.api_version,
                     worker_pid: process.child.id(),
                     disabled: process.disabled,
+                    request_buffer_capacity: process.request_buffer.capacity(),
+                    reply_buffer_capacity: process.reply_buffer.capacity(),
                     ipc: process.metrics.snapshot(now),
                 })
                 .collect(),
@@ -178,6 +175,7 @@ impl Plugins {
         Ok(Self {
             processes,
             dispatch_metrics: Collector::default(),
+            event_buffer: Buffer::default(),
         })
     }
 
@@ -240,20 +238,43 @@ impl Plugins {
         let timing = self.dispatch_metrics.begin();
         let mut dispatch_failed = false;
         let hook = event.hook();
-        let replies = futures_util::future::join_all(self.processes.iter_mut().map(|process| {
-            let subscribed = !process.disabled
+        let mut selected = [false; MAX_PLUGINS];
+        let mut selected_count = 0;
+        for (process, selected) in self.processes.iter().zip(&mut selected) {
+            *selected = !process.disabled
                 && process.metadata.hooks.contains(&hook)
                 && recipient.is_none_or(|name| process.metadata.name == name);
-            let event = &event;
-            async move {
-                if subscribed {
-                    Some(process.request_event(event).await)
-                } else {
-                    None
-                }
-            }
-        }))
-        .await;
+            selected_count += usize::from(*selected);
+        }
+        // A private reply selects its owner before any serialization. Public
+        // fan-out encodes the body once; envelope IDs remain per worker.
+        let shared = selected_count > 1;
+        let encode_timing = shared.then(|| self.dispatch_metrics.begin()).flatten();
+        let body = shared.then(|| framing::event(&mut self.event_buffer, &event));
+        let encode_ns = Collector::elapsed(&encode_timing);
+        let prepared = body
+            .as_ref()
+            .map(|result| result.as_ref().map(|()| self.event_buffer.bytes()));
+        let replies = if selected_count == 0 {
+            Vec::new()
+        } else {
+            futures_util::future::join_all(self.processes.iter_mut().zip(selected).map(
+                |(process, subscribed)| {
+                    let event = &event;
+                    async move {
+                        if !subscribed {
+                            None
+                        } else if let Some(body) = prepared {
+                            Some(process.request_shared_event(event.hook(), body).await)
+                        } else {
+                            Some(process.request_event(event).await)
+                        }
+                    }
+                },
+            ))
+            .await
+        };
+        self.event_buffer.clear();
         for (process, reply) in self.processes.iter_mut().zip(replies) {
             let Some(reply) = reply else { continue };
             let result = async {
@@ -339,7 +360,8 @@ impl Plugins {
                 request_id: None,
                 hook: Some(hook),
                 start_ns: 0,
-                encode_ns: 0,
+                encode_ns,
+                message_encodes: u64::from(shared),
                 wall_ns: 0,
                 sent_bytes: 0,
                 received_bytes: 0,
@@ -451,6 +473,8 @@ impl Process {
             inventory_clock: Instant::now(),
             world_budget: None,
             metrics: Collector::default(),
+            request_buffer: Buffer::default(),
+            reply_buffer: Buffer::default(),
         };
         let reply = process
             .request(HostMessage::Hello {
@@ -531,31 +555,54 @@ impl Process {
         message: &T,
         hook: Option<sculith_plugin_api::Hook>,
     ) -> Result<PluginMessage> {
+        self.request_frame(hook, 1, |id, buffer| framing::request(buffer, id, message))
+            .await
+    }
+
+    async fn request_shared_event(
+        &mut self,
+        hook: sculith_plugin_api::Hook,
+        body: std::result::Result<&[u8], &anyhow::Error>,
+    ) -> Result<PluginMessage> {
+        self.request_frame(Some(hook), 0, |id, buffer| {
+            let body = body
+                .map_err(|error| anyhow::anyhow!("shared plugin event encoding failed: {error}"))?;
+            framing::shared_request(buffer, id, body)
+        })
+        .await
+    }
+
+    async fn request_frame(
+        &mut self,
+        hook: Option<sculith_plugin_api::Hook>,
+        encodes: u64,
+        encode: impl FnOnce(u64, &mut Buffer) -> Result<()> + Send,
+    ) -> Result<PluginMessage> {
         let timing = self.metrics.begin();
-        let (mut encode_ns, mut sent_bytes, mut received_bytes, mut timed_out) = (0, 0, 0, false);
+        let (mut encode_ns, mut message_encodes, mut sent_bytes, mut received_bytes, mut timed_out) =
+            (0, 0, 0, 0, false);
         let result = async {
             self.request_id = self
                 .request_id
                 .checked_add(1)
                 .context("plugin request identifiers exhausted")?;
-            let request = WireRequest {
-                id: self.request_id,
-                message,
-            };
-            let mut data = serde_json::to_vec(&request)?;
-            data.push(b'\n');
+            message_encodes = encodes;
+            let encoded = encode(self.request_id, &mut self.request_buffer);
             encode_ns = Collector::elapsed(&timing);
-            ensure!(data.len() <= MAX_MESSAGE_BYTES, "host message too large");
+            encoded?;
             let outcome = tokio::time::timeout(self.timeout, async {
                 let input = self.input.as_mut().context("plugin stdin closed")?;
-                input.write_all(&data).await?;
-                sent_bytes = data.len() as u64;
+                input.write_all(self.request_buffer.bytes()).await?;
+                sent_bytes = self.request_buffer.bytes().len() as u64;
                 input.flush().await?;
-                let line = read_line_bounded(&mut self.output).await?;
-                received_bytes = line.len() as u64;
-                let response: Response =
-                    serde_json::from_slice(&line).context("invalid plugin JSON response")?;
-                ensure!(response.id == request.id, "plugin response ID mismatch");
+                read_line_bounded(&mut self.output, &mut self.reply_buffer).await?;
+                received_bytes = self.reply_buffer.bytes().len() as u64;
+                let response: Response = serde_json::from_slice(self.reply_buffer.bytes())
+                    .context("invalid plugin JSON response")?;
+                ensure!(
+                    response.id == self.request_id,
+                    "plugin response ID mismatch"
+                );
                 Ok(response.message)
             })
             .await;
@@ -563,6 +610,9 @@ impl Process {
             outcome.context("plugin response timed out")?
         }
         .await;
+        // Responses own their fields. Retain bounded capacity, never stale bytes.
+        self.request_buffer.clear();
+        self.reply_buffer.clear();
         self.metrics.finish(
             timing,
             Sample {
@@ -570,6 +620,7 @@ impl Process {
                 hook,
                 start_ns: 0,
                 encode_ns,
+                message_encodes,
                 wall_ns: 0,
                 sent_bytes,
                 received_bytes,
@@ -581,8 +632,11 @@ impl Process {
     }
 }
 
-async fn read_line_bounded(input: &mut (impl AsyncBufRead + Unpin)) -> Result<Vec<u8>> {
-    let mut line = Vec::new();
+async fn read_line_bounded(
+    input: &mut (impl AsyncBufRead + Unpin),
+    line: &mut Buffer,
+) -> Result<()> {
+    line.clear();
     loop {
         let available = input.fill_buf().await?;
         ensure!(
@@ -594,14 +648,11 @@ async fn read_line_bounded(input: &mut (impl AsyncBufRead + Unpin)) -> Result<Ve
             .position(|&b| b == b'\n')
             .map(|index| index + 1);
         let count = end.unwrap_or(available.len());
-        ensure!(
-            line.len() + count <= MAX_MESSAGE_BYTES,
-            "plugin response exceeds 64 KiB"
-        );
-        line.extend_from_slice(&available[..count]);
+        line.append(&available[..count])
+            .context("plugin response exceeds 64 KiB")?;
         input.consume(count);
         if end.is_some() {
-            return Ok(line);
+            return Ok(());
         }
     }
 }

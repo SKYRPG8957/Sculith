@@ -20,6 +20,7 @@ def start(server, fixture, root, duration):
         '[network.java]\nbind="127.0.0.1:0"\n'
         '[network.bedrock]\nenabled=false\nbind="127.0.0.1:0"\n'
         '[[plugins]]\npath='+json.dumps(str(fixture))+'\nargs=["active","tick"]\n'
+        '[[plugins]]\npath='+json.dumps(str(fixture))+'\nargs=["peer","tick"]\n'
         '[[plugins]]\npath='+json.dumps(str(fixture))+'\nargs=["idle","none"]\n', encoding='utf-8')
     with log.open('w', encoding='utf-8') as stream:
         process = subprocess.Popen([str(server), 'run', '--config', str(config),
@@ -41,8 +42,17 @@ def check(output, reason):
     assert data['finished_reason'] == reason
     assert 'profile-private-payload-sentinel' not in output.read_text(encoding='utf-8')
     plugins = {plugin['name']: plugin for plugin in data['plugins']}
-    assert set(plugins) == {'active', 'idle'} and not any(plugin['disabled'] for plugin in plugins.values())
-    active, idle = plugins['active']['ipc'], plugins['idle']['ipc']
+    assert set(plugins) == {'active', 'peer', 'idle'} and not any(plugin['disabled'] for plugin in plugins.values())
+    active, peer, idle = (plugins[name]['ipc'] for name in ['active', 'peer', 'idle'])
+    assert active['calls'] == peer['calls']
+    # Both tick workers share one encoded body; only Hello is serialized locally.
+    assert active['message_encodes'] == peer['message_encodes'] == idle['message_encodes'] == 1
+    assert data['dispatcher']['message_encodes'] > 0
+    assert all(sample['message_encodes'] == 1 for sample in data['dispatcher']['samples'] if sample['hook'] == 'tick')
+    assert all(sample['message_encodes'] == 0 for sample in active['samples'])
+    assert 0 < data['shared_event_buffer_capacity'] <= 65536
+    assert all(0 < plugin[key] <= 65536 for plugin in plugins.values()
+        for key in ['request_buffer_capacity', 'reply_buffer_capacity'])
     assert active['calls'] > 1 and active['timed_calls'] > 0 and active['failures'] == active['timeouts'] == 0
     assert active['sent_bytes'] > 0 and active['received_bytes'] > 0 and active['encode_ns'] > 0
     assert 0 < active['recent_p50_ns'] <= active['recent_p95_ns'] <= active['recent_p99_ns']
@@ -84,7 +94,7 @@ def smoke(server, fixture):
                 print(log.read_text(encoding='utf-8')); raise
             finally:
                 if process.poll() is None: process.kill(); process.wait(timeout=10)
-    print('PASS: bounded real-Rust IPC timing reports, exact recent quantiles, private payload omission, automatic expiry, interrupted capture and no-clobber output')
+    print('PASS: shared event encoding, bounded reusable frames, real-Rust IPC timing reports, exact recent quantiles, private payload omission, automatic expiry, interrupted capture and no-clobber output')
 
 
 if __name__ == '__main__':

@@ -8,7 +8,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
-- Subscription/private-recipient filtering precedes delivery, and selected workers serialize the shared immutable event without deep payload cloning. Action order and backpressure are preserved. Initial plugin IPC instrumentation adds Off/Monitor/bounded Profile modes, rolling exact recent quantiles, encoding/wall times, complete-frame bytes and versioned payload-free reports. A real-Rust fanout benchmark and Linux CPU/RSS/PSS driver provide repeatable baselines. This does not implement CPU sampling, a full game profiler or parallel region simulation. [Operator guide](../guides/profiling.md).
+- Subscription/private-recipient filtering precedes delivery, and selected workers serialize the shared immutable event without deep payload cloning. Fan-out encodes the body once while preserving independent request IDs; single-recipient events serialize directly. Bounded request/reply storage is reused, and unused dispatches skip IPC entirely. Action order and backpressure are preserved. Initial plugin IPC instrumentation adds Off/Monitor/bounded Profile modes, rolling exact recent quantiles, encoding/wall times, complete-frame bytes and versioned payload-free reports. A real-Rust fanout benchmark and Linux CPU/RSS/PSS driver provide repeatable baselines. This does not implement CPU sampling, a full game profiler or parallel region simulation. [Operator guide](../guides/profiling.md).
 
 - API v11 adds shared text, boolean, dropdown and integer-slider forms. The same owner validates complete typed replies, deadlines, session IDs and step/length bounds before a single private callback. Java uses stock dialog controls and a bounded flat modified-UTF-8 payload; native uses standard custom forms. Simple forms retain API v3 and the shared one-pending-form slot.
 
@@ -254,7 +254,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 - Default mode remains discovery-only. Authenticated remote listeners require explicit session/media configuration; official-client online gameplay remains unverified.
 - Successful real-account sign-in remains unverified. Test-issued online transcripts and actual official-endpoint negative checks pass. Offline identities are restricted to loopback binds.
 - Gameplay remains a bounded creative builder with four block items and 36 inventory slots. General containers, drop/drag/shift-click, armour/offhand, gravity, simulation ticks, survival, combat and crafting are not implemented.
-- Region persistence runs only on orderly shutdown; periodic/crash recovery saving and persistent player state are pending.
+- Region recovery restores completed periodic/final snapshots. Unflushed edits, persistent player state and a write-ahead log remain pending.
 - Initialized peer players and counted held items are displayed within loaded chunks; account skins, armour/offhand, general entity simulation and combat remain pending. The Java adapter has official-game evidence for the limited Linux offline scenario; official Windows game rendering and successful real-account sign-in remain unverified. No complete crossplay claim is made.
 - Java currently maps only the five core block states, uses a fixed two-chunk view, and supplies direct vertical skylight without lateral light propagation. General containers and packet compression are pending; login encryption, public chat, commands and configured pack delivery are implemented.
 - NetherNet supports local compatibility and configured direct-peer media. Required-authentication mode checks Microsoft token signatures/claims and the P-384 fingerprint proof; offline local mode checks fingerprint ownership and expiry only. The inner Bedrock login policy remains separate. Official entry is user-reported; successful real-account entry, Internet/NAT routing, TURN and signaling proxy support remain unverified or unimplemented.
@@ -267,7 +267,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Extend region queue/chunk encoding/storage instrumentation and measure bounded shared encoding/buffer reuse. Extend recovery beyond completed snapshots, general entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
+Extend region queue/chunk encoding/storage instrumentation; separately measure profiler mode overhead and allocator behavior. Extend recovery beyond completed snapshots, general entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
 
 Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 

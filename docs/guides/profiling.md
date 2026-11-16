@@ -1,7 +1,7 @@
 # Plugin IPC profiling
 
 Profiling works without a management GUI. Default **OFF** keeps only request,
-complete-frame byte and failure counters. It adds no clock reads per request
+complete-frame byte, message encoding and failure counters. It adds no clock reads per request
 or history allocation. No game/network packet format changes.
 
 For rolling timing statistics (**MONITOR**):
@@ -43,9 +43,23 @@ Wall time includes OS scheduling/waiting; it is **not plugin CPU time**.
   records request ID, hook, timing, byte counts and failure flags; overwritten
   sample counts are explicit. An in-flight request started inside the window can
   finish after its deadline. History storage is released after report capture.
-- Event envelopes serialize a shared immutable reference; no `Clone` bound is
-  required. This is checked against the retained SDK wire representation. Heap
-  allocation counts are not inferred from the timing or traffic counters.
+- `message_encodes` counts actual attempts to serialize a full message body.
+  It is a lifetime counter in each aggregate, and per-request in detailed samples.
+  An event with several selected recipients is encoded once in the dispatcher;
+  workers copy that body into their own request-ID envelopes. A single recipient
+  serializes directly in its worker; no recipient performs no serialization.
+  Handshakes count in the worker. Failed serialization attempts are included.
+- Dispatcher `encode_ns` measures shared body serialization. Worker `encode_ns`
+  measures its frame construction, including direct serialization when needed.
+  Shared body time is outside the worker interval; do not sum concurrent wall times.
+- Request/reply buffers retain capacity on reuse, growing lazily up to 64 KiB each.
+  The shared event buffer has the same bound. Snapshot capacity fields expose
+  this retained storage, not total process RAM or allocation counts. Up to 32
+  loaded workers can retain 4 MiB plus 64 KiB for the shared body, excluding
+  pipe buffers, decoded values, metadata and the allocator. Lengths are cleared
+  after requests, including failures; capacity is retained until host teardown.
+- No event `Clone` bound is required. Direct/shared framing is checked against
+  the retained SDK wire bytes, including Unicode and maximum request IDs.
 - Payloads, commands, input text, account tokens and addresses are not captured.
   Plugin names and worker PIDs identify local processes for separate OS analysis.
 
