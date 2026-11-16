@@ -233,13 +233,14 @@ impl Plugins {
             let subscribed = !process.disabled
                 && process.metadata.hooks.contains(&hook)
                 && recipient.is_none_or(|name| process.metadata.name == name);
-            let event = event.clone();
-            cloned_events += 1;
+            let event = subscribed.then(|| {
+                cloned_events += 1;
+                event.clone()
+            });
             async move {
-                if subscribed {
-                    Some(process.request(HostMessage::Event { event }).await)
-                } else {
-                    None
+                match event {
+                    Some(event) => Some(process.request(HostMessage::Event { event }).await),
+                    None => None,
                 }
             }
         }))

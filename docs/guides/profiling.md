@@ -1,8 +1,8 @@
 # Plugin IPC profiling
 
 Profiling works without a management GUI. Default **OFF** keeps only request,
-complete-frame byte, failure and payload-clone counters. It performs no per-call
-clock reads or history allocation. No game/network packet format changes.
+complete-frame byte, failure and payload-clone counters. It adds no clock reads per request
+or history allocation. No game/network packet format changes.
 
 For rolling timing statistics (**MONITOR**):
 
@@ -43,6 +43,9 @@ Wall time includes OS scheduling/waiting; it is **not plugin CPU time**.
   records request ID, hook, timing, byte counts and failure flags; overwritten
   sample counts are explicit. An in-flight request started inside the window can
   finish after its deadline. History storage is released after report capture.
+- `dispatcher.payload_clones` counts actual typed-event clone calls. Subscription
+  and private-recipient checks run before that clone; this is not a heap allocation
+  count. The CI delivery budget checks that unselected workers make no clone.
 - Payloads, commands, input text, account tokens and addresses are not captured.
   Plugin names and worker PIDs identify local processes for separate OS analysis.
 
