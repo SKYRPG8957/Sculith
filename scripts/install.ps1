@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$')]
-    [string]$Version = 'v0.1.0-preview.9',
+    [string]$Version = 'v0.1.0-preview.10',
     [string]$Destination = (Join-Path (Get-Location) 'Sculith')
 )
 
@@ -58,7 +58,7 @@ try {
     }
     Write-Host "Installed: $Destination"
     Write-Host 'Double-click start.cmd to start. Bedrock address: 127.0.0.1, port: 19132.'
-    Write-Host 'This is a development preview. Official game-client entry remains unverified; Java world entry is not implemented.'
+    Write-Host 'This is a development preview. See the release notes for Java connection details, verified clients and limitations.'
 }
 finally {
     if (Test-Path -LiteralPath $Temporary) { Remove-Item -LiteralPath $Temporary -Recurse -Force }

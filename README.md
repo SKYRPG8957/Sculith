@@ -48,15 +48,15 @@ Multiplayer entity visibility, general inventory transactions, physics/gravity, 
 
 ## Windows quick start
 
-For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.9), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
+For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.10), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
 
 In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
 
 Java **26.3** uses **`127.0.0.1:25565`** and shares the same owner and committed block changes. Existing configurations do not automatically enable Java sessions; see [the Java preview guide](docs/java-preview.md).
 
-Preview 9 selects the local, offline-identity Java and Bedrock previews and corrects the two Java wire errors found with the real game. Official Linux Java entry/building is verified; official Bedrock-game entry and Windows game rendering remain unverified. See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
+Preview 10 selects the local, offline-identity Java and Bedrock previews and includes the actual-game wire corrections and a Rust gameplay plugin. Official Linux Java entry/building and plugin-message rendering are verified; official Bedrock-game entry and Windows game rendering remain unverified. See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
 
-The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 corrected this; Preview 9 retains that handling. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official Bedrock-game entry remains unverified.
+The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 corrected this; Preview 10 retains that handling. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official Bedrock-game entry remains unverified.
 
 ## Build from source
 
@@ -102,7 +102,7 @@ cargo run --locked -- run --config examples/with-plugin.toml
 
 The original welcome example changes the common MOTD. The new gameplay example sends a private welcome after player initialization and observes accepted block changes; run it with `examples/gameplay-preview.toml`. Current plugins are trusted executable JSON-lines processes, not a sandbox. The official host design will evaluate the WASI Component Model, resource limits and region-aware APIs.
 
-Public Preview 9 predates game API v2 and the bundled gameplay example; the Preview 10 addition is being verified.
+Public Preview 10 includes game API v2 and `plugins/sculith-gameplay-plugin.exe`, enabled in new Windows configurations. It sends each initialized player a private welcome and logs committed block changes. Existing configurations are preserved and do not automatically add plugins.
 
 See the [plugin SDK guide](docs/plugins.md) and [example source](examples/welcome-plugin/src/main.rs).
 
