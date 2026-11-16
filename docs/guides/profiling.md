@@ -81,3 +81,5 @@ configurable. A shared cloud runner is not a controlled long-term performance la
 timing thresholds are not imposed against unrelated GitHub-hosted hardware.
 Build, lifecycle, wire equivalence, delivery counts and bounded-capture checks
 run in CI. No benchmark files or binaries are uploaded.
+
+[Measured dispatch results and limits](../development/performance-2026-11-17.md).

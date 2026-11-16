@@ -80,6 +80,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Verified — current local source
 
+- Optimization source `789053e` passes 249 project tests, Clippy, workspace check, ownership doctest, release workspace build and complete Linux/Windows workflows. Real Rust profiling checks and the existing mixed-edition game/content probes pass. The exact final source also displays/submits all four controls in an unmodified Java 26.3 profile with the shared pack/model; owned processes are stopped. Matching 5×5,000-call measurements reduce 1/32 large-event dispatch wall time by 65.1% and host process CPU from 0.76 to 0.12 s; aggregate observed PSS changes by about 0.5%. Single-subscriber p95/p99 rise slightly. These are IPC-only observations, not TPS, allocation counts or RMT. [Full conditions, files, limits and regressions](performance-2026-11-17.md).
+
 - Input-form checks pass 244 project tests, Clippy, ownership doctests and architecture checks. Actual Rust controller/observer processes and independent Java/native peers verify all four controls, Unicode values, cancellation, invalid/replayed/foreign responses and private delivery. Existing simple forms, world API, periodic recovery, inventory, models, sounds, connection hooks and pack-proxy checks pass. An unmodified Java 26.3 profile displays all four controls over the shared model/pack, submits actual mouse/keyboard edits and receives the exact typed result as private text. The first string-only reply hypothesis was corrected to the actual Byte/Float/String tag layout after inspecting the concrete client handlers.
 
 - Periodic checkpoint validation passes 235 project tests, Clippy, ownership doctests and architecture checks. A real Rust plugin edits two chunks; forced server termination and restart restore both blocks, revision, heightmaps and skylight through an independent Java decoder. Disabled periodic saves still retain final saving; unchanged revisions skip disk work. A changed checkpoint against a foreign destination exits nonzero and preserves it, reporting both failure causes. Existing Java/native world API and listener probes pass. Source `5a24c89` completes Linux CI and every configured native Windows build/runtime/interoperability step, including forced termination/recovery against the static-CRT release. Only Windows cache/checkout cleanup remains at this observation. [Scope and reproduction](verification/autosave.md).
@@ -203,6 +205,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+The matching release IPC benchmark (5,000 calls, 128 warmups, five repetitions) reduces 1/32 large-event dispatch wall time from 766.339 to 267.575 ms and host process CPU from 0.76 to 0.12 s. All-32 dispatch changes from 3,141.371 to 2,728.644 ms. Observed aggregate PSS changes by about 0.5%; single-subscriber tail values rise slightly. No game TPS, allocation count, profiler-mode overhead or RMT improvement is inferred. [Conditions, raw hashes, intermediate regression and scope](performance-2026-11-17.md).
+
 The input-form release kernel measures 10,000 four-control open/submit pairs in **1.587368 ms**. Definitions and reply vectors are prepared before the timer; owner validation, request attribution and response construction are included. A synthetic monotonic clock avoids form-rate exhaustion. This excludes rendering, sockets and plugin IPC and is not a server-TPS or optimization comparison.
 
 The periodic-checkpoint candidate retains the existing release storage probe: 1,000 encodes of a 1,193-byte region in **14.810168 ms**, 1,000 validation/decodes in **18.372249 ms** and 20 atomic save/reload operations in **17.357416 ms**. This is a local small-region/filesystem sample, not a full-region, server-TPS or optimization comparison.
@@ -263,7 +267,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Extend recovery beyond completed region snapshots, add general entity APIs and region-safe scheduling. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
+Extend region queue/chunk encoding/storage instrumentation and measure bounded shared encoding/buffer reuse. Extend recovery beyond completed snapshots, general entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
 
 Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 

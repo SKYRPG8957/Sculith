@@ -47,6 +47,7 @@ The previous preview downloads have been withdrawn; no new binaries are publishe
 - Shared chunks, player visibility, movement, creative building and chat.
 - Counted 36-slot creative inventory with Stone, Dirt, Grass and Bedrock.
 - Rust plugin world queries and atomic block edits through the region owner.
+- Optional [plugin IPC monitoring and profiling](docs/guides/profiling.md).
 - Rust plugin SDK with game events, commands, private messages, forms, sounds
   and static models. [Plugin guide](docs/guides/plugins.md).
 - One Bedrock resource-pack source with selected Java texture, sound and
