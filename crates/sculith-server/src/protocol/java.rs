@@ -18,7 +18,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{Context, Result, bail, ensure};
 use sculith_core::ServerStatus;
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{Semaphore, watch},
     task::JoinSet,
@@ -129,7 +129,7 @@ async fn handle_with_preview(
                 let _ = disconnect(
                     stream,
                     phase,
-                    "Sculith Java 26.3 preview: request rejected; check the server console.",
+                    "Sculith: request rejected; check the server log.",
                 )
                 .await;
             }
@@ -146,7 +146,6 @@ async fn handle_with_preview(
             "Java connections are disabled in the server configuration."
         };
         disconnect(stream, Phase::Login, reason).await?;
-        stream.shutdown().await?;
         return Ok(());
     }
 
@@ -216,7 +215,26 @@ async fn disconnect(stream: &mut TcpStream, phase: Phase, reason: &str) -> Resul
         Phase::Login => write_string(&serde_json::json!({"text":reason}).to_string(), &mut packet),
         _ => codec::text(reason, &mut packet)?,
     }
-    codec::send(stream, &packet).await
+    codec::send(stream, &packet).await?;
+    // Dropping a TCP socket with unread client data can reset it and discard
+    // the rejection notice on Windows. Half-close first; drain without parsing
+    // further requests, bounded by both bytes and time.
+    stream.shutdown().await?;
+    let _ = tokio::time::timeout(Duration::from_millis(200), async {
+        let mut remaining = codec::MAX_INBOUND;
+        let mut buffer = [0; 1024];
+        while remaining != 0 {
+            let length = remaining.min(buffer.len());
+            let read = stream.read(&mut buffer[..length]).await?;
+            if read == 0 {
+                break;
+            }
+            remaining -= read;
+        }
+        Ok::<_, std::io::Error>(())
+    })
+    .await;
+    Ok(())
 }
 
 pub fn read_varint(input: &mut &[u8]) -> Result<i32> {
@@ -339,6 +357,37 @@ mod tests {
         ping.extend_from_slice(&(-123_456i64).to_be_bytes());
         write_frame(&mut client, &ping).await.unwrap();
         assert_eq!(read_frame(&mut client).await.unwrap(), ping);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn disconnect_reaches_client_before_eof_with_unread_pipelined_input() {
+        use tokio::io::AsyncReadExt;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (ready, queued) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            queued.await.unwrap();
+            disconnect(&mut stream, Phase::Play, "request rejected")
+                .await
+                .unwrap();
+        });
+        let mut client = TcpStream::connect(address).await.unwrap();
+        client.write_all(&[0; 2048]).await.unwrap();
+        ready.send(()).unwrap();
+        let packet = read_frame(&mut client).await.unwrap();
+        assert_eq!(packet[0], 0x20);
+        assert!(packet.windows(16).any(|w| w == b"request rejected"));
+        let mut byte = [0];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), client.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        drop(client);
         server.await.unwrap();
     }
 

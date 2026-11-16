@@ -56,7 +56,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Verified — current local source
 
-- Local API-v7 checks pass 185 project tests, Clippy, ownership doctest and independent Java/native grant/query, recipient isolation, full-inventory rejection and cursor preservation. Retained v1–v6 workers pass the new host. The stock Java 26.3 game renders the server-granted stack and displays the private query result using a test-only plugin; no GDK gameplay claim is added. Native Windows validation of this change is pending CI.
+- Local API-v7 checks pass 186 project tests, Clippy, ownership doctest and independent Java/native grant/query, recipient isolation, full-inventory rejection and cursor preservation. Retained v1–v6 workers pass the new host. The stock Java 26.3 game renders the server-granted stack and displays the private query result using a test-only plugin; no GDK gameplay claim is added. Native Windows validation of this change is pending CI.
 
 - Linux workspace build, Clippy with warnings denied, 179 project tests and the ownership compile-fail doctest pass. The independent Java/native inventory check covers creative creation, actual counts/stack IDs, split/swap, stale predictions, bounded replay/conflict, unsupported-action resynchronization, counted peer hands and committed Rust inventory hooks.
 - Independent packet/event, bidirectional chat/command, equipment, gameplay plugin, forms, sounds, static models and required-pack/cache/consent checks pass. These are wire/owner checks, distinct from actual-game verification.
@@ -117,6 +117,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Latest-release reference check still reports Java `26.3 / 777` and Bedrock `1.26.60 / 2225`. These are references, not full gameplay support declarations.
 
 ## Failed / externally constrained
+
+- The first API-v7 Windows run correctly rejected invalid teleport confirmations, but immediate TCP close with unread input could hide the disconnect frame (`WinError 10053`). A real-socket Linux regression reproduces the reset before the fix. The disconnect path now half-closes and drains raw input for at most 200 ms/8192 bytes without interpreting further requests. The same regression passes after the change; rejection checks remain in place. Windows revalidation is pending.
 
 - The first shared-pack Windows run passed runtime/unit/interop/plugin checks, then the independent Python archive fixture used native Windows backslashes as dictionary keys and looked up a POSIX ZIP path. It failed before transfer with `KeyError`, not an engine assertion. The fixture now normalizes relative keys with `as_posix()` and the corrected full native Windows run passes above; those failed builds are not published.
 - Actual Java 26.3 testing reproduced two Preview 8 layout errors missed by the older reference and synthetic clients: the previous game type used legacy `-1` instead of OPTIONAL_VAR_INT, then the teleport acknowledgement's coordinates/rotation were rejected as trailing bytes. Current source corrects both, validates confirmation values without turning them into a movement intent, and passes the actual game session above. The corrected native Windows build also passes as recorded above.
