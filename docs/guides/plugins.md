@@ -1,4 +1,4 @@
-# Rust 플러그인 SDK v7
+# Rust 플러그인 SDK v8
 
 현재 SDK는 생명주기·공통 MOTD에 더해 초기화가 확인된 플레이어의 접속/종료와 승인된 블록 변경을 받습니다.
 `SendMessage`는 월드 소유자가 접속 상태와 호출량을 검사한 뒤 한 플레이어에게만 보냅니다.
@@ -9,6 +9,7 @@ v4는 등록된 공통 팩 음원을 개인 재생하는 `PlaySound`를 제공�
 v5는 등록된 정적 모델을 개인 표시·교체·숨기는 `ShowModel`/`HideModel`을 제공합니다. [범위·소유권·검증](models.md).
 v6는 패킷 수신 메타데이터, 승인된 이동·장비·인벤토리 변경·공개 채팅, 플러그인 명령어 등록을 제공합니다. 공개 배포 패키지는 만들지 않습니다.
 v7는 인벤토리 조회·아이템 지급과 요청한 플러그인에만 돌아오는 결과를 제공합니다.
+v8는 입장 전부터 종료까지의 연결 수명주기와 수신 패킷 메타데이터를 제공합니다.
 Master Engineering Directive에 따라 공식 호스트는 WASI Component Model을 우선 후보로 검토합니다.
 현재 구현이 WASI 샌드박스, region scheduler, Player/World API를 제공한다고 표시하지 않습니다.
 플러그인은 신뢰된 별도 실행 파일이며, `.dll`/`.so` 로딩이나 OS 샌드박스를 제공하지 않습니다.
@@ -97,13 +98,14 @@ timeout_ms = 1000
 | `InventoryResponse { player_id, request_id, result }` | 인벤토리 요청을 보낸 플러그인만 받는 조회·지급 결과. API v7 필요 |
 | `PlayerChat { player_id, name, message }` | 초기화된 세션에서 검사한 공개 채팅. 작성자는 서버 프로필 기준. API v6 필요 |
 | `PacketReceived { player_id, packet }` | 초기화 완료 후 play 패킷의 에디션·버전·ID·이름·처리 분류·수신 순번. 본문과 계정 정보는 제외. API v6 필요 |
+| `Connection { event }` | 연결 열림·단계별 패킷 수신·활성 플레이어 연결·종료. API v8 필요 |
 | `CommandSubmitted { player_id, name, command, arguments }` | 명령어를 등록한 플러그인만 수신. 인자는 공개 채팅이나 다른 플러그인에 전달하지 않음. API v6 필요 |
 
 메타데이터의 `hooks`에 구독한 이벤트만 전송합니다. 같은 훅을 중복 구독할 수 없습니다.
 플러그인 이름은 1~64자의 영문·숫자·`_.-`이고 서버 안에서 유일해야 합니다.
 콜백 요청은 동시에 기다리고, 응답 액션은 서버 설정 순서대로 적용합니다.
 32개 플러그인의 응답 시간을 직렬로 더하지 않습니다. 게임 소유자는 콜백 응답을 기다리지 않습니다.
-블록 이름은 `minecraft:stone` 같은 공통 이름입니다. 패킷 번호는 별도로 구독한 `PacketReceived`에서만 제공합니다.
+블록 이름은 `minecraft:stone` 같은 공통 이름입니다. 패킷 번호는 별도로 구독한 `PacketReceived`와 `Connection`에서 제공합니다.
 게임 훅은 커밋 이후 알림이므로 취소·롤백·권한 검사 대체 용도가 아닙니다. `PacketReceived`는 처리 전 수신 기록이며 본문 검사 성공을 의미하지 않습니다.
 서버 전체 종료에서는 남은 `PlayerLeft` 콜백을 보장하지 않으므로 `Stopping` 훅으로 정리하세요.
 이동·장비·인벤토리·패킷 관측은 구독자가 있을 때만 게임 훅 큐에 넣습니다. 개인 메시지와 표시 효과는 다시 게임 훅을 발생시키지 않습니다.
@@ -179,15 +181,32 @@ Java 기본 명령 트리와 베드락 명령 목록에서 같은 이름과 선�
 `sculith packets`는 Java 777의 상태·방향별 식별자 260개와 베드락 2225의 식별자 244개를 출력합니다.
 베드락 239개는 잠긴 Rust 의존성의 실제 패킷 타입이고, 나머지 5개는 독립 Go 풀에서 확인한 미구현 본문입니다.
 등록은 전체 게임 동작 구현을 뜻하지 않습니다. `dispatch`의 `unsupported`/`unknown`도 수신 기록에 남으며 본문은 플러그인에 보내지 않습니다.
-관측 범위는 초기화가 완료된 세션의 play 입력입니다. 상태 조회·로그인·설정 단계의 패킷 훅은 제공하지 않습니다.
+기존 `PacketReceived`는 초기화 완료 후 play 입력이며 플레이어별 순번을 유지합니다.
+`Connection`은 별도 구독입니다. Java TCP의 handshake/status/login/configuration/spawn/play와,
+Bedrock 전송 연결 후 network_settings/login/encryption(해당 전송만)/resource_packs/spawn/play를 관찰합니다.
+RakNet 검색·재전송, NetherNet HTTP 신호, ICE/DTLS 자체와 송신 패킷은 이 훅의 대상이 아닙니다.
+
+`ConnectionEvent`는 다음 네 종류입니다.
+
+- `Opened { connection_id, transport }`: `java_tcp`, `bedrock_raknet`, `bedrock_nethernet` 중 하나입니다.
+- `PacketReceived { connection_id, packet }`: `protocol`, `phase`, `id`, `name`, `dispatch`, `sequence`만 제공합니다.
+  Java handshake의 protocol은 아직 선택되지 않아 `None`입니다. 지원하지 않는 버전의 로그인에는 알려진 버전의 패킷 이름을 붙이지 않습니다.
+- `PlayerAttached { connection_id, player_id }`: 월드 소유자가 초기화를 승인한 뒤의 연결입니다. `connection_id`는 플레이어 ID와 별개이며 프로세스 안에서 재사용하지 않습니다.
+- `Closed { connection_id }`: 정상 종료·거절·시간 초과·서버 작업 취소 때 발생합니다. 머신 장애나 강제 프로세스 종료는 예외입니다.
+
+순번은 연결별 첫 수신부터 1로 시작하며 단계 변경 뒤에도 이어집니다. 프레이밍/디코딩이 끝난 패킷을 본문 검사 전에 관찰하므로, 훅 수신은 입력 승인이나 게임 동작 지원을 뜻하지 않습니다.
+식별자조차 디코딩할 수 없는 손상된 입력은 패킷 훅 없이 연결을 닫습니다. 본문·계정·프로필·IP 주소는 전달하지 않습니다.
+월드 이벤트 큐와 연결 큐 사이의 상대 순서는 보장하지 않습니다. 플레이어 조작은 여전히 소유자의 활성 세션 검사를 거칩니다.
+128개 연결 관측 큐가 넘치면 해당 훅 구독 플러그인을 기록 후 비활성화합니다. 네트워크 작업은 플러그인 응답을 기다리지 않습니다.
+구독자가 없으면 연결별 ID·순번·패킷 이름 생성과 이벤트 전송을 건너뜁니다. 일반 설정에는 관측 플러그인이 자동으로 포함되지 않습니다.
 
 ## 통신과 종료
 
-- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `7`, 기존 `1`~`6`도 협상할 수 있습니다.
-- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7], ... }`를 보냅니다.
+- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `8`, 기존 `1`~`7`도 협상할 수 있습니다.
+- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7,8], ... }`를 보냅니다.
   기존 v1 SDK는 추가 필드를 무시하고 그대로 동작합니다. SDK는 공통으로 지원하는 가장 높은 버전을 선택합니다.
   새 SDK의 기존 게임 훅은 v2 호스트에서도 동작하고, 폼 훅은 v3가 없는 호스트에서 로드를 거부합니다.
-- 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1~v6 Rust 실행 파일도 새 호스트에서 확인했습니다.
+- 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1~v7 Rust 실행 파일도 새 호스트에서 확인했습니다.
 - 각 응답은 요청과 같은 `id`를 반환해야 합니다.
 - `stdout`은 프로토콜 전용입니다. 디버그 출력은 `eprintln!` 등으로 `stderr`에 기록하세요.
 - 메시지는 줄바꿈을 포함해 최대 64 KiB, 한 응답의 액션은 최대 32개입니다.

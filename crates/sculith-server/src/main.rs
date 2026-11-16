@@ -1,4 +1,5 @@
 mod config;
+mod connections;
 mod content;
 use sculith_plugin_host as plugins;
 mod protocol;
@@ -253,6 +254,8 @@ async fn run(config: Config) -> Result<()> {
     let mut world_task = tokio::spawn(world_task);
     let mut world_finished = false;
     let mut game_events = world.subscribe_game();
+    let observer = connections::Observer::default();
+    let mut connection_events = observer.subscribe();
     let mut plugins = plugins::Plugins::load(&config.plugins, &state).await?;
     world.configure_observations(plugins.observation_flags());
     plugins
@@ -267,6 +270,7 @@ async fn run(config: Config) -> Result<()> {
     world.seal_commands().await?;
     world.configure_observations(plugins.observation_flags());
     let (status_tx, status_rx) = watch::channel(state.clone());
+    observer.configure(plugins.observes_connections());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut services = JoinSet::new();
     if let Some(delivery) = delivery {
@@ -286,6 +290,7 @@ async fn run(config: Config) -> Result<()> {
             status_rx.clone(),
             preview,
             shutdown_rx.clone(),
+            observer.clone(),
         ));
     }
     if let Some(server) = nethernet {
@@ -298,6 +303,7 @@ async fn run(config: Config) -> Result<()> {
                         .context("NetherNet requires Bedrock login initialization")?,
                     timeout: Duration::from_secs(config.bedrock.login_timeout_secs),
                     content: content.clone(),
+                    observer: observer.clone(),
                 },
                 world: world.clone(),
                 status: status_rx.clone(),
@@ -323,6 +329,7 @@ async fn run(config: Config) -> Result<()> {
                         authentication,
                         timeout: Duration::from_secs(config.bedrock.login_timeout_secs),
                         content: content.clone(),
+                        observer: observer.clone(),
                     },
                     shutdown_rx,
                     world.clone(),
@@ -375,6 +382,7 @@ async fn run(config: Config) -> Result<()> {
                         state.online_players = world.online_players();
                         plugins.dispatch_game(&event, &mut state, &world).await;
                         world.configure_observations(plugins.observation_flags());
+                        observer.configure(plugins.observes_connections());
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
                         warn!(missed, "game hook backlog; disabling subscribers rather than silently losing events");
@@ -384,11 +392,25 @@ async fn run(config: Config) -> Result<()> {
                     Err(error) => break Err(error.into()),
                 }
             }
+            event = connection_events.recv() => {
+                match event {
+                    Ok(event) => plugins.dispatch(Event::Connection { event }, &mut state, &world).await,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
+                        warn!(missed, "Connection event backlog");
+                        observer.configure(false);
+                        plugins.disable_connection_subscribers(&world).await;
+                    }
+                    Err(error) => break Err(error.into()),
+                }
+                observer.configure(plugins.observes_connections());
+                world.configure_observations(plugins.observation_flags());
+            }
             _ = ticker.tick() => {
                 tick += 1;
                 state.online_players = world.online_players();
                 plugins.dispatch(Event::Tick { tick }, &mut state, &world).await;
                 world.configure_observations(plugins.observation_flags());
+                observer.configure(plugins.observes_connections());
                 status_tx.send_if_modified(|current| {
                     if *current == state { false } else { *current = state.clone(); true }
                 });
@@ -409,6 +431,23 @@ async fn run(config: Config) -> Result<()> {
     }
     // Network sessions are now gone. Capture the final committed state while
     // the owner is still alive; disk encoding and I/O run on a blocking worker.
+    // Trace drops include timeout, rejection and shutdown cancellation. Deliver
+    // queued closes before Stopping; an overflow never becomes silent success.
+    loop {
+        match connection_events.try_recv() {
+            Ok(event) => {
+                plugins
+                    .dispatch(Event::Connection { event }, &mut state, &world)
+                    .await
+            }
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(missed)) => {
+                warn!(missed, "Connection event backlog during shutdown");
+                observer.configure(false);
+                plugins.disable_connection_subscribers(&world).await;
+            }
+            Err(_) => break,
+        }
+    }
     if !world_finished {
         if let Some(path) = config.world.snapshot_path {
             let saved = async {

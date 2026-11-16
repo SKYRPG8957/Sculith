@@ -40,6 +40,7 @@ pub struct Settings {
     pub authentication: Authentication,
     pub timeout: Duration,
     pub content: Option<Arc<crate::content::Content>>,
+    pub observer: crate::connections::Observer,
 }
 
 #[derive(Clone)]
@@ -109,16 +110,44 @@ impl Authentication {
 
 struct Packets {
     pending: VecDeque<V2225>,
+    trace: crate::connections::Trace,
+    phase: sculith_core::connections::PacketPhase,
 }
 
 impl Packets {
-    fn new() -> Self {
+    fn new(observer: &crate::connections::Observer, protection: &Protection) -> Self {
+        use sculith_core::connections::{ConnectionTransport, PacketPhase};
         Self {
             pending: VecDeque::new(),
+            trace: observer.open(match protection {
+                Protection::PacketEncryption => ConnectionTransport::BedrockRaknet,
+                Protection::WebRtcDtls(_) => ConnectionTransport::BedrockNethernet,
+            }),
+            phase: PacketPhase::NetworkSettings,
         }
     }
 
     async fn next<T: Transport>(&mut self, conn: &mut Connection<V2225, T>) -> Result<V2225> {
+        let packet = self.next_decoded(conn).await?;
+        if self.trace.enabled() {
+            let info = super::catalog::receipt(&packet, 1);
+            self.trace
+                .packet(sculith_core::connections::ConnectionPacket {
+                    protocol: Some(info.protocol),
+                    phase: self.phase,
+                    id: info.id,
+                    name: info.name,
+                    dispatch: info.dispatch,
+                    sequence: 0,
+                });
+        }
+        Ok(packet)
+    }
+
+    async fn next_decoded<T: Transport>(
+        &mut self,
+        conn: &mut Connection<V2225, T>,
+    ) -> Result<V2225> {
         if let Some(packet) = self.pending.pop_front() {
             return Ok(packet);
         }
@@ -190,7 +219,7 @@ pub async fn handle_with_protection<T: Transport>(
     world: &WorldHandle,
     protection: Protection,
 ) -> Result<()> {
-    let mut packets = Packets::new();
+    let mut packets = Packets::new(&settings.observer, &protection);
     let mut events = world.subscribe();
     let mut stage = "network-settings";
     let result = tokio::time::timeout(
@@ -477,8 +506,10 @@ async fn initialize<T: Transport>(
     tracing::info!(player = %login.authentication.identity().display_name,
         authenticated = login.authentication.is_authenticated(), protection = protection.label(), "Bedrock login completed");
     *stage = "resource-packs";
+    packets.phase = sculith_core::connections::PacketPhase::ResourcePacks;
     packs::negotiate(conn, packets, content).await?;
     *stage = "world-spawn";
+    packets.phase = sculith_core::connections::PacketPhase::Spawn;
     let identity = login.authentication.identity();
     let subject = if login.authentication.is_authenticated() {
         format!("xuid:{}", identity.xuid)
@@ -549,6 +580,8 @@ async fn initialize<T: Transport>(
                 tracing::info!(player = %login.authentication.identity().display_name, entity_id,
                     "Bedrock client acknowledged the flat-world spawn");
                 world.activate(entity_id).await?;
+                packets.trace.attach(entity_id);
+                packets.phase = sculith_core::connections::PacketPhase::Play;
                 let (interest, radius) = interest.expect("checked above");
                 return Ok((lease, interest, radius));
             }
@@ -702,6 +735,7 @@ async fn login<T: Transport>(
     .await?;
     conn.enable_compression(settings.compression);
     *stage = "login-request";
+    packets.phase = sculith_core::connections::PacketPhase::Login;
     let V2225::LoginPacket(request) = packets.next(conn).await? else {
         bail!("expected Login after network settings");
     };
@@ -719,6 +753,7 @@ async fn login<T: Transport>(
     }
     packets.require_empty()?;
     *stage = "encryption-handshake";
+    packets.phase = sculith_core::connections::PacketPhase::Encryption;
     let (token, encryption) = begin_encryption(&login)?;
     conn.send(&[V2225::ServerToClientHandshakePacket(Box::new(
         ServerToClientHandshakePacket {

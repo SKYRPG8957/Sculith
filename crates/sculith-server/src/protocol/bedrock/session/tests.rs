@@ -48,6 +48,21 @@ impl Harness {
         timeout: Duration,
         content: Option<std::sync::Arc<crate::content::Content>>,
     ) -> Self {
+        Self::start_observed(
+            authentication,
+            timeout,
+            content,
+            crate::connections::Observer::default(),
+        )
+        .await
+    }
+
+    async fn start_observed(
+        authentication: Authentication,
+        timeout: Duration,
+        content: Option<std::sync::Arc<crate::content::Content>>,
+        observer: crate::connections::Observer,
+    ) -> Self {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let address = socket.local_addr().unwrap();
         let (status, receiver) =
@@ -64,7 +79,8 @@ impl Harness {
                     super::Settings {
                         authentication,
                         timeout,
-                        content
+                        content,
+                        observer,
                     },
                     stop,
                     connection_world,
@@ -503,6 +519,7 @@ async fn nethernet_http_webrtc_and_raknet_share_login_world_and_committed_block_
             authentication: Authentication::offline(),
             timeout: Duration::from_secs(10),
             content: None,
+            observer: crate::connections::Observer::default(),
         },
         world: server.world.clone(),
         status: server._status.subscribe(),
@@ -669,6 +686,7 @@ async fn nethernet_rejects_a_login_not_bound_to_its_signed_transport_key() {
             authentication: Authentication::offline(),
             timeout: Duration::from_secs(10),
             content: None,
+            observer: crate::connections::Observer::default(),
         },
         world: server.world.clone(),
         status: server._status.subscribe(),
@@ -1054,6 +1072,7 @@ async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_own
             shutdown: shutdown.clone(),
         }),
         shutdown,
+        crate::connections::Observer::default(),
     ));
     let mut bedrock = TestClient::connect(server.address).await.unwrap();
     let bedrock_id = bedrock.enter().await.unwrap();
@@ -1071,6 +1090,7 @@ async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_own
                 authentication: Authentication::offline(),
                 timeout: Duration::from_secs(15),
                 content: None,
+                observer: crate::connections::Observer::default(),
             },
             world: server.world.clone(),
             status: server._status.subscribe(),
@@ -1244,7 +1264,17 @@ async fn required_pack_rejects_unknown_ids_early_finish_invalid_chunks_and_exces
 
 #[tokio::test]
 async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
-    let server = Harness::start(Authentication::offline(), Duration::from_secs(1)).await;
+    use sculith_core::connections::{ConnectionEvent, ConnectionTransport, PacketPhase};
+    let observer = crate::connections::Observer::default();
+    let mut events = observer.subscribe();
+    observer.configure(true);
+    let server = Harness::start_observed(
+        Authentication::offline(),
+        Duration::from_secs(1),
+        None,
+        observer,
+    )
+    .await;
     let mut client = TestClient::connect(server.address).await.unwrap();
     client.login().await.unwrap();
     client.finish_packs().await.unwrap();
@@ -1269,6 +1299,16 @@ async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
     tokio::time::sleep(Duration::from_millis(1100)).await;
     assert_eq!(server.world.online_players(), 1);
     assert!(!client.conn.is_closed().await);
+    client
+        .conn
+        .send(&[V2225::ClientCacheStatusPacket(Box::new(
+            ClientCacheStatusPacket {
+                is_cache_supported: false,
+            },
+        ))])
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(20)).await;
     client.conn.close().await;
     tokio::time::timeout(Duration::from_secs(1), async {
         while server.world.online_players() != 0 {
@@ -1278,6 +1318,53 @@ async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
     .await
     .unwrap();
     server.stop().await;
+    let mut sequence = 0;
+    let mut phases = Vec::new();
+    let mut attached = 0;
+    let mut closed = 0;
+    assert!(matches!(
+        events.try_recv().unwrap(),
+        ConnectionEvent::Opened {
+            connection_id: 1,
+            transport: ConnectionTransport::BedrockRaknet,
+        }
+    ));
+    while let Ok(event) = events.try_recv() {
+        match event {
+            ConnectionEvent::PacketReceived {
+                connection_id,
+                packet,
+            } => {
+                assert_eq!(connection_id, 1);
+                assert_eq!(packet.sequence, sequence + 1);
+                sequence = packet.sequence;
+                phases.push(packet.phase);
+            }
+            ConnectionEvent::PlayerAttached {
+                connection_id,
+                player_id,
+            } => {
+                assert_eq!((connection_id, player_id), (1, id));
+                attached += 1;
+            }
+            ConnectionEvent::Closed { connection_id } => {
+                assert_eq!(connection_id, 1);
+                closed += 1;
+            }
+            _ => panic!("unexpected extra connection"),
+        }
+    }
+    assert_eq!((attached, closed), (1, 1));
+    for phase in [
+        PacketPhase::NetworkSettings,
+        PacketPhase::Login,
+        PacketPhase::Encryption,
+        PacketPhase::ResourcePacks,
+        PacketPhase::Spawn,
+        PacketPhase::Play,
+    ] {
+        assert!(phases.contains(&phase), "missing phase {phase:?}");
+    }
 }
 
 #[tokio::test]

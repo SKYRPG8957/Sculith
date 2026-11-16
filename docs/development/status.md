@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- API v8 adds opt-in connection lifecycle and inbound packet metadata across Java handshake/status/login/configuration/spawn/play and native settings/login/cipher/packs/spawn/play. Connections have separate non-reused process IDs and ordered receipts; active player attachment is explicit. Bounded observation queues do not block adapters and disable subscribers on loss. Payloads, account/profile data and addresses are excluded; undecodable frames, transport discovery/signaling/control and outbound packets are outside this hook. Existing initialized-play API-v6 callbacks are unchanged.
+
 - API v7 adds owner-validated inventory queries and atomic grants, with private correlated responses, separate player/plugin budgets, current-state notifications and Java slot deltas that preserve the creative carried stack. The server registers no reward/test commands. Command-driven verification lives only under `tests/fixtures`; default Cargo builds select the server.
 
 - Engine boundaries are now separate implemented crates: `sculith-game` owns game decisions, `sculith-runtime` owns the world mailbox/leases/peer projection, and `sculith-plugin-host` owns executable plugin lifecycle. The game crate has no protocol or Tokio dependency; runtime receipt metadata comes from core rather than the SDK. Existing server module exports and SDK serialization remain compatible. CI checks dependency direction.
@@ -17,7 +19,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 - Public production/commercial engine scope is recorded in [project-scope.md](project-scope.md). 에스테리아 일대기 is the primary integration server; RPG rules stay in plugins/packs. No new preview packages, tags or binary artifacts are published.
 - API v6 adds opt-in metadata-only packet receipt, accepted movement/equipment/inventory changes, owner-validated public chat and private plugin commands. Existing API v1–v5 negotiation remains supported. `/help` and the Rust `/hello` example share native command declarations and the Java command tree. Command registration is bounded and sealed before accepting players; invocation goes only to its owning plugin. [Contract](../guides/plugins.md).
-- Packet catalogues register 260 Java identifiers across phases/directions and 244 native identifiers. Native codecs cover 239; five identifiers have explicit opaque handling. Registration is not gameplay implementation. Packet callbacks cover initialized play sessions, exclude payloads/account data, and retain per-player order.
+- Packet catalogues register 260 Java identifiers across phases/directions and 244 native identifiers. Native codecs cover 239; five identifiers have explicit opaque handling. Registration is not gameplay implementation. API-v6 packet callbacks cover initialized play; API-v8 connection observations also cover decoded pre-play inputs. Both exclude payloads/account data and retain their respective per-player/per-connection order.
 - One owner now maintains 36 counted creative slots, cursor/output, four block items and positive stack IDs. Native creative creation, transfer/split, swap and destroy are atomic, with bounded prediction/replay history. Java creative replacements, pickup and hotbar swaps use the same inventory. Unsupported ordinary actions restore canonical state without disconnecting; forged click predictions do not grant items. Changed held-item counts reach the other edition; inventory does not change region revisions.
 - Actual stock Java testing caught a full-inventory response erasing the creative screen's unsent carried stack. Successful creative edits now acknowledge only the affected slot; rejected edits still restore state. Mouse-driven splitting/moving and key-driven swaps pass after the correction.
 - The selected [REA](https://github.com/morluto/rea) 6.9.0 is installed outside the product with Ghidra 12.2/JDK 25 and a Codex MCP configuration. Its actual static analysis found the old Windows binary's inventory-rejection string and cross-reference. This is evidence about Sculith's old artifact, not an official GDK-client trace.
@@ -55,6 +57,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- Local API-v8 checks pass 192 project tests, Clippy and the ownership doctest. Real TCP probes verify discovery-only and active sessions, Java status/login rejection/timeout/configuration/spawn/play, metadata redaction, shutdown cancellation and explicit observer backlog isolation. RakNet verifies cipher/pack/spawn/play receipt ordering; an independent Go/Pion native client verifies NetherNet attachment. Existing inventory/content/peer smokes and retained API-v1–v7 executables pass. These are protocol/plugin checks, not new official GDK rendering evidence.
 
 - Local API-v7 checks pass 186 project tests, Clippy, ownership doctest and independent Java/native grant/query, recipient isolation, full-inventory rejection and cursor preservation. Retained v1–v6 workers pass the new host. The stock Java 26.3 game renders the server-granted stack and displays the private query result using a test-only plugin; no GDK gameplay claim is added. Commit `ce6f06a` passes native Windows build/runtime/interop checks in [run 43872642970](https://github.com/SKYRPG8957/Sculith/actions/runs/43872642970) and Linux [run 43872643244](https://github.com/SKYRPG8957/Sculith/actions/runs/43872643244).
 
@@ -139,6 +143,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+A local release-mode API-v8 observer probe measures a median of five 10,000-cycle runs: disabled open/drop/drain **459.803 µs**; enabled open/one receipt/player attachment/close/drain **2.405614 ms**. The enabled cycle includes metadata allocation and bounded-ring delivery; both exclude sockets and plugin IPC. The different cycle contents are not a speedup comparison or TPS measurement.
+
 API-v7 kernel sample: `cargo run --release --locked -p sculith-game --example authority_bench` measures 10,000 grant/view/clear cycles in **2.624965 ms**. This synthetic clock excludes sockets, mailbox and plugin IPC costs and does not establish server TPS.
 
 Reproduction: `cargo run --release --locked -p sculith-world --example world_bench -- 10000`.
@@ -179,6 +185,6 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Continue the shared game API and inventory beyond this four-item creative subset, then storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Online authentication, public NetherNet trust, official GDK gameplay, general entities and wider content fidelity remain separate required work; the engineering directive is not complete.
+Continue online authentication and the public connection path, owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Public NetherNet trust, official GDK gameplay, general entities, broader inventory/content support and server-packet observations remain separate required work; the engineering directive is not complete.
 
 Use the available Linux stock Java game and independent native clients without asking the away user for repeated manual testing. Official GDK gameplay still needs an available Windows client environment. Accumulate source toward 0.1.0; keep withdrawn releases/tags/artifacts withdrawn.

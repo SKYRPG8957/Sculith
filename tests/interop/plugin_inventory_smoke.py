@@ -43,7 +43,7 @@ def response(client, message, changes):
     raise AssertionError("inventory callback deadline")
 
 
-def smoke(server, plugin, native):
+def smoke(server, plugin, native, api_version=8):
     with tempfile.TemporaryDirectory(prefix="sculith plugin inventory ") as temporary:
         root = Path(temporary)
         settings, log = root / "server.toml", root / "server.log"
@@ -127,7 +127,7 @@ def smoke(server, plugin, native):
                 process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
                 assert process.wait(timeout=5) == 0
                 text = log.read_text(encoding="utf-8")
-                assert "api_version=7" in text and "inventory plugin stopped" in text
+                assert f"api_version={api_version}" in text and "inventory plugin stopped" in text
                 assert "unexpected foreign inventory response" not in text and "plugin disabled" not in text
                 print("".join(lines), end="")
             except Exception:
@@ -152,5 +152,6 @@ if __name__ == "__main__":
     parser.add_argument("--server", type=Path, default=ROOT / ("target/debug/sculith" + suffix))
     parser.add_argument("--plugin", type=Path, default=ROOT / ("target/debug/sculith-inventory-fixture" + suffix))
     parser.add_argument("--client", type=Path, required=True)
+    parser.add_argument("--api-version", type=int, choices=(7,8), default=8)
     args = parser.parse_args()
-    smoke(args.server.resolve(strict=True), args.plugin.resolve(strict=True), args.client.resolve(strict=True))
+    smoke(args.server.resolve(strict=True), args.plugin.resolve(strict=True), args.client.resolve(strict=True), args.api_version)

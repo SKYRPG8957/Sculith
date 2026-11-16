@@ -106,6 +106,7 @@ async fn http_status_and_rejections_cross_tcp_without_admitting_invalid_offers()
             authentication: Authentication::offline(),
             timeout: Duration::from_secs(10),
             content: None,
+            observer: crate::connections::Observer::default(),
         },
         world: world.clone(),
         status,

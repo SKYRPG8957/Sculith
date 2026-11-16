@@ -1,5 +1,6 @@
 //! Shared engine types and validation.
 
+pub mod connections;
 pub mod inventory;
 
 use serde::{Deserialize, Serialize};

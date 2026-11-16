@@ -14,9 +14,31 @@ pub struct Frames {
     expected: usize,
     body: Vec<u8>,
     offset: usize,
+    trace: crate::connections::Trace,
+    phase: Option<sculith_core::connections::PacketPhase>,
+    protocol: Option<u32>,
 }
 
 impl Frames {
+    pub fn observed(observer: &crate::connections::Observer) -> Self {
+        Self {
+            trace: observer.open(sculith_core::connections::ConnectionTransport::JavaTcp),
+            ..Self::default()
+        }
+    }
+
+    pub fn select_protocol(&mut self, protocol: u32) {
+        self.protocol = Some(protocol);
+    }
+
+    pub fn set_phase(&mut self, phase: sculith_core::connections::PacketPhase) {
+        self.phase = Some(phase);
+    }
+
+    pub fn attach(&mut self, player_id: u64) {
+        self.trace.attach(player_id);
+    }
+
     pub async fn next(&mut self, stream: &mut (impl AsyncRead + Unpin)) -> Result<Vec<u8>> {
         if self.expected == 0 {
             while self.prefix.last().is_none_or(|b| b & 128 != 0) {
@@ -41,7 +63,68 @@ impl Frames {
         self.prefix.clear();
         self.offset = 0;
         self.expected = 0;
-        Ok(std::mem::take(&mut self.body))
+        let body = std::mem::take(&mut self.body);
+        if self.trace.enabled() {
+            // A malformed identifier has no decoded packet metadata. The
+            // lifecycle still closes, without forwarding any client bytes.
+            if let Ok(id) = read_varint(&mut &body[..])
+                && let Ok(packet) = crate::protocol::catalog::java_connection_receipt(
+                    id,
+                    self.protocol,
+                    self.phase
+                        .unwrap_or(sculith_core::connections::PacketPhase::Handshake),
+                )
+            {
+                self.trace.packet(packet);
+            }
+        }
+        Ok(body)
+    }
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+    use sculith_core::connections::{ConnectionEvent, PacketPhase};
+
+    #[tokio::test]
+    async fn partial_cancelled_frame_emits_once_after_completion_without_body() {
+        let observer = crate::connections::Observer::default();
+        let mut events = observer.subscribe();
+        observer.configure(true);
+        let mut frames = Frames::observed(&observer);
+        frames.select_protocol(777);
+        frames.set_phase(PacketPhase::Login);
+        let (mut input, mut output) = tokio::io::duplex(64);
+        input.write_all(&[4, 0, b'x']).await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(5), frames.next(&mut output))
+                .await
+                .is_err()
+        );
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            ConnectionEvent::Opened { .. }
+        ));
+        assert!(events.try_recv().is_err());
+        input.write_all(b"yz").await.unwrap();
+        assert_eq!(frames.next(&mut output).await.unwrap(), b"\0xyz");
+        let ConnectionEvent::PacketReceived { packet, .. } = events.try_recv().unwrap() else {
+            panic!("missing receipt");
+        };
+        assert_eq!(
+            (packet.sequence, packet.phase, packet.name.as_str()),
+            (1, PacketPhase::Login, "minecraft:hello")
+        );
+        let fields = serde_json::to_value(packet).unwrap();
+        assert_eq!(fields.as_object().unwrap().len(), 6);
+        assert!(!fields.to_string().contains("xyz"));
+        drop(frames);
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            ConnectionEvent::Closed { .. }
+        ));
+        assert!(events.try_recv().is_err());
     }
 }
 

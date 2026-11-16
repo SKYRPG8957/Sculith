@@ -6,7 +6,7 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 7;
+pub const API_VERSION: u32 = 8;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
@@ -14,6 +14,7 @@ pub const SOUND_API_VERSION: u32 = 4;
 pub const MODEL_API_VERSION: u32 = 5;
 pub const OBSERVATION_API_VERSION: u32 = 6;
 pub const INVENTORY_API_VERSION: u32 = 7;
+pub const CONNECTION_API_VERSION: u32 = 8;
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     LEGACY_API_VERSION,
     GAME_API_VERSION,
@@ -22,7 +23,11 @@ pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     MODEL_API_VERSION,
     OBSERVATION_API_VERSION,
     INVENTORY_API_VERSION,
+    CONNECTION_API_VERSION,
 ];
+pub use sculith_core::connections::{
+    ConnectionEvent, ConnectionPacket, ConnectionTransport, PacketPhase,
+};
 pub use sculith_core::inventory::{
     InventoryError, InventoryItem, InventoryOperation, InventoryResult, InventoryView,
 };
@@ -33,6 +38,7 @@ pub const MAX_ACTIONS: usize = 32;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Hook {
+    Connection,
     Started,
     Tick,
     Stopping,
@@ -51,6 +57,7 @@ pub enum Hook {
 
 impl Hook {
     pub const ALL: &[Self] = &[
+        Self::Connection,
         Self::Started,
         Self::Tick,
         Self::Stopping,
@@ -68,6 +75,7 @@ impl Hook {
     ];
     pub fn minimum_api(&self) -> u32 {
         match self {
+            Self::Connection => CONNECTION_API_VERSION,
             Self::Started | Self::Tick | Self::Stopping => LEGACY_API_VERSION,
             Self::FormSubmitted => UI_API_VERSION,
             Self::InventoryResponse => INVENTORY_API_VERSION,
@@ -113,6 +121,10 @@ pub enum HostMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    /// Opt-in connection lifecycle and inbound metadata, including pre-login.
+    Connection {
+        event: ConnectionEvent,
+    },
     /// Returned only to the plugin that issued this request.
     InventoryResponse {
         player_id: u64,
@@ -224,6 +236,7 @@ pub struct InventoryChange {
 impl Event {
     pub fn hook(&self) -> Hook {
         match self {
+            Self::Connection { .. } => Hook::Connection,
             Self::InventoryResponse { .. } => Hook::InventoryResponse,
             Self::PlayerInventoryChanged { .. } => Hook::PlayerInventoryChanged,
             Self::CommandSubmitted { .. } => Hook::CommandSubmitted,
@@ -558,6 +571,8 @@ mod tests {
     #[test]
     fn negotiates_highest_common_version_and_retains_all_older_apis() {
         for (supported, expected) in [
+            (vec![1, 2, 3, 4, 5, 6, 7, 8], 8),
+            (vec![1, 2, 3, 4, 5, 6, 7], 7),
             (vec![1, 2, 3, 4, 5, 6], 6),
             (vec![1, 2, 3, 4, 5], 5),
             (vec![1, 2, 3, 4], 4),
@@ -582,6 +597,47 @@ mod tests {
                 matches!(response.message, PluginMessage::Ready { api_version, .. } if api_version == expected)
             );
         }
+    }
+
+    #[test]
+    fn connection_hook_requires_v8_without_changing_existing_player_hook() {
+        struct Observer;
+        impl Plugin for Observer {
+            fn metadata(&self) -> Metadata {
+                Metadata {
+                    name: "connections".into(),
+                    version: "1".into(),
+                    hooks: vec![Hook::Connection],
+                }
+            }
+            fn on_event(&mut self, _: Event) -> Vec<Action> {
+                vec![]
+            }
+        }
+        for version in [7, 8] {
+            let mut input = serde_json::to_vec(&Request {
+                id: 1,
+                message: HostMessage::Hello {
+                    api_version: 1,
+                    supported_versions: (1..=version).collect(),
+                    server: ServerStatus::new("test".into(), 20).unwrap(),
+                },
+            })
+            .unwrap();
+            input.push(b'\n');
+            assert_eq!(
+                serve_io(Observer, &input[..], &mut Vec::new()).is_ok(),
+                version == 8
+            );
+        }
+        assert_eq!(Hook::PacketReceived.minimum_api(), 6);
+        assert_eq!(
+            Event::Connection {
+                event: ConnectionEvent::Closed { connection_id: 1 }
+            }
+            .hook(),
+            Hook::Connection
+        );
     }
 
     #[test]

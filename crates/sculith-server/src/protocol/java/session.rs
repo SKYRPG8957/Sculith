@@ -98,8 +98,10 @@ pub async fn start(
     let ack = frames.next(stream).await?;
     ensure!(ack == [3], "expected Java Login Acknowledged");
     *phase = super::Phase::Configuration;
+    frames.set_phase(sculith_core::connections::PacketPhase::Configuration);
     configure(stream, frames, content).await?;
     *phase = super::Phase::Play;
+    frames.set_phase(sculith_core::connections::PacketPhase::Spawn);
     let events = world.subscribe();
     let lease = world
         .reserve(
@@ -169,6 +171,8 @@ pub async fn start(
         }
         if teleported && loaded {
             state.player = state.world.activate(state.player.id).await?;
+            frames.attach(state.player.id);
+            frames.set_phase(sculith_core::connections::PacketPhase::Play);
             send_peer_changes(stream, vec![PeerChange::InfoAdd(state.player.clone())]).await?;
             let observation = state.world.observe_players(state.player.id).await?;
             let mut peers = Peers::new(state.player.id, observation.players)?;

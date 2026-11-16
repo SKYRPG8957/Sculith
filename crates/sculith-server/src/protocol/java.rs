@@ -49,6 +49,7 @@ pub async fn serve(
     status: watch::Receiver<ServerStatus>,
     preview: Option<Preview>,
     mut shutdown: watch::Receiver<bool>,
+    observer: crate::connections::Observer,
 ) -> Result<()> {
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     let mut connections = JoinSet::new();
@@ -62,9 +63,10 @@ pub async fn serve(
                 let Ok(permit) = slots.clone().try_acquire_owned() else { continue };
                 let status = status.clone();
                 let preview=preview.clone();
+                let observer=observer.clone();
                 connections.spawn(async move {
                     let _permit = permit;
-                    if let Err(error)=handle_with_preview(&mut stream,status,preview).await {
+                    if let Err(error)=handle_with_preview(&mut stream,status,preview,&observer).await {
                         tracing::debug!(%address,error = %format!("{error:#}"),"Java connection closed");
                     }
                 });
@@ -85,17 +87,31 @@ pub async fn serve(
 
 #[cfg(test)]
 async fn handle(stream: &mut TcpStream, status: watch::Receiver<ServerStatus>) -> Result<()> {
-    handle_with_preview(stream, status, None).await
+    handle_with_preview(
+        stream,
+        status,
+        None,
+        &crate::connections::Observer::default(),
+    )
+    .await
 }
 
 async fn handle_with_preview(
     stream: &mut TcpStream,
     status: watch::Receiver<ServerStatus>,
     preview: Option<Preview>,
+    observer: &crate::connections::Observer,
 ) -> Result<()> {
-    let mut frames = codec::Frames::default();
+    use sculith_core::connections::PacketPhase;
+    let mut frames = codec::Frames::observed(observer);
     let handshake = tokio::time::timeout(CONNECTION_TIMEOUT, frames.next(stream)).await??;
     let (protocol, state) = parse_handshake(&handshake)?;
+    frames.select_protocol(protocol as u32);
+    frames.set_phase(if state == 2 {
+        PacketPhase::Login
+    } else {
+        PacketPhase::Status
+    });
     if state == 2 {
         if let Some(preview) = preview.as_ref().filter(|_| protocol == registry::PROTOCOL) {
             ensure!(

@@ -100,9 +100,96 @@ pub fn java_receipt(id: i32, sequence: u64) -> Result<sculith_plugin_api::Packet
     })
 }
 
+pub fn java_connection_receipt(
+    id: i32,
+    protocol: Option<u32>,
+    phase: sculith_core::connections::PacketPhase,
+) -> Result<sculith_core::connections::ConnectionPacket> {
+    use sculith_core::{
+        PacketDispatch,
+        connections::{ConnectionPacket, PacketPhase},
+    };
+    ensure!(id >= 0, "negative Java packet identifier");
+    let catalog_phase = match phase {
+        PacketPhase::Handshake => "handshake",
+        PacketPhase::Status => "status",
+        PacketPhase::Login => "login",
+        PacketPhase::Configuration => "configuration",
+        PacketPhase::Spawn | PacketPhase::Play => "play",
+        _ => "unknown",
+    };
+    // Handshake/status are version-independent. Never give a known-version
+    // packet name to a different protocol selected by an unverified client.
+    let known_protocol =
+        matches!(phase, PacketPhase::Handshake | PacketPhase::Status) || protocol == Some(777);
+    let entry = known_protocol
+        .then(|| {
+            java().iter().find(|p| {
+                p.phase == catalog_phase && p.direction == "serverbound" && i32::from(p.id) == id
+            })
+        })
+        .flatten();
+    let dispatch = if entry.is_none() {
+        PacketDispatch::Unknown
+    } else if phase == PacketPhase::Play {
+        java_receipt(id, 1)?.dispatch
+    } else {
+        PacketDispatch::Control
+    };
+    Ok(ConnectionPacket {
+        protocol,
+        phase,
+        id: id as u32,
+        name: entry
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| "unknown".into()),
+        dispatch,
+        sequence: 0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn connection_receipts_use_phase_and_selected_protocol() {
+        use sculith_core::connections::PacketPhase;
+        for (phase, id, name) in [
+            (PacketPhase::Handshake, 0, "minecraft:intention"),
+            (PacketPhase::Status, 0, "minecraft:status_request"),
+            (PacketPhase::Login, 0, "minecraft:hello"),
+            (
+                PacketPhase::Configuration,
+                0,
+                "minecraft:client_information",
+            ),
+            (PacketPhase::Spawn, 0, "minecraft:accept_teleportation"),
+        ] {
+            assert_eq!(
+                java_connection_receipt(id, Some(777), phase).unwrap().name,
+                name
+            );
+        }
+        assert_eq!(
+            java_connection_receipt(0, Some(776), PacketPhase::Login)
+                .unwrap()
+                .name,
+            "unknown"
+        );
+        assert_eq!(
+            java_connection_receipt(0, None, PacketPhase::Handshake)
+                .unwrap()
+                .name,
+            "minecraft:intention"
+        );
+        assert_eq!(
+            java_connection_receipt(1000, Some(777), PacketPhase::Play)
+                .unwrap()
+                .dispatch,
+            sculith_core::PacketDispatch::Unknown
+        );
+        assert!(java_connection_receipt(-1, Some(777), PacketPhase::Login).is_err());
+    }
     #[test]
     fn full_pinned_java_identifier_table_has_unique_phase_direction_keys() {
         let packets = java();

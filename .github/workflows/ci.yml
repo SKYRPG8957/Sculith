@@ -66,6 +66,8 @@ jobs:
         run: python tests/interop/inventory_smoke.py --client target/gophertunnel-probe
       - name: Verify Rust inventory requests, private results and client updates
         run: python tests/interop/plugin_inventory_smoke.py --client target/gophertunnel-probe
+      - name: Verify connection phases, redaction and observer backlog handling
+        run: python tests/interop/connection_smoke.py --client target/gophertunnel-probe
       - name: Verify authoritative cross-edition held items and empty hands
         run: python tests/interop/equipment_smoke.py --client target/gophertunnel-probe
       - name: Verify cross-edition player visibility, movement and leave

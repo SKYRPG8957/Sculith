@@ -39,6 +39,32 @@ struct Process {
 }
 
 impl Plugins {
+    pub fn observes_connections(&self) -> bool {
+        self.processes.iter().any(|p| {
+            !p.disabled
+                && p.metadata
+                    .hooks
+                    .contains(&sculith_plugin_api::Hook::Connection)
+        })
+    }
+
+    pub async fn disable_connection_subscribers(&mut self, world: &WorldHandle) {
+        for process in &mut self.processes {
+            if !process.disabled
+                && process
+                    .metadata
+                    .hooks
+                    .contains(&sculith_plugin_api::Hook::Connection)
+            {
+                tracing::warn!(plugin = %process.metadata.name, "plugin disabled after missing connection events");
+                process.disabled = true;
+                let _ = world.disable_commands(process.metadata.name.clone()).await;
+                let _ = process.child.kill().await;
+                process.input.take();
+            }
+        }
+    }
+
     pub fn observation_flags(&self) -> u8 {
         use sculith_plugin_api::Hook;
         use sculith_runtime::observations;
@@ -212,11 +238,9 @@ impl Plugins {
     pub async fn disable_game_subscribers(&mut self, world: &WorldHandle) {
         for process in &mut self.processes {
             if !process.disabled
-                && process
-                    .metadata
-                    .hooks
-                    .iter()
-                    .any(|hook| hook.minimum_api() >= 2)
+                && process.metadata.hooks.iter().any(|hook| {
+                    hook.minimum_api() >= 2 && *hook != sculith_plugin_api::Hook::Connection
+                })
             {
                 tracing::warn!(plugin = %process.metadata.name, "plugin disabled after missing game events");
                 process.disabled = true;
