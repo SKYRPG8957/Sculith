@@ -57,5 +57,19 @@
   "retained_binary_sha256": {
     "sculith-welcome-api-v1": "d113e1e8cae36d26ccd279d018252c2e6e1122c14ee36e939cfcf872f63d1547",
     "sculith-gameplay-plugin-preview11-api2": "1219a8b4f17353760c29945740265b8bfb607cabe05f1979af16117689f933dd"
+  },
+  "publication": {
+    "version": "v0.1.0-preview.12",
+    "workflow_run": 43797691679,
+    "fresh_unauthenticated_https_download_verified": true,
+    "immutable_tag_matches_tested_source": true
+  },
+  "windows_public_installer": {
+    "workflow_run": 43798694183,
+    "powershell_5_1": true,
+    "direct_and_documented_one_command_install": true,
+    "both_launchers": true,
+    "existing_directory_preserved": true,
+    "both_plugins_and_pack_paths_present": true
   }
 }

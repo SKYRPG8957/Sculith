@@ -8,6 +8,12 @@ independent Java/aiortc/Go/Dragonfly, shared forms and pack/cache checks. The ex
 ZIP, sixteen members, metadata, dependency licenses and system-DLL-only imports
 of all three EXEs were inspected.
 
+The exact artifact is public as [Preview 12](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.12).
+A fresh unauthenticated HTTPS download passes source/tag/hash verification.
+Windows PowerShell 5.1 direct/one-command installation, both launchers,
+existing-directory preservation and the configured plugin/pack paths pass in
+[run 43798694183](https://github.com/SKYRPG8957/Sculith/actions/runs/43798694183).
+
 An unmodified official Java **26.3** game on Linux displayed the shared form:
 
 ![Actual Java menu](shared-form-java.png)
