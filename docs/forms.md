@@ -11,9 +11,9 @@ cargo run --locked -- run --config examples/forms-preview.toml
 ```
 
 This source example also enables the existing gameplay welcome and shared texture
-pack. Append `.exe` to plugin paths on Windows. Current public Preview 11 predates
-forms; the Preview 12 Windows candidate adds the forms executable and enables it
-only in new settings. Existing operator settings are preserved.
+pack. Append `.exe` to plugin paths on Windows. Public Preview 12 includes the
+forms executable and enables it only in new settings. Existing operator settings
+are preserved.
 
 ## Plugin contract
 
