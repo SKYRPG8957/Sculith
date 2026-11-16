@@ -29,7 +29,7 @@ def smoke(server, client, wait_for_keepalive=False):
         shutil.copytree(ROOT / "examples/pack/bedrock", source)
         # More than two network chunks, independent of compression assumptions.
         (source / "credits.bin").write_bytes(bytes(range(256)) * 300)
-        original = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+        original = {p.relative_to(source).as_posix(): p.read_bytes() for p in source.rglob("*") if p.is_file()}
         mapping = ROOT / "examples/pack/textures.json"
         expected = root / "expected"
         subprocess.run([str(server), "pack", "bundle", "--input", str(source), "--mapping", str(mapping), "--output", str(expected)], check=True, capture_output=True)
@@ -147,7 +147,7 @@ def smoke(server, client, wait_for_keepalive=False):
                     assert "PASS: received Bedrock resource pack" in result.stdout
                     assert downloaded.read_bytes() == native_bytes
                 assert "cached=true" in log.read_text(encoding="utf-8"), "cached pack path was not used"
-                assert {str(p.relative_to(source)): p.read_bytes() for p in source.rglob("*") if p.is_file()} == original
+                assert {p.relative_to(source).as_posix(): p.read_bytes() for p in source.rglob("*") if p.is_file()} == original
                 process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
                 assert process.wait(timeout=5) == 0
             except Exception:
