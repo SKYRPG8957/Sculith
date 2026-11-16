@@ -6,6 +6,7 @@ It is the project direction; implementation and verification evidence determine 
 - Preserve existing work. Inspect branch, worktree and changes before editing; one owner per file during parallel work.
 - Keep the existing MIT LICENSE. Do not copy incompatible copyleft implementation code or change licenses without authorization.
 - The canonical repository is `SKYRPG8957/Sculith`. Do not silently rewrite remotes, push, publish or create releases.
+- User instruction (2026-11-16): do not publish preview packages, create preview release tags, or upload build artifacts. Removed previews must stay removed. Keep CI focused on building and testing; do not restore publication workflows or the preview installer.
 - One Bedrock-native authoritative world, exposed through edition-specific adapters. Never create separate Java and Bedrock simulations.
 - Consider region ownership, bounded queues, byte budgets and committed event boundaries from the start. A single region is the initial correctness target.
 - Keep latest stable Bedrock distinct from previews. Java starts with one near-latest stable version. Protocol reference numbers are not proof of gameplay support.
