@@ -78,7 +78,7 @@ def observations(text, legacy=False):
 
 
 def verify(text, sessions, legacy=False):
-    assert f"api_version={8 if legacy else 10}" in text
+    assert f"api_version={8 if legacy else 11}" in text
     assert "plugin disabled" not in text, text
     assert ("connection v8 fixture stopped" if legacy else "connection fixture stopped") in text
     events = observations(text, legacy)
@@ -198,7 +198,7 @@ def smoke(server, plugin, native):
                 connection.close()
             if process.poll() is None:
                 process.kill(); process.wait(timeout=5)
-    print("PASS: Rust API-v10 host, v9 bidirectional connection metadata, retained v8 subscriber, phases, status-only mode, login rejection/timeout, Java/native attachment, shutdown closes, redaction and explicit backlog isolation")
+    print("PASS: Rust API-v11 host, v9 bidirectional connection metadata, retained v8 subscriber, phases, status-only mode, login rejection/timeout, Java/native attachment, shutdown closes, redaction and explicit backlog isolation")
 
 
 if __name__ == "__main__":

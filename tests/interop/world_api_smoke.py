@@ -127,7 +127,7 @@ def smoke(server,plugin,native):
             client.socket.close();client=None
             stop(process)
             text=log.read_text(encoding='utf-8')
-            assert 'api_version=10' in text and 'plugin disabled' not in text,text
+            assert 'api_version=11' in text and 'plugin disabled' not in text,text
             audits=[json.loads('{'+line.split('world-audit {',1)[1]) for line in text.splitlines() if 'world-audit {' in line]
             assert [a['revision'] for a in audits]==[1,2,3,4],audits
             assert [a['actor'] for a in audits]==[{'type':'plugin','name':'world-fixture'},{'type':'plugin','name':'world-fixture'},{'type':'player','player_id':1},{'type':'plugin','name':'world-fixture'}],audits

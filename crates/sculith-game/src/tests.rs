@@ -1074,3 +1074,187 @@ fn creative_build_rate_uses_server_time_and_rejections_do_not_consume_budget() {
     let result = game.break_block(id, BlockPos { y: 4, ..against }, now);
     rejected_block(&mut game, result, RejectReason::ClockRegression, &before);
 }
+
+fn input_form() -> sculith_core::CustomForm {
+    use sculith_core::FormField;
+    sculith_core::CustomForm {
+        title: "설정 👋".into(),
+        fields: vec![
+            FormField::Text {
+                label: "이름".into(),
+                default: "".into(),
+                max_length: 8,
+            },
+            FormField::Toggle {
+                label: "알림".into(),
+                default: true,
+            },
+            FormField::Dropdown {
+                label: "목록".into(),
+                options: vec!["가".into(), "나".into()],
+                default: 0,
+            },
+            FormField::Slider {
+                label: "크기".into(),
+                min: -10,
+                max: 10,
+                step: 5,
+                default: 0,
+            },
+        ],
+    }
+}
+
+#[test]
+fn input_forms_preserve_pending_requests_on_invalid_or_foreign_replies() {
+    use sculith_core::FormValue as V;
+    let now = Instant::now();
+    let (mut state, id) = active(Region::flat_origin(), now);
+    let other = state
+        .reserve(profile(902), Permissions::default(), now)
+        .unwrap();
+    state.activate(other.id).unwrap();
+    let form = input_form();
+    let pending = state
+        .show_custom_form(id, "owner".into(), 42, form.clone(), now)
+        .unwrap();
+    let values = vec![
+        V::Text("이름 👋".into()),
+        V::Toggle(false),
+        V::Number(1),
+        V::Number(5),
+    ];
+    assert!(
+        state
+            .show_form(
+                id,
+                "other".into(),
+                0,
+                &sculith_core::SimpleForm {
+                    title: "A".into(),
+                    body: "".into(),
+                    buttons: vec!["B".into()]
+                },
+                now + Duration::from_secs(1)
+            )
+            .is_err()
+    );
+    assert!(state.submit_form(id, pending, Some(0), now).is_err());
+    assert!(
+        state
+            .submit_custom_form(other.id, pending, values.clone(), now)
+            .is_err()
+    );
+    assert!(
+        state
+            .submit_custom_form(id, pending + 1, values.clone(), now)
+            .is_err()
+    );
+    assert!(
+        state
+            .submit_custom_form(id, pending, values[..3].to_vec(), now)
+            .is_err()
+    );
+    for (index, value) in [
+        (0, V::Text("👋".repeat(5))),
+        (1, V::Number(0)),
+        (2, V::Number(2)),
+        (3, V::Number(1)),
+    ] {
+        let mut invalid = values.clone();
+        invalid[index] = value;
+        assert!(state.submit_custom_form(id, pending, invalid, now).is_err());
+    }
+    assert!(
+        state
+            .submit_custom_form(id, pending, values.clone(), now - Duration::from_millis(1))
+            .is_err()
+    );
+    let result = state
+        .submit_custom_form(id, pending, values.clone(), now)
+        .unwrap();
+    assert_eq!(
+        result,
+        CustomFormSubmission {
+            player_id: id,
+            plugin: "owner".into(),
+            request_id: 42,
+            values: Some(values.clone())
+        }
+    );
+    assert!(state.submit_custom_form(id, pending, values, now).is_err());
+    assert_eq!(state.revision(), 0);
+    assert!(
+        state
+            .show_custom_form(
+                id,
+                "owner".into(),
+                43,
+                form.clone(),
+                now + Duration::from_millis(999)
+            )
+            .is_err()
+    );
+    let pending = state
+        .show_custom_form(id, "owner".into(), 43, form, now + Duration::from_secs(1))
+        .unwrap();
+    let UiSubmission::Custom(cancelled) = state
+        .cancel_form(id, pending, now + Duration::from_secs(1))
+        .unwrap()
+    else {
+        panic!("wrong callback kind")
+    };
+    assert_eq!(
+        (
+            cancelled.plugin.as_str(),
+            cancelled.request_id,
+            cancelled.values
+        ),
+        ("owner", 43, None)
+    );
+}
+
+#[test]
+fn input_form_expiry_identifier_exhaustion_and_retirement_do_not_notify() {
+    let now = Instant::now();
+    let (mut state, id) = active(Region::flat_origin(), now);
+    let first = state
+        .show_custom_form(id, "owner".into(), 1, input_form(), now)
+        .unwrap();
+    assert!(
+        state
+            .cancel_form(id, first, now + Duration::from_secs(61))
+            .is_err()
+    );
+    let second = state
+        .show_custom_form(
+            id,
+            "owner".into(),
+            2,
+            input_form(),
+            now + Duration::from_secs(61),
+        )
+        .unwrap();
+    assert!(
+        state
+            .cancel_form(id, first, now + Duration::from_secs(61))
+            .is_err()
+    );
+    state.retire(id);
+    assert!(
+        state
+            .cancel_form(id, second, now + Duration::from_secs(61))
+            .is_err()
+    );
+    let player = state
+        .reserve(profile(903), Permissions::default(), now)
+        .unwrap();
+    state.activate(player.id).unwrap();
+    state.next_form_id = u32::MAX;
+    assert!(
+        state
+            .show_custom_form(player.id, "owner".into(), 3, input_form(), now)
+            .is_err()
+    );
+    assert_eq!(state.revision(), 0);
+}

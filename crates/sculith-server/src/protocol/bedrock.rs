@@ -3,6 +3,7 @@
 pub mod catalog;
 mod chunk;
 mod commands;
+mod forms;
 mod input;
 mod inventory;
 pub mod nethernet;

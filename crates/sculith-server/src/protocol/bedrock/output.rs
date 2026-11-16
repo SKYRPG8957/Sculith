@@ -247,6 +247,25 @@ pub fn simple_form(id: u32, form: &sculith_core::SimpleForm) -> anyhow::Result<V
     )))
 }
 
+pub fn custom_form(id: u32, form: &sculith_core::CustomForm) -> anyhow::Result<V2225> {
+    use sculith_core::FormField;
+    form.validate().map_err(anyhow::Error::msg)?;
+    let fields:Vec<_>=form.fields.iter().map(|field|match field {
+        FormField::Text {label,default,..}=>serde_json::json!({"type":"input","text":label,"placeholder":"","default":default}),
+        FormField::Toggle {label,default}=>serde_json::json!({"type":"toggle","text":label,"default":default}),
+        FormField::Dropdown {label,options,default}=>serde_json::json!({"type":"dropdown","text":label,"options":options,"default":default}),
+        FormField::Slider {label,min,max,step,default}=>serde_json::json!({"type":"slider","text":label,"min":min,"max":max,"step":step,"default":default}),
+    }).collect();
+    Ok(V2225::ModalFormRequestPacket(Box::new(
+        bedrock::protocol::v662::packets::ModalFormRequestPacket {
+            form_id: id,
+            form_ui_json: serde_json::to_string(
+                &serde_json::json!({"type":"custom_form","title":form.title,"content":fields}),
+            )?,
+        },
+    )))
+}
+
 /// Same fixed-point position and parameters as the Java direct sound event.
 pub fn sound(effect: &crate::game::SoundEffect, native: &str) -> V2225 {
     use bedrock::protocol::v2193::packets::{PlaySoundPacket, PlaySoundPosition};

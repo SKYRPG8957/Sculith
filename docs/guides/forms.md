@@ -1,7 +1,7 @@
-# Shared simple forms
+# Shared forms
 
-Rust plugin API v3 can open one edition-independent simple choice form and receive
-its validated selection/cancellation. Bedrock uses a native menu form; unmodified
+Rust plugins can open shared choice forms (API v3) or typed input forms (API v11)
+and receive validated private responses. Bedrock uses a native menu form; unmodified
 Java 26.3 uses a vanilla multi-action dialog. This is a functional UI fallback,
 not automatic conversion of arbitrary Bedrock JSON UI, images, HUD or scripting.
 
@@ -10,10 +10,15 @@ cargo build --workspace --locked
 cargo run --locked -- run --config examples/configs/forms.toml
 ```
 
-This source example also enables the existing gameplay welcome and shared texture
-pack. Append `.exe` to plugin paths on Windows. Public Preview 14 includes the
-forms executable and enables it only in new settings. Existing operator settings
-are preserved.
+The choice example enables the gameplay welcome and shared texture pack. For text,
+checkboxes, selection lists and integer sliders, run:
+
+```sh
+cargo run --locked -- run --config examples/configs/inputs.toml
+```
+
+The input example loads the same forms executable with `args = ["--inputs"]` and
+shares the configured resource pack. Append `.exe` to plugin paths on Windows.
 
 ## Plugin contract
 
@@ -59,6 +64,54 @@ observer stream. The existing bounded mailbox/game-event/worker policies apply.
 Closed sessions, pending forms and rate limits are ordinary action rejections,
 logged without disabling an otherwise valid plugin.
 
+## Input controls (API v11)
+
+Subscribe to `Hook::CustomFormSubmitted`, then send
+`Action::ShowCustomForm { player_id, request_id, form: CustomForm { title, fields } }`.
+The callback is `Event::CustomFormSubmitted { player_id, request_id, values }`.
+`None` means cancelled; `Some(values)` contains one value per field in input order.
+Results go only to the plugin that opened the form.
+
+| Field | Definition | Result |
+| --- | --- | --- |
+| `FormField::Text` | `label`, `default`, `max_length` | `FormValue::Text(String)` |
+| `FormField::Toggle` | `label`, `default: bool` | `FormValue::Toggle(bool)` |
+| `FormField::Dropdown` | `label`, `options`, `default: u32` | `FormValue::Number(index)` |
+| `FormField::Slider` | `label`, `min`, `max`, `step`, `default` | `FormValue::Number(value)` |
+
+A form has 1–8 fields. Title, labels and options require 1–128 UTF-8 bytes without
+control characters. Text accepts an empty value and at most `max_length` UTF-16
+units (1–256); a supplementary character uses two units. The Java widget enforces
+this limit while editing; Bedrock responses are checked by the owner. Control
+characters are rejected. Dropdowns have 1–8 options and zero-based indexes.
+
+Sliders use integers in `[-32768,32767]`, `min < max`, and a positive `step` at most
+65535. The range and default must lie on that step grid; replies outside it are
+rejected. Fractional sliders and password/multiline inputs are not implemented.
+
+Choice and input forms share one pending slot and the existing rate, session,
+60-second deadline and replay checks. Wrong IDs, counts, types, text lengths or
+slider steps keep the valid request pending. Cancellation uses the owner's stored
+form kind. Form callbacks never grant gameplay permissions or change world
+revisions. Inputs add no player data persistence.
+
+Bedrock receives a `custom_form`; Java receives a vanilla dialog with text,
+boolean, single-option and number-range controls. Only a generated custom action
+can submit its values: no plugin-supplied action IDs or executable commands are
+sent. Java replies accept a bounded flat string-tag compound, with strict modified
+UTF-8 and unique consecutive input indexes. Native replies accept a bounded typed
+array. Payloads are at most 16 KiB; nesting and unknown value types are rejected.
+UI layout and native styling differ; this is shared form behavior, not arbitrary
+Bedrock JSON UI or HUD conversion.
+
+```sh
+python3 tests/interop/custom_forms_smoke.py --client target/gophertunnel-probe
+```
+
+The probe runs real Rust controller/observer processes and independent Java/native
+clients. It checks all four definitions, Unicode input, cancellation, malformed
+replies, step/length/count/type validation, replay and recipient isolation.
+
 ## Client implementation and verification
 
 The unmodified Java game displayed Korean/emoji title, body and buttons:
@@ -100,8 +153,9 @@ modified UTF-8, including nested supplementary characters. Native packets are
 ModalFormRequest/Response 100/101 in the pinned V2225 dependency and independent Go
 codec. No decompiled implementation or proprietary game assets are distributed.
 
-Only simple forms are supported. There is no text input, arbitrary JSON UI,
-replacement/cancel API, automatic on-screen timeout close or expiry callback yet.
+Choice and the bounded input controls above are supported. There is no arbitrary
+JSON UI, replacement/cancel API, automatic on-screen timeout close or expiry
+callback yet.
 An unanswered form occupies the one pending slot until a response or disconnect;
 an expired answer is not applied. Callback success does not grant permissions for
 future game actions. Official Windows Bedrock rendering remains unverified;

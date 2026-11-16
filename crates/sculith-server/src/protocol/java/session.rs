@@ -661,16 +661,30 @@ impl Session {
                     tracing::debug!(player=self.player.id,%error,"Java chat rejected");
                 }
             }
-            0x44 => {
-                if let Some((form_id, selection)) = super::forms::response(fields)?
-                    && let Err(error) = self
+            0x44 => match super::forms::custom_response(Fields(fields.0)) {
+                Ok(Some((form_id, values))) => {
+                    if let Err(error) = self
                         .world
-                        .submit_form(self.player.id, form_id, selection)
+                        .submit_custom_form(self.player.id, form_id, values)
                         .await
-                {
-                    tracing::debug!(player=self.player.id, %error, "Java form reply rejected");
+                    {
+                        tracing::debug!(player=self.player.id,%error,"Java input form reply rejected");
+                    }
                 }
-            }
+                Ok(None) => {
+                    if let Some((form_id, selection)) = super::forms::response(fields)?
+                        && let Err(error) = self
+                            .world
+                            .submit_form(self.player.id, form_id, selection)
+                            .await
+                    {
+                        tracing::debug!(player=self.player.id,%error,"Java form reply rejected");
+                    }
+                }
+                Err(error) => {
+                    tracing::debug!(player=self.player.id,%error,"Java input form reply rejected")
+                }
+            },
             0x1c => {
                 let received = fields.long()?;
                 fields.end()?;
@@ -941,6 +955,15 @@ impl Session {
             packet.extend_from_slice(&effect.pitch.to_be_bytes());
             packet.extend_from_slice(&0i64.to_be_bytes());
             codec::send(stream, &packet).await?;
+        }
+        if let WorldEvent::CustomFormRequested {
+            player_id,
+            form_id,
+            form,
+        } = event
+            && *player_id == self.player.id
+        {
+            codec::send(stream, &super::forms::show_custom(*form_id, form)?).await?;
         }
         if let WorldEvent::FormRequested {
             player_id,

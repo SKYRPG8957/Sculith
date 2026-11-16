@@ -93,6 +93,7 @@ timeout_ms = 1000
 | `BlocksChanged { player_id, revision, changes }` | 플레이어가 커밋한 블록 변경. 기존 API v2 계약 유지 |
 | `WorldBlocksChanged { region_id, previous_revision, revision, actor, changes }` | 플레이어·플러그인이 커밋한 블록 변경. `actor`로 실제 주체 구분. API v10 필요 |
 | `WorldResponse { request_id, result }` | 월드 요청을 보낸 플러그인만 받는 결과. API v10 필요 |
+| `CustomFormSubmitted { player_id, request_id, values }` | 입력 폼의 검증된 텍스트·불리언·정수 값 또는 취소 `None`. 폼을 연 플러그인만 수신. API v11 필요 |
 | `FormSubmitted { player_id, request_id, selection }` | 폼을 연 해당 플러그인만 수신. 선택지 인덱스 또는 취소 `None`. API v3 필요 |
 | `PlayerMoved { player_id, tick, x, y, z, yaw, pitch, head_yaw }` | 승인돼 실제로 바뀐 위치·회전. `x/y/z`는 공통 발 좌표. API v6 필요 |
 | `PlayerEquipped { player_id, slot, item, count }` | 선택 슬롯이나 손에 든 아이템 종류·수량이 바뀐 뒤. API v6 필요 |
@@ -126,6 +127,7 @@ Stone/Dirt/Grass/Bedrock만 지원하며 한 스택은 최대 64개입니다.
 | `SetMotd { motd }` | 공통 상태를 바꾸어 두 에디션의 서버 목록에 반영 |
 | `Log { message }` | 플러그인 이름과 함께 호스트 로그에 기록 |
 | `SendMessage { player_id, message }` | 초기화된 해당 플레이어에게만 시스템 메시지 전달. API v2 필요 |
+| `ShowCustomForm { player_id, request_id, form }` | 공통 텍스트·체크박스·목록·정수 슬라이더. [입력 폼](forms.md#input-controls-api-v11), API v11 필요 |
 | `ShowForm { player_id, request_id, form }` | 같은 단순 선택 폼을 양쪽 에디션에 표시. API v3 필요 |
 | `PlaySound { player_id, sound, volume, pitch }` | 등록된 팩 음원을 해당 플레이어에게만 재생. API v4 필요 |
 | `ShowModel { player_id, model }` / `HideModel { player_id }` | 등록된 정적 모델의 개인 미리보기 표시·교체·숨김. API v5 필요 |
@@ -268,8 +270,8 @@ Bedrock은 디코딩된 배치 전체를 처리 전에 관찰합니다. 같은 �
 
 ## 통신과 종료
 
-- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `10`, 기존 `1`~`9`도 협상할 수 있습니다.
-- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7,8,9,10], ... }`를 보냅니다.
+- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `11`, 기존 `1`~`10`도 협상할 수 있습니다.
+- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7,8,9,10,11], ... }`를 보냅니다.
   기존 v1 SDK는 추가 필드를 무시하고 그대로 동작합니다. SDK는 공통으로 지원하는 가장 높은 버전을 선택합니다.
   새 SDK의 기존 게임 훅은 v2 호스트에서도 동작하고, 폼 훅은 v3가 없는 호스트에서 로드를 거부합니다.
 - 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1~v7 Rust 실행 파일도 새 호스트에서 확인했습니다.

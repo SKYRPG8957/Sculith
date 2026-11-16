@@ -43,7 +43,7 @@ def response(client, message, changes):
     raise AssertionError("inventory callback deadline")
 
 
-def smoke(server, plugin, native, api_version=10):
+def smoke(server, plugin, native, api_version=11):
     with tempfile.TemporaryDirectory(prefix="sculith plugin inventory ") as temporary:
         root = Path(temporary)
         settings, log = root / "server.toml", root / "server.log"
@@ -152,6 +152,6 @@ if __name__ == "__main__":
     parser.add_argument("--server", type=Path, default=ROOT / ("target/debug/sculith" + suffix))
     parser.add_argument("--plugin", type=Path, default=ROOT / ("target/debug/sculith-inventory-fixture" + suffix))
     parser.add_argument("--client", type=Path, required=True)
-    parser.add_argument("--api-version", type=int, choices=(7,8,9,10), default=10)
+    parser.add_argument("--api-version", type=int, choices=(7,8,9,10,11), default=11)
     args = parser.parse_args()
     smoke(args.server.resolve(strict=True), args.plugin.resolve(strict=True), args.client.resolve(strict=True), args.api_version)

@@ -132,6 +132,7 @@ impl Plugins {
             WorldEvent::PluginWorldResult { plugin, .. }
             | WorldEvent::PluginInventoryResult { plugin, .. } => Some(plugin.as_str()),
             WorldEvent::FormSubmitted(submission) => Some(submission.plugin.as_str()),
+            WorldEvent::CustomFormSubmitted(submission) => Some(submission.plugin.as_str()),
             WorldEvent::CommandSubmitted(submission) => {
                 if !self
                     .processes
@@ -241,6 +242,11 @@ impl Plugins {
                         Action::PlaySound { player_id, sound, volume, pitch } => {
                             if let Err(error) = world.play_sound(player_id, sound, volume, pitch).await {
                                 tracing::warn!(plugin=%process.metadata.name, player_id, %error, "plugin sound rejected");
+                            }
+                        }
+                        Action::ShowCustomForm {player_id,request_id,form}=>{
+                            if let Err(error)=world.show_custom_form(player_id,process.metadata.name.clone(),request_id,form).await {
+                                tracing::warn!(plugin=%process.metadata.name,player_id,%error,"plugin custom form rejected");
                             }
                         }
                         Action::ShowForm { player_id, request_id, form } => {
@@ -520,6 +526,12 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
                 sculith_core::validate_sound_parameters(*volume, *pitch)
                     .map_err(anyhow::Error::msg)?;
             }
+            Action::ShowCustomForm {
+                player_id, form, ..
+            } => {
+                ensure!(*player_id != 0, "invalid form recipient");
+                form.validate().map_err(anyhow::Error::msg)?;
+            }
             Action::ShowForm {
                 player_id, form, ..
             } => {
@@ -655,6 +667,11 @@ pub fn game_event(event: &WorldEvent) -> Option<Event> {
             },
         },
         WorldEvent::Left { id } => Event::PlayerLeft { player_id: *id },
+        WorldEvent::CustomFormSubmitted(submission) => Event::CustomFormSubmitted {
+            player_id: submission.player_id,
+            request_id: submission.request_id,
+            values: submission.values.clone(),
+        },
         WorldEvent::FormSubmitted(submission) => Event::FormSubmitted {
             player_id: submission.player_id,
             request_id: submission.request_id,

@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- API v11 adds shared text, boolean, dropdown and integer-slider forms. The same owner validates complete typed replies, deadlines, session IDs and step/length bounds before a single private callback. Java uses stock dialog controls and a bounded flat modified-UTF-8 payload; native uses standard custom forms. Simple forms retain API v3 and the shared one-pending-form slot.
+
 - Configured region snapshots now checkpoint changed revisions every 60 seconds by default. One serial blocking writer prevents overlapping saves; final shutdown waits before capturing newer state. A zero interval retains final-only saving. Forced restart recovers completed plugin/block checkpoints; foreign/invalid files remain protected. Player persistence and a write-ahead log remain pending.
 
 - API v10 adds owner-serialized world reads and compare-and-set edits of up to 64 blocks. Reads return one consistent region revision without loading chunks; invalid/stale batches make no changes. Per-plugin and owner work quotas bound calls. Private results return only to the submitting plugin. Committed player/plugin edits share the existing Java/native delivery and expose explicit attribution through the new world hook, preserving the older player-only hook.
@@ -75,6 +77,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- Input-form checks pass 244 project tests, Clippy, ownership doctests and architecture checks. Actual Rust controller/observer processes and independent Java/native peers verify all four controls, Unicode values, cancellation, invalid/replayed/foreign responses and private delivery. Existing simple forms, world API, periodic recovery, inventory, models, sounds, connection hooks and pack-proxy checks pass. Official-game input interaction is still pending at this observation.
 
 - Periodic checkpoint validation passes 235 project tests, Clippy, ownership doctests and architecture checks. A real Rust plugin edits two chunks; forced server termination and restart restore both blocks, revision, heightmaps and skylight through an independent Java decoder. Disabled periodic saves still retain final saving; unchanged revisions skip disk work. A changed checkpoint against a foreign destination exits nonzero and preserves it, reporting both failure causes. Existing Java/native world API and listener probes pass. Source `5a24c89` completes Linux CI and every configured native Windows build/runtime/interoperability step, including forced termination/recovery against the static-CRT release. Only Windows cache/checkout cleanup remains at this observation. [Scope and reproduction](verification/autosave.md).
 
@@ -197,6 +201,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+The input-form release kernel measures 10,000 four-control open/submit pairs in **1.587368 ms**. Definitions and reply vectors are prepared before the timer; owner validation, request attribution and response construction are included. A synthetic monotonic clock avoids form-rate exhaustion. This excludes rendering, sockets and plugin IPC and is not a server-TPS or optimization comparison.
+
 The periodic-checkpoint candidate retains the existing release storage probe: 1,000 encodes of a 1,193-byte region in **14.810168 ms**, 1,000 validation/decodes in **18.372249 ms** and 20 atomic save/reload operations in **17.357416 ms**. This is a local small-region/filesystem sample, not a full-region, server-TPS or optimization comparison.
 
 The release authority probe measures 10,000 world reads of 64 blocks in **14.273437 ms** and 1,000 atomic 32-block edit batches in **3.767321 ms**. Requests are prepared before the edit timer; typed response construction, validation and commit are included. Reads leave the loaded chunk count unchanged. The synthetic monotonic clock avoids quota exhaustion; sockets, plugin IPC, rendering and persistence are excluded. This is a local kernel sample, not server TPS or a comparison with another engine.
@@ -248,7 +254,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 - NetherNet supports local compatibility and configured direct-peer media. Required-authentication mode checks Microsoft token signatures/claims and the P-384 fingerprint proof; offline local mode checks fingerprint ownership and expiry only. The inner Bedrock login policy remains separate. Official entry is user-reported; successful real-account entry, Internet/NAT routing, TURN and signaling proxy support remain unverified or unimplemented.
 - Both NetherNet channels now reach the validated owner. A real test commits valid unreliable movement and corrects a large tick/teleport attempt over the reliable channel. Official-client movement/rendering still require verification.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
-- Plugins expose lifecycle/MOTD, post-commit game hooks, connection and bidirectional packet metadata, public player commands, private messages, simple forms, private sounds and static models through trusted executable processes. WASI Component execution, multi-region world access, general entity APIs, inventory removal/arbitrary slot replacement, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
+- Plugins expose lifecycle/MOTD, post-commit game hooks, connection and bidirectional packet metadata, public player commands, private messages, choice/input forms, private sounds and static models through trusted executable processes. WASI Component execution, multi-region world access, general entity APIs, inventory removal/arbitrary slot replacement, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
 - Conversion supports explicit static PNG overrides, bounded single-clip Vorbis sound events and explicit static cuboid models. Configured HTTP/proxy pack delivery and shared simple forms are implemented; rotated/animated models, arbitrary-UI conversion, content IR, Companion and hot reload are pending. Internet routing/TLS proxy deployment remains unverified.
 - Latest protocol types expose camera instruction, preset, aim-assist and spline packets, but Sculith has no camera API or scenario tests yet.
 - REA CLI/direct stdio MCP is usable. The active chat tool namespace does not refresh automatically, and no official Windows GDK binary is available here for artifact analysis.

@@ -1,5 +1,7 @@
 //! Shared engine types and validation.
 
+pub mod forms;
+pub use forms::{CustomForm, FormField, FormValue};
 pub mod connections;
 pub mod inventory;
 pub mod world;

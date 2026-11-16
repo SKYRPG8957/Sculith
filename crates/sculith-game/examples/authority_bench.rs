@@ -189,6 +189,56 @@ fn main() {
         "Validated world edits: 1000 atomic batches of 32 blocks in {:?}",
         started.elapsed()
     );
+    use sculith_core::{CustomForm, FormField, FormValue};
+    let form = CustomForm {
+        title: "Settings".into(),
+        fields: vec![
+            FormField::Text {
+                label: "Name".into(),
+                default: "".into(),
+                max_length: 16,
+            },
+            FormField::Toggle {
+                label: "Enabled".into(),
+                default: true,
+            },
+            FormField::Dropdown {
+                label: "Style".into(),
+                options: vec!["Basic".into(), "Full".into()],
+                default: 0,
+            },
+            FormField::Slider {
+                label: "Size".into(),
+                min: -10,
+                max: 10,
+                step: 5,
+                default: 0,
+            },
+        ],
+    };
+    let values = vec![
+        FormValue::Text("Name 👋".into()),
+        FormValue::Toggle(false),
+        FormValue::Number(1),
+        FormValue::Number(5),
+    ];
+    let inputs: Vec<_> = (0..10000).map(|_| (form.clone(), values.clone())).collect();
+    let revision = game.revision();
+    let started = Instant::now();
+    for (index, (form, values)) in inputs.into_iter().enumerate() {
+        let now = clock + Duration::from_secs(10_000 + index as u64);
+        let id = game
+            .show_custom_form(player.id, "benchmark".into(), index as u32, form, now)
+            .unwrap();
+        let submitted = game.submit_custom_form(player.id, id, values, now).unwrap();
+        assert_eq!(submitted.request_id, index as u32);
+        black_box(submitted);
+    }
+    println!(
+        "Validated input forms: 10000 four-control open/submit pairs in {:?}",
+        started.elapsed()
+    );
+    assert_eq!(game.revision(), revision);
     println!(
         "Synthetic monotonic clock; no sockets, rendering, physics tick or persistence workload."
     );

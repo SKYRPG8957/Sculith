@@ -312,15 +312,13 @@ pub async fn handle_with_protection<T: Transport>(
                     continue;
                 }
                 if let V2225::ModalFormResponsePacket(response) = &packet {
-                    let choice = match (&response.json_response, &response.form_cancel_reason) {
-                        (Some(json), None) if json.len() <= 64 => serde_json::from_str::<Option<u32>>(json).ok(),
-                        (None, _) => Some(None),
-                        _ => None,
+                    let result=match super::forms::response(response.json_response.as_deref(),response.form_cancel_reason.is_some()) {
+                        Ok(super::forms::Reply::Choice(choice))=>world.submit_form(id,response.form_id,Some(choice)).await,
+                        Ok(super::forms::Reply::Values(values))=>world.submit_custom_form(id,response.form_id,Some(values)).await,
+                        Ok(super::forms::Reply::Cancelled)=>world.submit_form(id,response.form_id,None).await,
+                        Err(error)=>Err(error),
                     };
-                    if let Some(choice) = choice
-                        && let Err(error) = world.submit_form(id, response.form_id, choice).await {
-                        tracing::debug!(player=id, %error, "Bedrock form reply rejected");
-                    }
+                    if let Err(error)=result {tracing::debug!(player=id,%error,"Bedrock form reply rejected");}
                     continue;
                 }
                 if let V2225::RequestChunkRadiusPacket(request) = &packet {
@@ -423,6 +421,9 @@ pub async fn handle_with_protection<T: Transport>(
                     WorldEvent::Message {player_id,message}=>{
                         if *player_id == id { conn.send(&[output::system_message(message)?]).await?; }
                     }
+                    WorldEvent::CustomFormRequested {player_id,form_id,form}=>{
+                        if *player_id==id {conn.send(&[output::custom_form(*form_id,form)?]).await?;}
+                    }
                     WorldEvent::FormRequested {player_id,form_id,form}=>{
                         if *player_id == id { conn.send(&[output::simple_form(*form_id, form)?]).await?; }
                     }
@@ -442,7 +443,7 @@ pub async fn handle_with_protection<T: Transport>(
                     WorldEvent::ModelHidden {player_id,entity_id}=>{
                         if *player_id==id { conn.send(&[output::remove_model(*entity_id)]).await?; }
                     }
-                    WorldEvent::FormSubmitted(_) | WorldEvent::Equipped(_) | WorldEvent::PacketReceived {..} | WorldEvent::CommandSubmitted(_) | WorldEvent::InventoryChanged {..}=>{},
+                    WorldEvent::CustomFormSubmitted(_) | WorldEvent::FormSubmitted(_) | WorldEvent::Equipped(_) | WorldEvent::PacketReceived {..} | WorldEvent::CommandSubmitted(_) | WorldEvent::InventoryChanged {..}=>{},
                 }
             }
         }

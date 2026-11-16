@@ -77,6 +77,12 @@ pub enum WorldEvent {
         form_id: u32,
         form: sculith_core::SimpleForm,
     },
+    CustomFormRequested {
+        player_id: u64,
+        form_id: u32,
+        form: sculith_core::CustomForm,
+    },
+    CustomFormSubmitted(sculith_game::CustomFormSubmission),
     /// Semantic result only; not broadcast to protocol observers.
     FormSubmitted(sculith_game::FormSubmission),
     Blocks {
@@ -248,6 +254,19 @@ enum Command {
         sound: String,
         volume: f32,
         pitch: f32,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    ShowCustomForm {
+        id: u64,
+        plugin: String,
+        request_id: u32,
+        form: sculith_core::CustomForm,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    SubmitCustomForm {
+        id: u64,
+        form_id: u32,
+        values: Option<Vec<sculith_core::FormValue>>,
         reply: oneshot::Sender<Result<()>>,
     },
     ShowForm {
@@ -496,6 +515,60 @@ impl WorldHandle {
             .await
             .context("world owner stopped")?;
         receiver.await.context("sound response lost")?
+    }
+
+    pub async fn show_custom_form(
+        &self,
+        id: u64,
+        plugin: String,
+        request_id: u32,
+        form: sculith_core::CustomForm,
+    ) -> Result<()> {
+        form.validate().map_err(anyhow::Error::msg)?;
+        let (reply, response) = oneshot::channel();
+        self.commands
+            .send(Command::ShowCustomForm {
+                id,
+                plugin,
+                request_id,
+                form,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        response.await.context("custom form response lost")?
+    }
+
+    pub async fn submit_custom_form(
+        &self,
+        id: u64,
+        form_id: u32,
+        values: Option<Vec<sculith_core::FormValue>>,
+    ) -> Result<()> {
+        if let Some(values) = &values {
+            anyhow::ensure!(
+                values.len() <= sculith_core::forms::MAX_FORM_FIELDS,
+                "too many input values"
+            );
+            for value in values {
+                if let sculith_core::FormValue::Text(text) = value {
+                    anyhow::ensure!(text.len() <= 1024, "input text too long");
+                }
+            }
+        }
+        let (reply, response) = oneshot::channel();
+        self.commands
+            .send(Command::SubmitCustomForm {
+                id,
+                form_id,
+                values,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        response
+            .await
+            .context("custom form submission response lost")?
     }
 
     pub async fn show_form(
@@ -783,6 +856,17 @@ fn retire(
     }
 }
 
+fn publish_form(
+    submission: sculith_game::UiSubmission,
+    events: &broadcast::Sender<Arc<WorldEvent>>,
+) {
+    let event = match submission {
+        sculith_game::UiSubmission::Simple(result) => WorldEvent::FormSubmitted(result),
+        sculith_game::UiSubmission::Custom(result) => WorldEvent::CustomFormSubmitted(result),
+    };
+    let _ = events.send(Arc::new(event));
+}
+
 pub fn with_region(
     region: Region,
     max_players: u32,
@@ -1020,11 +1104,25 @@ pub fn with_region_and_content(
                             let result = result.map(|form_id| { let _ = events.send(Arc::new(WorldEvent::FormRequested { player_id: id, form_id, form })); });
                             let _ = reply.send(result);
                         }
-                        Some(Command::SubmitForm { id, form_id, selection, reply }) => {
-                            let result = state.submit_form(id, form_id, selection, Instant::now()).map(|submission| {
-                                let _ = game_events.send(Arc::new(WorldEvent::FormSubmitted(submission)));
+                        Some(Command::ShowCustomForm {id,plugin,request_id,form,reply})=>{
+                            let result=state.show_custom_form(id,plugin,request_id,form.clone(),Instant::now()).map(|form_id| {
+                                let _=events.send(Arc::new(WorldEvent::CustomFormRequested {player_id:id,form_id,form}));
                             });
-                            let _ = reply.send(result);
+                            let _=reply.send(result);
+                        }
+                        Some(Command::SubmitCustomForm {id,form_id,values,reply})=>{
+                            let result= match values {
+                                Some(values)=>state.submit_custom_form(id,form_id,values,Instant::now()).map(sculith_game::UiSubmission::Custom),
+                                None=>state.cancel_form(id,form_id,Instant::now()),
+                            }.map(|submission| publish_form(submission,&game_events));
+                            let _=reply.send(result);
+                        }
+                        Some(Command::SubmitForm { id, form_id, selection, reply }) => {
+                            let result=match selection {
+                                Some(choice)=>state.submit_form(id,form_id,Some(choice),Instant::now()).map(sculith_game::UiSubmission::Simple),
+                                None=>state.cancel_form(id,form_id,Instant::now()),
+                            }.map(|submission| publish_form(submission,&game_events));
+                            let _=reply.send(result);
                         }
                         None => break Ok(()),
                     }

@@ -1,4 +1,7 @@
 //! Vanilla multi-action dialog: the simple-form fallback, not arbitrary JSON UI.
+mod custom;
+pub use custom::{response as custom_response, show as show_custom};
+
 use super::codec::{self, Fields};
 use anyhow::{Result, ensure};
 use sculith_core::SimpleForm;

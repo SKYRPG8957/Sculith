@@ -849,3 +849,76 @@ async fn committed_changes_are_shared_and_a_dropped_lease_cleans_up() {
     shutdown.send_replace(true);
     task.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn input_results_remain_private_and_preserve_legacy_form_callbacks() {
+    use sculith_core::{CustomForm, FormField, FormValue};
+    let (stop, receiver) = watch::channel(false);
+    let (world, task) = create(receiver);
+    let task = tokio::spawn(task);
+    let actor = world
+        .reserve(profile("input-owner"), Permissions::default())
+        .await
+        .unwrap();
+    let id = actor.player.id;
+    world.activate(id).await.unwrap();
+    let viewer = world
+        .reserve(profile("input-viewer"), Permissions::default())
+        .await
+        .unwrap();
+    world.activate(viewer.player.id).await.unwrap();
+    let mut normal = world.subscribe();
+    let mut hooks = world.subscribe_game();
+    let mut peers = world.observe_players(viewer.player.id).await.unwrap();
+    world
+        .show_custom_form(
+            id,
+            "owner".into(),
+            19,
+            CustomForm {
+                title: "Input".into(),
+                fields: vec![FormField::Text {
+                    label: "Name".into(),
+                    default: "".into(),
+                    max_length: 8,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    let event = normal.recv().await.unwrap();
+    let WorldEvent::CustomFormRequested { form_id, .. } = event.as_ref() else {
+        panic!("input presentation missing")
+    };
+    assert!(hooks.try_recv().is_err() && peers.updates.try_recv().is_err());
+    assert!(world.submit_form(id, *form_id, Some(0)).await.is_err());
+    assert!(
+        world
+            .submit_custom_form(id, *form_id, Some(vec![FormValue::Toggle(true)]))
+            .await
+            .is_err()
+    );
+    assert!(
+        world
+            .submit_custom_form(
+                viewer.player.id,
+                *form_id,
+                Some(vec![FormValue::Text("foreign".into())])
+            )
+            .await
+            .is_err()
+    );
+    assert!(hooks.try_recv().is_err());
+    world
+        .submit_custom_form(id, *form_id, Some(vec![FormValue::Text("이름 👋".into())]))
+        .await
+        .unwrap();
+    assert!(
+        matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::CustomFormSubmitted(result) if result.player_id==id && result.plugin=="owner" && result.request_id==19 && result.values==Some(vec![FormValue::Text("이름 👋".into())]))
+    );
+    assert!(normal.try_recv().is_err() && peers.updates.try_recv().is_err());
+    assert!(world.submit_custom_form(id, *form_id, None).await.is_err());
+    assert_eq!(world.capture().await.unwrap().revision(), 0);
+    stop.send_replace(true);
+    task.await.unwrap().unwrap();
+}

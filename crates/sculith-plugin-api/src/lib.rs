@@ -6,7 +6,7 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 10;
+pub const API_VERSION: u32 = 11;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
@@ -17,6 +17,7 @@ pub const INVENTORY_API_VERSION: u32 = 7;
 pub const CONNECTION_API_VERSION: u32 = 8;
 pub const PACKET_SENT_API_VERSION: u32 = 9;
 pub const WORLD_API_VERSION: u32 = 10;
+pub const CUSTOM_FORM_API_VERSION: u32 = 11;
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     LEGACY_API_VERSION,
     GAME_API_VERSION,
@@ -28,6 +29,7 @@ pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     CONNECTION_API_VERSION,
     PACKET_SENT_API_VERSION,
     WORLD_API_VERSION,
+    CUSTOM_FORM_API_VERSION,
 ];
 pub use sculith_core::connections::{
     ConnectionEvent, ConnectionPacket, ConnectionTransport, PacketPhase,
@@ -39,7 +41,9 @@ pub use sculith_core::world::{
     BlockChange, RegionInfo, WorldActor, WorldBlock, WorldError, WorldOperation, WorldPosition,
     WorldResult,
 };
-pub use sculith_core::{CommandSpec, Edition, PacketDispatch, PacketInfo, SimpleForm};
+pub use sculith_core::{
+    CommandSpec, CustomForm, Edition, FormField, FormValue, PacketDispatch, PacketInfo, SimpleForm,
+};
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
 pub const MAX_ACTIONS: usize = 32;
 
@@ -57,6 +61,7 @@ pub enum Hook {
     PlayerLeft,
     BlocksChanged,
     FormSubmitted,
+    CustomFormSubmitted,
     PlayerMoved,
     PlayerEquipped,
     PacketReceived,
@@ -79,6 +84,7 @@ impl Hook {
         Self::PlayerLeft,
         Self::BlocksChanged,
         Self::FormSubmitted,
+        Self::CustomFormSubmitted,
         Self::PlayerMoved,
         Self::PlayerEquipped,
         Self::PacketReceived,
@@ -94,6 +100,7 @@ impl Hook {
             Self::PacketSent => PACKET_SENT_API_VERSION,
             Self::Started | Self::Tick | Self::Stopping => LEGACY_API_VERSION,
             Self::FormSubmitted => UI_API_VERSION,
+            Self::CustomFormSubmitted => CUSTOM_FORM_API_VERSION,
             Self::InventoryResponse => INVENTORY_API_VERSION,
             Self::PlayerMoved
             | Self::PlayerEquipped
@@ -223,6 +230,12 @@ pub enum Event {
         revision: u64,
         changes: Vec<BlockChange>,
     },
+    /// Ordered validated input values. None means cancelled; private to the owner.
+    CustomFormSubmitted {
+        player_id: u64,
+        request_id: u32,
+        values: Option<Vec<FormValue>>,
+    },
     /// Delivered only to the plugin that showed this form. None means cancelled.
     FormSubmitted {
         player_id: u64,
@@ -272,6 +285,7 @@ impl Event {
             Self::PlayerLeft { .. } => Hook::PlayerLeft,
             Self::BlocksChanged { .. } => Hook::BlocksChanged,
             Self::FormSubmitted { .. } => Hook::FormSubmitted,
+            Self::CustomFormSubmitted { .. } => Hook::CustomFormSubmitted,
             Self::PlayerMoved { .. } => Hook::PlayerMoved,
             Self::PlayerEquipped { .. } => Hook::PlayerEquipped,
             Self::PacketReceived { .. } => Hook::PacketReceived,
@@ -325,6 +339,11 @@ pub enum Action {
         player_id: u64,
         message: String,
     },
+    ShowCustomForm {
+        player_id: u64,
+        request_id: u32,
+        form: CustomForm,
+    },
     ShowForm {
         player_id: u64,
         request_id: u32,
@@ -356,6 +375,7 @@ impl Action {
             Self::SetMotd { .. } | Self::Log { .. } => LEGACY_API_VERSION,
             Self::SendMessage { .. } => GAME_API_VERSION,
             Self::ShowForm { .. } => UI_API_VERSION,
+            Self::ShowCustomForm { .. } => CUSTOM_FORM_API_VERSION,
             Self::PlaySound { .. } => SOUND_API_VERSION,
             Self::ShowModel { .. } | Self::HideModel { .. } => MODEL_API_VERSION,
         }
@@ -647,6 +667,58 @@ mod tests {
         assert_eq!(event.hook(), Hook::PacketSent);
         assert_eq!(event.hook().minimum_api(), 9);
         assert_eq!(Hook::Connection.minimum_api(), 8);
+    }
+
+    #[test]
+    fn custom_input_hooks_negotiate_v11_without_changing_v3_forms() {
+        struct Inputs;
+        impl Plugin for Inputs {
+            fn metadata(&self) -> Metadata {
+                Metadata {
+                    name: "inputs".into(),
+                    version: "1".into(),
+                    hooks: vec![Hook::CustomFormSubmitted],
+                }
+            }
+            fn on_event(&mut self, _: Event) -> Vec<Action> {
+                vec![]
+            }
+        }
+        for highest in [10, 11] {
+            let mut input = serde_json::to_vec(&Request {
+                id: 1,
+                message: HostMessage::Hello {
+                    api_version: 1,
+                    supported_versions: (1..=highest).collect(),
+                    server: ServerStatus::new("test".into(), 20).unwrap(),
+                },
+            })
+            .unwrap();
+            input.push(b'\n');
+            assert_eq!(
+                serve_io(Inputs, &input[..], &mut Vec::new()).is_ok(),
+                highest == 11
+            );
+        }
+        assert_eq!(Hook::CustomFormSubmitted.minimum_api(), 11);
+        assert_eq!(Hook::FormSubmitted.minimum_api(), 3);
+        assert_eq!(
+            Action::ShowCustomForm {
+                player_id: 1,
+                request_id: 0,
+                form: CustomForm {
+                    title: "Input".into(),
+                    fields: vec![FormField::Toggle {
+                        label: "Enabled".into(),
+                        default: true
+                    }]
+                }
+            }
+            .minimum_api(),
+            11
+        );
+        let invalid = serde_json::json!({"type":"show_custom_form","player_id":1,"request_id":0,"form":{"title":"Input","fields":[{"type":"toggle","label":"Enabled","default":true,"command":"injected"}]}});
+        assert!(serde_json::from_value::<Action>(invalid).is_err());
     }
 
     #[test]

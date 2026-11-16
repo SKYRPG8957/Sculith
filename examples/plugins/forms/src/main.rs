@@ -1,14 +1,21 @@
 //! One simple menu shared between native Bedrock forms and vanilla Java dialogs.
-use sculith_plugin_api::{Action, Event, Hook, Metadata, Plugin, SimpleForm, serve};
+use sculith_plugin_api::{
+    Action, CustomForm, Event, FormField, FormValue, Hook, Metadata, Plugin, SimpleForm, serve,
+};
 
 struct Forms {
     observer: bool,
+    inputs: bool,
 }
 
 impl Plugin for Forms {
     fn metadata(&self) -> Metadata {
         Metadata {
-            name: if self.observer {
+            name: if self.inputs && self.observer {
+                "forms-input-observer"
+            } else if self.inputs {
+                "forms-input-demo"
+            } else if self.observer {
                 "forms-observer"
             } else {
                 "forms-demo"
@@ -16,12 +23,20 @@ impl Plugin for Forms {
             .into(),
             version: env!("CARGO_PKG_VERSION").into(),
             hooks: if self.observer {
-                vec![Hook::FormSubmitted]
+                vec![if self.inputs {
+                    Hook::CustomFormSubmitted
+                } else {
+                    Hook::FormSubmitted
+                }]
             } else {
                 vec![
                     Hook::Started,
                     Hook::PlayerJoined,
-                    Hook::FormSubmitted,
+                    if self.inputs {
+                        Hook::CustomFormSubmitted
+                    } else {
+                        Hook::FormSubmitted
+                    },
                     Hook::Stopping,
                 ]
             },
@@ -33,6 +48,68 @@ impl Plugin for Forms {
             Event::Started { .. } => vec![Action::Log {
                 message: "forms plugin started".into(),
             }],
+            Event::PlayerJoined { player } if self.inputs => vec![Action::ShowCustomForm {
+                player_id: player.id,
+                request_id: 19,
+                form: CustomForm {
+                    title: "공통 입력 폼 👋".into(),
+                    fields: vec![
+                        FormField::Text {
+                            label: "이름".into(),
+                            default: "테스트 👋".into(),
+                            max_length: 16,
+                        },
+                        FormField::Toggle {
+                            label: "알림 받기".into(),
+                            default: true,
+                        },
+                        FormField::Dropdown {
+                            label: "표시 방식".into(),
+                            options: vec!["기본".into(), "확장".into()],
+                            default: 0,
+                        },
+                        FormField::Slider {
+                            label: "크기".into(),
+                            min: -10,
+                            max: 10,
+                            step: 5,
+                            default: 0,
+                        },
+                    ],
+                },
+            }],
+            Event::CustomFormSubmitted {
+                player_id,
+                request_id,
+                values,
+            } => {
+                if self.observer {
+                    return vec![Action::Log {
+                        message: "unexpected foreign input reply".into(),
+                    }];
+                }
+                let message = match values.as_deref() {
+                    None => "입력을 취소했습니다.".into(),
+                    Some(
+                        [
+                            FormValue::Text(name),
+                            FormValue::Toggle(enabled),
+                            FormValue::Number(option),
+                            FormValue::Number(value),
+                        ],
+                    ) => format!("입력: {name} | 알림: {enabled} | 선택: {option} | 값: {value}"),
+                    _ => "입력 항목이 일치하지 않습니다.".into(),
+                };
+                vec![
+                    Action::Log {
+                        message: format!(
+                            "input reply request={request_id} player={player_id} cancelled={}",
+                            values.is_none()
+                        ),
+                    },
+                    Action::SendMessage { player_id, message },
+                ]
+            }
             Event::PlayerJoined { player } => vec![Action::ShowForm {
                 player_id: player.id,
                 request_id: 7,
@@ -83,5 +160,6 @@ impl Plugin for Forms {
 fn main() -> std::io::Result<()> {
     serve(Forms {
         observer: std::env::args().any(|arg| arg == "--observe"),
+        inputs: std::env::args().any(|arg| arg == "--inputs"),
     })
 }

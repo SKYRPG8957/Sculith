@@ -5,7 +5,10 @@
 
 pub mod commands;
 pub mod inventory;
+mod ui;
 pub mod world_api;
+use ui::PendingForm;
+pub use ui::{CustomFormSubmission, FormSubmission, UiSubmission};
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -278,23 +281,6 @@ impl Player {
         };
         true
     }
-}
-
-#[derive(Debug)]
-struct PendingForm {
-    id: u32,
-    plugin: String,
-    request_id: u32,
-    buttons: u32,
-    shown: Instant,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FormSubmission {
-    pub player_id: u64,
-    pub plugin: String,
-    pub request_id: u32,
-    pub selection: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -797,94 +783,6 @@ impl GameState {
         })
     }
 
-    pub fn show_form(
-        &mut self,
-        id: u64,
-        plugin: String,
-        request_id: u32,
-        form: &sculith_core::SimpleForm,
-        now: Instant,
-    ) -> Result<u32> {
-        form.validate().map_err(anyhow::Error::msg)?;
-        ensure!(
-            !plugin.is_empty()
-                && plugin.len() <= 64
-                && plugin
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b)),
-            "invalid form owner"
-        );
-        let player = self
-            .players
-            .get_mut(&id)
-            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
-        ensure!(player.snapshot.initialized, "player is not initialized");
-        ensure!(
-            player.pending_form.is_none(),
-            "player already has a pending form"
-        );
-        let remaining = player
-            .forms
-            .available(now, 1.0, 1.0)
-            .ok_or_else(|| anyhow::anyhow!("form clock regression"))?;
-        ensure!(remaining >= 1.0, "player form rate exceeded");
-        let form_id = self.next_form_id;
-        self.next_form_id = form_id
-            .checked_add(1)
-            .ok_or_else(|| anyhow::anyhow!("form identifiers exhausted"))?;
-        player.forms = Budget {
-            remaining: remaining - 1.0,
-            updated: now,
-        };
-        player.pending_form = Some(PendingForm {
-            id: form_id,
-            plugin,
-            request_id,
-            buttons: form.buttons.len() as u32,
-            shown: now,
-        });
-        Ok(form_id)
-    }
-
-    pub fn submit_form(
-        &mut self,
-        id: u64,
-        form_id: u32,
-        selection: Option<u32>,
-        now: Instant,
-    ) -> Result<FormSubmission> {
-        let player = self
-            .players
-            .get_mut(&id)
-            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
-        ensure!(player.snapshot.initialized, "player is not initialized");
-        let pending = player
-            .pending_form
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("no pending form"))?;
-        ensure!(
-            pending.id == form_id,
-            "form identifier does not belong to this session"
-        );
-        let elapsed = now
-            .checked_duration_since(pending.shown)
-            .ok_or_else(|| anyhow::anyhow!("form clock regression"))?;
-        if elapsed > Duration::from_secs(60) {
-            player.pending_form.take();
-            anyhow::bail!("form reply expired");
-        }
-        ensure!(
-            selection.is_none_or(|choice| choice < pending.buttons),
-            "form choice out of range"
-        );
-        let pending = player.pending_form.take().expect("validated above");
-        Ok(FormSubmission {
-            player_id: id,
-            plugin: pending.plugin,
-            request_id: pending.request_id,
-            selection,
-        })
-    }
     pub fn snapshot(&mut self, pos: ChunkPos) -> sculith_world::Result<ChunkSnapshot> {
         self.region.snapshot(pos)
     }
