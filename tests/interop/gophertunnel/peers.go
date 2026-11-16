@@ -79,7 +79,7 @@ func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise bool) error {
 					return fmt.Errorf("unexpected initial peer %s", p.Username)
 				}
 				ready = true
-				if err := conn.WritePacket(&packet.PlayerAuthInput{Position: mgl32.Vec3{.5, 5.62, 2}, Yaw: 180, HeadYaw: 180, InputMode: packet.InputModeMouse, InteractionModel: packet.InteractionModelCrosshair, Tick: 1, Delta: mgl32.Vec3{0, 0, 1.5}, CameraOrientation: mgl32.Vec3{0, 0, 1}}); err != nil {
+				if err := conn.WritePacket(&packet.PlayerAuthInput{Position: mgl32.Vec3{.5, 5.62, 2}, Yaw: 180, HeadYaw: 180, InputMode: packet.InputModeMouse, PlayMode: packet.PlayModeScreen, InteractionModel: packet.InteractionModelCrosshair, Tick: 1, Delta: mgl32.Vec3{0, 0, 1.5}, CameraOrientation: mgl32.Vec3{0, 0, 1}}); err != nil {
 					return err
 				}
 				if err := conn.Flush(); err != nil {

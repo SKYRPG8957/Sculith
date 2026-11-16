@@ -187,9 +187,13 @@ fn auth_input(input: &PlayerAuthInputPacket<V2225>) -> Result<Vec<Intent>> {
         !matches!(input.input_mode, InputMode::Undefined | InputMode::Count),
         "unsupported input mode"
     );
+    // ClientPlayMode describes the client's presentation (for example Screen),
+    // not the authoritative creative/survival game mode. Real Windows GDK
+    // clients can send non-Normal values immediately after the spawn ack.
+    // All concrete protocol modes still pass the same owner validation below.
     ensure!(
-        matches!(input.play_mode, ClientPlayMode::Normal),
-        "unsupported client play mode"
+        !matches!(input.play_mode, ClientPlayMode::NumModes),
+        "invalid client play mode sentinel"
     );
     ensure!(
         !matches!(input.new_interaction_model, NewInteractionModel::Count),
@@ -528,6 +532,36 @@ pub(in crate::protocol::bedrock) mod tests {
                 head_yaw: -90.0
             }]
         );
+    }
+
+    #[test]
+    fn client_presentation_modes_do_not_change_authoritative_movement_intents() {
+        let expected = decode(&V2225::PlayerAuthInputPacket(Box::new(movement())), 1).unwrap();
+        for mode in [
+            ClientPlayMode::Normal,
+            ClientPlayMode::Teaser,
+            ClientPlayMode::Screen,
+            ClientPlayMode::Viewer,
+            ClientPlayMode::Reality,
+            ClientPlayMode::Placement,
+            ClientPlayMode::LivingRoom,
+            ClientPlayMode::ExitLevel,
+            ClientPlayMode::ExitLevelLivingRoom,
+        ] {
+            let mut input = movement();
+            input.play_mode = mode;
+            assert_eq!(
+                decode(
+                    &roundtrip(&V2225::PlayerAuthInputPacket(Box::new(input))),
+                    1
+                )
+                .unwrap(),
+                expected
+            );
+        }
+        let mut input = movement();
+        input.play_mode = ClientPlayMode::NumModes;
+        assert!(decode(&V2225::PlayerAuthInputPacket(Box::new(input)), 1).is_err());
     }
 
     #[test]
