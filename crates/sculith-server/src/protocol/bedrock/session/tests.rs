@@ -1200,7 +1200,7 @@ async fn required_pack_rejects_unknown_ids_early_finish_invalid_chunks_and_exces
     let bundle =
         sculith_packs::bundle::Bundle::prepare(&root.join("bedrock"), &root.join("textures.json"))
             .unwrap();
-    let delivery = crate::content::Delivery::prepare("127.0.0.1:0".parse().unwrap(), bundle)
+    let delivery = crate::content::Delivery::prepare("127.0.0.1:0".parse().unwrap(), None, bundle)
         .await
         .unwrap();
     for case in 0..4 {

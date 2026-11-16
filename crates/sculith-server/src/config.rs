@@ -27,6 +27,9 @@ pub struct Content {
     pub mapping: PathBuf,
     #[serde(default = "content_bind")]
     pub bind: SocketAddr,
+    /// Optional HTTP(S) base URL advertised to Java clients, including a proxy prefix.
+    #[serde(default)]
+    pub public_url: Option<String>,
 }
 
 fn content_bind() -> SocketAddr {
@@ -204,9 +207,20 @@ impl Config {
     fn validate(&self) -> Result<()> {
         self.status()?;
         if let Some(content) = &self.content {
+            let public_url = content
+                .public_url
+                .as_deref()
+                .map(crate::content::PackBaseUrl::parse)
+                .transpose()?;
             ensure!(
-                content.bind.ip().is_loopback(),
-                "content.bind must be loopback"
+                content.bind.ip().is_loopback() || public_url.is_some(),
+                "non-loopback content.bind requires content.public_url"
+            );
+            ensure!(
+                !self.java.sessions
+                    || self.network.java.bind.ip().is_loopback()
+                    || public_url.as_ref().is_some_and(|url| !url.is_loopback()),
+                "public Java sessions with content require a non-loopback content.public_url"
             );
             ensure!(
                 content.source.is_dir() && content.mapping.is_file(),
@@ -314,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn content_paths_resolve_against_config_and_delivery_requires_local_sessions() {
+    fn content_paths_resolve_against_config_and_public_delivery_requires_an_advertised_url() {
         let directory = tempfile::tempdir().unwrap();
         std::fs::create_dir(directory.path().join("pack")).unwrap();
         std::fs::write(directory.path().join("map.json"), "{}").unwrap();
@@ -325,6 +339,21 @@ mod tests {
         assert!(config.content.as_ref().unwrap().mapping.is_absolute());
         config.content.as_mut().unwrap().bind = "0.0.0.0:0".parse().unwrap();
         assert!(config.validate().is_err());
+        config.content.as_mut().unwrap().public_url = Some("https://packs.example.com".into());
+        config.validate().unwrap();
+        config.java.require_authentication = true;
+        config.network.java.bind = "0.0.0.0:25565".parse().unwrap();
+        config.validate().unwrap();
+        for url in [
+            None,
+            Some("http://127.1"),
+            Some("http://[::ffff:127.0.0.1]"),
+            Some("http://localhost."),
+        ] {
+            config.content.as_mut().unwrap().public_url = url.map(str::to_owned);
+            assert!(config.validate().is_err(), "{url:?}");
+        }
+        config.content.as_mut().unwrap().public_url = Some("https://packs.example.com".into());
         config.content.as_mut().unwrap().bind = content_bind();
         config.java.sessions = false;
         assert!(config.validate().is_err());

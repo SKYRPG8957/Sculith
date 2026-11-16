@@ -161,7 +161,10 @@ async fn run(config: Config) -> Result<()> {
         })
         .await
         .context("pack preparation worker failed")??;
-        Some(content::Delivery::prepare(settings.bind, bundle).await?)
+        Some(
+            content::Delivery::prepare(settings.bind, settings.public_url.as_deref(), bundle)
+                .await?,
+        )
     } else {
         None
     };
@@ -284,7 +287,7 @@ async fn run(config: Config) -> Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut services = JoinSet::new();
     if let Some(delivery) = delivery {
-        info!(url = %delivery.content.java_url, "Resource packs available");
+        info!(address = %delivery.local_addr()?, url = %delivery.content.java_url, "Resource packs available");
         services.spawn(delivery.serve(shutdown_rx.clone()));
     }
     if let Some(listener) = java {

@@ -98,3 +98,5 @@ jobs:
         run: python tests/interop/peer_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify shared packs, native cache and consent keepalive
         run: python tests/interop/pack_delivery_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --wait-for-keepalive
+      - name: Verify advertised pack URL through an independent HTTP proxy
+        run: python tests/interop/pack_delivery_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --public-http

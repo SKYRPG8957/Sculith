@@ -74,3 +74,5 @@ jobs:
         run: python tests/interop/peer_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared packs, native cache and consent keepalive
         run: python tests/interop/pack_delivery_smoke.py --client target/gophertunnel-probe --wait-for-keepalive
+      - name: Exercise advertised pack URL through an independent HTTP proxy
+        run: python tests/interop/pack_delivery_smoke.py --client target/gophertunnel-probe --public-http

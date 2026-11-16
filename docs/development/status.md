@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Java pack delivery accepts an explicit `content.public_url`, including an HTTPS proxy/path prefix, and an independently configured HTTP bind. The server still serves only its immutable hash route with bounded HTTP workers; it neither fetches remote content nor trusts request/forwarding headers to construct the offer. Public Java sessions with content reject missing or loopback advertised URLs. Defaults remain local; public NetherNet trust and real-account positive login are separate unfinished work.
+
 - The target is stable Bedrock 1.26.63/protocol 2225. Official BDS 1.26.63.1 was acquired by the official download link and run separately on loopback. A completed REA process capture and independent native packets show empty 36/5/57/1 inventory windows and Stone 5→8 with fresh positive stack IDs. Sculith now initializes the auxiliary 5/57/1 windows before chunk loading, projecting owned cursor/output into UI slots 0/50. This adds no armour/offhand/crafting rules or commands. [Reference and analysis limits](verification/bedrock-1.26.63.1-reference.md).
 
 - Java online mode now exchanges an ephemeral RSA-2048 key/fresh challenge, encrypts subsequent frames with continuous AES-128/CFB8, and requires the official HTTPS `hasJoined` name/UUID before reserving a player. Private decryption uses AWS-LC rather than the existing Rust RSA crate's documented vulnerable PKCS#1-v1.5 path. Sixteen permits bound crypto/HTTPS jobs even after socket cancellation; profiles and replies are bounded, and errors do not downgrade authentication. Public Java binds require online mode; offline binds/peers remain local. This adds no game commands or default plugins.
@@ -61,6 +63,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- Public pack delivery passes 204 project tests, Clippy, the ownership doctest and the architecture check. The independent Java offer/download test passes through a prefix-stripping proxy whose backend uses this host's non-loopback interface; exact ZIP bytes/hash, method/body/path rejection, native transfer/cache and delayed-consent keepalive pass. Existing Java, WebRTC, form, sound, model and connection probes also pass. This does not establish a live Internet/TLS deployment or positive real-account login.
 
 - Native auxiliary inventory initialization passes 201 project tests, Clippy, the ownership doctest and independent Java/native/WebRTC probes. Build and interoperability checks for `a69a64e` pass on [Linux](https://github.com/SKYRPG8957/Sculith/actions/runs/43899920944) and [Windows](https://github.com/SKYRPG8957/Sculith/actions/runs/43899920837), including the Windows static-CRT release executable. The official BDS REA process capture is separate from these Sculith probes; full static analysis timed out. [Reference record](verification/bedrock-1.26.63.1-reference.md).
 
@@ -199,6 +203,6 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 Remove the prototype starter loadout with explicit protocol/test fixture seeding; do not replace it with game-specific engine commands. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work rather than claiming the timed-out full static analysis succeeded.
 
-Continue public pack delivery and NetherNet trust, owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java sign-in, official GDK gameplay, general entities, broader inventory/content support and server-packet observations remain separate required work; the engineering directive is not complete.
+Continue public NetherNet trust, owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java sign-in, official GDK gameplay, general entities, broader inventory/content support and server-packet observations remain separate required work; the engineering directive is not complete.
 
 Use the available Linux stock Java game and independent native clients without asking the away user for repeated manual testing. Official GDK gameplay still needs an available Windows client environment. Accumulate source toward 0.1.0; keep withdrawn releases/tags/artifacts withdrawn.

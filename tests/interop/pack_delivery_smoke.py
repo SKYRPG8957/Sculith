@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Independent archive/hash/HTTP and two-edition transfer checks, without game rendering."""
 import argparse
+from contextlib import ExitStack
 import hashlib
+from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import os
@@ -9,10 +12,13 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import tempfile
+import threading
 import time
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 import uuid
 import zipfile
@@ -22,8 +28,56 @@ from java_smoke import Client, receive, send, vi
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def smoke(server, client, wait_for_keepalive=False):
-    with tempfile.TemporaryDirectory(prefix="sculith-pack-transfer-") as temporary:
+class PackProxy:
+    """Independent HTTP proxy that removes an advertised deployment prefix."""
+    def __enter__(self):
+        self.upstream = None
+        self.forwarded = []
+        proxy = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if not self.path.startswith("/shared/") or proxy.upstream is None:
+                    self.send_error(404)
+                    return
+                connection = HTTPConnection(*proxy.upstream, timeout=3)
+                try:
+                    path = self.path.removeprefix("/shared")
+                    connection.request(self.command, path)
+                    response = connection.getresponse()
+                    data = response.read()
+                    self.send_response(response.status)
+                    for name in ("Content-Length", "Content-Type", "ETag", "Cache-Control"):
+                        if response.getheader(name) is not None:
+                            self.send_header(name, response.getheader(name))
+                    self.end_headers()
+                    if self.command != "HEAD":
+                        self.wfile.write(data)
+                    proxy.forwarded.append((self.command, path, response.status))
+                finally:
+                    connection.close()
+
+            do_HEAD = do_GET
+
+            def log_message(self, *_):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.server.server_port}/shared"
+        return self
+
+    def __exit__(self, *_):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=3)
+        assert not self.thread.is_alive()
+
+
+def smoke(server, client, wait_for_keepalive=False, public_http=False):
+    with tempfile.TemporaryDirectory(prefix="sculith-pack-transfer-") as temporary, ExitStack() as resources:
         root = Path(temporary)
         source = root / "original source"
         shutil.copytree(ROOT / "examples/pack/bedrock", source)
@@ -52,11 +106,13 @@ def smoke(server, client, wait_for_keepalive=False):
             assert z.read("assets/minecraft/textures/block/stone.png") == original["textures/blocks/sculith_demo.png"]
             assert json.loads(z.read("pack.mcmeta"))["pack"]["min_format"] == [97, 1]
         assert hashlib.sha1(java_bytes).hexdigest() == metadata["java_sha1"]
+        proxy = resources.enter_context(PackProxy()) if public_http else None
+        http_settings = ('bind = "0.0.0.0:0"\npublic_url = ' + json.dumps(proxy.base) + '\n') if proxy else ''
         settings = root / "server.toml"
         settings.write_text('[java]\nsessions = true\nrequire_authentication = false\nlogin_timeout_secs = 60\n'
                             '[bedrock]\nsessions = true\nrequire_authentication = false\nlogin_timeout_secs = 30\n'
                             '[network.java]\nbind = "127.0.0.1:0"\n[network.bedrock]\nbind = "127.0.0.1:0"\n'
-                            '[content]\nsource = ' + json.dumps(str(source)) + '\nmapping = ' + json.dumps(str(mapping)) + '\n', encoding="utf-8")
+                            '[content]\nsource = ' + json.dumps(str(source)) + '\nmapping = ' + json.dumps(str(mapping)) + '\n' + http_settings, encoding="utf-8")
         log = root / "server.log"
         with log.open("w", encoding="utf-8") as out:
             process = subprocess.Popen([str(server), "run", "--config", str(settings)], cwd=root,
@@ -66,7 +122,7 @@ def smoke(server, client, wait_for_keepalive=False):
                 deadline = time.monotonic() + 8
                 while time.monotonic() < deadline:
                     text = log.read_text(encoding="utf-8")
-                    http = re.search(r'url=(http://127\.0\.0\.1:\d+/packs/[0-9a-f]+\.zip)', text)
+                    http = re.search(r'url=(http://127\.0\.0\.1:\d+/(?:shared/)?packs/[0-9a-f]+\.zip)', text)
                     java = re.search(r'Java listening.*?127\.0\.0\.1:(\d+)', text)
                     native = re.search(r'NetherNet listening.*?127\.0\.0\.1:(\d+)', text)
                     if http and java and native: break
@@ -74,6 +130,35 @@ def smoke(server, client, wait_for_keepalive=False):
                     time.sleep(.05)
                 else: raise TimeoutError(text)
                 url = http[1]
+                if proxy:
+                    assert url == proxy.base + '/packs/' + metadata['java_sha1'] + '.zip'
+                    backend = re.search(r'Resource packs available.*?address=0\.0\.0\.0:(\d+)', text)
+                    assert backend, text
+                    # Prefer the machine's LAN interface to exercise a non-loopback
+                    # peer; a host without one still exercises the public bind/proxy.
+                    try:
+                        hosts = [a[4][0] for a in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+                                 if not a[4][0].startswith('127.')]
+                    except socket.gaierror:
+                        hosts = []
+                    proxy.upstream = (hosts[0] if hosts else '127.0.0.1', int(backend[1]))
+                    print('PACK_HTTP_UPSTREAM', proxy.upstream[0])
+                parsed = urlsplit(url)
+                endpoint = proxy.upstream if proxy else (parsed.hostname, parsed.port)
+                pack_path = '/packs/' + metadata['java_sha1'] + '.zip'
+                for method, body, headers, expected_status in [
+                    ('POST', None, {}, 405),
+                    ('GET', b'x', {}, 400),
+                    ('GET', b'0\r\n\r\n', {'Transfer-Encoding': 'chunked'}, 400),
+                ]:
+                    connection = HTTPConnection(*endpoint, timeout=3)
+                    try:
+                        connection.request(method, pack_path, body, headers)
+                        response = connection.getresponse()
+                        assert response.status == expected_status, (method, headers, response.status)
+                        assert response.read() == b''
+                    finally:
+                        connection.close()
                 with urlopen(Request(url, method="HEAD"), timeout=3) as response:
                     assert response.status == 200 and int(response.headers["Content-Length"]) == len(java_bytes)
                     assert response.read() == b""
@@ -114,6 +199,9 @@ def smoke(server, client, wait_for_keepalive=False):
                 java_client = Client(("127.0.0.1", int(java[1])), pack_handler=accept)
                 java_client.socket.close()
                 assert len(received) == 1
+                if proxy:
+                    assert any(method == 'GET' and status == 200 for method, _, status in proxy.forwarded)
+                    assert any(method == 'HEAD' and status == 200 for method, _, status in proxy.forwarded)
                 class ExpectedRejection(Exception):
                     pass
                 for invalid_case in ("decline", "wrong_id", "load_before_accept", "reload_failure"):
@@ -157,7 +245,7 @@ def smoke(server, client, wait_for_keepalive=False):
                 if process.poll() is None:
                     process.kill()
                     process.wait(timeout=5)
-    print("PASS: immutable native/Java archives, independent ZIP/CRC/hash checks, bounded HTTP routes, Java required-pack acknowledgement, Bedrock multi-chunk transfer and cached reconnect")
+    print("PASS: immutable native/Java archives, independent ZIP/CRC/hash checks, bounded HTTP routes, Java required-pack acknowledgement, Bedrock multi-chunk transfer and cached reconnect" + (", public HTTP bind and advertised proxy prefix" if public_http else ""))
 
 
 if __name__ == "__main__":
@@ -166,5 +254,6 @@ if __name__ == "__main__":
     parser.add_argument("--server", type=Path, default=ROOT / ("target/debug/sculith" + suffix))
     parser.add_argument("--client", type=Path, required=True)
     parser.add_argument("--wait-for-keepalive", action="store_true")
+    parser.add_argument("--public-http", action="store_true")
     args = parser.parse_args()
-    smoke(args.server.resolve(strict=True), args.client.resolve(strict=True), args.wait_for_keepalive)
+    smoke(args.server.resolve(strict=True), args.client.resolve(strict=True), args.wait_for_keepalive, args.public_http)

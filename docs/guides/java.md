@@ -59,8 +59,8 @@ invalid challenges/profiles and cancellation. An independent OpenSSL-backed clie
 also reaches the actual official session endpoint and receives an encrypted
 rejection for an account that did not join. This does not establish successful
 sign-in with a real Microsoft account. The earlier actual-game evidence remains
-offline evidence. Public pack hosting and public NetherNet trust are separate
-pending work; the current pack delivery URL is local.
+offline evidence. [Public pack delivery](packs.md) accepts an explicit HTTP(S)
+advertised URL; public NetherNet trust remains separate pending work.
 
 ## Implemented and tested
 
@@ -114,7 +114,7 @@ is pending. General entity simulation is not implemented.
 General containers, drag/shift-click, drops, survival, gravity and crafting remain
 unfinished. Current source supports selected [static models](models.md),
 [sounds](sounds.md), [simple forms](forms.md) and
-[automatic local pack delivery](packs.md). Arbitrary Bedrock content
+[automatic pack delivery](packs.md). Arbitrary Bedrock content
 conversion is not implemented.
 The known vanilla core supplies registry definitions, not Bedrock pack conversion.
 Both editions use the same orderly-shutdown region persistence; periodic saves
