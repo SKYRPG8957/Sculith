@@ -76,7 +76,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Verified — current local source
 
-- Periodic checkpoint validation passes 235 project tests, Clippy, ownership doctests and architecture checks. A real Rust plugin edits two chunks; forced server termination and restart restore both blocks, revision, heightmaps and skylight through an independent Java decoder. Disabled periodic saves still retain final saving; unchanged revisions skip disk work. A changed checkpoint against a foreign destination exits nonzero and preserves it, reporting both failure causes. Existing Java/native world API and listener probes pass. [Scope and reproduction](verification/autosave.md).
+- Periodic checkpoint validation passes 235 project tests, Clippy, ownership doctests and architecture checks. A real Rust plugin edits two chunks; forced server termination and restart restore both blocks, revision, heightmaps and skylight through an independent Java decoder. Disabled periodic saves still retain final saving; unchanged revisions skip disk work. A changed checkpoint against a foreign destination exits nonzero and preserves it, reporting both failure causes. Existing Java/native world API and listener probes pass. Source `5a24c89` completes Linux CI and every configured native Windows build/runtime/interoperability step, including forced termination/recovery against the static-CRT release. Only Windows cache/checkout cleanup remains at this observation. [Scope and reproduction](verification/autosave.md).
 
 - World API validation passes 231 project tests, Clippy, ownership doctests and architecture checks. A real Rust controller edits two chunks; independent Java/native peers observe the same five plugin/player block changes over revisions 1–3. Rejected bounds/types/duplicates/stale revisions and no-op edits cause no public deltas. Separate workers verify private responses and legacy callbacks; a flooding worker is disabled while discovery keeps working. Orderly restart restores plugin edits and the shared CAS revision, including cross-chunk heightmap/skylight verification. Existing inventory, packet hooks, forms, sounds, static models, Java gameplay, native transports and public pack-proxy checks pass.
   Source `0f20d6f` completes both Linux and native Windows CI. A separate local release build and world probe pass. These workflows upload no artifacts.
@@ -169,6 +169,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Latest-release reference check still reports Java `26.3 / 777` and Bedrock `1.26.60 / 2225`. These are references, not full gameplay support declarations.
 
 ## Failed / externally constrained
+
+- The initial autosave failure probe found that a failed final save hid the periodic-save cause. Shutdown now preserves both errors; the corrected real-process failure probe passes.
 
 - The first API-v10 Windows workflow passed native build/runtime checks but its new world probe referenced a debug fixture path after building release executables. The probe had not started; source `0f20d6f` corrects the path to the release executable. This was a workflow configuration failure rather than a runtime compatibility result.
 

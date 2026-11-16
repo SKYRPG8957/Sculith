@@ -21,6 +21,15 @@ or overwritten automatically.
 
 ## Verification
 
+Runtime source `5a24c89410ad2ca0dfdd8e3221f905f5d37e6723` completes
+[Linux run 43949705160](https://github.com/SKYRPG8957/Sculith/actions/runs/43949705160).
+The native [Windows run 43949705866](https://github.com/SKYRPG8957/Sculith/actions/runs/43949705866)
+passes every configured build, runtime and interoperability step, including the
+forced-termination/recovery probe against its static-CRT release executable.
+Only cache/checkout cleanup remains at this observation. This is actual Windows
+process/filesystem evidence with independent protocol clients, not official
+Windows GDK rendering or power-loss testing.
+
 Local checks pass **235 project tests**, with two release benchmarks ignored,
 Clippy, ownership doctests and the eight-crate architecture check. Unit checks
 exercise live checkpoints, skip unchanged revisions, preserve a foreign file on
@@ -41,8 +50,17 @@ failure and retain final saving when periodic writes are disabled.
    changed checkpoint exits nonzero, preserves that file and reports both the
    autosave and final-save failures.
 
+A separate local release build passes the same forced-termination probe using
+the release server and Rust fixture. A Linux OS-lock experiment holds the storage
+sidecar while the owner still accepts a world read and a newer edit. Shutdown
+waits until that lock is released: checkpoint revision 1 completes before the
+final revision 2, and another process restores revision 2. This lock experiment
+is separate from the portable CI fixture and is not Windows evidence.
+
 Existing world-API cross-edition checks, listener/plugin/persistence checks in
 both transport modes and independent Java gameplay/reconnect checks also pass.
+Independent Go/Pion and aiortc/OpenSSL probes retain initialized native entry,
+transport-bound login and startup/chunk decoding.
 All worlds are temporary; no gameplay command or test plugin enters production
 defaults. Linux and Windows CI run the new forced-termination check; neither
 workflow publishes packages or artifacts.
