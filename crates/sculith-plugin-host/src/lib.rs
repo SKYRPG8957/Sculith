@@ -255,24 +255,34 @@ impl Plugins {
         let prepared = body
             .as_ref()
             .map(|result| result.as_ref().map(|()| self.event_buffer.bytes()));
-        let replies = futures_util::future::join_all(
-            self.processes
-                .iter_mut()
-                .enumerate()
-                .filter(|(index, _)| selected[*index])
-                .map(|(index, process)| {
-                    let event = &event;
-                    async move {
-                        let reply = if let Some(body) = prepared {
-                            process.request_shared_event(event.hook(), body).await
-                        } else {
-                            process.request_event(event).await
-                        };
-                        (index, reply)
-                    }
-                }),
-        )
-        .await;
+        let replies = if selected_count == 0 {
+            Vec::new()
+        } else if selected_count == 1 {
+            let index = selected
+                .iter()
+                .position(|selected| *selected)
+                .expect("selected worker");
+            let reply = self.processes[index].request_event(&event).await;
+            vec![(index, reply)]
+        } else {
+            futures_util::future::join_all(
+                self.processes
+                    .iter_mut()
+                    .enumerate()
+                    .filter(|(index, _)| selected[*index])
+                    .map(|(index, process)| {
+                        let body = prepared.expect("shared event");
+                        let event = &event;
+                        async move {
+                            (
+                                index,
+                                process.request_shared_event(event.hook(), body).await,
+                            )
+                        }
+                    }),
+            )
+            .await
+        };
         self.event_buffer.clear();
         for (index, reply) in replies {
             let process = &mut self.processes[index];
