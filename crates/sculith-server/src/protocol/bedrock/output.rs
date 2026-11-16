@@ -123,6 +123,33 @@ pub fn held(player: &PlayerSnapshot) -> Result<NetworkItemStackDescriptorV2> {
     anyhow::ensure!(player.selected_slot <= 8, "invalid owner hotbar slot");
     stack(player.held())
 }
+
+/// BDS 1.26.63.1 initializes these static windows before chunk loading.
+/// Gameplay in armour/offhand/other crafting cells remains unsupported; their
+/// canonical initial state is empty. Cursor/output always come from the owner.
+pub fn inventory_baseline(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
+    let empty = |count| (0..count).map(|_| stack(None)).collect::<Result<Vec<_>>>();
+    let mut ui = empty(57)?;
+    ui[0] = stack(player.cursor)?;
+    ui[50] = stack(player.created_output)?;
+    [(120, empty(5)?), (124, ui), (119, empty(1)?)]
+        .into_iter()
+        .map(|(inventory_id, slots)| {
+            Ok(V2225::InventoryContentPacket(Box::new(
+                InventoryContentPacket {
+                    inventory_id,
+                    slots,
+                    // Reference BDS uses zero-valued metadata for these static windows.
+                    container_name_data: FullContainerName {
+                        container: ContainerEnumName::AnvilInputContainer,
+                        dynamic_id: None,
+                    },
+                    storage_item: stack(None)?,
+                },
+            )))
+        })
+        .collect()
+}
 pub fn inventory_ui(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
     use bedrock::protocol::v975::packets::InventorySlotPacket;
     [
@@ -296,4 +323,62 @@ pub fn show_model(view: &crate::game::ModelView, native: &str) -> Vec<V2225> {
             },
         )),
     ]
+}
+
+#[cfg(test)]
+mod inventory_baseline_tests {
+    use super::*;
+    #[test]
+    fn reference_windows_keep_unsupported_cells_empty_and_project_owned_ui_stacks() {
+        use crate::game::inventory::ItemStack;
+        use crate::game::{Edition, GameState, Permissions, Profile};
+        let mut game = GameState::new(sculith_world::Region::flat_origin(), 20).unwrap();
+        let mut player = game
+            .reserve(
+                Profile {
+                    subject: "baseline".into(),
+                    name: "Baseline".into(),
+                    uuid: uuid::Uuid::new_v4(),
+                    edition: Edition::Bedrock,
+                },
+                Permissions { can_build: true },
+                std::time::Instant::now(),
+            )
+            .unwrap();
+        player.cursor = Some(ItemStack {
+            kind: BlockKind::Dirt,
+            count: 7,
+            net_id: 501,
+        });
+        player.created_output = Some(ItemStack {
+            kind: BlockKind::Stone,
+            count: 64,
+            net_id: 502,
+        });
+        let windows = inventory_baseline(&player).unwrap();
+        assert_eq!(windows.len(), 3);
+        for (packet, (id, size)) in windows.iter().zip([(120, 5), (124, 57), (119, 1)]) {
+            let V2225::InventoryContentPacket(window) = packet else {
+                panic!("expected content packet");
+            };
+            assert_eq!((window.inventory_id, window.slots.len()), (id, size));
+            assert!(matches!(
+                window.container_name_data.container,
+                ContainerEnumName::AnvilInputContainer
+            ));
+            assert!(window.container_name_data.dynamic_id.is_none());
+            assert_eq!(window.storage_item.id, 0);
+            for (slot, item) in window.slots.iter().enumerate() {
+                match (id, slot) {
+                    (124, 0) => {
+                        assert_eq!((item.id, item.stack_size, item.net_id), (3, 7, Some(501)))
+                    }
+                    (124, 50) => {
+                        assert_eq!((item.id, item.stack_size, item.net_id), (1, 64, Some(502)))
+                    }
+                    _ => assert_eq!((item.id, item.stack_size, item.net_id), (0, 0, None)),
+                }
+            }
+        }
+    }
 }

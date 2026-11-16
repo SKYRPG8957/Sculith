@@ -210,7 +210,8 @@ fn server_data(status: &ServerStatus) -> ServerData {
     data.player_count = status.online_players as i32;
     data.max_player_count = status.max_players as i32;
     data.protocol_version = V2225::PROTOCOL_VERSION;
-    data.game_version = V2225::GAME_VERSION.into();
+    // Patch releases may retain the codec's protocol version.
+    data.game_version = crate::protocol::references().bedrock.version;
     data
 }
 

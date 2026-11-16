@@ -339,6 +339,18 @@ impl<T: Transport> TestClient<T> {
             inventory.slots.len() == 36 && inventory.slots[0].id == 1 && inventory.slots[1].id == 3
         );
         ensure!(matches!(self.next().await?, V2225::MobEquipmentPacket(_)));
+        for (id, size) in [(120, 5), (124, 57), (119, 1)] {
+            let V2225::InventoryContentPacket(window) = self.next().await? else {
+                anyhow::bail!("expected auxiliary inventory baseline");
+            };
+            ensure!(window.inventory_id == id && window.slots.len() == size);
+            ensure!(
+                window
+                    .slots
+                    .iter()
+                    .all(|slot| slot.id == 0 && slot.net_id.is_none())
+            );
+        }
         let V2225::BiomeDefinitionListPacket(biomes) = self.next().await? else {
             anyhow::bail!("expected biome definitions");
         };

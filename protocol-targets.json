@@ -18,20 +18,25 @@
     "stage": "shared-world-preview",
     "official_client_verified": false,
     "nethernet": "loopback HTTP/WebRTC preview",
-    "version": "1.26.60",
+    "version": "1.26.63",
     "protocol": 2225,
     "gameplay_supported_versions": [],
     "registered_packet_identifiers": 244,
     "typed_packet_codecs": 239,
     "opaque_packet_identifiers": 5,
     "official_client_entry_reported": true,
-    "verification_scope": "User reports Windows GDK 1.26.63 entry after the presentation-mode fix. Current counted inventory is checked with independent clients; official-app gameplay and public hosting are not verified."
+    "verification_scope": "User reports Windows GDK 1.26.63 entry after the presentation-mode fix. Current counted inventory is checked with independent clients; official-app gameplay and public hosting are not verified.",
+    "reference_server": {
+      "version": "1.26.63.1",
+      "sha256": "dc9b3c566a014cf53930eb1b54c6b599a99a81cc32c68aba06a5d73a0fd63179"
+    }
   },
   "sources": [
     "https://github.com/PrismarineJS/minecraft-data/blob/9b995542ab4a17837dee785439954e43d031b33e/data/pc/common/protocolVersions.json",
     "https://github.com/PrismarineJS/minecraft-data/blob/9b995542ab4a17837dee785439954e43d031b33e/data/bedrock/common/protocolVersions.json",
     "https://github.com/Sandertv/gophertunnel/blob/e2251a60f71d5faa9784d6a4bc817c117cb6af78/minecraft/protocol/info.go",
-    "https://github.com/misode/mcmeta/blob/26.3-summary/version.json"
+    "https://github.com/misode/mcmeta/blob/26.3-summary/version.json",
+    "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.63.1.zip"
   ],
   "plugin_api_version": 8
 }

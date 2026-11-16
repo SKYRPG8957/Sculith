@@ -9,7 +9,7 @@ one server and share the same world, game rules and Rust plugins.
 
 Sculith is under development. Current gameplay is a local creative builder;
 public hosting, survival and complete Bedrock content compatibility are unfinished.
-Development targets Bedrock **1.26.60 / protocol 2225** and stock Java **26.3 / 777**.
+Development targets Bedrock **1.26.63 / protocol 2225** and stock Java **26.3 / 777**.
 [Compatibility and test status](docs/development/status.md).
 
 ## Build and run

@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- The target is stable Bedrock 1.26.63/protocol 2225. Official BDS 1.26.63.1 was acquired by the official download link and run separately on loopback. A completed REA process capture and independent native packets show empty 36/5/57/1 inventory windows and Stone 5→8 with fresh positive stack IDs. Sculith now initializes the auxiliary 5/57/1 windows before chunk loading, projecting owned cursor/output into UI slots 0/50. This adds no armour/offhand/crafting rules or commands. [Reference and analysis limits](verification/bedrock-1.26.63.1-reference.md).
+
 - Java online mode now exchanges an ephemeral RSA-2048 key/fresh challenge, encrypts subsequent frames with continuous AES-128/CFB8, and requires the official HTTPS `hasJoined` name/UUID before reserving a player. Private decryption uses AWS-LC rather than the existing Rust RSA crate's documented vulnerable PKCS#1-v1.5 path. Sixteen permits bound crypto/HTTPS jobs even after socket cancellation; profiles and replies are bounded, and errors do not downgrade authentication. Public Java binds require online mode; offline binds/peers remain local. This adds no game commands or default plugins.
 
 - API v8 adds opt-in connection lifecycle and inbound packet metadata across Java handshake/status/login/configuration/spawn/play and native settings/login/cipher/packs/spawn/play. Connections have separate non-reused process IDs and ordered receipts; active player attachment is explicit. Bounded observation queues do not block adapters and disable subscribers on loss. Payloads, account/profile data and addresses are excluded; undecodable frames, transport discovery/signaling/control and outbound packets are outside this hook. Existing initialized-play API-v6 callbacks are unchanged.
@@ -192,6 +194,8 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 - REA CLI/direct stdio MCP is usable. The active chat tool namespace does not refresh automatically, and no official Windows GDK binary is available here for artifact analysis.
 
 ## Next Action
+
+Remove the prototype starter loadout with explicit protocol/test fixture seeding; do not replace it with game-specific engine commands. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work rather than claiming the timed-out full static analysis succeeded.
 
 Continue public pack delivery and NetherNet trust, owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java sign-in, official GDK gameplay, general entities, broader inventory/content support and server-packet observations remain separate required work; the engineering directive is not complete.
 

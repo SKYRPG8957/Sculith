@@ -24,11 +24,12 @@ type observer struct {
 	chunks                       map[protocol.ChunkPos]bool
 	biomes, creative, structures bool
 	modelRegistry                bool
+	auxiliary                    map[uint32]bool
 	err                          error
 }
 
 func newObserver(registry world.BlockRegistry) *observer {
-	return &observer{registry: registry, chunks: make(map[protocol.ChunkPos]bool)}
+	return &observer{registry: registry, chunks: make(map[protocol.ChunkPos]bool), auxiliary: make(map[uint32]bool)}
 }
 
 func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
@@ -131,6 +132,25 @@ func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
 			}
 		}
 		o.creative = true
+	case packet.IDInventoryContent:
+		p := new(packet.InventoryContent)
+		p.Marshal(reader)
+		size, aux := map[uint32]int{120: 5, 124: 57, 119: 1}[p.WindowID]
+		if !aux {
+			return
+		}
+		_, dynamic := p.Container.DynamicContainerID.Value()
+		if len(p.Content) != size || p.Container.ContainerID != 0 || dynamic || o.auxiliary[p.WindowID] {
+			o.err = fmt.Errorf("invalid auxiliary inventory baseline: window=%d slots=%d", p.WindowID, len(p.Content))
+			return
+		}
+		for _, item := range p.Content {
+			if item.Stack.NetworkID != 0 || item.Stack.Count != 0 || item.StackNetworkID != 0 {
+				o.err = fmt.Errorf("nonempty auxiliary inventory baseline")
+				return
+			}
+		}
+		o.auxiliary[p.WindowID] = true
 	case packet.IDLevelChunk:
 		p := new(packet.LevelChunk)
 		p.Marshal(reader)
@@ -191,8 +211,8 @@ func (o *observer) verify() error {
 	if o.err != nil {
 		return o.err
 	}
-	if !o.structures || !o.biomes || !o.creative || len(o.chunks) != 25 || len(o.commands) == 0 {
-		return fmt.Errorf("incomplete startup: structures=%t biomes=%t creative=%t chunks=%d", o.structures, o.biomes, o.creative, len(o.chunks))
+	if !o.structures || !o.biomes || !o.creative || len(o.chunks) != 25 || len(o.commands) == 0 || len(o.auxiliary) != 3 {
+		return fmt.Errorf("incomplete startup: structures=%t biomes=%t creative=%t chunks=%d auxiliary=%d", o.structures, o.biomes, o.creative, len(o.chunks), len(o.auxiliary))
 	}
 	return nil
 }

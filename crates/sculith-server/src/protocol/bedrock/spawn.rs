@@ -57,6 +57,7 @@ pub fn initial_packets(player: &crate::game::PlayerSnapshot) -> Result<Vec<V2225
     ];
     packets.extend(super::output::registry_and_abilities(player));
     packets.extend(super::output::inventory(player)?);
+    packets.extend(super::output::inventory_baseline(player)?);
     // Chunk biome palettes reference the native plains biome. Supply its
     // definition before chunks, even though headless clients do not render it.
     packets.push(plains_definition());
