@@ -35,7 +35,6 @@ pub struct Measurements {
     pub mode: Mode,
     pub collecting: bool,
     pub calls: u64,
-    pub payload_clones: u64,
     pub failures: u64,
     pub timeouts: u64,
     pub sent_bytes: u64,
@@ -80,7 +79,6 @@ pub(super) struct Collector {
     origin: Option<Instant>,
     deadline: Option<Instant>,
     calls: u64,
-    clones: u64,
     failures: u64,
     timeouts: u64,
     sent: u64,
@@ -104,7 +102,6 @@ impl Default for Collector {
             origin: None,
             deadline: None,
             calls: 0,
-            clones: 0,
             failures: 0,
             timeouts: 0,
             sent: 0,
@@ -134,9 +131,6 @@ impl Collector {
     }
     fn collecting(&self, now: Instant) -> bool {
         self.mode != Mode::Off && self.deadline.is_none_or(|end| now < end)
-    }
-    pub fn add_clones(&mut self, count: u64) {
-        self.clones = self.clones.saturating_add(count);
     }
     pub fn begin(&self) -> Option<Token> {
         if self.mode == Mode::Off {
@@ -190,7 +184,6 @@ impl Collector {
             mode: self.mode,
             collecting: self.collecting(now),
             calls: self.calls,
-            payload_clones: self.clones,
             failures: self.failures,
             timeouts: self.timeouts,
             sent_bytes: self.sent,

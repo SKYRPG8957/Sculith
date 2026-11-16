@@ -41,9 +41,6 @@ def check(output, reason):
     assert data['finished_reason'] == reason
     assert 'profile-private-payload-sentinel' not in output.read_text(encoding='utf-8')
     plugins = {plugin['name']: plugin for plugin in data['plugins']}
-    # Each worker has one non-event Hello. Every later completed request is
-    # one selected callback; unselected recipients must make no payload clone.
-    assert data['dispatcher']['payload_clones'] == sum(plugin['ipc']['calls']-1 for plugin in data['plugins'])
     assert set(plugins) == {'active', 'idle'} and not any(plugin['disabled'] for plugin in plugins.values())
     active, idle = plugins['active']['ipc'], plugins['idle']['ipc']
     assert active['calls'] > 1 and active['timed_calls'] > 0 and active['failures'] == active['timeouts'] == 0

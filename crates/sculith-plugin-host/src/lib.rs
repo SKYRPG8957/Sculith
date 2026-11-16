@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 use sculith_core::{ServerStatus, validate_motd, validate_system_message};
 use sculith_plugin_api::{
     API_VERSION, Action, Event, HostMessage, LEGACY_API_VERSION, MAX_ACTIONS, MAX_MESSAGE_BYTES,
-    Metadata, PluginMessage, Request, Response, SUPPORTED_API_VERSIONS,
+    Metadata, PluginMessage, Response, SUPPORTED_API_VERSIONS,
 };
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -20,6 +20,18 @@ use profiling::{Collector, Mode, Sample};
 mod config;
 pub use config::PluginConfig;
 use sculith_runtime::{WorldEvent, WorldHandle};
+
+#[derive(serde::Serialize)]
+struct WireRequest<'a, T> {
+    id: u64,
+    message: &'a T,
+}
+
+#[derive(serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum EventMessage<'a> {
+    Event { event: &'a Event },
+}
 
 pub const MAX_PLUGINS: usize = 32;
 
@@ -228,24 +240,20 @@ impl Plugins {
         let timing = self.dispatch_metrics.begin();
         let mut dispatch_failed = false;
         let hook = event.hook();
-        let mut cloned_events = 0u64;
         let replies = futures_util::future::join_all(self.processes.iter_mut().map(|process| {
             let subscribed = !process.disabled
                 && process.metadata.hooks.contains(&hook)
                 && recipient.is_none_or(|name| process.metadata.name == name);
-            let event = subscribed.then(|| {
-                cloned_events += 1;
-                event.clone()
-            });
+            let event = &event;
             async move {
-                match event {
-                    Some(event) => Some(process.request(HostMessage::Event { event }).await),
-                    None => None,
+                if subscribed {
+                    Some(process.request_event(event).await)
+                } else {
+                    None
                 }
             }
         }))
         .await;
-        self.dispatch_metrics.add_clones(cloned_events);
         for (process, reply) in self.processes.iter_mut().zip(replies) {
             let Some(reply) = reply else { continue };
             let result = async {
@@ -510,6 +518,19 @@ impl Process {
             HostMessage::Event { event } => Some(event.hook()),
             HostMessage::Hello { .. } => None,
         };
+        self.request_message(&message, hook).await
+    }
+
+    async fn request_event(&mut self, event: &Event) -> Result<PluginMessage> {
+        self.request_message(&EventMessage::Event { event }, Some(event.hook()))
+            .await
+    }
+
+    async fn request_message<T: serde::Serialize + Sync>(
+        &mut self,
+        message: &T,
+        hook: Option<sculith_plugin_api::Hook>,
+    ) -> Result<PluginMessage> {
         let timing = self.metrics.begin();
         let (mut encode_ns, mut sent_bytes, mut received_bytes, mut timed_out) = (0, 0, 0, false);
         let result = async {
@@ -517,7 +538,7 @@ impl Process {
                 .request_id
                 .checked_add(1)
                 .context("plugin request identifiers exhausted")?;
-            let request = Request {
+            let request = WireRequest {
                 id: self.request_id,
                 message,
             };

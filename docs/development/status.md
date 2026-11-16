@@ -8,7 +8,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
-- Subscription/private-recipient filtering now precedes per-worker event cloning, preserving delivery/action order and backpressure. Initial plugin IPC instrumentation adds Off/Monitor/bounded Profile modes, rolling exact recent quantiles, encoding/wall times, complete-frame bytes, clone counts and versioned payload-free reports. A real-Rust fanout benchmark and Linux CPU/RSS/PSS driver provide repeatable baselines. This does not implement CPU sampling, a full game profiler or parallel region simulation. [Operator guide](../guides/profiling.md).
+- Subscription/private-recipient filtering precedes delivery, and selected workers serialize the shared immutable event without deep payload cloning. Action order and backpressure are preserved. Initial plugin IPC instrumentation adds Off/Monitor/bounded Profile modes, rolling exact recent quantiles, encoding/wall times, complete-frame bytes and versioned payload-free reports. A real-Rust fanout benchmark and Linux CPU/RSS/PSS driver provide repeatable baselines. This does not implement CPU sampling, a full game profiler or parallel region simulation. [Operator guide](../guides/profiling.md).
 
 - API v11 adds shared text, boolean, dropdown and integer-slider forms. The same owner validates complete typed replies, deadlines, session IDs and step/length bounds before a single private callback. Java uses stock dialog controls and a bounded flat modified-UTF-8 payload; native uses standard custom forms. Simple forms retain API v3 and the shared one-pending-form slot.
 

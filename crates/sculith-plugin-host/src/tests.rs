@@ -163,3 +163,62 @@ fn world_commit_hooks_preserve_sources_and_the_legacy_player_contract() {
         })
     ));
 }
+
+#[test]
+fn borrowed_requests_preserve_sdk_wire_bytes_and_do_not_require_clone() {
+    use sculith_plugin_api::{BlockChange, WorldActor};
+    let events = vec![
+        Event::Tick { tick: 2 },
+        Event::CustomFormSubmitted {
+            player_id: 7,
+            request_id: 19,
+            values: Some(vec![sculith_plugin_api::FormValue::Text(
+                "입력 👋 \"quoted\"".into(),
+            )]),
+        },
+        Event::WorldBlocksChanged {
+            region_id: 0,
+            previous_revision: 8,
+            revision: 9,
+            actor: WorldActor::Plugin {
+                name: "test".into(),
+            },
+            changes: vec![BlockChange {
+                x: -1,
+                y: 4,
+                z: 2,
+                before: "minecraft:air".into(),
+                after: "minecraft:stone".into(),
+            }],
+        },
+    ];
+    for id in [1, u64::MAX] {
+        for event in &events {
+            let borrowed = serde_json::to_vec(&WireRequest {
+                id,
+                message: &EventMessage::Event { event },
+            })
+            .unwrap();
+            let owned = serde_json::to_vec(&sculith_plugin_api::Request {
+                id,
+                message: HostMessage::Event {
+                    event: event.clone(),
+                },
+            })
+            .unwrap();
+            assert_eq!(borrowed, owned);
+            let decoded: sculith_plugin_api::Request = serde_json::from_slice(&borrowed).unwrap();
+            assert_eq!(decoded.id, id);
+        }
+    }
+    #[derive(serde::Serialize)]
+    struct NotClone {
+        value: u32,
+    }
+    let output = serde_json::to_vec(&WireRequest {
+        id: 1,
+        message: &NotClone { value: 7 },
+    })
+    .unwrap();
+    assert_eq!(output, br#"{"id":1,"message":{"value":7}}"#);
+}
