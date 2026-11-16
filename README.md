@@ -35,6 +35,7 @@ Stop with Ctrl+C. The example saves the region to `world/region.sculith` on
 orderly shutdown. Player data and crash recovery are not yet persistent.
 The previous preview downloads have been withdrawn; no new binaries are published.
 [Windows setup](docs/guides/windows.md).
+[Network hosting and ports](docs/guides/hosting.md).
 
 ## Features
 

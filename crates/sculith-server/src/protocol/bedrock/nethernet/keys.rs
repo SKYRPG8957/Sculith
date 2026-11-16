@@ -23,6 +23,8 @@ pub(super) struct Authority {
     keys: MinecraftKeys,
     http: ureq::Agent,
     schedule: Schedule,
+    #[cfg(test)]
+    static_fixture: bool,
 }
 
 impl Authority {
@@ -39,6 +41,8 @@ impl Authority {
             keys: keys.into(),
             http,
             schedule: Schedule::new(Instant::now()),
+            #[cfg(test)]
+            static_fixture: false,
         })
     }
 
@@ -47,6 +51,15 @@ impl Authority {
     }
 
     pub async fn run(mut self, mut shutdown: watch::Receiver<bool>) {
+        #[cfg(test)]
+        if self.static_fixture {
+            while !*shutdown.borrow() {
+                if shutdown.changed().await.is_err() {
+                    break;
+                }
+            }
+            return;
+        }
         let mut tick = tokio::time::interval(Duration::from_secs(1));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -93,6 +106,7 @@ impl Authority {
             keys: keys.into(),
             http: crate::protocol::http_client::authentication_metadata(),
             schedule: Schedule::new(Instant::now()),
+            static_fixture: true,
         }
     }
 }

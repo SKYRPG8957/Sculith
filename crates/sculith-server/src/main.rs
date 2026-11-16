@@ -228,6 +228,7 @@ async fn run(config: Config) -> Result<()> {
                 authentication
                     .as_ref()
                     .context("NetherNet requires Bedrock authentication settings")?,
+                config.bedrock.nethernet_media.as_ref(),
             )
             .await?,
         )

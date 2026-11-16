@@ -1,4 +1,4 @@
-# Local NetherNet preview
+# NetherNet transport
 
 The Bedrock adapter accepts HTTP signaling and WebRTC data channels as well as RakNet.
 Both feed the same verified Bedrock login, pack negotiation, session handling and authoritative world owner.
@@ -9,11 +9,24 @@ No other Minecraft server process is required.
 
 With `bedrock.sessions = true` and a loopback Bedrock bind, NetherNet is enabled when the `nethernet` setting is absent.
 Existing local preview configurations therefore gain the transport without being overwritten.
-Set `bedrock.nethernet = false` to disable it. Explicit `true` requires enabled Bedrock sessions and a loopback address.
+Set `bedrock.nethernet = false` to disable it. Explicit `true` requires enabled Bedrock sessions.
 Discovery-only mode does not bind an HTTP listener or create a key.
 
 The Bedrock address uses both UDP (RakNet) and TCP (HTTP signaling), normally `127.0.0.1:19132`.
-HTTP signaling remains loopback-only. WebRTC opens an ephemeral UDP media port per peer; IPv4 media binds all local interfaces so clients using interface-bound sockets can reach it. Both candidate destinations and incoming source addresses must match loopback or an IPv4 address owned by this machine, captured from the OS at startup (at most 16 non-loopback addresses). No remote machine is admitted by this preview. IPv6 retains loopback media only.
+Local signaling preserves the existing same-machine policy: ephemeral UDP ports,
+IPv4 interfaces captured from the OS (at most 16 non-loopback addresses), and
+loopback-only IPv6 media. Public signaling requires account authentication and
+`bedrock.nethernet_media`; the table also enables NetherNet by default on that
+listener. [Operator configuration](../guides/hosting.md).
+
+Public media uses a bounded explicit UDP range, a concrete advertised IP and a
+policy per TCP peer. Numeric SDP candidates, inferred host ports and incoming or
+outgoing datagrams may address only that peer's IP. The advertised server IP does
+not expand eligible destinations. The socket range is at most 64 ports and must
+cover configured player capacity without overlapping discovery. Allocation skips
+busy ports; exhausting the range returns unavailable rather than replacing another
+socket. NAT forwarding uses unchanged public/local port numbers. HTTP signaling
+proxies and TURN relays are not admitted by this direct-peer policy.
 Java keeps its separately configured TCP listener, normally port 25565.
 
 `bedrock.nethernet_identity_path` defaults to `world/nethernet-identity.pem`, resolved relative to the configuration file.
@@ -32,16 +45,15 @@ The local patch separates SCTP initiation from the negotiated DTLS role; its ori
 Its unbounded Tokio wrapper is used only by test clients.
 
 - HTTP: 16 concurrent connections, 8 KiB parsing buffer, 64 KiB request body, 12-second request and 15-second connection deadlines, no keep-alive.
-- Media: at most 64 concurrent transports, four per source IP, establishment deadline from `login_timeout_secs`.
+- Media and game tasks: at most 64 of each, four transports per source IP, establishment deadline from `login_timeout_secs`.
 - Application queues: 16 incoming and 32 outgoing messages per transport, with separate 16 MiB aggregate ingress/egress budgets for this backend.
 - NetherNet reliable message limit: 2,550,000 bytes; decompressed Bedrock batch limit: 4 MiB. Remote SCTP message limits are capped at 262,144 bytes, including a remote value of zero (unlimited).
-- ICE uses complete offers/answers without STUN or TURN. Numeric candidates must belong to this machine. For unresolved/mDNS host candidates, only their advertised UDP ports (up to eight) are tried on the captured same-machine addresses. No DNS lookup or forwarded-header trust is used. Transient candidate-path ICMP errors do not abort other viable ICE checks; the establishment deadline still applies.
+- ICE uses complete offers/answers without STUN discovery or TURN services. STUN connectivity checks still establish the selected pair. Numeric candidates must satisfy the local or direct-peer policy. For unresolved/mDNS host candidates, only their advertised UDP ports (up to eight) are tried on permitted addresses. No DNS lookup or forwarded-header trust is used. Transient candidate-path ICMP errors do not abort other viable ICE checks; the establishment deadline still applies.
 
 These bounds are not a total process-memory limit or a throughput claim.
 Application tasks are cancelled and drained before final world capture, releasing their player leases.
 Both incoming data channels use the same bounded queues and owner validation. Valid unreliable movement commits; invalid movement is corrected over the reliable channel. Movement arriving before the reliable initialization acknowledgement is ignored until the player activates. Outgoing game batches currently use the reliable channel.
 
-This backend still requires loopback HTTP signaling and same-machine media sources.
 With `bedrock.require_authentication = true`, startup loads the official Minecraft
 signing keys and uses `TokenTrust::Minecraft`: RS256 signature, issuer, audience,
 subject, expiry and the detached P-384 fingerprint assertion must all validate.
@@ -61,13 +73,21 @@ their async waiters are cancelled. Refresh work never runs in the signaling loop
 
 Explicit local offline mode retains `TokenTrust::Any` for fingerprint ownership
 and expiry; it does not establish Microsoft issuer/signature or account identity.
-Public NetherNet still needs media endpoint advertisement and remote-peer routing;
-these authentication changes do not lift the existing same-machine restriction.
+Non-loopback signaling rejects offline game authentication, missing media settings
+and missing Microsoft signing authority before accepting players.
 
 ## Verification and sources
 
 Real TCP tests cover shared status, unsigned/tampered offer rejection, fixed/chunked body limits, signed answers,
 persistent operator identity and shutdown port release.
+A full non-loopback fixture additionally uses real HTTP/ICE/DTLS/SCTP, configured
+UDP ports, a pinned operator key and an OIDC test issuer for both the signed offer
+and game account token. Client data remains P-384 signed and its key must match the
+transport. The fixture reaches initialized world membership, rejects a foreign
+SDP destination without emitting a UDP packet to its sink, and releases the UDP
+range at shutdown. An occupied range returns HTTP 503 without world admission,
+then accepts the same account after the ports are released. Fixtures and their
+issuer overrides compile only in tests.
 A controlled signing fixture additionally exercises real HTTP acceptance, wrong
 signature/issuer/audience/subject/expiry/fingerprint rejection, key rotation and
 empty-cache rejection without world admission. Cancellation tests retain the fetch

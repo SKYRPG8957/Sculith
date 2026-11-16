@@ -1,4 +1,4 @@
-//! Bounded loopback HTTP signaling and a sans-IO WebRTC driver.
+//! Bounded HTTP signaling and a WebRTC driver with explicit media policy.
 //! Wire facts: Mojang's NetherNetOnboardingGuide; Apache-2.0 nethernet
 //! ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99. Gameplay uses the existing owner.
 
@@ -56,12 +56,17 @@ const IDENTITY_BYTES: u64 = 64 * 1024;
 
 mod keys;
 mod media;
+#[cfg(test)]
+pub(super) mod test_support;
+#[cfg(test)]
 use media::LocalMedia;
+pub use media::PublicMedia;
+use media::{Media, PeerMedia};
 
 pub struct Server {
     listener: TcpListener,
     identity: Arc<ServerIdentity>,
-    media: Arc<LocalMedia>,
+    media: Arc<Media>,
     authority: Option<keys::Authority>,
 }
 
@@ -77,11 +82,22 @@ pub async fn prepare(
     address: SocketAddr,
     identity_path: &Path,
     authentication: &super::session::Authentication,
+    public_media: Option<&PublicMedia>,
 ) -> Result<Server> {
     ensure!(
-        address.ip().is_loopback(),
-        "NetherNet preview requires loopback"
+        address.ip().is_loopback() || authentication.is_required(),
+        "public NetherNet requires authenticated Bedrock sessions"
     );
+    if !address.ip().is_loopback() {
+        public_media
+            .context("public NetherNet requires bedrock.nethernet_media settings")?
+            .validate(address.ip(), 0)?;
+    } else {
+        ensure!(
+            public_media.is_none(),
+            "public media settings require a non-loopback NetherNet bind"
+        );
+    }
     let listener = TcpListener::bind(address)
         .await
         .context("cannot bind NetherNet TCP signaling listener")?;
@@ -90,9 +106,27 @@ pub async fn prepare(
     } else {
         None
     };
+    prepare_bound(listener, identity_path, public_media, authority).await
+}
+
+async fn prepare_bound(
+    listener: TcpListener,
+    identity_path: &Path,
+    public_media: Option<&PublicMedia>,
+    authority: Option<keys::Authority>,
+) -> Result<Server> {
+    let address = listener.local_addr()?;
+    ensure!(
+        address.ip().is_loopback() || authority.is_some(),
+        "public NetherNet requires Microsoft signing keys"
+    );
+    let public_media = public_media.cloned();
     let path = identity_path.to_owned();
     let (identity, media) = tokio::task::spawn_blocking(move || -> Result<_> {
-        Ok((load_identity(&path)?, LocalMedia::detect(address.ip())?))
+        Ok((
+            load_identity(&path)?,
+            Media::prepare(address.ip(), public_media.as_ref())?,
+        ))
     })
     .await
     .context("NetherNet identity worker failed")??;
@@ -237,6 +271,10 @@ impl Server {
             !context.settings.authentication.is_required() || self.authority.is_some(),
             "authenticated NetherNet requires Microsoft signaling keys"
         );
+        ensure!(
+            !self.media.is_public() || context.settings.authentication.is_required(),
+            "public NetherNet game login must require authentication"
+        );
         let local_ip = self.listener.local_addr()?.ip();
         let trust = self
             .authority
@@ -321,6 +359,7 @@ impl Server {
                     result.context("NetherNet HTTP task failed")?;
                 }
                 Some(transport) = ready_sessions.recv() => {
+                    if applications.len() >= MEDIA_CONNECTIONS { continue; }
                     let settings = context.settings.clone();
                     let world = context.world.clone();
                     let protection = Protection::WebRtcDtls(transport.identity.clone());
@@ -367,18 +406,23 @@ impl Server {
                             signaling.handle(HttpSignalerInput::Reject {connection_id: offer.connection_id, reason: RejectReason::Rejected})?;
                             continue;
                         };
-                        match answer(&offer, local_ip, &self.identity, context.settings.timeout, &self.media).await {
+                        let Ok(media)=self.media.for_peer(offer.client_address) else {
+                            signaling.handle(HttpSignalerInput::Reject {connection_id: offer.connection_id, reason: RejectReason::Rejected})?;
+                            continue;
+                        };
+                        match answer(&offer, local_ip, &self.identity, context.settings.timeout, &media).await {
                             Ok((socket, connection, sdp)) => {
                                 signaling.handle(HttpSignalerInput::Answer {connection_id: offer.connection_id, sdp})?;
                                 *peers.entry(ip).or_default() += 1;
-                                let config = PeerContext { shutdown: context.shutdown.clone(), ready: ready.clone(), media: self.media.clone(), identity,
+                                let config = PeerContext { shutdown: context.shutdown.clone(), ready: ready.clone(), media, identity,
                                     incoming_budget: incoming_budget.clone(), outgoing_budget: outgoing_budget.clone() };
                                 workers.spawn(async move { (ip, drive(socket, connection, config).await) });
                             }
                             Err(error) => {
                                 tracing::warn!(%ip, "NetherNet offer rejected");
                                 tracing::debug!(%error, "NetherNet answer failure");
-                                signaling.handle(HttpSignalerInput::Reject {connection_id: offer.connection_id, reason: RejectReason::Rejected})?;
+                                let reason=if error.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind()==std::io::ErrorKind::AddrInUse) { RejectReason::Unavailable } else { RejectReason::Rejected };
+                                signaling.handle(HttpSignalerInput::Reject {connection_id: offer.connection_id, reason})?;
                             }
                         }
                     }
@@ -404,14 +448,14 @@ async fn answer(
     local_ip: IpAddr,
     identity: &ServerIdentity,
     timeout: Duration,
-    media: &LocalMedia,
+    media: &PeerMedia,
 ) -> Result<(UdpSocket, Peer, String)> {
-    let socket = UdpSocket::bind(SocketAddr::new(media.bind_ip(), 0)).await?;
+    let socket = media.bind().await?;
     // HttpSignaler already verified the offer's signed fingerprint assertion.
     let signal = offer.signal();
     let (mut remote, mut candidates) = Peer::parse_offer(&signal)?;
     let offered_candidates = candidates.len();
-    // Only same-machine destinations obtained from the OS are eligible.
+    // Only addresses permitted for this TCP peer are eligible.
     candidates.retain(|candidate| {
         candidate
             .address()
@@ -420,7 +464,7 @@ async fn answer(
     });
     tracing::debug!(
         offered_candidates,
-        same_machine_candidates = candidates.len(),
+        permitted_candidates = candidates.len(),
         "NetherNet offer candidate selection"
     );
     let retained_ports: Vec<_> = candidates
@@ -435,7 +479,7 @@ async fn answer(
         n => n.min(SCTP_LIMIT),
     };
     let now = Instant::now();
-    let advertised = SocketAddr::new(local_ip, socket.local_addr()?.port());
+    let advertised = SocketAddr::new(media.advertised_ip(local_ip), socket.local_addr()?.port());
     let (mut session, local) = Session::with_advertised(advertised, media.addresses(), false, now)?;
     session.set_establish_deadline(timeout);
     let (mut connection, signals) = Peer::accept(
@@ -448,10 +492,10 @@ async fn answer(
         now,
     )?;
     // An mDNS host candidate need not name a numeric IP. Try its advertised
-    // UDP port only on same-machine addresses, without DNS or forwarded headers.
+    // UDP port only on policy-approved addresses, without DNS or forwarded headers.
     if offer
         .client_address
-        .is_some_and(|from| from.ip().is_loopback())
+        .is_some_and(|from| from.ip().is_loopback() || media.allows(from.ip()))
     {
         let mut ports = Vec::new();
         for line in offer
@@ -472,24 +516,27 @@ async fn answer(
         }
         tracing::debug!(
             inferred_ports = ports.len(),
-            "NetherNet loopback candidate inference"
+            "NetherNet peer candidate inference"
         );
+        let inferred: Vec<_> = match media {
+            PeerMedia::Local(_) => media.addresses().to_vec(),
+            PeerMedia::Public { .. } => offer
+                .client_address
+                .into_iter()
+                .map(|address| address.ip())
+                .collect(),
+        };
         for (index, (port, address)) in ports
             .into_iter()
-            .flat_map(|port| {
-                media
-                    .addresses()
-                    .iter()
-                    .copied()
-                    .map(move |address| (port, address))
-            })
+            .flat_map(|port| inferred.iter().copied().map(move |address| (port, address)))
             .enumerate()
         {
             let candidate = format!(
-                "candidate:{} 1 UDP 1677721855 {} {} typ srflx raddr 0.0.0.0 rport 0",
+                "candidate:{} 1 UDP 1677721855 {} {} typ srflx raddr {} rport 0",
                 90_100_000 + index,
                 address,
-                port
+                port,
+                if address.is_ipv4() { "0.0.0.0" } else { "::" }
             );
             connection.handle(ConnectionInput::Signal(
                 nethernet::protocol::Signal::candidate(
@@ -520,7 +567,7 @@ struct SendCommand {
     reply: oneshot::Sender<Result<(), String>>,
 }
 
-struct SessionTransport {
+pub(super) struct SessionTransport {
     remote: SocketAddr,
     incoming: mpsc::Receiver<Inbound>,
     outgoing: mpsc::Sender<SendCommand>,
@@ -600,7 +647,7 @@ struct PeerContext {
     incoming_budget: Arc<Semaphore>,
     outgoing_budget: Arc<Semaphore>,
     ready: mpsc::Sender<SessionTransport>,
-    media: Arc<LocalMedia>,
+    media: Arc<PeerMedia>,
     identity: Arc<nethernet::identity::PlayerInfo>,
 }
 
@@ -660,7 +707,7 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
                 SessionOutput::Send(data, remote) => {
                     ensure!(
                         context.media.allows(remote.ip()),
-                        "NetherNet candidate outside same-machine policy"
+                        "NetherNet candidate outside peer policy"
                     );
                     if let Err(error) = socket.send_to(&data, remote).await {
                         if !candidate_path_error(&error) {

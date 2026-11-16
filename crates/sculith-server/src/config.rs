@@ -68,10 +68,12 @@ pub struct Bedrock {
     pub sessions: bool,
     pub require_authentication: bool,
     pub login_timeout_secs: u64,
-    /// Experimental HTTP/WebRTC transport on the Bedrock TCP port; loopback only initially.
+    /// HTTP/WebRTC on the Bedrock TCP port; remote listeners require explicit media settings.
     pub nethernet: Option<bool>,
     /// Persistent operator key. Never automatically replace an existing invalid key.
     pub nethernet_identity_path: PathBuf,
+    /// Explicit UDP endpoints for an authenticated non-loopback NetherNet listener.
+    pub nethernet_media: Option<crate::protocol::bedrock::nethernet::PublicMedia>,
 }
 
 impl Default for Bedrock {
@@ -82,6 +84,7 @@ impl Default for Bedrock {
             login_timeout_secs: 15,
             nethernet: None,
             nethernet_identity_path: "world/nethernet-identity.pem".into(),
+            nethernet_media: None,
         }
     }
 }
@@ -251,10 +254,25 @@ impl Config {
         );
         ensure!(
             self.bedrock.nethernet != Some(true)
-                || (self.bedrock.sessions
-                    && self.network.bedrock.enabled
-                    && self.network.bedrock.bind.ip().is_loopback()),
-            "NetherNet preview requires enabled Bedrock sessions and a loopback bind"
+                || (self.bedrock.sessions && self.network.bedrock.enabled),
+            "NetherNet requires enabled Bedrock sessions"
+        );
+        if let Some(media) = &self.bedrock.nethernet_media {
+            ensure!(
+                self.nethernet_enabled() && self.bedrock.require_authentication,
+                "public NetherNet media requires enabled authenticated sessions"
+            );
+            media.validate(self.network.bedrock.bind.ip(), self.server.max_players)?;
+            ensure!(
+                !(media.ports[0]..=media.ports[1]).contains(&self.network.bedrock.bind.port()),
+                "NetherNet media ports must not include the Bedrock discovery UDP port"
+            );
+        }
+        ensure!(
+            !self.nethernet_enabled()
+                || self.network.bedrock.bind.ip().is_loopback()
+                || self.bedrock.nethernet_media.is_some(),
+            "public NetherNet requires bedrock.nethernet_media settings"
         );
         ensure!(
             (1..=60).contains(&self.bedrock.login_timeout_secs),
@@ -308,10 +326,10 @@ impl Config {
     pub fn nethernet_enabled(&self) -> bool {
         self.network.bedrock.enabled
             && self.bedrock.sessions
-            && self
-                .bedrock
-                .nethernet
-                .unwrap_or_else(|| self.network.bedrock.bind.ip().is_loopback())
+            && self.bedrock.nethernet.unwrap_or_else(|| {
+                self.network.bedrock.bind.ip().is_loopback()
+                    || self.bedrock.nethernet_media.is_some()
+            })
     }
 }
 
@@ -406,6 +424,36 @@ mod tests {
             config.network.bedrock.bind = address.parse().unwrap();
             assert!(config.validate().is_err(), "{address}");
         }
+    }
+
+    #[test]
+    fn public_nethernet_requires_authentication_explicit_media_and_capacity() {
+        let mut config = Config::default();
+        config.bedrock.sessions = true;
+        config.bedrock.nethernet = Some(true);
+        config.network.bedrock.bind = "0.0.0.0:19132".parse().unwrap();
+        assert!(config.validate().is_err());
+        config.bedrock.nethernet_media = Some(crate::protocol::bedrock::nethernet::PublicMedia {
+            ports: [19133, 19196],
+            advertised_ip: Some("192.0.2.10".parse().unwrap()),
+        });
+        config.validate().unwrap();
+        config.bedrock.nethernet = None;
+        assert!(config.nethernet_enabled());
+        config.validate().unwrap();
+        config.bedrock.require_authentication = false;
+        assert!(config.validate().is_err());
+        config.bedrock.require_authentication = true;
+        config.bedrock.nethernet_media.as_mut().unwrap().ports = [19132, 19195];
+        assert!(config.validate().is_err());
+        config.bedrock.nethernet_media.as_mut().unwrap().ports = [19133, 19134];
+        assert!(config.validate().is_err());
+        config.bedrock.nethernet_media.as_mut().unwrap().ports = [19133, 19196];
+        config.bedrock.nethernet = Some(false);
+        assert!(config.validate().is_err());
+        config.bedrock.nethernet = Some(true);
+        config.network.bedrock.bind = "127.0.0.1:19132".parse().unwrap();
+        assert!(config.validate().is_err());
     }
 
     #[test]

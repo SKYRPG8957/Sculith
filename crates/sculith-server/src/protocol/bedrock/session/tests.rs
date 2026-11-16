@@ -509,6 +509,183 @@ async fn nether_client(address: SocketAddr) -> Result<TestClient<TestNetherTrans
 }
 
 #[tokio::test]
+async fn authenticated_nethernet_crosses_nonloopback_http_fixed_udp_and_oidc_before_spawning() {
+    use crate::protocol::bedrock::nethernet::{ContextData, PublicMedia, test_support};
+    let Some(ip) = if_addrs::get_if_addrs()
+        .unwrap()
+        .into_iter()
+        .map(|interface| interface.ip())
+        .find(|ip| ip.is_ipv4() && !ip.is_loopback() && !ip.is_unspecified())
+    else {
+        eprintln!("SKIP: public NetherNet fixture requires a non-loopback interface");
+        return;
+    };
+    let issuer = test_support::TestIssuer::new("online-gameplay-fixture");
+    let authentication = Authentication {
+        options: LoginOptions::default().oidc(std::sync::Arc::new(issuer.oidc())),
+        http: Some(crate::protocol::http_client::authentication_metadata()),
+    };
+    let udp = UdpSocket::bind(SocketAddr::new(ip, 0)).await.unwrap();
+    let forbidden = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    // Hold a small free range while setting up the server. The client is already
+    // bound, so it cannot acquire one of the advertised server ports.
+    let mut reservation = None;
+    for _ in 0..32 {
+        let first = UdpSocket::bind(SocketAddr::new(ip, 0)).await.unwrap();
+        let port = first.local_addr().unwrap().port();
+        if port > 65532 {
+            continue;
+        }
+        let mut held = vec![first];
+        for next in port + 1..=port + 3 {
+            if let Ok(socket) = UdpSocket::bind(SocketAddr::new(ip, next)).await {
+                held.push(socket);
+            } else {
+                break;
+            }
+        }
+        if held.len() == 4 {
+            reservation = Some(([port, port + 3], held));
+            break;
+        }
+    }
+    let (ports, guards) = reservation.expect("no small free UDP range for public fixture");
+    let media = PublicMedia {
+        ports,
+        advertised_ip: Some(ip),
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let (server, operator) = test_support::server(
+        SocketAddr::new(ip, 0),
+        &directory.path().join("identity.pem"),
+        Some(&media),
+        &issuer,
+    )
+    .await
+    .unwrap();
+    let address = server.local_addr().unwrap();
+    let (stop, shutdown) = watch::channel(false);
+    let (world, owner) = crate::world::create(shutdown.clone());
+    let owner = tokio::spawn(owner);
+    let (_status_sender, status) =
+        watch::channel(ServerStatus::new("authenticated public fixture".into(), 1).unwrap());
+    let task = tokio::spawn(server.serve(ContextData {
+        settings: super::Settings {
+            authentication,
+            timeout: Duration::from_secs(15),
+            content: None,
+            observer: crate::connections::Observer::default(),
+        },
+        world: world.clone(),
+        status,
+        shutdown: shutdown.clone(),
+    }));
+    let key = ClientIdentity::generate_key();
+    let signer = nethernet::identity::ServerIdentity::from_key(
+        key.clone().into(),
+        "fixture.client",
+        std::time::SystemTime::now(),
+        Some(Duration::from_secs(600)),
+    )
+    .unwrap();
+    let token=issuer.token(signer.token(),serde_json::json!({"mid":"fixture-mid","xid":"2535400000000001","xname":"PublicNetherTest"}));
+    let data = ClientData::offline(
+        V2225::GAME_VERSION,
+        &address.to_string(),
+        "PublicNetherTest",
+    );
+    let identity = ClientIdentity::online(
+        key,
+        bedrock::auth::AuthData {
+            auth_type: bedrock::auth::AuthType::Online,
+            auth_payload: bedrock::auth::AuthPayload::Token(token),
+        },
+        &data,
+    )
+    .unwrap();
+    let blocked_udp = UdpSocket::bind(SocketAddr::new(ip, 0)).await.unwrap();
+    let unavailable = test_support::connect(
+        address,
+        blocked_udp,
+        &signer,
+        &operator,
+        &issuer,
+        shutdown.clone(),
+        None,
+    )
+    .await;
+    match unavailable {
+        Err(error) => assert!(error.to_string().contains("HTTP/1.1 503"), "{error:#}"),
+        Ok(_) => panic!("a full UDP range accepted another media connection"),
+    }
+    assert_eq!(world.online_players(), 0);
+    drop(guards);
+    let (transport, client_task) = test_support::connect(
+        address,
+        udp,
+        &signer,
+        &operator,
+        &issuer,
+        shutdown,
+        Some(forbidden.local_addr().unwrap()),
+    )
+    .await
+    .unwrap();
+    let mut client = TestClient {
+        conn: Connection::<V2225, _>::from_transport_conn(transport),
+        pending: VecDeque::new(),
+        dtls_identity: Some(identity),
+        own_id: 0,
+    };
+    let id = tokio::time::timeout(Duration::from_secs(15), client.enter())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!client.conn.get_socket_addr().ip().is_loopback());
+    assert!((ports[0]..=ports[1]).contains(&client.conn.get_socket_addr().port()));
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while world.online_players() == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let player = world.player_snapshot(id).await.unwrap();
+    assert_eq!(player.profile.subject, "xuid:2535400000000001");
+    assert_eq!(player.profile.name, "PublicNetherTest");
+    assert_eq!(world.online_players(), 1);
+    let mut packet = [0u8; 128];
+    assert_eq!(
+        forbidden.try_recv_from(&mut packet).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock,
+        "an untrusted SDP candidate received a UDP connectivity check"
+    );
+    assert!(
+        client.conn.encryption.is_none(),
+        "DTLS must not add a RakNet packet cipher"
+    );
+    stop.send(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), client_task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    owner.await.unwrap().unwrap();
+    assert_eq!(world.online_players(), 0);
+    for port in ports[0]..=ports[1] {
+        UdpSocket::bind(SocketAddr::new(ip, port)).await.unwrap();
+    }
+    eprintln!(
+        "PUBLIC_AUTH_NETHERNET_SPAWN: fixture-issued RSA account, P-384 client data, pinned operator and fixed UDP ports"
+    );
+}
+
+#[tokio::test]
 async fn nethernet_http_webrtc_and_raknet_share_login_world_and_committed_block_changes() {
     let _ = tracing_subscriber::fmt()
         .with_test_writer()
@@ -523,6 +700,7 @@ async fn nethernet_http_webrtc_and_raknet_share_login_world_and_committed_block_
         "127.0.0.1:0".parse().unwrap(),
         &directory.path().join("identity.pem"),
         &Authentication::offline(),
+        None,
     )
     .await
     .unwrap();
@@ -691,6 +869,7 @@ async fn nethernet_rejects_a_login_not_bound_to_its_signed_transport_key() {
         "127.0.0.1:0".parse().unwrap(),
         &directory.path().join("identity.pem"),
         &Authentication::offline(),
+        None,
     )
     .await
     .unwrap();
@@ -1096,6 +1275,7 @@ async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_own
         "127.0.0.1:0".parse().unwrap(),
         &directory.path().join("identity.pem"),
         &Authentication::offline(),
+        None,
     )
     .await
     .unwrap();

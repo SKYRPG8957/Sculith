@@ -35,6 +35,7 @@ Ctrl+C로 정상 종료하면 `world/region.sculith`에 지역을 저장합니�
 플레이어 데이터 저장과 비정상 종료 복구는 아직 없습니다.
 이전 프리뷰 배포본은 철회했으며 새 바이너리는 게시하지 않습니다.
 [Windows 설정](docs/guides/windows.md).
+[외부 접속과 포트 설정](docs/guides/hosting.md).
 
 ## 주요 기능
 
