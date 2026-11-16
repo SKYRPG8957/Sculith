@@ -3015,6 +3015,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sculith-profile-fixture"
+version = "0.1.0"
+dependencies = [
+ "sculith-plugin-api",
+]
+
+[[package]]
 name = "sculith-runtime"
 version = "0.1.0"
 dependencies = [

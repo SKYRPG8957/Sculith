@@ -1,4 +1,4 @@
-# Development status — 2026-11-16 KST
+# Development status — 2026-11-17 KST
 
 > 프리뷰 릴리스·태그·배포 파일은 철회했습니다. 아래 개발·검증 기록은 유지하며, 새 패키지는 올리지 않습니다.
 
@@ -7,6 +7,8 @@ Canonical repository: `SKYRPG8957/Sculith`. Existing MIT license and origin are 
 The full requirements are in [engineering-directive.md](engineering-directive.md).
 
 ## Implemented — current source toward 0.1.0
+
+- Initial plugin IPC instrumentation adds Off/Monitor/bounded Profile modes, rolling exact recent quantiles, encoding/wall times, complete-frame bytes, clone counts and versioned payload-free reports. A real-Rust fanout benchmark and Linux CPU/RSS/PSS driver provide repeatable baselines. This does not implement CPU sampling, a full game profiler or parallel region simulation. [Operator guide](../guides/profiling.md).
 
 - API v11 adds shared text, boolean, dropdown and integer-slider forms. The same owner validates complete typed replies, deadlines, session IDs and step/length bounds before a single private callback. Java uses stock dialog controls and a bounded flat modified-UTF-8 payload; native uses standard custom forms. Simple forms retain API v3 and the shared one-pending-form slot.
 

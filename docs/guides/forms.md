@@ -109,6 +109,9 @@ Bedrock JSON UI or HUD conversion.
 python3 tests/interop/custom_forms_smoke.py --client target/gophertunnel-probe
 ```
 
+The unmodified Java game also displays and submits all four controls through
+actual keyboard/mouse input. [Evidence and limits](../development/verification/custom-forms.md).
+
 The probe runs real Rust controller/observer processes and independent Java/native
 clients. It checks all four definitions, Unicode input, cancellation, malformed
 replies, step/length/count/type validation, replay and recipient isolation.

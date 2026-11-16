@@ -2,6 +2,7 @@
 
 Read `docs/development/engineering-directive.md` for the user's Master Engineering Directive v1.0.
 It is the project direction; implementation and verification evidence determine actual support.
+Read `docs/development/performance-directive.md` for the optimization request. Start with repeatable baselines and instrumentation, preserve safe Rust and protocol/game behavior, and only report measured improvements.
 
 - Preserve existing work. Inspect branch, worktree and changes before editing; one owner per file during parallel work.
 - Keep the existing MIT LICENSE. Do not copy incompatible copyleft implementation code or change licenses without authorization.

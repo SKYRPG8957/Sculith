@@ -15,6 +15,8 @@ use tokio::{
     process::{Child, ChildStdin, ChildStdout, Command},
 };
 
+pub mod profiling;
+use profiling::{Collector, Mode, Sample};
 mod config;
 pub use config::PluginConfig;
 use sculith_runtime::{WorldEvent, WorldHandle};
@@ -23,6 +25,7 @@ pub const MAX_PLUGINS: usize = 32;
 
 pub struct Plugins {
     processes: Vec<Process>,
+    dispatch_metrics: Collector,
 }
 
 struct Process {
@@ -37,9 +40,54 @@ struct Process {
     inventory_tokens: f64,
     inventory_clock: Instant,
     world_budget: Option<(f64, Instant)>,
+    metrics: Collector,
 }
 
 impl Plugins {
+    /// Minimal counters remain active in Off; clocks and history are opt-in.
+    pub fn monitor(&mut self, enabled: bool) {
+        let now = Instant::now();
+        let mode = if enabled { Mode::Monitor } else { Mode::Off };
+        self.dispatch_metrics.configure(mode, now, None);
+        for process in &mut self.processes {
+            process.metrics.configure(mode, now, None);
+        }
+    }
+
+    pub fn start_profile(&mut self, duration: Duration) -> Result<()> {
+        ensure!(
+            (Duration::from_secs(1)..=Duration::from_secs(300)).contains(&duration),
+            "plugin profile duration must be 1..300 seconds"
+        );
+        let now = Instant::now();
+        let end = Some(now + duration);
+        self.dispatch_metrics.configure(Mode::Profile, now, end);
+        for process in &mut self.processes {
+            process.metrics.configure(Mode::Profile, now, end);
+        }
+        Ok(())
+    }
+
+    pub fn profile_snapshot(&self) -> profiling::Snapshot {
+        let now = Instant::now();
+        profiling::Snapshot {
+            schema_version: 1,
+            scope: "plugin_ipc_wall_time",
+            dispatcher: self.dispatch_metrics.snapshot(now),
+            plugins: self
+                .processes
+                .iter()
+                .map(|process| profiling::PluginProfile {
+                    name: process.metadata.name.clone(),
+                    api_version: process.api_version,
+                    worker_pid: process.child.id(),
+                    disabled: process.disabled,
+                    ipc: process.metrics.snapshot(now),
+                })
+                .collect(),
+        }
+    }
+
     pub fn observes_connections(&self) -> bool {
         self.processes.iter().any(|p| {
             !p.disabled
@@ -115,7 +163,10 @@ impl Plugins {
             tracing::info!(plugin = %process.metadata.name, version = %process.metadata.version, api_version = process.api_version, "Rust plugin loaded");
             processes.push(process);
         }
-        Ok(Self { processes })
+        Ok(Self {
+            processes,
+            dispatch_metrics: Collector::default(),
+        })
     }
 
     pub async fn dispatch(&mut self, event: Event, status: &mut ServerStatus, world: &WorldHandle) {
@@ -174,12 +225,16 @@ impl Plugins {
     ) {
         // Requests wait concurrently; actions still apply in configured order.
         // One slow worker must not multiply the round's delay by plugin count.
+        let timing = self.dispatch_metrics.begin();
+        let mut dispatch_failed = false;
         let hook = event.hook();
+        let mut cloned_events = 0u64;
         let replies = futures_util::future::join_all(self.processes.iter_mut().map(|process| {
             let subscribed = !process.disabled
                 && process.metadata.hooks.contains(&hook)
                 && recipient.is_none_or(|name| process.metadata.name == name);
             let event = event.clone();
+            cloned_events += 1;
             async move {
                 if subscribed {
                     Some(process.request(HostMessage::Event { event }).await)
@@ -189,6 +244,7 @@ impl Plugins {
             }
         }))
         .await;
+        self.dispatch_metrics.add_clones(cloned_events);
         for (process, reply) in self.processes.iter_mut().zip(replies) {
             let Some(reply) = reply else { continue };
             let result = async {
@@ -260,6 +316,7 @@ impl Plugins {
             }
             .await;
             if let Err(error) = result {
+                dispatch_failed = true;
                 tracing::warn!(plugin = %process.metadata.name, %error, "plugin disabled");
                 process.disabled = true;
                 let _ = world.disable_commands(process.metadata.name.clone()).await;
@@ -267,6 +324,20 @@ impl Plugins {
                 process.input.take();
             }
         }
+        self.dispatch_metrics.finish(
+            timing,
+            Sample {
+                request_id: None,
+                hook: Some(hook),
+                start_ns: 0,
+                encode_ns: 0,
+                wall_ns: 0,
+                sent_bytes: 0,
+                received_bytes: 0,
+                failed: dispatch_failed,
+                timed_out: false,
+            },
+        );
     }
 
     pub async fn disable_game_subscribers(&mut self, world: &WorldHandle) {
@@ -370,6 +441,7 @@ impl Process {
             inventory_tokens: 256.0,
             inventory_clock: Instant::now(),
             world_budget: None,
+            metrics: Collector::default(),
         };
         let reply = process
             .request(HostMessage::Hello {
@@ -433,26 +505,57 @@ impl Process {
     }
 
     async fn request(&mut self, message: HostMessage) -> Result<PluginMessage> {
-        self.request_id += 1;
-        let request = Request {
-            id: self.request_id,
-            message,
+        let hook = match &message {
+            HostMessage::Event { event } => Some(event.hook()),
+            HostMessage::Hello { .. } => None,
         };
-        let mut data = serde_json::to_vec(&request)?;
-        data.push(b'\n');
-        ensure!(data.len() <= MAX_MESSAGE_BYTES, "host message too large");
-        tokio::time::timeout(self.timeout, async {
-            let input = self.input.as_mut().context("plugin stdin closed")?;
-            input.write_all(&data).await?;
-            input.flush().await?;
-            let line = read_line_bounded(&mut self.output).await?;
-            let response: Response =
-                serde_json::from_slice(&line).context("invalid plugin JSON response")?;
-            ensure!(response.id == request.id, "plugin response ID mismatch");
-            Ok(response.message)
-        })
-        .await
-        .context("plugin response timed out")?
+        let timing = self.metrics.begin();
+        let (mut encode_ns, mut sent_bytes, mut received_bytes, mut timed_out) = (0, 0, 0, false);
+        let result = async {
+            self.request_id = self
+                .request_id
+                .checked_add(1)
+                .context("plugin request identifiers exhausted")?;
+            let request = Request {
+                id: self.request_id,
+                message,
+            };
+            let mut data = serde_json::to_vec(&request)?;
+            data.push(b'\n');
+            encode_ns = Collector::elapsed(&timing);
+            ensure!(data.len() <= MAX_MESSAGE_BYTES, "host message too large");
+            let outcome = tokio::time::timeout(self.timeout, async {
+                let input = self.input.as_mut().context("plugin stdin closed")?;
+                input.write_all(&data).await?;
+                sent_bytes = data.len() as u64;
+                input.flush().await?;
+                let line = read_line_bounded(&mut self.output).await?;
+                received_bytes = line.len() as u64;
+                let response: Response =
+                    serde_json::from_slice(&line).context("invalid plugin JSON response")?;
+                ensure!(response.id == request.id, "plugin response ID mismatch");
+                Ok(response.message)
+            })
+            .await;
+            timed_out = outcome.is_err();
+            outcome.context("plugin response timed out")?
+        }
+        .await;
+        self.metrics.finish(
+            timing,
+            Sample {
+                request_id: Some(self.request_id),
+                hook,
+                start_ns: 0,
+                encode_ns,
+                wall_ns: 0,
+                sent_bytes,
+                received_bytes,
+                failed: result.is_err(),
+                timed_out,
+            },
+        );
+        result
     }
 }
 

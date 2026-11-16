@@ -80,6 +80,10 @@ jobs:
         run: python tests/interop/plugin_game_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-gameplay-plugin.exe
       - name: Verify shared forms, callbacks and recipient isolation
         run: python tests/interop/forms_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-forms-plugin.exe
+      - name: Verify performance comparison contracts
+        run: python -m unittest discover -s scripts/bench -p "test_*.py"
+      - name: Verify bounded plugin profiling and report lifecycle
+        run: python tests/interop/profile_smoke.py --server target/release/sculith.exe --plugin target/release/sculith-profile-fixture.exe
       - name: Verify shared input controls, validation and private callbacks
         run: python tests/interop/custom_forms_smoke.py --server target/release/sculith.exe --plugin target/release/sculith-forms-plugin.exe --client target/gophertunnel-probe.exe
       - name: Verify shared sound assets, playback packets and recipient isolation
