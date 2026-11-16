@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "source_commit": "1d46a8164cb27007daf45f89bb0afec5a015ada5",
+  "scope": "actual unmodified offline Java 26.3 game on Linux; source model pack and Rust API-v5 show/replace/hide",
+  "client_jar_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+  "linux_executables_sha256": {
+    "sculith": "560ea42e5ec94e069b9dba9ceb478ff4f8ce7acadeeb9737e9efac347ec110e5",
+    "sculith-model-plugin": "af0ca6e32f6692708b9e305e583d031f59d2208654b2342f5a1d848dcc7d7f62"
+  },
+  "screenshots": [
+    {
+      "name": "shared-model-java.png",
+      "scenario": "early world frame while rendering was loading; model not visible yet",
+      "seconds_after_spawn_observed": 1.1664585930047906,
+      "sha256": "2841d6381019902bb9dac33f24845d1ee17fbd34de99d70bd61ad0fd0f81c3da"
+    },
+    {
+      "name": "shared-model-replaced-java.png",
+      "scenario": "same textured model after replacement",
+      "seconds_after_spawn_observed": 2.9762058630003594,
+      "sha256": "6bbc54b985526a0622d27f14b885f9400aa81f58d25bdfdd50150b6724533688"
+    },
+    {
+      "name": "shared-model-hidden-java.png",
+      "scenario": "world remains connected after hide",
+      "seconds_after_spawn_observed": 5.181046516998322,
+      "sha256": "3e61cd091d29b402204bfe446857f87de6d78e448dd5346f86b3b6deab69b298"
+    }
+  ],
+  "exercise_seconds": {
+    "replace": 2,
+    "hide": 4
+  },
+  "official_bedrock_game_verified": false,
+  "windows_build": {
+    "run_id": "43807085201",
+    "source_commit": "1d46a8164cb27007daf45f89bb0afec5a015ada5",
+    "zip_bytes": 6526986,
+    "sha256": "d7809c89f6bba52d793d32ba9350cfdaba6fd4e7b37708e7fdd5bbe09961c2ff",
+    "executables": {
+      "plugins/sculith-forms-plugin.exe": {
+        "bytes": 470528,
+        "sha256": "c67c0e11b5c8365365f93946a9c9c6e31c9b2268200e0aaabeedba923b1303c9",
+        "dll_imports": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      "plugins/sculith-gameplay-plugin.exe": {
+        "bytes": 462336,
+        "sha256": "9588b520480a8ffd49f3c29dff46882841f50ce410b0c82b904520f916dbc2d5",
+        "dll_imports": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      "plugins/sculith-model-plugin.exe": {
+        "bytes": 489472,
+        "sha256": "efa2e85d02a383d1a617562082212990779a6737a86a1448446a5df4c5f66e67",
+        "dll_imports": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      "plugins/sculith-sound-plugin.exe": {
+        "bytes": 460288,
+        "sha256": "17466fb2b902f5db1ee630efb7ecedc615c2da98fcceb5f48d38803d73fb29f0",
+        "dll_imports": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      "sculith.exe": {
+        "bytes": 14046720,
+        "sha256": "6289cadcb693135cc443e2b3ebeea5054b151f7839bcb2fbdf4ff0a6d3509019",
+        "dll_imports": [
+          "bcryptprimitives.dll",
+          "kernel32.dll",
+          "api-ms-win-core-synch-l1-2-0.dll",
+          "bcrypt.dll",
+          "iphlpapi.dll",
+          "ntdll.dll",
+          "ws2_32.dll",
+          "crypt32.dll",
+          "KERNEL32.dll",
+          "ADVAPI32.dll"
+        ]
+      }
+    },
+    "members": [
+      {
+        "name": "Cargo.lock",
+        "bytes": 104641
+      },
+      {
+        "name": "diagnose.cmd",
+        "bytes": 196
+      },
+      {
+        "name": "LICENSE",
+        "bytes": 1092
+      },
+      {
+        "name": "packs/sculith-demo/entity/sculith_statue.entity.json",
+        "bytes": 517
+      },
+      {
+        "name": "packs/sculith-demo/manifest.json",
+        "bytes": 443
+      },
+      {
+        "name": "packs/sculith-demo/models/entity/sculith_statue.geo.json",
+        "bytes": 6052
+      },
+      {
+        "name": "packs/sculith-demo/render_controllers/sculith_static.render_controllers.json",
+        "bytes": 303
+      },
+      {
+        "name": "packs/sculith-demo/sounds/sculith_demo.ogg",
+        "bytes": 5184
+      },
+      {
+        "name": "packs/sculith-demo/sounds/sound_definitions.json",
+        "bytes": 191
+      },
+      {
+        "name": "packs/sculith-demo/textures/blocks/sculith_demo.png",
+        "bytes": 101
+      },
+      {
+        "name": "packs/sculith-demo/textures/entity/sculith_statue.png",
+        "bytes": 101
+      },
+      {
+        "name": "packs/sculith-demo/textures/terrain_texture.json",
+        "bytes": 181
+      },
+      {
+        "name": "packs/sculith-demo-textures.json",
+        "bytes": 651
+      },
+      {
+        "name": "plugins/sculith-forms-plugin.exe",
+        "bytes": 470528
+      },
+      {
+        "name": "plugins/sculith-gameplay-plugin.exe",
+        "bytes": 462336
+      },
+      {
+        "name": "plugins/sculith-model-plugin.exe",
+        "bytes": 489472
+      },
+      {
+        "name": "plugins/sculith-sound-plugin.exe",
+        "bytes": 460288
+      },
+      {
+        "name": "README.txt",
+        "bytes": 7072
+      },
+      {
+        "name": "release.json",
+        "bytes": 209
+      },
+      {
+        "name": "sculith.exe",
+        "bytes": 14046720
+      },
+      {
+        "name": "sculith.local.example.toml",
+        "bytes": 1052
+      },
+      {
+        "name": "start.cmd",
+        "bytes": 1054
+      },
+      {
+        "name": "THIRD_PARTY_LICENSES.txt",
+        "bytes": 3467853
+      },
+      {
+        "name": "THIRD_PARTY_NOTICES.md",
+        "bytes": 4549
+      }
+    ],
+    "conclusion": "success"
+  },
+  "combined_actual_game": {
+    "source_commit": "1d46a8164cb27007daf45f89bb0afec5a015ada5",
+    "plugins": [
+      "gameplay-demo",
+      "forms-demo",
+      "sound-demo",
+      "model-demo"
+    ],
+    "api_version": 5,
+    "screenshots": [
+      {
+        "name": "shared-model-menu-java.png",
+        "scenario": "all four examples; menu over the private static model",
+        "sha256": "5fe6de42fbd17d766f8a31f719a00f81896735565f9efb666aae941f24712a6a"
+      },
+      {
+        "name": "shared-model-combined-java.png",
+        "scenario": "normal model remains visible; actual menu click and private welcome/help in chat",
+        "sha256": "d11ee923cd1f94f3cad0c65629bf68056a9d3988612844449a33294913e3d819"
+      }
+    ],
+    "menu_callback_selection": 0,
+    "pcm_format": "stereo PCM16, 48000 Hz",
+    "pcm_sha256": "c7c47190e6ea60c782019b3d96cee5764ddb7b6b62832b8b782b10a9a81d8c0c",
+    "pcm_frames": 229376,
+    "fft_peak_hz": 880.0,
+    "energy_fraction_875_885_hz": 0.99757885364384,
+    "fft_window_start_seconds": 1.5
+  },
+  "linux_ci_runs": [
+    "43807085178",
+    "43807082765"
+  ],
+  "pack_preparation": {
+    "scope": "five fresh debug CLI processes; original small example including static geometry; includes startup, file I/O, validation and both archives; not TPS or server memory",
+    "source_files": 9,
+    "source_bytes": 12737,
+    "native_zip_bytes": 14096,
+    "java_zip_bytes": 11911,
+    "runs": [
+      {
+        "wall_seconds": 0.009258600999601185,
+        "peak_child_rss_kib": 15908
+      },
+      {
+        "wall_seconds": 0.009902787998726126,
+        "peak_child_rss_kib": 16324
+      },
+      {
+        "wall_seconds": 0.007790452997141983,
+        "peak_child_rss_kib": 16356
+      },
+      {
+        "wall_seconds": 0.007280104997335002,
+        "peak_child_rss_kib": 16136
+      },
+      {
+        "wall_seconds": 0.006351659998472314,
+        "peak_child_rss_kib": 16052
+      }
+    ],
+    "median_wall_seconds": 0.007790452997141983,
+    "peak_child_rss_kib": 16356,
+    "pack_artifacts": {
+      "bedrock_id": "361c69b1-7301-58e4-9b38-19a1576b6363",
+      "java_id": "8dd49444-4617-54f5-b681-e2e593d54325",
+      "bedrock_sha256": "f80bf44c2ce8bd16457014385da37f6e5435413f472d1c263036d2daecd4acec",
+      "java_sha1": "4ec0f94603861aeceb633e2384b12d7cc3213135",
+      "java_sha256": "4d94857e16ac03570e514fd20137e98b66363dcdf6cb47f10ba6050039ce119b"
+    }
+  }
+}

@@ -27,6 +27,47 @@ bone cycles, out-of-bounds UV and generated-file collisions.
 
 Linux workspace tests, Clippy and ownership doctest pass. Retained actual v1/v2/v3/v4
 Rust executables pass the new host, including old forms/sounds and pack/cache/consent
-regressions. Final exact-source actual-game captures and native Windows release
-verification are pending. Official Windows Bedrock-game entry/rendering remains
+regressions. Exact source `1d46a8164cb27007daf45f89bb0afec5a015ada5` passes native Windows
+[run 43807085201](https://github.com/SKYRPG8957/Sculith/actions/runs/43807085201), including
+models/actor lifecycle/privacy, both transports, all plugin/form/sound/pack checks,
+license packaging and extracted launchers. Linux CI 43807085178 and 43807082765 pass.
+The ZIP is **6,526,986 bytes**, SHA-256
+`d7809c89f6bba52d793d32ba9350cfdaba6fd4e7b37708e7fdd5bbe09961c2ff`.
+Twenty-four members and all five EXEs were inspected; imports are Windows system
+DLLs only. No private key, world, test log or Minecraft JAR/game assets are bundled.
+Source/license text is unchanged apart from Windows checkout line endings. Official Windows Bedrock-game entry/rendering remains
 unverified; independent native tests are not labelled official-game verification.
+
+## Exact-source actual game
+
+The [JSON record](shared-model-result.json) pins the client, exact runtime source,
+Linux executable hashes, screenshot hashes, exercise timing and Windows artifact.
+The earliest frame at 1.17 seconds shows the world before the model is visible;
+it is retained with that accurate label. The 2.98-second frame shows the textured
+statue after replacement, and the 5.18-second frame shows the connected world
+after the four-second hide. All captures are unmodified.
+
+![Actual Java textured model after replacement](shared-model-replaced-java.png)
+
+![Actual Java remains connected after hide](shared-model-hidden-java.png)
+
+A second normal run enables all four bundled examples, without the exercise
+timer. The original model remains visible with the welcome/menu/sound examples.
+A real mouse click returns `selection=Some(0)` to the owning Rust plugin; chat
+history displays both its private help and the gameplay welcome. Actual stock
+OpenAL output contains an 880-Hz tone, with 99.7579% of one-second Hann-windowed
+spectral energy in 875–885 Hz. The file is stereo PCM16 at 48 kHz; no speaker
+listening or official native rendering is claimed.
+
+![Actual Java combined menu and model](shared-model-menu-java.png)
+
+![Actual Java combined model and private callbacks](shared-model-combined-java.png)
+
+Owned game/server/display processes were stopped after each scenario. Temporary
+client assets, game JAR, logs and device audio are not shipped.
+
+A five-process small-pack debug CLI measurement includes process startup, file
+I/O, validation and both archives. Source: nine files / 12,737 bytes; native/Java
+ZIPs: 14,096 / 11,911 bytes. Median wall time is 7.790 ms, peak child RSS 16,356 KiB
+(Linux `wait4`). This is not TPS, server memory or a large-pack performance claim.
+Individual measurements and pack hashes are in the JSON record.
