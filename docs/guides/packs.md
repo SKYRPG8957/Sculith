@@ -129,6 +129,9 @@ advertised Java URL and archive bytes, exercises GET/HEAD plus method/body/path
 rejection, and connects the backend through a non-loopback interface when the host
 has one. This is a local network deployment test, not a live Internet/TLS deployment
 or proof of successful Microsoft-account login.
+An unmodified Java 26.3 game also downloads through the advertised proxy prefix
+and renders the authored texture and plugin statue from a fresh profile.
+[Current source verification](../development/verification/public-pack-url.md).
 
 An unmodified Linux Java 26.3 game has downloaded the server pack and rendered the
 checkerboard on held Stone. This is separate from independent Bedrock wire tests;
