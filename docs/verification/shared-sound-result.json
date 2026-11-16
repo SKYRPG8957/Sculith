@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "source_commit": "e3fe40318a496da96f22a7c9d0ce4b46cab5eaaa",
+  "scope": "actual unmodified offline Java 26.3 game on Linux; original custom sound after required-pack load and player initialization",
+  "client_jar_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+  "audio_backend": "stock OpenAL Soft Wave File Writer",
+  "capture": "raw device output captured while running; RIFF sizes retain unknown-length sentinels",
+  "format": {
+    "type": "WAVE_FORMAT_EXTENSIBLE / PCM16",
+    "sample_rate_hz": 48000,
+    "channels": 2,
+    "bits_per_sample": 16
+  },
+  "raw_capture_bytes": 770116,
+  "raw_capture_sha256": "9e62794d1bc7b5f3616b7008592247d41192aec577df7353d7ce813692c8af42",
+  "pcm_sha256": "2d800ea06dcd1880bd5fd3a6ffe2aead6fd75276eb9a7907c3b221eec19604cd",
+  "pcm_frames": 192512,
+  "analysis": {
+    "one_second_window_start": 1.0,
+    "rms_int16": 878.306342052466,
+    "fft_peak_hz": 880.0,
+    "spectral_energy_fraction_875_885_hz": 0.9972207093811192,
+    "method": "channel mean, strongest 1-second window at 0.5-second spacing; Hann-windowed NumPy rFFT"
+  },
+  "authored_clip_sha256": "8e15745a94e04437cb78f5ae39fb2a6dda7390baae40079f91c2015effd8001f",
+  "screenshot_sha256": "f4fe183fff86f7532f576635ca664be7907be15564801084410c06af9766f7b6",
+  "official_bedrock_game_verified": false,
+  "windows_build": {
+    "run_id": "43801768939",
+    "source_commit": "e3fe40318a496da96f22a7c9d0ce4b46cab5eaaa",
+    "zip_bytes": 6269330,
+    "sha256": "9d2e071f60a204df58ee0e1be6a2800b3ad945e48e5e9e4609c415a66291a5f5",
+    "executables": {
+      "plugins/sculith-forms-plugin.exe": {
+        "bytes": 468992,
+        "sha256": "c9334aa04608fc1e03bfe0d27c1583eadbbc02d558158e5fa4a763d71fbc0f81",
+        "dll_imports": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      "plugins/sculith-gameplay-plugin.exe": {
+        "bytes": 459776,
+        "sha256": "03b2192521ab8e400fd5c03558353da391258622fe449340536015ba73efe8eb",
+        "dll_imports": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      "plugins/sculith-sound-plugin.exe": {
+        "bytes": 459264,
+        "sha256": "7a88540cede44210bcbd820647f97f1d815d4e387e05920635ba0959aa85ca6c",
+        "dll_imports": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      "sculith.exe": {
+        "bytes": 13956608,
+        "sha256": "2d0d7e9e629fe71ade3363ad26cf008bcc483f6dfb1efb049758e8c5596fa826",
+        "dll_imports": [
+          "bcryptprimitives.dll",
+          "kernel32.dll",
+          "api-ms-win-core-synch-l1-2-0.dll",
+          "bcrypt.dll",
+          "iphlpapi.dll",
+          "ntdll.dll",
+          "ws2_32.dll",
+          "crypt32.dll",
+          "KERNEL32.dll",
+          "ADVAPI32.dll"
+        ]
+      }
+    },
+    "members": [
+      {
+        "name": "Cargo.lock",
+        "bytes": 104531
+      },
+      {
+        "name": "diagnose.cmd",
+        "bytes": 196
+      },
+      {
+        "name": "LICENSE",
+        "bytes": 1092
+      },
+      {
+        "name": "packs/sculith-demo/manifest.json",
+        "bytes": 443
+      },
+      {
+        "name": "packs/sculith-demo/sounds/sculith_demo.ogg",
+        "bytes": 5184
+      },
+      {
+        "name": "packs/sculith-demo/sounds/sound_definitions.json",
+        "bytes": 191
+      },
+      {
+        "name": "packs/sculith-demo/textures/blocks/sculith_demo.png",
+        "bytes": 101
+      },
+      {
+        "name": "packs/sculith-demo/textures/terrain_texture.json",
+        "bytes": 181
+      },
+      {
+        "name": "packs/sculith-demo-textures.json",
+        "bytes": 286
+      },
+      {
+        "name": "plugins/sculith-forms-plugin.exe",
+        "bytes": 468992
+      },
+      {
+        "name": "plugins/sculith-gameplay-plugin.exe",
+        "bytes": 459776
+      },
+      {
+        "name": "plugins/sculith-sound-plugin.exe",
+        "bytes": 459264
+      },
+      {
+        "name": "README.txt",
+        "bytes": 6577
+      },
+      {
+        "name": "release.json",
+        "bytes": 209
+      },
+      {
+        "name": "sculith.exe",
+        "bytes": 13956608
+      },
+      {
+        "name": "sculith.local.example.toml",
+        "bytes": 960
+      },
+      {
+        "name": "start.cmd",
+        "bytes": 1054
+      },
+      {
+        "name": "THIRD_PARTY_LICENSES.txt",
+        "bytes": 3467853
+      },
+      {
+        "name": "THIRD_PARTY_NOTICES.md",
+        "bytes": 4549
+      }
+    ],
+    "conclusion": "success"
+  },
+  "pack_preparation": {
+    "scope": "five fresh debug CLI processes preparing the small original example; includes process startup, filesystem, validation, both archives; not TPS/gameplay throughput",
+    "source_files": 5,
+    "source_bytes": 6065,
+    "native_zip_bytes": 6798,
+    "java_zip_bytes": 7191,
+    "runs": [
+      {
+        "wall_seconds": 0.006613728000957053,
+        "peak_child_rss_kib": 16288
+      },
+      {
+        "wall_seconds": 0.004585757997119799,
+        "peak_child_rss_kib": 16236
+      },
+      {
+        "wall_seconds": 0.004007417999673635,
+        "peak_child_rss_kib": 16020
+      },
+      {
+        "wall_seconds": 0.007290826993994415,
+        "peak_child_rss_kib": 16020
+      },
+      {
+        "wall_seconds": 0.003590951004298404,
+        "peak_child_rss_kib": 16236
+      }
+    ],
+    "median_wall_seconds": 0.004585757997119799,
+    "peak_child_rss_kib": 16288
+  },
+  "pack_artifacts": {
+    "bedrock_id": "e1bc7608-9c82-568a-8a0a-06176e0cf357",
+    "java_id": "c6f6edd2-1eab-52df-a8df-baebfc7cf6de",
+    "bedrock_sha256": "b4789c52bdc91d60ecd6858ad11ca4cf67bd225250cb2d414f6251f9592942ee",
+    "java_sha1": "19fa13ff904533940231af02d0da5965b515cf8d",
+    "java_sha256": "b26cf302d88fb5fb09d1d88bf3e5b7666113b4f2b2336fd25aceba37b019415f"
+  },
+  "linux_executables_sha256": {
+    "sculith": "70943a3a59a260aa3fcfca8f670ff49d79c98094ea1c34e22b95a89f3deb456d",
+    "sculith-sound-plugin": "e064d238ab9c521ef3b25258b8814f9cf29c0f186a2e137e77a3d88cde57931e"
+  },
+  "linux_ci_runs": [
+    "43801769062",
+    "43801764466"
+  ]
+}
