@@ -1,0 +1,179 @@
+{
+  "source": "5eba35cb0f9ca3843b2bfb6d71e7796433b3ca1a",
+  "official_java": {
+    "version": "26.3",
+    "protocol": 777,
+    "jar_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+    "unmodified": true,
+    "mods": false,
+    "offline_loopback": true
+  },
+  "server_sha256": "d734142ad3bb94c273be0c5271f4369e9927af44f91cc5a30b476d7672c8370c",
+  "native_probe_sha256": "cc84bca42ef8b4a7ff81399cddb890371c3d8a1c71fbdd5da4767a681b3dbaad",
+  "native_is_official_game": false,
+  "content_pack": true,
+  "seconds": 32.755580798002484,
+  "captures": [
+    {
+      "file": "shared-equipment-stone-java.png",
+      "sha256": "3c4305ff81328868f1ef105e0e2e09e040c5a40a0bc83ce1513394b747810fcd"
+    },
+    {
+      "file": "shared-equipment-java-dirt.png",
+      "sha256": "31e7a11db39b9afffba5b40737a3872c9b202c590536c70e57c7a1e3bed70355"
+    },
+    {
+      "file": "shared-equipment-both-dirt-java.png",
+      "sha256": "fb6a6549d60ae49cd03e082a531e5d80c13fa0a6ba036e4c3577fcd3d0131546"
+    },
+    {
+      "file": "shared-equipment-java-empty.png",
+      "sha256": "29d0184d766b3b600579028d0f632755d7e24fa166a304420f2eabab9e544d7e"
+    },
+    {
+      "file": "shared-equipment-both-empty-java.png",
+      "sha256": "55b3b2036da6f893dd69bc065f525b7a1207099c3286e5337a030de352d3c6a8"
+    },
+    {
+      "file": "shared-equipment-native-left-java.png",
+      "sha256": "774f429f137f575be0e1ed5eccfae9482b71454d91059e8efa37f918f5582d9b"
+    }
+  ],
+  "native_output": [
+    "DIALED: independent gophertunnel Bedrock login completed\n",
+    "PASS: independent gophertunnel NetherNet world spawn 2\n",
+    "PEER_ACTUAL_EQUIPMENT: id=2 item=1 count=64 slot=0\n",
+    "PEER_READY\n",
+    "PEER_VISUAL_READY\n",
+    "PEER_ACTUAL_EQUIPMENT: id=1 item=3 count=64 slot=1\n",
+    "PEER_ACTUAL_EQUIPMENT: id=2 item=3 count=64 slot=1\n",
+    "PEER_ACTUAL_EQUIPMENT: id=1 item=0 count=0 slot=8\n",
+    "PEER_ACTUAL_EQUIPMENT: id=2 item=0 count=0 slot=8\n",
+    "PASS: native peer held for actual stock Java rendering\n"
+  ],
+  "limitations": [
+    "Official Windows Bedrock rendering is unverified.",
+    "Fixed creative starter hotbar only; no general inventory/armour/offhand.",
+    "No account-skin or cape transfer."
+  ],
+  "checks": {
+    "rust_project_tests": 136,
+    "clippy": "pass",
+    "ownership_doctest": "pass",
+    "independent_equipment_and_false_claim_correction": "pass",
+    "independent_peers": "pass",
+    "independent_java": "pass",
+    "gameplay_plugin": "pass",
+    "forms": "pass",
+    "sound": "pass",
+    "model": "pass",
+    "packs_cache_consent_keepalive": "pass",
+    "discovery_sessions_persistence": "pass"
+  },
+  "windows_build": {
+    "version": "v0.1.0-preview.16",
+    "source": "5eba35cb0f9ca3843b2bfb6d71e7796433b3ca1a",
+    "run_id": 43819324302,
+    "bytes": 6594214,
+    "sha256": "bae1d47488b3ea20cdd886ffd90ac08cfea81c16c0e70b87332721367b446f6e",
+    "members": [
+      "Cargo.lock",
+      "diagnose.cmd",
+      "LICENSE",
+      "packs/sculith-demo/entity/sculith_statue.entity.json",
+      "packs/sculith-demo/manifest.json",
+      "packs/sculith-demo/models/entity/sculith_statue.geo.json",
+      "packs/sculith-demo/render_controllers/sculith_static.render_controllers.json",
+      "packs/sculith-demo/sounds/sculith_demo.ogg",
+      "packs/sculith-demo/sounds/sound_definitions.json",
+      "packs/sculith-demo/textures/blocks/sculith_demo.png",
+      "packs/sculith-demo/textures/entity/sculith_statue.png",
+      "packs/sculith-demo/textures/terrain_texture.json",
+      "packs/sculith-demo-textures.json",
+      "plugins/sculith-forms-plugin.exe",
+      "plugins/sculith-gameplay-plugin.exe",
+      "plugins/sculith-model-plugin.exe",
+      "plugins/sculith-sound-plugin.exe",
+      "README.txt",
+      "release.json",
+      "sculith.exe",
+      "sculith.local.example.toml",
+      "start.cmd",
+      "THIRD_PARTY_LICENSES.txt",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "exes": [
+      {
+        "name": "sculith.exe",
+        "bytes": 14246400,
+        "sha256": "784cf723459979c6df8873ccd8a1d33a19eb2bf7deb125f6015eac6b10ce6cc2",
+        "dlls": [
+          "bcryptprimitives.dll",
+          "kernel32.dll",
+          "api-ms-win-core-synch-l1-2-0.dll",
+          "bcrypt.dll",
+          "iphlpapi.dll",
+          "ntdll.dll",
+          "ws2_32.dll",
+          "crypt32.dll",
+          "KERNEL32.dll",
+          "ADVAPI32.dll"
+        ]
+      },
+      {
+        "name": "plugins/sculith-forms-plugin.exe",
+        "bytes": 470528,
+        "sha256": "ea82a5253b0ce6c7cecf4bd31b40ba847039718688528d0e5369ce75cb8cc131",
+        "dlls": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      {
+        "name": "plugins/sculith-sound-plugin.exe",
+        "bytes": 460288,
+        "sha256": "371278059bf437fe6bbb175abed6502d800a02d97f33df544e4fedea6af5b6ef",
+        "dlls": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      {
+        "name": "plugins/sculith-gameplay-plugin.exe",
+        "bytes": 462336,
+        "sha256": "7049c2e46b1c88bbc2f4c206c19c0a032a156f8d2a24f8e835309d0c280d86b6",
+        "dlls": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      {
+        "name": "plugins/sculith-model-plugin.exe",
+        "bytes": 489472,
+        "sha256": "c194fa619741ef6cb66f92868a4274a8516a6028bf5f5a2f7888dd57d3d605b5",
+        "dlls": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      }
+    ],
+    "source_asset_check": "JSON, LICENSE and Cargo.lock match with CRLF/LF normalization; PNG/OGG byte-identical",
+    "status": "success"
+  },
+  "interop_benchmark": {
+    "kind": "whole independent equipment integration harness including Rust startup, Python/Go voxel decoding and local transports; not server TPS or latency",
+    "source": "5eba35cb0f9ca3843b2bfb6d71e7796433b3ca1a",
+    "samples_seconds": [
+      1.7414551129986648,
+      1.5975060400014627,
+      1.5506706599990139
+    ],
+    "median_seconds": 1.5975060400014627,
+    "harness_children_max_rss_kib": 52368,
+    "conditions": "Linux debug build; GUI client also running; no scalability claim"
+  }
+}
