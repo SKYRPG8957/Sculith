@@ -75,6 +75,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 ## Verified — current local source
 
 - World API validation passes 231 project tests, Clippy, ownership doctests and architecture checks. A real Rust controller edits two chunks; independent Java/native peers observe the same five plugin/player block changes over revisions 1–3. Rejected bounds/types/duplicates/stale revisions and no-op edits cause no public deltas. Separate workers verify private responses and legacy callbacks; a flooding worker is disabled while discovery keeps working. Orderly restart restores plugin edits and the shared CAS revision, including cross-chunk heightmap/skylight verification. Existing inventory, packet hooks, forms, sounds, static models, Java gameplay, native transports and public pack-proxy checks pass.
+  Source `0f20d6f` completes Linux CI and every configured native Windows build/runtime/interoperability step; only Windows cache/checkout cleanup remains at this observation. A separate local release build and world probe pass. These workflows upload no artifacts.
+  An actual unmodified Java 26.3 profile also displays a block committed through the Rust fixture with the shared texture and static model. A separate peer decodes the edited spawn and reads back the same revision and block names. [Evidence and scope](verification/world-api.md).
 
 - Empty-start validation passes 221 project tests, Clippy, ownership doctests and independent Java/native startup/gameplay/inventory/peer/content probes. Every independent native spawn checks the empty main inventory, hand and auxiliary windows; Java verifies its empty baseline before optional creative fixture selection, and also enters without fixture items. A real RakNet request with an empty hand is corrected before explicit creative material is supplied. Both editions retain movement/building, grants, counted hands, forms, sounds, models and pack transfer.
   Source `98245d6` also passes Linux CI and all configured native Windows build/runtime/interoperability steps. An actual unmodified Java 26.3 fresh profile displays the empty hotbar and shared model, then selects Stone through the creative UI; a separate peer observes the committed one-item hand. [Evidence and scope](verification/empty-inventory.md).
@@ -163,6 +165,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Latest-release reference check still reports Java `26.3 / 777` and Bedrock `1.26.60 / 2225`. These are references, not full gameplay support declarations.
 
 ## Failed / externally constrained
+
+- The first API-v10 Windows workflow passed native build/runtime checks but its new world probe referenced a debug fixture path after building release executables. The probe had not started; source `0f20d6f` corrects the path to the release executable. This was a workflow configuration failure rather than a runtime compatibility result.
 
 - The empty-start cleanup exposed assumptions in fixture setup: invalid teleport tests attempted creative seeding before activation, late-join probes expected an implicit held Stone stack, and the benchmark grant loop still relied on initial Dirt/Grass. Those fixtures now observe empty startup and prepare only the materials each scenario needs. All configured checks pass after these corrections; no production seed flag or engine command was added.
 
