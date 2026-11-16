@@ -1,8 +1,10 @@
-# Rust 플러그인 SDK v2 — 실행 파일 방식의 초기 게임 API
+# Rust 플러그인 SDK v3 — 실행 파일 방식의 초기 게임/UI API
 
 현재 SDK는 생명주기·공통 MOTD에 더해 초기화가 확인된 플레이어의 접속/종료와 승인된 블록 변경을 받습니다.
 `SendMessage`는 월드 소유자가 접속 상태와 호출량을 검사한 뒤 한 플레이어에게만 보냅니다.
 Java와 베드락은 같은 게임 이벤트/API를 사용합니다. [순정 Java 실제 화면과 검증](verification/2026-11-16-plugin-api-v2.md).
+v3는 공통 `SimpleForm`과 소유자에게만 돌아오는 선택/취소 응답을 제공합니다.
+베드락 기본 폼과 순정 Java 대화상자에서 같은 메뉴를 사용합니다. [공유 폼 예제·제한·실제 화면](forms.md).
 Master Engineering Directive에 따라 공식 호스트는 WASI Component Model을 우선 후보로 검토합니다.
 현재 구현이 WASI 샌드박스, region scheduler, Player/World API를 제공한다고 표시하지 않습니다.
 플러그인은 신뢰된 별도 실행 파일이며, `.dll`/`.so` 로딩이나 OS 샌드박스를 제공하지 않습니다.
@@ -85,6 +87,7 @@ timeout_ms = 1000
 | `PlayerJoined { player }` | 올바른 초기화 확인 이후. `id`, `name`, `edition` (`java`/`bedrock`) 제공 |
 | `PlayerLeft { player_id }` | 초기화됐던 플레이어의 세션 정리 이후 |
 | `BlocksChanged { player_id, revision, changes }` | 소유자가 실제로 승인한 변경 이후. 좌표와 `before`/`after` 이름 제공 |
+| `FormSubmitted { player_id, request_id, selection }` | 폼을 연 해당 플러그인만 수신. 선택지 인덱스 또는 취소 `None`. API v3 필요 |
 
 메타데이터의 `hooks`에 구독한 이벤트만 전송합니다. 같은 훅을 중복 구독할 수 없습니다.
 플러그인 이름은 1~64자의 영문·숫자·`_.-`이고 서버 안에서 유일해야 합니다.
@@ -100,6 +103,7 @@ timeout_ms = 1000
 | `SetMotd { motd }` | 공통 상태를 바꾸어 두 에디션의 서버 목록에 반영 |
 | `Log { message }` | 플러그인 이름과 함께 호스트 로그에 기록 |
 | `SendMessage { player_id, message }` | 초기화된 해당 플레이어에게만 시스템 메시지 전달. API v2 필요 |
+| `ShowForm { player_id, request_id, form }` | 같은 단순 선택 폼을 양쪽 에디션에 표시. API v3 필요 |
 
 MOTD는 비어 있지 않은 최대 192 UTF-8 바이트이며 제어문자와 `;`를 포함할 수 없습니다.
 로그 메시지는 최대 2048 바이트이며 제어문자를 포함할 수 없습니다.
@@ -111,11 +115,11 @@ MOTD는 비어 있지 않은 최대 192 UTF-8 바이트이며 제어문자와 `;
 
 ## 통신과 종료
 
-- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `2`, 기존 생명주기 API는 `1`입니다.
-- 호스트는 `Hello { api_version: 1, supported_versions: [1,2], ... }`를 보냅니다.
-  기존 v1 SDK는 추가 필드를 무시하고 그대로 동작합니다. 새 SDK는 `Ready`에서 v2를 선택합니다.
-  구형 호스트에서는 기존 훅만 쓰는 새 SDK도 v1로 동작합니다. 게임 훅이 필요한 플러그인은 구형 호스트에서 로드를 거부합니다.
-- 협상한 버전보다 높은 훅/액션은 거부합니다. 실제로 보관한 v1 Rust 실행 파일의 새 호스트 동작을 확인했습니다.
+- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `3`, 기존 게임 API는 `2`, 생명주기는 `1`입니다.
+- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3], ... }`를 보냅니다.
+  기존 v1 SDK는 추가 필드를 무시하고 그대로 동작합니다. SDK는 공통으로 지원하는 가장 높은 버전을 선택합니다.
+  새 SDK의 기존 게임 훅은 v2 호스트에서도 동작하고, 폼 훅은 v3가 없는 호스트에서 로드를 거부합니다.
+- 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1·v2 Rust 실행 파일도 새 호스트에서 확인했습니다.
 - 각 응답은 요청과 같은 `id`를 반환해야 합니다.
 - `stdout`은 프로토콜 전용입니다. 디버그 출력은 `eprintln!` 등으로 `stderr`에 기록하세요.
 - 메시지는 줄바꿈을 포함해 최대 64 KiB, 한 응답의 액션은 최대 32개입니다.

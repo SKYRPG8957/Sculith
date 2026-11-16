@@ -139,7 +139,26 @@ pub fn text(value: &str, bytes: &mut Vec<u8>) -> Result<()> {
     // Rust String goes through Java modified UTF-8. Value::String holds raw
     // BString bytes and intentionally bypasses this conversion (emoji failed
     // in the actual 26.3 client when passed through that raw representation).
+    append_nbt(&nbtx::to_be_bytes(&value.to_owned())?, bytes)
+}
+
+pub fn nbt(value: &nbtx::Value, bytes: &mut Vec<u8>) -> Result<()> {
+    append_nbt(&nbtx::to_be_bytes(value)?, bytes)
+}
+
+pub fn nbt_string(value: &str) -> Result<nbtx::Value> {
     let encoded = nbtx::to_be_bytes(&value.to_owned())?;
+    ensure!(
+        encoded.first() == Some(&8) && encoded.get(1..3) == Some(&[0, 0]) && encoded.len() >= 5,
+        "unexpected NBT string layout"
+    );
+    // Value's BString is raw bytes, so populate it with Java MUTF-8 from the
+    // library's Rust String encoder, including supplementary surrogate pairs.
+    Ok(nbtx::Value::String(encoded[5..].to_vec().into()))
+}
+
+fn append_nbt(encoded: &[u8], bytes: &mut Vec<u8>) -> Result<()> {
+    ensure!(encoded.len() <= 16 * 1024, "Java NBT component too large");
     // Network NBT omits the root name present in standard disk NBT.
     ensure!(
         encoded.get(1..3) == Some(&[0, 0]),

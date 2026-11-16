@@ -16,6 +16,10 @@ https://github.com/SKYRPG8957/Sculith
 Rust 예제 플러그인이 동봉돼 접속한 플레이어에게 환영 메시지를 보내고 블록 변경을 기록합니다.
 파일은 plugins/sculith-gameplay-plugin.exe이며, sculith.toml의 [[plugins]]에서 등록합니다.
 기존 설정을 옮겼다면 예제 플러그인도 자동으로 추가하지 않습니다.
+공유 메뉴 예제 plugins/sculith-forms-plugin.exe도 동봉합니다. 새 설정은 접속 후 안내 메뉴를 엽니다.
+베드락은 기본 폼, 순정 Java 26.3은 대화상자로 같은 제목·내용·선택지를 표시합니다.
+버튼 선택 또는 취소 결과는 메뉴를 연 Rust 플러그인에만 돌아가며 개인 안내 메시지를 보냅니다.
+한 플레이어에게 하나의 메뉴만 열고, 60초가 지난 응답은 적용하지 않습니다.
 새 설정은 동봉한 베드락 예제 팩을 두 에디션에 자동 전달합니다. 게임의 팩 사용 동의가 필요할 수 있습니다.
 Stone에 원본 체크무늬 텍스처가 표시됩니다. 순정 Java 26.3에서 실제 다운로드와 표시를 확인했습니다.
 팩은 packs/sculith-demo, 변환 매핑은 packs/sculith-demo-textures.json입니다.
@@ -59,6 +63,10 @@ are not implemented. Existing settings are not automatically opted in.
 Settings and world data are preserved. No Rust, Java or Python install is needed.
 The bundled Rust gameplay plugin sends a private welcome and observes committed
 block changes. It is enabled in new example settings; existing settings are preserved.
+The forms plugin also opens a shared menu through a Bedrock form or vanilla Java
+dialog. Selection/cancellation returns only to its owning plugin. One form per
+player is pending at a time; replies expire after 60 seconds. This is a simple-form
+fallback, not arbitrary Bedrock JSON UI conversion.
 New settings also deliver the bundled Bedrock texture example to both editions;
 Java receives the mapped PNG conversion. Accept the game's pack prompt when shown.
 Stone displays the original checkerboard. General sound/model/UI conversion is pending.

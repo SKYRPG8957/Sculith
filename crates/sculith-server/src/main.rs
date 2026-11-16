@@ -327,10 +327,8 @@ async fn run(config: Config) -> Result<()> {
             event = game_events.recv() => {
                 match event {
                     Ok(event) => {
-                        if let Some(event) = plugins::game_event(&event) {
-                            state.online_players = world.online_players();
-                            plugins.dispatch(event, &mut state, &world).await;
-                        }
+                        state.online_players = world.online_players();
+                        plugins.dispatch_game(&event, &mut state, &world).await;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
                         warn!(missed, "game hook backlog; disabling subscribers rather than silently losing events");

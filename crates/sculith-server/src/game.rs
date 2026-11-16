@@ -6,7 +6,7 @@
 use std::{
     collections::BTreeMap,
     sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Result, ensure};
@@ -185,6 +185,25 @@ struct Player {
     movement: Budget,
     building: Budget,
     messages: Budget,
+    forms: Budget,
+    pending_form: Option<PendingForm>,
+}
+
+#[derive(Debug)]
+struct PendingForm {
+    id: u32,
+    plugin: String,
+    request_id: u32,
+    buttons: u32,
+    shown: Instant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormSubmission {
+    pub player_id: u64,
+    pub plugin: String,
+    pub request_id: u32,
+    pub selection: Option<u32>,
 }
 
 /// One exclusively owned game state containing the existing authoritative Region.
@@ -194,6 +213,7 @@ pub struct GameState {
     max_players: u32,
     spawn: Position,
     players: BTreeMap<u64, Player>,
+    next_form_id: u32,
 }
 
 impl GameState {
@@ -212,6 +232,7 @@ impl GameState {
             },
         )?;
         Ok(Self {
+            next_form_id: 1,
             region,
             max_players,
             spawn,
@@ -279,6 +300,11 @@ impl GameState {
                     remaining: 8.0,
                     updated: now,
                 },
+                forms: Budget {
+                    remaining: 1.0,
+                    updated: now,
+                },
+                pending_form: None,
             },
         );
         Ok(snapshot)
@@ -322,6 +348,95 @@ impl GameState {
             updated: now,
         };
         Ok(())
+    }
+
+    pub fn show_form(
+        &mut self,
+        id: u64,
+        plugin: String,
+        request_id: u32,
+        form: &sculith_core::SimpleForm,
+        now: Instant,
+    ) -> Result<u32> {
+        form.validate().map_err(anyhow::Error::msg)?;
+        ensure!(
+            !plugin.is_empty()
+                && plugin.len() <= 64
+                && plugin
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b)),
+            "invalid form owner"
+        );
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        ensure!(
+            player.pending_form.is_none(),
+            "player already has a pending form"
+        );
+        let remaining = player
+            .forms
+            .available(now, 1.0, 1.0)
+            .ok_or_else(|| anyhow::anyhow!("form clock regression"))?;
+        ensure!(remaining >= 1.0, "player form rate exceeded");
+        let form_id = self.next_form_id;
+        self.next_form_id = form_id
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("form identifiers exhausted"))?;
+        player.forms = Budget {
+            remaining: remaining - 1.0,
+            updated: now,
+        };
+        player.pending_form = Some(PendingForm {
+            id: form_id,
+            plugin,
+            request_id,
+            buttons: form.buttons.len() as u32,
+            shown: now,
+        });
+        Ok(form_id)
+    }
+
+    pub fn submit_form(
+        &mut self,
+        id: u64,
+        form_id: u32,
+        selection: Option<u32>,
+        now: Instant,
+    ) -> Result<FormSubmission> {
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        let pending = player
+            .pending_form
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no pending form"))?;
+        ensure!(
+            pending.id == form_id,
+            "form identifier does not belong to this session"
+        );
+        let elapsed = now
+            .checked_duration_since(pending.shown)
+            .ok_or_else(|| anyhow::anyhow!("form clock regression"))?;
+        if elapsed > Duration::from_secs(60) {
+            player.pending_form.take();
+            anyhow::bail!("form reply expired");
+        }
+        ensure!(
+            selection.is_none_or(|choice| choice < pending.buttons),
+            "form choice out of range"
+        );
+        let pending = player.pending_form.take().expect("validated above");
+        Ok(FormSubmission {
+            player_id: id,
+            plugin: pending.plugin,
+            request_id: pending.request_id,
+            selection,
+        })
     }
     pub fn snapshot(&mut self, pos: ChunkPos) -> sculith_world::Result<ChunkSnapshot> {
         self.region.snapshot(pos)
@@ -882,6 +997,102 @@ mod tests {
         assert!(
             state
                 .permit_message(id, now + Duration::from_secs(10))
+                .is_err()
+        );
+        assert_eq!(state.revision(), 0);
+    }
+
+    #[test]
+    fn forms_bind_replies_to_live_sessions_and_owner_without_replay_or_world_changes() {
+        let now = Instant::now();
+        let (mut state, id) = active(Region::flat_origin(), now);
+        let other = state
+            .reserve(profile(2), Permissions::default(), now)
+            .unwrap();
+        let form = sculith_core::SimpleForm {
+            title: "Menu".into(),
+            body: "Choose".into(),
+            buttons: vec!["A".into(), "B".into()],
+        };
+        assert!(
+            state
+                .show_form(other.id, "owner".into(), 7, &form, now)
+                .is_err()
+        );
+        state.activate(other.id).unwrap();
+        let first = state.show_form(id, "owner".into(), 7, &form, now).unwrap();
+        assert!(
+            state
+                .show_form(id, "another".into(), 8, &form, now + Duration::from_secs(1))
+                .is_err()
+        );
+        assert!(state.submit_form(other.id, first, Some(0), now).is_err());
+        assert!(state.submit_form(id, first + 1, Some(0), now).is_err());
+        assert!(state.submit_form(id, first, Some(2), now).is_err());
+        assert!(
+            state
+                .submit_form(id, first, Some(0), now - Duration::from_millis(1))
+                .is_err()
+        );
+        let result = state.submit_form(id, first, Some(1), now).unwrap();
+        assert_eq!(
+            result,
+            FormSubmission {
+                player_id: id,
+                plugin: "owner".into(),
+                request_id: 7,
+                selection: Some(1)
+            }
+        );
+        assert!(state.submit_form(id, first, Some(0), now).is_err());
+        assert!(
+            state
+                .show_form(
+                    id,
+                    "owner".into(),
+                    8,
+                    &form,
+                    now + Duration::from_millis(999)
+                )
+                .is_err()
+        );
+        let second = state
+            .show_form(id, "owner".into(), 8, &form, now + Duration::from_secs(1))
+            .unwrap();
+        assert_ne!(first, second);
+        assert!(
+            state
+                .submit_form(id, first, Some(0), now + Duration::from_secs(1))
+                .is_err()
+        );
+        assert!(
+            state
+                .submit_form(id, second, None, now + Duration::from_secs(1))
+                .unwrap()
+                .selection
+                .is_none()
+        );
+        let third = state
+            .show_form(id, "owner".into(), 9, &form, now + Duration::from_secs(2))
+            .unwrap();
+        assert!(
+            state
+                .submit_form(id, third, Some(0), now + Duration::from_secs(63))
+                .is_err()
+        );
+        let fourth = state
+            .show_form(id, "owner".into(), 10, &form, now + Duration::from_secs(64))
+            .unwrap();
+        state.retire(id);
+        assert!(
+            state
+                .submit_form(id, fourth, None, now + Duration::from_secs(64))
+                .is_err()
+        );
+        state.next_form_id = u32::MAX;
+        assert!(
+            state
+                .show_form(other.id, "owner".into(), 0, &form, now)
                 .is_err()
         );
         assert_eq!(state.revision(), 0);

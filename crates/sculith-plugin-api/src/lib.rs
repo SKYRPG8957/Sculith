@@ -6,9 +6,12 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 2;
+pub const API_VERSION: u32 = 3;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
+pub const UI_API_VERSION: u32 = 3;
+pub const SUPPORTED_API_VERSIONS: &[u32] = &[LEGACY_API_VERSION, GAME_API_VERSION, UI_API_VERSION];
+pub use sculith_core::SimpleForm;
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
 pub const MAX_ACTIONS: usize = 32;
 
@@ -21,12 +24,14 @@ pub enum Hook {
     PlayerJoined,
     PlayerLeft,
     BlocksChanged,
+    FormSubmitted,
 }
 
 impl Hook {
     pub fn minimum_api(&self) -> u32 {
         match self {
             Self::Started | Self::Tick | Self::Stopping => LEGACY_API_VERSION,
+            Self::FormSubmitted => UI_API_VERSION,
             _ => GAME_API_VERSION,
         }
     }
@@ -83,6 +88,12 @@ pub enum Event {
         revision: u64,
         changes: Vec<BlockChange>,
     },
+    /// Delivered only to the plugin that showed this form. None means cancelled.
+    FormSubmitted {
+        player_id: u64,
+        request_id: u32,
+        selection: Option<u32>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +129,7 @@ impl Event {
             Self::PlayerJoined { .. } => Hook::PlayerJoined,
             Self::PlayerLeft { .. } => Hook::PlayerLeft,
             Self::BlocksChanged { .. } => Hook::BlocksChanged,
+            Self::FormSubmitted { .. } => Hook::FormSubmitted,
         }
     }
 }
@@ -154,6 +166,11 @@ pub enum Action {
         player_id: u64,
         message: String,
     },
+    ShowForm {
+        player_id: u64,
+        request_id: u32,
+        form: SimpleForm,
+    },
 }
 
 impl Action {
@@ -161,6 +178,7 @@ impl Action {
         match self {
             Self::SetMotd { .. } | Self::Log { .. } => LEGACY_API_VERSION,
             Self::SendMessage { .. } => GAME_API_VERSION,
+            Self::ShowForm { .. } => UI_API_VERSION,
         }
     }
 }
@@ -189,14 +207,12 @@ fn serve_io(
                 supported_versions,
                 ..
             } if negotiated.is_none() => {
-                let version =
-                    if api_version == API_VERSION || supported_versions.contains(&API_VERSION) {
-                        API_VERSION
-                    } else if api_version == LEGACY_API_VERSION {
-                        LEGACY_API_VERSION
-                    } else {
-                        return Err(io::Error::other("incompatible plugin API version"));
-                    };
+                let version = SUPPORTED_API_VERSIONS
+                    .iter()
+                    .copied()
+                    .rev()
+                    .find(|version| *version == api_version || supported_versions.contains(version))
+                    .ok_or_else(|| io::Error::other("incompatible plugin API version"))?;
                 let metadata = plugin.metadata();
                 if metadata
                     .hooks
@@ -353,8 +369,8 @@ mod tests {
     }
 
     #[test]
-    fn negotiates_v2_with_a_new_host_and_retains_v1_for_legacy_hooks() {
-        for (supported, expected) in [(vec![1, 2], 2), (vec![], 1)] {
+    fn negotiates_highest_common_version_and_retains_both_older_apis() {
+        for (supported, expected) in [(vec![1, 2, 3], 3), (vec![1, 2], 2), (vec![], 1)] {
             let mut input = serde_json::to_vec(&Request {
                 id: 1,
                 message: HostMessage::Hello {
@@ -401,5 +417,41 @@ mod tests {
         .unwrap();
         input.push(b'\n');
         assert!(serve_io(GamePlugin, &input[..], &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn v2_host_accepts_legacy_game_hooks_but_rejects_ui_hooks() {
+        struct FormPlugin;
+        impl Plugin for FormPlugin {
+            fn metadata(&self) -> Metadata {
+                Metadata {
+                    name: "forms".into(),
+                    version: "1".into(),
+                    hooks: vec![Hook::FormSubmitted],
+                }
+            }
+            fn on_event(&mut self, _: Event) -> Vec<Action> {
+                vec![]
+            }
+        }
+        let mut input = serde_json::to_vec(&Request {
+            id: 1,
+            message: HostMessage::Hello {
+                api_version: 1,
+                supported_versions: vec![1, 2],
+                server: ServerStatus::new("test".into(), 20).unwrap(),
+            },
+        })
+        .unwrap();
+        input.push(b'\n');
+        let mut output = Vec::new();
+        serve_io(GamePlugin, &input[..], &mut output).unwrap();
+        assert!(matches!(
+            serde_json::from_slice::<Response>(&output).unwrap().message,
+            PluginMessage::Ready { api_version: 2, .. }
+        ));
+        assert!(serve_io(FormPlugin, &input[..], &mut Vec::new()).is_err());
+        assert_eq!(Hook::PlayerJoined.minimum_api(), 2);
+        assert_eq!(Hook::FormSubmitted.minimum_api(), 3);
     }
 }

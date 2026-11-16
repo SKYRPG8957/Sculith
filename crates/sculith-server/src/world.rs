@@ -30,6 +30,13 @@ pub enum WorldEvent {
         player_id: u64,
         message: String,
     },
+    FormRequested {
+        player_id: u64,
+        form_id: u32,
+        form: sculith_core::SimpleForm,
+    },
+    /// Semantic result only; not broadcast to protocol observers.
+    FormSubmitted(crate::game::FormSubmission),
     Blocks {
         player_id: u64,
         batch: CommittedBatch,
@@ -109,9 +116,57 @@ enum Command {
         message: String,
         reply: oneshot::Sender<Result<()>>,
     },
+    ShowForm {
+        id: u64,
+        plugin: String,
+        request_id: u32,
+        form: sculith_core::SimpleForm,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    SubmitForm {
+        id: u64,
+        form_id: u32,
+        selection: Option<u32>,
+        reply: oneshot::Sender<Result<()>>,
+    },
 }
 
 impl WorldHandle {
+    pub async fn show_form(
+        &self,
+        id: u64,
+        plugin: String,
+        request_id: u32,
+        form: sculith_core::SimpleForm,
+    ) -> Result<()> {
+        form.validate().map_err(anyhow::Error::msg)?;
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::ShowForm {
+                id,
+                plugin,
+                request_id,
+                form,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("form response lost")?
+    }
+
+    pub async fn submit_form(&self, id: u64, form_id: u32, selection: Option<u32>) -> Result<()> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::SubmitForm {
+                id,
+                form_id,
+                selection,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("form submission response lost")?
+    }
     pub async fn snapshot(&self, position: ChunkPos) -> Result<ChunkSnapshot> {
         let (reply, receiver) = oneshot::channel();
         self.commands
@@ -372,6 +427,17 @@ pub fn with_region(
                             if result.is_ok() { let _ = events.send(Arc::new(WorldEvent::Message { player_id: id, message })); }
                             let _ = reply.send(result);
                         }
+                        Some(Command::ShowForm { id, plugin, request_id, form, reply }) => {
+                            let result = state.show_form(id, plugin, request_id, &form, Instant::now());
+                            let result = result.map(|form_id| { let _ = events.send(Arc::new(WorldEvent::FormRequested { player_id: id, form_id, form })); });
+                            let _ = reply.send(result);
+                        }
+                        Some(Command::SubmitForm { id, form_id, selection, reply }) => {
+                            let result = state.submit_form(id, form_id, selection, Instant::now()).map(|submission| {
+                                let _ = game_events.send(Arc::new(WorldEvent::FormSubmitted(submission)));
+                            });
+                            let _ = reply.send(result);
+                        }
                         None => break Ok(()),
                     }
                 }
@@ -514,6 +580,59 @@ mod tests {
         assert!(
             matches!(hooks.recv().await.unwrap().as_ref(), WorldEvent::Left { id: left } if *left == id)
         );
+        shutdown.send_replace(true);
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn form_results_are_private_semantic_events_and_dead_leases_cannot_reply() {
+        let (shutdown, stop) = watch::channel(false);
+        let (world, task) = create(stop);
+        let task = tokio::spawn(task);
+        let lease = world
+            .reserve(profile("forms"), Permissions::default())
+            .await
+            .unwrap();
+        let id = lease.player.id;
+        let form = sculith_core::SimpleForm {
+            title: "Menu".into(),
+            body: "Choose".into(),
+            buttons: vec!["A".into()],
+        };
+        assert!(
+            world
+                .show_form(id, "owner".into(), 7, form.clone())
+                .await
+                .is_err()
+        );
+        world.activate(id).await.unwrap();
+        let mut view = world.subscribe();
+        let mut hooks = world.subscribe_game();
+        world
+            .show_form(id, "owner".into(), 7, form.clone())
+            .await
+            .unwrap();
+        let event = view.recv().await.unwrap();
+        let WorldEvent::FormRequested { form_id, .. } = event.as_ref() else {
+            panic!("expected private form presentation")
+        };
+        assert!(matches!(
+            hooks.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        world.submit_form(id, *form_id, Some(0)).await.unwrap();
+        assert!(
+            matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::FormSubmitted(reply) if reply.plugin=="owner" && reply.request_id==7 && reply.selection==Some(0))
+        );
+        assert!(matches!(
+            view.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        assert!(world.submit_form(id, *form_id, Some(0)).await.is_err());
+        drop(lease);
+        assert!(world.show_form(id, "owner".into(), 8, form).await.is_err());
+        assert!(world.submit_form(id, *form_id, None).await.is_err());
+        assert_eq!(world.capture().await.unwrap().revision(), 0);
         shutdown.send_replace(true);
         task.await.unwrap().unwrap();
     }

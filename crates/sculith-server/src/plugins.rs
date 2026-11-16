@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail, ensure};
 use sculith_core::{ServerStatus, validate_motd, validate_system_message};
 use sculith_plugin_api::{
     API_VERSION, Action, Event, HostMessage, LEGACY_API_VERSION, MAX_ACTIONS, MAX_MESSAGE_BYTES,
-    Metadata, PluginMessage, Request, Response,
+    Metadata, PluginMessage, Request, Response, SUPPORTED_API_VERSIONS,
 };
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -49,11 +49,39 @@ impl Plugins {
     }
 
     pub async fn dispatch(&mut self, event: Event, status: &mut ServerStatus, world: &WorldHandle) {
+        self.dispatch_for(event, None, status, world).await;
+    }
+
+    pub async fn dispatch_game(
+        &mut self,
+        event: &WorldEvent,
+        status: &mut ServerStatus,
+        world: &WorldHandle,
+    ) {
+        let recipient = if let WorldEvent::FormSubmitted(submission) = event {
+            Some(submission.plugin.as_str())
+        } else {
+            None
+        };
+        if let Some(event) = game_event(event) {
+            self.dispatch_for(event, recipient, status, world).await;
+        }
+    }
+
+    async fn dispatch_for(
+        &mut self,
+        event: Event,
+        recipient: Option<&str>,
+        status: &mut ServerStatus,
+        world: &WorldHandle,
+    ) {
         // Requests wait concurrently; actions still apply in configured order.
         // One slow worker must not multiply the round's delay by plugin count.
         let hook = event.hook();
         let replies = futures_util::future::join_all(self.processes.iter_mut().map(|process| {
-            let subscribed = !process.disabled && process.metadata.hooks.contains(&hook);
+            let subscribed = !process.disabled
+                && process.metadata.hooks.contains(&hook)
+                && recipient.is_none_or(|name| process.metadata.name == name);
             let event = event.clone();
             async move {
                 if subscribed {
@@ -84,6 +112,11 @@ impl Plugins {
                             if let Err(error) = world.send_message(player_id, message).await {
                                 // Disconnects and owner rate limits are ordinary rejections.
                                 tracing::warn!(plugin = %process.metadata.name, player_id, %error, "plugin message rejected");
+                            }
+                        }
+                        Action::ShowForm { player_id, request_id, form } => {
+                            if let Err(error) = world.show_form(player_id, process.metadata.name.clone(), request_id, form).await {
+                                tracing::warn!(plugin=%process.metadata.name, player_id, %error, "plugin form rejected");
                             }
                         }
                     }
@@ -164,7 +197,7 @@ impl Process {
         let reply = process
             .request(HostMessage::Hello {
                 api_version: LEGACY_API_VERSION,
-                supported_versions: vec![LEGACY_API_VERSION, API_VERSION],
+                supported_versions: SUPPORTED_API_VERSIONS.to_vec(),
                 server: status.clone(),
             })
             .await?;
@@ -176,7 +209,7 @@ impl Process {
             bail!("expected plugin ready handshake");
         };
         ensure!(
-            api_version == API_VERSION || api_version == LEGACY_API_VERSION,
+            SUPPORTED_API_VERSIONS.contains(&api_version),
             "plugin API version {api_version} is incompatible with {API_VERSION}"
         );
         ensure!(
@@ -194,7 +227,7 @@ impl Process {
                 && !metadata.version.chars().any(char::is_control),
             "invalid plugin version"
         );
-        ensure!(metadata.hooks.len() <= 6, "too many plugin subscriptions");
+        ensure!(metadata.hooks.len() <= 7, "too many plugin subscriptions");
         for (index, hook) in metadata.hooks.iter().enumerate() {
             ensure!(
                 hook.minimum_api() <= api_version,
@@ -274,6 +307,12 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
                 ensure!(*player_id != 0, "invalid message recipient");
                 validate_system_message(message).map_err(anyhow::Error::msg)?;
             }
+            Action::ShowForm {
+                player_id, form, ..
+            } => {
+                ensure!(*player_id != 0, "invalid form recipient");
+                form.validate().map_err(anyhow::Error::msg)?;
+            }
         }
     }
     Ok(())
@@ -304,6 +343,11 @@ pub fn game_event(event: &WorldEvent) -> Option<Event> {
             },
         },
         WorldEvent::Left { id } => Event::PlayerLeft { player_id: *id },
+        WorldEvent::FormSubmitted(submission) => Event::FormSubmitted {
+            player_id: submission.player_id,
+            request_id: submission.request_id,
+            selection: submission.selection,
+        },
         WorldEvent::Blocks {
             player_id, batch, ..
         } => Event::BlocksChanged {

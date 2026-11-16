@@ -40,7 +40,8 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Authoritative movement checks and limited creative block placement/breaking, with server-owned starter items and committed block deltas shared between sessions.
 - A single region owner, revision-checked block commits, compact uniform/palette sections and immutable copy-on-write snapshots.
 - Optional versioned, checksummed region snapshots loaded at startup and saved after sessions close on orderly shutdown. Periodic autosaving is pending.
-- Trusted-executable Rust plugin SDK v2 with v1 compatibility, lifecycle/MOTD, initialized-player join/leave and committed-block hooks, plus owner-validated private messages in both editions. [Actual game evidence](docs/verification/2026-11-16-plugin-api-v2.md).
+- Trusted-executable Rust plugin SDK v3 with v1/v2 compatibility, lifecycle/MOTD, initialized-player join/leave and committed-block hooks, plus owner-validated private messages in both editions. [Actual game evidence](docs/verification/2026-11-16-plugin-api-v2.md).
+- Shared simple forms: native Bedrock menus and vanilla Java dialogs with private, owner-validated Rust callbacks. [API, limits and actual game screenshots](docs/forms.md).
 - Explicit Bedrock PNG-to-Java texture overrides, with a conversion report describing unsupported assets.
 - Optional automatic delivery from one frozen Bedrock pack to native clients and a converted Java ZIP, with immutable hashes/cache IDs and required-pack acknowledgements. [Configuration and test scope](docs/content-delivery.md). The stock Java game renders the server-delivered checkerboard texture.
 - Unit, codec, ownership, real-socket and executable smoke tests.

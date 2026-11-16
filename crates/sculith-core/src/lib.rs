@@ -2,6 +2,33 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Edition-independent simple choice form. No executable commands or asset IDs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SimpleForm {
+    pub title: String,
+    pub body: String,
+    pub buttons: Vec<String>,
+}
+
+impl SimpleForm {
+    pub fn validate(&self) -> Result<(), String> {
+        let label = |text: &str| {
+            !text.trim().is_empty() && text.len() <= 128 && !text.chars().any(char::is_control)
+        };
+        if !label(&self.title)
+            || self.body.len() > 2048
+            || self.body.chars().any(|c| c.is_control() && c != '\n')
+            || self.buttons.is_empty()
+            || self.buttons.len() > 8
+            || !self.buttons.iter().all(|text| label(text))
+        {
+            return Err("form requires a 1..128-byte title, body up to 2048 bytes and 1..8 bounded button labels".into());
+        }
+        Ok(())
+    }
+}
+
 /// Default configuration stays discovery-only; edition previews are explicit.
 pub const DEVELOPMENT_STAGE: &str = "discovery-only";
 
@@ -76,5 +103,26 @@ mod tests {
             assert!(validate_system_message(invalid).is_err());
         }
         assert!(validate_system_message(&"가".repeat(171)).is_err());
+    }
+
+    #[test]
+    fn simple_forms_bound_multiline_text_labels_and_choice_count() {
+        let mut form = SimpleForm {
+            title: "환영합니다 👋".into(),
+            body: "첫 줄\n다음 줄".into(),
+            buttons: vec!["선택".into()],
+        };
+        form.validate().unwrap();
+        form.buttons = vec!["x".into(); 9];
+        assert!(form.validate().is_err());
+        form.buttons.clear();
+        assert!(form.validate().is_err());
+        form.buttons = vec!["\n".into()];
+        assert!(form.validate().is_err());
+        form.buttons = vec!["확인".into()];
+        form.body = "bad\0text".into();
+        assert!(form.validate().is_err());
+        form.body = "가".repeat(683);
+        assert!(form.validate().is_err());
     }
 }

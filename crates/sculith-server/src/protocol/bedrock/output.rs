@@ -171,3 +171,19 @@ pub fn registry_and_abilities(player: &PlayerSnapshot) -> Vec<V2225> {
         })),
     ]
 }
+pub fn simple_form(id: u32, form: &sculith_core::SimpleForm) -> anyhow::Result<V2225> {
+    form.validate().map_err(anyhow::Error::msg)?;
+    let buttons: Vec<_> = form
+        .buttons
+        .iter()
+        .map(|text| serde_json::json!({"text":text}))
+        .collect();
+    Ok(V2225::ModalFormRequestPacket(Box::new(
+        bedrock::protocol::v662::packets::ModalFormRequestPacket {
+            form_id: id,
+            form_ui_json: serde_json::to_string(
+                &serde_json::json!({"type":"form","title":form.title,"content":form.body,"buttons":buttons}),
+            )?,
+        },
+    )))
+}

@@ -28,7 +28,7 @@ def nbt_text(reader):
         "utf-16", "surrogatepass").decode("utf-16")
 
 
-def smoke(server, plugin, client):
+def smoke(server, plugin, client, api_version=3):
     with tempfile.TemporaryDirectory(prefix="sculith game plugin ") as temporary:
         root = Path(temporary)
         staged_plugin = root / "plugins with spaces" / plugin.name
@@ -63,7 +63,7 @@ def smoke(server, plugin, client):
                     time.sleep(.05)
                 else:
                     raise TimeoutError(text)
-                assert "api_version=2" in text and "gameplay-demo" in text
+                assert f"api_version={api_version}" in text and "gameplay-demo" in text
                 java = wire.Client(("127.0.0.1", int(tcp[1])), "PluginJavaProbe")
                 id_, reader = wire.receive(java.socket)
                 assert id_ == 0x7c
@@ -101,7 +101,7 @@ def smoke(server, plugin, client):
                 if process.poll() is None:
                     process.kill()
                     process.wait(timeout=5)
-    print("PASS: real Rust API-v2 plugin, private Unicode welcome in both editions, no cross-player leak, committed block hook and graceful stopping")
+    print(f"PASS: real Rust API-v{api_version} plugin, private Unicode welcome in both editions, no cross-player leak, committed block hook and graceful stopping")
 
 
 if __name__ == "__main__":
@@ -110,5 +110,6 @@ if __name__ == "__main__":
     parser.add_argument("--server", type=Path, default=ROOT / ("target/debug/sculith" + suffix))
     parser.add_argument("--plugin", type=Path, default=ROOT / ("target/debug/sculith-gameplay-plugin" + suffix))
     parser.add_argument("--client", type=Path, required=True)
+    parser.add_argument("--api-version", type=int, choices=(2,3), default=3)
     args = parser.parse_args()
-    smoke(args.server.resolve(strict=True), args.plugin.resolve(strict=True), args.client.resolve(strict=True))
+    smoke(args.server.resolve(strict=True), args.plugin.resolve(strict=True), args.client.resolve(strict=True), args.api_version)

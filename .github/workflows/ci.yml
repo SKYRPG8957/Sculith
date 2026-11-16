@@ -52,5 +52,7 @@ jobs:
         run: python scripts/gophertunnel_smoke.py --client target/gophertunnel-probe
       - name: Exercise Rust plugin game hooks in both editions
         run: python scripts/plugin_game_smoke.py --client target/gophertunnel-probe
+      - name: Exercise shared forms, callbacks and recipient isolation
+        run: python scripts/forms_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared packs, native cache and consent keepalive
         run: python scripts/pack_delivery_smoke.py --client target/gophertunnel-probe --wait-for-keepalive

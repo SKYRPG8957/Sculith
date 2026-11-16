@@ -20,7 +20,7 @@ def dependency_notices():
         cwd=ROOT, text=True, encoding="utf-8",
     ))
     nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
-    roots = {"sculith-server", "sculith-gameplay-plugin"}
+    roots = {"sculith-server", "sculith-gameplay-plugin", "sculith-forms-plugin"}
     selected, pending = set(), [p["id"] for p in metadata["packages"] if p["name"] in roots]
     if len(pending) != len(roots):
         raise RuntimeError("Missing server or bundled plugin in the locked metadata")
@@ -68,7 +68,7 @@ def dependency_notices():
     return "".join(records)
 
 
-def package(binary, version, output, plugin=None):
+def package(binary, version, output, plugin=None, forms_plugin=None):
     if not re.fullmatch(r"v\d+\.\d+\.\d+-preview\.\d+", version):
         raise ValueError("Expected vMAJOR.MINOR.PATCH-preview.NUMBER")
     binary = binary.resolve(strict=True)
@@ -77,6 +77,9 @@ def package(binary, version, output, plugin=None):
     plugin = (plugin or binary.with_name("sculith-gameplay-plugin.exe")).resolve(strict=True)
     if plugin.read_bytes()[:2] != b"MZ":
         raise ValueError("Expected the Windows gameplay plugin executable")
+    forms_plugin = (forms_plugin or binary.with_name("sculith-forms-plugin.exe")).resolve(strict=True)
+    if forms_plugin.read_bytes()[:2] != b"MZ":
+        raise ValueError("Expected the Windows forms plugin executable")
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f"sculith-{version}-windows-x86_64.zip"
     checksum = output / "SHA256SUMS.txt"
@@ -88,6 +91,7 @@ def package(binary, version, output, plugin=None):
         shutil.copyfile(binary, stage / "sculith.exe")
         (stage / "plugins").mkdir()
         shutil.copyfile(plugin, stage / "plugins/sculith-gameplay-plugin.exe")
+        shutil.copyfile(forms_plugin, stage / "plugins/sculith-forms-plugin.exe")
         shutil.copytree(ROOT / "examples/pack/bedrock", stage / "packs/sculith-demo")
         shutil.copyfile(ROOT / "examples/pack/textures.json", stage / "packs/sculith-demo-textures.json")
         for source in (ROOT / "distribution/windows").iterdir():
@@ -119,7 +123,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--plugin", type=Path, help="Defaults to the gameplay EXE beside the server")
+    parser.add_argument("--forms-plugin", type=Path, help="Defaults to the forms EXE beside the server")
     parser.add_argument("--version", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    package(args.binary, args.version, args.output, args.plugin)
+    package(args.binary, args.version, args.output, args.plugin, args.forms_plugin)

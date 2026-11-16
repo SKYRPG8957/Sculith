@@ -548,6 +548,16 @@ impl Session {
         let id = fields.int()?;
         match id {
             0 => self.confirm_teleport(fields)?,
+            0x44 => {
+                if let Some((form_id, selection)) = super::forms::response(fields)?
+                    && let Err(error) = self
+                        .world
+                        .submit_form(self.player.id, form_id, selection)
+                        .await
+                {
+                    tracing::debug!(player=self.player.id, %error, "Java form reply rejected");
+                }
+            }
             0x1c => {
                 let received = fields.long()?;
                 fields.end()?;
@@ -732,6 +742,15 @@ impl Session {
     }
 
     async fn event(&mut self, stream: &mut TcpStream, event: &WorldEvent) -> Result<()> {
+        if let WorldEvent::FormRequested {
+            player_id,
+            form_id,
+            form,
+        } = event
+            && *player_id == self.player.id
+        {
+            codec::send(stream, &super::forms::show(*form_id, form)?).await?;
+        }
         if let WorldEvent::Message { player_id, message } = event
             && *player_id == self.player.id
         {

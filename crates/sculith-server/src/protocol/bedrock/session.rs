@@ -236,6 +236,18 @@ pub async fn handle_with_protection<T: Transport>(
                 if session_control(conn, &packet, id).await? {
                     continue;
                 }
+                if let V2225::ModalFormResponsePacket(response) = &packet {
+                    let choice = match (&response.json_response, &response.form_cancel_reason) {
+                        (Some(json), None) if json.len() <= 64 => serde_json::from_str::<Option<u32>>(json).ok(),
+                        (None, _) => Some(None),
+                        _ => None,
+                    };
+                    if let Some(choice) = choice
+                        && let Err(error) = world.submit_form(id, response.form_id, choice).await {
+                        tracing::debug!(player=id, %error, "Bedrock form reply rejected");
+                    }
+                    continue;
+                }
                 if let V2225::RequestChunkRadiusPacket(request) = &packet {
                     let requested = bounded_radius(request.chunk_radius)?;
                     acknowledge_radius(conn, requested).await?;
@@ -309,6 +321,10 @@ pub async fn handle_with_protection<T: Transport>(
                     WorldEvent::Message {player_id,message}=>{
                         if *player_id == id { conn.send(&[output::system_message(message)?]).await?; }
                     }
+                    WorldEvent::FormRequested {player_id,form_id,form}=>{
+                        if *player_id == id { conn.send(&[output::simple_form(*form_id, form)?]).await?; }
+                    }
+                    WorldEvent::FormSubmitted(_)=>{},
                 }
             }
         }
