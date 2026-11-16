@@ -95,7 +95,7 @@ jobs:
       - name: Verify connection phases, redaction and observer backlog handling
         run: python tests/interop/connection_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-connection-fixture.exe
       - name: Verify Rust world operations and shared atomic block commits
-        run: python tests/interop/world_api_smoke.py --server target/release/sculith.exe --plugin target/debug/sculith-world-fixture.exe --client target/gophertunnel-probe.exe
+        run: python tests/interop/world_api_smoke.py --server target/release/sculith.exe --plugin target/release/sculith-world-fixture.exe --client target/gophertunnel-probe.exe
       - name: Verify cross-edition player visibility, movement and leave
         run: python tests/interop/peer_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify shared packs, native cache and consent keepalive
