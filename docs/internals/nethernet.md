@@ -79,6 +79,10 @@ Malformed expiry values, including timestamps beyond the platform range or its
 clock-skew allowance, are rejected without panicking. The vendor regression
 reproduced the original overflow; actual HTTP checks return 401 and keep serving
 after those inputs.
+Source `a32062f` passes the build and interoperability workflows on
+[Linux](https://github.com/SKYRPG8957/Sculith/actions/runs/43912080454) and
+[Windows](https://github.com/SKYRPG8957/Sculith/actions/runs/43912080476), including
+the transport timestamp regression and Windows static-CRT release executable.
 A real HTTP/WebRTC headless client and an encrypted RakNet client log in, spawn in the same owner and receive the same committed block delta.
 Executable smoke checks probe HTTP status, unsigned-offer rejection and unchanged keys after restart.
 An independent aiortc 1.14.0/OpenSSL probe verifies ICE, DTLS, SCTP, both data channels, the server JWT and fingerprint signatures, network settings and transport-bound Bedrock login proceeding directly to resource-pack negotiation. It reproduced the former interface-address and SCTP-role failures before the corrections. Run it with development dependencies from `tests/interop/requirements.txt` and `python tests/interop/webrtc_smoke.py`. These dependencies are not required by the installed server.
