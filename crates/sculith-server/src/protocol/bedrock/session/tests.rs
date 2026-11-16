@@ -1263,6 +1263,63 @@ async fn required_pack_rejects_unknown_ids_early_finish_invalid_chunks_and_exces
 }
 
 #[tokio::test]
+async fn rejected_batch_prefix_does_not_hide_decoded_trailing_packet_receipts() {
+    use sculith_core::connections::{ConnectionEvent, PacketPhase};
+    let observer = crate::connections::Observer::default();
+    let mut events = observer.subscribe();
+    observer.configure(true);
+    let server = Harness::start_observed(
+        Authentication::offline(),
+        Duration::from_secs(5),
+        None,
+        observer,
+    )
+    .await;
+    let mut client = TestClient::connect(server.address).await.unwrap();
+    // The second packet is invalid here: compression has not been negotiated.
+    // Both decoded identifiers must be observable, but neither may advance login.
+    client
+        .conn
+        .send(&[
+            V2225::RequestNetworkSettingsPacket(Box::new(RequestNetworkSettingsPacket {
+                client_network_version: V2225::PROTOCOL_VERSION as i32,
+            })),
+            V2225::ClientToServerHandshakePacket(Box::new(ClientToServerHandshakePacket {})),
+        ])
+        .await
+        .unwrap();
+    assert!(matches!(
+        client.next().await.unwrap(),
+        V2225::DisconnectPacket(_)
+    ));
+    assert_eq!(server.world.online_players(), 0);
+    client.conn.close().await;
+    server.stop().await;
+    let mut receipts = Vec::new();
+    let mut closes = 0;
+    while let Ok(event) = events.try_recv() {
+        match event {
+            ConnectionEvent::PacketReceived { packet, .. } => receipts.push(packet),
+            ConnectionEvent::PlayerAttached { .. } => panic!("rejected batch activated a player"),
+            ConnectionEvent::Closed { .. } => closes += 1,
+            _ => {}
+        }
+    }
+    assert_eq!(closes, 1);
+    assert_eq!(receipts.len(), 2);
+    assert_eq!(
+        receipts.iter().map(|p| p.sequence).collect::<Vec<_>>(),
+        [1, 2]
+    );
+    assert!(
+        receipts
+            .iter()
+            .all(|p| p.phase == PacketPhase::NetworkSettings)
+    );
+    assert_ne!(receipts[0].id, receipts[1].id);
+}
+
+#[tokio::test]
 async fn real_raknet_compression_encryption_and_ordered_pack_negotiation() {
     use sculith_core::connections::{ConnectionEvent, ConnectionTransport, PacketPhase};
     let observer = crate::connections::Observer::default();

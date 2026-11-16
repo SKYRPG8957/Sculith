@@ -128,26 +128,6 @@ impl Packets {
     }
 
     async fn next<T: Transport>(&mut self, conn: &mut Connection<V2225, T>) -> Result<V2225> {
-        let packet = self.next_decoded(conn).await?;
-        if self.trace.enabled() {
-            let info = super::catalog::receipt(&packet, 1);
-            self.trace
-                .packet(sculith_core::connections::ConnectionPacket {
-                    protocol: Some(info.protocol),
-                    phase: self.phase,
-                    id: info.id,
-                    name: info.name,
-                    dispatch: info.dispatch,
-                    sequence: 0,
-                });
-        }
-        Ok(packet)
-    }
-
-    async fn next_decoded<T: Transport>(
-        &mut self,
-        conn: &mut Connection<V2225, T>,
-    ) -> Result<V2225> {
         if let Some(packet) = self.pending.pop_front() {
             return Ok(packet);
         }
@@ -159,6 +139,23 @@ impl Packets {
                 "Bedrock packet batch count out of bounds"
             );
             bail!("invalid login packet batch size");
+        }
+        // Observe the complete bounded batch before interpreting any member.
+        // A rejected prefix must not hide already decoded trailing packets.
+        // Phase is the ingress state, even if a prefix later advances it.
+        if self.trace.enabled() {
+            for (_, packet) in &packets {
+                let info = super::catalog::receipt(packet, 1);
+                self.trace
+                    .packet(sculith_core::connections::ConnectionPacket {
+                        protocol: Some(info.protocol),
+                        phase: self.phase,
+                        id: info.id,
+                        name: info.name,
+                        dispatch: info.dispatch,
+                        sequence: 0,
+                    });
+            }
         }
         for (header, packet) in packets {
             if header.sender_sub_client_id != 0 || header.target_sub_client_id != 0 {
