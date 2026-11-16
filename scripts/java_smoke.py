@@ -162,7 +162,7 @@ def chunk(reader, edits=None):
 
 class Client:
     def __init__(self, address, name="SculithJavaProbe", edits=None,
-                 acknowledged_position=(.5, 4, .5)):
+                 acknowledged_position=(.5, 4, .5), pack_handler=None):
         self.socket = socket.create_connection(address, timeout=5)
         self.socket.settimeout(5)
         self.uuid = uuid.UUID(bytes=hashlib.md5(("OfflinePlayer:" + name).encode()).digest(), version=3)
@@ -207,6 +207,9 @@ class Client:
                 assert registries["minecraft:worldgen/biome"][41] == "minecraft:plains"
                 send(self.socket, 3)
                 break
+            elif id_ == 9:
+                assert pack_handler is not None, "unexpected resource pack offer"
+                pack_handler(r, self.socket)
             else:
                 raise AssertionError(("unexpected configuration packet", id_))
             r.end()

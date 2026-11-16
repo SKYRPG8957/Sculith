@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/world"
@@ -11,8 +12,9 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message")) {
-		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--crossplay|--plugin-message]")
+	packOutput := len(os.Args) == 4 && os.Args[2] == "--pack-output"
+	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message")) && !packOutput {
+		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--crossplay|--plugin-message|--pack-output file]")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -20,7 +22,11 @@ func main() {
 	registry := world.NewBlockRegistry()
 	registry.Finalize()
 	observed := newObserver(registry)
-	conn, err := (minecraft.Dialer{PacketFunc: observed.packet}).DialContext(ctx, "nethernet", os.Args[1])
+	dialer := minecraft.Dialer{PacketFunc: observed.packet}
+	if packOutput {
+		dialer.ResourcePackCache = minecraft.DirResourcePackCache{Dir: filepath.Join(filepath.Dir(os.Args[3]), "cache")}
+	}
+	conn, err := dialer.DialContext(ctx, "nethernet", os.Args[1])
 	if err != nil {
 		panic(fmt.Errorf("dial: %w", err))
 	}
@@ -35,6 +41,20 @@ func main() {
 	}
 	fmt.Println("PASS: independent Dragonfly decoding of 25 chunks, all 2457600 blocks, plains biomes and startup definitions")
 	fmt.Println("PASS: independent gophertunnel NetherNet world spawn", conn.GameData().EntityRuntimeID)
+	if packOutput {
+		packs := conn.ResourcePacks()
+		if len(packs) != 1 {
+			panic(fmt.Errorf("expected exactly one received resource pack, got %d", len(packs)))
+		}
+		data := make([]byte, packs[0].Len())
+		if n, err := packs[0].ReadAt(data, 0); err != nil || n != len(data) {
+			panic(fmt.Errorf("read downloaded pack: %d %v", n, err))
+		}
+		if err := os.WriteFile(os.Args[3], data, 0600); err != nil {
+			panic(err)
+		}
+		fmt.Println("PASS: received Bedrock resource pack", packs[0].UUID(), packs[0].Version(), len(data))
+	}
 	if len(os.Args) == 3 {
 		var err error
 		if os.Args[2] == "--crossplay" {

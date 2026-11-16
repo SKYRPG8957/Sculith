@@ -3,7 +3,7 @@
 //! ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99. Gameplay uses the existing owner.
 
 use super::{
-    session::{Authentication, Protection, handle_with_protection},
+    session::{Protection, Settings, handle_with_protection},
     transport::MAX_MESSAGE_BYTES,
 };
 use crate::world::WorldHandle;
@@ -64,8 +64,7 @@ pub struct Server {
 }
 
 pub struct ContextData {
-    pub authentication: Authentication,
-    pub timeout: Duration,
+    pub settings: Settings,
     pub world: WorldHandle,
     pub status: watch::Receiver<ServerStatus>,
     pub shutdown: watch::Receiver<bool>,
@@ -225,7 +224,7 @@ impl Server {
         let mut signaling = HttpSignaler::new(HttpSignalerConfig {
             max_connections_per_address: PER_IP,
             max_pending_joins: HTTP_CONNECTIONS,
-            answer_timeout: context.timeout,
+            answer_timeout: context.settings.timeout,
             // This loopback preview verifies fingerprint ownership for signed
             // offers. Account authority is still checked by the Bedrock login.
             token_trust: Some(TokenTrust::Any),
@@ -293,14 +292,13 @@ impl Server {
                     result.context("NetherNet HTTP task failed")?;
                 }
                 Some(transport) = ready_sessions.recv() => {
-                    let authentication = context.authentication.clone();
+                    let settings = context.settings.clone();
                     let world = context.world.clone();
-                    let timeout = context.timeout;
                     let protection = Protection::WebRtcDtls(transport.identity.clone());
                     applications.spawn(async move {
                         let mut conn = Connection::<V2225, _>::from_transport_conn(transport);
                         conn.max_batch_len = MAX_MESSAGE_BYTES;
-                        let result = handle_with_protection(&mut conn, &authentication, &world, timeout, protection).await;
+                        let result = handle_with_protection(&mut conn, &settings, &world, protection).await;
                         conn.close().await;
                         result
                     });
@@ -340,7 +338,7 @@ impl Server {
                             signaling.handle(HttpSignalerInput::Reject {connection_id: offer.connection_id, reason: RejectReason::Rejected})?;
                             continue;
                         };
-                        match answer(&offer, local_ip, &self.identity, context.timeout, &self.media).await {
+                        match answer(&offer, local_ip, &self.identity, context.settings.timeout, &self.media).await {
                             Ok((socket, connection, sdp)) => {
                                 signaling.handle(HttpSignalerInput::Answer {connection_id: offer.connection_id, sdp})?;
                                 *peers.entry(ip).or_default() += 1;

@@ -19,6 +19,7 @@ on:
       - 'scripts/smoke.py'
       - 'scripts/java_smoke.py'
       - 'scripts/plugin_game_smoke.py'
+      - 'scripts/pack_delivery_smoke.py'
       - 'scripts/generate_java_protocol_facts.py'
       - 'scripts/package_release.py'
       - 'scripts/webrtc_smoke.py'
@@ -38,7 +39,7 @@ jobs:
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       PYTHONUTF8: '1'
-      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.10'
+      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.11'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/cache@v4
@@ -106,6 +107,8 @@ jobs:
         run: python scripts/gophertunnel_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify Rust plugin game hooks in both editions
         run: python scripts/plugin_game_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-gameplay-plugin.exe
+      - name: Verify shared packs, native cache and consent keepalive
+        run: python scripts/pack_delivery_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --wait-for-keepalive
       - name: Package Windows preview and dependency licenses
         run: python scripts/package_release.py --binary target/release/sculith.exe --version $env:SCULITH_PREVIEW_VERSION --output dist
       - name: Verify extracted package configuration and CLI

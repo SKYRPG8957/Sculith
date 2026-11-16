@@ -25,7 +25,7 @@ use tokio::{
     time::MissedTickBehavior,
 };
 
-use super::session::{Authentication, handle};
+use super::session::{Settings, handle};
 use crate::world::WorldHandle;
 
 pub const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
@@ -130,8 +130,7 @@ pub async fn serve(
     socket: UdpSocket,
     mut status: watch::Receiver<ServerStatus>,
     guid: u64,
-    authentication: Authentication,
-    timeout: Duration,
+    settings: Settings,
     mut shutdown: watch::Receiver<bool>,
     world: WorldHandle,
 ) -> Result<()> {
@@ -276,13 +275,13 @@ pub async fn serve(
                             closed,
                         },
                     );
-                    let authentication = authentication.clone();
+                    let settings = settings.clone();
                     let world = world.clone();
                     tasks.spawn(async move {
                         let remote = transport.address;
                         let mut conn = Connection::<V2225, _>::from_transport_conn(transport);
                         conn.max_batch_len = MAX_MESSAGE_BYTES;
-                        let result = handle(&mut conn, &authentication, &world, timeout).await;
+                        let result = handle(&mut conn, &settings, &world).await;
                         match result {
                             Ok(()) => {}
                             Err(error) => {

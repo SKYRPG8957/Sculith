@@ -1,4 +1,5 @@
 mod config;
+mod content;
 mod plugins;
 mod protocol;
 use sculith_server::{game, world};
@@ -56,6 +57,15 @@ enum Command {
 
 #[derive(Subcommand)]
 enum PackCommand {
+    /// Freeze one Bedrock source into inspectable edition archives (Java 26.3).
+    Bundle {
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        mapping: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
     Convert {
         #[arg(long)]
         input: PathBuf,
@@ -102,6 +112,19 @@ async fn main() -> Result<()> {
         }
         Command::Pack {
             command:
+                PackCommand::Bundle {
+                    input,
+                    mapping,
+                    output,
+                },
+        } => {
+            let bundle = sculith_packs::bundle::Bundle::prepare(&input, &mapping)?;
+            bundle.write(&output)?;
+            println!("Edition pack bundle written: {}", output.display());
+            Ok(())
+        }
+        Command::Pack {
+            command:
                 PackCommand::Convert {
                     input,
                     mapping,
@@ -119,6 +142,19 @@ async fn main() -> Result<()> {
 }
 
 async fn run(config: Config) -> Result<()> {
+    let delivery = if let Some(settings) = &config.content {
+        let source = settings.source.clone();
+        let mapping = settings.mapping.clone();
+        let bundle = tokio::task::spawn_blocking(move || {
+            sculith_packs::bundle::Bundle::prepare(&source, &mapping)
+        })
+        .await
+        .context("pack preparation worker failed")??;
+        Some(content::Delivery::prepare(settings.bind, bundle).await?)
+    } else {
+        None
+    };
+    let content = delivery.as_ref().map(|delivery| delivery.content.clone());
     let region = if let Some(path) = config.world.snapshot_path.clone() {
         tokio::task::spawn_blocking(move || -> Result<sculith_world::Region> {
             match std::fs::symlink_metadata(&path) {
@@ -191,9 +227,14 @@ async fn run(config: Config) -> Result<()> {
     let (status_tx, status_rx) = watch::channel(state.clone());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut services = JoinSet::new();
+    if let Some(delivery) = delivery {
+        info!(url = %delivery.content.java_url, "Immutable resource pack HTTP delivery listening");
+        services.spawn(delivery.serve(shutdown_rx.clone()));
+    }
     if let Some(listener) = java {
         info!(address = %listener.local_addr()?, "Java TCP discovery listening");
         let preview = config.java.sessions.then(|| protocol::java::Preview {
+            content: content.clone(),
             world: world.clone(),
             timeout: Duration::from_secs(config.java.login_timeout_secs),
             shutdown: shutdown_rx.clone(),
@@ -209,10 +250,13 @@ async fn run(config: Config) -> Result<()> {
         info!(address = %server.local_addr()?, "NetherNet HTTP signaling listening");
         services.spawn(
             server.serve(protocol::bedrock::nethernet::ContextData {
-                authentication: authentication
-                    .clone()
-                    .context("NetherNet requires Bedrock login initialization")?,
-                timeout: Duration::from_secs(config.bedrock.login_timeout_secs),
+                settings: protocol::bedrock::session::Settings {
+                    authentication: authentication
+                        .clone()
+                        .context("NetherNet requires Bedrock login initialization")?,
+                    timeout: Duration::from_secs(config.bedrock.login_timeout_secs),
+                    content: content.clone(),
+                },
                 world: world.clone(),
                 status: status_rx.clone(),
                 shutdown: shutdown_rx.clone(),
@@ -239,8 +283,11 @@ async fn run(config: Config) -> Result<()> {
                     socket,
                     status_rx,
                     guid,
-                    authentication,
-                    Duration::from_secs(config.bedrock.login_timeout_secs),
+                    protocol::bedrock::session::Settings {
+                        authentication,
+                        timeout: Duration::from_secs(config.bedrock.login_timeout_secs),
+                        content: content.clone(),
+                    },
                     shutdown_rx,
                     world.clone(),
                 ));

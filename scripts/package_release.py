@@ -88,6 +88,8 @@ def package(binary, version, output, plugin=None):
         shutil.copyfile(binary, stage / "sculith.exe")
         (stage / "plugins").mkdir()
         shutil.copyfile(plugin, stage / "plugins/sculith-gameplay-plugin.exe")
+        shutil.copytree(ROOT / "examples/pack/bedrock", stage / "packs/sculith-demo")
+        shutil.copyfile(ROOT / "examples/pack/textures.json", stage / "packs/sculith-demo-textures.json")
         for source in (ROOT / "distribution/windows").iterdir():
             if source.is_file():
                 shutil.copyfile(source, stage / source.name)

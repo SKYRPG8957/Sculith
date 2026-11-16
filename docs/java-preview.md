@@ -75,8 +75,9 @@ chunks and clipped to the existing region. Only Air, Bedrock, Stone, Dirt and
 Grass are mapped. Sky lighting is direct vertical lighting; lateral propagation
 is pending. Other players/entities are not yet displayed.
 
-General inventory transactions, chat, survival, gravity, crafting, custom assets,
-automatic resource-pack delivery and shared models/sounds/UI remain unfinished.
+General inventory transactions, chat, survival, gravity, crafting and shared
+models/sounds/UI remain unfinished. Current source supports optional
+[automatic local texture-pack delivery](content-delivery.md); public Preview 10 predates it.
 The known vanilla core supplies registry definitions, not Bedrock pack conversion.
 Both editions use the same orderly-shutdown region persistence; periodic saves
 and persistent player data are pending.

@@ -16,6 +16,10 @@ https://github.com/SKYRPG8957/Sculith
 Rust 예제 플러그인이 동봉돼 접속한 플레이어에게 환영 메시지를 보내고 블록 변경을 기록합니다.
 파일은 plugins/sculith-gameplay-plugin.exe이며, sculith.toml의 [[plugins]]에서 등록합니다.
 기존 설정을 옮겼다면 예제 플러그인도 자동으로 추가하지 않습니다.
+새 설정은 동봉한 베드락 예제 팩을 두 에디션에 자동 전달합니다. 게임의 팩 사용 동의가 필요할 수 있습니다.
+Stone에 원본 체크무늬 텍스처가 표시됩니다. 순정 Java 26.3에서 실제 다운로드와 표시를 확인했습니다.
+팩은 packs/sculith-demo, 변환 매핑은 packs/sculith-demo-textures.json입니다.
+기존 설정에 팩을 추가하려면 예제의 [content] 항목을 참고하세요. 다른 자산의 변환은 아직 제한됩니다.
 순정 Java 26.3의 로컬 입장·이동·마우스 건축은 Linux에서 확인했습니다.
 공식 베드락 앱의 입장과 Windows 게임 렌더링은 아직 확인하지 못했습니다.
 Java 26.3의 로컬 로그인·평지 전송·제한된 건축 경로도 구현했습니다.
@@ -55,6 +59,9 @@ are not implemented. Existing settings are not automatically opted in.
 Settings and world data are preserved. No Rust, Java or Python install is needed.
 The bundled Rust gameplay plugin sends a private welcome and observes committed
 block changes. It is enabled in new example settings; existing settings are preserved.
+New settings also deliver the bundled Bedrock texture example to both editions;
+Java receives the mapped PNG conversion. Accept the game's pack prompt when shown.
+Stone displays the original checkerboard. General sound/model/UI conversion is pending.
 
 MIT License. Third-party notices and license texts are included.
 Independent project, not affiliated with Mojang or Microsoft.

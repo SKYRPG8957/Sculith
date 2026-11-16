@@ -15,7 +15,21 @@ pub struct Config {
     pub bedrock: Bedrock,
     pub java: Java,
     pub world: World,
+    pub content: Option<Content>,
     pub plugins: Vec<PluginConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Content {
+    pub source: PathBuf,
+    pub mapping: PathBuf,
+    #[serde(default = "content_bind")]
+    pub bind: SocketAddr,
+}
+
+fn content_bind() -> SocketAddr {
+    "127.0.0.1:0".parse().expect("literal loopback address")
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -163,6 +177,14 @@ impl Config {
                     plugin.path = base.join(&plugin.path);
                 }
             }
+            if let Some(content) = &mut config.content {
+                if content.source.is_relative() {
+                    content.source = base.join(&content.source);
+                }
+                if content.mapping.is_relative() {
+                    content.mapping = base.join(&content.mapping);
+                }
+            }
             config
         } else {
             Self::default()
@@ -194,6 +216,20 @@ impl Config {
 
     fn validate(&self) -> Result<()> {
         self.status()?;
+        if let Some(content) = &self.content {
+            ensure!(
+                content.bind.ip().is_loopback(),
+                "content.bind must be loopback"
+            );
+            ensure!(
+                content.source.is_dir() && content.mapping.is_file(),
+                "content source directory and texture mapping must exist"
+            );
+            ensure!(
+                self.java.sessions || (self.bedrock.sessions && self.network.bedrock.enabled),
+                "content requires an enabled edition session preview"
+            );
+        }
         ensure!(
             !self.java.sessions
                 || (self.network.java.enabled
@@ -288,6 +324,23 @@ mod tests {
         config.validate().unwrap();
         assert!(config.network.java.bind.ip().is_loopback());
         assert!(config.network.bedrock.bind.ip().is_loopback());
+    }
+
+    #[test]
+    fn content_paths_resolve_against_config_and_delivery_requires_local_sessions() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir(directory.path().join("pack")).unwrap();
+        std::fs::write(directory.path().join("map.json"), "{}").unwrap();
+        let path = directory.path().join("server.toml");
+        std::fs::write(&path, "[java]\nsessions = true\nrequire_authentication = false\n[content]\nsource = 'pack'\nmapping = 'map.json'\n").unwrap();
+        let mut config = Config::load(Some(&path)).unwrap();
+        assert!(config.content.as_ref().unwrap().source.is_absolute());
+        assert!(config.content.as_ref().unwrap().mapping.is_absolute());
+        config.content.as_mut().unwrap().bind = "0.0.0.0:0".parse().unwrap();
+        assert!(config.validate().is_err());
+        config.content.as_mut().unwrap().bind = content_bind();
+        config.java.sessions = false;
+        assert!(config.validate().is_err());
     }
 
     #[test]

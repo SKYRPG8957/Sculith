@@ -9,12 +9,12 @@ snapshot_path = "world/region.sculith"
 [java]
 sessions = true
 require_authentication = false
-login_timeout_secs = 30
+login_timeout_secs = 60
 
 [bedrock]
 sessions = true
 require_authentication = false
-login_timeout_secs = 30
+login_timeout_secs = 60
 nethernet = true
 nethernet_identity_path = "world/nethernet-identity.pem"
 
@@ -29,3 +29,8 @@ bind = "127.0.0.1:19132"
 [[plugins]]
 path = "plugins/sculith-gameplay-plugin.exe"
 timeout_ms = 1000
+
+# One authored Bedrock pack; Java receives its supported texture conversion.
+[content]
+source = "packs/sculith-demo"
+mapping = "packs/sculith-demo-textures.json"

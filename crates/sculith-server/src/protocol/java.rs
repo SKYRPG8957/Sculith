@@ -25,6 +25,7 @@ const MAX_CONNECTIONS: usize = 64;
 
 #[derive(Clone)]
 pub struct Preview {
+    pub content: Option<Arc<crate::content::Content>>,
     pub world: crate::world::WorldHandle,
     pub timeout: Duration,
     pub shutdown: watch::Receiver<bool>,
@@ -105,6 +106,7 @@ async fn handle_with_preview(
                     preview.world.clone(),
                     max_players,
                     &mut phase,
+                    preview.content.as_deref(),
                 ),
             )
             .await;

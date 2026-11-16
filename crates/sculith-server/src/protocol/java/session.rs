@@ -70,6 +70,7 @@ pub async fn start(
     world: WorldHandle,
     max_players: u32,
     phase: &mut super::Phase,
+    content: Option<&crate::content::Content>,
 ) -> Result<Session> {
     let packet = frames.next(stream).await?;
     let mut fields = Fields(&packet);
@@ -91,7 +92,7 @@ pub async fn start(
     let ack = frames.next(stream).await?;
     ensure!(ack == [3], "expected Java Login Acknowledged");
     *phase = super::Phase::Configuration;
-    configure(stream, frames).await?;
+    configure(stream, frames, content).await?;
     *phase = super::Phase::Play;
     let events = world.subscribe();
     let lease = world
@@ -165,7 +166,11 @@ pub async fn start(
     bail!("too many Java packets before initialization")
 }
 
-async fn configure(stream: &mut TcpStream, frames: &mut Frames) -> Result<()> {
+async fn configure(
+    stream: &mut TcpStream,
+    frames: &mut Frames,
+    content: Option<&crate::content::Content>,
+) -> Result<()> {
     let mut features = codec::packet(0x0d);
     codec::strings(&["minecraft:vanilla"], &mut features);
     codec::send(stream, &features).await?;
@@ -204,6 +209,81 @@ async fn configure(stream: &mut TcpStream, frames: &mut Frames) -> Result<()> {
         codec::send(stream, packet).await?;
     }
     codec::send(stream, &registry::get().tags).await?;
+    if let Some(content) = content {
+        let bundle = &content.bundle;
+        let mut offer = codec::packet(9);
+        offer.extend_from_slice(bundle.java_id.as_bytes());
+        write_string(&content.java_url, &mut offer);
+        write_string(&bundle.java.sha1, &mut offer);
+        offer.extend_from_slice(&[1, 0]); // Required; no optional prompt component.
+        codec::send(stream, &offer).await?;
+        let mut accepted = false;
+        let mut downloaded = false;
+        let mut loaded = false;
+        let mut keepalive = None;
+        let mut keepalive_id = 0i64;
+        let mut pulse = tokio::time::interval_at(
+            tokio::time::Instant::now() + Duration::from_secs(10),
+            Duration::from_secs(10),
+        );
+        pulse.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        for _ in 0..32 {
+            let packet = loop {
+                tokio::select! {
+                    packet = frames.next(stream) => break packet?,
+                    _ = pulse.tick() => {
+                        ensure!(keepalive.is_none(), "Java configuration keepalive not acknowledged");
+                        keepalive_id += 1;
+                        let mut packet = codec::packet(4);
+                        packet.extend_from_slice(&keepalive_id.to_be_bytes());
+                        codec::send(stream, &packet).await?;
+                        keepalive = Some(keepalive_id);
+                    }
+                }
+            };
+            let mut fields = Fields(&packet);
+            match fields.int()? {
+                0 => client_information(fields)?,
+                2 => ensure!(fields.0.len() <= 4096, "Java custom data too large"),
+                4 => {
+                    let id = fields.long()?;
+                    fields.end()?;
+                    ensure!(
+                        keepalive == Some(id),
+                        "Java configuration keepalive mismatch"
+                    );
+                    keepalive = None;
+                    if loaded {
+                        break;
+                    }
+                }
+                6 => {
+                    ensure!(
+                        fields.take(16)? == bundle.java_id.as_bytes(),
+                        "Java pack acknowledgement ID mismatch"
+                    );
+                    let status = fields.int()?;
+                    fields.end()?;
+                    match status {
+                        3 if !accepted => accepted = true,
+                        4 if accepted && !downloaded => downloaded = true,
+                        0 if accepted && !loaded => {
+                            loaded = true;
+                            if keepalive.is_none() {
+                                break;
+                            }
+                        }
+                        _ => bail!(
+                            "required Java pack was declined, failed or acknowledged out of order (status {status})"
+                        ),
+                    }
+                }
+                _ => bail!("unexpected Java packet during resource pack transfer"),
+            }
+        }
+        ensure!(loaded, "Java resource pack loading was not acknowledged");
+        tracing::info!(pack_id=%bundle.java_id, "Java client loaded the shared resource pack");
+    }
     codec::send(stream, &[3]).await?;
     for _ in 0..32 {
         let packet = frames.next(stream).await?;

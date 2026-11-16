@@ -102,8 +102,11 @@ async fn http_status_and_rejections_cross_tcp_without_admitting_invalid_offers()
     let (status_tx, status) =
         watch::channel(ServerStatus::new("shared NetherNet status".into(), 20).unwrap());
     let task = tokio::spawn(server.serve(ContextData {
-        authentication: Authentication::offline(),
-        timeout: Duration::from_secs(10),
+        settings: crate::protocol::bedrock::session::Settings {
+            authentication: Authentication::offline(),
+            timeout: Duration::from_secs(10),
+            content: None,
+        },
         world: world.clone(),
         status,
         shutdown,
@@ -191,3 +194,4 @@ async fn http_status_and_rejections_cross_tcp_without_admitting_invalid_offers()
     drop(status_tx);
     let _rebound = TcpListener::bind(address).await.unwrap();
 }
+use crate::protocol::bedrock::session::Authentication;

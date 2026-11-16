@@ -40,6 +40,14 @@ struct Harness {
 
 impl Harness {
     async fn start(authentication: Authentication, timeout: Duration) -> Self {
+        Self::start_with_content(authentication, timeout, None).await
+    }
+
+    async fn start_with_content(
+        authentication: Authentication,
+        timeout: Duration,
+        content: Option<std::sync::Arc<crate::content::Content>>,
+    ) -> Self {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let address = socket.local_addr().unwrap();
         let (status, receiver) =
@@ -53,8 +61,11 @@ impl Harness {
                     socket,
                     receiver,
                     9876,
-                    authentication,
-                    timeout,
+                    super::Settings {
+                        authentication,
+                        timeout,
+                        content
+                    },
                     stop,
                     connection_world,
                 ),
@@ -462,8 +473,11 @@ async fn nethernet_http_webrtc_and_raknet_share_login_world_and_committed_block_
     .unwrap();
     let address = nether.local_addr().unwrap();
     let task = tokio::spawn(nether.serve(ContextData {
-        authentication: Authentication::offline(),
-        timeout: Duration::from_secs(10),
+        settings: crate::protocol::bedrock::session::Settings {
+            authentication: Authentication::offline(),
+            timeout: Duration::from_secs(10),
+            content: None,
+        },
         world: server.world.clone(),
         status: server._status.subscribe(),
         shutdown: server.shutdown.subscribe(),
@@ -625,8 +639,11 @@ async fn nethernet_rejects_a_login_not_bound_to_its_signed_transport_key() {
     .unwrap();
     let address = nether.local_addr().unwrap();
     let task = tokio::spawn(nether.serve(ContextData {
-        authentication: Authentication::offline(),
-        timeout: Duration::from_secs(10),
+        settings: crate::protocol::bedrock::session::Settings {
+            authentication: Authentication::offline(),
+            timeout: Duration::from_secs(10),
+            content: None,
+        },
         world: server.world.clone(),
         status: server._status.subscribe(),
         shutdown: server.shutdown.subscribe(),
@@ -1005,6 +1022,7 @@ async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_own
         tcp,
         server._status.subscribe(),
         Some(Preview {
+            content: None,
             world: server.world.clone(),
             timeout: Duration::from_secs(30),
             shutdown: shutdown.clone(),
@@ -1023,8 +1041,11 @@ async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_own
     let nether_address = nether.local_addr().unwrap();
     let nether_task = tokio::spawn(nether.serve(
         crate::protocol::bedrock::nethernet::ContextData {
-            authentication: Authentication::offline(),
-            timeout: Duration::from_secs(15),
+            settings: crate::protocol::bedrock::session::Settings {
+                authentication: Authentication::offline(),
+                timeout: Duration::from_secs(15),
+                content: None,
+            },
             world: server.world.clone(),
             status: server._status.subscribe(),
             shutdown: server.shutdown.subscribe(),
@@ -1111,6 +1132,88 @@ async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_own
         .unwrap()
         .unwrap();
     server.stop().await;
+}
+
+#[tokio::test]
+async fn required_pack_rejects_unknown_ids_early_finish_invalid_chunks_and_excess_retries() {
+    use bedrock::protocol::v662::packets::ResourcePackChunkRequestPacket;
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/pack");
+    let bundle =
+        sculith_packs::bundle::Bundle::prepare(&root.join("bedrock"), &root.join("textures.json"))
+            .unwrap();
+    let delivery = crate::content::Delivery::prepare("127.0.0.1:0".parse().unwrap(), bundle)
+        .await
+        .unwrap();
+    for case in 0..4 {
+        let server = Harness::start_with_content(
+            Authentication::offline(),
+            Duration::from_secs(15),
+            Some(delivery.content.clone()),
+        )
+        .await;
+        let mut client = TestClient::connect(server.address).await.unwrap();
+        client.login().await.unwrap();
+        let V2225::ResourcePacksInfoPacket(info) = client.next().await.unwrap() else {
+            panic!("expected pack info");
+        };
+        assert!(info.resource_pack_required);
+        assert_eq!(info.resource_packs.len(), 1);
+        let pack = &info.resource_packs[0];
+        let name = format!("{}_{}", pack.id, pack.version);
+        let requested = if case == 0 {
+            "unadvertised-pack".to_string()
+        } else {
+            name.clone()
+        };
+        client
+            .conn
+            .send(&[V2225::ResourcePackClientResponsePacket(Box::new(
+                ResourcePackClientResponsePacket::Downloading(vec![requested]),
+            ))])
+            .await
+            .unwrap();
+        if case != 0 {
+            assert!(matches!(
+                client.next().await.unwrap(),
+                V2225::ResourcePackDataInfoPacket(_)
+            ));
+            if case == 1 {
+                client
+                    .conn
+                    .send(&[V2225::ResourcePackClientResponsePacket(Box::new(
+                        ResourcePackClientResponsePacket::DownloadingFinished,
+                    ))])
+                    .await
+                    .unwrap();
+            } else {
+                for attempt in 0..if case == 2 { 1 } else { 3 } {
+                    client
+                        .conn
+                        .send(&[V2225::ResourcePackChunkRequestPacket(Box::new(
+                            ResourcePackChunkRequestPacket {
+                                resource_name: name.clone(),
+                                chunk: if case == 2 { u32::MAX } else { 0 },
+                            },
+                        ))])
+                        .await
+                        .unwrap();
+                    if case == 3 && attempt < 2 {
+                        assert!(matches!(
+                            client.next().await.unwrap(),
+                            V2225::ResourcePackChunkDataPacket(_)
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(
+            matches!(client.next().await.unwrap(), V2225::DisconnectPacket(_)),
+            "case {case}"
+        );
+        assert_eq!(server.world.online_players(), 0);
+        client.conn.close().await;
+        server.stop().await;
+    }
 }
 
 #[tokio::test]

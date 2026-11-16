@@ -24,7 +24,7 @@ The checked-in release references are:
 
 | Edition | Reference version | Protocol | Current implementation |
 | --- | --- | --- | --- |
-| Bedrock | 1.26.60 | 2225 | Discovery; RakNet and local NetherNet login, encryption, empty-pack negotiation, spawn and limited creative-builder preview |
+| Bedrock | 1.26.60 | 2225 | Discovery; RakNet and local NetherNet login, encryption, resource-pack negotiation/delivery, spawn and limited creative-builder preview |
 | Java | 26.3 | 777 | Discovery; opt-in loopback login/configuration, flat-world chunks and limited creative building in the same owner |
 
 These numbers identify development targets, **not verified gameplay support**. The gameplay support lists in [`protocol-targets.json`](protocol-targets.json) remain empty. Preview/Beta versions are separate targets, and RakNet tests do not establish NetherNet support.
@@ -42,9 +42,10 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Optional versioned, checksummed region snapshots loaded at startup and saved after sessions close on orderly shutdown. Periodic autosaving is pending.
 - Trusted-executable Rust plugin SDK v2 with v1 compatibility, lifecycle/MOTD, initialized-player join/leave and committed-block hooks, plus owner-validated private messages in both editions. [Actual game evidence](docs/verification/2026-11-16-plugin-api-v2.md).
 - Explicit Bedrock PNG-to-Java texture overrides, with a conversion report describing unsupported assets.
+- Optional automatic delivery from one frozen Bedrock pack to native clients and a converted Java ZIP, with immutable hashes/cache IDs and required-pack acknowledgements. [Configuration and test scope](docs/content-delivery.md). The stock Java game renders the server-delivered checkerboard texture.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
-Multiplayer entity visibility, general inventory transactions, physics/gravity, content distribution, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
+Multiplayer entity visibility, general inventory transactions, physics/gravity, public content hosting, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
 
 ## Windows quick start
 
@@ -124,7 +125,7 @@ cargo run --locked -- pack convert \
   --pack-format 97 --pack-format-minor 1
 ```
 
-The output must be a new directory. Automatic pack delivery and sound/model/UI conversion are not implemented.
+The output must be a new directory. Current source also supports [automatic local pack delivery](docs/content-delivery.md) with `examples/content-preview.toml`; public Preview 10 predates this addition. Sound/model/UI conversion remains unfinished.
 
 ## Development checks
 

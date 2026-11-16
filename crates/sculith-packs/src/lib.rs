@@ -1,5 +1,7 @@
 //! Explicit Bedrock PNG -> vanilla Java texture overrides.
-//! Models, behaviors, UI, materials, sounds and pack delivery are separate work.
+//! Models, behaviors, UI, materials and sounds are separate work.
+
+pub mod bundle;
 
 use std::{
     collections::HashSet,
@@ -168,7 +170,7 @@ pub fn convert(
             "Only explicitly mapped PNG files are converted; unmapped assets are not included.".into(),
             "Java targets must already exist in the target client's vanilla resource set.".into(),
             "Models, animations, UI, fonts, sounds, materials and behavior/script packs are not converted.".into(),
-            "Custom block/item registration and automatic client pack delivery are not implemented.".into(),
+            "Texture conversion does not register custom blocks/items; archive delivery is configured separately.".into(),
         ],
     };
     let metadata = serde_json::json!({"pack": {

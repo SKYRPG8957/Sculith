@@ -16,11 +16,8 @@ use bedrock::{
         v662::{
             enums::{PacketCompressionAlgorithm, PlayStatus},
             packets::{NetworkSettingsPacket, PlayStatusPacket, ServerToClientHandshakePacket},
-            types::{BaseGameVersion, Experiments},
         },
         v712::packets::{DisconnectMessage, DisconnectPacket},
-        v898::packets::ResourcePackStackPacket,
-        v2168::packets::{ResourcePackClientResponsePacket, ResourcePacksInfoPacket},
         v2225::enums::ConnectionFailReason,
     },
 };
@@ -34,8 +31,16 @@ use crate::{
     world::{PlayerLease, WorldEvent},
 };
 
+mod packs;
 #[cfg(test)]
 mod tests;
+
+#[derive(Clone)]
+pub struct Settings {
+    pub authentication: Authentication,
+    pub timeout: Duration,
+    pub content: Option<Arc<crate::content::Content>>,
+}
 
 #[derive(Clone)]
 pub struct Authentication {
@@ -173,39 +178,31 @@ pub async fn disconnect<T: Transport>(
 
 pub async fn handle<T: Transport>(
     conn: &mut Connection<V2225, T>,
-    authentication: &Authentication,
+    settings: &Settings,
     world: &WorldHandle,
-    timeout: Duration,
 ) -> Result<()> {
-    handle_with_protection(
-        conn,
-        authentication,
-        world,
-        timeout,
-        Protection::PacketEncryption,
-    )
-    .await
+    handle_with_protection(conn, settings, world, Protection::PacketEncryption).await
 }
 
 pub async fn handle_with_protection<T: Transport>(
     conn: &mut Connection<V2225, T>,
-    authentication: &Authentication,
+    settings: &Settings,
     world: &WorldHandle,
-    timeout: Duration,
     protection: Protection,
 ) -> Result<()> {
     let mut packets = Packets::new();
     let mut events = world.subscribe();
     let mut stage = "network-settings";
     let result = tokio::time::timeout(
-        timeout,
+        settings.timeout,
         initialize(
             conn,
             &mut packets,
-            authentication,
+            &settings.authentication,
             world,
             &mut stage,
             &protection,
+            settings.content.as_deref(),
         ),
     )
     .await;
@@ -379,12 +376,13 @@ async fn initialize<T: Transport>(
     world: &WorldHandle,
     stage: &mut &'static str,
     protection: &Protection,
+    content: Option<&crate::content::Content>,
 ) -> Result<(PlayerLease, spawn::Interest, i32)> {
     let login = login(conn, packets, authentication, stage, protection).await?;
     tracing::info!(player = %login.authentication.identity().display_name,
         authenticated = login.authentication.is_authenticated(), protection = protection.label(), "Bedrock login completed");
     *stage = "resource-packs";
-    empty_pack_handshake(conn, packets).await?;
+    packs::negotiate(conn, packets, content).await?;
     *stage = "world-spawn";
     let identity = login.authentication.identity();
     let subject = if login.authentication.is_authenticated() {
@@ -630,57 +628,4 @@ async fn login<T: Transport>(
     };
     conn.send(&[status(PlayStatus::LoginSuccess)]).await?;
     Ok(login)
-}
-
-async fn empty_pack_handshake<T: Transport>(
-    conn: &mut Connection<V2225, T>,
-    packets: &mut Packets,
-) -> Result<()> {
-    conn.send(&[V2225::ResourcePacksInfoPacket(Box::new(
-        ResourcePacksInfoPacket {
-            resource_pack_required: false,
-            has_addon_packs: false,
-            has_scripts: false,
-            force_disable_vibrant_visuals: false,
-            world_template_uuid: uuid::Uuid::nil(),
-            world_template_version: String::new(),
-            resource_packs: vec![],
-        },
-    ))])
-    .await?;
-    let mut stack_sent = false;
-    let mut cache_seen = false;
-    loop {
-        match packets.next(conn).await? {
-            V2225::ClientCacheStatusPacket(_) if !cache_seen => {
-                cache_seen = true;
-            }
-            V2225::ResourcePackClientResponsePacket(response) => match *response {
-                ResourcePackClientResponsePacket::Cancel => {
-                    bail!("client cancelled resource packs")
-                }
-                ResourcePackClientResponsePacket::DownloadingFinished if !stack_sent => {
-                    conn.send(&[V2225::ResourcePackStackPacket(Box::new(
-                        ResourcePackStackPacket {
-                            texture_pack_required: false,
-                            addon_list: vec![],
-                            base_game_version: BaseGameVersion(V2225::GAME_VERSION.into()),
-                            experiments: Experiments {
-                                experiments: vec![],
-                                ever_toggled: false,
-                            },
-                            include_editor_packs: false,
-                        },
-                    ))])
-                    .await?;
-                    stack_sent = true;
-                }
-                ResourcePackClientResponsePacket::ResourcePackStackFinished if stack_sent => {
-                    return Ok(());
-                }
-                _ => bail!("resource-pack response out of sequence"),
-            },
-            _ => bail!("unexpected packet during resource-pack negotiation"),
-        }
-    }
 }
