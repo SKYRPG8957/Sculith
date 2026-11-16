@@ -267,6 +267,7 @@
     "version": "v0.1.0-preview.14",
     "unauthenticated_https_verified": true,
     "immutable_source_tag_verified": true,
-    "installer_run_id": null
+    "installer_run_id": "43809042457",
+    "installer_conclusion": "success"
   }
 }

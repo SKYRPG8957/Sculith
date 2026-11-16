@@ -77,4 +77,8 @@ Individual measurements and pack hashes are in the JSON record.
 [Publication run 43808277834](https://github.com/SKYRPG8957/Sculith/actions/runs/43808277834)
 publishes Preview 14 from this exact tested source. Fresh unauthenticated HTTPS
 ZIP/checksum downloads pass source/tag/SHA-256 verification. Installer/download
-defaults select Preview 14; native public installation is being checked.
+defaults select Preview 14. Native Windows PowerShell 5.1
+[installation run 43809042457](https://github.com/SKYRPG8957/Sculith/actions/runs/43809042457)
+passes direct installation, the documented raw-HTTPS one-command install, both
+launchers and preservation of an existing directory. New settings validate both
+adapters, four registered plugin EXEs and all bundled pack paths.
