@@ -67,7 +67,17 @@ def mutf8(value):
 def click(client, form_id, entries=None, payload=None):
     action = 'cancel' if entries is None and payload is None else 'submit'
     if payload is None:
-        payload = b'\0' if entries is None else b'\x0a'+b''.join(b'\x08'+mutf8(key)+mutf8(value) for key, value in entries)+b'\0'
+        if entries is None:
+            payload = b'\0'
+        else:
+            payload = bytearray(b'\x0a')
+            for key, value in entries:
+                tag = 1 if key.startswith('toggle_') and value in ('true','false') else 5 if key == 'number_3' else 8
+                payload += bytes([tag])+mutf8(key)
+                if tag == 1: payload += bytes([int(value == 'true')])
+                elif tag == 5: payload += struct.pack('>f',float(value))
+                else: payload += mutf8(value)
+            payload += b'\0'
     wire.send(client.socket, 68, wire.string(f'sculith:input/{form_id}/{action}')+wire.vi(len(payload))+payload)
 
 
@@ -88,7 +98,7 @@ def smoke(server, plugin, native):
             form_id = dialog(java)
             valid = [('number_3', '5.0'), ('toggle_1', 'false'), ('text_0', '이름 👋'), ('number_2', '1')]
             for entries in [valid[:-1], [('text_0', 'x'), ('text_0', 'duplicate')],
-                            [('toggle_0', 'true')], [('number_0', 'NaN')],
+                            [('toggle_0', 'true')], [('number_0', 'NaN')], [('number_3', 'NaN')],
                             [('text_0', '👋'*9), *valid[:2], valid[3]],
                             [('text_0', 'x'), ('toggle_1', 'true'), ('number_2', '9'), ('number_3', '3')]]:
                 click(java, form_id, entries)

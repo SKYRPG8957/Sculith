@@ -111,7 +111,7 @@ pub fn show(id: u32, form: &CustomForm) -> Result<Vec<u8>> {
     Ok(packet)
 }
 
-/// Accept only the string-valued flat compound emitted by vanilla's dynamic
+/// Accept only the flat string/boolean-byte/float compound emitted by vanilla's dynamic
 /// custom action. No lists, nested tags, arbitrary keys or duplicate indexes.
 pub fn response(mut fields: Fields<'_>) -> Result<Option<(u32, Option<Vec<FormValue>>)>> {
     let action = fields.string(128)?;
@@ -138,7 +138,7 @@ pub fn response(mut fields: Fields<'_>) -> Result<Option<(u32, Option<Vec<FormVa
             break;
         }
         ensure!(
-            tag == 8 && values.len() < MAX_FORM_FIELDS,
+            matches!(tag, 1 | 5 | 8) && values.len() < MAX_FORM_FIELDS,
             "invalid input payload tag or field count"
         );
         let key = nbt_string(&mut data, 32)?;
@@ -150,16 +150,15 @@ pub fn response(mut fields: Fields<'_>) -> Result<Option<(u32, Option<Vec<FormVa
             index < MAX_FORM_FIELDS && key == format!("{kind}_{index}"),
             "invalid input index"
         );
-        let value = nbt_string(&mut data, 1024)?;
-        let value = match kind {
-            "text" => FormValue::Text(value),
-            "toggle" => FormValue::Toggle(match value.as_str() {
-                "true" => true,
-                "false" => false,
-                _ => bail!("invalid toggle value"),
-            }),
-            "number" => FormValue::number(value.parse::<f64>()?).map_err(anyhow::Error::msg)?,
-            _ => bail!("unknown input key"),
+        let value = match (kind, tag) {
+            ("text", 8) => FormValue::Text(nbt_string(&mut data, 1024)?),
+            ("toggle", 1) => FormValue::Toggle(data.boolean()?),
+            ("number", 5) => {
+                FormValue::number(f64::from(data.float()?)).map_err(anyhow::Error::msg)?
+            }
+            ("number", 8) => FormValue::number(nbt_string(&mut data, 32)?.parse::<f64>()?)
+                .map_err(anyhow::Error::msg)?,
+            _ => bail!("invalid input key or value tag"),
         };
         ensure!(
             values.insert(index, value).is_none(),
@@ -215,13 +214,25 @@ mod tests {
         super::super::super::write_string("sculith:input/41/submit", &mut fields);
         let mut payload = vec![10];
         for (key, value) in entries {
-            payload.push(8);
-            for text in [key, value] {
-                // Reuse only the production string encoder; adversarial frames
-                // below alter the independently assembled flat tag structure.
-                let mut encoded = Vec::new();
-                codec::nbt(&codec::nbt_string(text).unwrap(), &mut encoded).unwrap();
-                payload.extend_from_slice(&encoded[1..]);
+            let tag = if key.starts_with("toggle_") && matches!(*value, "true" | "false") {
+                1
+            } else if *key == "number_3" {
+                5
+            } else {
+                8
+            };
+            payload.push(tag);
+            let mut encoded = Vec::new();
+            codec::nbt(&codec::nbt_string(key).unwrap(), &mut encoded).unwrap();
+            payload.extend_from_slice(&encoded[1..]);
+            match tag {
+                1 => payload.push(u8::from(*value == "true")),
+                5 => payload.extend_from_slice(&value.parse::<f32>().unwrap().to_be_bytes()),
+                _ => {
+                    let mut encoded = Vec::new();
+                    codec::nbt(&codec::nbt_string(value).unwrap(), &mut encoded).unwrap();
+                    payload.extend_from_slice(&encoded[1..]);
+                }
             }
         }
         payload.push(0);
@@ -256,6 +267,8 @@ mod tests {
             vec![("toggle_0", "1")],
             vec![("number_0", "NaN")],
             vec![("number_0", "1.1")],
+            vec![("number_3", "NaN")],
+            vec![("number_3", "1.1")],
             vec![("text_00", "alias")],
         ] {
             assert!(response(Fields(&self::packet(&entries))).is_err());

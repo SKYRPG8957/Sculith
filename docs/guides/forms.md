@@ -98,8 +98,9 @@ revisions. Inputs add no player data persistence.
 Bedrock receives a `custom_form`; Java receives a vanilla dialog with text,
 boolean, single-option and number-range controls. Only a generated custom action
 can submit its values: no plugin-supplied action IDs or executable commands are
-sent. Java replies accept a bounded flat string-tag compound, with strict modified
-UTF-8 and unique consecutive input indexes. Native replies accept a bounded typed
+sent. Java replies accept a bounded flat compound of strings, boolean bytes and
+integer-valued finite floats, with strict modified UTF-8 and unique consecutive
+input indexes. Native replies accept a bounded typed
 array. Payloads are at most 16 KiB; nesting and unknown value types are rejected.
 UI layout and native styling differ; this is shared form behavior, not arbitrary
 Bedrock JSON UI or HUD conversion.
