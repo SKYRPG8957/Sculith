@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "tested_at": "2026-11-16 KST",
+  "server_source_commit": "b64f81ccfb551918b6b225b5e209976183a8f16c",
+  "plugin_api": 2,
+  "legacy_api_supported": 1,
+  "checks": {
+    "linux_project_tests": 109,
+    "ownership_doctest": true,
+    "clippy": true,
+    "previously_compiled_v1_rust_executable": true,
+    "concurrent_worker_barrier_and_ordered_actions": true,
+    "private_message_owner_gates_and_rate_budget": true,
+    "independent_java_and_bedrock_unicode_messages": true,
+    "no_cross_player_message_leak": true,
+    "post_commit_block_hook": true,
+    "windows_release_and_bundled_plugin": true
+  },
+  "windows_run": 43783043722,
+  "official_game": {
+    "edition": "Java",
+    "version": "26.3",
+    "platform": "Linux",
+    "unmodified_client": true,
+    "jar_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+    "korean_and_emoji_welcome_displayed": true,
+    "online_authentication_tested": false
+  },
+  "official_bedrock_game_tested": false,
+  "regression": {
+    "old_raw_nbt_string_fails_independent_reader": true,
+    "java_surrogate_pair_encoding_passes": true
+  },
+  "retained_linux_executables": {
+    "api_v1_welcome": "d113e1e8cae36d26ccd279d018252c2e6e1122c14ee36e939cfcf872f63d1547",
+    "api_v2_gameplay": "9ba9e5b7a6fc1d408eb5e908a2b27aa3c0a34ee2c7079ff43cb488ff50982b46"
+  },
+  "screenshot": {
+    "file": "plugin-api-v2-java.png",
+    "sha256": "4d686dbf31302bda955ca95d3cf5864150e9850536af2c168be760b6f41c5780"
+  }
+}
