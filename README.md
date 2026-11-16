@@ -53,7 +53,7 @@ General inventory transactions, physics/gravity, public content hosting, and com
 
 ## Windows quick start
 
-For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.14), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
+For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.15), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
 
 In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
 
@@ -107,7 +107,7 @@ cargo run --locked -- run --config examples/with-plugin.toml
 
 The original welcome example changes the common MOTD. The new gameplay example sends a private welcome after player initialization and observes accepted block changes; run it with `examples/gameplay-preview.toml`. Current plugins are trusted executable JSON-lines processes, not a sandbox. The official host design will evaluate the WASI Component Model, resource limits and region-aware APIs.
 
-Public Preview 14 includes API v5 and gameplay/forms/sound/model examples, enabled in new Windows configurations. Older v1/v2/v3/v4 executables remain supported. It sends each initialized player a private welcome and logs committed block changes. Existing configurations are preserved and do not automatically add plugins.
+Public Preview 15 includes API v5 and gameplay/forms/sound/model examples, enabled in new Windows configurations. Older v1/v2/v3/v4 executables remain supported. It sends each initialized player a private welcome and logs committed block changes. Existing configurations are preserved and do not automatically add plugins.
 
 See the [plugin SDK guide](docs/plugins.md) and [example source](examples/welcome-plugin/src/main.rs).
 

@@ -216,5 +216,12 @@
     ],
     "source_asset_check": "JSON, LICENSE and Cargo.lock match with CRLF/LF normalization; PNG/OGG byte-identical",
     "status": "success"
+  },
+  "publication": {
+    "run_id": 43817319113,
+    "url": "https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.15",
+    "fresh_unauthenticated_zip_and_checksum_verified": true,
+    "tag_source_matches_tested_windows_run": true,
+    "archive_readme_erratum": "The inherited README limitation saying other players are not displayed is stale; basic peer visibility is implemented and tested as above. Public notes and current source README correct it."
   }
 }

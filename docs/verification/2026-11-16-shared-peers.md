@@ -74,5 +74,11 @@ has **24 members**, **6,591,847 bytes**, SHA-256
 All five EXEs import system DLLs only. The nine authored pack files match source
 (JSON with checkout CRLF/LF normalization; PNG/OGG byte-identical); locked metadata,
 license and source revision match. No keys, worlds, game JARs or test clients are
-included. Public download and installation validation are pending.
+included. [Public Preview 15](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.15)
+is published through [run 43817319113](https://github.com/SKYRPG8957/Sculith/actions/runs/43817319113).
+A fresh unauthenticated HTTPS ZIP/checksum download passes exact-source/tag/hash
+verification. Installer/download defaults select Preview 15; native Windows public
+installation validation is pending. The inherited ZIP README line saying peer
+visibility is unfinished is stale; public release notes and current source correct
+that description. Published tag and archive remain immutable.
 
