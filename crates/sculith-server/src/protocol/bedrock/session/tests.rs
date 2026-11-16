@@ -594,6 +594,7 @@ async fn authenticated_nethernet_crosses_nonloopback_http_fixed_udp_and_oidc_bef
         &address.to_string(),
         "PublicNetherTest",
     );
+    let offline_identity = ClientIdentity::offline(key.clone(), "PublicNetherTest", &data).unwrap();
     let identity = ClientIdentity::online(
         key,
         bedrock::auth::AuthData {
@@ -619,7 +620,39 @@ async fn authenticated_nethernet_crosses_nonloopback_http_fixed_udp_and_oidc_bef
         Ok(_) => panic!("a full UDP range accepted another media connection"),
     }
     assert_eq!(world.online_players(), 0);
+    let rejected_udp = UdpSocket::bind(SocketAddr::new(ip, 0)).await.unwrap();
     drop(guards);
+    let (rejected, rejected_task) = test_support::connect(
+        address,
+        rejected_udp,
+        &signer,
+        &operator,
+        &issuer,
+        shutdown.clone(),
+        None,
+    )
+    .await
+    .unwrap();
+    let mut rejected = TestClient {
+        conn: Connection::<V2225, _>::from_transport_conn(rejected),
+        pending: VecDeque::new(),
+        dtls_identity: Some(offline_identity),
+        own_id: 0,
+    };
+    assert!(
+        tokio::time::timeout(Duration::from_secs(3), rejected.login())
+            .await
+            .unwrap()
+            .is_err(),
+        "a trusted transport admitted an offline game account"
+    );
+    assert_eq!(world.online_players(), 0);
+    drop(rejected);
+    tokio::time::timeout(Duration::from_secs(3), rejected_task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
     let (transport, client_task) = test_support::connect(
         address,
         udp,

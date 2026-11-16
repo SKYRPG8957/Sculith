@@ -88,6 +88,8 @@ SDP destination without emitting a UDP packet to its sink, and releases the UDP
 range at shutdown. An occupied range returns HTTP 503 without world admission,
 then accepts the same account after the ports are released. Fixtures and their
 issuer overrides compile only in tests.
+The same trusted transport also rejects an offline game-account payload before
+world admission, then accepts the fixture's online account token.
 A controlled signing fixture additionally exercises real HTTP acceptance, wrong
 signature/issuer/audience/subject/expiry/fingerprint rejection, key rotation and
 empty-cache rejection without world admission. Cancellation tests retain the fetch
