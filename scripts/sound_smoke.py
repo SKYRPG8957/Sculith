@@ -57,7 +57,7 @@ def smoke(server, plugin, client, api_version=5):
                     loaded.append(True)
                     wire.send(sock,6,id_+wire.vi(4));wire.send(sock,6,id_+wire.vi(0))
                 java=wire.Client(("127.0.0.1",int(tcp[1])),"SoundJavaProbe",pack_handler=accept)
-                id_,reader=wire.receive(java.socket)
+                id_,reader=wire.receive_play(java)
                 assert id_==119 and reader.varint()==0 and reader.string()=="sculith:demo_tone"
                 assert reader.number(">B")==0 and reader.varint()==7
                 assert [reader.number(">i") for _ in range(3)]==[4,44,4]

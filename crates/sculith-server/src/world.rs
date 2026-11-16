@@ -58,6 +58,13 @@ pub struct WorldHandle {
     game_events: broadcast::Sender<Arc<WorldEvent>>,
 }
 
+/// Snapshot and its continuation are created atomically inside the owner.
+/// Updates contain only Joined, Moved and Left, with no private presentation.
+pub struct PeerObservation {
+    pub players: Vec<PlayerSnapshot>,
+    pub updates: broadcast::Receiver<Arc<WorldEvent>>,
+}
+
 pub struct PlayerLease {
     pub player: PlayerSnapshot,
     alive: Arc<AtomicBool>,
@@ -73,6 +80,10 @@ impl Drop for PlayerLease {
 }
 
 enum Command {
+    ObservePlayers {
+        id: u64,
+        reply: oneshot::Sender<Result<PeerObservation>>,
+    },
     Snapshot {
         position: ChunkPos,
         reply: oneshot::Sender<Result<ChunkSnapshot>>,
@@ -154,6 +165,15 @@ enum Command {
 }
 
 impl WorldHandle {
+    pub async fn observe_players(&self, id: u64) -> Result<PeerObservation> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::ObservePlayers { id, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("peer observation lost")?
+    }
+
     pub async fn show_model(&self, id: u64, model: String) -> Result<()> {
         sculith_core::validate_resource_id(&model).map_err(anyhow::Error::msg)?;
         let (reply, receiver) = oneshot::channel();
@@ -355,6 +375,18 @@ fn publish_game(
     let _ = game_events.send(event);
 }
 
+fn publish_presence(
+    event: WorldEvent,
+    events: &broadcast::Sender<Arc<WorldEvent>>,
+    game_events: &broadcast::Sender<Arc<WorldEvent>>,
+    peer_events: &broadcast::Sender<Arc<WorldEvent>>,
+) {
+    let event = Arc::new(event);
+    let _ = events.send(event.clone());
+    let _ = game_events.send(event.clone());
+    let _ = peer_events.send(event);
+}
+
 fn publish_blocks(
     state: &mut GameState,
     events: &broadcast::Sender<Arc<WorldEvent>>,
@@ -388,13 +420,14 @@ fn retire(
     leases: &mut BTreeMap<u64, Weak<AtomicBool>>,
     events: &broadcast::Sender<Arc<WorldEvent>>,
     game_events: &broadcast::Sender<Arc<WorldEvent>>,
+    peer_events: &broadcast::Sender<Arc<WorldEvent>>,
     id: u64,
 ) {
     leases.remove(&id);
     if let Some(player) = state.retire(id)
         && player.initialized
     {
-        publish_game(WorldEvent::Left { id }, events, game_events);
+        publish_presence(WorldEvent::Left { id }, events, game_events, peer_events);
     }
 }
 
@@ -427,6 +460,7 @@ pub fn with_region_and_content(
     let weak_commands = commands.downgrade();
     let (events, _) = broadcast::channel(128);
     let (game_events, _) = broadcast::channel(128);
+    let (peer_events, _) = broadcast::channel(128);
     let online = Arc::new(AtomicU32::new(0));
     let handle = WorldHandle {
         commands,
@@ -446,7 +480,14 @@ pub fn with_region_and_content(
                 })
                 .collect();
             for id in dead {
-                retire(&mut state, &mut leases, &events, &game_events, id);
+                retire(
+                    &mut state,
+                    &mut leases,
+                    &events,
+                    &game_events,
+                    &peer_events,
+                    id,
+                );
             }
             online.store(state.online_count(), Ordering::Release);
             tokio::select! {
@@ -459,8 +500,17 @@ pub fn with_region_and_content(
                     let dead: Vec<_> = leases.iter().filter_map(|(&id, flag)|
                         flag.upgrade().is_none_or(|flag| !flag.load(Ordering::Acquire)).then_some(id)
                     ).collect();
-                    for id in dead { retire(&mut state, &mut leases, &events, &game_events, id); }
+                    for id in dead { retire(&mut state, &mut leases, &events, &game_events, &peer_events, id); }
                     match command {
+                        Some(Command::ObservePlayers {id,reply})=>{
+                            let result=if state.player(id).is_some_and(|p|p.initialized) {
+                                // There is no await or external publisher between
+                                // capturing membership and subscribing to changes.
+                                let players=state.initialized_players().into_iter().filter(|p|p.id!=id).collect();
+                                Ok(PeerObservation {players,updates:peer_events.subscribe()})
+                            } else {Err(anyhow::anyhow!("peer observer must be a live initialized player"))};
+                            let _=reply.send(result);
+                        }
                         Some(Command::Snapshot { position, reply }) => { let _ = reply.send(state.snapshot(position).map_err(Into::into)); }
                         Some(Command::Capture { reply }) => { let _ = reply.send(state.capture()); }
                         Some(Command::Reserve { profile, permissions, reply }) => {
@@ -474,15 +524,16 @@ pub fn with_region_and_content(
                         Some(Command::Activate { id, reply }) => {
                             let was_ready = state.player(id).is_some_and(|p| p.initialized);
                             let result = state.activate(id);
-                            if !was_ready && let Ok(player) = &result { publish_game(WorldEvent::Joined(player.clone()), &events, &game_events); }
+                            if !was_ready && let Ok(player) = &result { publish_presence(WorldEvent::Joined(player.clone()), &events, &game_events, &peer_events); }
                             online.store(state.online_count(), Ordering::Release);
                             let _ = reply.send(result);
                         }
-                        Some(Command::Retire { id }) => { retire(&mut state, &mut leases, &events, &game_events, id); }
+                        Some(Command::Retire { id }) => { retire(&mut state, &mut leases, &events, &game_events, &peer_events, id); }
                         Some(Command::Move { id, tick, position, rotation, reply }) => {
                             let outcome = state.move_player(id, tick, position, rotation, Instant::now());
                             if let MoveOutcome::Accepted { player, tick, changed: true } = &outcome {
-                                let _ = events.send(Arc::new(WorldEvent::Moved { player: player.clone(), tick: *tick }));
+                                let event=Arc::new(WorldEvent::Moved { player: player.clone(), tick: *tick });
+                                let _ = events.send(event.clone());let _ = peer_events.send(event);
                             }
                             let _ = reply.send(outcome);
                         }
@@ -557,6 +608,61 @@ mod tests {
             uuid: uuid::Uuid::new_v4(),
             edition: Edition::Bedrock,
         }
+    }
+
+    #[tokio::test]
+    async fn peer_observation_has_an_atomic_initial_membership_boundary_and_no_pending_players() {
+        let (stop, receiver) = watch::channel(false);
+        let (world, task) = create(receiver);
+        let task = tokio::spawn(task);
+        let viewer = world
+            .reserve(profile("viewer"), Permissions::default())
+            .await
+            .unwrap();
+        assert!(world.observe_players(viewer.player.id).await.is_err());
+        world.activate(viewer.player.id).await.unwrap();
+        let peer = world
+            .reserve(profile("peer"), Permissions::default())
+            .await
+            .unwrap();
+        let mut first = world.observe_players(viewer.player.id).await.unwrap();
+        assert!(first.players.is_empty());
+        world.activate(peer.player.id).await.unwrap();
+        assert!(
+            matches!(first.updates.recv().await.unwrap().as_ref(),WorldEvent::Joined(p) if p.id==peer.player.id)
+        );
+        let mut second = world.observe_players(viewer.player.id).await.unwrap();
+        assert_eq!(second.players.len(), 1);
+        assert_eq!(second.players[0].id, peer.player.id);
+        assert!(matches!(
+            second.updates.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        world
+            .send_message(viewer.player.id, "private".into())
+            .await
+            .unwrap();
+        assert!(matches!(
+            second.updates.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        let id = peer.player.id;
+        drop(peer);
+        // The next mailbox command first retires dead leases and then snapshots.
+        let mut third = world.observe_players(viewer.player.id).await.unwrap();
+        assert!(third.players.is_empty());
+        assert!(
+            matches!(second.updates.recv().await.unwrap().as_ref(),WorldEvent::Left {id:current} if *current==id)
+        );
+        assert!(matches!(
+            third.updates.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        let id = viewer.player.id;
+        drop(viewer);
+        assert!(world.observe_players(id).await.is_err());
+        stop.send(true).unwrap();
+        task.await.unwrap().unwrap();
     }
 
     #[tokio::test]

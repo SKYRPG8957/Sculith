@@ -65,7 +65,7 @@ def smoke(server, plugin, client, api_version=5):
                     raise TimeoutError(text)
                 assert f"api_version={api_version}" in text and "gameplay-demo" in text
                 java = wire.Client(("127.0.0.1", int(tcp[1])), "PluginJavaProbe")
-                id_, reader = wire.receive(java.socket)
+                id_, reader = wire.receive_play(java)
                 assert id_ == 0x7c
                 assert nbt_text(reader) == "Sculith: PluginJavaProbe님, 환영합니다 👋"
                 assert reader.number(">B") == 0

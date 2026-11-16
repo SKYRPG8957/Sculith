@@ -12,10 +12,11 @@ import (
 )
 
 func main() {
+	visual := len(os.Args) == 3 && os.Args[2] == "--peer-visual"
 	packOutput := len(os.Args) == 4 && os.Args[2] == "--pack-output"
 	modelOutput := len(os.Args) == 4 && os.Args[2] == "--model-output"
-	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--model" || os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput && !modelOutput {
-		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--model|--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file|--model-output file]")
+	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--peers" || os.Args[2] == "--peer-visual" || os.Args[2] == "--model" || os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput && !modelOutput {
+		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--peers|--peer-visual|--model|--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file|--model-output file]")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -24,6 +25,12 @@ func main() {
 	registry.Finalize()
 	observed := newObserver(registry)
 	dialer := minecraft.Dialer{PacketFunc: observed.packet}
+	if len(os.Args) == 3 && os.Args[2] == "--peers" {
+		dialer.IdentityData.DisplayName = "베드락😀"
+	}
+	if visual {
+		dialer.PacketFunc = nil
+	}
 	if packOutput {
 		dialer.ResourcePackCache = minecraft.DirResourcePackCache{Dir: filepath.Join(filepath.Dir(os.Args[3]), "cache")}
 	}
@@ -37,10 +44,12 @@ func main() {
 	if err := conn.DoSpawn(); err != nil {
 		panic(fmt.Errorf("spawn: %w", err))
 	}
-	if err := observed.verify(); err != nil {
-		panic(err)
+	if !visual {
+		if err := observed.verify(); err != nil {
+			panic(err)
+		}
+		fmt.Println("PASS: independent Dragonfly decoding of 25 chunks, all 2457600 blocks, plains biomes and startup definitions")
 	}
-	fmt.Println("PASS: independent Dragonfly decoding of 25 chunks, all 2457600 blocks, plains biomes and startup definitions")
 	fmt.Println("PASS: independent gophertunnel NetherNet world spawn", conn.GameData().EntityRuntimeID)
 	if packOutput || modelOutput {
 		packs := conn.ResourcePacks()
@@ -63,7 +72,9 @@ func main() {
 	}
 	if len(os.Args) == 3 {
 		var err error
-		if os.Args[2] == "--model" {
+		if os.Args[2] == "--peers" || os.Args[2] == "--peer-visual" {
+			err = sharedPeers(conn, os.Args[2] == "--peer-visual")
+		} else if os.Args[2] == "--model" {
 			err = sharedModel(conn, observed)
 		} else if os.Args[2] == "--sound" {
 			err = sharedSound(conn)

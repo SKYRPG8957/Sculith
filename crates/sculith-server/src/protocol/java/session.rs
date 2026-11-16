@@ -10,6 +10,7 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use md5::{Digest, Md5};
+use sculith_server::peers::{Change as PeerChange, Peers};
 use sculith_world::{BlockKind, BlockPos, ChunkPos};
 use std::{
     collections::BTreeMap,
@@ -23,6 +24,8 @@ pub struct Session {
     player: PlayerSnapshot,
     world: WorldHandle,
     events: broadcast::Receiver<std::sync::Arc<WorldEvent>>,
+    peers: Option<Peers>,
+    peer_updates: Option<broadcast::Receiver<std::sync::Arc<WorldEvent>>>,
     interest: BTreeMap<ChunkPos, u64>,
     center: ChunkPos,
     tick: u64,
@@ -112,6 +115,8 @@ pub async fn start(
         player,
         world,
         events,
+        peers: None,
+        peer_updates: None,
         interest: BTreeMap::new(),
         center: ChunkPos { x: 0, z: 0 },
         tick: 0,
@@ -158,6 +163,12 @@ pub async fn start(
         }
         if teleported && loaded {
             state.player = state.world.activate(state.player.id).await?;
+            send_peer_changes(stream, vec![PeerChange::InfoAdd(state.player.clone())]).await?;
+            let observation = state.world.observe_players(state.player.id).await?;
+            let mut peers = Peers::new(state.player.id, observation.players)?;
+            send_peer_changes(stream, peers.initial(&state.interest)).await?;
+            state.peers = Some(peers);
+            state.peer_updates = Some(observation.updates);
             tracing::info!(player=%state.player.profile.name, entity_id=state.player.id,
                 "Java client acknowledged the shared flat-world spawn");
             return Ok(state);
@@ -453,6 +464,10 @@ impl Session {
         frames: &mut Frames,
         mut shutdown: tokio::sync::watch::Receiver<bool>,
     ) -> Result<()> {
+        let mut peer_updates = self
+            .peer_updates
+            .take()
+            .context("missing Java peer observation")?;
         let mut pulse = tokio::time::interval(Duration::from_secs(1));
         pulse.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut last_ping = Instant::now();
@@ -465,6 +480,11 @@ impl Session {
                     let packet=packet?;
                     self.rate.charge(packet.len())?;
                     self.input(stream,&packet).await?;
+                }
+                event=peer_updates.recv()=>{
+                    let event=event.context("Java peer event backlog; reconnect")?;
+                    let changes=self.peers.as_mut().context("missing Java peer projection")?.event(event.as_ref(),&self.interest)?;
+                    send_peer_changes(stream,changes).await?;
                 }
                 event=self.events.recv()=>{
                     let event=event.context("Java world event backlog; reconnect")?;
@@ -526,6 +546,7 @@ impl Session {
         }
         if additions.is_empty() {
             self.center = center;
+            self.refresh_peer_visibility(stream).await?;
             return Ok(());
         }
         codec::send(stream, &[0x0c]).await?;
@@ -540,6 +561,15 @@ impl Session {
         write_varint(count, &mut done);
         codec::send(stream, &done).await?;
         self.center = center;
+        self.refresh_peer_visibility(stream).await?;
+        Ok(())
+    }
+
+    async fn refresh_peer_visibility(&mut self, stream: &mut TcpStream) -> Result<()> {
+        if let Some(peers) = &mut self.peers {
+            let changes = peers.refresh(&self.interest);
+            send_peer_changes(stream, changes).await?;
+        }
         Ok(())
     }
 
@@ -821,4 +851,13 @@ async fn update(stream: &mut TcpStream, position: BlockPos, kind: BlockKind) -> 
     codec::position(position, &mut packet);
     write_varint(registry::get().state(kind), &mut packet);
     codec::send(stream, &packet).await
+}
+
+async fn send_peer_changes(stream: &mut TcpStream, changes: Vec<PeerChange>) -> Result<()> {
+    for change in changes {
+        for packet in super::peers::packets(&change)? {
+            codec::send(stream, &packet).await?;
+        }
+    }
+    Ok(())
 }

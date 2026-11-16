@@ -327,7 +327,7 @@ async fn run(config: Config) -> Result<()> {
         }
     }
     warn!(stage = %state.stage,
-        "Development build: edition previews; multiplayer entity visibility and full content compatibility are pending");
+        "Development build: shared-world preview; full gameplay and content compatibility are pending");
     let mut ticker = tokio::time::interval(Duration::from_secs_f64(
         1.0 / f64::from(config.server.tick_rate),
     ));

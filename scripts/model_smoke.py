@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def receive(client):
     while True:
-        id_,reader=wire.receive(client.socket)
+        id_,reader=wire.receive_play(client)
         if id_==45:
             wire.send(client.socket,28,reader.take(8));reader.end()
         else:return id_,reader

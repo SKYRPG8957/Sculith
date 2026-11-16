@@ -160,6 +160,72 @@ def chunk(reader, edits=None):
     return x, z
 
 
+def consume_peer(client, id_, r):
+    """Validate one public peer frame; preserve private presentation traffic."""
+    if not hasattr(client,"peer_profiles"):
+        client.peer_profiles={};client.peer_entities={}
+    if id_==45:
+        send(client.socket,28,r.take(8));r.end();return True
+    if id_==71:
+        assert r.number(">B")==0xad
+        count=r.varint();assert 0<count<=64
+        for _ in range(count):
+            uuid_=r.take(16);name=r.string()
+            assert 0<len(name)<=16 and all(c.isascii() and (c.isalnum() or c=="_") for c in name)
+            assert r.varint()==0 and r.varint()==1 and r.take(2)==bytes([1,1])
+            assert r.number(">B")==8
+            raw=r.take(r.number(">H"));assert not any(b>=0xf0 for b in raw)
+            display=raw.decode("utf-8","surrogatepass").encode("utf-16","surrogatepass").decode("utf-16")
+            assert display.strip() and len(display.encode())<=64 and r.number(">B")==1
+            client.peer_profiles[uuid_]={'name':name,'display':display}
+        r.end();assert len(client.peer_profiles)<=64;return True
+    if id_==70:
+        count=r.varint();assert 0<count<=64
+        for _ in range(count):
+            uuid_=r.take(16);assert uuid_ in client.peer_profiles
+            assert not any(entity['uuid']==uuid_ for entity in client.peer_entities.values())
+            del client.peer_profiles[uuid_]
+        r.end();return True
+    if id_==1:
+        start=r.i;entity=r.varint();uuid_=r.take(16);type_=r.varint()
+        if type_!=159:r.i=start;return False
+        assert entity>0 and entity!=client.entity_id and uuid_ in client.peer_profiles
+        assert entity not in client.peer_entities
+        position=[r.number(">d") for _ in range(3)]
+        assert all(abs(p)<=30_000_000 for p in position)
+        assert r.number(">B")==0
+        rotation=r.take(3);assert r.varint()==0;r.end()
+        client.peer_entities[entity]={'uuid':uuid_,'position':position,'rotation':rotation};return True
+    if id_==35:
+        start=r.i;entity=r.varint()
+        if entity not in client.peer_entities:r.i=start;return False
+        assert r.varint()==0
+        position=[r.number(">d") for _ in range(3)]
+        assert all(abs(p)<=30_000_000 for p in position)
+        yaw,pitch=r.number(">f"),r.number(">f")
+        assert -180<=yaw<=180 and -90<=pitch<=90 and r.number(">B")==0;r.end()
+        client.peer_entities[entity]['position']=position
+        client.peer_entities[entity]['yaw']=yaw;client.peer_entities[entity]['pitch']=pitch;return True
+    if id_==85:
+        start=r.i;entity=r.varint()
+        if entity not in client.peer_entities:r.i=start;return False
+        client.peer_entities[entity]['head']=r.number(">B");r.end();return True
+    if id_==78:
+        start=r.i;count=r.varint();assert 0<count<=64
+        ids=[r.varint() for _ in range(count)]
+        if not all(entity in client.peer_entities for entity in ids):r.i=start;return False
+        for entity in ids:del client.peer_entities[entity]
+        r.end();return True
+    return False
+
+
+def receive_play(client):
+    while True:
+        id_,r=receive(client.socket)
+        if not consume_peer(client,id_,r):
+            return id_,r
+
+
 class Client:
     def __init__(self, address, name="SculithJavaProbe", edits=None,
                  acknowledged_position=(.5, 4, .5), pack_handler=None):
@@ -220,7 +286,8 @@ class Client:
         for _ in range(128):
             id_, r = receive(self.socket)
             if id_ == 0x32:
-                assert r.number(">i") > 0 and r.number(">B") == 0
+                self.entity_id = r.number(">i")
+                assert self.entity_id > 0 and r.number(">B") == 0
                 assert r.varint() == 1 and r.string() == "sculith:world"
                 assert [r.varint() for _ in range(3)] == [20, 2, 2]
                 assert r.take(3) == bytes([0, 1, 0])
@@ -283,7 +350,7 @@ class Client:
     def block(self, expected_position, expected_state, edited):
         updated = False
         for _ in range(12):
-            id_, r = receive(self.socket)
+            id_, r = receive_play(self)
             if id_ == 4:
                 r.varint()
             elif id_ == 8:
@@ -336,22 +403,22 @@ def smoke(server):
                 # Replaying sequence 2 at a new target must not create another block.
                 send(client.socket, 0x42, vi(0) + pos(1, 3, 1) + vi(1)
                      + struct.pack(">fffBB", .5, 1, .5, 0, 0) + vi(2))
-                id_, r = receive(client.socket)
+                id_, r = receive_play(client)
                 assert id_ == 4 and r.varint() == 2
                 r.end()
                 # A large teleport is corrected to the owner position.
                 send(client.socket, 0x1f, struct.pack(">dddffB", 1000, 4, .5, 0, 0, 1))
-                id_, r = receive(client.socket)
+                id_, r = receive_play(client)
                 assert id_ == 0x49, "replayed block sequence changed the world"
                 correction = r.varint()
                 assert [r.number(">d") for _ in range(6)] == [1, 4, .5, 0, 0, 0]
                 assert r.take(12) == bytes(12)
                 r.end()
                 send(client.socket, 0x29, vi(0) + pos(2, 3, 1) + b"\x01" + vi(3))
-                id_, r = receive(client.socket)
+                id_, r = receive_play(client)
                 assert id_ == 4 and r.varint() == 3
                 r.end()
-                id_, r = receive(client.socket)
+                id_, r = receive_play(client)
                 assert id_ == 8 and r.take(8) == pos(2, 3, 1) and r.varint() == 9
                 r.end()
                 send(client.socket, 0, vi(correction) + struct.pack(">dddff", 1, 4, .5, 0, 0))
@@ -365,7 +432,7 @@ def smoke(server):
                 # Client-proposed offhand stacks cannot replace server inventory.
                 send(client.socket, 0x39, struct.pack(">h", 45) + vi(64) + vi(1) + b"\x00\x00")
                 for slot in range(41):
-                    id_, r = receive(client.socket)
+                    id_, r = receive_play(client)
                     assert id_ == 0x6e and r.varint() == slot
                     count = r.varint()
                     if slot < 3:
@@ -373,7 +440,7 @@ def smoke(server):
                     else:
                         assert count == 0
                     r.end()
-                id_, r = receive(client.socket)
+                id_, r = receive_play(client)
                 assert id_ == 0x6b and r.varint() == 1
                 r.end()
                 client.socket.close()
@@ -384,7 +451,7 @@ def smoke(server):
                 for name, position in [("WrongAck", (1000, 4, .5)), ("NonfiniteAck", (float("nan"), 4, .5))]:
                     invalid = Client(("127.0.0.1", int(match[1])), name,
                                      {(1, 3, 1): 10}, acknowledged_position=position)
-                    id_, r = receive(invalid.socket)
+                    id_, r = receive_play(invalid)
                     assert id_ == 0x20 and r.number(">B") == 8
                     assert "request rejected" in r.take(r.number(">H")).decode()
                     r.end()

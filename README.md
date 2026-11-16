@@ -47,7 +47,9 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Optional automatic delivery from one frozen Bedrock pack to native clients and a converted Java ZIP, with immutable hashes/cache IDs and required-pack acknowledgements. [Configuration and test scope](docs/content-delivery.md). The stock Java game renders the server-delivered checkerboard texture.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
-Multiplayer entity visibility, general inventory transactions, physics/gravity, public content hosting, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
+Player rosters, nearby avatars, movement and leave updates now share the authoritative owner in the development source. Java uses default avatars and Bedrock uses an original placeholder skin; account skins and equipment are pending.
+
+General inventory transactions, physics/gravity, public content hosting, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
 
 ## Windows quick start
 

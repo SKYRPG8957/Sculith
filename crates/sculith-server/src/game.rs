@@ -390,6 +390,15 @@ impl GameState {
     pub fn player(&self, id: u64) -> Option<PlayerSnapshot> {
         self.players.get(&id).map(|player| player.snapshot.clone())
     }
+    /// Owned observations expose initialized sessions only, never pending leases.
+    pub fn initialized_players(&self) -> Vec<PlayerSnapshot> {
+        self.players
+            .values()
+            .filter(|p| p.snapshot.initialized)
+            .map(|p| p.snapshot.clone())
+            .collect()
+    }
+
     pub fn online_count(&self) -> u32 {
         self.players
             .values()

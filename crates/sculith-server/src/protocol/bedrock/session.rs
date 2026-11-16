@@ -227,10 +227,26 @@ pub async fn handle_with_protection<T: Transport>(
         }
     };
     let id = lease.player.id;
+    let observation = world.observe_players(id).await?;
+    let mut peer_views = sculith_server::peers::Peers::new(id, observation.players)?;
+    let mut peer_updates = observation.updates;
+    let initial_peers = peer_views.initial(&interest);
+    tracing::debug!(
+        player = id,
+        chunks = interest.len(),
+        changes = initial_peers.len(),
+        "initial peer projection"
+    );
+    super::peers::send(conn, initial_peers).await?;
     let mut view_player = lease.player.clone();
     let mut view_center = (0, 0);
     loop {
         tokio::select! {
+            event=peer_updates.recv()=>{
+                let event=event.context("Bedrock peer event backlog; reconnect")?;
+                let changes=peer_views.event(event.as_ref(),&interest)?;
+                super::peers::send(conn,changes).await?;
+            }
             packet = packets.next(conn) => {
                 let packet = packet?;
                 if session_control(conn, &packet, id).await? {
@@ -254,6 +270,7 @@ pub async fn handle_with_protection<T: Transport>(
                     if requested != radius {
                         spawn::refresh(conn, world, &mut interest, &view_player, requested).await?;
                         radius = requested;
+                        super::peers::send(conn,peer_views.refresh(&interest)).await?;
                     }
                     continue;
                 }
@@ -273,7 +290,7 @@ pub async fn handle_with_protection<T: Transport>(
                                 }
                                 MoveOutcome::Accepted {player,..}=>{
                                     let center=((player.feet.x.floor() as i32).div_euclid(16),(player.feet.z.floor() as i32).div_euclid(16));
-                                    if center!=view_center {spawn::refresh(conn,world,&mut interest,&player,radius).await?;view_center=center;}
+                                    if center!=view_center {spawn::refresh(conn,world,&mut interest,&player,radius).await?;view_center=center;super::peers::send(conn,peer_views.refresh(&interest)).await?;}
                                     view_player=player;
                                 }
                                 _=>{},

@@ -149,28 +149,33 @@ pub fn registry_and_abilities(player: &PlayerSnapshot) -> Vec<V2225> {
     vec![
         V2225::ItemComponentPacket(Box::new(ItemComponentPacket { items })),
         V2225::UpdateAbilitiesPacket(Box::new(UpdateAbilitiesPacket {
-            data: SerializedAbilitiesData {
-                target_player_raw_id: player.id as i64,
-                player_permissions: 1,
-                command_permissions: CommandPermissionLevel::Any,
-                layers: vec![SerializedLayer {
-                    serialized_layer: SerializedAbilitiesLayer::Base,
-                    // gophertunnel protocol/ability.go at e2251a60: explicitly
-                    // define all current flags, without operator/teleport/noclip.
-                    abilities_set: (1 << 20) - 1,
-                    ability_values: if player.permissions.can_build {
-                        3 | (1 << 8) | (1 << 10) | (1 << 11) | (1 << 13) | (1 << 14) | (1 << 19)
-                    } else {
-                        0
-                    },
-                    fly_speed: 0.05,
-                    vertical_fly_speed: 1.0,
-                    walk_speed: 0.1,
-                }],
-            },
+            data: abilities(player),
         })),
     ]
 }
+/// The same authoritative capabilities accompany local and peer presentations.
+pub fn abilities(player: &PlayerSnapshot) -> SerializedAbilitiesData<V2225> {
+    SerializedAbilitiesData {
+        target_player_raw_id: player.id as i64,
+        player_permissions: 1,
+        command_permissions: CommandPermissionLevel::Any,
+        layers: vec![SerializedLayer {
+            serialized_layer: SerializedAbilitiesLayer::Base,
+            // gophertunnel protocol/ability.go at e2251a60: explicitly
+            // define all current flags, without operator/teleport/noclip.
+            abilities_set: (1 << 20) - 1,
+            ability_values: if player.permissions.can_build {
+                3 | (1 << 8) | (1 << 10) | (1 << 11) | (1 << 13) | (1 << 14) | (1 << 19)
+            } else {
+                0
+            },
+            fly_speed: 0.05,
+            vertical_fly_speed: 1.0,
+            walk_speed: 0.1,
+        }],
+    }
+}
+
 pub fn simple_form(id: u32, form: &sculith_core::SimpleForm) -> anyhow::Result<V2225> {
     form.validate().map_err(anyhow::Error::msg)?;
     let buttons: Vec<_> = form

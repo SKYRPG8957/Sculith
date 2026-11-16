@@ -4,6 +4,7 @@ mod chunk;
 mod input;
 pub mod nethernet;
 mod output;
+mod peers;
 pub mod session;
 mod spawn;
 mod transport;

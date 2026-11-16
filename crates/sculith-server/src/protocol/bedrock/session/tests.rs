@@ -99,6 +99,7 @@ struct TestClient<T: Transport = TransportLayerConnection> {
     conn: Connection<V2225, T>,
     pending: VecDeque<V2225>,
     dtls_identity: Option<ClientIdentity>,
+    own_id: u64,
 }
 
 impl<T: Transport> TestClient<T> {
@@ -140,14 +141,26 @@ impl<T: Transport> TestClient<T> {
         Ok(())
     }
     async fn next(&mut self) -> Result<V2225> {
-        if let Some(packet) = self.pending.pop_front() {
-            return Ok(packet);
+        // Block/input fixtures ignore public presence, independently checked by
+        // peer_smoke.py. Local movement corrections must remain observable.
+        for _ in 0..256 {
+            if self.pending.is_empty() {
+                let batch = tokio::time::timeout(Duration::from_secs(3), self.conn.recv())
+                    .await
+                    .context("test receive timed out")??;
+                ensure!(!batch.is_empty(), "empty test client batch");
+                self.pending.extend(batch);
+            }
+            let packet = self.pending.pop_front().unwrap();
+            match &packet {
+                V2225::PlayerListPacket(_)
+                | V2225::AddPlayerPacket(_)
+                | V2225::RemoveActorPacket(_) => continue,
+                V2225::MovePlayerPacket(p) if p.player_runtime_id.0 != self.own_id => continue,
+                _ => return Ok(packet),
+            }
         }
-        let batch = tokio::time::timeout(Duration::from_secs(3), self.conn.recv())
-            .await
-            .context("test receive timed out")??;
-        self.pending.extend(batch);
-        self.pending.pop_front().context("empty test client batch")
+        anyhow::bail!("excessive public presence traffic in block fixture")
     }
 
     async fn settings(&mut self) -> Result<()> {
@@ -292,6 +305,7 @@ impl<T: Transport> TestClient<T> {
         };
         ensure!(game.block_network_ids_are_hashes && game.position == (0.5, 5.62, 0.5));
         let id = game.target_runtime_id.0;
+        self.own_id = id;
         ensure!(matches!(
             self.next().await?,
             V2225::UpdateAdventureSettingsPacket(_)
@@ -368,6 +382,7 @@ impl TestClient {
             conn,
             pending: VecDeque::new(),
             dtls_identity: None,
+            own_id: 0,
         })
     }
 }
@@ -451,6 +466,7 @@ async fn nether_client(address: SocketAddr) -> Result<TestClient<TestNetherTrans
         conn,
         pending: VecDeque::new(),
         dtls_identity: Some(dtls_identity),
+        own_id: 0,
     })
 }
 
@@ -764,7 +780,7 @@ async fn two_encrypted_clients_share_committed_block_deltas_and_rejected_correct
         super::super::chunk::block_hash(BlockKind::Bedrock).unwrap()
     );
     assert!(
-        tokio::time::timeout(Duration::from_millis(100), b.conn.recv())
+        tokio::time::timeout(Duration::from_millis(100), b.next())
             .await
             .is_err(),
         "denials must not be broadcast as commits"
@@ -798,7 +814,7 @@ async fn placement_uses_server_inventory_and_broadcasts_only_accepted_changes() 
         super::super::chunk::block_hash(BlockKind::Air).unwrap()
     );
     assert!(
-        tokio::time::timeout(Duration::from_millis(100), b.conn.recv())
+        tokio::time::timeout(Duration::from_millis(100), b.next())
             .await
             .is_err()
     );

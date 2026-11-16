@@ -4,6 +4,7 @@ mod chunk;
 mod codec;
 mod forms;
 mod models;
+mod peers;
 mod registry;
 mod session;
 #[cfg(test)]

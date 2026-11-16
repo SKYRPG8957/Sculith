@@ -45,7 +45,7 @@ def nbt(reader, tag=None, depth=0):
 
 
 def dialog(client):
-    id_, reader = wire.receive(client.socket)
+    id_, reader = wire.receive_play(client)
     assert id_ == 143 and reader.varint() == 0
     value = nbt(reader); reader.end()
     assert value["type"] == "minecraft:multi_action"
@@ -66,7 +66,7 @@ def click(client, form_id, selection):
 
 
 def message(client, cancelled=False):
-    id_, reader = wire.receive(client.socket)
+    id_, reader = wire.receive_play(client)
     assert id_ == 124
     expected = "Sculith: 메뉴를 닫았습니다." if cancelled else "Sculith: 블록을 설치하거나 부수고, Ctrl+C로 서버를 종료하면 월드를 저장합니다."
     assert nbt_text(reader) == expected and reader.number(">B") == 0

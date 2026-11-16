@@ -30,3 +30,12 @@ From the repository root:
 
 On Windows use an .exe output path. CI runs this against the portable release executable.
 This is an independent headless protocol test, not official Minecraft rendering verification.
+
+Player membership/pose lifecycle (two Java peers, one native peer):
+
+    python3 scripts/peer_smoke.py --client target/gophertunnel-probe
+
+This also checks a Korean/emoji native name through Java's bounded ASCII profile
+name and original display-name component. `--peer-visual` is a 30-second companion
+for a separately running stock Java game; it skips flat-voxel checks on that
+existing world and reports received Java movement. See [scope](../../../docs/peers.md).
