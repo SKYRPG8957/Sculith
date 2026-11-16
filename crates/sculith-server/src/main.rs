@@ -225,6 +225,9 @@ async fn run(config: Config) -> Result<()> {
             protocol::bedrock::nethernet::prepare(
                 config.network.bedrock.bind,
                 &config.bedrock.nethernet_identity_path,
+                authentication
+                    .as_ref()
+                    .context("NetherNet requires Bedrock authentication settings")?,
             )
             .await?,
         )

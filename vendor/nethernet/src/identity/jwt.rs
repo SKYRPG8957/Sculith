@@ -56,7 +56,7 @@ impl Claims {
 
     pub fn expiry(&self) -> Option<SystemTime> {
         let seconds = self.values.get("exp").and_then(Value::as_u64)?;
-        Some(UNIX_EPOCH + Duration::from_secs(seconds))
+        UNIX_EPOCH.checked_add(Duration::from_secs(seconds))
     }
 
     /// The `cpk` claim: a P-384 key as a JWK object or as a base64 SPKI DER string.
@@ -92,7 +92,10 @@ impl Claims {
             .expiry()
             .ok_or_else(|| IdentityError::Untrusted("the token carries no expiry".to_string()))?;
 
-        match now <= expiry + LEEWAY {
+        let deadline = expiry.checked_add(LEEWAY).ok_or_else(|| {
+            IdentityError::Untrusted("the token expiry exceeds the supported range".to_string())
+        })?;
+        match now <= deadline {
             true => Ok(()),
             false => Err(IdentityError::Untrusted(
                 "the token has expired".to_string(),
@@ -108,6 +111,14 @@ mod tests {
 
     fn claims(value: Value) -> Claims {
         Claims::new(value.as_object().unwrap().clone())
+    }
+
+    #[test]
+    fn out_of_range_expiry_is_rejected_without_panicking() {
+        for seconds in [u64::MAX, i64::MAX as u64] {
+            let token = claims(json!({"exp": seconds}));
+            assert!(token.check_expiry(UNIX_EPOCH).is_err());
+        }
     }
 
     #[test]

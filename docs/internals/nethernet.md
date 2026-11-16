@@ -41,14 +41,44 @@ These bounds are not a total process-memory limit or a throughput claim.
 Application tasks are cancelled and drained before final world capture, releasing their player leases.
 Both incoming data channels use the same bounded queues and owner validation. Valid unreliable movement commits; invalid movement is corrected over the reliable channel. Movement arriving before the reliable initialization acknowledgement is ignored until the player activates. Outgoing game batches currently use the reliable channel.
 
-This backend currently requires loopback HTTP signaling and same-machine media sources. It validates offer fingerprint ownership and expiry with `TokenTrust::Any`;
-this does **not** authenticate the signaling token's issuer/signature or establish an online account identity.
-The existing inner Bedrock authentication policy still applies. Public NetherNet requires official token trust and further validation.
+This backend still requires loopback HTTP signaling and same-machine media sources.
+With `bedrock.require_authentication = true`, startup loads the official Minecraft
+signing keys and uses `TokenTrust::Minecraft`: RS256 signature, issuer, audience,
+subject, expiry and the detached P-384 fingerprint assertion must all validate.
+The subsequent Bedrock login is independently authenticated and its identity key
+must match the transport key. Missing keys never select the offline policy.
+
+Key metadata comes only from
+`https://authorization.franchise.minecraft-services.net/.well-known/keys`, using
+OS certificate trust, no redirects and a 15-second HTTP deadline. Responses are
+limited to 64 KiB and 16 entries; supported RSA keys require unique bounded IDs,
+2,048–8,192-bit moduli and valid public exponents. Initial failure stops startup.
+An owned task refreshes hourly or after an unknown key ID, with at least 60 seconds
+between attempts. Failed fetches remain pending. A cache not refreshed for 24 hours
+is cleared on its next refresh tick, rejecting new offers until valid keys return.
+Two process-wide fetch permits remain held by running blocking HTTP jobs even when
+their async waiters are cancelled. Refresh work never runs in the signaling loop.
+
+Explicit local offline mode retains `TokenTrust::Any` for fingerprint ownership
+and expiry; it does not establish Microsoft issuer/signature or account identity.
+Public NetherNet still needs media endpoint advertisement and remote-peer routing;
+these authentication changes do not lift the existing same-machine restriction.
 
 ## Verification and sources
 
 Real TCP tests cover shared status, unsigned/tampered offer rejection, fixed/chunked body limits, signed answers,
 persistent operator identity and shutdown port release.
+A controlled signing fixture additionally exercises real HTTP acceptance, wrong
+signature/issuer/audience/subject/expiry/fingerprint rejection, key rotation and
+empty-cache rejection without world admission. Cancellation tests retain the fetch
+worker bound; clock-driven tests cover retry, refresh and stale-cache decisions.
+A live required-authentication startup fetched the actual official keys and rejected
+an independently signed non-Microsoft offer with HTTP 401 before media establishment.
+This is a negative authority check, not successful real-account login.
+Malformed expiry values, including timestamps beyond the platform range or its
+clock-skew allowance, are rejected without panicking. The vendor regression
+reproduced the original overflow; actual HTTP checks return 401 and keep serving
+after those inputs.
 A real HTTP/WebRTC headless client and an encrypted RakNet client log in, spawn in the same owner and receive the same committed block delta.
 Executable smoke checks probe HTTP status, unsigned-offer rejection and unchanged keys after restart.
 An independent aiortc 1.14.0/OpenSSL probe verifies ICE, DTLS, SCTP, both data channels, the server JWT and fingerprint signatures, network settings and transport-bound Bedrock login proceeding directly to resource-pack negotiation. It reproduced the former interface-address and SCTP-role failures before the corrections. Run it with development dependencies from `tests/interop/requirements.txt` and `python tests/interop/webrtc_smoke.py`. These dependencies are not required by the installed server.

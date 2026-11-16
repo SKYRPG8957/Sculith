@@ -522,6 +522,7 @@ async fn nethernet_http_webrtc_and_raknet_share_login_world_and_committed_block_
     let nether = prepare(
         "127.0.0.1:0".parse().unwrap(),
         &directory.path().join("identity.pem"),
+        &Authentication::offline(),
     )
     .await
     .unwrap();
@@ -689,6 +690,7 @@ async fn nethernet_rejects_a_login_not_bound_to_its_signed_transport_key() {
     let nether = prepare(
         "127.0.0.1:0".parse().unwrap(),
         &directory.path().join("identity.pem"),
+        &Authentication::offline(),
     )
     .await
     .unwrap();
@@ -1093,6 +1095,7 @@ async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_own
     let nether = crate::protocol::bedrock::nethernet::prepare(
         "127.0.0.1:0".parse().unwrap(),
         &directory.path().join("identity.pem"),
+        &Authentication::offline(),
     )
     .await
     .unwrap();

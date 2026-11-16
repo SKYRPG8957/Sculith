@@ -65,6 +65,10 @@ impl Protection {
 }
 
 impl Authentication {
+    pub(super) fn is_required(&self) -> bool {
+        self.http.is_some()
+    }
+
     pub async fn new(required: bool) -> Result<Self> {
         if !required {
             return Ok(Self::offline());

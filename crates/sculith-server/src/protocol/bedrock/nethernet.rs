@@ -54,6 +54,7 @@ const QUEUED_BYTES: usize = 16 * 1024 * 1024;
 const NETHER_MESSAGE_BYTES: usize = 255 * 10_000;
 const IDENTITY_BYTES: u64 = 64 * 1024;
 
+mod keys;
 mod media;
 use media::LocalMedia;
 
@@ -61,6 +62,7 @@ pub struct Server {
     listener: TcpListener,
     identity: Arc<ServerIdentity>,
     media: Arc<LocalMedia>,
+    authority: Option<keys::Authority>,
 }
 
 pub struct ContextData {
@@ -71,7 +73,11 @@ pub struct ContextData {
 }
 
 /// Bind first, then conservatively load or create the operator's stable key.
-pub async fn prepare(address: SocketAddr, identity_path: &Path) -> Result<Server> {
+pub async fn prepare(
+    address: SocketAddr,
+    identity_path: &Path,
+    authentication: &super::session::Authentication,
+) -> Result<Server> {
     ensure!(
         address.ip().is_loopback(),
         "NetherNet preview requires loopback"
@@ -79,6 +85,11 @@ pub async fn prepare(address: SocketAddr, identity_path: &Path) -> Result<Server
     let listener = TcpListener::bind(address)
         .await
         .context("cannot bind NetherNet TCP signaling listener")?;
+    let authority = if authentication.is_required() {
+        Some(keys::Authority::load().await?)
+    } else {
+        None
+    };
     let path = identity_path.to_owned();
     let (identity, media) = tokio::task::spawn_blocking(move || -> Result<_> {
         Ok((load_identity(&path)?, LocalMedia::detect(address.ip())?))
@@ -89,6 +100,7 @@ pub async fn prepare(address: SocketAddr, identity_path: &Path) -> Result<Server
         listener,
         identity: Arc::new(identity),
         media: Arc::new(media),
+        authority,
     })
 }
 
@@ -221,14 +233,25 @@ impl Server {
     }
 
     pub async fn serve(self, mut context: ContextData) -> Result<()> {
+        ensure!(
+            !context.settings.authentication.is_required() || self.authority.is_some(),
+            "authenticated NetherNet requires Microsoft signaling keys"
+        );
         let local_ip = self.listener.local_addr()?.ip();
+        let trust = self
+            .authority
+            .as_ref()
+            .map(keys::Authority::trust)
+            .unwrap_or(TokenTrust::Any);
+        let mut refresh = JoinSet::new();
+        if let Some(authority) = self.authority {
+            refresh.spawn(authority.run(context.shutdown.clone()));
+        }
         let mut signaling = HttpSignaler::new(HttpSignalerConfig {
             max_connections_per_address: PER_IP,
             max_pending_joins: HTTP_CONNECTIONS,
             answer_timeout: context.settings.timeout,
-            // This loopback preview verifies fingerprint ownership for signed
-            // offers. Account authority is still checked by the Bedrock login.
-            token_trust: Some(TokenTrust::Any),
+            token_trust: Some(trust),
             ..Default::default()
         });
         signaling.handle(HttpSignalerInput::SetServerData(Box::new(server_data(
@@ -255,6 +278,11 @@ impl Server {
                 changed = context.status.changed() => {
                     if changed.is_err() { break Ok(()); }
                     signaling.handle(HttpSignalerInput::SetServerData(Box::new(server_data(&context.status.borrow()))))?;
+                }
+                Some(result) = refresh.join_next(), if !refresh.is_empty() => {
+                    result.context("NetherNet signing key refresh task failed")?;
+                    ensure!(*context.shutdown.borrow(), "NetherNet signing key refresh stopped unexpectedly");
+                    break Ok(());
                 }
                 accepted = self.listener.accept() => {
                     let (stream, remote) = accepted?;
@@ -365,6 +393,8 @@ impl Server {
         http_tasks.abort_all();
         while workers.join_next().await.is_some() {}
         while http_tasks.join_next().await.is_some() {}
+        refresh.abort_all();
+        while refresh.join_next().await.is_some() {}
         result
     }
 }

@@ -24,6 +24,7 @@ uuid.workspace = true
 nbtx = { git = "https://github.com/bedrock-crustaceans/nbtx" }
 nethernet = { git = "https://github.com/bedrock-crustaceans/nethernet.git", rev = "ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99" }
 bytes = "1.12"
+base64 = "=0.22.1"
 futures-util.workspace = true
 md-5 = "=0.10.6"
 http = "1"
@@ -48,6 +49,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+aws-lc-rs = { version = "=1.19.0", default-features = false, features = ["ring-io"] }
 tempfile.workspace = true
 rcgen = "0.14.10"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
