@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "tested_at": "2026-11-16 UTC",
+  "automated_source_commit": "9d7003bee189722309ade9cb3a46041444ab4215",
+  "linux_project_tests": 114,
+  "ownership_doctest": true,
+  "clippy": true,
+  "independent_checks": {
+    "python_zip_crc_hash_and_texture_bytes": true,
+    "java_required_http_pack_loading": true,
+    "java_decline_wrong_id_premature_success_reload_failure_rejected": true,
+    "native_multi_chunk_archive_matches_exact_bytes": true,
+    "native_independent_disk_cache_reconnect": true,
+    "native_unknown_id_early_finish_invalid_index_retry_limit_rejected": true,
+    "consent_deferred_40_seconds_with_keepalive": true,
+    "final_keepalive_reply_after_loaded": true,
+    "existing_discovery_sessions_building_plugin_and_persistence_smokes": true
+  },
+  "official_game": {
+    "source_commit": "20115fec2795a438049333941ab43773c1ac2e03",
+    "edition": "Java",
+    "version": "26.3",
+    "platform": "Linux",
+    "unmodified_client": true,
+    "jar_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+    "authentication": "local offline identity; online account authentication not tested",
+    "test_cache_preserved_and_fresh_cache_created": true,
+    "http_download_time": "2026-11-16T01:49:32.964308426Z",
+    "pack_id": "00bf48c4-ffe9-5494-a1b0-ed6e10012815",
+    "downloaded_zip_bytes": 1361,
+    "downloaded_zip_sha1": "b8e7a3e4c3a50a11a2dbd4d152aa66dca3bd0e0d",
+    "downloaded_zip_sha256": "005bbd5554dcf9ba9b5d6120637a516410413034f7a2f145da983d5f231c28ea",
+    "checkerboard_held_stone_rendered": true,
+    "world_initialized": true,
+    "same_runtime_plugin_welcome_displayed": true
+  },
+  "official_windows_bedrock_game_tested": false,
+  "windows_run": 43789121642,
+  "windows_verified": false,
+  "screenshot": {
+    "file": "shared-pack-java.png",
+    "sha256": "30b8d9750d69556b13c69deb85d38de048f1064a25544f5a23a19643f0004f73"
+  }
+}

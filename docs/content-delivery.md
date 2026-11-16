@@ -98,6 +98,7 @@ reject unknown IDs, early completion, invalid chunk indices and excessive retrie
 An unmodified Linux Java 26.3 game has downloaded the server pack and rendered the
 checkerboard on held Stone. This is separate from independent Bedrock wire tests;
 official Windows Bedrock rendering remains unverified.
+[Exact source, fresh-download evidence and hashes](verification/2026-11-16-shared-pack.md).
 
 ![Unmodified Java 26.3 with the automatically delivered checkerboard](verification/shared-pack-java.png)
 
