@@ -4,7 +4,7 @@ Current source implements protocol **777** against the same `WorldHandle` and
 single region owner as Bedrock. This is an explicitly offline, loopback-only
 development path. Unmodified stock Java entry, rendering, keyboard movement and
 mouse building have been verified on Linux. [Actual-client evidence](verification/2026-11-16-java26.3.md).
-[Windows Preview 10](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.10)
+[Windows Preview 11](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.11)
 includes the actual-client wire corrections, enables both local paths in new
 configurations and bundles a Rust gameplay plugin. Its Korean/emoji welcome was
 also [displayed in the unmodified Java game](verification/2026-11-16-plugin-api-v2.md).
@@ -77,7 +77,7 @@ is pending. Other players/entities are not yet displayed.
 
 General inventory transactions, chat, survival, gravity, crafting and shared
 models/sounds/UI remain unfinished. Current source supports optional
-[automatic local texture-pack delivery](content-delivery.md); public Preview 10 predates it.
+[automatic local texture-pack delivery](content-delivery.md), included in Preview 11.
 The known vanilla core supplies registry definitions, not Bedrock pack conversion.
 Both editions use the same orderly-shutdown region persistence; periodic saves
 and persistent player data are pending.
