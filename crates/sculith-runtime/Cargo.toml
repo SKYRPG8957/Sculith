@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+serde.workspace = true
 sculith-core = { path = "../sculith-core" }
 sculith-game = { path = "../sculith-game" }
 sculith-world = { path = "../sculith-world" }

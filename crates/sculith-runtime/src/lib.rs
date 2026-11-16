@@ -2,6 +2,7 @@
 
 pub mod observations;
 pub mod peers;
+pub mod profiling;
 
 use anyhow::{Context, Result};
 use sculith_game::{
@@ -94,7 +95,8 @@ pub enum WorldEvent {
 
 #[derive(Clone)]
 pub struct WorldHandle {
-    commands: mpsc::Sender<Command>,
+    commands: mpsc::Sender<Envelope>,
+    telemetry: Arc<profiling::Shared>,
     online: Arc<AtomicU32>,
     events: broadcast::Sender<Arc<WorldEvent>>,
     game_events: broadcast::Sender<Arc<WorldEvent>>,
@@ -111,15 +113,24 @@ pub struct PeerObservation {
 pub struct PlayerLease {
     pub player: PlayerSnapshot,
     alive: Arc<AtomicBool>,
-    commands: mpsc::WeakSender<Command>,
+    commands: mpsc::WeakSender<Envelope>,
 }
 impl Drop for PlayerLease {
     fn drop(&mut self) {
         self.alive.store(false, Ordering::Release);
         if let Some(commands) = self.commands.upgrade() {
-            let _ = commands.try_send(Command::Retire { id: self.player.id });
+            // Drop must never wait for an optional observer's mutex or queue.
+            let _ = commands.try_send(Envelope {
+                command: Command::Retire { id: self.player.id },
+                stamp: None,
+            });
         }
     }
+}
+
+struct Envelope {
+    command: Command,
+    stamp: Option<profiling::Stamp>,
 }
 
 enum Command {
@@ -284,13 +295,86 @@ enum Command {
     },
 }
 
+impl Command {
+    fn operation(&self) -> profiling::Operation {
+        match self {
+            Self::PluginWorld { .. } => profiling::Operation::PluginWorld,
+            Self::PlayerSnapshot { .. } => profiling::Operation::PlayerSnapshot,
+            Self::PluginInventory { .. } => profiling::Operation::PluginInventory,
+            Self::InventoryClick { .. } => profiling::Operation::InventoryClick,
+            Self::Inventory { .. } => profiling::Operation::Inventory,
+            Self::CreativeSlot { .. } => profiling::Operation::CreativeSlot,
+            Self::RegisterCommands { .. } => profiling::Operation::RegisterCommands,
+            Self::SealCommands { .. } => profiling::Operation::SealCommands,
+            Self::DisableCommands { .. } => profiling::Operation::DisableCommands,
+            Self::ListCommands { .. } => profiling::Operation::ListCommands,
+            Self::Execute { .. } => profiling::Operation::Execute,
+            Self::Chat { .. } => profiling::Operation::Chat,
+            Self::ObservePacket { .. } => profiling::Operation::ObservePacket,
+            Self::ObservePlayers { .. } => profiling::Operation::ObservePlayers,
+            Self::Snapshot { .. } => profiling::Operation::Snapshot,
+            Self::Capture { .. } => profiling::Operation::Capture,
+            Self::Reserve { .. } => profiling::Operation::Reserve,
+            Self::Activate { .. } => profiling::Operation::Activate,
+            Self::Retire { .. } => profiling::Operation::Retire,
+            Self::Move { .. } => profiling::Operation::Move,
+            Self::Break { .. } => profiling::Operation::Break,
+            Self::Place { .. } => profiling::Operation::Place,
+            Self::Select { .. } => profiling::Operation::Select,
+            Self::SendMessage { .. } => profiling::Operation::SendMessage,
+            Self::ShowModel { .. } => profiling::Operation::ShowModel,
+            Self::HideModel { .. } => profiling::Operation::HideModel,
+            Self::PlaySound { .. } => profiling::Operation::PlaySound,
+            Self::ShowCustomForm { .. } => profiling::Operation::ShowCustomForm,
+            Self::SubmitCustomForm { .. } => profiling::Operation::SubmitCustomForm,
+            Self::ShowForm { .. } => profiling::Operation::ShowForm,
+            Self::SubmitForm { .. } => profiling::Operation::SubmitForm,
+        }
+    }
+}
+
 impl WorldHandle {
+    pub fn monitor(&self, enabled: bool) -> Result<()> {
+        self.telemetry.configure(
+            if enabled {
+                profiling::Mode::Monitor
+            } else {
+                profiling::Mode::Off
+            },
+            None,
+        )
+    }
+    pub fn start_profile(&self, duration: std::time::Duration) -> Result<()> {
+        self.telemetry
+            .configure(profiling::Mode::Profile, Some(duration))
+    }
+    pub fn profile_snapshot(&self) -> profiling::Snapshot {
+        let capacity = self.commands.max_capacity();
+        self.telemetry.snapshot(
+            capacity,
+            capacity - self.commands.capacity(),
+            self.commands.is_closed(),
+        )
+    }
+    async fn send(&self, command: Command) -> Result<()> {
+        let mut stamp = self.telemetry.begin();
+        let permit = self
+            .commands
+            .reserve()
+            .await
+            .context("world owner stopped")?;
+        if let Some(stamp) = &mut stamp {
+            stamp.queued();
+        }
+        permit.send(Envelope { command, stamp });
+        Ok(())
+    }
+
     /// Adapters read current owner state when consuming an asynchronous update;
     /// a queued notification must never restore an older client transaction.
     pub async fn player_snapshot(&self, id: u64) -> Result<PlayerSnapshot> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::PlayerSnapshot { id, reply })
+        self.send(Command::PlayerSnapshot { id, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("player snapshot response lost")?
@@ -312,15 +396,14 @@ impl WorldHandle {
         );
         operation.validate().map_err(anyhow::Error::msg)?;
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::PluginWorld {
-                plugin,
-                request_id,
-                operation,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::PluginWorld {
+            plugin,
+            request_id,
+            operation,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("world dispatch response lost")
     }
 
@@ -341,16 +424,15 @@ impl WorldHandle {
         );
         operation.validate().map_err(anyhow::Error::msg)?;
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::PluginInventory {
-                plugin,
-                id,
-                request_id,
-                operation,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::PluginInventory {
+            plugin,
+            id,
+            request_id,
+            operation,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("inventory dispatch response lost")
     }
 
@@ -360,8 +442,7 @@ impl WorldHandle {
         click: sculith_game::inventory::Click,
     ) -> Result<sculith_game::InventoryOutcome> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::InventoryClick { id, click, reply })
+        self.send(Command::InventoryClick { id, click, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("inventory click response lost")?
@@ -372,8 +453,7 @@ impl WorldHandle {
         request: sculith_game::inventory::Request,
     ) -> Result<sculith_game::InventoryOutcome> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Inventory { id, request, reply })
+        self.send(Command::Inventory { id, request, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("inventory response lost")?
@@ -386,16 +466,15 @@ impl WorldHandle {
         count: u8,
     ) -> Result<sculith_game::InventoryOutcome> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::CreativeSlot {
-                id,
-                slot,
-                kind,
-                count,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::CreativeSlot {
+            id,
+            slot,
+            kind,
+            count,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("creative inventory response lost")?
     }
     pub async fn register_commands(
@@ -404,52 +483,46 @@ impl WorldHandle {
         specs: Vec<sculith_core::CommandSpec>,
     ) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::RegisterCommands {
-                plugin,
-                specs,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::RegisterCommands {
+            plugin,
+            specs,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("command registration lost")?
     }
     pub async fn seal_commands(&self) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::SealCommands { reply })
+        self.send(Command::SealCommands { reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("command seal lost")
     }
     pub async fn disable_commands(&self, plugin: String) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::DisableCommands { plugin, reply })
+        self.send(Command::DisableCommands { plugin, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("command disable lost")
     }
     pub async fn command_specs(&self) -> Result<Vec<sculith_core::CommandSpec>> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::ListCommands { reply })
+        self.send(Command::ListCommands { reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("command listing lost")
     }
     pub async fn submit_command(&self, id: u64, input: String) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Execute { id, input, reply })
+        self.send(Command::Execute { id, input, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("command submission lost")?
     }
     pub async fn chat(&self, id: u64, message: String) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Chat { id, message, reply })
+        self.send(Command::Chat { id, message, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("chat submission lost")?
@@ -467,16 +540,14 @@ impl WorldHandle {
         }
         packet.validate().map_err(anyhow::Error::msg)?;
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::ObservePacket { id, packet, reply })
+        self.send(Command::ObservePacket { id, packet, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("packet observation lost")?
     }
     pub async fn observe_players(&self, id: u64) -> Result<PeerObservation> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::ObservePlayers { id, reply })
+        self.send(Command::ObservePlayers { id, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("peer observation lost")?
@@ -485,16 +556,14 @@ impl WorldHandle {
     pub async fn show_model(&self, id: u64, model: String) -> Result<()> {
         sculith_core::validate_resource_id(&model).map_err(anyhow::Error::msg)?;
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::ShowModel { id, model, reply })
+        self.send(Command::ShowModel { id, model, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("model response lost")?
     }
     pub async fn hide_model(&self, id: u64) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::HideModel { id, reply })
+        self.send(Command::HideModel { id, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("model response lost")?
@@ -504,16 +573,15 @@ impl WorldHandle {
         sculith_core::validate_sound_id(&sound).map_err(anyhow::Error::msg)?;
         sculith_core::validate_sound_parameters(volume, pitch).map_err(anyhow::Error::msg)?;
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::PlaySound {
-                id,
-                sound,
-                volume,
-                pitch,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::PlaySound {
+            id,
+            sound,
+            volume,
+            pitch,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("sound response lost")?
     }
 
@@ -526,16 +594,15 @@ impl WorldHandle {
     ) -> Result<()> {
         form.validate().map_err(anyhow::Error::msg)?;
         let (reply, response) = oneshot::channel();
-        self.commands
-            .send(Command::ShowCustomForm {
-                id,
-                plugin,
-                request_id,
-                form,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::ShowCustomForm {
+            id,
+            plugin,
+            request_id,
+            form,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         response.await.context("custom form response lost")?
     }
 
@@ -557,15 +624,14 @@ impl WorldHandle {
             }
         }
         let (reply, response) = oneshot::channel();
-        self.commands
-            .send(Command::SubmitCustomForm {
-                id,
-                form_id,
-                values,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::SubmitCustomForm {
+            id,
+            form_id,
+            values,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         response
             .await
             .context("custom form submission response lost")?
@@ -580,64 +646,58 @@ impl WorldHandle {
     ) -> Result<()> {
         form.validate().map_err(anyhow::Error::msg)?;
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::ShowForm {
-                id,
-                plugin,
-                request_id,
-                form,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::ShowForm {
+            id,
+            plugin,
+            request_id,
+            form,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("form response lost")?
     }
 
     pub async fn submit_form(&self, id: u64, form_id: u32, selection: Option<u32>) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::SubmitForm {
-                id,
-                form_id,
-                selection,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::SubmitForm {
+            id,
+            form_id,
+            selection,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("form submission response lost")?
     }
     pub async fn snapshot(&self, position: ChunkPos) -> Result<ChunkSnapshot> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Snapshot { position, reply })
+        self.send(Command::Snapshot { position, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("snapshot response lost")?
     }
     pub async fn capture(&self) -> Result<RegionSnapshot> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Capture { reply })
+        self.send(Command::Capture { reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("capture response lost")
     }
     pub async fn reserve(&self, profile: Profile, permissions: Permissions) -> Result<PlayerLease> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Reserve {
-                profile,
-                permissions,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::Reserve {
+            profile,
+            permissions,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("registration response lost")?
     }
     pub async fn activate(&self, id: u64) -> Result<PlayerSnapshot> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Activate { id, reply })
+        self.send(Command::Activate { id, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("activation response lost")?
@@ -650,28 +710,26 @@ impl WorldHandle {
         rotation: Rotation,
     ) -> Result<MoveOutcome> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Move {
-                id,
-                tick,
-                position,
-                rotation,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::Move {
+            id,
+            tick,
+            position,
+            rotation,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("movement response lost")
     }
     pub async fn break_block(&self, id: u64, position: BlockPos) -> Result<BlockOutcome> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Break {
-                id,
-                position,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::Break {
+            id,
+            position,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("break response lost")
     }
     pub async fn place_block(
@@ -683,23 +741,21 @@ impl WorldHandle {
         claimed: BlockKind,
     ) -> Result<BlockOutcome> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Place {
-                id,
-                against,
-                face,
-                slot,
-                claimed,
-                reply,
-            })
-            .await
-            .context("world owner stopped")?;
+        self.send(Command::Place {
+            id,
+            against,
+            face,
+            slot,
+            claimed,
+            reply,
+        })
+        .await
+        .context("world owner stopped")?;
         receiver.await.context("placement response lost")
     }
     pub async fn select_slot(&self, id: u64, slot: u8) -> Result<PlayerSnapshot> {
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::Select { id, slot, reply })
+        self.send(Command::Select { id, slot, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("selection response lost")?
@@ -719,8 +775,7 @@ impl WorldHandle {
     pub async fn send_message(&self, id: u64, message: String) -> Result<()> {
         sculith_core::validate_system_message(&message).map_err(anyhow::Error::msg)?;
         let (reply, receiver) = oneshot::channel();
-        self.commands
-            .send(Command::SendMessage { id, message, reply })
+        self.send(Command::SendMessage { id, message, reply })
             .await
             .context("world owner stopped")?;
         receiver.await.context("message response lost")?
@@ -891,6 +946,7 @@ pub fn with_region_and_content(
     sounds: std::collections::BTreeSet<String>,
     models: std::collections::BTreeSet<String>,
 ) -> Result<(WorldHandle, impl Future<Output = Result<()>> + Send)> {
+    let telemetry = Arc::new(profiling::Shared::new(region.id().0));
     let mut state = GameState::with_content(region, max_players, sounds, models)?;
     let mut command_registry = sculith_game::commands::Registry::default();
     let (commands, mut requests) = mpsc::channel(32);
@@ -902,6 +958,7 @@ pub fn with_region_and_content(
     let observations = Arc::new(AtomicU8::new(0));
     let handle = WorldHandle {
         commands,
+        telemetry: telemetry.clone(),
         online: online.clone(),
         events: events.clone(),
         game_events: game_events.clone(),
@@ -934,6 +991,9 @@ pub fn with_region_and_content(
                     if stopped.is_err() || *shutdown.borrow() { break Ok(()); }
                 }
                 command = requests.recv() => {
+                    let mut timing=command.as_ref().map(|envelope:&Envelope|
+                        telemetry.processing(envelope.stamp,||envelope.command.operation(),requests.len()));
+                    let command=command.map(|envelope|envelope.command);
                     // Leases may have died while recv was suspended. Retire them
                     // before accepting a queued intent from a closed connection.
                     let dead: Vec<_> = leases.iter().filter_map(|(&id, flag)|
@@ -1126,6 +1186,7 @@ pub fn with_region_and_content(
                         }
                         None => break Ok(()),
                     }
+                    if let Some(timing)=&mut timing {timing.complete();}
                 }
             }
         };
@@ -1146,3 +1207,6 @@ mod tests;
 
 #[cfg(test)]
 mod world_api_tests;
+
+#[cfg(test)]
+mod profiling_tests;

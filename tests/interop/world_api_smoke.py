@@ -29,7 +29,7 @@ def wait(log, process, predicate, seconds=10):
         time.sleep(.02)
     raise TimeoutError(log.read_text(encoding="utf-8"))
 
-def start(server, plugin, root, flood=False, autosave_interval=60):
+def start(server, plugin, root, flood=False, autosave_interval=60, extra_args=()):
     settings,log=root/'server.toml',root/'server.log'
     config='[java]\nsessions=true\nrequire_authentication=false\n[bedrock]\nsessions=true\nrequire_authentication=false\nnethernet_identity_path='+json.dumps(str(root/'identity.pem'))+'\n[network.java]\nbind="127.0.0.1:0"\n[network.bedrock]\nbind="127.0.0.1:0"\n'
     config+='[world]\nsnapshot_path='+json.dumps(str(root/'region.sculith'))+'\nautosave_interval_secs='+str(autosave_interval)+'\n'
@@ -38,7 +38,7 @@ def start(server, plugin, root, flood=False, autosave_interval=60):
         config+='[[plugins]]\npath='+json.dumps(str(plugin))+'\nargs='+json.dumps([mode] if mode else [])+'\ntimeout_ms=1000\n'
     settings.write_text(config,encoding='utf-8')
     with log.open('w',encoding='utf-8') as output:
-        process=subprocess.Popen([str(server),'run','--config',str(settings)],cwd=ROOT,stdout=output,stderr=output,
+        process=subprocess.Popen([str(server),'run','--config',str(settings),*extra_args],cwd=ROOT,stdout=output,stderr=output,
             env=dict(os.environ,NO_COLOR='1',RUST_LOG='info'),creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name=='nt' else 0)
     tcp=wait(log,process,lambda text:re.search(r'Java listening.*?127\.0\.0\.1:(\d+)',text))
     udp=wait(log,process,lambda text:re.search(r'NetherNet listening.*?127\.0\.0\.1:(\d+)',text))

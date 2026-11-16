@@ -655,10 +655,13 @@ async fn an_intent_queued_before_lease_drop_cannot_commit_after_disconnect() {
     let (reply, response) = oneshot::channel();
     world
         .commands
-        .try_send(Command::Break {
-            id,
-            position: BlockPos { x: 1, y: 3, z: 1 },
-            reply,
+        .try_send(Envelope {
+            command: Command::Break {
+                id,
+                position: BlockPos { x: 1, y: 3, z: 1 },
+                reply,
+            },
+            stamp: None,
         })
         .unwrap();
     // No yield between enqueue and drop: the owner must see the dead lease

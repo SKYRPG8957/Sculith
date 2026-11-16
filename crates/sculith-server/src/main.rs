@@ -3,6 +3,7 @@ mod connections;
 mod content;
 mod persistence;
 mod profiling;
+mod world_profiling;
 use sculith_plugin_host as plugins;
 mod protocol;
 use sculith_game as game;
@@ -42,6 +43,8 @@ enum Command {
         config: Option<PathBuf>,
         #[command(flatten)]
         profiling: profiling::Options,
+        #[command(flatten)]
+        world_profiling: world_profiling::Options,
     },
     /// Validate configuration and plugin paths without launching plugins.
     Check {
@@ -99,10 +102,16 @@ async fn main() -> Result<()> {
     match Cli::parse().command.unwrap_or(Command::Run {
         config: None,
         profiling: Default::default(),
+        world_profiling: Default::default(),
     }) {
-        Command::Run { config, profiling } => {
+        Command::Run {
+            config,
+            profiling,
+            world_profiling,
+        } => {
             profiling.validate()?;
-            run(Config::load(config.as_deref())?, profiling).await
+            world_profiling.validate(profiling.output_path())?;
+            run(Config::load(config.as_deref())?, profiling, world_profiling).await
         }
         Command::Check { config } => {
             let config = Config::load(config.as_deref())?;
@@ -157,7 +166,11 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn run(config: Config, profiling: profiling::Options) -> Result<()> {
+async fn run(
+    config: Config,
+    profiling: profiling::Options,
+    world_profiling: world_profiling::Options,
+) -> Result<()> {
     let started = Instant::now();
     info!("Starting Sculith v{}", env!("CARGO_PKG_VERSION"));
     let delivery = if let Some(settings) = &config.content {
@@ -279,6 +292,7 @@ async fn run(config: Config, profiling: profiling::Options) -> Result<()> {
         sounds,
         models,
     )?;
+    let mut world_profiling = world_profiling.start(&world)?;
     let mut world_task = tokio::spawn(world_task);
     let mut world_finished = false;
     let mut game_events = world.subscribe_game();
@@ -462,6 +476,7 @@ async fn run(config: Config, profiling: profiling::Options) -> Result<()> {
                 state.online_players = world.online_players();
                 plugins.dispatch(Event::Tick { tick }, &mut state, &world).await;
                 profiling.poll(&mut plugins);
+                world_profiling.poll(&world);
                 world.configure_observations(plugins.observation_flags());
                 observer.configure(plugins.observes_connections());
                 observer.configure_sent(plugins.observes_outgoing());
@@ -537,6 +552,7 @@ async fn run(config: Config, profiling: profiling::Options) -> Result<()> {
     }
     plugins.stop(&mut state, &world).await;
     profiling.finish(&mut plugins).await;
+    world_profiling.finish(&world).await;
     info!(ticks = tick, "Sculith stopped");
     result
 }

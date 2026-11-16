@@ -22,6 +22,10 @@ pub struct Options {
     profile_output: Option<PathBuf>,
 }
 impl Options {
+    pub(crate) fn output_path(&self) -> Option<&Path> {
+        self.profile_output.as_deref()
+    }
+
     pub fn validate(&self) -> Result<()> {
         ensure!(
             !(self.monitor_plugins && self.profile_plugins.is_some()),
@@ -38,19 +42,7 @@ impl Options {
             );
         }
         if let Some(path) = &self.profile_output {
-            match std::fs::symlink_metadata(path) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-                Ok(_) => anyhow::bail!("profile output already exists: {}", path.display()),
-            }
-            let parent = path
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or(Path::new("."));
-            ensure!(
-                parent.is_dir(),
-                "profile output parent directory must exist"
-            );
+            validate_output(path)?;
         }
         Ok(())
     }
@@ -75,6 +67,23 @@ impl Options {
             task: None,
         })
     }
+}
+
+pub(crate) fn validate_output(path: &Path) -> Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+        Ok(_) => anyhow::bail!("profile output already exists: {}", path.display()),
+    }
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    ensure!(
+        parent.is_dir(),
+        "profile output parent directory must exist"
+    );
+    Ok(())
 }
 
 pub struct Reporter {
@@ -137,7 +146,7 @@ impl Reporter {
         }
     }
 }
-fn save(path: &Path, report: &Report) -> Result<()> {
+pub(crate) fn save(path: &Path, report: &impl Serialize) -> Result<()> {
     use std::io::Write;
     let data = serde_json::to_vec_pretty(report)?;
     let mut output = std::fs::OpenOptions::new()

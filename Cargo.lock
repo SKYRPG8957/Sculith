@@ -3029,6 +3029,7 @@ dependencies = [
  "sculith-core",
  "sculith-game",
  "sculith-world",
+ "serde",
  "tempfile",
  "tokio",
  "uuid",

@@ -76,6 +76,8 @@ jobs:
         run: python tests/interop/connection_smoke.py --client target/gophertunnel-probe
       - name: Verify Rust world operations and shared atomic block commits
         run: python tests/interop/world_api_smoke.py --client target/gophertunnel-probe
+      - name: Verify bounded world mailbox profiling and mixed-edition requests
+        run: python tests/interop/world_profile_smoke.py --client target/gophertunnel-probe
       - name: Verify live checkpoints, forced termination and world recovery
         run: python tests/interop/autosave_smoke.py
       - name: Verify authoritative cross-edition held items and empty hands
