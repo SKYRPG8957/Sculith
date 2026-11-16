@@ -21,23 +21,30 @@ impl Buffer {
         self.0.capacity()
     }
 
+    #[inline]
     pub fn append(&mut self, bytes: &[u8]) -> io::Result<()> {
         if bytes.len() > MAX_MESSAGE_BYTES - self.0.len() {
             return Err(io::Error::other("plugin message exceeds 64 KiB"));
         }
         let required = self.0.len() + bytes.len();
         if required > self.0.capacity() {
-            let target = required
-                .max(self.0.capacity().saturating_mul(2))
-                .min(MAX_MESSAGE_BYTES);
-            self.0.reserve_exact(target - self.0.len());
+            self.grow(required);
         }
         self.0.extend_from_slice(bytes);
         Ok(())
     }
+
+    #[cold]
+    fn grow(&mut self, required: usize) {
+        let target = required
+            .max(self.0.capacity().saturating_mul(2))
+            .min(MAX_MESSAGE_BYTES);
+        self.0.reserve_exact(target - self.0.len());
+    }
 }
 
 impl Write for Buffer {
+    #[inline]
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.append(bytes)?;
         Ok(bytes.len())

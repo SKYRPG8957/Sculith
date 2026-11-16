@@ -255,28 +255,27 @@ impl Plugins {
         let prepared = body
             .as_ref()
             .map(|result| result.as_ref().map(|()| self.event_buffer.bytes()));
-        let replies = if selected_count == 0 {
-            Vec::new()
-        } else {
-            futures_util::future::join_all(self.processes.iter_mut().zip(selected).map(
-                |(process, subscribed)| {
+        let replies = futures_util::future::join_all(
+            self.processes
+                .iter_mut()
+                .enumerate()
+                .filter(|(index, _)| selected[*index])
+                .map(|(index, process)| {
                     let event = &event;
                     async move {
-                        if !subscribed {
-                            None
-                        } else if let Some(body) = prepared {
-                            Some(process.request_shared_event(event.hook(), body).await)
+                        let reply = if let Some(body) = prepared {
+                            process.request_shared_event(event.hook(), body).await
                         } else {
-                            Some(process.request_event(event).await)
-                        }
+                            process.request_event(event).await
+                        };
+                        (index, reply)
                     }
-                },
-            ))
-            .await
-        };
+                }),
+        )
+        .await;
         self.event_buffer.clear();
-        for (process, reply) in self.processes.iter_mut().zip(replies) {
-            let Some(reply) = reply else { continue };
+        for (index, reply) in replies {
+            let process = &mut self.processes[index];
             let result = async {
                 let PluginMessage::Actions { actions } = reply? else {
                     bail!("expected plugin actions");
