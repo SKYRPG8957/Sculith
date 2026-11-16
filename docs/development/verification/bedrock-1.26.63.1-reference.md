@@ -54,6 +54,12 @@ pack transfer, Java gameplay and WebRTC. The session probe first caught stale
 NetherNet version advertising; it passed after using the bundled patch target
 for discovery while retaining protocol 2225.
 
+The build and interoperability checks also passed for commit `a69a64e` on
+[Linux](https://github.com/SKYRPG8957/Sculith/actions/runs/43899920944) and
+[Windows](https://github.com/SKYRPG8957/Sculith/actions/runs/43899920837), including
+the Windows release executable with a static CRT. These are independent protocol
+clients, not verification with the official Windows game.
+
 Sculith still has its prototype main-inventory starter stacks. Removing that
 loadout requires explicit fixture seeding rather than another engine command.
 No Minecraft executable, pack, registry asset or decompiled implementation is
