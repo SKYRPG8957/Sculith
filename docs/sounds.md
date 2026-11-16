@@ -79,7 +79,7 @@ position to eighth-block coordinates, use the player category, and request one
 playback without looping. Delivery targets only the selected session. Presentation
 does not change the region revision or re-enter plugin game hooks.
 
-The SDK negotiates versions 1 through 4. The host rejects a sound action on an
+The current SDK negotiates versions 1 through 5; sound playback requires v4. The host rejects a sound action on an
 older negotiated API. Trusted executable plugins retain the server user's OS
 permissions; this API does not provide a sandbox.
 

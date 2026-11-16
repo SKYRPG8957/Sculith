@@ -1,0 +1,21 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "sculith:demo_statue",
+      "runtime_identifier": "minecraft:armor_stand",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/sculith_statue"
+      },
+      "geometry": {
+        "default": "geometry.sculith.statue"
+      },
+      "render_controllers": [
+        "controller.render.sculith_static"
+      ]
+    }
+  }
+}

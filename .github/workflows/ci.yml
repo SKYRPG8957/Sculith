@@ -56,5 +56,7 @@ jobs:
         run: python scripts/forms_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared sounds and private playback
         run: python scripts/sound_smoke.py --client target/gophertunnel-probe
+      - name: Exercise shared static models and private actor lifecycle
+        run: python scripts/model_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared packs, native cache and consent keepalive
         run: python scripts/pack_delivery_smoke.py --client target/gophertunnel-probe --wait-for-keepalive

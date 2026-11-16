@@ -7,7 +7,7 @@ use bedrock::protocol::{
     v662::{
         enums::CommandPermissionLevel,
         packets::{UpdateAbilitiesPacket, UpdateBlockPacket},
-        types::ActorRuntimeID,
+        types::{ActorRuntimeID, ActorUniqueID},
     },
     v729::types::FullContainerName,
     v776::{
@@ -206,4 +206,62 @@ pub fn sound(effect: &crate::game::SoundEffect, native: &str) -> V2225 {
         server_sound_handle: None,
         playback_position_seconds: None,
     }))
+}
+
+/// Only resource-backed presentation actors are registered by this preview.
+pub fn model_registry(models: &[sculith_packs::ModelMapping]) -> V2225 {
+    use nbtx::{Value, ValueList};
+    let values = models
+        .iter()
+        .map(|entry| {
+            [("id".into(), Value::String(entry.bedrock.as_bytes().into()))]
+                .into_iter()
+                .collect()
+        })
+        .collect();
+    V2225::AvailableActorIdentifiersPacket(Box::new(
+        bedrock::protocol::v662::packets::AvailableActorIdentifiersPacket {
+            actor_info_list: [("idlist".into(), Value::List(ValueList::Compound(values)))]
+                .into_iter()
+                .collect(),
+        },
+    ))
+}
+
+pub fn remove_model(entity_id: u64) -> V2225 {
+    V2225::RemoveActorPacket(Box::new(
+        bedrock::protocol::v662::packets::RemoveActorPacket {
+            target_actor_id: ActorUniqueID(entity_id as i64),
+        },
+    ))
+}
+
+pub fn show_model(view: &crate::game::ModelView, native: &str) -> Vec<V2225> {
+    vec![
+        remove_model(view.entity_id),
+        V2225::AddActorPacket(Box::new(
+            bedrock::protocol::v2225::packets::AddActorPacket {
+                target_actor_id: ActorUniqueID(view.entity_id as i64),
+                target_runtime_id: ActorRuntimeID(view.entity_id),
+                actor_type: native.into(),
+                position: (
+                    view.position.x as f32,
+                    view.position.y as f32,
+                    view.position.z as f32,
+                ),
+                velocity: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0),
+                y_head_rotation: 0.0,
+                y_body_rotation: 0.0,
+                attributes: vec![],
+                actor_data: vec![],
+                synced_properties: bedrock::protocol::v662::types::PropertySyncData {
+                    int_entries_list: vec![],
+                    float_entries_list: vec![],
+                },
+                actor_links: vec![],
+                passenger_of_block_data: None,
+            },
+        )),
+    ]
 }

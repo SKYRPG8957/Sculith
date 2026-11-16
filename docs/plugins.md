@@ -1,4 +1,4 @@
-# Rust 플러그인 SDK v4 — 실행 파일 방식의 초기 게임/UI API
+# Rust 플러그인 SDK v5 — 실행 파일 방식의 초기 게임/UI API
 
 현재 SDK는 생명주기·공통 MOTD에 더해 초기화가 확인된 플레이어의 접속/종료와 승인된 블록 변경을 받습니다.
 `SendMessage`는 월드 소유자가 접속 상태와 호출량을 검사한 뒤 한 플레이어에게만 보냅니다.
@@ -6,6 +6,7 @@ Java와 베드락은 같은 게임 이벤트/API를 사용합니다. [순정 Jav
 v3는 공통 `SimpleForm`과 소유자에게만 돌아오는 선택/취소 응답을 제공합니다.
 베드락 기본 폼과 순정 Java 대화상자에서 같은 메뉴를 사용합니다. [공유 폼 예제·제한·실제 화면](forms.md).
 v4는 등록된 공통 팩 음원을 개인 재생하는 `PlaySound`를 제공합니다. [원본·매핑·검증](sounds.md).
+v5는 등록된 정적 모델을 개인 표시·교체·숨기는 `ShowModel`/`HideModel`을 제공합니다. [범위·소유권·검증](models.md).
 Master Engineering Directive에 따라 공식 호스트는 WASI Component Model을 우선 후보로 검토합니다.
 현재 구현이 WASI 샌드박스, region scheduler, Player/World API를 제공한다고 표시하지 않습니다.
 플러그인은 신뢰된 별도 실행 파일이며, `.dll`/`.so` 로딩이나 OS 샌드박스를 제공하지 않습니다.
@@ -106,6 +107,7 @@ timeout_ms = 1000
 | `SendMessage { player_id, message }` | 초기화된 해당 플레이어에게만 시스템 메시지 전달. API v2 필요 |
 | `ShowForm { player_id, request_id, form }` | 같은 단순 선택 폼을 양쪽 에디션에 표시. API v3 필요 |
 | `PlaySound { player_id, sound, volume, pitch }` | 등록된 팩 음원을 해당 플레이어에게만 재생. API v4 필요 |
+| `ShowModel { player_id, model }` / `HideModel { player_id }` | 등록된 정적 모델의 개인 미리보기 표시·교체·숨김. API v5 필요 |
 
 MOTD는 비어 있지 않은 최대 192 UTF-8 바이트이며 제어문자와 `;`를 포함할 수 없습니다.
 로그 메시지는 최대 2048 바이트이며 제어문자를 포함할 수 없습니다.
@@ -117,11 +119,11 @@ MOTD는 비어 있지 않은 최대 192 UTF-8 바이트이며 제어문자와 `;
 
 ## 통신과 종료
 
-- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `4`, 폼은 `3`, 기존 게임 API는 `2`, 생명주기는 `1`입니다.
-- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4], ... }`를 보냅니다.
+- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `5`, 사운드는 `4`, 폼은 `3`, 기존 게임 API는 `2`, 생명주기는 `1`입니다.
+- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5], ... }`를 보냅니다.
   기존 v1 SDK는 추가 필드를 무시하고 그대로 동작합니다. SDK는 공통으로 지원하는 가장 높은 버전을 선택합니다.
   새 SDK의 기존 게임 훅은 v2 호스트에서도 동작하고, 폼 훅은 v3가 없는 호스트에서 로드를 거부합니다.
-- 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1·v2·v3 Rust 실행 파일도 새 호스트에서 확인했습니다.
+- 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1·v2·v3·v4 Rust 실행 파일도 새 호스트에서 확인했습니다.
 - 각 응답은 요청과 같은 `id`를 반환해야 합니다.
 - `stdout`은 프로토콜 전용입니다. 디버그 출력은 `eprintln!` 등으로 `stderr`에 기록하세요.
 - 메시지는 줄바꿈을 포함해 최대 64 KiB, 한 응답의 액션은 최대 32개입니다.

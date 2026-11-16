@@ -2861,6 +2861,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sculith-model-plugin"
+version = "0.1.0"
+dependencies = [
+ "sculith-plugin-api",
+]
+
+[[package]]
 name = "sculith-packs"
 version = "0.1.0"
 dependencies = [

@@ -31,6 +31,11 @@ pub enum WorldEvent {
         message: String,
     },
     Sound(crate::game::SoundEffect),
+    ModelShown(crate::game::ModelView),
+    ModelHidden {
+        player_id: u64,
+        entity_id: u64,
+    },
     FormRequested {
         player_id: u64,
         form_id: u32,
@@ -117,6 +122,15 @@ enum Command {
         message: String,
         reply: oneshot::Sender<Result<()>>,
     },
+    ShowModel {
+        id: u64,
+        model: String,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    HideModel {
+        id: u64,
+        reply: oneshot::Sender<Result<()>>,
+    },
     PlaySound {
         id: u64,
         sound: String,
@@ -140,6 +154,24 @@ enum Command {
 }
 
 impl WorldHandle {
+    pub async fn show_model(&self, id: u64, model: String) -> Result<()> {
+        sculith_core::validate_resource_id(&model).map_err(anyhow::Error::msg)?;
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::ShowModel { id, model, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("model response lost")?
+    }
+    pub async fn hide_model(&self, id: u64) -> Result<()> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::HideModel { id, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("model response lost")?
+    }
+
     pub async fn play_sound(&self, id: u64, sound: String, volume: f32, pitch: f32) -> Result<()> {
         sculith_core::validate_sound_id(&sound).map_err(anyhow::Error::msg)?;
         sculith_core::validate_sound_parameters(volume, pitch).map_err(anyhow::Error::msg)?;
@@ -377,10 +409,20 @@ pub fn with_region(
 pub fn with_region_and_sounds(
     region: Region,
     max_players: u32,
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
     sounds: std::collections::BTreeSet<String>,
 ) -> Result<(WorldHandle, impl Future<Output = Result<()>> + Send)> {
-    let mut state = GameState::with_sounds(region, max_players, sounds)?;
+    with_region_and_content(region, max_players, shutdown, sounds, Default::default())
+}
+
+pub fn with_region_and_content(
+    region: Region,
+    max_players: u32,
+    mut shutdown: watch::Receiver<bool>,
+    sounds: std::collections::BTreeSet<String>,
+    models: std::collections::BTreeSet<String>,
+) -> Result<(WorldHandle, impl Future<Output = Result<()>> + Send)> {
+    let mut state = GameState::with_content(region, max_players, sounds, models)?;
     let (commands, mut requests) = mpsc::channel(32);
     let weak_commands = commands.downgrade();
     let (events, _) = broadcast::channel(128);
@@ -461,6 +503,14 @@ pub fn with_region_and_sounds(
                             if result.is_ok() { let _ = events.send(Arc::new(WorldEvent::Message { player_id: id, message })); }
                             let _ = reply.send(result);
                         }
+                        Some(Command::ShowModel {id,model,reply})=>{
+                            let result=state.show_model(id,model,Instant::now()).map(|view| { let _=events.send(Arc::new(WorldEvent::ModelShown(view))); });
+                            let _=reply.send(result);
+                        }
+                        Some(Command::HideModel {id,reply})=>{
+                            let result=state.hide_model(id).map(|view| { if let Some(entity_id)=view { let _=events.send(Arc::new(WorldEvent::ModelHidden { player_id:id,entity_id })); } });
+                            let _=reply.send(result);
+                        }
                         Some(Command::PlaySound { id, sound, volume, pitch, reply }) => {
                             let result = state.play_sound(id, sound, volume, pitch, Instant::now()).map(|effect| {
                                 let _ = events.send(Arc::new(WorldEvent::Sound(effect)));
@@ -507,6 +557,56 @@ mod tests {
             uuid: uuid::Uuid::new_v4(),
             edition: Edition::Bedrock,
         }
+    }
+
+    #[tokio::test]
+    async fn model_effects_are_private_presentation_and_hide_is_idempotent() {
+        let (stop, receiver) = watch::channel(false);
+        let (world, task) = with_region_and_content(
+            Region::flat_origin(),
+            20,
+            receiver,
+            Default::default(),
+            ["sculith:demo_statue".into()].into(),
+        )
+        .unwrap();
+        let task = tokio::spawn(task);
+        let lease = world
+            .reserve(profile("model"), Permissions { can_build: true })
+            .await
+            .unwrap();
+        let id = lease.player.id;
+        world.activate(id).await.unwrap();
+        let mut events = world.subscribe();
+        let mut hooks = world.subscribe_game();
+        world
+            .show_model(id, "sculith:demo_statue".into())
+            .await
+            .unwrap();
+        let event = events.recv().await.unwrap();
+        let WorldEvent::ModelShown(view) = event.as_ref() else {
+            panic!("missing model")
+        };
+        assert_eq!(view.player_id, id);
+        let entity_id = view.entity_id;
+        world.hide_model(id).await.unwrap();
+        assert!(
+            matches!(events.recv().await.unwrap().as_ref(),WorldEvent::ModelHidden {player_id,entity_id:current} if *player_id==id && *current==entity_id)
+        );
+        world.hide_model(id).await.unwrap();
+        assert!(matches!(
+            events.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            hooks.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        assert_eq!(world.capture().await.unwrap().revision(), 0);
+        drop(lease);
+        assert!(world.hide_model(id).await.is_err());
+        stop.send(true).unwrap();
+        task.await.unwrap().unwrap();
     }
 
     #[tokio::test]

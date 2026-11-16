@@ -6,16 +6,18 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 4;
+pub const API_VERSION: u32 = 5;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
 pub const SOUND_API_VERSION: u32 = 4;
+pub const MODEL_API_VERSION: u32 = 5;
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     LEGACY_API_VERSION,
     GAME_API_VERSION,
     UI_API_VERSION,
     SOUND_API_VERSION,
+    MODEL_API_VERSION,
 ];
 pub use sculith_core::SimpleForm;
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
@@ -177,6 +179,14 @@ pub enum Action {
         request_id: u32,
         form: SimpleForm,
     },
+    /// One private, noncolliding static model preview, positioned by the owner.
+    ShowModel {
+        player_id: u64,
+        model: String,
+    },
+    HideModel {
+        player_id: u64,
+    },
     /// Play a registered pack sound privately at the initialized player's eye.
     PlaySound {
         player_id: u64,
@@ -193,6 +203,7 @@ impl Action {
             Self::SendMessage { .. } => GAME_API_VERSION,
             Self::ShowForm { .. } => UI_API_VERSION,
             Self::PlaySound { .. } => SOUND_API_VERSION,
+            Self::ShowModel { .. } | Self::HideModel { .. } => MODEL_API_VERSION,
         }
     }
 }
@@ -385,6 +396,7 @@ mod tests {
     #[test]
     fn negotiates_highest_common_version_and_retains_all_three_older_apis() {
         for (supported, expected) in [
+            (vec![1, 2, 3, 4, 5], 5),
             (vec![1, 2, 3, 4], 4),
             (vec![1, 2, 3], 3),
             (vec![1, 2], 2),

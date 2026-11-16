@@ -17,7 +17,7 @@ import java_smoke as wire
 
 ROOT = Path(__file__).resolve().parents[1]
 
-def smoke(server, plugin, client):
+def smoke(server, plugin, client, api_version=5):
     with tempfile.TemporaryDirectory(prefix="sculith sound ") as temporary:
         root=Path(temporary); log=root/"server.log"; settings=root/"server.toml"
         settings.write_text('[java]\nsessions=true\nrequire_authentication=false\n'
@@ -41,7 +41,7 @@ def smoke(server, plugin, client):
                     assert process.poll() is None,text
                     time.sleep(.05)
                 else: raise TimeoutError(text)
-                assert "sound-demo" in text and "api_version=4" in text
+                assert "sound-demo" in text and f"api_version={api_version}" in text
                 loaded=[]
                 def accept(reader,sock):
                     id_=reader.take(16);url=reader.string();sha=reader.string()
@@ -88,5 +88,6 @@ if __name__=="__main__":
     parser.add_argument("--server",type=Path,default=ROOT/("target/debug/sculith"+suffix))
     parser.add_argument("--plugin",type=Path,default=ROOT/("target/debug/sculith-sound-plugin"+suffix))
     parser.add_argument("--client",type=Path,required=True)
+    parser.add_argument("--api-version",type=int,choices=(4,5),default=5)
     args=parser.parse_args()
-    smoke(args.server.resolve(strict=True),args.plugin.resolve(strict=True),args.client.resolve(strict=True))
+    smoke(args.server.resolve(strict=True),args.plugin.resolve(strict=True),args.client.resolve(strict=True),args.api_version)

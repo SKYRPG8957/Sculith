@@ -21,6 +21,7 @@ on:
       - 'scripts/plugin_game_smoke.py'
       - 'scripts/forms_smoke.py'
       - 'scripts/sound_smoke.py'
+      - 'scripts/model_smoke.py'
       - 'scripts/pack_delivery_smoke.py'
       - 'scripts/generate_java_protocol_facts.py'
       - 'scripts/package_release.py'
@@ -41,7 +42,7 @@ jobs:
     env:
       RUSTFLAGS: '-C target-feature=+crt-static'
       PYTHONUTF8: '1'
-      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.13'
+      SCULITH_PREVIEW_VERSION: 'v0.1.0-preview.14'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/cache@v4
@@ -113,6 +114,8 @@ jobs:
         run: python scripts/forms_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-forms-plugin.exe
       - name: Verify shared sound assets, playback packets and recipient isolation
         run: python scripts/sound_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-sound-plugin.exe
+      - name: Verify shared models, private actors and show-replace-hide lifecycle
+        run: python scripts/model_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-model-plugin.exe
       - name: Verify shared packs, native cache and consent keepalive
         run: python scripts/pack_delivery_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --wait-for-keepalive
       - name: Package Windows preview and dependency licenses

@@ -10,6 +10,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
@@ -21,6 +22,7 @@ type observer struct {
 	registry                     world.BlockRegistry
 	chunks                       map[protocol.ChunkPos]bool
 	biomes, creative, structures bool
+	modelRegistry                bool
 	err                          error
 }
 
@@ -43,6 +45,24 @@ func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
 	buf := bytes.NewBuffer(payload)
 	reader := protocol.NewReader(buf, 0, true)
 	switch header.PacketID {
+	case packet.IDAvailableActorIdentifiers:
+		p := new(packet.AvailableActorIdentifiers)
+		p.Marshal(reader)
+		var value struct {
+			IDs []struct {
+				ID string `nbt:"id"`
+			} `nbt:"idlist"`
+		}
+		if err := nbt.Unmarshal(p.SerialisedEntityIdentifiers, &value); err != nil {
+			o.err = err
+			return
+		}
+		for _, entry := range value.IDs {
+			if entry.ID == "sculith:demo_statue" {
+				o.modelRegistry = true
+			}
+		}
+
 	case packet.IDJigsawStructureData:
 		p := new(packet.JigsawStructureData)
 		p.Marshal(reader)

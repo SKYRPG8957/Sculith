@@ -331,6 +331,15 @@ pub async fn handle_with_protection<T: Transport>(
                             conn.send(&[output::sound(effect, &native.bedrock)]).await?;
                         }
                     }
+                    WorldEvent::ModelShown(view)=>{
+                        if view.player_id==id {
+                            let entry=settings.content.as_ref().and_then(|c| c.bundle.report.converted_models.iter().find(|entry| entry.java==view.model)).context("registered model missing from native bundle")?;
+                            conn.send(&output::show_model(view,&entry.bedrock)).await?;
+                        }
+                    }
+                    WorldEvent::ModelHidden {player_id,entity_id}=>{
+                        if *player_id==id { conn.send(&[output::remove_model(*entity_id)]).await?; }
+                    }
                     WorldEvent::FormSubmitted(_)=>{},
                 }
             }
@@ -425,7 +434,15 @@ async fn initialize<T: Transport>(
         )
         .await?;
     let entity_id = lease.player.id;
-    conn.send(&spawn::initial_packets(&lease.player)?).await?;
+    let mut initial = spawn::initial_packets(&lease.player)?;
+    if let Some(content) = content
+        && !content.bundle.report.converted_models.is_empty()
+    {
+        initial.push(output::model_registry(
+            &content.bundle.report.converted_models,
+        ));
+    }
+    conn.send(&initial).await?;
     *stage = "chunk-request";
     let mut interest = None;
     let mut side_packets = 0usize;

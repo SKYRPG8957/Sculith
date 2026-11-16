@@ -11,5 +11,15 @@
       "java": "sculith:demo_tone",
       "file": "sounds/sculith_demo.ogg"
     }
+  ],
+  "models": [
+    {
+      "bedrock": "sculith:demo_statue",
+      "java": "sculith:demo_statue",
+      "entity": "entity/sculith_statue.entity.json",
+      "geometry": "models/entity/sculith_statue.geo.json",
+      "texture": "textures/entity/sculith_statue.png",
+      "controller": "render_controllers/sculith_static.render_controllers.json"
+    }
   ]
 }

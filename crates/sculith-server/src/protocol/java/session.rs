@@ -742,6 +742,20 @@ impl Session {
     }
 
     async fn event(&mut self, stream: &mut TcpStream, event: &WorldEvent) -> Result<()> {
+        match event {
+            WorldEvent::ModelShown(view) if view.player_id == self.player.id => {
+                for packet in super::models::show(view)? {
+                    codec::send(stream, &packet).await?;
+                }
+            }
+            WorldEvent::ModelHidden {
+                player_id,
+                entity_id,
+            } if *player_id == self.player.id => {
+                codec::send(stream, &super::models::remove(*entity_id)?).await?;
+            }
+            _ => {}
+        }
         if let WorldEvent::Sound(effect) = event
             && effect.player_id == self.player.id
         {

@@ -29,8 +29,8 @@ impl SimpleForm {
     }
 }
 
-/// Canonical custom sound: a bounded Java-style resource identifier.
-pub fn validate_sound_id(id: &str) -> Result<(), String> {
+/// Bounded Java-style resource identifier shared by immutable content catalogs.
+pub fn validate_resource_id(id: &str) -> Result<(), String> {
     let valid = || {
         let (namespace, path) = id.split_once(':')?;
         if id.len() > 128
@@ -52,8 +52,12 @@ pub fn validate_sound_id(id: &str) -> Result<(), String> {
         Some(())
     };
     valid().ok_or_else(|| {
-        "sound ID requires namespace:path, at most 128 bytes without traversal".into()
+        "resource ID requires namespace:path, at most 128 bytes without traversal".into()
     })
+}
+
+pub fn validate_sound_id(id: &str) -> Result<(), String> {
+    validate_resource_id(id)
 }
 
 pub fn validate_sound_parameters(volume: f32, pitch: f32) -> Result<(), String> {

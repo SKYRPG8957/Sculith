@@ -1,0 +1,20 @@
+[server]
+motd = "Sculith / shared static model preview"
+
+[java]
+sessions = true
+require_authentication = false
+login_timeout_secs = 60
+
+[bedrock]
+sessions = true
+require_authentication = false
+login_timeout_secs = 60
+
+[content]
+source = "pack/bedrock"
+mapping = "pack/textures.json"
+
+[[plugins]]
+path = "../target/debug/sculith-model-plugin"
+timeout_ms = 1000

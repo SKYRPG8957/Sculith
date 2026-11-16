@@ -114,6 +114,12 @@ impl Plugins {
                                 tracing::warn!(plugin = %process.metadata.name, player_id, %error, "plugin message rejected");
                             }
                         }
+                        Action::ShowModel { player_id, model } => {
+                            if let Err(error)=world.show_model(player_id,model).await { tracing::warn!(plugin=%process.metadata.name,player_id,%error,"plugin model rejected"); }
+                        }
+                        Action::HideModel { player_id } => {
+                            if let Err(error)=world.hide_model(player_id).await { tracing::warn!(plugin=%process.metadata.name,player_id,%error,"plugin model rejected"); }
+                        }
                         Action::PlaySound { player_id, sound, volume, pitch } => {
                             if let Err(error) = world.play_sound(player_id, sound, volume, pitch).await {
                                 tracing::warn!(plugin=%process.metadata.name, player_id, %error, "plugin sound rejected");
@@ -311,6 +317,13 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
             Action::SendMessage { player_id, message } => {
                 ensure!(*player_id != 0, "invalid message recipient");
                 validate_system_message(message).map_err(anyhow::Error::msg)?;
+            }
+            Action::ShowModel { player_id, model } => {
+                ensure!(*player_id != 0, "invalid model recipient");
+                sculith_core::validate_resource_id(model).map_err(anyhow::Error::msg)?;
+            }
+            Action::HideModel { player_id } => {
+                ensure!(*player_id != 0, "invalid model recipient");
             }
             Action::PlaySound {
                 player_id,

@@ -1,7 +1,8 @@
-//! Explicit Bedrock PNG -> vanilla Java texture overrides.
-//! Explicit single-clip Vorbis sounds are shared; models and behaviors remain separate.
+//! Explicit Bedrock textures, sounds and static models for vanilla Java.
+//! Selected content is compiled explicitly; behaviors and animation remain separate.
 
 pub mod bundle;
+mod models;
 mod sounds;
 
 use std::{
@@ -46,6 +47,8 @@ pub struct TextureMap {
     pub textures: Vec<TextureMapping>,
     #[serde(default)]
     pub sounds: Vec<SoundMapping>,
+    #[serde(default)]
+    pub models: Vec<ModelMapping>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +71,17 @@ pub struct SoundMapping {
     pub file: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelMapping {
+    pub bedrock: String,
+    pub java: String,
+    pub entity: String,
+    pub geometry: String,
+    pub texture: String,
+    pub controller: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConversionReport {
     pub bedrock_pack_uuid: String,
@@ -76,6 +90,7 @@ pub struct ConversionReport {
     pub java_pack_format_minor: u32,
     pub converted_textures: usize,
     pub converted_sounds: Vec<SoundMapping>,
+    pub converted_models: Vec<ModelMapping>,
     pub scope: String,
     pub limitations: Vec<String>,
 }
@@ -140,7 +155,7 @@ pub fn convert(
     );
     let mapping: TextureMap = read_json(mapping)?;
     ensure!(
-        !mapping.textures.is_empty() || !mapping.sounds.is_empty(),
+        !mapping.textures.is_empty() || !mapping.sounds.is_empty() || !mapping.models.is_empty(),
         "content mapping is empty"
     );
     ensure!(
@@ -180,6 +195,7 @@ pub fn convert(
 
     sounds::convert(&root, &mapping.sounds, stage.path(), &mut total_bytes)?;
 
+    models::convert(&root, &mapping.models, stage.path(), &mut total_bytes)?;
     let report = ConversionReport {
         bedrock_pack_uuid: manifest.header.uuid,
         bedrock_pack_version: manifest.header.version,
@@ -187,12 +203,13 @@ pub fn convert(
         java_pack_format_minor: pack_format_minor,
         converted_textures: mapping.textures.len(),
         converted_sounds: mapping.sounds,
-        scope: "explicit PNG overrides and single-clip Vorbis sound events".into(),
+        converted_models: mapping.models,
+        scope: "explicit PNG overrides, single-clip Vorbis sounds and static cuboid models".into(),
         limitations: vec![
-            "Only explicitly mapped PNG and OGG files are converted; unmapped assets are not included.".into(),
-            "PNG targets must already exist in the target client; custom sound events are registered by the pack.".into(),
-            "Models, animations, UI, fonts, materials and behavior/script packs are not converted; weighted/streaming sounds are unsupported.".into(),
-            "Texture conversion does not register custom blocks/items; archive delivery is configured separately.".into(),
+            "Only explicitly mapped PNG, OGG and static geometry definitions are converted; unmapped assets are not included.".into(),
+            "PNG overrides target existing textures; custom sound events and presentation-only item models are registered by the pack.".into(),
+            "Only static unrotated cuboids with explicit per-face UVs are converted; animations, arbitrary UI, fonts, custom materials, behavior/script packs and weighted/streaming sounds are unsupported.".into(),
+            "Asset conversion does not register new gameplay blocks/items; archive delivery is configured separately.".into(),
         ],
     };
     let metadata = serde_json::json!({"pack": {

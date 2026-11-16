@@ -221,11 +221,24 @@ async fn run(config: Config) -> Result<()> {
                 .collect()
         })
         .unwrap_or_default();
-    let (world, world_task) = world::with_region_and_sounds(
+    let models = content
+        .as_ref()
+        .map(|content| {
+            content
+                .bundle
+                .report
+                .converted_models
+                .iter()
+                .map(|entry| entry.java.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let (world, world_task) = world::with_region_and_content(
         region,
         config.server.max_players.min(64),
         world_stop_rx,
         sounds,
+        models,
     )?;
     let mut world_task = tokio::spawn(world_task);
     let mut world_finished = false;

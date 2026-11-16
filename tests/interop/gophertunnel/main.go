@@ -13,8 +13,9 @@ import (
 
 func main() {
 	packOutput := len(os.Args) == 4 && os.Args[2] == "--pack-output"
-	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput {
-		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file]")
+	modelOutput := len(os.Args) == 4 && os.Args[2] == "--model-output"
+	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--model" || os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput && !modelOutput {
+		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--model|--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file|--model-output file]")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -41,7 +42,7 @@ func main() {
 	}
 	fmt.Println("PASS: independent Dragonfly decoding of 25 chunks, all 2457600 blocks, plains biomes and startup definitions")
 	fmt.Println("PASS: independent gophertunnel NetherNet world spawn", conn.GameData().EntityRuntimeID)
-	if packOutput {
+	if packOutput || modelOutput {
 		packs := conn.ResourcePacks()
 		if len(packs) != 1 {
 			panic(fmt.Errorf("expected exactly one received resource pack, got %d", len(packs)))
@@ -55,9 +56,16 @@ func main() {
 		}
 		fmt.Println("PASS: received Bedrock resource pack", packs[0].UUID(), packs[0].Version(), len(data))
 	}
+	if modelOutput {
+		if err := sharedModel(conn, observed); err != nil {
+			panic(err)
+		}
+	}
 	if len(os.Args) == 3 {
 		var err error
-		if os.Args[2] == "--sound" {
+		if os.Args[2] == "--model" {
+			err = sharedModel(conn, observed)
+		} else if os.Args[2] == "--sound" {
 			err = sharedSound(conn)
 		} else if os.Args[2] == "--crossplay" {
 			err = crossplay(conn, registry)

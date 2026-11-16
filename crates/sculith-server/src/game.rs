@@ -187,6 +187,8 @@ struct Player {
     messages: Budget,
     forms: Budget,
     sounds: Budget,
+    models: Budget,
+    model: Option<ModelView>,
     pending_form: Option<PendingForm>,
 }
 
@@ -216,6 +218,15 @@ pub struct SoundEffect {
     pub pitch: f32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ModelView {
+    pub player_id: u64,
+    pub entity_id: u64,
+    pub uuid: Uuid,
+    pub model: String,
+    pub position: Position,
+}
+
 /// One exclusively owned game state containing the existing authoritative Region.
 #[derive(Debug)]
 pub struct GameState {
@@ -225,6 +236,7 @@ pub struct GameState {
     players: BTreeMap<u64, Player>,
     next_form_id: u32,
     registered_sounds: BTreeSet<String>,
+    registered_models: BTreeSet<String>,
 }
 
 impl GameState {
@@ -237,6 +249,22 @@ impl GameState {
         max_players: u32,
         registered_sounds: BTreeSet<String>,
     ) -> Result<Self> {
+        Self::with_content(region, max_players, registered_sounds, BTreeSet::new())
+    }
+
+    pub fn with_content(
+        region: Region,
+        max_players: u32,
+        registered_sounds: BTreeSet<String>,
+        registered_models: BTreeSet<String>,
+    ) -> Result<Self> {
+        ensure!(
+            registered_models.len() <= 32,
+            "at most 32 registered models"
+        );
+        for model in &registered_models {
+            sculith_core::validate_resource_id(model).map_err(anyhow::Error::msg)?;
+        }
         ensure!(
             registered_sounds.len() <= 64,
             "at most 64 registered sounds"
@@ -259,6 +287,7 @@ impl GameState {
         )?;
         Ok(Self {
             registered_sounds,
+            registered_models,
             next_form_id: 1,
             region,
             max_players,
@@ -335,6 +364,11 @@ impl GameState {
                     remaining: 4.0,
                     updated: now,
                 },
+                models: Budget {
+                    remaining: 1.0,
+                    updated: now,
+                },
+                model: None,
                 pending_form: None,
             },
         );
@@ -379,6 +413,78 @@ impl GameState {
             updated: now,
         };
         Ok(())
+    }
+
+    pub fn show_model(&mut self, id: u64, model: String, now: Instant) -> Result<ModelView> {
+        sculith_core::validate_resource_id(&model).map_err(anyhow::Error::msg)?;
+        ensure!(
+            self.registered_models.contains(&model),
+            "model is not registered by the active content bundle"
+        );
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        let remaining = player
+            .models
+            .available(now, 1.0, 1.0)
+            .ok_or_else(|| anyhow::anyhow!("model clock regression"))?;
+        ensure!(remaining >= 1.0, "player model rate exceeded");
+        let yaw = player.snapshot.rotation.yaw.to_radians();
+        let position = Position {
+            x: player.snapshot.feet.x - yaw.sin() * 3.0,
+            y: player.snapshot.feet.y,
+            z: player.snapshot.feet.z + yaw.cos() * 3.0,
+        };
+        ensure!(
+            position.y - 1.0 >= f64::from(MIN_Y) && position.y + 2.0 <= f64::from(MAX_Y + 1),
+            "model preview exceeds vertical bounds"
+        );
+        for x in [-2.0, 2.0] {
+            for z in [-2.0, 2.0] {
+                ensure!(
+                    self.region.bounds().contains(
+                        BlockPos {
+                            x: (position.x + x).floor() as i32,
+                            y: 0,
+                            z: (position.z + z).floor() as i32
+                        }
+                        .chunk()
+                    ),
+                    "model preview exceeds region bounds"
+                );
+            }
+        }
+        let (entity_id, uuid) = if let Some(old) = &player.model {
+            (old.entity_id, old.uuid)
+        } else {
+            let id = allocate_id(&NEXT_PLAYER_ID)?;
+            ensure!(id <= i32::MAX as u64, "model entity identifiers exhausted");
+            (id, Uuid::new_v4())
+        };
+        let view = ModelView {
+            player_id: id,
+            entity_id,
+            uuid,
+            model,
+            position,
+        };
+        player.model = Some(view.clone());
+        player.models = Budget {
+            remaining: remaining - 1.0,
+            updated: now,
+        };
+        Ok(view)
+    }
+
+    pub fn hide_model(&mut self, id: u64) -> Result<Option<u64>> {
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        Ok(player.model.take().map(|model| model.entity_id))
     }
 
     pub fn play_sound(
@@ -1032,6 +1138,100 @@ mod tests {
             .unwrap();
         game.activate(player.id).unwrap();
         (game, player.id)
+    }
+
+    #[test]
+    fn models_require_registered_live_players_and_owner_clock_without_world_mutation() {
+        let now = Instant::now();
+        let mut state = GameState::with_content(
+            Region::flat_origin(),
+            20,
+            Default::default(),
+            ["sculith:demo_statue".into()].into(),
+        )
+        .unwrap();
+        let player = state
+            .reserve(profile(123), Permissions { can_build: true }, now)
+            .unwrap();
+        let id = player.id;
+        assert!(
+            state
+                .show_model(id, "sculith:demo_statue".into(), now)
+                .is_err()
+        );
+        assert!(state.hide_model(id).is_err());
+        state.activate(id).unwrap();
+        let revision = state.capture().revision();
+        assert!(state.show_model(id, "sculith:missing".into(), now).is_err());
+        let first = state
+            .show_model(id, "sculith:demo_statue".into(), now)
+            .unwrap();
+        assert_ne!(first.entity_id, id);
+        assert_eq!(
+            first.position,
+            Position {
+                x: 0.5,
+                y: 4.0,
+                z: 3.5
+            }
+        );
+        assert!(
+            state
+                .show_model(id, "sculith:demo_statue".into(), now)
+                .is_err()
+        );
+        let second = state
+            .show_model(
+                id,
+                "sculith:demo_statue".into(),
+                now + Duration::from_secs(1),
+            )
+            .unwrap();
+        assert_eq!(
+            (first.entity_id, first.uuid),
+            (second.entity_id, second.uuid)
+        );
+        assert!(
+            state
+                .show_model(id, "sculith:demo_statue".into(), now)
+                .is_err()
+        );
+        assert_eq!(state.hide_model(id).unwrap(), Some(first.entity_id));
+        assert_eq!(state.hide_model(id).unwrap(), None);
+        let third = state
+            .show_model(
+                id,
+                "sculith:demo_statue".into(),
+                now + Duration::from_secs(2),
+            )
+            .unwrap();
+        assert_ne!(third.entity_id, first.entity_id);
+        state.players.get_mut(&id).unwrap().snapshot.feet.x = 63.5;
+        assert!(
+            state
+                .show_model(
+                    id,
+                    "sculith:demo_statue".into(),
+                    now + Duration::from_secs(3)
+                )
+                .is_err()
+        );
+        assert_eq!(
+            state.players[&id].model.as_ref().unwrap().entity_id,
+            third.entity_id
+        );
+        assert_eq!(state.capture().revision(), revision);
+        state.retire(id);
+        assert!(
+            state
+                .show_model(
+                    id,
+                    "sculith:demo_statue".into(),
+                    now + Duration::from_secs(4)
+                )
+                .is_err()
+        );
+        assert!(state.hide_model(id).is_err());
     }
 
     #[test]
