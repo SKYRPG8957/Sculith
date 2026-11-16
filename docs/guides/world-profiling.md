@@ -108,3 +108,5 @@ driver or sampling-helper hashes, requesters and workload. Five repetitions are
 the default; at least three are required. No benchmark binaries or reports are
 uploaded by CI. Functional profiling and comparison-contract checks run on Linux
 and Windows; resource timing thresholds require matching hardware.
+
+[Measured default cost and verification limits](../development/performance-2026-11-17-mailbox.md).

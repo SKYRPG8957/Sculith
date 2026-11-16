@@ -1,5 +1,7 @@
 # Plugin IPC profiling
 
+For owner admission, queue and service timings, see [World mailbox profiling](world-profiling.md).
+
 Profiling works without a management GUI. Default **OFF** keeps only request,
 complete-frame byte, message encoding and failure counters. It adds no clock reads per request
 or history allocation. No game/network packet format changes.
