@@ -27,6 +27,21 @@ use bedrock::protocol::{
 };
 use sculith_world::{BlockKind, BlockPos};
 
+pub fn system_message(message: &str) -> Result<V2225> {
+    sculith_core::validate_system_message(message).map_err(anyhow::Error::msg)?;
+    Ok(V2225::TextPacket(Box::new(
+        bedrock::protocol::v898::packets::TextPacket {
+            localize: false,
+            message_type: bedrock::protocol::v924::enums::TextPacketType::SystemMessage(
+                message.into(),
+            ),
+            sender_xuid: String::new(),
+            platform_id: String::new(),
+            filtered_message: None,
+        },
+    )))
+}
+
 pub fn block_update(position: BlockPos, block: BlockKind) -> Result<V2225> {
     Ok(V2225::UpdateBlockPacket(Box::new(UpdateBlockPacket {
         block_position: NetworkBlockPosition {

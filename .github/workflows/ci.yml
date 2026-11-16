@@ -50,3 +50,5 @@ jobs:
         run: go build -mod=readonly -o ../../../target/gophertunnel-probe .
       - name: Exercise independent Bedrock login and world spawn
         run: python scripts/gophertunnel_smoke.py --client target/gophertunnel-probe
+      - name: Exercise Rust plugin game hooks in both editions
+        run: python scripts/plugin_game_smoke.py --client target/gophertunnel-probe

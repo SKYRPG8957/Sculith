@@ -290,7 +290,7 @@ pub async fn handle_with_protection<T: Transport>(
                     Err(error)=>{let _=disconnect(conn,"Sculith: world event backlog; reconnect to resynchronize.").await;return Err(error.into());}
                 };
                 match event.as_ref() {
-                    WorldEvent::Blocks {batch,revisions}=>{
+                    WorldEvent::Blocks {batch,revisions,..}=>{
                         for (position,revision) in revisions {
                             let Some(known)=interest.get(position).copied() else {continue};
                             if *revision<=known {continue;}
@@ -309,6 +309,9 @@ pub async fn handle_with_protection<T: Transport>(
                     WorldEvent::Joined(player)=>tracing::debug!(player=player.id,"shared world player joined"),
                     WorldEvent::Moved {player,tick}=>tracing::trace!(player=player.id,tick,"shared world player moved"),
                     WorldEvent::Left {id}=>tracing::debug!(player=id,"shared world player left"),
+                    WorldEvent::Message {player_id,message}=>{
+                        if *player_id == id { conn.send(&[output::system_message(message)?]).await?; }
+                    }
                 }
             }
         }

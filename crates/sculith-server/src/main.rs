@@ -172,6 +172,12 @@ async fn run(config: Config) -> Result<()> {
         None
     };
     let mut state = config.status()?;
+    let (world_stop, world_stop_rx) = watch::channel(false);
+    let (world, world_task) =
+        world::with_region(region, config.server.max_players.min(64), world_stop_rx)?;
+    let mut world_task = tokio::spawn(world_task);
+    let mut world_finished = false;
+    let mut game_events = world.subscribe_game();
     let mut plugins = plugins::Plugins::load(&config.plugins, &state).await?;
     plugins
         .dispatch(
@@ -179,16 +185,12 @@ async fn run(config: Config) -> Result<()> {
                 server: state.clone(),
             },
             &mut state,
+            &world,
         )
         .await;
     let (status_tx, status_rx) = watch::channel(state.clone());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut services = JoinSet::new();
-    let (world_stop, world_stop_rx) = watch::channel(false);
-    let (world, world_task) =
-        world::with_region(region, config.server.max_players.min(64), world_stop_rx)?;
-    let mut world_task = tokio::spawn(world_task);
-    let mut world_finished = false;
     if let Some(listener) = java {
         info!(address = %listener.local_addr()?, "Java TCP discovery listening");
         let preview = config.java.sessions.then(|| protocol::java::Preview {
@@ -275,10 +277,25 @@ async fn run(config: Config) -> Result<()> {
                     _ => Err(anyhow::anyhow!("discovery listener exited unexpectedly")),
                 };
             }
+            event = game_events.recv() => {
+                match event {
+                    Ok(event) => {
+                        if let Some(event) = plugins::game_event(&event) {
+                            state.online_players = world.online_players();
+                            plugins.dispatch(event, &mut state, &world).await;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
+                        warn!(missed, "game hook backlog; disabling subscribers rather than silently losing events");
+                        plugins.disable_game_subscribers().await;
+                    }
+                    Err(error) => break Err(error.into()),
+                }
+            }
             _ = ticker.tick() => {
                 tick += 1;
                 state.online_players = world.online_players();
-                plugins.dispatch(Event::Tick { tick }, &mut state).await;
+                plugins.dispatch(Event::Tick { tick }, &mut state, &world).await;
                 status_tx.send_if_modified(|current| {
                     if *current == state { false } else { *current = state.clone(); true }
                 });
@@ -325,7 +342,7 @@ async fn run(config: Config) -> Result<()> {
             _ => {}
         }
     }
-    plugins.stop(&mut state).await;
+    plugins.stop(&mut state, &world).await;
     info!(ticks = tick, "Sculith stopped");
     result
 }

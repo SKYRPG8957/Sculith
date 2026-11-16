@@ -20,8 +20,10 @@ def dependency_notices():
         cwd=ROOT, text=True, encoding="utf-8",
     ))
     nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
-    server = next(p["id"] for p in metadata["packages"] if p["name"] == "sculith-server")
-    selected, pending = set(), [server]
+    roots = {"sculith-server", "sculith-gameplay-plugin"}
+    selected, pending = set(), [p["id"] for p in metadata["packages"] if p["name"] in roots]
+    if len(pending) != len(roots):
+        raise RuntimeError("Missing server or bundled plugin in the locked metadata")
     while pending:
         item = pending.pop()
         if item not in selected:
@@ -66,12 +68,15 @@ def dependency_notices():
     return "".join(records)
 
 
-def package(binary, version, output):
+def package(binary, version, output, plugin=None):
     if not re.fullmatch(r"v\d+\.\d+\.\d+-preview\.\d+", version):
         raise ValueError("Expected vMAJOR.MINOR.PATCH-preview.NUMBER")
     binary = binary.resolve(strict=True)
     if binary.read_bytes()[:2] != b"MZ":
         raise ValueError("Expected a Windows executable")
+    plugin = (plugin or binary.with_name("sculith-gameplay-plugin.exe")).resolve(strict=True)
+    if plugin.read_bytes()[:2] != b"MZ":
+        raise ValueError("Expected the Windows gameplay plugin executable")
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f"sculith-{version}-windows-x86_64.zip"
     checksum = output / "SHA256SUMS.txt"
@@ -81,6 +86,8 @@ def package(binary, version, output):
     with tempfile.TemporaryDirectory(prefix="sculith-package-") as temporary:
         stage = Path(temporary)
         shutil.copyfile(binary, stage / "sculith.exe")
+        (stage / "plugins").mkdir()
+        shutil.copyfile(plugin, stage / "plugins/sculith-gameplay-plugin.exe")
         for source in (ROOT / "distribution/windows").iterdir():
             if source.is_file():
                 shutil.copyfile(source, stage / source.name)
@@ -92,11 +99,14 @@ def package(binary, version, output):
             "stage": "development-preview", "official_client_verified": False,
         }, indent=2) + "\n", encoding="utf-8")
         with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED) as bundle:
-            for path in sorted(stage.iterdir()):
+            for path in sorted(stage.rglob("*")):
+                if not path.is_file():
+                    continue
+                name = path.relative_to(stage).as_posix()
                 if path.suffix == ".cmd":
-                    bundle.writestr(path.name, path.read_text(encoding="utf-8").replace("\n", "\r\n"))
+                    bundle.writestr(name, path.read_text(encoding="utf-8").replace("\n", "\r\n"))
                 else:
-                    bundle.write(path, path.name)
+                    bundle.write(path, name)
     with archive.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     checksum.write_text(f"{digest}  {archive.name}\n", encoding="ascii")
@@ -106,7 +116,8 @@ def package(binary, version, output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
+    parser.add_argument("--plugin", type=Path, help="Defaults to the gameplay EXE beside the server")
     parser.add_argument("--version", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    package(args.binary, args.version, args.output)
+    package(args.binary, args.version, args.output, args.plugin)

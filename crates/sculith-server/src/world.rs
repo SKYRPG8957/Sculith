@@ -26,7 +26,12 @@ pub enum WorldEvent {
     Left {
         id: u64,
     },
+    Message {
+        player_id: u64,
+        message: String,
+    },
     Blocks {
+        player_id: u64,
         batch: CommittedBatch,
         revisions: BTreeMap<ChunkPos, u64>,
     },
@@ -37,6 +42,7 @@ pub struct WorldHandle {
     commands: mpsc::Sender<Command>,
     online: Arc<AtomicU32>,
     events: broadcast::Sender<Arc<WorldEvent>>,
+    game_events: broadcast::Sender<Arc<WorldEvent>>,
 }
 
 pub struct PlayerLease {
@@ -97,6 +103,11 @@ enum Command {
         id: u64,
         slot: u8,
         reply: oneshot::Sender<Result<PlayerSnapshot>>,
+    },
+    SendMessage {
+        id: u64,
+        message: String,
+        reply: oneshot::Sender<Result<()>>,
     },
 }
 
@@ -205,11 +216,38 @@ impl WorldHandle {
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<WorldEvent>> {
         self.events.subscribe()
     }
+
+    /// Semantic game hooks exclude high-frequency movement and private messages.
+    pub fn subscribe_game(&self) -> broadcast::Receiver<Arc<WorldEvent>> {
+        self.game_events.subscribe()
+    }
+
+    pub async fn send_message(&self, id: u64, message: String) -> Result<()> {
+        sculith_core::validate_system_message(&message).map_err(anyhow::Error::msg)?;
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::SendMessage { id, message, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("message response lost")?
+    }
+}
+
+fn publish_game(
+    event: WorldEvent,
+    events: &broadcast::Sender<Arc<WorldEvent>>,
+    game_events: &broadcast::Sender<Arc<WorldEvent>>,
+) {
+    let event = Arc::new(event);
+    let _ = events.send(event.clone());
+    let _ = game_events.send(event);
 }
 
 fn publish_blocks(
     state: &mut GameState,
     events: &broadcast::Sender<Arc<WorldEvent>>,
+    game_events: &broadcast::Sender<Arc<WorldEvent>>,
+    player_id: u64,
     outcome: &BlockOutcome,
 ) -> Result<()> {
     if let BlockOutcome::Committed { batch } = outcome {
@@ -220,10 +258,15 @@ fn publish_blocks(
                 entry.insert(state.snapshot(position)?.revision());
             }
         }
-        let _ = events.send(Arc::new(WorldEvent::Blocks {
-            batch: batch.clone(),
-            revisions,
-        }));
+        publish_game(
+            WorldEvent::Blocks {
+                player_id,
+                batch: batch.clone(),
+                revisions,
+            },
+            events,
+            game_events,
+        );
     }
     Ok(())
 }
@@ -232,13 +275,14 @@ fn retire(
     state: &mut GameState,
     leases: &mut BTreeMap<u64, Weak<AtomicBool>>,
     events: &broadcast::Sender<Arc<WorldEvent>>,
+    game_events: &broadcast::Sender<Arc<WorldEvent>>,
     id: u64,
 ) {
     leases.remove(&id);
     if let Some(player) = state.retire(id)
         && player.initialized
     {
-        let _ = events.send(Arc::new(WorldEvent::Left { id }));
+        publish_game(WorldEvent::Left { id }, events, game_events);
     }
 }
 
@@ -251,11 +295,13 @@ pub fn with_region(
     let (commands, mut requests) = mpsc::channel(32);
     let weak_commands = commands.downgrade();
     let (events, _) = broadcast::channel(128);
+    let (game_events, _) = broadcast::channel(128);
     let online = Arc::new(AtomicU32::new(0));
     let handle = WorldHandle {
         commands,
         online: online.clone(),
         events: events.clone(),
+        game_events: game_events.clone(),
     };
     let task = async move {
         let mut leases: BTreeMap<u64, Weak<AtomicBool>> = BTreeMap::new();
@@ -269,7 +315,7 @@ pub fn with_region(
                 })
                 .collect();
             for id in dead {
-                retire(&mut state, &mut leases, &events, id);
+                retire(&mut state, &mut leases, &events, &game_events, id);
             }
             online.store(state.online_count(), Ordering::Release);
             tokio::select! {
@@ -282,7 +328,7 @@ pub fn with_region(
                     let dead: Vec<_> = leases.iter().filter_map(|(&id, flag)|
                         flag.upgrade().is_none_or(|flag| !flag.load(Ordering::Acquire)).then_some(id)
                     ).collect();
-                    for id in dead { retire(&mut state, &mut leases, &events, id); }
+                    for id in dead { retire(&mut state, &mut leases, &events, &game_events, id); }
                     match command {
                         Some(Command::Snapshot { position, reply }) => { let _ = reply.send(state.snapshot(position).map_err(Into::into)); }
                         Some(Command::Capture { reply }) => { let _ = reply.send(state.capture()); }
@@ -297,11 +343,11 @@ pub fn with_region(
                         Some(Command::Activate { id, reply }) => {
                             let was_ready = state.player(id).is_some_and(|p| p.initialized);
                             let result = state.activate(id);
-                            if !was_ready && let Ok(player) = &result { let _ = events.send(Arc::new(WorldEvent::Joined(player.clone()))); }
+                            if !was_ready && let Ok(player) = &result { publish_game(WorldEvent::Joined(player.clone()), &events, &game_events); }
                             online.store(state.online_count(), Ordering::Release);
                             let _ = reply.send(result);
                         }
-                        Some(Command::Retire { id }) => { retire(&mut state, &mut leases, &events, id); }
+                        Some(Command::Retire { id }) => { retire(&mut state, &mut leases, &events, &game_events, id); }
                         Some(Command::Move { id, tick, position, rotation, reply }) => {
                             let outcome = state.move_player(id, tick, position, rotation, Instant::now());
                             if let MoveOutcome::Accepted { player, tick, changed: true } = &outcome {
@@ -311,15 +357,21 @@ pub fn with_region(
                         }
                         Some(Command::Break { id, position, reply }) => {
                             let outcome = state.break_block(id, position, Instant::now());
-                            publish_blocks(&mut state, &events, &outcome)?;
+                            publish_blocks(&mut state, &events, &game_events, id, &outcome)?;
                             let _ = reply.send(outcome);
                         }
                         Some(Command::Place { id, against, face, slot, claimed, reply }) => {
                             let outcome = state.place_block(id, against, face, slot, claimed, Instant::now());
-                            publish_blocks(&mut state, &events, &outcome)?;
+                            publish_blocks(&mut state, &events, &game_events, id, &outcome)?;
                             let _ = reply.send(outcome);
                         }
                         Some(Command::Select { id, slot, reply }) => { let _ = reply.send(state.select_slot(id, slot)); }
+                        Some(Command::SendMessage { id, message, reply }) => {
+                            let result = sculith_core::validate_system_message(&message).map_err(anyhow::Error::msg)
+                                .and_then(|()| state.permit_message(id, Instant::now()));
+                            if result.is_ok() { let _ = events.send(Arc::new(WorldEvent::Message { player_id: id, message })); }
+                            let _ = reply.send(result);
+                        }
                         None => break Ok(()),
                     }
                 }
@@ -424,6 +476,45 @@ mod tests {
             BlockKind::Air
         );
         stop.send_replace(true);
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn private_messages_require_a_live_initialized_lease_and_never_reenter_game_hooks() {
+        let (shutdown, stop) = watch::channel(false);
+        let (world, task) = create(stop);
+        let task = tokio::spawn(task);
+        let mut hooks = world.subscribe_game();
+        let lease = world
+            .reserve(profile("recipient"), Permissions { can_build: true })
+            .await
+            .unwrap();
+        let id = lease.player.id;
+        assert!(world.send_message(id, "pending".into()).await.is_err());
+        world.activate(id).await.unwrap();
+        assert!(
+            matches!(hooks.recv().await.unwrap().as_ref(), WorldEvent::Joined(p) if p.id == id)
+        );
+        let mut view = world.subscribe();
+        assert!(world.send_message(id, "bad\ntext".into()).await.is_err());
+        world
+            .send_message(id, "환영합니다 👋".into())
+            .await
+            .unwrap();
+        assert!(
+            matches!(view.recv().await.unwrap().as_ref(), WorldEvent::Message { player_id, message } if *player_id == id && message == "환영합니다 👋")
+        );
+        assert!(matches!(
+            hooks.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        assert_eq!(world.capture().await.unwrap().revision(), 0);
+        drop(lease);
+        assert!(world.send_message(id, "closed".into()).await.is_err());
+        assert!(
+            matches!(hooks.recv().await.unwrap().as_ref(), WorldEvent::Left { id: left } if *left == id)
+        );
+        shutdown.send_replace(true);
         task.await.unwrap().unwrap();
     }
 

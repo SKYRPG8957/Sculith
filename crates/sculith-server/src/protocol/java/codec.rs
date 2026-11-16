@@ -136,7 +136,10 @@ pub fn position(value: BlockPos, bytes: &mut Vec<u8>) {
 
 pub fn text(value: &str, bytes: &mut Vec<u8>) -> Result<()> {
     ensure!(value.len() <= 4096, "Java text component too large");
-    let encoded = nbtx::to_be_bytes(&nbtx::Value::String(value.into()))?;
+    // Rust String goes through Java modified UTF-8. Value::String holds raw
+    // BString bytes and intentionally bypasses this conversion (emoji failed
+    // in the actual 26.3 client when passed through that raw representation).
+    let encoded = nbtx::to_be_bytes(&value.to_owned())?;
     // Network NBT omits the root name present in standard disk NBT.
     ensure!(
         encoded.get(1..3) == Some(&[0, 0]),
@@ -157,6 +160,12 @@ pub fn strings(values: &[&str], bytes: &mut Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn literal_text_encodes_supplementary_unicode_as_java_surrogate_pairs() {
+        let mut bytes = Vec::new();
+        text("👋", &mut bytes).unwrap();
+        assert_eq!(bytes, [8, 0, 6, 0xed, 0xa0, 0xbd, 0xed, 0xb1, 0x8b]);
+    }
     #[tokio::test]
     async fn partial_frame_survives_cancellation_between_world_events() {
         let (mut writer, mut reader) = tokio::io::duplex(1024);

@@ -184,6 +184,7 @@ struct Player {
     last_tick: Option<u64>,
     movement: Budget,
     building: Budget,
+    messages: Budget,
 }
 
 /// One exclusively owned game state containing the existing authoritative Region.
@@ -274,6 +275,10 @@ impl GameState {
                     remaining: BUILD_BURST,
                     updated: now,
                 },
+                messages: Budget {
+                    remaining: 8.0,
+                    updated: now,
+                },
             },
         );
         Ok(snapshot)
@@ -299,6 +304,24 @@ impl GameState {
             .values()
             .filter(|player| player.snapshot.initialized)
             .count() as u32
+    }
+
+    pub fn permit_message(&mut self, id: u64, now: Instant) -> Result<()> {
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        let available = player
+            .messages
+            .available(now, 4.0, 8.0)
+            .ok_or_else(|| anyhow::anyhow!("message clock regression"))?;
+        ensure!(available >= 1.0, "player message rate exceeded");
+        player.messages = Budget {
+            remaining: available - 1.0,
+            updated: now,
+        };
+        Ok(())
     }
     pub fn snapshot(&mut self, pos: ChunkPos) -> sculith_world::Result<ChunkSnapshot> {
         self.region.snapshot(pos)
@@ -826,6 +849,42 @@ mod tests {
             .unwrap();
         game.activate(player.id).unwrap();
         (game, player.id)
+    }
+
+    #[test]
+    fn message_budget_is_per_initialized_player_and_uses_the_owner_clock() {
+        let now = Instant::now();
+        let (mut state, id) = active(Region::flat_origin(), now);
+        for _ in 0..8 {
+            state.permit_message(id, now).unwrap();
+        }
+        assert!(state.permit_message(id, now).is_err());
+        assert!(
+            state
+                .permit_message(id, now - Duration::from_millis(1))
+                .is_err()
+        );
+        assert!(
+            state
+                .permit_message(id, now + Duration::from_millis(249))
+                .is_err()
+        );
+        state
+            .permit_message(id, now + Duration::from_millis(250))
+            .unwrap();
+        let other = state
+            .reserve(profile(2), Permissions { can_build: true }, now)
+            .unwrap();
+        assert!(state.permit_message(other.id, now).is_err());
+        state.activate(other.id).unwrap();
+        state.permit_message(other.id, now).unwrap();
+        state.retire(id);
+        assert!(
+            state
+                .permit_message(id, now + Duration::from_secs(10))
+                .is_err()
+        );
+        assert_eq!(state.revision(), 0);
     }
 
     fn accepted(outcome: MoveOutcome) -> PlayerSnapshot {

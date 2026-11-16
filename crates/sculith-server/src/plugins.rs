@@ -1,10 +1,10 @@
 use std::{collections::HashSet, process::Stdio, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
-use sculith_core::{ServerStatus, validate_motd};
+use sculith_core::{ServerStatus, validate_motd, validate_system_message};
 use sculith_plugin_api::{
-    API_VERSION, Action, Event, HostMessage, MAX_ACTIONS, MAX_MESSAGE_BYTES, Metadata,
-    PluginMessage, Request, Response,
+    API_VERSION, Action, Event, HostMessage, LEGACY_API_VERSION, MAX_ACTIONS, MAX_MESSAGE_BYTES,
+    Metadata, PluginMessage, Request, Response,
 };
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -12,6 +12,7 @@ use tokio::{
 };
 
 use crate::config::PluginConfig;
+use crate::world::{WorldEvent, WorldHandle};
 
 pub struct Plugins {
     processes: Vec<Process>,
@@ -25,6 +26,7 @@ struct Process {
     request_id: u64,
     timeout: Duration,
     disabled: bool,
+    api_version: u32,
 }
 
 impl Plugins {
@@ -40,27 +42,36 @@ impl Plugins {
                 "duplicate plugin name: {}",
                 process.metadata.name
             );
-            tracing::info!(plugin = %process.metadata.name, version = %process.metadata.version, "Rust plugin loaded");
+            tracing::info!(plugin = %process.metadata.name, version = %process.metadata.version, api_version = process.api_version, "Rust plugin loaded");
             processes.push(process);
         }
         Ok(Self { processes })
     }
 
-    pub async fn dispatch(&mut self, event: Event, status: &mut ServerStatus) {
-        for process in &mut self.processes {
-            if process.disabled || !process.metadata.hooks.contains(&event.hook()) {
-                continue;
+    pub async fn dispatch(&mut self, event: Event, status: &mut ServerStatus, world: &WorldHandle) {
+        // Requests wait concurrently; actions still apply in configured order.
+        // One slow worker must not multiply the round's delay by plugin count.
+        let hook = event.hook();
+        let replies = futures_util::future::join_all(self.processes.iter_mut().map(|process| {
+            let subscribed = !process.disabled && process.metadata.hooks.contains(&hook);
+            let event = event.clone();
+            async move {
+                if subscribed {
+                    Some(process.request(HostMessage::Event { event }).await)
+                } else {
+                    None
+                }
             }
+        }))
+        .await;
+        for (process, reply) in self.processes.iter_mut().zip(replies) {
+            let Some(reply) = reply else { continue };
             let result = async {
-                let reply = process
-                    .request(HostMessage::Event {
-                        event: event.clone(),
-                    })
-                    .await?;
-                let PluginMessage::Actions { actions } = reply else {
+                let PluginMessage::Actions { actions } = reply? else {
                     bail!("expected plugin actions");
                 };
                 validate_actions(&actions)?;
+                ensure!(actions.iter().all(|action| action.minimum_api() <= process.api_version), "action exceeds negotiated plugin API");
                 for action in actions {
                     match action {
                         Action::SetMotd { motd } => {
@@ -68,6 +79,12 @@ impl Plugins {
                         }
                         Action::Log { message } => {
                             tracing::info!(plugin = %process.metadata.name, %message)
+                        }
+                        Action::SendMessage { player_id, message } => {
+                            if let Err(error) = world.send_message(player_id, message).await {
+                                // Disconnects and owner rate limits are ordinary rejections.
+                                tracing::warn!(plugin = %process.metadata.name, player_id, %error, "plugin message rejected");
+                            }
                         }
                     }
                 }
@@ -83,8 +100,25 @@ impl Plugins {
         }
     }
 
-    pub async fn stop(&mut self, status: &mut ServerStatus) {
-        self.dispatch(Event::Stopping, status).await;
+    pub async fn disable_game_subscribers(&mut self) {
+        for process in &mut self.processes {
+            if !process.disabled
+                && process
+                    .metadata
+                    .hooks
+                    .iter()
+                    .any(|hook| hook.minimum_api() >= 2)
+            {
+                tracing::warn!(plugin = %process.metadata.name, "plugin disabled after missing game events");
+                process.disabled = true;
+                let _ = process.child.kill().await;
+                process.input.take();
+            }
+        }
+    }
+
+    pub async fn stop(&mut self, status: &mut ServerStatus, world: &WorldHandle) {
+        self.dispatch(Event::Stopping, status, world).await;
         for process in &mut self.processes {
             process.input.take();
             if tokio::time::timeout(Duration::from_millis(500), process.child.wait())
@@ -125,10 +159,12 @@ impl Process {
             request_id: 0,
             timeout: Duration::from_millis(config.timeout_ms),
             disabled: false,
+            api_version: LEGACY_API_VERSION,
         };
         let reply = process
             .request(HostMessage::Hello {
-                api_version: API_VERSION,
+                api_version: LEGACY_API_VERSION,
+                supported_versions: vec![LEGACY_API_VERSION, API_VERSION],
                 server: status.clone(),
             })
             .await?;
@@ -140,7 +176,7 @@ impl Process {
             bail!("expected plugin ready handshake");
         };
         ensure!(
-            api_version == API_VERSION,
+            api_version == API_VERSION || api_version == LEGACY_API_VERSION,
             "plugin API version {api_version} is incompatible with {API_VERSION}"
         );
         ensure!(
@@ -158,14 +194,19 @@ impl Process {
                 && !metadata.version.chars().any(char::is_control),
             "invalid plugin version"
         );
-        ensure!(metadata.hooks.len() <= 3, "too many plugin subscriptions");
+        ensure!(metadata.hooks.len() <= 6, "too many plugin subscriptions");
         for (index, hook) in metadata.hooks.iter().enumerate() {
+            ensure!(
+                hook.minimum_api() <= api_version,
+                "hook exceeds negotiated plugin API"
+            );
             ensure!(
                 !metadata.hooks[..index].contains(hook),
                 "duplicate plugin subscription"
             );
         }
         process.metadata = metadata;
+        process.api_version = api_version;
         Ok(process)
     }
 
@@ -229,9 +270,59 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
                     "invalid plugin log message"
                 );
             }
+            Action::SendMessage { player_id, message } => {
+                ensure!(*player_id != 0, "invalid message recipient");
+                validate_system_message(message).map_err(anyhow::Error::msg)?;
+            }
         }
     }
     Ok(())
+}
+
+pub fn game_event(event: &WorldEvent) -> Option<Event> {
+    use sculith_plugin_api::{BlockChange, Edition, PlayerInfo};
+    use sculith_world::BlockKind;
+    fn name(block: BlockKind) -> String {
+        match block {
+            BlockKind::Air => "minecraft:air",
+            BlockKind::Bedrock => "minecraft:bedrock",
+            BlockKind::Stone => "minecraft:stone",
+            BlockKind::Dirt => "minecraft:dirt",
+            BlockKind::Grass => "minecraft:grass_block",
+        }
+        .into()
+    }
+    Some(match event {
+        WorldEvent::Joined(player) => Event::PlayerJoined {
+            player: PlayerInfo {
+                id: player.id,
+                name: player.profile.name.clone(),
+                edition: match player.profile.edition {
+                    crate::game::Edition::Java => Edition::Java,
+                    crate::game::Edition::Bedrock => Edition::Bedrock,
+                },
+            },
+        },
+        WorldEvent::Left { id } => Event::PlayerLeft { player_id: *id },
+        WorldEvent::Blocks {
+            player_id, batch, ..
+        } => Event::BlocksChanged {
+            player_id: *player_id,
+            revision: batch.revision,
+            changes: batch
+                .changes
+                .iter()
+                .map(|c| BlockChange {
+                    x: c.position.x,
+                    y: c.position.y,
+                    z: c.position.z,
+                    before: name(c.before),
+                    after: name(c.after),
+                })
+                .collect(),
+        },
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -274,6 +365,60 @@ mod tests {
         assert!(read_line_bounded(&mut &data[..]).await.is_err());
         assert!(read_line_bounded(&mut &b"partial"[..]).await.is_err());
         assert_eq!(read_line_bounded(&mut &b"{}\n"[..]).await.unwrap(), b"{}\n");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn v1_callbacks_wait_concurrently_but_apply_actions_in_configuration_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first");
+        let second = dir.path().join("second");
+        let script = r#"read -r hello
+printf '%s\n' '{"id":1,"message":{"type":"ready","api_version":1,"metadata":{"name":"'"$3"'","version":"1","hooks":["started"]}}}'
+read -r event
+: > "$1"
+while [ ! -e "$2" ]; do sleep 0.01; done
+printf '%s\n' '{"id":2,"message":{"type":"actions","actions":[{"type":"set_motd","motd":"'"$3"'"}]}}'
+"#;
+        let configs = [(&first, &second, "first"), (&second, &first, "second")]
+            .into_iter()
+            .map(|(own, peer, name)| PluginConfig {
+                path: "/bin/sh".into(),
+                args: vec![
+                    "-c".into(),
+                    script.into(),
+                    "fixture".into(),
+                    own.display().to_string(),
+                    peer.display().to_string(),
+                    name.into(),
+                ],
+                timeout_ms: 2000,
+            })
+            .collect::<Vec<_>>();
+        let mut status = ServerStatus::new("original".into(), 20).unwrap();
+        let mut plugins = Plugins::load(&configs, &status).await.unwrap();
+        let (shutdown, stop) = tokio::sync::watch::channel(false);
+        let (world, task) = crate::world::create(stop);
+        let task = tokio::spawn(task);
+        plugins
+            .dispatch(
+                Event::Started {
+                    server: status.clone(),
+                },
+                &mut status,
+                &world,
+            )
+            .await;
+        assert!(
+            plugins
+                .processes
+                .iter()
+                .all(|p| !p.disabled && p.api_version == 1)
+        );
+        assert_eq!(status.motd, "second");
+        plugins.stop(&mut status, &world).await;
+        shutdown.send_replace(true);
+        task.await.unwrap().unwrap();
     }
 
     #[cfg(unix)]

@@ -40,7 +40,7 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Authoritative movement checks and limited creative block placement/breaking, with server-owned starter items and committed block deltas shared between sessions.
 - A single region owner, revision-checked block commits, compact uniform/palette sections and immutable copy-on-write snapshots.
 - Optional versioned, checksummed region snapshots loaded at startup and saved after sessions close on orderly shutdown. Periodic autosaving is pending.
-- An initial trusted-executable Rust plugin SDK with lifecycle hooks and a shared MOTD action.
+- Trusted-executable Rust plugin SDK v2 with v1 compatibility, lifecycle/MOTD, initialized-player join/leave and committed-block hooks, plus owner-validated private messages in both editions. [Actual game evidence](docs/verification/2026-11-16-plugin-api-v2.md).
 - Explicit Bedrock PNG-to-Java texture overrides, with a conversion report describing unsupported assets.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
@@ -100,7 +100,9 @@ cargo build --workspace --locked
 cargo run --locked -- run --config examples/with-plugin.toml
 ```
 
-The example plugin changes the common MOTD seen by both editions. Current plugins are trusted executable processes communicating over versioned JSON-lines; they are not sandboxed. The official plugin-host design will evaluate the WASI Component Model, resource limits and region-aware APIs.
+The original welcome example changes the common MOTD. The new gameplay example sends a private welcome after player initialization and observes accepted block changes; run it with `examples/gameplay-preview.toml`. Current plugins are trusted executable JSON-lines processes, not a sandbox. The official host design will evaluate the WASI Component Model, resource limits and region-aware APIs.
+
+Public Preview 9 predates game API v2 and the bundled gameplay example; the Preview 10 addition is being verified.
 
 See the [plugin SDK guide](docs/plugins.md) and [example source](examples/welcome-plugin/src/main.rs).
 

@@ -25,3 +25,7 @@ bind = "127.0.0.1:25565"
 [network.bedrock]
 enabled = true
 bind = "127.0.0.1:19132"
+
+[[plugins]]
+path = "plugins/sculith-gameplay-plugin.exe"
+timeout_ms = 1000

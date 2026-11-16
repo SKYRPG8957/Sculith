@@ -11,8 +11,8 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 && !(len(os.Args) == 3 && os.Args[2] == "--crossplay") {
-		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--crossplay]")
+	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message")) {
+		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--crossplay|--plugin-message]")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -36,7 +36,13 @@ func main() {
 	fmt.Println("PASS: independent Dragonfly decoding of 25 chunks, all 2457600 blocks, plains biomes and startup definitions")
 	fmt.Println("PASS: independent gophertunnel NetherNet world spawn", conn.GameData().EntityRuntimeID)
 	if len(os.Args) == 3 {
-		if err := crossplay(conn, registry); err != nil {
+		var err error
+		if os.Args[2] == "--crossplay" {
+			err = crossplay(conn, registry)
+		} else {
+			err = pluginMessage(conn)
+		}
+		if err != nil {
 			panic(err)
 		}
 	}

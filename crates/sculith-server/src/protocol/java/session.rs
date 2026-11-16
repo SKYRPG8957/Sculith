@@ -652,7 +652,18 @@ impl Session {
     }
 
     async fn event(&mut self, stream: &mut TcpStream, event: &WorldEvent) -> Result<()> {
-        if let WorldEvent::Blocks { batch, revisions } = event {
+        if let WorldEvent::Message { player_id, message } = event
+            && *player_id == self.player.id
+        {
+            let mut packet = codec::packet(0x7c); // Protocol 777 SystemChat.
+            codec::text(message, &mut packet)?;
+            packet.push(0); // Chat, rather than action-bar overlay.
+            codec::send(stream, &packet).await?;
+        }
+        if let WorldEvent::Blocks {
+            batch, revisions, ..
+        } = event
+        {
             for (p, revision) in revisions {
                 let Some(known) = self.interest.get(p).copied() else {
                     continue;

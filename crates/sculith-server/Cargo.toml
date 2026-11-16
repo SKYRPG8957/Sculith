@@ -19,6 +19,7 @@ uuid = { version = "1.18", features = ["v4"] }
 nbtx = { git = "https://github.com/bedrock-crustaceans/nbtx" }
 nethernet = { git = "https://github.com/bedrock-crustaceans/nethernet.git", rev = "ed552b0b60dc6f8d54e0d7d42a9c66a9b9bdfb99" }
 bytes = "1.12"
+futures-util = "=0.3.34"
 md-5 = "=0.10.6"
 http = "1"
 http-body-util = "0.1"
