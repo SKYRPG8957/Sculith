@@ -29,6 +29,8 @@ pub struct Session {
     interest: BTreeMap<ChunkPos, u64>,
     center: ChunkPos,
     tick: u64,
+    packet_sequence: u64,
+    inventory_state: u16,
     teleport_id: i32,
     pending_teleport: Option<(i32, Instant)>,
     keepalive: Option<(i64, Instant)>,
@@ -120,6 +122,8 @@ pub async fn start(
         interest: BTreeMap::new(),
         center: ChunkPos { x: 0, z: 0 },
         tick: 0,
+        packet_sequence: 0,
+        inventory_state: 0,
         teleport_id: 0,
         pending_teleport: None,
         keepalive: None,
@@ -353,6 +357,11 @@ impl Session {
         write_varint(63, &mut packet);
         packet.extend_from_slice(&[0, 0]); // Offline mode, unsigned chat.
         codec::send(stream, &packet).await?;
+        codec::send(
+            stream,
+            &super::commands::tree(&self.world.command_specs().await?),
+        )
+        .await?;
         let mut abilities = codec::packet(0x41);
         abilities.push(15);
         abilities.extend_from_slice(&0.05f32.to_be_bytes());
@@ -386,23 +395,48 @@ impl Session {
         Ok(())
     }
 
-    async fn inventory(&self, stream: &mut TcpStream) -> Result<()> {
+    async fn inventory(&mut self, stream: &mut TcpStream) -> Result<()> {
+        self.inventory_state = (self.inventory_state + 1) & 0x7fff;
         for slot in 0..41 {
-            let kind = self.player.hotbar.get(slot).copied().flatten();
-            let mut packet = codec::packet(0x6e);
-            write_varint(slot as i32, &mut packet);
-            if let Some(kind) = kind {
-                write_varint(64, &mut packet);
-                write_varint(registry::get().item(kind), &mut packet);
-                packet.extend_from_slice(&[0, 0]); // No component patches.
-            } else {
-                write_varint(0, &mut packet);
-            }
-            codec::send(stream, &packet).await?;
+            self.inventory_slot(stream, slot).await?;
         }
+        let mut contents = codec::packet(0x12);
+        write_varint(0, &mut contents);
+        write_varint(i32::from(self.inventory_state), &mut contents);
+        write_varint(46, &mut contents);
+        for menu_slot in 0..46 {
+            let owner_slot = match menu_slot {
+                9..=35 => Some(menu_slot),
+                36..=44 => Some(menu_slot - 36),
+                _ => None,
+            };
+            super::inventory::write_stack(
+                owner_slot.and_then(|slot| self.player.inventory[slot]),
+                &mut contents,
+            )?;
+        }
+        super::inventory::write_stack(self.player.cursor, &mut contents)?;
+        codec::send(stream, &contents).await?;
+        let mut cursor = codec::packet(0x62);
+        super::inventory::write_stack(self.player.cursor, &mut cursor)?;
+        codec::send(stream, &cursor).await?;
         let mut selected = codec::packet(0x6b);
         write_varint(i32::from(self.player.selected_slot), &mut selected);
         codec::send(stream, &selected).await
+    }
+
+    async fn inventory_slot(&self, stream: &mut TcpStream, slot: u8) -> Result<()> {
+        ensure!(slot < 41, "invalid Java inventory synchronization slot");
+        let item = self
+            .player
+            .inventory
+            .get(usize::from(slot))
+            .copied()
+            .flatten();
+        let mut packet = codec::packet(0x6e);
+        write_varint(i32::from(slot), &mut packet);
+        super::inventory::write_stack(item, &mut packet)?;
+        codec::send(stream, &packet).await
     }
 
     async fn teleport(&mut self, stream: &mut TcpStream) -> Result<()> {
@@ -574,10 +608,36 @@ impl Session {
     }
 
     async fn input(&mut self, stream: &mut TcpStream, packet: &[u8]) -> Result<()> {
+        if self.world.observes_packets() {
+            let id = Fields(packet).int()?;
+            self.packet_sequence = self
+                .packet_sequence
+                .checked_add(1)
+                .context("Java packet observation sequence exhausted")?;
+            self.world
+                .observe_packet(
+                    self.player.id,
+                    super::super::catalog::java_receipt(id, self.packet_sequence)?,
+                )
+                .await?;
+        }
         let mut fields = Fields(packet);
         let id = fields.int()?;
         match id {
             0 => self.confirm_teleport(fields)?,
+            7 => {
+                let command = fields.string(256)?.to_owned();
+                fields.end()?;
+                if let Err(error) = self.world.submit_command(self.player.id, command).await {
+                    tracing::debug!(player=self.player.id,%error,"Java command rejected");
+                }
+            }
+            9 => {
+                let message = super::chat::read(fields)?;
+                if let Err(error) = self.world.chat(self.player.id, message).await {
+                    tracing::debug!(player=self.player.id,%error,"Java chat rejected");
+                }
+            }
             0x44 => {
                 if let Some((form_id, selection)) = super::forms::response(fields)?
                     && let Err(error) = self
@@ -716,9 +776,40 @@ impl Session {
                     }
                 }
             }
-            0x12 | 0x39 => {
+            0x39 => {
+                if let Some(change) = super::inventory::creative(fields)? {
+                    let outcome = self
+                        .world
+                        .creative_slot(self.player.id, change.slot, change.kind, change.count)
+                        .await?;
+                    self.player = outcome.player;
+                    if outcome.response.result.is_ok() {
+                        // CreativeInventoryScreen keeps its carried stack locally
+                        // and submits only the resulting slot replacements. A
+                        // full menu/cursor update here destroys that unsent state
+                        // between a split and its subsequent placement.
+                        self.inventory_slot(stream, change.slot).await?;
+                        return Ok(());
+                    }
+                }
                 self.inventory(stream).await?;
-            } // Never trust client inventory/creative stacks.
+            }
+            0x12 => {
+                if let Some(change) = super::inventory::click(fields)? {
+                    if change.state_id != self.inventory_state {
+                        tracing::debug!(
+                            player = self.player.id,
+                            "Java inventory prediction state resynchronized"
+                        );
+                    }
+                    self.player = self
+                        .world
+                        .inventory_click(self.player.id, change.click)
+                        .await?
+                        .player;
+                }
+                self.inventory(stream).await?;
+            }
             0x0e => client_information(fields)?,
             0x0d | 0x2c => fields.end()?,
             0x0b => {
@@ -772,6 +863,12 @@ impl Session {
     }
 
     async fn event(&mut self, stream: &mut TcpStream, event: &WorldEvent) -> Result<()> {
+        if let WorldEvent::Chat(chat) = event {
+            let mut packet = codec::packet(0x7c);
+            codec::text(&format!("<{}> {}", chat.name, chat.message), &mut packet)?;
+            packet.push(0);
+            codec::send(stream, &packet).await?;
+        }
         match event {
             WorldEvent::ModelShown(view) if view.player_id == self.player.id => {
                 for packet in super::models::show(view)? {

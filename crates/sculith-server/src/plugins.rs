@@ -30,6 +30,24 @@ struct Process {
 }
 
 impl Plugins {
+    pub fn observation_flags(&self) -> u8 {
+        use sculith_plugin_api::Hook;
+        use sculith_server::observations;
+        self.processes
+            .iter()
+            .filter(|p| !p.disabled)
+            .flat_map(|p| &p.metadata.hooks)
+            .fold(0, |flags, hook| {
+                flags
+                    | match hook {
+                        Hook::PacketReceived => observations::PACKETS,
+                        Hook::PlayerMoved => observations::MOVEMENT,
+                        Hook::PlayerEquipped => observations::EQUIPMENT,
+                        Hook::PlayerInventoryChanged => observations::INVENTORY,
+                        _ => 0,
+                    }
+            })
+    }
     pub async fn load(configs: &[PluginConfig], status: &ServerStatus) -> Result<Self> {
         let mut processes = Vec::new();
         let mut names = HashSet::new();
@@ -58,10 +76,25 @@ impl Plugins {
         status: &mut ServerStatus,
         world: &WorldHandle,
     ) {
-        let recipient = if let WorldEvent::FormSubmitted(submission) = event {
-            Some(submission.plugin.as_str())
-        } else {
-            None
+        let recipient = match event {
+            WorldEvent::FormSubmitted(submission) => Some(submission.plugin.as_str()),
+            WorldEvent::CommandSubmitted(submission) => {
+                if !self
+                    .processes
+                    .iter()
+                    .any(|p| !p.disabled && p.metadata.name == submission.plugin)
+                {
+                    let _ = world
+                        .send_message(
+                            submission.player_id,
+                            "This command is temporarily unavailable.".into(),
+                        )
+                        .await;
+                    return;
+                }
+                Some(submission.plugin.as_str())
+            }
+            _ => None,
         };
         if let Some(event) = game_event(event) {
             self.dispatch_for(event, recipient, status, world).await;
@@ -100,8 +133,14 @@ impl Plugins {
                 };
                 validate_actions(&actions)?;
                 ensure!(actions.iter().all(|action| action.minimum_api() <= process.api_version), "action exceeds negotiated plugin API");
+                let registrations:Vec<_>=actions.iter().filter_map(|action|match action {Action::RegisterCommand {command}=>Some(command.clone()),_=>None}).collect();
+                if !registrations.is_empty() {
+                    ensure!(hook==sculith_plugin_api::Hook::Started && process.metadata.hooks.contains(&sculith_plugin_api::Hook::CommandSubmitted),"commands require Started registration and CommandSubmitted subscription");
+                    world.register_commands(process.metadata.name.clone(),registrations).await?;
+                }
                 for action in actions {
                     match action {
+                        Action::RegisterCommand {..}=>{},
                         Action::SetMotd { motd } => {
                             status.set_motd(motd).map_err(anyhow::Error::msg)?
                         }
@@ -138,13 +177,14 @@ impl Plugins {
             if let Err(error) = result {
                 tracing::warn!(plugin = %process.metadata.name, %error, "plugin disabled");
                 process.disabled = true;
+                let _ = world.disable_commands(process.metadata.name.clone()).await;
                 let _ = process.child.kill().await;
                 process.input.take();
             }
         }
     }
 
-    pub async fn disable_game_subscribers(&mut self) {
+    pub async fn disable_game_subscribers(&mut self, world: &WorldHandle) {
         for process in &mut self.processes {
             if !process.disabled
                 && process
@@ -155,6 +195,7 @@ impl Plugins {
             {
                 tracing::warn!(plugin = %process.metadata.name, "plugin disabled after missing game events");
                 process.disabled = true;
+                let _ = world.disable_commands(process.metadata.name.clone()).await;
                 let _ = process.child.kill().await;
                 process.input.take();
             }
@@ -238,7 +279,10 @@ impl Process {
                 && !metadata.version.chars().any(char::is_control),
             "invalid plugin version"
         );
-        ensure!(metadata.hooks.len() <= 7, "too many plugin subscriptions");
+        ensure!(
+            metadata.hooks.len() <= sculith_plugin_api::Hook::ALL.len(),
+            "too many plugin subscriptions"
+        );
         for (index, hook) in metadata.hooks.iter().enumerate() {
             ensure!(
                 hook.minimum_api() <= api_version,
@@ -307,6 +351,9 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
     ensure!(actions.len() <= MAX_ACTIONS, "too many plugin actions");
     for action in actions {
         match action {
+            Action::RegisterCommand { command } => {
+                command.validate().map_err(anyhow::Error::msg)?
+            }
             Action::SetMotd { motd } => validate_motd(motd).map_err(anyhow::Error::msg)?,
             Action::Log { message } => {
                 ensure!(
@@ -361,6 +408,61 @@ pub fn game_event(event: &WorldEvent) -> Option<Event> {
         .into()
     }
     Some(match event {
+        WorldEvent::CommandSubmitted(submission) => Event::CommandSubmitted {
+            player_id: submission.player_id,
+            name: submission.name.clone(),
+            command: submission.command.clone(),
+            arguments: submission.arguments.clone(),
+        },
+        WorldEvent::Chat(chat) => Event::PlayerChat {
+            player_id: chat.player_id,
+            name: chat.name.clone(),
+            message: chat.message.clone(),
+        },
+        WorldEvent::PacketReceived { player_id, packet } => Event::PacketReceived {
+            player_id: *player_id,
+            packet: packet.clone(),
+        },
+        WorldEvent::Moved { player, tick } => Event::PlayerMoved {
+            player_id: player.id,
+            tick: *tick,
+            x: player.feet.x,
+            y: player.feet.y,
+            z: player.feet.z,
+            yaw: player.rotation.yaw,
+            pitch: player.rotation.pitch,
+            head_yaw: player.rotation.head_yaw,
+        },
+        WorldEvent::InventoryChanged { player_id, changes } => Event::PlayerInventoryChanged {
+            player_id: *player_id,
+            changes: changes
+                .iter()
+                .map(|change| {
+                    use sculith_plugin_api::{InventoryChange, InventoryContainer};
+                    use sculith_server::inventory::Slot;
+                    let (container, slot) = match change.slot {
+                        Slot::Inventory(slot) => (InventoryContainer::Inventory, slot),
+                        Slot::Cursor => (InventoryContainer::Cursor, 0),
+                        Slot::CreatedOutput => (InventoryContainer::CreatedOutput, 50),
+                    };
+                    InventoryChange {
+                        container,
+                        slot,
+                        item: change.stack.map(|stack| name(stack.kind)),
+                        count: change.stack.map_or(0, |stack| u16::from(stack.count)),
+                    }
+                })
+                .collect(),
+        },
+        WorldEvent::Equipped(player) => {
+            let selected = player.held();
+            Event::PlayerEquipped {
+                player_id: player.id,
+                slot: player.selected_slot,
+                item: selected.map(|stack| name(stack.kind)),
+                count: selected.map_or(0, |stack| u16::from(stack.count)),
+            }
+        }
         WorldEvent::Joined(player) => Event::PlayerJoined {
             player: PlayerInfo {
                 id: player.id,

@@ -16,7 +16,7 @@ import (
 
 // Independent native decoding, including the current player-list/skin format.
 // This is not an official Bedrock rendering or account authentication test.
-func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise bool) error {
+func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise, observeExercise bool) error {
 	done := make(chan struct{})
 	defer close(done)
 	if err := conn.SetReadDeadline(time.Now().Add(55 * time.Second)); err != nil {
@@ -25,6 +25,7 @@ func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise bool) error {
 	listed := map[uuid.UUID]protocol.PlayerListEntry{}
 	entities := map[uint64]uuid.UUID{}
 	ready, javaMoved, lateJoined, lateRemoved := false, false, false, false
+	chatSeen := 0
 	var late uuid.UUID
 	var visualEnd time.Time
 	for {
@@ -50,6 +51,9 @@ func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise bool) error {
 					}
 					delete(listed, entry.UUID)
 					if lateRemoved && entry.UUID == late {
+						if observeExercise && chatSeen != 7 {
+							return fmt.Errorf("missing public chat directions: %d", chatSeen)
+						}
 						fmt.Println("PASS: independent Bedrock peer roster, skin, spawn, bidirectional movement, late join and ordered leave")
 						return nil
 					}
@@ -86,6 +90,26 @@ func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise bool) error {
 					return err
 				}
 				fmt.Println("PEER_READY")
+				if observeExercise {
+					if err := conn.WritePacket(&packet.MobEquipment{EntityRuntimeID: conn.GameData().EntityRuntimeID, NewItem: protocol.ItemInstance{Stack: protocol.ItemStack{ItemType: protocol.ItemType{NetworkID: 1}, Count: 1}}, InventorySlot: 2, HotBarSlot: 2}); err != nil {
+						return err
+					}
+					if err := conn.WritePacket(&packet.ScriptCustomEvent{EventName: "sculith:metadata_probe", EventData: []byte("SCULITH_SECRET_PACKET_SENTINEL")}); err != nil {
+						return err
+					}
+					if err := conn.WritePacket(&packet.Text{TextType: packet.TextTypeChat, SourceName: "ForgedAuthor", Message: "native 안녕 😀", XUID: "ForgedXUID"}); err != nil {
+						return err
+					}
+					for _, origin := range []uint32{protocol.CommandOriginDedicatedServer, protocol.CommandOriginPlayer} {
+						if err := conn.WritePacket(&packet.CommandRequest{CommandLine: "/hello SCULITH_SECRET_COMMAND_SENTINEL", CommandOrigin: protocol.CommandOrigin{Origin: origin, UUID: uuid.New()}, Version: ""}); err != nil {
+							return err
+						}
+					}
+					if err := conn.Flush(); err != nil {
+						return err
+					}
+				}
+
 				if visual {
 					time.Sleep(time.Second)
 					if err := conn.WritePacket(&packet.PlayerAuthInput{Position: mgl32.Vec3{.5, 5.62, 3.5}, Yaw: 180, HeadYaw: 180, InputMode: packet.InputModeMouse, InteractionModel: packet.InteractionModelCrosshair, Tick: 2, Delta: mgl32.Vec3{0, 0, 1.5}, CameraOrientation: mgl32.Vec3{0, 0, 1}}); err != nil {
@@ -129,6 +153,33 @@ func sharedPeers(conn *minecraft.Conn, visual, equipmentExercise bool) error {
 				return fmt.Errorf("unexpected peer %s", p.Username)
 			}
 
+		case *packet.Text:
+			if observeExercise {
+				if p.TextType == packet.TextTypeSystem && p.Message == "Hello 베드락😀 👋" {
+					if chatSeen&4 != 0 {
+						return fmt.Errorf("duplicate or forged command execution")
+					}
+					chatSeen |= 4
+					continue
+				}
+				if p.TextType != packet.TextTypeChat || p.XUID != "" {
+					return fmt.Errorf("invalid authoritative chat envelope")
+				}
+				switch p.Message {
+				case "native 안녕 😀":
+					if p.SourceName != "베드락😀" || chatSeen&1 != 0 {
+						return fmt.Errorf("spoofed or duplicated native chat author")
+					}
+					chatSeen |= 1
+				case "java 반가워 😀":
+					if p.SourceName != "PeerJavaProbe" || chatSeen&2 != 0 {
+						return fmt.Errorf("invalid Java chat author")
+					}
+					chatSeen |= 2
+				default:
+					return fmt.Errorf("unexpected public chat")
+				}
+			}
 		case *packet.MobEquipment:
 			if visual {
 				fmt.Printf("PEER_ACTUAL_EQUIPMENT: id=%d item=%d count=%d slot=%d\n", p.EntityRuntimeID, p.NewItem.Stack.NetworkID, p.NewItem.Stack.Count, p.HotBarSlot)

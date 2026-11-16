@@ -332,6 +332,15 @@ impl<T: Transport> TestClient<T> {
             self.next().await?,
             V2225::CreativeContentPacket(_)
         ));
+        let V2225::AvailableCommandsPacket(commands) = self.next().await? else {
+            anyhow::bail!("expected command registry");
+        };
+        ensure!(
+            commands
+                .commands
+                .iter()
+                .any(|command| command.name == "help")
+        );
         self.conn
             .send(&[V2225::RequestChunkRadiusPacket(Box::new(
                 RequestChunkRadiusPacket {

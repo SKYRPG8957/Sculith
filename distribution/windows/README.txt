@@ -84,3 +84,9 @@ Stone displays the original checkerboard. General sound/model/UI conversion is p
 
 MIT License. Third-party notices and license texts are included.
 Independent project, not affiliated with Mojang or Microsoft.
+
+API v6 개발 소스:
+- sculith.exe packets는 Java 260개/Bedrock 244개 패킷 식별자를 JSON으로 출력합니다.
+- 등록은 실제 게임 기능 지원을 뜻하지 않습니다. 로그인 데이터와 패킷 본문은 플러그인에 전달하지 않습니다.
+- Rust 명령어·채팅·이동·장비·인벤토리 이벤트 예제는 docs/plugins.md를 참고하세요.
+- 이 문서는 배포용 원본입니다. 새 ZIP·프리뷰·GitHub 빌드 아티팩트는 게시하지 않습니다.

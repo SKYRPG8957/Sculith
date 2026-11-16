@@ -60,12 +60,7 @@ pub fn initial_packets(player: &crate::game::PlayerSnapshot) -> Result<Vec<V2225
     // Chunk biome palettes reference the native plains biome. Supply its
     // definition before chunks, even though headless clients do not render it.
     packets.push(plains_definition());
-    packets.push(V2225::CreativeContentPacket(Box::new(
-        bedrock::protocol::v2168::packets::CreativeContentPacket {
-            groups: vec![],
-            contents: vec![],
-        },
-    )));
+    packets.push(super::inventory::creative_catalogue()?);
     Ok(packets)
 }
 
@@ -202,7 +197,7 @@ fn start_game(player: &crate::game::PlayerSnapshot) -> StartGamePacket<V2225> {
         enchantment_seed: 0,
         block_properties: vec![],
         multiplayer_correlation_id: String::new(),
-        enable_item_stack_net_manager: false,
+        enable_item_stack_net_manager: true,
         server_version: format!("Sculith {}", env!("CARGO_PKG_VERSION")),
         player_property_data: Default::default(),
         server_block_type_registry_checksum: 0,

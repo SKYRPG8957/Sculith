@@ -6,20 +6,22 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 5;
+pub const API_VERSION: u32 = 6;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
 pub const SOUND_API_VERSION: u32 = 4;
 pub const MODEL_API_VERSION: u32 = 5;
+pub const OBSERVATION_API_VERSION: u32 = 6;
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     LEGACY_API_VERSION,
     GAME_API_VERSION,
     UI_API_VERSION,
     SOUND_API_VERSION,
     MODEL_API_VERSION,
+    OBSERVATION_API_VERSION,
 ];
-pub use sculith_core::SimpleForm;
+pub use sculith_core::{CommandSpec, SimpleForm};
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
 pub const MAX_ACTIONS: usize = 32;
 
@@ -33,14 +35,41 @@ pub enum Hook {
     PlayerLeft,
     BlocksChanged,
     FormSubmitted,
+    PlayerMoved,
+    PlayerEquipped,
+    PacketReceived,
+    PlayerChat,
+    PlayerInventoryChanged,
+    CommandSubmitted,
 }
 
 impl Hook {
+    pub const ALL: &[Self] = &[
+        Self::Started,
+        Self::Tick,
+        Self::Stopping,
+        Self::PlayerJoined,
+        Self::PlayerLeft,
+        Self::BlocksChanged,
+        Self::FormSubmitted,
+        Self::PlayerMoved,
+        Self::PlayerEquipped,
+        Self::PacketReceived,
+        Self::PlayerChat,
+        Self::CommandSubmitted,
+        Self::PlayerInventoryChanged,
+    ];
     pub fn minimum_api(&self) -> u32 {
         match self {
             Self::Started | Self::Tick | Self::Stopping => LEGACY_API_VERSION,
             Self::FormSubmitted => UI_API_VERSION,
-            _ => GAME_API_VERSION,
+            Self::PlayerMoved
+            | Self::PlayerEquipped
+            | Self::PacketReceived
+            | Self::PlayerChat
+            | Self::PlayerInventoryChanged
+            | Self::CommandSubmitted => OBSERVATION_API_VERSION,
+            Self::PlayerJoined | Self::PlayerLeft | Self::BlocksChanged => GAME_API_VERSION,
         }
     }
 }
@@ -76,6 +105,24 @@ pub enum HostMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    /// Owner-committed item changes; stack-network IDs remain adapter-private.
+    PlayerInventoryChanged {
+        player_id: u64,
+        changes: Vec<InventoryChange>,
+    },
+    /// Private to the plugin that registered this command. No shell evaluation.
+    CommandSubmitted {
+        player_id: u64,
+        name: String,
+        command: String,
+        arguments: String,
+    },
+    /// Validated public chat; the author comes from the initialized session.
+    PlayerChat {
+        player_id: u64,
+        name: String,
+        message: String,
+    },
     Started {
         server: ServerStatus,
     },
@@ -89,6 +136,30 @@ pub enum Event {
     /// Runtime disconnect notification; use Stopping for whole-server shutdown.
     PlayerLeft {
         player_id: u64,
+    },
+    /// Owner-committed movement, only when the position/rotation changed.
+    PlayerMoved {
+        player_id: u64,
+        tick: u64,
+        x: f64,
+        y: f64,
+        z: f64,
+        yaw: f64,
+        pitch: f64,
+        head_yaw: f64,
+    },
+    /// Owner-selected slot and committed held item/count, never client claims.
+    PlayerEquipped {
+        player_id: u64,
+        slot: u8,
+        item: Option<String>,
+        count: u16,
+    },
+    /// Receipt metadata for an initialized session, before the gameplay handler.
+    /// No raw body, account token, identity chain, address or skin is included.
+    PacketReceived {
+        player_id: u64,
+        packet: PacketInfo,
     },
     /// Post-commit notification. This event cannot cancel or rewrite a commit.
     BlocksChanged {
@@ -111,6 +182,45 @@ pub enum Edition {
     Bedrock,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PacketDispatch {
+    Control,
+    Gameplay,
+    Notification,
+    Unsupported,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PacketInfo {
+    pub edition: Edition,
+    pub protocol: u32,
+    pub phase: String,
+    pub id: u32,
+    pub name: String,
+    /// Planned dispatch category, not a claim that body validation succeeded.
+    pub dispatch: PacketDispatch,
+    pub sequence: u64,
+}
+
+impl PacketInfo {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.sequence == 0 || self.protocol == 0 || self.id > i32::MAX as u32 {
+            return Err("invalid packet receipt counters");
+        }
+        if self.phase != "play"
+            || self.name.is_empty()
+            || self.name.len() > 128
+            || !self.name.is_ascii()
+            || self.name.chars().any(char::is_control)
+        {
+            return Err("invalid packet receipt metadata");
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerInfo {
     pub id: u64,
@@ -128,9 +238,26 @@ pub struct BlockChange {
     pub after: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InventoryContainer {
+    Inventory,
+    Cursor,
+    CreatedOutput,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryChange {
+    pub container: InventoryContainer,
+    pub slot: u8,
+    pub item: Option<String>,
+    pub count: u16,
+}
+
 impl Event {
     pub fn hook(&self) -> Hook {
         match self {
+            Self::PlayerInventoryChanged { .. } => Hook::PlayerInventoryChanged,
+            Self::CommandSubmitted { .. } => Hook::CommandSubmitted,
             Self::Started { .. } => Hook::Started,
             Self::Tick { .. } => Hook::Tick,
             Self::Stopping => Hook::Stopping,
@@ -138,6 +265,10 @@ impl Event {
             Self::PlayerLeft { .. } => Hook::PlayerLeft,
             Self::BlocksChanged { .. } => Hook::BlocksChanged,
             Self::FormSubmitted { .. } => Hook::FormSubmitted,
+            Self::PlayerMoved { .. } => Hook::PlayerMoved,
+            Self::PlayerEquipped { .. } => Hook::PlayerEquipped,
+            Self::PacketReceived { .. } => Hook::PacketReceived,
+            Self::PlayerChat { .. } => Hook::PlayerChat,
         }
     }
 }
@@ -163,6 +294,10 @@ pub enum PluginMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
+    /// Register public player commands during Started, before sessions open.
+    RegisterCommand {
+        command: CommandSpec,
+    },
     SetMotd {
         motd: String,
     },
@@ -199,6 +334,7 @@ pub enum Action {
 impl Action {
     pub fn minimum_api(&self) -> u32 {
         match self {
+            Self::RegisterCommand { .. } => OBSERVATION_API_VERSION,
             Self::SetMotd { .. } | Self::Log { .. } => LEGACY_API_VERSION,
             Self::SendMessage { .. } => GAME_API_VERSION,
             Self::ShowForm { .. } => UI_API_VERSION,
@@ -394,8 +530,9 @@ mod tests {
     }
 
     #[test]
-    fn negotiates_highest_common_version_and_retains_all_three_older_apis() {
+    fn negotiates_highest_common_version_and_retains_all_older_apis() {
         for (supported, expected) in [
+            (vec![1, 2, 3, 4, 5, 6], 6),
             (vec![1, 2, 3, 4, 5], 5),
             (vec![1, 2, 3, 4], 4),
             (vec![1, 2, 3], 3),
@@ -419,6 +556,46 @@ mod tests {
                 matches!(response.message, PluginMessage::Ready { api_version, .. } if api_version == expected)
             );
         }
+    }
+
+    #[test]
+    fn observation_hooks_require_v6_and_receipts_contain_only_bounded_metadata() {
+        for hook in [
+            Hook::PacketReceived,
+            Hook::PlayerMoved,
+            Hook::PlayerEquipped,
+        ] {
+            assert_eq!(hook.minimum_api(), 6);
+        }
+        let packet = PacketInfo {
+            edition: Edition::Java,
+            protocol: 777,
+            phase: "play".into(),
+            id: 22,
+            name: "minecraft:custom_payload".into(),
+            dispatch: PacketDispatch::Unsupported,
+            sequence: 1,
+        };
+        packet.validate().unwrap();
+        let value = serde_json::to_value(Event::PacketReceived {
+            player_id: 1,
+            packet: packet.clone(),
+        })
+        .unwrap();
+        let fields = value["packet"].as_object().unwrap();
+        assert_eq!(fields.len(), 7);
+        assert!(fields.keys().all(|key| {
+            [
+                "edition", "protocol", "phase", "id", "name", "dispatch", "sequence",
+            ]
+            .contains(&key.as_str())
+        }));
+        let mut invalid = packet;
+        invalid.name = "token\nvalue".into();
+        assert!(invalid.validate().is_err());
+        invalid.name = "unknown".into();
+        invalid.sequence = 0;
+        assert!(invalid.validate().is_err());
     }
 
     struct GamePlugin;

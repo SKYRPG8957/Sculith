@@ -240,6 +240,7 @@ pub async fn handle_with_protection<T: Transport>(
     super::peers::send(conn, initial_peers).await?;
     let mut view_player = lease.player.clone();
     let mut view_center = (0, 0);
+    let mut packet_sequence = 0u64;
     loop {
         tokio::select! {
             event=peer_updates.recv()=>{
@@ -249,7 +250,26 @@ pub async fn handle_with_protection<T: Transport>(
             }
             packet = packets.next(conn) => {
                 let packet = packet?;
+                if world.observes_packets() {
+                    packet_sequence=packet_sequence.checked_add(1).context("Bedrock packet observation sequence exhausted")?;
+                    world.observe_packet(id,super::catalog::receipt(&packet,packet_sequence)).await?;
+                }
                 if session_control(conn, &packet, id).await? {
+                    continue;
+                }
+                if let V2225::TextPacket(text)=&packet {
+                    if let bedrock::protocol::v924::enums::TextPacketType::Chat {message,..}=&text.message_type
+                        && let Err(error)=world.chat(id,message.clone()).await {
+                        tracing::debug!(player=id,%error,"Bedrock chat rejected");
+                    }
+                    continue;
+                }
+                if let V2225::CommandRequestPacket(request)=&packet {
+                    let result=match super::commands::input(request,id) {
+                        Ok(input)=>world.submit_command(id,input).await,
+                        Err(error)=>Err(error),
+                    };
+                    if let Err(error)=result {tracing::debug!(player=id,%error,"Bedrock command rejected");}
                     continue;
                 }
                 if let V2225::ModalFormResponsePacket(response) = &packet {
@@ -274,10 +294,26 @@ pub async fn handle_with_protection<T: Transport>(
                     }
                     continue;
                 }
+                let requests=super::inventory::requests(&packet,view_player.selected_slot)?;
                 let intents = match super::input::decode(&packet,id) {
                     Ok(intents)=>intents,
+                    Err(error) if matches!(&packet,V2225::InventoryTransactionPacket(transaction) if transaction.legacy_request_id!=0 || transaction.legacy_set_item_slots.is_some() || !transaction.actions.is_empty() || !matches!(transaction.data,bedrock::protocol::v662::types::InventoryTransactionData::ItemUse(_)))=>{
+                        tracing::debug!(player=id,%error,"unsupported legacy inventory request resynchronized");
+                        conn.send(&output::inventory(&view_player)?).await?;
+                        conn.send(&output::inventory_ui(&view_player)?).await?;
+                        continue;
+                    }
                     Err(error)=>{let _=disconnect(conn,"Sculith: invalid or unsupported gameplay request.").await;return Err(error);}
                 };
+                if let Some(requests)=requests {
+                    for request in requests {
+                        let outcome=world.inventory_request(id,request).await?;
+                        conn.send(&[super::inventory::response(&outcome.response)?]).await?;
+                        view_player=outcome.player;
+                        conn.send(&output::inventory(&view_player)?).await?;
+                        conn.send(&output::inventory_ui(&view_player)?).await?;
+                    }
+                }
                 for intent in intents {
                     match intent {
                         Intent::Move {tick,position,rotation,head_yaw} => {
@@ -306,6 +342,7 @@ pub async fn handle_with_protection<T: Transport>(
                         Intent::SelectSlot {slot}=>{
                             let player=world.select_slot(id,slot).await?;
                             conn.send(&output::inventory(&player)?).await?;
+                            view_player=player;
                         }
                     }
                 }
@@ -316,6 +353,7 @@ pub async fn handle_with_protection<T: Transport>(
                     Err(error)=>{let _=disconnect(conn,"Sculith: world event backlog; reconnect to resynchronize.").await;return Err(error.into());}
                 };
                 match event.as_ref() {
+                    WorldEvent::Chat(message)=>conn.send(&[output::chat(message)]).await?,
                     WorldEvent::Blocks {batch,revisions,..}=>{
                         for (position,revision) in revisions {
                             let Some(known)=interest.get(position).copied() else {continue};
@@ -357,7 +395,7 @@ pub async fn handle_with_protection<T: Transport>(
                     WorldEvent::ModelHidden {player_id,entity_id}=>{
                         if *player_id==id { conn.send(&[output::remove_model(*entity_id)]).await?; }
                     }
-                    WorldEvent::FormSubmitted(_) | WorldEvent::Equipped(_)=>{},
+                    WorldEvent::FormSubmitted(_) | WorldEvent::Equipped(_) | WorldEvent::PacketReceived {..} | WorldEvent::CommandSubmitted(_) | WorldEvent::InventoryChanged {..}=>{},
                 }
             }
         }
@@ -452,6 +490,7 @@ async fn initialize<T: Transport>(
         .await?;
     let entity_id = lease.player.id;
     let mut initial = spawn::initial_packets(&lease.player)?;
+    initial.push(super::commands::available(&world.command_specs().await?));
     if let Some(content) = content
         && !content.bundle.report.converted_models.is_empty()
     {

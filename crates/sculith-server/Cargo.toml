@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-bedrock = { git = "https://github.com/bedrock-crustaceans/bedrock-rs.git", rev = "5221fcae8cc8468f523f3f58f129cb308e9d3369", default-features = false, features = ["network-tokio", "protocol-v2225", "protocol-unknown", "auth-ureq"] }
+bedrock = { git = "https://github.com/bedrock-crustaceans/bedrock-rs.git", rev = "5221fcae8cc8468f523f3f58f129cb308e9d3369", default-features = false, features = ["network-tokio", "protocol-v2225", "protocol-unknown", "protocol-packet-meta", "auth-ureq"] }
 raknet = { git = "https://github.com/bedrock-crustaceans/raknet.git", version = "0.1.0" }
 ureq = { version = "3", features = ["platform-verifier"] }
 uuid = { version = "1.18", features = ["v4"] }

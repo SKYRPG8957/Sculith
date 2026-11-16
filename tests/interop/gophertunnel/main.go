@@ -12,11 +12,17 @@ import (
 )
 
 func main() {
-	visual := len(os.Args) == 3 && (os.Args[2] == "--peer-visual" || os.Args[2] == "--equipment-visual")
+	if len(os.Args) == 2 && os.Args[1] == "--packet-catalog" {
+		if err := packetCatalog(); err != nil {
+			panic(err)
+		}
+		return
+	}
+	visual := len(os.Args) == 3 && (os.Args[2] == "--peer-visual" || os.Args[2] == "--equipment-visual" || os.Args[2] == "--chat-visual")
 	packOutput := len(os.Args) == 4 && os.Args[2] == "--pack-output"
 	modelOutput := len(os.Args) == 4 && os.Args[2] == "--model-output"
-	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--equipment-visual" || os.Args[2] == "--equipment" || os.Args[2] == "--peers" || os.Args[2] == "--peer-visual" || os.Args[2] == "--model" || os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput && !modelOutput {
-		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--equipment-visual|--equipment|--peers|--peer-visual|--model|--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file|--model-output file]")
+	if len(os.Args) != 2 && !(len(os.Args) == 3 && (visual || os.Args[2] == "--inventory" || os.Args[2] == "--events" || os.Args[2] == "--equipment" || os.Args[2] == "--peers" || os.Args[2] == "--model" || os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput && !modelOutput {
+		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--inventory|--events|--chat-visual|--equipment-visual|--equipment|--peers|--peer-visual|--model|--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file|--model-output file]")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -25,7 +31,7 @@ func main() {
 	registry.Finalize()
 	observed := newObserver(registry)
 	dialer := minecraft.Dialer{PacketFunc: observed.packet}
-	if len(os.Args) == 3 && os.Args[2] == "--peers" {
+	if len(os.Args) == 3 && (os.Args[2] == "--peers" || os.Args[2] == "--events" || os.Args[2] == "--chat-visual") {
 		dialer.IdentityData.DisplayName = "베드락😀"
 	}
 	if visual {
@@ -49,6 +55,14 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("PASS: independent Dragonfly decoding of 25 chunks, all 2457600 blocks, plains biomes and startup definitions")
+		if len(os.Args) == 3 && os.Args[2] == "--events" {
+			observed.mu.Lock()
+			_, hasHello := observed.commands["hello"]
+			observed.mu.Unlock()
+			if !hasHello {
+				panic("missing registered Rust plugin command")
+			}
+		}
 	}
 	fmt.Println("PASS: independent gophertunnel NetherNet world spawn", conn.GameData().EntityRuntimeID)
 	if packOutput || modelOutput {
@@ -72,10 +86,14 @@ func main() {
 	}
 	if len(os.Args) == 3 {
 		var err error
-		if os.Args[2] == "--equipment" {
+		if os.Args[2] == "--inventory" {
+			err = sharedInventory(conn)
+		} else if os.Args[2] == "--chat-visual" {
+			err = sharedChatVisual(conn)
+		} else if os.Args[2] == "--equipment" {
 			err = sharedEquipment(conn)
-		} else if os.Args[2] == "--peers" || visual {
-			err = sharedPeers(conn, visual, os.Args[2] == "--equipment-visual")
+		} else if os.Args[2] == "--peers" || os.Args[2] == "--events" || visual {
+			err = sharedPeers(conn, visual, os.Args[2] == "--equipment-visual", os.Args[2] == "--events")
 		} else if os.Args[2] == "--model" {
 			err = sharedModel(conn, observed)
 		} else if os.Args[2] == "--sound" {

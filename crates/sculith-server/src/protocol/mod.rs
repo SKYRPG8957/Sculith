@@ -1,4 +1,5 @@
 pub mod bedrock;
+pub mod catalog;
 mod http_client;
 pub mod java;
 

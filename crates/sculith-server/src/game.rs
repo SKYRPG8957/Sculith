@@ -110,6 +110,32 @@ pub struct PlayerSnapshot {
     pub selected_slot: u8,
     pub initialized: bool,
     pub hotbar: [Option<BlockKind>; 9],
+    /// Immutable presentation copies; the private Inventory owns item mutations.
+    pub inventory: [Option<crate::inventory::ItemStack>; 36],
+    pub cursor: Option<crate::inventory::ItemStack>,
+    pub created_output: Option<crate::inventory::ItemStack>,
+}
+
+impl PlayerSnapshot {
+    pub fn held(&self) -> Option<crate::inventory::ItemStack> {
+        self.inventory
+            .get(usize::from(self.selected_slot))
+            .copied()
+            .flatten()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InventoryOutcome {
+    pub player: PlayerSnapshot,
+    pub response: crate::inventory::Response,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatMessage {
+    pub player_id: u64,
+    pub name: String,
+    pub message: String,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -181,15 +207,45 @@ impl Budget {
 #[derive(Debug)]
 struct Player {
     snapshot: PlayerSnapshot,
+    inventory: crate::inventory::Inventory,
+    inventory_budget: Budget,
     last_tick: Option<u64>,
     movement: Budget,
     building: Budget,
     messages: Budget,
+    text_input: Budget,
     forms: Budget,
     sounds: Budget,
     models: Budget,
     model: Option<ModelView>,
     pending_form: Option<PendingForm>,
+}
+
+impl Player {
+    fn finish_inventory(&mut self, response: crate::inventory::Response) -> InventoryOutcome {
+        self.snapshot.inventory = *self.inventory.slots();
+        self.snapshot.cursor = self.inventory.cursor();
+        self.snapshot.created_output = self.inventory.created_output();
+        self.snapshot.hotbar =
+            std::array::from_fn(|slot| self.snapshot.inventory[slot].map(|stack| stack.kind));
+        InventoryOutcome {
+            player: self.snapshot.clone(),
+            response,
+        }
+    }
+    fn permit_inventory(&mut self, now: Instant) -> bool {
+        let Some(available) = self.inventory_budget.available(now, 40.0, 64.0) else {
+            return false;
+        };
+        if available < 1.0 {
+            return false;
+        }
+        self.inventory_budget = Budget {
+            remaining: available - 1.0,
+            updated: now,
+        };
+        true
+    }
 }
 
 #[derive(Debug)]
@@ -319,6 +375,7 @@ impl GameState {
         );
         let feet = clear_spawn(&self.region, self.spawn)?;
         let id = allocate_id(&NEXT_PLAYER_ID)?;
+        let inventory = crate::inventory::Inventory::default();
         let snapshot = PlayerSnapshot {
             id,
             profile,
@@ -327,6 +384,9 @@ impl GameState {
             rotation: Rotation::default(),
             selected_slot: 0,
             initialized: false,
+            inventory: *inventory.slots(),
+            cursor: None,
+            created_output: None,
             hotbar: [
                 Some(BlockKind::Stone),
                 Some(BlockKind::Dirt),
@@ -343,6 +403,11 @@ impl GameState {
             id,
             Player {
                 snapshot: snapshot.clone(),
+                inventory,
+                inventory_budget: Budget {
+                    remaining: 64.0,
+                    updated: now,
+                },
                 last_tick: None,
                 movement: Budget {
                     remaining: MOVE_BURST,
@@ -354,6 +419,10 @@ impl GameState {
                 },
                 messages: Budget {
                     remaining: 8.0,
+                    updated: now,
+                },
+                text_input: Budget {
+                    remaining: 4.0,
                     updated: now,
                 },
                 forms: Budget {
@@ -406,6 +475,95 @@ impl GameState {
             .count() as u32
     }
 
+    pub fn inventory_request(
+        &mut self,
+        id: u64,
+        request: crate::inventory::Request,
+        now: Instant,
+    ) -> Result<InventoryOutcome> {
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        let response = if player.permit_inventory(now) {
+            player
+                .inventory
+                .apply(&request, player.snapshot.permissions.can_build)
+        } else {
+            crate::inventory::Response {
+                request_id: request.id,
+                result: Err(crate::inventory::RejectReason::RateLimited),
+                replayed: false,
+            }
+        };
+        Ok(player.finish_inventory(response))
+    }
+
+    pub fn creative_slot(
+        &mut self,
+        id: u64,
+        slot: u8,
+        kind: Option<BlockKind>,
+        count: u8,
+        now: Instant,
+    ) -> Result<InventoryOutcome> {
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        let result = if player.permit_inventory(now) {
+            player
+                .inventory
+                .replace_creative(slot, kind, count, player.snapshot.permissions.can_build)
+                .map_err(|error| {
+                    error
+                        .downcast_ref::<crate::inventory::RejectReason>()
+                        .copied()
+                        .unwrap_or(crate::inventory::RejectReason::UnsupportedAction)
+                })
+        } else {
+            Err(crate::inventory::RejectReason::RateLimited)
+        };
+        Ok(player.finish_inventory(crate::inventory::Response {
+            request_id: 0,
+            result,
+            replayed: false,
+        }))
+    }
+
+    pub fn inventory_click(
+        &mut self,
+        id: u64,
+        click: crate::inventory::Click,
+        now: Instant,
+    ) -> Result<InventoryOutcome> {
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        let result = if player.permit_inventory(now) {
+            player
+                .inventory
+                .click(click, player.snapshot.permissions.can_build)
+                .map_err(|error| {
+                    error
+                        .downcast_ref::<crate::inventory::RejectReason>()
+                        .copied()
+                        .unwrap_or(crate::inventory::RejectReason::UnsupportedAction)
+                })
+        } else {
+            Err(crate::inventory::RejectReason::RateLimited)
+        };
+        Ok(player.finish_inventory(crate::inventory::Response {
+            request_id: 0,
+            result,
+            replayed: false,
+        }))
+    }
+
     pub fn permit_message(&mut self, id: u64, now: Instant) -> Result<()> {
         let player = self
             .players
@@ -422,6 +580,40 @@ impl GameState {
             updated: now,
         };
         Ok(())
+    }
+
+    pub fn permit_text_input(
+        &mut self,
+        id: u64,
+        text: &str,
+        now: Instant,
+    ) -> Result<PlayerSnapshot> {
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        let available = player
+            .text_input
+            .available(now, 2.0, 4.0)
+            .ok_or_else(|| anyhow::anyhow!("text clock regression"))?;
+        ensure!(available >= 1.0, "player text rate exceeded");
+        player.text_input = Budget {
+            remaining: available - 1.0,
+            updated: now,
+        };
+        sculith_core::validate_player_text(text).map_err(anyhow::Error::msg)?;
+        Ok(player.snapshot.clone())
+    }
+
+    pub fn chat(&mut self, id: u64, message: String, now: Instant) -> Result<ChatMessage> {
+        let player = self.permit_text_input(id, &message, now)?;
+        ensure!(!message.starts_with('/'), "use the command channel");
+        Ok(ChatMessage {
+            player_id: id,
+            name: player.profile.name,
+            message,
+        })
     }
 
     pub fn show_model(&mut self, id: u64, model: String, now: Instant) -> Result<ModelView> {

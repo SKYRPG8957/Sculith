@@ -2,6 +2,48 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Public player command, with a single optional free-text argument tail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommandSpec {
+    pub name: String,
+    pub description: String,
+}
+impl CommandSpec {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.is_empty()
+            || self.name.len() > 32
+            || !self
+                .name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+            || self.description.trim().is_empty()
+            || self.description.len() > 128
+            || self.description.chars().any(char::is_control)
+        {
+            return Err(
+                "command requires a 1..32-character lowercase name and a 1..128-byte description"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Player-authored public text, distinct from trusted plugin system messages.
+pub fn validate_player_text(text: &str) -> Result<(), String> {
+    if text.trim().is_empty()
+        || text.len() > 1024
+        || text.chars().count() > 256
+        || text.chars().any(char::is_control)
+    {
+        return Err(
+            "text requires 1..256 characters, at most 1024 bytes and no control characters".into(),
+        );
+    }
+    Ok(())
+}
+
 /// Edition-independent simple choice form. No executable commands or asset IDs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -66,7 +66,7 @@ def accept_pack(reader,sock):
             assert all(face=={"uv":[0,0,16,16],"texture":"#main"} for face in element["faces"].values())
     wire.send(sock,6,id_+wire.vi(4));wire.send(sock,6,id_+wire.vi(0))
 
-def smoke(server,plugin,client):
+def smoke(server,plugin,client,api_version=6):
     with tempfile.TemporaryDirectory(prefix="sculith model ") as temporary:
         root=Path(temporary);log=root/"server.log";settings=root/"server.toml"
         settings.write_text('[java]\nsessions=true\nrequire_authentication=false\n'
@@ -90,7 +90,7 @@ def smoke(server,plugin,client):
                     assert process.poll() is None,text
                     time.sleep(.05)
                 else:raise TimeoutError(text)
-                assert "model-demo" in text and "api_version=5" in text
+                assert "model-demo" in text and ("api_version="+str(api_version)) in text
                 java=wire.Client(("127.0.0.1",int(tcp[1])),"ModelJavaProbe",pack_handler=accept_pack)
                 uuid=shown(java,2)
                 native_result=subprocess.run([str(client),"http://127.0.0.1:"+native[1],"--model-output",str(root/"native-model.mcpack")],capture_output=True,text=True,encoding="utf-8",timeout=40)
@@ -121,4 +121,5 @@ if __name__=="__main__":
     parser.add_argument("--server",type=Path,default=ROOT/("target/debug/sculith"+suffix))
     parser.add_argument("--plugin",type=Path,default=ROOT/("target/debug/sculith-model-plugin"+suffix))
     parser.add_argument("--client",type=Path,required=True)
-    args=parser.parse_args();smoke(args.server.resolve(strict=True),args.plugin.resolve(strict=True),args.client.resolve(strict=True))
+    parser.add_argument("--api-version",type=int,choices=(5,6),default=6)
+    args=parser.parse_args();smoke(args.server.resolve(strict=True),args.plugin.resolve(strict=True),args.client.resolve(strict=True),args.api_version)

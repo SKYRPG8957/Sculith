@@ -1,8 +1,11 @@
 //! Server-list discovery and an opt-in local protocol-777 shared-world adapter.
 
+mod chat;
 mod chunk;
 mod codec;
+mod commands;
 mod forms;
+mod inventory;
 mod models;
 mod peers;
 mod registry;

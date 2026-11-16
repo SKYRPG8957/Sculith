@@ -1,5 +1,6 @@
 //! Edition encoding of authoritative decisions. Numeric item IDs are V2225 facts
 //! from Dragonfly's vanilla_items.nbt at 0f9a3a5736267db60bf46e92d408f81be1de9a64.
+use super::inventory::stack;
 use crate::game::PlayerSnapshot;
 use anyhow::{Result, bail};
 use bedrock::protocol::{
@@ -26,6 +27,19 @@ use bedrock::protocol::{
     v2225::enums::ContainerEnumName,
 };
 use sculith_world::{BlockKind, BlockPos};
+
+pub fn chat(message: &crate::game::ChatMessage) -> V2225 {
+    V2225::TextPacket(Box::new(bedrock::protocol::v898::packets::TextPacket {
+        localize: false,
+        message_type: bedrock::protocol::v924::enums::TextPacketType::Chat {
+            player_name: message.name.clone(),
+            message: message.message.clone(),
+        },
+        sender_xuid: String::new(),
+        platform_id: String::new(),
+        filtered_message: None,
+    }))
+}
 
 pub fn system_message(message: &str) -> Result<V2225> {
     sculith_core::validate_system_message(message).map_err(anyhow::Error::msg)?;
@@ -83,32 +97,14 @@ pub fn claimed_block(id: i32) -> Result<BlockKind> {
         1 => BlockKind::Stone,
         3 => BlockKind::Dirt,
         2 => BlockKind::Grass,
+        7 => BlockKind::Bedrock,
         _ => bail!("item is not in the server starter registry"),
-    })
-}
-fn item_id(kind: BlockKind) -> Result<i16> {
-    Ok(match kind {
-        BlockKind::Stone => 1,
-        BlockKind::Dirt => 3,
-        BlockKind::Grass => 2,
-        BlockKind::Bedrock => 7,
-        BlockKind::Air => 0,
-    })
-}
-fn stack(kind: Option<BlockKind>) -> Result<NetworkItemStackDescriptorV2> {
-    Ok(NetworkItemStackDescriptorV2 {
-        id: kind.map(item_id).transpose()?.unwrap_or(0),
-        stack_size: if kind.is_some() { 64 } else { 0 },
-        aux_value: 0,
-        net_id: None,
-        block_runtime_id: kind.map(super::chunk::block_hash).transpose()?.unwrap_or(0),
-        user_data_buffer: if kind.is_some() { vec![0; 10] } else { vec![] },
     })
 }
 pub fn inventory(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
     let mut slots = Vec::with_capacity(36);
-    for index in 0..36 {
-        slots.push(stack(player.hotbar.get(index).copied().flatten())?);
+    for item in player.inventory {
+        slots.push(stack(item)?);
     }
     Ok(vec![
         V2225::InventoryContentPacket(Box::new(InventoryContentPacket {
@@ -125,7 +121,32 @@ pub fn inventory(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
 }
 pub fn held(player: &PlayerSnapshot) -> Result<NetworkItemStackDescriptorV2> {
     anyhow::ensure!(player.selected_slot <= 8, "invalid owner hotbar slot");
-    stack(player.hotbar[player.selected_slot as usize])
+    stack(player.held())
+}
+pub fn inventory_ui(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
+    use bedrock::protocol::v975::packets::InventorySlotPacket;
+    [
+        (0, ContainerEnumName::CursorContainer, player.cursor),
+        (
+            50,
+            ContainerEnumName::CreatedOutputContainer,
+            player.created_output,
+        ),
+    ]
+    .into_iter()
+    .map(|(slot, container, item)| {
+        Ok(V2225::InventorySlotPacket(Box::new(InventorySlotPacket {
+            container_id: 124,
+            slot,
+            container_name_data: Some(FullContainerName {
+                container,
+                dynamic_id: None,
+            }),
+            storage_item: None,
+            item: stack(item)?,
+        })))
+    })
+    .collect()
 }
 pub fn equipment(player: &PlayerSnapshot) -> Result<V2225> {
     Ok(V2225::MobEquipmentPacket(Box::new(MobEquipmentPacket {

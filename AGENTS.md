@@ -8,6 +8,7 @@ It is the project direction; implementation and verification evidence determine 
 - The canonical repository is `SKYRPG8957/Sculith`. Do not silently rewrite remotes, push, publish or create releases.
 - User instruction (2026-11-16): do not publish preview packages, create preview release tags, or upload build artifacts. Removed previews must stay removed. Keep CI focused on building and testing; do not restore publication workflows or the preview installer.
 - One Bedrock-native authoritative world, exposed through edition-specific adapters. Never create separate Java and Bedrock simulations.
+- Sculith targets a broadly usable public production server, with 에스테리아 일대기 as its primary real-use server. Keep that server's RPG rules/content in Rust plugins and packs; do not specialize the engine around its game design.
 - Consider region ownership, bounded queues, byte budgets and committed event boundaries from the start. A single region is the initial correctness target.
 - Keep latest stable Bedrock distinct from previews. Java starts with one near-latest stable version. Protocol reference numbers are not proof of gameplay support.
 - Validate RakNet and NetherNet independently. Do not label RakNet as NetherNet compatibility.
@@ -16,6 +17,7 @@ It is the project direction; implementation and verification evidence determine 
 - Prioritize actual Bedrock login/spawn, Java same-world crossplay, game/plugin behavior, content fidelity, then parallel simulation/optimization. Add crates only for real implementations.
 - Use stable pinned Rust, preserve input/auth/permission checks, bound network input, never delete real worlds.
 - Check REA tool availability for relevant research; unavailable REA does not block independent work. Record versioned public sources instead of inventing commands.
+- The user's selected REA is `https://github.com/morluto/rea`. This cloud setup has a working `/workspace/.tools/rea` CLI when that path is present; use it for artifact analysis even if the active chat has no REA tool namespace. Keep tooling and analysis caches outside the product repository.
 - Follow Inspect → Design → Implement → Test → Review → Benchmark → Document → Next Task. Keep `docs/status.md` factual: implemented, verified, failed, performance, limits and next action.
 - Distinguish synthetic protocol tests, real socket tests and real Minecraft client verification. Do not call the goal complete while required game/content features remain missing.
 

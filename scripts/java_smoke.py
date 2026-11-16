@@ -160,10 +160,31 @@ def chunk(reader, edits=None):
     return x, z
 
 
+def item_stack(r):
+    count=r.varint();assert 0<=count<=64
+    if not count:return (0,0)
+    item=r.varint();assert item in (1,55,54,87)
+    assert r.varint()==0 and r.varint()==0
+    return (count,item)
+
+
+def inventory_content(client,r):
+    assert r.varint()==0
+    client.inventory_state=r.varint();assert 0<=client.inventory_state<=32767
+    assert r.varint()==46
+    client.menu=[item_stack(r) for _ in range(46)]
+    client.cursor=item_stack(r)
+    r.end()
+
+
 def consume_peer(client, id_, r):
     """Validate one public peer frame; preserve private presentation traffic."""
     if not hasattr(client,"peer_profiles"):
         client.peer_profiles={};client.peer_entities={}
+    if id_==18:
+        inventory_content(client,r);return True
+    if id_==98:
+        client.cursor=item_stack(r);r.end();return True
     if id_==45:
         send(client.socket,28,r.take(8));r.end();return True
     if id_==71:
@@ -200,10 +221,10 @@ def consume_peer(client, id_, r):
         start=r.i;entity=r.varint()
         if entity not in client.peer_entities:r.i=start;return False
         assert r.number(">B")==0
-        count=r.varint();assert count in (0,64)
+        count=r.varint();assert 0<=count<=64
         item=0
         if count:
-            item=r.varint();assert item in (1,55,54)
+            item=r.varint();assert item in (1,55,54,87)
             assert r.take(2)==bytes(2)
         r.end();client.peer_entities[entity]['held']=(count,item);return True
     if id_==35:
@@ -227,6 +248,30 @@ def consume_peer(client, id_, r):
         for entity in ids:del client.peer_entities[entity]
         r.end();return True
     return False
+
+
+def command_tree(r):
+    count=r.varint();assert 3<=count<=259
+    nodes=[]
+    for _ in range(count):
+        flags=r.number('>B');assert flags in (0,5,6)
+        children=[r.varint() for _ in range(r.varint())]
+        assert len(set(children))==len(children) and all(0<=n<count for n in children)
+        name=None
+        if flags in (5,6):name=r.string()
+        if flags==6:
+            assert r.varint()==5 and r.varint()==2 # brigadier:string, greedy.
+        nodes.append((flags,name,children))
+    root=r.varint();assert 0<=root<count and nodes[root][0]==0
+    names={};visited={root}
+    for index in nodes[root][2]:
+        flags,name,children=nodes[index];assert flags==5 and name not in names
+        assert 1<=len(name)<=32 and all(c.isascii() and (c.islower() or c.isdigit() or c=='_') for c in name)
+        assert len(children)==1
+        arg=children[0];assert nodes[arg]==(6,'arguments',[])
+        visited.update((index,arg));names[name]=True
+    assert len(visited)==count and 'help' in names
+    return names
 
 
 def receive_play(client):
@@ -311,6 +356,8 @@ class Client:
             elif id_ == 0x41:
                 assert r.number(">B") == 15
                 assert abs(r.number(">f") - .05) < 1e-6 and abs(r.number(">f") - .1) < 1e-6
+            elif id_ == 16:
+                self.commands=command_tree(r)
             elif id_ in (0x61, 0x71):
                 assert r.varint() == 2
             elif id_ == 0x63:
@@ -329,6 +376,11 @@ class Client:
                     inventory[slot] = (0, 0)
             elif id_ == 0x6b:
                 assert r.varint() == 0
+            elif id_ == 18:
+                inventory_content(self,r)
+                assert [self.menu[i] for i in range(36,39)]==[(64,1),(64,55),(64,54)]
+            elif id_ == 98:
+                self.cursor=item_stack(r);assert self.cursor==(0,0)
             elif id_ == 0x27:
                 assert r.number(">B") == 13 and r.number(">f") == 0
             elif id_ == 0x60:

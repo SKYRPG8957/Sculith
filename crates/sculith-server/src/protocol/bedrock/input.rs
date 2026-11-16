@@ -59,7 +59,8 @@ pub enum Intent {
 }
 
 /// Fully validate a packet before returning any intentions, preserving its order.
-/// Unsupported inventory mutations return an error instead of being accepted.
+/// Legacy inventory mutations are rejected here. Stack requests have a separate
+/// inventory owner path and never become block/movement intentions here.
 pub fn decode(packet: &V2225, expected_entity_id: u64) -> Result<Vec<Intent>> {
     ensure!(
         expected_entity_id != 0,
@@ -129,9 +130,8 @@ pub fn decode(packet: &V2225, expected_entity_id: u64) -> Result<Vec<Intent>> {
                 vec![]
             })
         }
-        V2225::ItemStackRequestPacket(_) => {
-            bail!("unsupported item-stack inventory mutation request")
-        }
+        // The inventory adapter validates/normalizes this distinct owner request.
+        V2225::ItemStackRequestPacket(_) => Ok(vec![]),
         V2225::AnimatePacket(animation) => {
             ensure!(
                 animation.target_runtime_id.0 == expected_entity_id,
@@ -211,10 +211,6 @@ fn auth_input(input: &PlayerAuthInputPacket<V2225>) -> Result<Vec<Intent>> {
     ensure!(
         flag(PlayerAuthInputData::PerformItemStackRequest) == input.item_stack_request.is_some(),
         "item-stack flag and payload disagree"
-    );
-    ensure!(
-        input.item_stack_request.is_none(),
-        "unsupported embedded item-stack inventory mutation request"
     );
     ensure!(
         !flag(PlayerAuthInputData::IsInClientPredictedVehicle)
@@ -700,7 +696,7 @@ pub(in crate::protocol::bedrock) mod tests {
     }
 
     #[test]
-    fn unsupported_inventory_transactions_cannot_masquerade_as_noops() {
+    fn legacy_transactions_are_rejected_and_stack_requests_produce_no_block_intents() {
         let packet = V2225::InventoryTransactionPacket(Box::new(InventoryTransactionPacket {
             legacy_request_id: 0,
             legacy_set_item_slots: None,
@@ -716,7 +712,7 @@ pub(in crate::protocol::bedrock) mod tests {
         let packet = V2225::ItemStackRequestPacket(Box::new(
             bedrock::protocol::v662::packets::ItemStackRequestPacket { requests: vec![] },
         ));
-        assert!(decode(&roundtrip(&packet), 1).is_err());
+        assert!(decode(&roundtrip(&packet), 1).unwrap().is_empty());
     }
 
     #[test]

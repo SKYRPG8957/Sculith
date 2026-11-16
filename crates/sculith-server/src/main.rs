@@ -46,8 +46,10 @@ enum Command {
         #[arg(long)]
         config: Option<PathBuf>,
     },
-    /// Show protocol references and actual gameplay support (currently empty).
+    /// Show protocol references and the precise scope of verified preview support.
     Versions,
+    /// List versioned packet identifiers; registration alone is not game support.
+    Packets,
     /// Convert explicitly mapped Bedrock PNGs into a Java resource-pack directory.
     Pack {
         #[command(subcommand)]
@@ -108,6 +110,13 @@ async fn main() -> Result<()> {
         }
         Command::Versions => {
             println!("{}", protocol::REFERENCES_JSON);
+            Ok(())
+        }
+        Command::Packets => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&protocol::catalog::all())?
+            );
             Ok(())
         }
         Command::Pack {
@@ -244,6 +253,7 @@ async fn run(config: Config) -> Result<()> {
     let mut world_finished = false;
     let mut game_events = world.subscribe_game();
     let mut plugins = plugins::Plugins::load(&config.plugins, &state).await?;
+    world.configure_observations(plugins.observation_flags());
     plugins
         .dispatch(
             Event::Started {
@@ -253,6 +263,8 @@ async fn run(config: Config) -> Result<()> {
             &world,
         )
         .await;
+    world.seal_commands().await?;
+    world.configure_observations(plugins.observation_flags());
     let (status_tx, status_rx) = watch::channel(state.clone());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut services = JoinSet::new();
@@ -358,10 +370,12 @@ async fn run(config: Config) -> Result<()> {
                     Ok(event) => {
                         state.online_players = world.online_players();
                         plugins.dispatch_game(&event, &mut state, &world).await;
+                        world.configure_observations(plugins.observation_flags());
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(missed)) => {
                         warn!(missed, "game hook backlog; disabling subscribers rather than silently losing events");
-                        plugins.disable_game_subscribers().await;
+                        plugins.disable_game_subscribers(&world).await;
+                        world.configure_observations(0);
                     }
                     Err(error) => break Err(error.into()),
                 }
@@ -370,6 +384,7 @@ async fn run(config: Config) -> Result<()> {
                 tick += 1;
                 state.online_players = world.online_players();
                 plugins.dispatch(Event::Tick { tick }, &mut state, &world).await;
+                world.configure_observations(plugins.observation_flags());
                 status_tx.send_if_modified(|current| {
                     if *current == state { false } else { *current = state.clone(); true }
                 });

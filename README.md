@@ -16,7 +16,9 @@ A Bedrock-native Minecraft server engine written in Rust.
 
 Sculith is being built around **one authoritative Bedrock-native world**, with Java and Bedrock protocol adapters sharing the same server state. Its long-term goals include Rust plugins, region-owned simulation, and a shared Bedrock content pipeline.
 
-**This is an early, public development repository, not a production-ready release.** The default mode provides server discovery. Opt-in local Java and Bedrock adapters share a flat world and limited authoritative creative building. An unmodified Java 26.3 game has entered, rendered, moved and exchanged mouse-driven edits with an independent Bedrock client on Linux. [Screenshots and verification scope](docs/verification/2026-11-16-java26.3.md). Official Bedrock-game entry remains unverified.
+The target is a public production server engine, including commercial use. 에스테리아 일대기 is its primary integration server; server-specific RPG rules stay in plugins and packs. [Project scope](docs/project-scope.md).
+
+**This is an early, public development repository, not a production-ready release.** The default mode provides server discovery. Opt-in local Java and Bedrock adapters share a flat world and limited authoritative creative building. An unmodified Java 26.3 game has entered, rendered, moved and exchanged mouse-driven edits with an independent Bedrock client on Linux. [Screenshots and verification scope](docs/verification/2026-11-16-java26.3.md). The user reports official Windows Bedrock entry after the presentation-mode fix; full gameplay verification remains pending.
 
 ## Compatibility
 
@@ -40,16 +42,18 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Authoritative movement checks and limited creative block placement/breaking, with server-owned starter items and committed block deltas shared between sessions.
 - A single region owner, revision-checked block commits, compact uniform/palette sections and immutable copy-on-write snapshots.
 - Optional versioned, checksummed region snapshots loaded at startup and saved after sessions close on orderly shutdown. Periodic autosaving is pending.
-- Trusted-executable Rust plugin SDK v5 with v1/v2/v3/v4 compatibility, lifecycle/MOTD, initialized-player join/leave and committed-block hooks, plus owner-validated private messages in both editions. [Actual game evidence](docs/verification/2026-11-16-plugin-api-v2.md).
+- Trusted-executable Rust plugin SDK v6 with v1–v5 compatibility, lifecycle/MOTD, initialized-player join/leave and committed game hooks, plus owner-validated private messages in both editions. [SDK guide](docs/plugins.md).
+- Shared public chat, `/help`, Rust plugin command registration and opt-in packet metadata, movement, equipment and inventory hooks. Packet registration reports 260 Java and 244 Bedrock identifiers; registration does not mean every behavior is implemented.
+- Counted creative inventory with 36 slots and four block items, native stack requests and Java creative/pickup/hotbar-swap inputs. Rejected ordinary actions resynchronize without disconnecting; supported transactions commit through the same owner.
 - Shared static cuboid models with original native resources and stock Java Item Displays, through owner-validated private show/replace/hide. [Scope and actual game evidence](docs/models.md).
 - Shared simple forms: native Bedrock menus and vanilla Java dialogs with private, owner-validated Rust callbacks. [API, limits and actual game screenshots](docs/forms.md).
 - Explicit Bedrock PNG-to-Java texture overrides and single-clip Vorbis sound events, with a conversion report describing unsupported assets. [Shared sound API and evidence](docs/sounds.md).
 - Optional automatic delivery from one frozen Bedrock pack to native clients and a converted Java ZIP, with immutable hashes/cache IDs and required-pack acknowledgements. [Configuration and test scope](docs/content-delivery.md). The stock Java game renders the server-delivered checkerboard texture.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
-Player rosters, nearby avatars, movement and leave updates now share the authoritative owner in Preview 15. Java uses default avatars and Bedrock uses an original placeholder skin; account skins, armour and offhand are pending. The owner’s starter held items, slot changes and empty hands are shared in Preview 16. [Actual held-item evidence](docs/verification/2026-11-16-shared-equipment.md).
+Player rosters, nearby avatars, movement, counted held items and leave updates share the authoritative owner. Java uses default avatars and Bedrock uses an original placeholder skin; account skins, armour and offhand are pending. [Earlier actual held-item evidence](docs/verification/2026-11-16-shared-equipment.md).
 
-General inventory transactions, physics/gravity, public content hosting, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
+General containers, crafting, survival, physics/gravity, public content hosting, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
 
 ## Distribution
 
@@ -66,7 +70,7 @@ cd Sculith
 cargo build --workspace --locked
 ```
 
-Linux x86_64 development checks and native Windows packaging checks are configured separately. Recorded results are in [development status](docs/status.md).
+Linux x86_64 and native Windows build/runtime checks are configured separately. CI does not upload binaries. Recorded results are in [development status](docs/status.md).
 
 ## Run
 
@@ -100,7 +104,7 @@ cargo run --locked -- run --config examples/with-plugin.toml
 
 The original welcome example changes the common MOTD. The new gameplay example sends a private welcome after player initialization and observes accepted block changes; run it with `examples/gameplay-preview.toml`. Current plugins are trusted executable JSON-lines processes, not a sandbox. The official host design will evaluate the WASI Component Model, resource limits and region-aware APIs.
 
-Public Preview 16 includes API v5 and gameplay/forms/sound/model examples, enabled in new Windows configurations. Older v1/v2/v3/v4 executables remain supported. It sends each initialized player a private welcome and logs committed block changes. Existing configurations are preserved and do not automatically add plugins.
+Current source includes gameplay/forms/sound/model examples and the API-v6 command/event example in `examples/events.toml`. Older v1–v5 executables remain supported. Existing configurations are preserved and do not automatically add plugins.
 
 See the [plugin SDK guide](docs/plugins.md) and [example source](examples/welcome-plugin/src/main.rs).
 
@@ -122,7 +126,7 @@ cargo run --locked -- pack convert \
   --pack-format 97 --pack-format-minor 1
 ```
 
-The output must be a new directory. [Automatic local pack delivery](docs/content-delivery.md) is available in Preview 14 and in source with `examples/content-preview.toml`. Rotated/animated models and arbitrary JSON-UI conversion remain unfinished; [simple shared forms](docs/forms.md) are available.
+The output must be a new directory. [Automatic local pack delivery](docs/content-delivery.md) is available in source with `examples/content-preview.toml`. Rotated/animated models and arbitrary JSON-UI conversion remain unfinished; [simple shared forms](docs/forms.md) are available.
 
 ## Development checks
 

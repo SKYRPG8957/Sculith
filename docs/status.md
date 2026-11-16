@@ -2,11 +2,20 @@
 
 > 프리뷰 릴리스·태그·배포 파일은 철회했습니다. 아래 개발·검증 기록은 유지하며, 새 패키지는 올리지 않습니다.
 
-**Current Milestone:** Milestones 1–2, Bedrock-native spawn and the initial Java shared-world adapter. The overall goal remains active.
+**Current Milestone:** Milestones 1–3, shared creative inventory, chat/commands and Rust game observations. The overall goal remains active.
 Canonical repository: `SKYRPG8957/Sculith`. Existing MIT license and origin are preserved.
 The full requirements are in [engineering-directive.md](engineering-directive.md).
 
-## Implemented
+## Implemented — current source toward 0.1.0
+
+- Public production/commercial engine scope is recorded in [project-scope.md](project-scope.md). 에스테리아 일대기 is the primary integration server; RPG rules stay in plugins/packs. No new preview packages, tags or binary artifacts are published.
+- API v6 adds opt-in metadata-only packet receipt, accepted movement/equipment/inventory changes, owner-validated public chat and private plugin commands. Existing API v1–v5 negotiation remains supported. `/help` and the Rust `/hello` example share native command declarations and the Java command tree. Command registration is bounded and sealed before accepting players; invocation goes only to its owning plugin. [Contract](plugins.md).
+- Packet catalogues register 260 Java identifiers across phases/directions and 244 native identifiers. Native codecs cover 239; five identifiers have explicit opaque handling. Registration is not gameplay implementation. Packet callbacks cover initialized play sessions, exclude payloads/account data, and retain per-player order.
+- One owner now maintains 36 counted creative slots, cursor/output, four block items and positive stack IDs. Native creative creation, transfer/split, swap and destroy are atomic, with bounded prediction/replay history. Java creative replacements, pickup and hotbar swaps use the same inventory. Unsupported ordinary actions restore canonical state without disconnecting; forged click predictions do not grant items. Changed held-item counts reach the other edition; inventory does not change region revisions.
+- Actual stock Java testing caught a full-inventory response erasing the creative screen's unsent carried stack. Successful creative edits now acknowledge only the affected slot; rejected edits still restore state. Mouse-driven splitting/moving and key-driven swaps pass after the correction.
+- The selected [REA](https://github.com/morluto/rea) 6.9.0 is installed outside the product with Ghidra 12.2/JDK 25 and a Codex MCP configuration. Its actual static analysis found the old Windows binary's inventory-rejection string and cross-reference. This is evidence about Sculith's old artifact, not an official GDK-client trace.
+
+### Earlier implementation records (withdrawn packages)
 
 - Bedrock post-spawn disconnect fix: `ClientPlayMode` is client presentation metadata, not the server game mode. Concrete values 0–8 now pass the existing movement/owner validation; the count sentinel remains invalid. Regression tests cover every concrete value and an independent native `Screen` movement packet. The old Windows EXE reproduced the reported rejection under Wine/RakNet; the corrected MSVC EXE accepted the same input and continued cross-edition movement. This is not official Windows Bedrock game verification, and does not establish the Wine/RakNet fixture's final native-disconnect cleanup.
 
@@ -38,7 +47,15 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Explicit official online authentication initialization. Public-key lookup failure does not silently enable offline authentication.
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
-## Verified
+## Verified — current local source
+
+- Linux workspace build, Clippy with warnings denied, 179 project tests and the ownership compile-fail doctest pass. The independent Java/native inventory check covers creative creation, actual counts/stack IDs, split/swap, stale predictions, bounded replay/conflict, unsupported-action resynchronization, counted peer hands and committed Rust inventory hooks.
+- Independent packet/event, bidirectional chat/command, equipment, gameplay plugin, forms, sounds, static models and required-pack/cache/consent checks pass. These are wire/owner checks, distinct from actual-game verification.
+- The unmodified Java 26.3 game on Linux, offline loopback with the converted original pack, confirms Stone64 → Stone32 + carried32, placement into inventory slot9 and key2 exchange with Dirt64 in hotbar1. Server logs confirm the creative replacements and inventory hooks. Official Windows Bedrock inventory/rendering is not established by this check.
+- The user reports official Windows GDK 1.26.63 entry after the presentation-mode fix. The prior claim of “entry success” during Preview5 was explicitly corrected to a loading-time Boat error; it remains a failed historical attempt below. Current automated checks do not replace a real GDK gameplay test.
+- Retained, previously compiled API v1, v2, v3, v4 and v5 Rust workers pass the new host, including their messages/forms/sounds/models. Native Windows validation of this new API/inventory source is pending CI; earlier Windows runs below concern their recorded source.
+
+### Earlier verification records (historical; downloads withdrawn)
 
 - Current static model candidate passes Linux Clippy, 131 project tests and ownership doctest. Independent Java/native required-pack, actor registration, show/replace/hide and private-recipient checks pass; actual retained v1/v2/v3/v4 workers pass the new host. The actual Java game rendered the original textured statue after a real-game-discovered item-atlas correction. Exact-source actual Java captures confirm replacement/hide and all four examples together, including a real menu callback/private text and original-tone PCM. Native Windows [run 43807085201](https://github.com/SKYRPG8957/Sculith/actions/runs/43807085201) passes runtime/interop/models/forms/sounds/pack/package/launcher checks. Its inspected 24-member ZIP is 6,526,986 bytes, SHA-256 `d7809c89f6bba52d793d32ba9350cfdaba6fd4e7b37708e7fdd5bbe09961c2ff`; all five EXEs use system DLLs only. [Preview 14](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.14) is public through [run 43808277834](https://github.com/SKYRPG8957/Sculith/actions/runs/43808277834). Fresh unauthenticated HTTPS downloads pass source/tag/SHA-256 verification. Installer/download defaults select Preview 14. [Native Windows public installation run 43809042457](https://github.com/SKYRPG8957/Sculith/actions/runs/43809042457) passes PowerShell 5.1 direct/one-command installs, both launchers and existing-directory preservation; both adapters, four plugins and all pack paths validate. [Record and scope](verification/2026-11-16-shared-model.md).
 
@@ -106,7 +123,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - The first Windows smoke run found console shutdown killing a plugin before its lifecycle hook. Windows workers now run without the host console; the corrected run verifies the Stopping event and final world save.
 - Official discovery initially returned proxy HTTP 403 under the earlier restricted network. With the current unrestricted networking, Python's normally verified HTTPS client received HTTP 200 for discovery, the official OIDC configuration and its JWKS (three public signing keys). This is public-metadata retrieval; actual account login remains unverified.
 - The former authenticated startup failed with TLS `UnknownIssuer` in the Rust HTTP client. Authentication metadata now uses OS trust with HTTPS-only requests and a 15-second bound. A fresh executable run fetched official discovery/OIDC/JWKS and reached authenticated listeners. Real-socket tests reject plaintext and a fresh untrusted certificate. Actual online account login remains unverified.
-- Official Bedrock was attempted by the user and failed during initial connection. The corrected official Java client now passes the Linux local scenario above. The Windows Bedrock GDK app is unavailable in this Linux environment, so its world entry is not claimed from the independent clients.
+- Earlier official Bedrock attempts failed as recorded above. The user subsequently reported entry after the presentation-mode fix. The GDK app is unavailable in this Linux environment; current gameplay is not claimed from independent clients.
 - The latest Linux and native Windows automated checks pass after the routing correction. The expected compile-fail result verifies ownership restrictions.
 
 ## Performance
@@ -129,24 +146,26 @@ Authoritative kernel reproduction: `cargo run --release --locked -p sculith-serv
 One run measured 10,000 accepted movement operations in **750.358 µs** and 1,000 accepted placement/break pairs in **388.134 µs** (2,000 region revisions).
 This uses a synthetic monotonic clock and excludes sockets, rendering, physics ticks and persistence. It is a kernel baseline, not a gameplay load or TPS measurement.
 
+The counted-inventory candidate measures 10,000 validated movement operations in **975.978 µs**, 1,000 placement/break pairs in **320.402 µs** and 10,000 alternating one-item transfers in **1.872427 ms** with the same command. Transfer checks include owner snapshots and bounded history but exclude the mailbox/network/plugin paths; they leave the region revision unchanged. These are separate local kernel samples, not comparable whole-server throughput or a claimed optimization.
+
 ## Known Limitations
 
 - Default mode remains discovery-only. Native spawn is an explicit loopback development preview until online and official-client checks pass.
 - Online authentication has not been end-to-end verified. Offline test identities are restricted to loopback binds.
-- Preview gameplay is limited to validated movement and creative building with fixed Stone/Dirt/Grass starter slots. General inventory transactions, gravity, simulation ticks, survival, combat and crafting are not implemented.
+- Gameplay remains a bounded creative builder with four block items and 36 inventory slots. General containers, drop/drag/shift-click, armour/offhand, gravity, simulation ticks, survival, combat and crafting are not implemented.
 - Region persistence runs only on orderly shutdown; periodic/crash recovery saving and persistent player state are pending.
-- Initialized peer players are displayed within loaded chunks in the current candidate; account skins, equipment, general entity simulation and combat remain pending. The Java adapter has official-game evidence for the limited Linux offline scenario; Windows game rendering and online Java authentication remain unverified/unimplemented. No complete crossplay claim is made.
-- Java currently maps only the five core block states, uses a fixed two-chunk view, and supplies direct vertical skylight without lateral light propagation. General inventory transactions, chat and Java encryption/compression are pending; optional local texture-pack delivery is implemented.
-- NetherNet uses loopback HTTP signaling and same-machine media sources only. Offer fingerprint ownership and expiry are checked; the signaling token issuer/signature is not authenticated in this preview. The inner Bedrock login policy remains in force. Official NetherNet client entry and public token trust remain unverified.
+- Initialized peer players and counted held items are displayed within loaded chunks; account skins, armour/offhand, general entity simulation and combat remain pending. The Java adapter has official-game evidence for the limited Linux offline scenario; Windows game rendering and online Java authentication remain unverified/unimplemented. No complete crossplay claim is made.
+- Java currently maps only the five core block states, uses a fixed two-chunk view, and supplies direct vertical skylight without lateral light propagation. General containers and Java encryption/compression are pending; public chat, commands and selected local pack delivery are implemented.
+- NetherNet uses loopback HTTP signaling and same-machine media sources only. Offer fingerprint ownership and expiry are checked; the signaling token issuer/signature is not authenticated in this preview. The inner Bedrock login policy remains in force. Official entry is user-reported; current gameplay and public token trust remain unverified.
 - Both NetherNet channels now reach the validated owner. A real test commits valid unreliable movement and corrects a large tick/teleport attempt over the reliable channel. Official-client movement/rendering still require verification.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
-- Plugins expose lifecycle/MOTD, post-commit game hooks, private messages, simple choice forms, registered private sounds and private static model previews through trusted executable processes. WASI Component execution, general world/entity/inventory APIs, commands, cancellation, region/entity scheduling and isolation limits are not implemented.
+- Plugins expose lifecycle/MOTD, post-commit game hooks, metadata-only play receipt, public player commands, private messages, simple forms, private sounds and static models through trusted executable processes. WASI Component execution, general world/entity/inventory mutation APIs, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
 - Conversion supports explicit static PNG overrides, bounded single-clip Vorbis sound events and explicit static cuboid models. Optional local delivery and shared simple forms are implemented; rotated/animated models, arbitrary-UI conversion, content IR, Companion, public content hosting and hot reload are pending.
 - Latest protocol types expose camera instruction, preset, aim-assist and spline packets, but Sculith has no camera API or scenario tests yet.
-- REA/disassembler tools were searched in the actual connected-tool catalog and were unavailable. No REA commands or results are fabricated.
+- REA CLI/direct stdio MCP is usable. The active chat tool namespace does not refresh automatically, and no official Windows GDK binary is available here for artifact analysis.
 
 ## Next Action
 
-Official Windows Bedrock game entry/rendering still requires an available official-client Windows execution environment. The current environment is Linux and has no Windows desktop/client tool; independent protocol and actual Java checks are complete for the documented scope, with public Windows server installation verified. Do not ask the away user to repeat manual tests or describe independent native checks as official game verification.
+Continue the shared game API and inventory beyond this four-item creative subset, then storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Online authentication, public NetherNet trust, official GDK gameplay, general entities and wider content fidelity remain separate required work; the engineering directive is not complete.
 
-The broader engine remains unfinished. Continue general inventory/gameplay ownership beyond the fixed creative starter slots, armour/offhand, account skins, public online authentication and wider content fidelity as separate implementation work. Peer visibility is published as Preview 15 and authoritative starter held items as Preview 16; the overall engineering directive is not marked complete.
+Use the available Linux stock Java game and independent native clients without asking the away user for repeated manual testing. Official GDK gameplay still needs an available Windows client environment. Accumulate source toward 0.1.0; keep withdrawn releases/tags/artifacts withdrawn.

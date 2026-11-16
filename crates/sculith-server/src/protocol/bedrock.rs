@@ -1,7 +1,10 @@
 //! RakNet discovery, plus the opt-in V2225 encrypted login and read-only spawn.
 
+pub mod catalog;
 mod chunk;
+mod commands;
 mod input;
+mod inventory;
 pub mod nethernet;
 mod output;
 mod peers;

@@ -1,0 +1,1473 @@
+{
+  "protocol": 2225,
+  "source": "gophertunnel",
+  "source_commit": "e2251a60f71d5faa9784d6a4bc817c117cb6af78",
+  "license": "MIT; identifiers only, no implementation or assets",
+  "direction_note": "Pool membership is reference evidence, not an authoritative direction restriction; upstream server pool explicitly includes some client messages.",
+  "packets": [
+    {
+      "id": 1,
+      "name": "Login",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 2,
+      "name": "PlayStatus",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 3,
+      "name": "ServerToClientHandshake",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 4,
+      "name": "ClientToServerHandshake",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 5,
+      "name": "Disconnect",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 6,
+      "name": "ResourcePacksInfo",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 7,
+      "name": "ResourcePackStack",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 8,
+      "name": "ResourcePackClientResponse",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 9,
+      "name": "Text",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 10,
+      "name": "SetTime",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 11,
+      "name": "StartGame",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 12,
+      "name": "AddPlayer",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 13,
+      "name": "AddActor",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 14,
+      "name": "RemoveActor",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 15,
+      "name": "AddItemActor",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 16,
+      "name": "ServerPlayerPostMovePosition",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 17,
+      "name": "TakeItemActor",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 18,
+      "name": "MoveActorAbsolute",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 19,
+      "name": "MovePlayer",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 21,
+      "name": "UpdateBlock",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 22,
+      "name": "AddPainting",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 25,
+      "name": "LevelEvent",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 26,
+      "name": "BlockEvent",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 27,
+      "name": "ActorEvent",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 28,
+      "name": "MobEffect",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 29,
+      "name": "UpdateAttributes",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 30,
+      "name": "InventoryTransaction",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 31,
+      "name": "MobEquipment",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 32,
+      "name": "MobArmourEquipment",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 33,
+      "name": "Interact",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 34,
+      "name": "BlockPickRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 35,
+      "name": "ActorPickRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 36,
+      "name": "PlayerAction",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 38,
+      "name": "HurtArmour",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 39,
+      "name": "SetActorData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 40,
+      "name": "SetActorMotion",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 41,
+      "name": "SetActorLink",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 42,
+      "name": "SetHealth",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 43,
+      "name": "SetSpawnPosition",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 44,
+      "name": "Animate",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 45,
+      "name": "Respawn",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 46,
+      "name": "ContainerOpen",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 47,
+      "name": "ContainerClose",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 48,
+      "name": "PlayerHotBar",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 49,
+      "name": "InventoryContent",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 50,
+      "name": "InventorySlot",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 51,
+      "name": "ContainerSetData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 52,
+      "name": "CraftingData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 54,
+      "name": "GUIDataPickItem",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 55,
+      "name": "AdventureSettings",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 56,
+      "name": "BlockActorData",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 58,
+      "name": "LevelChunk",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 59,
+      "name": "SetCommandsEnabled",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 60,
+      "name": "SetDifficulty",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 61,
+      "name": "ChangeDimension",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 62,
+      "name": "SetPlayerGameType",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 63,
+      "name": "PlayerList",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 64,
+      "name": "SimpleEvent",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 65,
+      "name": "Event",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 66,
+      "name": "SpawnExperienceOrb",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 67,
+      "name": "ClientBoundMapItemData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 68,
+      "name": "MapInfoRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 69,
+      "name": "RequestChunkRadius",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 70,
+      "name": "ChunkRadiusUpdated",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 72,
+      "name": "GameRulesChanged",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 73,
+      "name": "Camera",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 74,
+      "name": "BossEvent",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 75,
+      "name": "ShowCredits",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 76,
+      "name": "AvailableCommands",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 77,
+      "name": "CommandRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 78,
+      "name": "CommandBlockUpdate",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 79,
+      "name": "CommandOutput",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 80,
+      "name": "UpdateTrade",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 81,
+      "name": "UpdateEquip",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 82,
+      "name": "ResourcePackDataInfo",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 83,
+      "name": "ResourcePackChunkData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 84,
+      "name": "ResourcePackChunkRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 85,
+      "name": "Transfer",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 86,
+      "name": "PlaySound",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 87,
+      "name": "StopSound",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 88,
+      "name": "SetTitle",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 89,
+      "name": "AddBehaviourTree",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 90,
+      "name": "StructureBlockUpdate",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 91,
+      "name": "ShowStoreOffer",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 92,
+      "name": "PurchaseReceipt",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 93,
+      "name": "PlayerSkin",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 94,
+      "name": "SubClientLogin",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 95,
+      "name": "AutomationClientConnect",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 96,
+      "name": "SetLastHurtBy",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 97,
+      "name": "BookEdit",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 98,
+      "name": "NPCRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 99,
+      "name": "PhotoTransfer",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 100,
+      "name": "ModalFormRequest",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 101,
+      "name": "ModalFormResponse",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 102,
+      "name": "ServerSettingsRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 103,
+      "name": "ServerSettingsResponse",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 104,
+      "name": "ShowProfile",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 105,
+      "name": "SetDefaultGameType",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 106,
+      "name": "RemoveObjective",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 107,
+      "name": "SetDisplayObjective",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 108,
+      "name": "SetScore",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 109,
+      "name": "LabTable",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 110,
+      "name": "UpdateBlockSynced",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 111,
+      "name": "MoveActorDelta",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 112,
+      "name": "SetScoreboardIdentity",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 113,
+      "name": "SetLocalPlayerAsInitialised",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 114,
+      "name": "UpdateSoftEnum",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 115,
+      "name": "NetworkStackLatency",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 117,
+      "name": "ScriptCustomEvent",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 118,
+      "name": "SpawnParticleEffect",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 119,
+      "name": "AvailableActorIdentifiers",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 121,
+      "name": "NetworkChunkPublisherUpdate",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 122,
+      "name": "BiomeDefinitionList",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 123,
+      "name": "LevelSoundEvent",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 124,
+      "name": "LevelEventGeneric",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 125,
+      "name": "LecternUpdate",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 129,
+      "name": "ClientCacheStatus",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 130,
+      "name": "OnScreenTextureAnimation",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 131,
+      "name": "MapCreateLockedCopy",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 132,
+      "name": "StructureTemplateDataRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 133,
+      "name": "StructureTemplateDataResponse",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 135,
+      "name": "ClientCacheBlobStatus",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 136,
+      "name": "ClientCacheMissResponse",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 137,
+      "name": "EducationSettings",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 138,
+      "name": "Emote",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 139,
+      "name": "MultiPlayerSettings",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 140,
+      "name": "SettingsCommand",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 141,
+      "name": "AnvilDamage",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 142,
+      "name": "CompletedUsingItem",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 143,
+      "name": "NetworkSettings",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 144,
+      "name": "PlayerAuthInput",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 145,
+      "name": "CreativeContent",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 146,
+      "name": "PlayerEnchantOptions",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 147,
+      "name": "ItemStackRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 148,
+      "name": "ItemStackResponse",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 149,
+      "name": "PlayerArmourDamage",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 150,
+      "name": "CodeBuilder",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 151,
+      "name": "UpdatePlayerGameType",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 152,
+      "name": "EmoteList",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 153,
+      "name": "PositionTrackingDBServerBroadcast",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 154,
+      "name": "PositionTrackingDBClientRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 155,
+      "name": "DebugInfo",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 156,
+      "name": "PacketViolationWarning",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 157,
+      "name": "MotionPredictionHints",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 158,
+      "name": "AnimateEntity",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 159,
+      "name": "CameraShake",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 160,
+      "name": "PlayerFog",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 161,
+      "name": "CorrectPlayerMovePrediction",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 162,
+      "name": "ItemRegistry",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 163,
+      "name": "FilterText",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 164,
+      "name": "ClientBoundDebugRenderer",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 165,
+      "name": "SyncActorProperty",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 166,
+      "name": "AddVolumeEntity",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 167,
+      "name": "RemoveVolumeEntity",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 168,
+      "name": "SimulationType",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 169,
+      "name": "NPCDialogue",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 170,
+      "name": "EducationResourceURI",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 171,
+      "name": "CreatePhoto",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 172,
+      "name": "UpdateSubChunkBlocks",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 173,
+      "name": "PhotoInfoRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 174,
+      "name": "SubChunk",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 175,
+      "name": "SubChunkRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 176,
+      "name": "ClientStartItemCooldown",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 177,
+      "name": "ScriptMessage",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 178,
+      "name": "CodeBuilderSource",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 179,
+      "name": "TickingAreasLoadStatus",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 180,
+      "name": "DimensionData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 181,
+      "name": "AgentAction",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 182,
+      "name": "ChangeMobProperty",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 183,
+      "name": "LessonProgress",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 184,
+      "name": "RequestAbility",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 185,
+      "name": "RequestPermissions",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 186,
+      "name": "ToastRequest",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 187,
+      "name": "UpdateAbilities",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 188,
+      "name": "UpdateAdventureSettings",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 189,
+      "name": "DeathInfo",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 190,
+      "name": "EditorNetwork",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 191,
+      "name": "FeatureRegistry",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 192,
+      "name": "ServerStats",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 193,
+      "name": "RequestNetworkSettings",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 194,
+      "name": "GameTestRequest",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 195,
+      "name": "GameTestResults",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 196,
+      "name": "UpdateClientInputLocks",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 197,
+      "name": "ClientCheatAbility",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 198,
+      "name": "CameraPresets",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 199,
+      "name": "UnlockedRecipes",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 300,
+      "name": "CameraInstruction",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 302,
+      "name": "TrimData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 303,
+      "name": "OpenSign",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 304,
+      "name": "AgentAnimation",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 305,
+      "name": "RefreshEntitlements",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 306,
+      "name": "PlayerToggleCrafterSlotRequest",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 307,
+      "name": "SetPlayerInventoryOptions",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 308,
+      "name": "SetHud",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 309,
+      "name": "AwardAchievement",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 310,
+      "name": "ClientBoundCloseForm",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 312,
+      "name": "ServerBoundLoadingScreen",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 313,
+      "name": "JigsawStructureData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 314,
+      "name": "CurrentStructureFeature",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 315,
+      "name": "ServerBoundDiagnostics",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 316,
+      "name": "CameraAimAssist",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 317,
+      "name": "ContainerRegistryCleanup",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 318,
+      "name": "MovementEffect",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 320,
+      "name": "CameraAimAssistPresets",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 321,
+      "name": "ClientCameraAimAssist",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 322,
+      "name": "ClientMovementPredictionSync",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 323,
+      "name": "UpdateClientOptions",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 324,
+      "name": "PlayerVideoCapture",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 325,
+      "name": "PlayerUpdateEntityOverrides",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 326,
+      "name": "PlayerLocation",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 327,
+      "name": "ClientBoundControlSchemeSet",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 328,
+      "name": "PrimitiveShapes",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 329,
+      "name": "ServerBoundPackSettingChange",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 330,
+      "name": "ClientBoundDataStore",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 331,
+      "name": "GraphicsOverrideParameter",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 332,
+      "name": "ServerBoundDataStore",
+      "client_pool": true,
+      "server_pool": false
+    },
+    {
+      "id": 333,
+      "name": "ClientBoundDataDrivenUIShowScreen",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 334,
+      "name": "ClientBoundDataDrivenUICloseScreen",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 335,
+      "name": "ClientBoundDataDrivenUIReload",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 336,
+      "name": "ClientBoundTextureShift",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 337,
+      "name": "VoxelShapes",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 338,
+      "name": "CameraSpline",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 339,
+      "name": "CameraAimAssistActorPriority",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 340,
+      "name": "ResourcePacksReadyForValidation",
+      "client_pool": true,
+      "server_pool": false
+    },
+    {
+      "id": 341,
+      "name": "LocatorBar",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 342,
+      "name": "PartyChanged",
+      "client_pool": true,
+      "server_pool": false
+    },
+    {
+      "id": 343,
+      "name": "ServerBoundDataDrivenScreenClosed",
+      "client_pool": true,
+      "server_pool": false
+    },
+    {
+      "id": 344,
+      "name": "SyncWorldClocks",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 345,
+      "name": "ClientBoundAttributeLayerSync",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 346,
+      "name": "ServerStoreInfo",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 347,
+      "name": "ServerPresenceInfo",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 348,
+      "name": "ClientboundUpdateSoundData",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 349,
+      "name": "SendPartyDestinationCookie",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 350,
+      "name": "PartyDestinationCookieResponse",
+      "client_pool": true,
+      "server_pool": false
+    },
+    {
+      "id": 351,
+      "name": "SetPlayerFurnaceOptions",
+      "client_pool": true,
+      "server_pool": true
+    },
+    {
+      "id": 352,
+      "name": "RecordStarted",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 353,
+      "name": "ClientboundMatchmakingState",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 354,
+      "name": "ServerboundStonecutterSetRecipe",
+      "client_pool": true,
+      "server_pool": false
+    },
+    {
+      "id": 355,
+      "name": "ClientboundStonecutterSetRecipe",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 356,
+      "name": "ServerboundMatchmakingCancel",
+      "client_pool": true,
+      "server_pool": false
+    },
+    {
+      "id": 357,
+      "name": "SetPassengerOfBlock",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 358,
+      "name": "ServerboundCursorItemDrag",
+      "client_pool": true,
+      "server_pool": false
+    },
+    {
+      "id": 359,
+      "name": "ClientboundPlayAudioContent",
+      "client_pool": false,
+      "server_pool": true
+    },
+    {
+      "id": 360,
+      "name": "ServerboundRegisterAudioContent",
+      "client_pool": true,
+      "server_pool": false
+    }
+  ]
+}

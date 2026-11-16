@@ -72,13 +72,7 @@ fn equipment(player: &PlayerSnapshot) -> Result<Vec<u8>> {
     let mut out = codec::packet(104);
     write_varint(id(player.id)?, &mut out);
     out.push(0); // MAINHAND, ordinal zero, last equipment entry.
-    if let Some(kind) = player.hotbar[player.selected_slot as usize] {
-        write_varint(64, &mut out);
-        write_varint(super::registry::get().item(kind), &mut out);
-        out.extend_from_slice(&[0, 0]); // No component patches.
-    } else {
-        write_varint(0, &mut out);
-    }
+    super::inventory::write_stack(player.held(), &mut out)?;
     Ok(out)
 }
 

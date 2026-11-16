@@ -18,6 +18,7 @@ import (
 // Test-only independent decoding, using a pinned full vanilla registry rather
 // than copying the Rust encoder's block hashes or palette implementation.
 type observer struct {
+	commands                     map[string]protocol.Command
 	mu                           sync.Mutex
 	registry                     world.BlockRegistry
 	chunks                       map[protocol.ChunkPos]bool
@@ -45,6 +46,25 @@ func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
 	buf := bytes.NewBuffer(payload)
 	reader := protocol.NewReader(buf, 0, true)
 	switch header.PacketID {
+	case packet.IDAvailableCommands:
+		p := new(packet.AvailableCommands)
+		p.Marshal(reader)
+		o.commands = map[string]protocol.Command{}
+		for _, command := range p.Commands {
+			if _, exists := o.commands[command.Name]; exists || len(command.Overloads) != 1 || len(command.Overloads[0].Parameters) != 1 || command.AliasesOffset != ^uint32(0) || command.PermissionLevel != protocol.CommandPermissionLevelAny {
+				o.err = fmt.Errorf("invalid public command registry")
+				return
+			}
+			param := command.Overloads[0].Parameters[0]
+			if param.Name != "arguments" || !param.Optional || param.Type != protocol.CommandArgValid|protocol.CommandArgTypeRawText {
+				o.err = fmt.Errorf("invalid optional command argument")
+				return
+			}
+			o.commands[command.Name] = command
+		}
+		if _, exists := o.commands["help"]; !exists {
+			o.err = fmt.Errorf("missing help command")
+		}
 	case packet.IDAvailableActorIdentifiers:
 		p := new(packet.AvailableActorIdentifiers)
 		p.Marshal(reader)
@@ -100,9 +120,15 @@ func (o *observer) packet(header packet.Header, payload []byte, _, _ net.Addr) {
 	case packet.IDCreativeContent:
 		p := new(packet.CreativeContent)
 		p.Marshal(reader)
-		if len(p.Groups) != 0 || len(p.Items) != 0 {
+		if len(p.Groups) != 1 || len(p.Items) != 4 {
 			o.err = fmt.Errorf("unexpected creative catalog")
 			return
+		}
+		for index, item := range p.Items {
+			if item.CreativeItemNetworkID != uint32(index+1) || item.Item.NetworkID != []int32{1, 3, 2, 7}[index] || item.Item.Count != 1 || item.GroupIndex != 0 {
+				o.err = fmt.Errorf("invalid creative catalogue mapping at %d: %+v", index, item)
+				return
+			}
 		}
 		o.creative = true
 	case packet.IDLevelChunk:
@@ -165,7 +191,7 @@ func (o *observer) verify() error {
 	if o.err != nil {
 		return o.err
 	}
-	if !o.structures || !o.biomes || !o.creative || len(o.chunks) != 25 {
+	if !o.structures || !o.biomes || !o.creative || len(o.chunks) != 25 || len(o.commands) == 0 {
 		return fmt.Errorf("incomplete startup: structures=%t biomes=%t creative=%t chunks=%d", o.structures, o.biomes, o.creative, len(o.chunks))
 	}
 	return nil

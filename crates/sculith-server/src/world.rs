@@ -10,7 +10,7 @@ use std::{
     collections::BTreeMap,
     sync::{
         Arc, Weak,
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering},
     },
     time::Instant,
 };
@@ -18,6 +18,17 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 #[derive(Debug, Clone)]
 pub enum WorldEvent {
+    InventoryChanged {
+        player_id: u64,
+        changes: Vec<crate::inventory::Change>,
+    },
+    /// Private command invocation, routed only to its registered plugin.
+    CommandSubmitted(crate::commands::Submission),
+    Chat(crate::game::ChatMessage),
+    PacketReceived {
+        player_id: u64,
+        packet: sculith_plugin_api::PacketInfo,
+    },
     Joined(PlayerSnapshot),
     Equipped(PlayerSnapshot),
     Moved {
@@ -57,6 +68,7 @@ pub struct WorldHandle {
     online: Arc<AtomicU32>,
     events: broadcast::Sender<Arc<WorldEvent>>,
     game_events: broadcast::Sender<Arc<WorldEvent>>,
+    observations: Arc<AtomicU8>,
 }
 
 /// Snapshot and its continuation are created atomically inside the owner.
@@ -81,6 +93,53 @@ impl Drop for PlayerLease {
 }
 
 enum Command {
+    InventoryClick {
+        id: u64,
+        click: crate::inventory::Click,
+        reply: oneshot::Sender<Result<crate::game::InventoryOutcome>>,
+    },
+    Inventory {
+        id: u64,
+        request: crate::inventory::Request,
+        reply: oneshot::Sender<Result<crate::game::InventoryOutcome>>,
+    },
+    CreativeSlot {
+        id: u64,
+        slot: u8,
+        kind: Option<BlockKind>,
+        count: u8,
+        reply: oneshot::Sender<Result<crate::game::InventoryOutcome>>,
+    },
+    RegisterCommands {
+        plugin: String,
+        specs: Vec<sculith_core::CommandSpec>,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    SealCommands {
+        reply: oneshot::Sender<()>,
+    },
+    DisableCommands {
+        plugin: String,
+        reply: oneshot::Sender<()>,
+    },
+    ListCommands {
+        reply: oneshot::Sender<Vec<sculith_core::CommandSpec>>,
+    },
+    Execute {
+        id: u64,
+        input: String,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    Chat {
+        id: u64,
+        message: String,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    ObservePacket {
+        id: u64,
+        packet: sculith_plugin_api::PacketInfo,
+        reply: oneshot::Sender<Result<()>>,
+    },
     ObservePlayers {
         id: u64,
         reply: oneshot::Sender<Result<PeerObservation>>,
@@ -166,6 +225,129 @@ enum Command {
 }
 
 impl WorldHandle {
+    pub async fn inventory_click(
+        &self,
+        id: u64,
+        click: crate::inventory::Click,
+    ) -> Result<crate::game::InventoryOutcome> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::InventoryClick { id, click, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("inventory click response lost")?
+    }
+    pub async fn inventory_request(
+        &self,
+        id: u64,
+        request: crate::inventory::Request,
+    ) -> Result<crate::game::InventoryOutcome> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::Inventory { id, request, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("inventory response lost")?
+    }
+    pub async fn creative_slot(
+        &self,
+        id: u64,
+        slot: u8,
+        kind: Option<BlockKind>,
+        count: u8,
+    ) -> Result<crate::game::InventoryOutcome> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::CreativeSlot {
+                id,
+                slot,
+                kind,
+                count,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("creative inventory response lost")?
+    }
+    pub async fn register_commands(
+        &self,
+        plugin: String,
+        specs: Vec<sculith_core::CommandSpec>,
+    ) -> Result<()> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::RegisterCommands {
+                plugin,
+                specs,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("command registration lost")?
+    }
+    pub async fn seal_commands(&self) -> Result<()> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::SealCommands { reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("command seal lost")
+    }
+    pub async fn disable_commands(&self, plugin: String) -> Result<()> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::DisableCommands { plugin, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("command disable lost")
+    }
+    pub async fn command_specs(&self) -> Result<Vec<sculith_core::CommandSpec>> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::ListCommands { reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("command listing lost")
+    }
+    pub async fn submit_command(&self, id: u64, input: String) -> Result<()> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::Execute { id, input, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("command submission lost")?
+    }
+    pub async fn chat(&self, id: u64, message: String) -> Result<()> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::Chat { id, message, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("chat submission lost")?
+    }
+    pub fn configure_observations(&self, flags: u8) {
+        self.observations
+            .store(flags & crate::observations::ALL, Ordering::Release);
+    }
+    pub fn observes_packets(&self) -> bool {
+        self.observations.load(Ordering::Acquire) & crate::observations::PACKETS != 0
+    }
+    pub async fn observe_packet(
+        &self,
+        id: u64,
+        packet: sculith_plugin_api::PacketInfo,
+    ) -> Result<()> {
+        if !self.observes_packets() {
+            return Ok(());
+        }
+        packet.validate().map_err(anyhow::Error::msg)?;
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::ObservePacket { id, packet, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("packet observation lost")?
+    }
     pub async fn observe_players(&self, id: u64) -> Result<PeerObservation> {
         let (reply, receiver) = oneshot::channel();
         self.commands
@@ -388,6 +570,61 @@ fn publish_presence(
     let _ = peer_events.send(event);
 }
 
+fn publish_inventory(
+    previous: Option<&PlayerSnapshot>,
+    outcome: &crate::game::InventoryOutcome,
+    game_events: &broadcast::Sender<Arc<WorldEvent>>,
+    peer_events: &broadcast::Sender<Arc<WorldEvent>>,
+    flags: u8,
+) {
+    let Ok(changes) = &outcome.response.result else {
+        return;
+    };
+    if outcome.response.replayed {
+        return;
+    }
+    if flags & crate::observations::INVENTORY != 0 {
+        let changes: Vec<_> = changes
+            .iter()
+            .filter(|change| {
+                previous.is_none_or(|previous| {
+                    let before = match change.slot {
+                        crate::inventory::Slot::Inventory(slot) => {
+                            previous.inventory[usize::from(slot)]
+                        }
+                        crate::inventory::Slot::Cursor => previous.cursor,
+                        crate::inventory::Slot::CreatedOutput => previous.created_output,
+                    };
+                    // Response slots also include non-mutating mining checks
+                    // and stack-ID refreshes. Plugins observe semantic changes.
+                    before.map(|stack| (stack.kind, stack.count))
+                        != change.stack.map(|stack| (stack.kind, stack.count))
+                })
+            })
+            .copied()
+            .collect();
+        if !changes.is_empty() {
+            let _ = game_events.send(Arc::new(WorldEvent::InventoryChanged {
+                player_id: outcome.player.id,
+                changes,
+            }));
+        }
+    }
+    let held = |player: &PlayerSnapshot| {
+        (
+            player.selected_slot,
+            player.held().map(|stack| (stack.kind, stack.count)),
+        )
+    };
+    if previous.map(held) != Some(held(&outcome.player)) {
+        let event = Arc::new(WorldEvent::Equipped(outcome.player.clone()));
+        if flags & crate::observations::EQUIPMENT != 0 {
+            let _ = game_events.send(event.clone());
+        }
+        let _ = peer_events.send(event);
+    }
+}
+
 fn publish_blocks(
     state: &mut GameState,
     events: &broadcast::Sender<Arc<WorldEvent>>,
@@ -457,17 +694,20 @@ pub fn with_region_and_content(
     models: std::collections::BTreeSet<String>,
 ) -> Result<(WorldHandle, impl Future<Output = Result<()>> + Send)> {
     let mut state = GameState::with_content(region, max_players, sounds, models)?;
+    let mut command_registry = crate::commands::Registry::default();
     let (commands, mut requests) = mpsc::channel(32);
     let weak_commands = commands.downgrade();
     let (events, _) = broadcast::channel(128);
     let (game_events, _) = broadcast::channel(128);
     let (peer_events, _) = broadcast::channel(128);
     let online = Arc::new(AtomicU32::new(0));
+    let observations = Arc::new(AtomicU8::new(0));
     let handle = WorldHandle {
         commands,
         online: online.clone(),
         events: events.clone(),
         game_events: game_events.clone(),
+        observations: observations.clone(),
     };
     let task = async move {
         let mut leases: BTreeMap<u64, Weak<AtomicBool>> = BTreeMap::new();
@@ -503,6 +743,53 @@ pub fn with_region_and_content(
                     ).collect();
                     for id in dead { retire(&mut state, &mut leases, &events, &game_events, &peer_events, id); }
                     match command {
+                        Some(Command::InventoryClick {id,click,reply})=>{
+                            let previous=state.player(id);
+                            let result=state.inventory_click(id,click,Instant::now());
+                            if let Ok(outcome)=&result {publish_inventory(previous.as_ref(),outcome,&game_events,&peer_events,observations.load(Ordering::Acquire));}
+                            let _=reply.send(result);
+                        }
+                        Some(Command::Inventory {id,request,reply})=>{
+                            let previous=state.player(id);
+                            let result=state.inventory_request(id,request,Instant::now());
+                            if let Ok(outcome)=&result {publish_inventory(previous.as_ref(),outcome,&game_events,&peer_events,observations.load(Ordering::Acquire));}
+                            let _=reply.send(result);
+                        }
+                        Some(Command::CreativeSlot {id,slot,kind,count,reply})=>{
+                            let previous=state.player(id);
+                            let result=state.creative_slot(id,slot,kind,count,Instant::now());
+                            if let Ok(outcome)=&result {publish_inventory(previous.as_ref(),outcome,&game_events,&peer_events,observations.load(Ordering::Acquire));}
+                            let _=reply.send(result);
+                        }
+                        Some(Command::RegisterCommands {plugin,specs,reply})=>{let _=reply.send(command_registry.register(&plugin,specs));}
+                        Some(Command::SealCommands {reply})=>{command_registry.seal();let _=reply.send(());}
+                        Some(Command::DisableCommands {plugin,reply})=>{command_registry.disable(&plugin);let _=reply.send(());}
+                        Some(Command::ListCommands {reply})=>{let _=reply.send(command_registry.list());}
+                        Some(Command::Execute {id,input,reply})=>{
+                            let result=state.permit_text_input(id,&input,Instant::now()).and_then(|player| {
+                                match command_registry.route(&input) {
+                                    crate::commands::Route::Plugin {owner,command,arguments}=>{let _=game_events.send(Arc::new(WorldEvent::CommandSubmitted(crate::commands::Submission {player_id:id,name:player.profile.name,plugin:owner,command,arguments})));}
+                                    crate::commands::Route::Feedback(message)=>{
+                                        state.permit_message(id,Instant::now())?;
+                                        let _=events.send(Arc::new(WorldEvent::Message {player_id:id,message}));
+                                    }
+                                }
+                                Ok(())
+                            });let _=reply.send(result);
+                        }
+                        Some(Command::Chat {id,message,reply})=>{
+                            let result=state.chat(id,message,Instant::now()).map(|chat|publish_game(WorldEvent::Chat(chat),&events,&game_events));
+                            let _=reply.send(result);
+                        }
+                        Some(Command::ObservePacket {id,packet,reply})=>{
+                            let result=if state.player(id).is_some_and(|p|p.initialized && matches!((&p.profile.edition,&packet.edition),(crate::game::Edition::Java,sculith_plugin_api::Edition::Java)|(crate::game::Edition::Bedrock,sculith_plugin_api::Edition::Bedrock))) {
+                                if observations.load(Ordering::Acquire) & crate::observations::PACKETS !=0 {
+                                    let _=game_events.send(Arc::new(WorldEvent::PacketReceived {player_id:id,packet}));
+                                }
+                                Ok(())
+                            } else {Err(anyhow::anyhow!("packet observer requires a live initialized player"))};
+                            let _=reply.send(result);
+                        }
                         Some(Command::ObservePlayers {id,reply})=>{
                             let result=if state.player(id).is_some_and(|p|p.initialized) {
                                 // There is no await or external publisher between
@@ -515,6 +802,7 @@ pub fn with_region_and_content(
                         Some(Command::Snapshot { position, reply }) => { let _ = reply.send(state.snapshot(position).map_err(Into::into)); }
                         Some(Command::Capture { reply }) => { let _ = reply.send(state.capture()); }
                         Some(Command::Reserve { profile, permissions, reply }) => {
+                            command_registry.seal();
                             let reservation = state.reserve(profile, permissions, Instant::now()).map(|player| {
                                 let alive = Arc::new(AtomicBool::new(true));
                                 leases.insert(player.id, Arc::downgrade(&alive));
@@ -534,7 +822,9 @@ pub fn with_region_and_content(
                             let outcome = state.move_player(id, tick, position, rotation, Instant::now());
                             if let MoveOutcome::Accepted { player, tick, changed: true } = &outcome {
                                 let event=Arc::new(WorldEvent::Moved { player: player.clone(), tick: *tick });
-                                let _ = events.send(event.clone());let _ = peer_events.send(event);
+                                let _ = events.send(event.clone());
+                                if observations.load(Ordering::Acquire) & crate::observations::MOVEMENT !=0 {let _=game_events.send(event.clone());}
+                                let _ = peer_events.send(event);
                             }
                             let _ = reply.send(outcome);
                         }
@@ -554,7 +844,9 @@ pub fn with_region_and_content(
                             if let Ok(player)=&result && previous!=Some(player.selected_slot) {
                                 // Public presentation only: no region revision or
                                 // plugin-game feedback for a selected hotbar slot.
-                                let _=peer_events.send(Arc::new(WorldEvent::Equipped(player.clone())));
+                                let event=Arc::new(WorldEvent::Equipped(player.clone()));
+                                if observations.load(Ordering::Acquire) & crate::observations::EQUIPMENT !=0 {let _=game_events.send(event.clone());}
+                                let _=peer_events.send(event);
                             }
                             let _=reply.send(result);
                         }
@@ -610,6 +902,295 @@ pub fn create(
 mod tests {
     use super::*;
     use crate::game::Edition;
+
+    #[tokio::test]
+    async fn inventory_commits_are_private_with_counted_public_hands_and_idempotent_replays() {
+        use crate::inventory::{Action, Request, Slot, SlotRef};
+        let (stop, receiver) = watch::channel(false);
+        let (world, task) = create(receiver);
+        let task = tokio::spawn(task);
+        let actor = world
+            .reserve(profile("inventory"), Permissions { can_build: true })
+            .await
+            .unwrap();
+        let viewer = world
+            .reserve(profile("viewer"), Permissions::default())
+            .await
+            .unwrap();
+        let id = actor.player.id;
+        assert!(
+            world
+                .creative_slot(id, 0, Some(BlockKind::Dirt), 5)
+                .await
+                .is_err()
+        );
+        world.activate(id).await.unwrap();
+        world.activate(viewer.player.id).await.unwrap();
+        world.configure_observations(
+            crate::observations::INVENTORY | crate::observations::EQUIPMENT,
+        );
+        let mut hooks = world.subscribe_game();
+        let mut normal = world.subscribe();
+        let mut peers = world.observe_players(viewer.player.id).await.unwrap();
+        let revision = world.capture().await.unwrap().revision();
+        let request = Request {
+            id: -1,
+            actions: vec![
+                Action::Destroy {
+                    source: SlotRef {
+                        slot: Slot::Inventory(0),
+                        expected_id: 1,
+                    },
+                    count: 64,
+                },
+                Action::CraftCreative { catalogue_id: 2 },
+                Action::Transfer {
+                    source: SlotRef {
+                        slot: Slot::CreatedOutput,
+                        expected_id: -1,
+                    },
+                    destination: SlotRef {
+                        slot: Slot::Inventory(0),
+                        expected_id: 0,
+                    },
+                    count: 5,
+                },
+            ],
+        };
+        let outcome = world.inventory_request(id, request.clone()).await.unwrap();
+        assert!(outcome.response.result.is_ok());
+        assert_eq!(
+            outcome.player.held().map(|s| (s.kind, s.count)),
+            Some((BlockKind::Dirt, 5))
+        );
+        assert_eq!(outcome.player.hotbar[0], Some(BlockKind::Dirt));
+        assert!(
+            matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::InventoryChanged {player_id,..} if *player_id==id)
+        );
+        assert!(
+            matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::Equipped(p) if p.held().unwrap().count==5)
+        );
+        assert!(
+            matches!(peers.updates.recv().await.unwrap().as_ref(),WorldEvent::Equipped(p) if p.id==id)
+        );
+        assert!(normal.try_recv().is_err() && peers.updates.try_recv().is_err());
+        assert!(
+            world
+                .inventory_request(id, request)
+                .await
+                .unwrap()
+                .response
+                .replayed
+        );
+        assert!(hooks.try_recv().is_err() && peers.updates.try_recv().is_err());
+        let invalid = Request {
+            id: -2,
+            actions: vec![Action::Destroy {
+                source: SlotRef {
+                    slot: Slot::Inventory(0),
+                    expected_id: 99999,
+                },
+                count: 5,
+            }],
+        };
+        let rejected = world.inventory_request(id, invalid).await.unwrap();
+        assert!(rejected.response.result.is_err());
+        assert_eq!(rejected.player.inventory, outcome.player.inventory);
+        assert!(hooks.try_recv().is_err() && peers.updates.try_recv().is_err());
+        for request in [
+            Request {
+                id: -3,
+                actions: vec![Action::Mine {
+                    source: SlotRef {
+                        slot: Slot::Inventory(0),
+                        expected_id: outcome.player.held().unwrap().net_id,
+                    },
+                }],
+            },
+            Request {
+                id: -4,
+                actions: vec![Action::Swap {
+                    source: SlotRef {
+                        slot: Slot::Inventory(10),
+                        expected_id: 0,
+                    },
+                    destination: SlotRef {
+                        slot: Slot::Inventory(11),
+                        expected_id: 0,
+                    },
+                }],
+            },
+        ] {
+            let response = world.inventory_request(id, request).await.unwrap();
+            assert!(!response.response.result.unwrap().is_empty());
+            assert!(hooks.try_recv().is_err() && peers.updates.try_recv().is_err());
+        }
+        assert_eq!(world.capture().await.unwrap().revision(), revision);
+        assert!(
+            world
+                .creative_slot(viewer.player.id, 0, Some(BlockKind::Grass), 2)
+                .await
+                .unwrap()
+                .response
+                .result
+                .is_err()
+        );
+        drop(actor);
+        assert!(
+            world
+                .creative_slot(id, 0, Some(BlockKind::Stone), 1)
+                .await
+                .is_err()
+        );
+        stop.send(true).unwrap();
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn command_arguments_only_enter_the_registered_plugin_stream() {
+        let (stop, receiver) = watch::channel(false);
+        let (world, task) = create(receiver);
+        let task = tokio::spawn(task);
+        world
+            .register_commands(
+                "owner".into(),
+                vec![sculith_core::CommandSpec {
+                    name: "hello".into(),
+                    description: "Say hello".into(),
+                }],
+            )
+            .await
+            .unwrap();
+        let lease = world
+            .reserve(profile("author"), Permissions::default())
+            .await
+            .unwrap();
+        let id = lease.player.id;
+        assert!(
+            world
+                .submit_command(id, "hello secret".into())
+                .await
+                .is_err()
+        );
+        world.activate(id).await.unwrap();
+        let mut public = world.subscribe();
+        let mut hooks = world.subscribe_game();
+        let mut peers = world.observe_players(id).await.unwrap();
+        world
+            .submit_command(id, "/hello secret 😀".into())
+            .await
+            .unwrap();
+        assert!(
+            matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::CommandSubmitted(c) if c.player_id==id && c.plugin=="owner" && c.command=="hello" && c.arguments=="secret 😀" && c.name=="author")
+        );
+        assert!(public.try_recv().is_err() && peers.updates.try_recv().is_err());
+        world.disable_commands("owner".into()).await.unwrap();
+        world
+            .submit_command(id, "hello secret".into())
+            .await
+            .unwrap();
+        assert!(hooks.try_recv().is_err());
+        assert!(
+            matches!(public.recv().await.unwrap().as_ref(),WorldEvent::Message {player_id,message} if *player_id==id && message=="This command is temporarily unavailable.")
+        );
+        drop(lease);
+        assert!(world.submit_command(id, "help".into()).await.is_err());
+        stop.send(true).unwrap();
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn chat_requires_an_initialized_live_author_and_rejects_private_commands() {
+        let (stop, receiver) = watch::channel(false);
+        let (world, task) = create(receiver);
+        let task = tokio::spawn(task);
+        let lease = world
+            .reserve(profile("author"), Permissions::default())
+            .await
+            .unwrap();
+        let id = lease.player.id;
+        assert!(world.chat(id, "before join".into()).await.is_err());
+        world.activate(id).await.unwrap();
+        let mut events = world.subscribe();
+        let mut hooks = world.subscribe_game();
+        let mut peers = world.observe_players(id).await.unwrap();
+        let revision = world.capture().await.unwrap().revision();
+        assert!(world.chat(id, "/password secret".into()).await.is_err());
+        assert!(world.chat(id, "line\nbreak".into()).await.is_err());
+        assert!(events.try_recv().is_err() && hooks.try_recv().is_err());
+        world.chat(id, "안녕 😀".into()).await.unwrap();
+        assert!(
+            matches!(events.recv().await.unwrap().as_ref(),WorldEvent::Chat(c) if c.player_id==id && c.name=="author" && c.message=="안녕 😀")
+        );
+        assert!(
+            matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::Chat(c) if c.player_id==id)
+        );
+        assert!(peers.updates.try_recv().is_err());
+        world.chat(id, "last burst".into()).await.unwrap();
+        assert!(world.chat(id, "over budget".into()).await.is_err());
+        assert_eq!(world.capture().await.unwrap().revision(), revision);
+        drop(lease);
+        assert!(world.chat(id, "retired".into()).await.is_err());
+        stop.send(true).unwrap();
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn opted_in_observations_are_owner_validated_and_never_enter_private_or_peer_streams() {
+        use sculith_plugin_api::{PacketDispatch, PacketInfo};
+        let (stop, receiver) = watch::channel(false);
+        let (world, task) = create(receiver);
+        let task = tokio::spawn(task);
+        let mut identity = profile("observer");
+        identity.edition = Edition::Java;
+        let lease = world
+            .reserve(identity, Permissions::default())
+            .await
+            .unwrap();
+        let id = lease.player.id;
+        let packet = PacketInfo {
+            edition: sculith_plugin_api::Edition::Java,
+            protocol: 777,
+            phase: "play".into(),
+            id: 22,
+            name: "minecraft:custom_payload".into(),
+            dispatch: PacketDispatch::Unsupported,
+            sequence: 1,
+        };
+        world.configure_observations(crate::observations::ALL);
+        assert!(world.observe_packet(id, packet.clone()).await.is_err());
+        world.activate(id).await.unwrap();
+        let mut game = world.subscribe_game();
+        let mut normal = world.subscribe();
+        let mut peers = world.observe_players(id).await.unwrap();
+        let revision = world.capture().await.unwrap().revision();
+        let mut wrong_edition = packet.clone();
+        wrong_edition.edition = sculith_plugin_api::Edition::Bedrock;
+        assert!(world.observe_packet(id, wrong_edition).await.is_err());
+        assert!(game.try_recv().is_err());
+        world.observe_packet(id, packet.clone()).await.unwrap();
+        assert!(
+            matches!(game.recv().await.unwrap().as_ref(),WorldEvent::PacketReceived {player_id,packet} if *player_id==id && packet.name=="minecraft:custom_payload")
+        );
+        assert!(normal.try_recv().is_err());
+        assert!(peers.updates.try_recv().is_err());
+        world.select_slot(id, 1).await.unwrap();
+        assert!(
+            matches!(game.recv().await.unwrap().as_ref(),WorldEvent::Equipped(p) if p.selected_slot==1)
+        );
+        world.send_message(id, "private".into()).await.unwrap();
+        assert!(game.try_recv().is_err());
+        assert_eq!(world.capture().await.unwrap().revision(), revision);
+        world.configure_observations(0);
+        world.observe_packet(id, packet.clone()).await.unwrap();
+        world.select_slot(id, 2).await.unwrap();
+        assert!(game.try_recv().is_err());
+        world.configure_observations(crate::observations::PACKETS);
+        drop(lease);
+        assert!(world.observe_packet(id, packet).await.is_err());
+        stop.send(true).unwrap();
+        task.await.unwrap().unwrap();
+    }
 
     #[tokio::test]
     async fn held_slot_changes_publish_only_committed_public_equipment() {
