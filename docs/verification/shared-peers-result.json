@@ -223,5 +223,20 @@
     "fresh_unauthenticated_zip_and_checksum_verified": true,
     "tag_source_matches_tested_windows_run": true,
     "archive_readme_erratum": "The inherited README limitation saying other players are not displayed is stale; basic peer visibility is implemented and tested as above. Public notes and current source README correct it."
+  },
+  "installer": {
+    "run_id": 43817638429,
+    "status": "success",
+    "shell": "Windows PowerShell 5.1",
+    "direct_install": true,
+    "documented_raw_one_command": true,
+    "start_cmd_check": true,
+    "diagnose_cmd_check": true,
+    "existing_directory_preserved": true,
+    "java_enabled": true,
+    "bedrock_enabled": true,
+    "plugins": 4,
+    "stage": "shared-world-preview",
+    "pack_paths_valid": true
   }
 }

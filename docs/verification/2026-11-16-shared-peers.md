@@ -78,7 +78,7 @@ included. [Public Preview 15](https://github.com/SKYRPG8957/Sculith/releases/tag
 is published through [run 43817319113](https://github.com/SKYRPG8957/Sculith/actions/runs/43817319113).
 A fresh unauthenticated HTTPS ZIP/checksum download passes exact-source/tag/hash
 verification. Installer/download defaults select Preview 15; native Windows public
-installation validation is pending. The inherited ZIP README line saying peer
+installation [run 43817638429](https://github.com/SKYRPG8957/Sculith/actions/runs/43817638429) passes Windows PowerShell 5.1 direct and documented raw one-command installs, both launcher checks and existing-directory preservation. New configurations enable both adapters/four plugins and validate all pack paths. The inherited ZIP README line saying peer
 visibility is unfinished is stale; public release notes and current source correct
 that description. Published tag and archive remain immutable.
 
