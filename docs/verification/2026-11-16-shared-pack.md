@@ -9,12 +9,19 @@ No mod, proxy or separate Minecraft server was used.
 
 [Machine-readable results and screenshot/download hashes](shared-pack-result.json).
 The exact actual-game source is [20115fec](https://github.com/SKYRPG8957/Sculith/tree/20115fec2795a438049333941ab43773c1ac2e03).
-The candidate adds a retained-worker bound in
+The release includes a retained-worker bound in
 [9d7003be](https://github.com/SKYRPG8957/Sculith/tree/9d7003bee189722309ade9cb3a46041444ab4215)
 and passes the independent pack probe. Native Windows verification passes in
 [run 43789669645](https://github.com/SKYRPG8957/Sculith/actions/runs/43789669645),
 which includes the Windows fixture-path correction in
 [d207998f](https://github.com/SKYRPG8957/Sculith/tree/d207998fff7cc3144affc0a90b3541df9d1afb56).
+
+The exact Windows artifact is public as
+[Preview 11](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.11).
+A fresh unauthenticated HTTPS download passes source/tag/hash verification.
+Windows PowerShell 5.1 installation, both launchers, existing-directory preservation
+and the documented one-command installation pass in
+[run 43790911715](https://github.com/SKYRPG8957/Sculith/actions/runs/43790911715).
 
 The stock client JAR SHA-1 remains
 `e877b6a07acd633fb3bb475002175cec036e7b87`, in the Linux/Temurin/software-Vulkan

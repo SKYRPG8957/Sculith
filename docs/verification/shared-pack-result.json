@@ -59,5 +59,20 @@
     "zip_sha256": "9efd8b084e6ef8204961e9ebdda772195344ea432bc13a6d956f9a9087370253",
     "entries": 15,
     "both_executables_system_dlls_only": true
+  },
+  "publication": {
+    "version": "v0.1.0-preview.11",
+    "workflow_run": 43790591375,
+    "fresh_unauthenticated_https_download_verified": true,
+    "tag_matches_tested_source": true
+  },
+  "windows_public_installer": {
+    "workflow_run": 43790911715,
+    "powershell_5_1": true,
+    "start_and_diagnose_launchers": true,
+    "existing_installation_preserved": true,
+    "documented_one_command_install": true,
+    "both_adapters_and_one_plugin": true,
+    "configured_content_files_present": true
   }
 }
