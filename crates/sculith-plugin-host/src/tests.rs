@@ -117,3 +117,49 @@ async fn rejects_incompatible_plugin_and_times_out_unresponsive_plugin() {
     };
     assert!(error.to_string().contains("timed out"));
 }
+
+#[test]
+fn world_commit_hooks_preserve_sources_and_the_legacy_player_contract() {
+    use sculith_core::world::WorldActor;
+    use sculith_world::{BlockChange, BlockKind, BlockPos, CommittedBatch, RegionId};
+    let batch = CommittedBatch {
+        region: RegionId(0),
+        previous_revision: 3,
+        revision: 4,
+        changes: vec![BlockChange {
+            position: BlockPos { x: 1, y: 4, z: 2 },
+            before: BlockKind::Air,
+            after: BlockKind::Stone,
+        }],
+    };
+    let plugin = WorldEvent::PluginBlocks {
+        plugin: "editor".into(),
+        batch: batch.clone(),
+        revisions: std::collections::BTreeMap::new(),
+    };
+    assert!(game_event(&plugin).is_none());
+    assert!(
+        matches!(world_block_event(&plugin),Some(Event::WorldBlocksChanged {actor:WorldActor::Plugin {name},region_id:0,previous_revision:3,revision:4,changes}) if name=="editor" && changes.len()==1)
+    );
+    let player = WorldEvent::Blocks {
+        player_id: 7,
+        batch,
+        revisions: std::collections::BTreeMap::new(),
+    };
+    assert!(matches!(
+        game_event(&player),
+        Some(Event::BlocksChanged {
+            player_id: 7,
+            revision: 4,
+            ..
+        })
+    ));
+    assert!(matches!(
+        world_block_event(&player),
+        Some(Event::WorldBlocksChanged {
+            actor: WorldActor::Player { player_id: 7 },
+            revision: 4,
+            ..
+        })
+    ));
+}

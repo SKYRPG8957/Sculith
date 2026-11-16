@@ -90,7 +90,9 @@ timeout_ms = 1000
 | `Stopping` | Ctrl+C, SIGTERM 또는 리스너 오류로 정상 종료 절차에 들어갈 때 |
 | `PlayerJoined { player }` | 올바른 초기화 확인 이후. `id`, `name`, `edition` (`java`/`bedrock`) 제공 |
 | `PlayerLeft { player_id }` | 초기화됐던 플레이어의 세션 정리 이후 |
-| `BlocksChanged { player_id, revision, changes }` | 소유자가 실제로 승인한 변경 이후. 좌표와 `before`/`after` 이름 제공 |
+| `BlocksChanged { player_id, revision, changes }` | 플레이어가 커밋한 블록 변경. 기존 API v2 계약 유지 |
+| `WorldBlocksChanged { region_id, previous_revision, revision, actor, changes }` | 플레이어·플러그인이 커밋한 블록 변경. `actor`로 실제 주체 구분. API v10 필요 |
+| `WorldResponse { request_id, result }` | 월드 요청을 보낸 플러그인만 받는 결과. API v10 필요 |
 | `FormSubmitted { player_id, request_id, selection }` | 폼을 연 해당 플러그인만 수신. 선택지 인덱스 또는 취소 `None`. API v3 필요 |
 | `PlayerMoved { player_id, tick, x, y, z, yaw, pitch, head_yaw }` | 승인돼 실제로 바뀐 위치·회전. `x/y/z`는 공통 발 좌표. API v6 필요 |
 | `PlayerEquipped { player_id, slot, item, count }` | 선택 슬롯이나 손에 든 아이템 종류·수량이 바뀐 뒤. API v6 필요 |
@@ -120,6 +122,7 @@ Stone/Dirt/Grass/Bedrock만 지원하며 한 스택은 최대 64개입니다.
 
 | 액션 | 효과 |
 | --- | --- |
+| `World { request_id, operation }` | 현재 소유 지역의 일관된 조회·원자적 블록 수정. `WorldResponse` 구독과 API v10 필요 |
 | `SetMotd { motd }` | 공통 상태를 바꾸어 두 에디션의 서버 목록에 반영 |
 | `Log { message }` | 플러그인 이름과 함께 호스트 로그에 기록 |
 | `SendMessage { player_id, message }` | 초기화된 해당 플레이어에게만 시스템 메시지 전달. API v2 필요 |
@@ -168,6 +171,63 @@ Action::Inventory {
 자바의 크리에이티브 화면에서 클라이언트가 따로 관리하는 마우스 아이템은 초기화하지 않습니다.
 검증용 플러그인은 `tests/fixtures`에 있으며 일반 설정과 서버 기본 빌드에는 포함하지 않습니다.
 
+## 월드 API
+
+`Hook::WorldResponse`를 구독하고 `Action::World`로 요청합니다. 플레이어 접속 전에도 사용할 수 있습니다.
+현재는 한 소유 지역만 제공하며 블록은 Air·Bedrock·Stone·Dirt·Grass를 지원합니다.
+
+```rust
+use sculith_plugin_api::{Action, WorldOperation, WorldPosition};
+
+Action::World {
+    request_id: 1,
+    operation: WorldOperation::Read {
+        positions: vec![WorldPosition { x: 1, y: 4, z: 2 }],
+    },
+}
+```
+
+`Read`는 최대 64개 좌표를 입력 순서대로 조회합니다. 빈 목록은 지역 정보만 조회합니다.
+`WorldResult::Snapshot { region, blocks }`의 `region`에는 `id`, `revision`,
+블록 좌표의 `min`과 `max_exclusive`가 있습니다. 조회는 청크를 새로 적재하거나 리비전을 바꾸지 않습니다.
+
+```rust
+use sculith_plugin_api::{Action, WorldBlock, WorldOperation, WorldPosition};
+
+Action::World {
+    request_id: 2,
+    operation: WorldOperation::Edit {
+        region_id: region.id,
+        expected_revision: region.revision,
+        blocks: vec![WorldBlock {
+            position: WorldPosition { x: 1, y: 4, z: 2 },
+            block: "minecraft:stone".into(),
+        }],
+    },
+}
+```
+
+`Edit`는 조회한 지역 ID와 리비전으로 최대 64개의 서로 다른 좌표를 수정합니다.
+현재 리비전이 다르거나 좌표·블록 이름·중복 좌표가 잘못되면 수정 전체를 거부합니다.
+성공하면 `WorldResult::Updated { region, previous_revision, changes }`가 돌아옵니다.
+실제 변경이 없는 요청은 리비전을 올리거나 변경 훅을 만들지 않습니다.
+
+정상 형식의 거절은 `WorldResult::Rejected { reason }`으로 돌아옵니다.
+`RevisionConflict { expected, actual }`, `OutsideRegion`, `UnknownRegion`,
+`UnsupportedBlock`, `InvalidRequest`, `RateLimited`, `Unavailable`을 구분할 수 있습니다.
+충돌 시 다시 조회한 뒤 플러그인 정책에 따라 재시도하세요. `request_id`는 응답 연결용 값이며 진행 중인 요청끼리 구분하세요.
+
+작업량은 좌표 수로 계산하며 빈 조회도 1개로 셉니다. 플러그인별 초당 1024개·순간 2048개,
+소유 지역 전체 초당 4096개·순간 8192개로 제한합니다. 지역 한도 초과는 일반 거절 응답입니다.
+64개 초과나 잘못된 식별자 등 프로토콜 형식 위반은 액션 적용 전에 거부하고 해당 플러그인을 비활성화합니다.
+
+수정은 신뢰된 서버 플러그인의 권한으로 실행하며 플레이어 건축 권한·재고를 사용하지 않습니다.
+`WorldBlocksChanged`는 `actor: Player { player_id }` 또는 `Plugin { name }`으로 실제 주체를 표시합니다.
+기존 `BlocksChanged`는 계속 플레이어 변경만 알립니다. 두 훅을 함께 구독하면 플레이어 변경에는 두 알림이 옵니다.
+조회·거절·변경 없는 요청에는 변경 알림이 없으며, 응답은 요청한 플러그인에만 전달됩니다.
+월드 요청은 서버 실행 중에 사용하고 `Stopping`에서는 새 요청을 보내지 마세요.
+종료나 플러그인 중단 직전의 응답 전달은 보장하지 않습니다. 재시도는 새 조회와 리비전 검사로 처리하세요.
+
 ## 명령어와 패킷 관측
 
 `examples/plugins/events`은 수신·이동·장비·인벤토리 훅을 구독하고 `/hello`를 등록하는 Rust 예제입니다.
@@ -208,8 +268,8 @@ Bedrock은 디코딩된 배치 전체를 처리 전에 관찰합니다. 같은 �
 
 ## 통신과 종료
 
-- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `9`, 기존 `1`~`8`도 협상할 수 있습니다.
-- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7,8,9], ... }`를 보냅니다.
+- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `10`, 기존 `1`~`9`도 협상할 수 있습니다.
+- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7,8,9,10], ... }`를 보냅니다.
   기존 v1 SDK는 추가 필드를 무시하고 그대로 동작합니다. SDK는 공통으로 지원하는 가장 높은 버전을 선택합니다.
   새 SDK의 기존 게임 훅은 v2 호스트에서도 동작하고, 폼 훅은 v3가 없는 호스트에서 로드를 거부합니다.
 - 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1~v7 Rust 실행 파일도 새 호스트에서 확인했습니다.
@@ -225,5 +285,5 @@ Bedrock은 디코딩된 배치 전체를 처리 전에 관찰합니다. 같은 �
 
 플러그인은 서버 사용자와 같은 OS 권한을 가집니다. 호스트의 API 검증은 시스템 접근을 제한하는 기능이 아닙니다.
 
-현재는 사전 취소 훅, 일반 World/Entity API, 인벤토리 삭제·임의 슬롯 교체, region scheduler,
+현재는 사전 취소 훅, 여러 지역을 다루는 World API·일반 Entity API, 인벤토리 삭제·임의 슬롯 교체, region scheduler,
 WASI Component 샌드박스와 fuel/memory 제한을 제공하지 않습니다.

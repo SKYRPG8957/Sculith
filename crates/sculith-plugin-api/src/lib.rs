@@ -6,7 +6,7 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 9;
+pub const API_VERSION: u32 = 10;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
@@ -16,6 +16,7 @@ pub const OBSERVATION_API_VERSION: u32 = 6;
 pub const INVENTORY_API_VERSION: u32 = 7;
 pub const CONNECTION_API_VERSION: u32 = 8;
 pub const PACKET_SENT_API_VERSION: u32 = 9;
+pub const WORLD_API_VERSION: u32 = 10;
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     LEGACY_API_VERSION,
     GAME_API_VERSION,
@@ -26,12 +27,17 @@ pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     INVENTORY_API_VERSION,
     CONNECTION_API_VERSION,
     PACKET_SENT_API_VERSION,
+    WORLD_API_VERSION,
 ];
 pub use sculith_core::connections::{
     ConnectionEvent, ConnectionPacket, ConnectionTransport, PacketPhase,
 };
 pub use sculith_core::inventory::{
     InventoryError, InventoryItem, InventoryOperation, InventoryResult, InventoryView,
+};
+pub use sculith_core::world::{
+    BlockChange, RegionInfo, WorldActor, WorldBlock, WorldError, WorldOperation, WorldPosition,
+    WorldResult,
 };
 pub use sculith_core::{CommandSpec, Edition, PacketDispatch, PacketInfo, SimpleForm};
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
@@ -42,6 +48,8 @@ pub const MAX_ACTIONS: usize = 32;
 pub enum Hook {
     Connection,
     PacketSent,
+    WorldResponse,
+    WorldBlocksChanged,
     Started,
     Tick,
     Stopping,
@@ -62,6 +70,8 @@ impl Hook {
     pub const ALL: &[Self] = &[
         Self::Connection,
         Self::PacketSent,
+        Self::WorldResponse,
+        Self::WorldBlocksChanged,
         Self::Started,
         Self::Tick,
         Self::Stopping,
@@ -79,6 +89,7 @@ impl Hook {
     ];
     pub fn minimum_api(&self) -> u32 {
         match self {
+            Self::WorldResponse | Self::WorldBlocksChanged => WORLD_API_VERSION,
             Self::Connection => CONNECTION_API_VERSION,
             Self::PacketSent => PACKET_SENT_API_VERSION,
             Self::Started | Self::Tick | Self::Stopping => LEGACY_API_VERSION,
@@ -126,6 +137,19 @@ pub enum HostMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    /// Private to the plugin that submitted this world operation.
+    WorldResponse {
+        request_id: u32,
+        result: WorldResult,
+    },
+    /// Committed player or plugin block changes; no event for rejected/no-op edits.
+    WorldBlocksChanged {
+        region_id: u64,
+        previous_revision: u64,
+        revision: u64,
+        actor: WorldActor,
+        changes: Vec<BlockChange>,
+    },
     /// Opt-in lifecycle and packet metadata, including pre-login.
     /// PacketSent is delivered only to the separate API-v9 hook.
     Connection {
@@ -215,16 +239,6 @@ pub struct PlayerInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockChange {
-    pub x: i32,
-    pub y: i32,
-    pub z: i32,
-    /// Edition-independent names, never a wire runtime ID.
-    pub before: String,
-    pub after: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InventoryContainer {
     Inventory,
@@ -242,6 +256,8 @@ pub struct InventoryChange {
 impl Event {
     pub fn hook(&self) -> Hook {
         match self {
+            Self::WorldResponse { .. } => Hook::WorldResponse,
+            Self::WorldBlocksChanged { .. } => Hook::WorldBlocksChanged,
             Self::Connection {
                 event: ConnectionEvent::PacketSent { .. },
             } => Hook::PacketSent,
@@ -285,6 +301,10 @@ pub enum PluginMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
+    World {
+        request_id: u32,
+        operation: WorldOperation,
+    },
     Inventory {
         player_id: u64,
         request_id: u32,
@@ -330,6 +350,7 @@ pub enum Action {
 impl Action {
     pub fn minimum_api(&self) -> u32 {
         match self {
+            Self::World { .. } => WORLD_API_VERSION,
             Self::Inventory { .. } => INVENTORY_API_VERSION,
             Self::RegisterCommand { .. } => OBSERVATION_API_VERSION,
             Self::SetMotd { .. } | Self::Log { .. } => LEGACY_API_VERSION,
@@ -626,6 +647,60 @@ mod tests {
         assert_eq!(event.hook(), Hook::PacketSent);
         assert_eq!(event.hook().minimum_api(), 9);
         assert_eq!(Hook::Connection.minimum_api(), 8);
+    }
+
+    #[test]
+    fn world_hooks_require_v10_and_keep_legacy_block_changes_unchanged() {
+        struct WorldPlugin;
+        impl Plugin for WorldPlugin {
+            fn metadata(&self) -> Metadata {
+                Metadata {
+                    name: "world".into(),
+                    version: "1".into(),
+                    hooks: vec![Hook::WorldResponse, Hook::WorldBlocksChanged],
+                }
+            }
+            fn on_event(&mut self, _: Event) -> Vec<Action> {
+                vec![]
+            }
+        }
+        for version in [9, 10] {
+            let mut input = serde_json::to_vec(&Request {
+                id: 1,
+                message: HostMessage::Hello {
+                    api_version: 1,
+                    supported_versions: (1..=version).collect(),
+                    server: ServerStatus::new("test".into(), 20).unwrap(),
+                },
+            })
+            .unwrap();
+            input.push(b'\n');
+            assert_eq!(
+                serve_io(WorldPlugin, &input[..], &mut Vec::new()).is_ok(),
+                version == 10
+            );
+        }
+        assert_eq!(
+            Action::World {
+                request_id: 0,
+                operation: WorldOperation::Read { positions: vec![] }
+            }
+            .minimum_api(),
+            10
+        );
+        assert_eq!(Hook::WorldResponse.minimum_api(), 10);
+        assert_eq!(Hook::WorldBlocksChanged.minimum_api(), 10);
+        assert_eq!(Hook::BlocksChanged.minimum_api(), 2);
+        let change = serde_json::to_value(BlockChange {
+            x: 1,
+            y: 4,
+            z: 2,
+            before: "minecraft:air".into(),
+            after: "minecraft:stone".into(),
+        })
+        .unwrap();
+        assert_eq!(change.as_object().unwrap().len(), 5);
+        assert_eq!(change["x"], 1);
     }
 
     #[test]

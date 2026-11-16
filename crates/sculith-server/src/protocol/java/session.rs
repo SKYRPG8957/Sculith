@@ -961,6 +961,9 @@ impl Session {
         }
         if let WorldEvent::Blocks {
             batch, revisions, ..
+        }
+        | WorldEvent::PluginBlocks {
+            batch, revisions, ..
         } = event
         {
             for (p, revision) in revisions {

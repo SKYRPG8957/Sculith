@@ -36,6 +36,7 @@ struct Process {
     api_version: u32,
     inventory_tokens: f64,
     inventory_clock: Instant,
+    world_budget: Option<(f64, Instant)>,
 }
 
 impl Plugins {
@@ -128,7 +129,8 @@ impl Plugins {
         world: &WorldHandle,
     ) {
         let recipient = match event {
-            WorldEvent::PluginInventoryResult { plugin, .. } => Some(plugin.as_str()),
+            WorldEvent::PluginWorldResult { plugin, .. }
+            | WorldEvent::PluginInventoryResult { plugin, .. } => Some(plugin.as_str()),
             WorldEvent::FormSubmitted(submission) => Some(submission.plugin.as_str()),
             WorldEvent::CommandSubmitted(submission) => {
                 if !self
@@ -148,6 +150,15 @@ impl Plugins {
             }
             _ => None,
         };
+        if self.processes.iter().any(|p| {
+            !p.disabled
+                && p.metadata
+                    .hooks
+                    .contains(&sculith_plugin_api::Hook::WorldBlocksChanged)
+        }) && let Some(world_event) = world_block_event(event)
+        {
+            self.dispatch_for(world_event, None, status, world).await;
+        }
         if let Some(event) = game_event(event) {
             self.dispatch_for(event, recipient, status, world).await;
         }
@@ -185,6 +196,11 @@ impl Plugins {
                 };
                 validate_actions(&actions)?;
                 ensure!(actions.iter().all(|action| action.minimum_api() <= process.api_version), "action exceeds negotiated plugin API");
+                let world_units: usize = actions.iter().filter_map(|a| match a { Action::World { operation, .. } => Some(operation.units()), _ => None }).sum();
+                if world_units != 0 {
+                    ensure!(process.metadata.hooks.contains(&sculith_plugin_api::Hook::WorldResponse), "world requests require WorldResponse subscription");
+                    process.charge_world(world_units, Instant::now())?;
+                }
                 let inventory_actions=actions.iter().filter(|a|matches!(a,Action::Inventory {..})).count();
                 if inventory_actions!=0 {
                     ensure!(process.metadata.hooks.contains(&sculith_plugin_api::Hook::InventoryResponse),"inventory requests require InventoryResponse subscription");
@@ -197,6 +213,9 @@ impl Plugins {
                 }
                 for action in actions {
                     match action {
+                        Action::World { request_id, operation } => {
+                            world.plugin_world(process.metadata.name.clone(), request_id, operation).await?;
+                        }
                         Action::Inventory {player_id,request_id,operation}=>{
                             world.plugin_inventory(process.metadata.name.clone(),player_id,request_id,operation).await?;
                         }
@@ -280,6 +299,25 @@ impl Plugins {
 }
 
 impl Process {
+    fn charge_world(&mut self, units: usize, now: Instant) -> Result<()> {
+        let available = match self.world_budget {
+            Some((tokens, updated)) => (tokens
+                + now
+                    .checked_duration_since(updated)
+                    .context("world budget clock moved backwards")?
+                    .as_secs_f64()
+                    * 1024.0)
+                .min(2048.0),
+            None => 2048.0,
+        };
+        ensure!(
+            units as f64 <= available,
+            "plugin world request limit exceeded"
+        );
+        self.world_budget = Some((available - units as f64, now));
+        Ok(())
+    }
+
     fn charge_inventory(&mut self, count: usize, now: Instant) -> Result<()> {
         let elapsed = now
             .saturating_duration_since(self.inventory_clock)
@@ -325,6 +363,7 @@ impl Process {
             api_version: LEGACY_API_VERSION,
             inventory_tokens: 256.0,
             inventory_clock: Instant::now(),
+            world_budget: None,
         };
         let reply = process
             .request(HostMessage::Hello {
@@ -440,6 +479,7 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
     ensure!(actions.len() <= MAX_ACTIONS, "too many plugin actions");
     for action in actions {
         match action {
+            Action::World { operation, .. } => operation.validate().map_err(anyhow::Error::msg)?,
             Action::Inventory {
                 player_id,
                 operation,
@@ -491,6 +531,34 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
     Ok(())
 }
 
+fn world_block_event(event: &WorldEvent) -> Option<Event> {
+    use sculith_plugin_api::WorldActor;
+    let (batch, actor) = match event {
+        WorldEvent::Blocks {
+            player_id, batch, ..
+        } => (
+            batch,
+            WorldActor::Player {
+                player_id: *player_id,
+            },
+        ),
+        WorldEvent::PluginBlocks { plugin, batch, .. } => (
+            batch,
+            WorldActor::Plugin {
+                name: plugin.clone(),
+            },
+        ),
+        _ => return None,
+    };
+    Some(Event::WorldBlocksChanged {
+        region_id: batch.region.0,
+        previous_revision: batch.previous_revision,
+        revision: batch.revision,
+        actor,
+        changes: sculith_game::world_api::describe_changes(batch),
+    })
+}
+
 pub fn game_event(event: &WorldEvent) -> Option<Event> {
     use sculith_plugin_api::{BlockChange, Edition, PlayerInfo};
     use sculith_world::BlockKind;
@@ -505,6 +573,12 @@ pub fn game_event(event: &WorldEvent) -> Option<Event> {
         .into()
     }
     Some(match event {
+        WorldEvent::PluginWorldResult {
+            request_id, result, ..
+        } => Event::WorldResponse {
+            request_id: *request_id,
+            result: result.clone(),
+        },
         WorldEvent::PluginInventoryResult {
             player_id,
             request_id,

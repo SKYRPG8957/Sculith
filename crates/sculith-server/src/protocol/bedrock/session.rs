@@ -399,9 +399,9 @@ pub async fn handle_with_protection<T: Transport>(
                             conn.send(&output::inventory_ui(&view_player)?).await?;
                         }
                     }
-                    WorldEvent::PluginInventoryResult {..}=>{},
+                    WorldEvent::PluginInventoryResult {..} | WorldEvent::PluginWorldResult {..}=>{},
                     WorldEvent::Chat(message)=>conn.send(&[output::chat(message)]).await?,
-                    WorldEvent::Blocks {batch,revisions,..}=>{
+                    WorldEvent::Blocks {batch,revisions,..} | WorldEvent::PluginBlocks {batch,revisions,..}=>{
                         for (position,revision) in revisions {
                             let Some(known)=interest.get(position).copied() else {continue};
                             if *revision<=known {continue;}

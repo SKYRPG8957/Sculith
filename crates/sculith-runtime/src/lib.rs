@@ -22,6 +22,16 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 #[derive(Debug, Clone)]
 pub enum WorldEvent {
+    PluginWorldResult {
+        plugin: String,
+        request_id: u32,
+        result: sculith_core::world::WorldResult,
+    },
+    PluginBlocks {
+        plugin: String,
+        batch: CommittedBatch,
+        revisions: BTreeMap<ChunkPos, u64>,
+    },
     /// Private adapter update for a server-authored mutation, never a game hook.
     InventoryUpdated {
         player_id: u64,
@@ -107,6 +117,12 @@ impl Drop for PlayerLease {
 }
 
 enum Command {
+    PluginWorld {
+        plugin: String,
+        request_id: u32,
+        operation: sculith_core::world::WorldOperation,
+        reply: oneshot::Sender<()>,
+    },
     PlayerSnapshot {
         id: u64,
         reply: oneshot::Sender<Result<PlayerSnapshot>>,
@@ -259,6 +275,34 @@ impl WorldHandle {
             .await
             .context("world owner stopped")?;
         receiver.await.context("player snapshot response lost")?
+    }
+
+    pub async fn plugin_world(
+        &self,
+        plugin: String,
+        request_id: u32,
+        operation: sculith_core::world::WorldOperation,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            !plugin.is_empty()
+                && plugin.len() <= 64
+                && plugin
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b)),
+            "invalid world request owner"
+        );
+        operation.validate().map_err(anyhow::Error::msg)?;
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::PluginWorld {
+                plugin,
+                request_id,
+                operation,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("world dispatch response lost")
     }
 
     pub async fn plugin_inventory(
@@ -687,6 +731,20 @@ fn publish_inventory(
     }
 }
 
+fn chunk_revisions(
+    state: &mut GameState,
+    batch: &CommittedBatch,
+) -> Result<BTreeMap<ChunkPos, u64>> {
+    let mut revisions = BTreeMap::new();
+    for change in &batch.changes {
+        let position = change.position.chunk();
+        if let std::collections::btree_map::Entry::Vacant(entry) = revisions.entry(position) {
+            entry.insert(state.snapshot(position)?.revision());
+        }
+    }
+    Ok(revisions)
+}
+
 fn publish_blocks(
     state: &mut GameState,
     events: &broadcast::Sender<Arc<WorldEvent>>,
@@ -695,13 +753,7 @@ fn publish_blocks(
     outcome: &BlockOutcome,
 ) -> Result<()> {
     if let BlockOutcome::Committed { batch } = outcome {
-        let mut revisions = BTreeMap::new();
-        for change in &batch.changes {
-            let position = change.position.chunk();
-            if let std::collections::btree_map::Entry::Vacant(entry) = revisions.entry(position) {
-                entry.insert(state.snapshot(position)?.revision());
-            }
-        }
+        let revisions = chunk_revisions(state, batch)?;
         publish_game(
             WorldEvent::Blocks {
                 player_id,
@@ -808,6 +860,15 @@ pub fn with_region_and_content(
                         Some(Command::PlayerSnapshot {id,reply})=>{
                             let result=state.player(id).filter(|p|p.initialized).ok_or_else(||anyhow::anyhow!("player is not initialized"));
                             let _=reply.send(result);
+                        }
+                        Some(Command::PluginWorld { plugin, request_id, operation, reply }) => {
+                            let (result, batch) = state.plugin_world(&operation, Instant::now());
+                            if let Some(batch) = batch {
+                                let revisions = chunk_revisions(&mut state, &batch)?;
+                                publish_game(WorldEvent::PluginBlocks { plugin: plugin.clone(), batch, revisions }, &events, &game_events);
+                            }
+                            let _ = game_events.send(Arc::new(WorldEvent::PluginWorldResult { plugin, request_id, result }));
+                            let _ = reply.send(());
                         }
                         Some(Command::PluginInventory {plugin,id,request_id,operation,reply})=>{
                             use sculith_core::inventory::InventoryResult;
@@ -984,3 +1045,6 @@ pub fn create(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod world_api_tests;

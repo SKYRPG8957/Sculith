@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- API v10 adds owner-serialized world reads and compare-and-set edits of up to 64 blocks. Reads return one consistent region revision without loading chunks; invalid/stale batches make no changes. Per-plugin and owner work quotas bound calls. Private results return only to the submitting plugin. Committed player/plugin edits share the existing Java/native delivery and expose explicit attribution through the new world hook, preserving the older player-only hook.
+
 - Production reservations/spawns now start with an empty 36-slot inventory and matching empty hotbar/hand. The prototype Stone/Dirt/Grass grants are removed; creative selection and plugin grants still use the existing owner validation. The bounded 64-entry transaction replay history allocates on first use. Test/benchmark setup explicitly creates its materials rather than adding an engine command or a special production mode.
 
 - API v9 adds separately subscribed clientbound packet metadata for Java TCP and native RakNet/NetherNet. Complete writes/batches emit after transport acceptance; partial, failed and cancelled sends do not. Directions retain independent consecutive sequences and share one lifecycle. API-v8 subscribers receive only their original event set; disabled observations allocate no per-connection trace.
@@ -71,6 +73,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- World API validation passes 231 project tests, Clippy, ownership doctests and architecture checks. A real Rust controller edits two chunks; independent Java/native peers observe the same five plugin/player block changes over revisions 1–3. Rejected bounds/types/duplicates/stale revisions and no-op edits cause no public deltas. Separate workers verify private responses and legacy callbacks; a flooding worker is disabled while discovery keeps working. Orderly restart restores plugin edits and the shared CAS revision, including cross-chunk heightmap/skylight verification. Existing inventory, packet hooks, forms, sounds, static models, Java gameplay, native transports and public pack-proxy checks pass.
 
 - Empty-start validation passes 221 project tests, Clippy, ownership doctests and independent Java/native startup/gameplay/inventory/peer/content probes. Every independent native spawn checks the empty main inventory, hand and auxiliary windows; Java verifies its empty baseline before optional creative fixture selection, and also enters without fixture items. A real RakNet request with an empty hand is corrected before explicit creative material is supplied. Both editions retain movement/building, grants, counted hands, forms, sounds, models and pack transfer.
   Source `98245d6` also passes Linux CI and all configured native Windows build/runtime/interoperability steps. An actual unmodified Java 26.3 fresh profile displays the empty hotbar and shared model, then selects Stone through the creative UI; a separate peer observes the committed one-item hand. [Evidence and scope](verification/empty-inventory.md).
@@ -183,6 +187,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+The release authority probe measures 10,000 world reads of 64 blocks in **14.273437 ms** and 1,000 atomic 32-block edit batches in **3.767321 ms**. Requests are prepared before the edit timer; typed response construction, validation and commit are included. Reads leave the loaded chunk count unchanged. The synthetic monotonic clock avoids quota exhaustion; sockets, plugin IPC, rendering and persistence are excluded. This is a local kernel sample, not server TPS or a comparison with another engine.
+
 After removing starter items, the release authority benchmark prepares Stone/Dirt/Grass explicitly before timing. One local sample measures 10,000 movement operations **779.723 µs**, 1,000 placement/break pairs **331.649 µs**, 10,000 inventory transfers **2.872583 ms**, and 10,000 plugin give/view/clear cycles **2.825661 ms**. It retains the same kernel assertions and synthetic clock, excluding sockets, rendering and persistence. These are local samples, not a claimed speedup; the replay cache's initially zero capacity is separately asserted.
 
 API-v9 connection observer release microbenchmark (`cargo test -p sculith-server --release connection_observer_benchmark -- --ignored --nocapture`), median of five 10,000-cycle runs: disabled **377.418 µs**, inbound **3.327606 ms**, inbound plus outbound **4.160279 ms**. Each cycle opens/clones/attaches/drops/drains; enabled directions each create one metadata event. This measures local tracing and bounded-ring delivery, excluding sockets, encryption, plugin IPC and game work. The cases perform different work and are not a speedup or TPS comparison.
@@ -230,14 +236,14 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 - NetherNet supports local compatibility and configured direct-peer media. Required-authentication mode checks Microsoft token signatures/claims and the P-384 fingerprint proof; offline local mode checks fingerprint ownership and expiry only. The inner Bedrock login policy remains separate. Official entry is user-reported; successful real-account entry, Internet/NAT routing, TURN and signaling proxy support remain unverified or unimplemented.
 - Both NetherNet channels now reach the validated owner. A real test commits valid unreliable movement and corrects a large tick/teleport attempt over the reliable channel. Official-client movement/rendering still require verification.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
-- Plugins expose lifecycle/MOTD, post-commit game hooks, connection and bidirectional packet metadata, public player commands, private messages, simple forms, private sounds and static models through trusted executable processes. WASI Component execution, general world/entity APIs, inventory removal/arbitrary slot replacement, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
+- Plugins expose lifecycle/MOTD, post-commit game hooks, connection and bidirectional packet metadata, public player commands, private messages, simple forms, private sounds and static models through trusted executable processes. WASI Component execution, multi-region world access, general entity APIs, inventory removal/arbitrary slot replacement, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
 - Conversion supports explicit static PNG overrides, bounded single-clip Vorbis sound events and explicit static cuboid models. Configured HTTP/proxy pack delivery and shared simple forms are implemented; rotated/animated models, arbitrary-UI conversion, content IR, Companion and hot reload are pending. Internet routing/TLS proxy deployment remains unverified.
 - Latest protocol types expose camera instruction, preset, aim-assist and spline packets, but Sculith has no camera API or scenario tests yet.
 - REA CLI/direct stdio MCP is usable. The active chat tool namespace does not refresh automatically, and no official Windows GDK binary is available here for artifact analysis.
 
 ## Next Action
 
-Add owner-validated general world APIs and bounded region saving/recovery. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
+Add bounded region saving/recovery, general entity APIs and region-safe scheduling. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
 
 Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 

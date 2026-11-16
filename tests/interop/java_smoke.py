@@ -128,7 +128,7 @@ def palette(reader, size):
             for i in range(size)]
 
 
-def light(reader, edited=None):
+def light(reader, edited=None, heights=None):
     masks = [int.from_bytes(reader.take(reader.varint()), "little") for _ in range(4)]
     assert masks == [2**26 - 1, 0, 0, 2**26 - 1], masks
     assert reader.varint() == 26
@@ -137,7 +137,15 @@ def light(reader, edited=None):
         assert length == 2048
         values = reader.take(length)
         for y in range(16):
-            if edited is None:
+            if heights is not None:
+                expected = bytearray(128)
+                for z in range(16):
+                    for x in range(0, 16, 2):
+                        low = 15 if section * 16 + y >= heights[z * 16 + x] else 0
+                        high = 15 if section * 16 + y >= heights[z * 16 + x + 1] else 0
+                        expected[z * 8 + x // 2] = low | (high << 4)
+                assert values[y * 128:(y + 1) * 128] == expected
+            elif edited is None:
                 expected = bytes([255 if section * 16 + y >= 4 else 0]) * 128
                 assert values[y * 128:(y + 1) * 128] == expected
             elif section == 0 and y == 3:
@@ -150,13 +158,25 @@ def light(reader, edited=None):
 def chunk(reader, edits=None):
     x, z = reader.number(">i"), reader.number(">i")
     assert -2 <= x <= 2 and -2 <= z <= 2
+    heights = [4] * 256
+    if edits:
+        columns = {(gx, gz) for gx, _, gz in edits if gx // 16 == x and gz // 16 == z}
+        for gx, gz in columns:
+            top = max([4] + [y + 1 for (ex, y, ez), value in edits.items() if ex == gx and ez == gz and value != 0])
+            while top > -64:
+                y = top - 1
+                baseline = 88 if y == 0 else 10 if y in (1, 2) else 9 if y == 3 else 0
+                if edits.get((gx, y, gz), baseline) != 0:
+                    break
+                top -= 1
+            heights[(gz % 16) * 16 + gx % 16] = top
     count = reader.varint()
     assert count == 2
     for expected in [1, 4]:
         assert reader.varint() == expected
         assert reader.varint() == 37
         words = [reader.number(">Q") for _ in range(37)]
-        assert all(((words[i // 7] >> ((i % 7) * 9)) & 511) == 68 for i in range(256))
+        assert all(((words[i // 7] >> ((i % 7) * 9)) & 511) == heights[i] + 64 for i in range(256))
     sections = Read(reader.take(reader.varint()))
     for sy in range(-4, 20):
         blocks, fluids = sections.number(">H"), sections.number(">H")
@@ -166,13 +186,13 @@ def chunk(reader, edits=None):
             y = sy * 16 + i // 256
             lx, lz = i % 16, (i // 16) % 16
             wanted = 88 if y == 0 else 10 if y in (1, 2) else 9 if y == 3 else 0
-            if edits and (x, z) == (0, 0):
-                wanted = edits.get((lx, y, lz), wanted)
+            if edits:
+                wanted = edits.get((x * 16 + lx, y, z * 16 + lz), wanted)
             assert value == wanted, (x, z, lx, y, lz, value, wanted)
         assert sections.number(">B") == 0 and sections.varint() == 41
     sections.end()
     assert reader.varint() == 0
-    light(reader)
+    light(reader, heights=heights if any(height != 4 for height in heights) else None)
     reader.end()
     return x, z
 

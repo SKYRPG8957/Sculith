@@ -5,6 +5,7 @@
 
 pub mod commands;
 pub mod inventory;
+pub mod world_api;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -322,6 +323,7 @@ pub struct GameState {
     spawn: Position,
     players: BTreeMap<u64, Player>,
     next_form_id: u32,
+    world_budget: Option<Budget>,
     registered_sounds: BTreeSet<String>,
     registered_models: BTreeSet<String>,
 }
@@ -376,6 +378,7 @@ impl GameState {
             registered_sounds,
             registered_models,
             next_form_id: 1,
+            world_budget: None,
             region,
             max_players,
             spawn,

@@ -2,6 +2,7 @@
 
 pub mod connections;
 pub mod inventory;
+pub mod world;
 
 use serde::{Deserialize, Serialize};
 

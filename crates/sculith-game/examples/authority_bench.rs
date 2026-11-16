@@ -135,6 +135,60 @@ fn main() {
         "Validated plugin give/view/clear: 10000 cycles in {:?}",
         started.elapsed()
     );
+    use sculith_core::world::{WorldBlock, WorldOperation, WorldPosition, WorldResult};
+    let positions: Vec<_> = (0..64).map(|x| WorldPosition { x, y: 4, z: 3 }).collect();
+    let query = WorldOperation::Read { positions };
+    let loaded = game.capture().chunks().len();
+    let revision = game.revision();
+    let started = Instant::now();
+    for index in 0..10_000 {
+        let (result, notification) = game.plugin_world(
+            &query,
+            clock + Duration::from_millis(2_500_000 + index * 100),
+        );
+        assert!(notification.is_none());
+        assert!(
+            matches!(&result,WorldResult::Snapshot {region,blocks} if region.revision==revision && blocks.len()==64)
+        );
+        black_box(result);
+    }
+    println!(
+        "Validated world reads: 10000 requests of 64 blocks in {:?}",
+        started.elapsed()
+    );
+    assert_eq!(game.capture().chunks().len(), loaded);
+    let edits: Vec<_> = (0..1000)
+        .map(|index| WorldOperation::Edit {
+            region_id: 0,
+            expected_revision: revision + index,
+            blocks: (0..32)
+                .map(|x| WorldBlock {
+                    position: WorldPosition { x, y: 4, z: 3 },
+                    block: if index % 2 == 0 {
+                        "minecraft:stone"
+                    } else {
+                        "minecraft:air"
+                    }
+                    .into(),
+                })
+                .collect(),
+        })
+        .collect();
+    let started = Instant::now();
+    for (index, operation) in edits.iter().enumerate() {
+        let (result, notification) = game.plugin_world(
+            operation,
+            clock + Duration::from_millis(4_000_000 + index as u64 * 100),
+        );
+        assert!(matches!(&result,WorldResult::Updated {changes,..} if changes.len()==32));
+        assert_eq!(notification.as_ref().unwrap().changes.len(), 32);
+        black_box((result, notification));
+    }
+    assert_eq!(game.revision(), revision + 1000);
+    println!(
+        "Validated world edits: 1000 atomic batches of 32 blocks in {:?}",
+        started.elapsed()
+    );
     println!(
         "Synthetic monotonic clock; no sockets, rendering, physics tick or persistence workload."
     );
