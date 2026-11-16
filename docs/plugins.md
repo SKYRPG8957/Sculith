@@ -26,7 +26,7 @@ cargo run --locked -- run --config examples/gameplay-preview.toml
 ```
 
 이 소스 예제 설정은 Linux/macOS 경로입니다. Windows에서 직접 빌드했다면 플러그인 경로에 `.exe`를 붙이세요.
-공개 Preview 13에 동봉한 `plugins/sculith-gameplay-plugin.exe`는 별도 Rust 설치 없이 실행합니다.
+공개 Preview 14에 동봉한 `plugins/sculith-gameplay-plugin.exe`는 별도 Rust 설치 없이 실행합니다.
 데모는 설정한 MOTD를 유지하고, 접속자에게 환영 메시지를 보낸 뒤 승인된 블록 변경의 리비전을 로그에 기록합니다.
 
 외부 Rust 프로젝트는 현재 `sculith-plugin-api`를 로컬 경로 의존성으로 사용할 수 있습니다.

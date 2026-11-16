@@ -10,7 +10,7 @@ cargo build --workspace --locked
 cargo run --locked -- run --config examples/sounds-preview.toml
 ```
 
-Public [Windows Preview 13](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.13)
+Public [Windows Preview 14](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.14)
 bundles the sound executable, gameplay/forms examples and original pack. New
 settings enable all three; existing settings are preserved.
 

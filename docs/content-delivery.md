@@ -16,7 +16,7 @@ when building on Windows). Java **26.3** connects to `127.0.0.1:25565`; Bedrock
 uses `127.0.0.1:19132`. Accept the game's resource-pack prompt when shown. Stone
 uses the original green checkerboard from `examples/pack/bedrock` in both packs.
 The default source configuration still has no content pack. Public Windows
-Preview 13 bundles the example assets and enables them only in newly created
+Preview 14 bundles the example assets and enables them only in newly created
 settings. Existing settings are preserved.
 
 ## Configure and inspect

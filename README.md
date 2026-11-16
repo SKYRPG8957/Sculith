@@ -51,15 +51,15 @@ Multiplayer entity visibility, general inventory transactions, physics/gravity, 
 
 ## Windows quick start
 
-For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.13), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
+For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.14), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
 
 In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
 
 Java **26.3** uses **`127.0.0.1:25565`** and shares the same owner and committed block changes. Existing configurations do not automatically enable Java sessions; see [the Java preview guide](docs/java-preview.md).
 
-Preview 13 selects the local, offline-identity Java and Bedrock previews and includes the actual-game wire corrections, Rust gameplay/forms/sound plugins and automatic shared texture/sound-pack delivery. Official Linux Java entry/building, plugin messages, downloaded textures, menu button/cancel outcomes and actual custom-sound PCM output are verified; official Bedrock-game entry and Windows game rendering remain unverified. See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
+Preview 14 selects the local, offline-identity Java and Bedrock previews and includes the actual-game wire corrections, Rust gameplay/forms/sound/model plugins and automatic shared texture/sound/model-pack delivery. Official Linux Java entry/building, plugin messages, downloaded textures, menu button/cancel outcomes and actual custom-sound PCM output and static model rendering/lifecycle are verified; official Bedrock-game entry and Windows game rendering remain unverified. See [Windows setup and connection troubleshooting](docs/windows-quickstart.md). The preview release includes SHA-256 checksums, build metadata and dependency license texts.
 
-The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 corrected this; Preview 13 retains that handling. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official Bedrock-game entry remains unverified.
+The Windows GDK `1.26.63` Preview 6 retest completed login, then Sculith rejected an Interact/33 notification before initialization and disconnected with `InitialConnection-40`. Preview 7 corrected this; Preview 14 retains that handling. Both transport regression tests and independent startup/spawn/full-chunk probes pass on Windows; official Bedrock-game entry remains unverified.
 
 ## Build from source
 
@@ -105,7 +105,7 @@ cargo run --locked -- run --config examples/with-plugin.toml
 
 The original welcome example changes the common MOTD. The new gameplay example sends a private welcome after player initialization and observes accepted block changes; run it with `examples/gameplay-preview.toml`. Current plugins are trusted executable JSON-lines processes, not a sandbox. The official host design will evaluate the WASI Component Model, resource limits and region-aware APIs.
 
-Public Preview 13 includes API v4 and gameplay/forms/sound examples, enabled in new Windows configurations. Older v1/v2/v3 executables remain supported. It sends each initialized player a private welcome and logs committed block changes. Existing configurations are preserved and do not automatically add plugins.
+Public Preview 14 includes API v5 and gameplay/forms/sound/model examples, enabled in new Windows configurations. Older v1/v2/v3/v4 executables remain supported. It sends each initialized player a private welcome and logs committed block changes. Existing configurations are preserved and do not automatically add plugins.
 
 See the [plugin SDK guide](docs/plugins.md) and [example source](examples/welcome-plugin/src/main.rs).
 
@@ -127,7 +127,7 @@ cargo run --locked -- pack convert \
   --pack-format 97 --pack-format-minor 1
 ```
 
-The output must be a new directory. [Automatic local pack delivery](docs/content-delivery.md) is available in Preview 13 and in source with `examples/content-preview.toml`. Rotated/animated models and arbitrary JSON-UI conversion remain unfinished; [simple shared forms](docs/forms.md) are available.
+The output must be a new directory. [Automatic local pack delivery](docs/content-delivery.md) is available in Preview 14 and in source with `examples/content-preview.toml`. Rotated/animated models and arbitrary JSON-UI conversion remain unfinished; [simple shared forms](docs/forms.md) are available.
 
 ## Development checks
 

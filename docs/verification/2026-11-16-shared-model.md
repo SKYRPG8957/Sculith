@@ -71,3 +71,10 @@ I/O, validation and both archives. Source: nine files / 12,737 bytes; native/Jav
 ZIPs: 14,096 / 11,911 bytes. Median wall time is 7.790 ms, peak child RSS 16,356 KiB
 (Linux `wait4`). This is not TPS, server memory or a large-pack performance claim.
 Individual measurements and pack hashes are in the JSON record.
+
+## Public publication
+
+[Publication run 43808277834](https://github.com/SKYRPG8957/Sculith/actions/runs/43808277834)
+publishes Preview 14 from this exact tested source. Fresh unauthenticated HTTPS
+ZIP/checksum downloads pass source/tag/SHA-256 verification. Installer/download
+defaults select Preview 14; native public installation is being checked.

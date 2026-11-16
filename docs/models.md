@@ -11,6 +11,10 @@ cargo build --workspace --locked
 cargo run --locked -- run --config examples/models-preview.toml
 ```
 
+Public [Windows Preview 14](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.14)
+bundles all four examples and original assets. New settings enable them; existing
+settings are preserved.
+
 Java uses `127.0.0.1:25565`; the native preview uses `127.0.0.1:19132` on the same
 machine. The source configuration accepts local offline identities. Append `.exe`
 to the model plugin path on Windows. Required pack loading precedes initialization

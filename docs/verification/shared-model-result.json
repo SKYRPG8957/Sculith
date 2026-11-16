@@ -261,5 +261,12 @@
       "java_sha1": "4ec0f94603861aeceb633e2384b12d7cc3213135",
       "java_sha256": "4d94857e16ac03570e514fd20137e98b66363dcdf6cb47f10ba6050039ce119b"
     }
+  },
+  "publication": {
+    "run_id": "43808277834",
+    "version": "v0.1.0-preview.14",
+    "unauthenticated_https_verified": true,
+    "immutable_source_tag_verified": true,
+    "installer_run_id": null
   }
 }
