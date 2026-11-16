@@ -206,6 +206,46 @@
     "version": "v0.1.0-preview.13",
     "unauthenticated_https_verified": true,
     "immutable_source_tag_verified": true,
-    "installer_run_id": null
+    "installer_run_id": "43803138651",
+    "installer_conclusion": "success"
+  },
+  "combined_actual_game": {
+    "schema_version": 1,
+    "scope": "actual unmodified offline Java 26.3 game on Linux; original custom sound after required-pack load and player initialization",
+    "client_jar_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+    "audio_backend": "stock OpenAL Soft Wave File Writer",
+    "capture": "raw device output captured while running; RIFF sizes retain unknown-length sentinels",
+    "format": {
+      "type": "WAVE_FORMAT_EXTENSIBLE / PCM16",
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bits_per_sample": 16
+    },
+    "raw_capture_bytes": 868420,
+    "raw_capture_sha256": "1fc7903de65d4788f51ed9555209a270970c8c570a37e79e6bb6fa6e76aea940",
+    "pcm_sha256": "8f946616caa6c3d09040f001f9df5ce688b6d6db2fcd228858a593ef1dee0bfc",
+    "pcm_frames": 217088,
+    "analysis": {
+      "one_second_window_start": 1.5,
+      "rms_int16": 836.1007209343112,
+      "fft_peak_hz": 880.0,
+      "spectral_energy_fraction_875_885_hz": 0.9854933664745317,
+      "method": "channel mean, strongest 1-second window at 0.5-second spacing; Hann-windowed NumPy rFFT"
+    },
+    "authored_clip_sha256": "8e15745a94e04437cb78f5ae39fb2a6dda7390baae40079f91c2015effd8001f",
+    "screenshot_sha256": "8ee267cd637dc5085f853b2abdf1645fbe32b3305b363f764f804b093d07d486",
+    "official_bedrock_game_verified": false,
+    "checkout_commit": "2dcc0c7236f69c5a27c1991c4f6a327087228a86",
+    "runtime_source_commit": "e3fe40318a496da96f22a7c9d0ce4b46cab5eaaa",
+    "scenario": "all three bundled gameplay/forms/sound examples together; actual menu click selection 0 and private welcome/help visible in chat history",
+    "plugins": [
+      "gameplay-demo",
+      "forms-demo",
+      "sound-demo"
+    ],
+    "api_version": 4,
+    "menu_callback_selection": 0,
+    "result_screenshot_sha256": "17da68552ce73aa91dd9a081d429e65cded8c6eadf9e8706bae8eaffee98fd54",
+    "runtime_binary_sha256": "70943a3a59a260aa3fcfca8f670ff49d79c98094ea1c34e22b95a89f3deb456d"
   }
 }

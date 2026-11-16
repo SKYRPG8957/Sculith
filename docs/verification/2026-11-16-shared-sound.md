@@ -61,7 +61,11 @@ The original MIT text is preserved (Windows checkout line endings differ).
 [Publication run 43802965625](https://github.com/SKYRPG8957/Sculith/actions/runs/43802965625)
 created public Preview 13 from this tested immutable build. A fresh unauthenticated
 HTTPS ZIP/checksum download passes exact source/tag/SHA-256 verification. Current
-installer/download defaults select Preview 13; native public installation is pending. Official Windows Bedrock GDK world entry and sound rendering
+installer/download defaults select Preview 13. Native Windows PowerShell 5.1
+[installation run 43803138651](https://github.com/SKYRPG8957/Sculith/actions/runs/43803138651)
+passes direct installation, the documented raw-HTTPS one-command install, both
+launchers and preservation of an existing directory. New settings validate both
+adapters, all three registered plugin EXEs and the bundled pack paths. Official Windows Bedrock GDK world entry and sound rendering
 remain unverified: the available native test is an independent client, not the
 official game.
 
@@ -71,3 +75,23 @@ files / 6,065 bytes; generated native/Java ZIPs are 6,798 / 7,191 bytes. Median 
 time is 4.586 ms and maximum child RSS is 16,288 KiB (`wait4`, Linux). This is not
 a server memory, TPS or large-pack performance claim; individual samples are in
 the JSON record.
+
+## Combined bundled examples
+
+A final actual-game run enables the gameplay, forms and sound examples together,
+matching the fresh Windows configuration. All negotiate API v4. The same server
+binary hash as the primary capture loads the required pack, initializes the
+player, displays the native Java dialog and produces the custom 880-Hz PCM tone
+while the menu is open (98.5493% spectral energy in 875–885 Hz). A real mouse click
+on the first choice reaches the owning Rust plugin with `selection=Some(0)`.
+Opening chat history displays both its private help and the gameplay welcome.
+The checkout `2dcc0c7236f69c5a27c1991c4f6a327087228a86` only changes documents and the
+installer after the tested runtime source; the recorded executable hash is equal.
+
+![Actual combined menu and tone scenario](shared-sound-combined-java.png)
+
+![Actual combined private welcome and menu callback](shared-sound-combined-result-java.png)
+
+Both screenshots are unmodified captures. Hashes, capture format, FFT parameters
+and callback details are in the JSON record. Owned game/server/display processes
+were stopped after verification.
