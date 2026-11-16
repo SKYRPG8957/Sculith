@@ -1,4 +1,82 @@
 use super::*;
+
+#[test]
+fn plugin_inventory_is_live_bounded_and_separate_from_client_permission_and_budget() {
+    use sculith_core::inventory::{InventoryError, InventoryOperation};
+    let now = Instant::now();
+    let mut game = GameState::new(Region::flat_origin(), 20).unwrap();
+    let player = game
+        .reserve(profile(1001), Permissions::default(), now)
+        .unwrap();
+    let give = InventoryOperation::Give {
+        item: "minecraft:bedrock".into(),
+        count: 65,
+    };
+    assert!(matches!(
+        game.plugin_inventory(player.id, &give, now),
+        Err(InventoryError::PlayerUnavailable)
+    ));
+    game.activate(player.id).unwrap();
+    let result = game.plugin_inventory(player.id, &give, now).unwrap();
+    assert_eq!(result.player.inventory[3].unwrap().count, 64);
+    assert_eq!(result.player.inventory[4].unwrap().count, 1);
+    let view = result.player.inventory_view();
+    assert_eq!(view.slots.len(), 36);
+    assert_eq!(view.slots[4].as_ref().unwrap().item, "minecraft:bedrock");
+    assert!(!game.player(player.id).unwrap().permissions.can_build);
+    let unknown = InventoryOperation::Give {
+        item: "minecraft:unknown".into(),
+        count: 1,
+    };
+    assert!(matches!(
+        game.plugin_inventory(player.id, &unknown, now),
+        Err(InventoryError::UnsupportedItem)
+    ));
+    for _ in 0..14 {
+        game.plugin_inventory(player.id, &InventoryOperation::Get, now)
+            .unwrap();
+    }
+    assert!(matches!(
+        game.plugin_inventory(player.id, &InventoryOperation::Get, now),
+        Err(InventoryError::RateLimited)
+    ));
+    game.plugin_inventory(
+        player.id,
+        &InventoryOperation::Get,
+        now + Duration::from_millis(125),
+    )
+    .unwrap();
+    assert!(matches!(
+        game.plugin_inventory(player.id, &give, now),
+        Err(InventoryError::RateLimited)
+    ));
+    let client = game
+        .inventory_request(
+            player.id,
+            crate::inventory::Request {
+                id: -1,
+                actions: vec![crate::inventory::Action::Destroy {
+                    source: crate::inventory::SlotRef {
+                        slot: crate::inventory::Slot::Inventory(0),
+                        expected_id: 1,
+                    },
+                    count: 1,
+                }],
+            },
+            now + Duration::from_millis(125),
+        )
+        .unwrap();
+    assert_eq!(
+        client.response.result,
+        Err(crate::inventory::RejectReason::Unauthorized)
+    );
+    assert_eq!(game.revision(), 0);
+    game.retire(player.id);
+    assert!(matches!(
+        game.plugin_inventory(player.id, &InventoryOperation::Get, now),
+        Err(InventoryError::PlayerUnavailable)
+    ));
+}
 use std::time::Duration;
 
 fn profile(index: u128) -> Profile {

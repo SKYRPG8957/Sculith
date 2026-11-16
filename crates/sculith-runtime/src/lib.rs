@@ -22,6 +22,16 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 #[derive(Debug, Clone)]
 pub enum WorldEvent {
+    /// Private adapter update for a server-authored mutation, never a game hook.
+    InventoryUpdated {
+        player_id: u64,
+    },
+    PluginInventoryResult {
+        plugin: String,
+        player_id: u64,
+        request_id: u32,
+        result: sculith_core::inventory::InventoryResult,
+    },
     InventoryChanged {
         player_id: u64,
         changes: Vec<sculith_game::inventory::Change>,
@@ -97,6 +107,17 @@ impl Drop for PlayerLease {
 }
 
 enum Command {
+    PlayerSnapshot {
+        id: u64,
+        reply: oneshot::Sender<Result<PlayerSnapshot>>,
+    },
+    PluginInventory {
+        plugin: String,
+        id: u64,
+        request_id: u32,
+        operation: sculith_core::inventory::InventoryOperation,
+        reply: oneshot::Sender<()>,
+    },
     InventoryClick {
         id: u64,
         click: sculith_game::inventory::Click,
@@ -229,6 +250,47 @@ enum Command {
 }
 
 impl WorldHandle {
+    /// Adapters read current owner state when consuming an asynchronous update;
+    /// a queued notification must never restore an older client transaction.
+    pub async fn player_snapshot(&self, id: u64) -> Result<PlayerSnapshot> {
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::PlayerSnapshot { id, reply })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("player snapshot response lost")?
+    }
+
+    pub async fn plugin_inventory(
+        &self,
+        plugin: String,
+        id: u64,
+        request_id: u32,
+        operation: sculith_core::inventory::InventoryOperation,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            !plugin.is_empty()
+                && plugin.len() <= 64
+                && plugin
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b)),
+            "invalid inventory request owner"
+        );
+        operation.validate().map_err(anyhow::Error::msg)?;
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::PluginInventory {
+                plugin,
+                id,
+                request_id,
+                operation,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("inventory dispatch response lost")
+    }
+
     pub async fn inventory_click(
         &self,
         id: u64,
@@ -743,6 +805,28 @@ pub fn with_region_and_content(
                     ).collect();
                     for id in dead { retire(&mut state, &mut leases, &events, &game_events, &peer_events, id); }
                     match command {
+                        Some(Command::PlayerSnapshot {id,reply})=>{
+                            let result=state.player(id).filter(|p|p.initialized).ok_or_else(||anyhow::anyhow!("player is not initialized"));
+                            let _=reply.send(result);
+                        }
+                        Some(Command::PluginInventory {plugin,id,request_id,operation,reply})=>{
+                            use sculith_core::inventory::InventoryResult;
+                            let previous=state.player(id);
+                            let result=match state.plugin_inventory(id,&operation,Instant::now()) {
+                                Ok(outcome)=>{
+                                    if let Ok(changes)=&outcome.response.result && !changes.is_empty() {
+                                        let _=events.send(Arc::new(WorldEvent::InventoryUpdated {
+                                            player_id:id,
+                                        }));
+                                    }
+                                    publish_inventory(previous.as_ref(),&outcome,&game_events,&peer_events,observations.load(Ordering::Acquire));
+                                    InventoryResult::Snapshot {inventory:outcome.player.inventory_view()}
+                                }
+                                Err(reason)=>InventoryResult::Rejected {reason},
+                            };
+                            let _=game_events.send(Arc::new(WorldEvent::PluginInventoryResult {plugin,player_id:id,request_id,result}));
+                            let _=reply.send(());
+                        }
                         Some(Command::InventoryClick {id,click,reply})=>{
                             let previous=state.player(id);
                             let result=state.inventory_click(id,click,Instant::now());

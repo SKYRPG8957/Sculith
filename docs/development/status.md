@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- API v7 adds owner-validated inventory queries and atomic grants, with private correlated responses, separate player/plugin budgets, current-state notifications and Java slot deltas that preserve the creative carried stack. The server registers no reward/test commands. Command-driven verification lives only under `tests/fixtures`; default Cargo builds select the server.
+
 - Engine boundaries are now separate implemented crates: `sculith-game` owns game decisions, `sculith-runtime` owns the world mailbox/leases/peer projection, and `sculith-plugin-host` owns executable plugin lifecycle. The game crate has no protocol or Tokio dependency; runtime receipt metadata comes from core rather than the SDK. Existing server module exports and SDK serialization remain compatible. CI checks dependency direction.
 - Examples are grouped under `examples/configs` and `examples/plugins`; independent clients are under `tests/interop`. Operator guides, internals and development records are separated under `docs`. Historical evidence and the engineering directive are retained. Launch templates are under `packaging/windows`; content demos are opt-in through `examples/configs/demo.toml`.
 - Startup logs show version, actual listeners and startup time. Java's server-list text uses the configured MOTD. Configuration-disabled Java login sends a concise reason; diagnostics retain stage/cause fields.
@@ -53,6 +55,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- Local API-v7 checks pass 185 project tests, Clippy, ownership doctest and independent Java/native grant/query, recipient isolation, full-inventory rejection and cursor preservation. Retained v1–v6 workers pass the new host. The stock Java 26.3 game renders the server-granted stack and displays the private query result using a test-only plugin; no GDK gameplay claim is added. Native Windows validation of this change is pending CI.
 
 - Linux workspace build, Clippy with warnings denied, 179 project tests and the ownership compile-fail doctest pass. The independent Java/native inventory check covers creative creation, actual counts/stack IDs, split/swap, stale predictions, bounded replay/conflict, unsupported-action resynchronization, counted peer hands and committed Rust inventory hooks.
 - Independent packet/event, bidirectional chat/command, equipment, gameplay plugin, forms, sounds, static models and required-pack/cache/consent checks pass. These are wire/owner checks, distinct from actual-game verification.
@@ -133,6 +137,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+API-v7 kernel sample: `cargo run --release --locked -p sculith-game --example authority_bench` measures 10,000 grant/view/clear cycles in **2.624965 ms**. This synthetic clock excludes sockets, mailbox and plugin IPC costs and does not establish server TPS.
+
 Reproduction: `cargo run --release --locked -p sculith-world --example world_bench -- 10000`.
 One Linux x86_64 cloud run with the pinned compiler measured:
 
@@ -164,7 +170,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 - NetherNet uses loopback HTTP signaling and same-machine media sources only. Offer fingerprint ownership and expiry are checked; the signaling token issuer/signature is not authenticated in this preview. The inner Bedrock login policy remains in force. Official entry is user-reported; current gameplay and public token trust remain unverified.
 - Both NetherNet channels now reach the validated owner. A real test commits valid unreliable movement and corrects a large tick/teleport attempt over the reliable channel. Official-client movement/rendering still require verification.
 - Only a single region owner is implemented; no parallel region tick scheduler, migration, merging or splitting exists yet.
-- Plugins expose lifecycle/MOTD, post-commit game hooks, metadata-only play receipt, public player commands, private messages, simple forms, private sounds and static models through trusted executable processes. WASI Component execution, general world/entity/inventory mutation APIs, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
+- Plugins expose lifecycle/MOTD, post-commit game hooks, metadata-only play receipt, public player commands, private messages, simple forms, private sounds and static models through trusted executable processes. WASI Component execution, general world/entity APIs, inventory removal/arbitrary slot replacement, command permissions, cancellation, region/entity scheduling and isolation limits are not implemented.
 - Conversion supports explicit static PNG overrides, bounded single-clip Vorbis sound events and explicit static cuboid models. Optional local delivery and shared simple forms are implemented; rotated/animated models, arbitrary-UI conversion, content IR, Companion, public content hosting and hot reload are pending.
 - Latest protocol types expose camera instruction, preset, aim-assist and spline packets, but Sculith has no camera API or scenario tests yet.
 - REA CLI/direct stdio MCP is usable. The active chat tool namespace does not refresh automatically, and no official Windows GDK binary is available here for artifact analysis.

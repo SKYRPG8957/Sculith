@@ -1,5 +1,7 @@
 //! Shared engine types and validation.
 
+pub mod inventory;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

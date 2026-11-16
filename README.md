@@ -19,7 +19,7 @@ Requires the pinned Rust toolchain and a native linker.
 ```sh
 git clone https://github.com/SKYRPG8957/Sculith.git
 cd Sculith
-cargo build --workspace --locked
+cargo build --locked
 cargo run --locked -- run --config examples/configs/crossplay.toml
 ```
 

@@ -10,7 +10,7 @@ From PowerShell:
 ```powershell
 git clone https://github.com/SKYRPG8957/Sculith.git
 cd Sculith
-cargo build --workspace --release --locked
+cargo build --release --locked
 .\target\release\sculith.exe run --config examples\configs\crossplay.toml
 ```
 

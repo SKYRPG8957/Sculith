@@ -101,6 +101,28 @@ fn main() {
         started.elapsed(),
         game.revision()
     );
+    let started = Instant::now();
+    for index in 0..10_000 {
+        let now = clock + Duration::from_millis(1_000_000 + index * 125);
+        let given = game
+            .plugin_inventory(
+                player.id,
+                &sculith_core::inventory::InventoryOperation::Give {
+                    item: "minecraft:dirt".into(),
+                    count: 5,
+                },
+                now,
+            )
+            .unwrap();
+        assert_eq!(given.player.inventory[3].unwrap().count, 5);
+        black_box(given.player.inventory_view());
+        game.creative_slot(player.id, 3, None, 0, now).unwrap();
+    }
+    assert_eq!(game.revision(), 2000);
+    println!(
+        "Validated plugin give/view/clear: 10000 cycles in {:?}",
+        started.elapsed()
+    );
     println!(
         "Synthetic monotonic clock; no sockets, rendering, physics tick or persistence workload."
     );

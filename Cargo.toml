@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "examples/plugins/*"]
+members = ["crates/*", "examples/plugins/*", "tests/fixtures/*"]
 default-members = ["crates/sculith-server"]
 resolver = "3"
 exclude = ["vendor/nethernet"]

@@ -1,4 +1,8 @@
-use std::{collections::HashSet, process::Stdio, time::Duration};
+use std::{
+    collections::HashSet,
+    process::Stdio,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result, bail, ensure};
 use sculith_core::{ServerStatus, validate_motd, validate_system_message};
@@ -30,6 +34,8 @@ struct Process {
     timeout: Duration,
     disabled: bool,
     api_version: u32,
+    inventory_tokens: f64,
+    inventory_clock: Instant,
 }
 
 impl Plugins {
@@ -87,6 +93,7 @@ impl Plugins {
         world: &WorldHandle,
     ) {
         let recipient = match event {
+            WorldEvent::PluginInventoryResult { plugin, .. } => Some(plugin.as_str()),
             WorldEvent::FormSubmitted(submission) => Some(submission.plugin.as_str()),
             WorldEvent::CommandSubmitted(submission) => {
                 if !self
@@ -143,6 +150,11 @@ impl Plugins {
                 };
                 validate_actions(&actions)?;
                 ensure!(actions.iter().all(|action| action.minimum_api() <= process.api_version), "action exceeds negotiated plugin API");
+                let inventory_actions=actions.iter().filter(|a|matches!(a,Action::Inventory {..})).count();
+                if inventory_actions!=0 {
+                    ensure!(process.metadata.hooks.contains(&sculith_plugin_api::Hook::InventoryResponse),"inventory requests require InventoryResponse subscription");
+                    process.charge_inventory(inventory_actions,Instant::now())?;
+                }
                 let registrations:Vec<_>=actions.iter().filter_map(|action|match action {Action::RegisterCommand {command}=>Some(command.clone()),_=>None}).collect();
                 if !registrations.is_empty() {
                     ensure!(hook==sculith_plugin_api::Hook::Started && process.metadata.hooks.contains(&sculith_plugin_api::Hook::CommandSubmitted),"commands require Started registration and CommandSubmitted subscription");
@@ -150,6 +162,9 @@ impl Plugins {
                 }
                 for action in actions {
                     match action {
+                        Action::Inventory {player_id,request_id,operation}=>{
+                            world.plugin_inventory(process.metadata.name.clone(),player_id,request_id,operation).await?;
+                        }
                         Action::RegisterCommand {..}=>{},
                         Action::SetMotd { motd } => {
                             status.set_motd(motd).map_err(anyhow::Error::msg)?
@@ -227,6 +242,20 @@ impl Plugins {
 }
 
 impl Process {
+    fn charge_inventory(&mut self, count: usize, now: Instant) -> Result<()> {
+        let elapsed = now
+            .saturating_duration_since(self.inventory_clock)
+            .as_secs_f64();
+        let available = (self.inventory_tokens + elapsed * 128.0).min(256.0);
+        ensure!(
+            count as f64 <= available,
+            "plugin inventory request limit exceeded"
+        );
+        self.inventory_tokens = available - count as f64;
+        self.inventory_clock = now;
+        Ok(())
+    }
+
     async fn start(config: &PluginConfig, status: &ServerStatus) -> Result<Self> {
         config.validate()?;
         let mut command = Command::new(&config.path);
@@ -256,6 +285,8 @@ impl Process {
             timeout: Duration::from_millis(config.timeout_ms),
             disabled: false,
             api_version: LEGACY_API_VERSION,
+            inventory_tokens: 256.0,
+            inventory_clock: Instant::now(),
         };
         let reply = process
             .request(HostMessage::Hello {
@@ -362,6 +393,14 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
     ensure!(actions.len() <= MAX_ACTIONS, "too many plugin actions");
     for action in actions {
         match action {
+            Action::Inventory {
+                player_id,
+                operation,
+                ..
+            } => {
+                ensure!(*player_id != 0, "invalid inventory recipient");
+                operation.validate().map_err(anyhow::Error::msg)?;
+            }
             Action::RegisterCommand { command } => {
                 command.validate().map_err(anyhow::Error::msg)?
             }
@@ -419,6 +458,16 @@ pub fn game_event(event: &WorldEvent) -> Option<Event> {
         .into()
     }
     Some(match event {
+        WorldEvent::PluginInventoryResult {
+            player_id,
+            request_id,
+            result,
+            ..
+        } => Event::InventoryResponse {
+            player_id: *player_id,
+            request_id: *request_id,
+            result: result.clone(),
+        },
         WorldEvent::CommandSubmitted(submission) => Event::CommandSubmitted {
             player_id: submission.player_id,
             name: submission.name.clone(),

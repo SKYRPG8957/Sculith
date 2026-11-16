@@ -27,7 +27,7 @@ def until(client, predicate):
             client.chat_messages.append(nbt_text(reader));assert reader.number('>B')==0;reader.end();continue
         assert wire.consume_peer(client,id_,reader),f"unexpected public peer packet {id_}"
 
-def smoke(server,native,plugin=None):
+def smoke(server,native,plugin=None,api_version=7):
     with tempfile.TemporaryDirectory(prefix="sculith peers ") as temporary:
         root=Path(temporary);log=root/"server.log";settings=root/"server.toml"
         settings.write_text('[java]\nsessions=true\nrequire_authentication=false\n'
@@ -104,7 +104,7 @@ def smoke(server,native,plugin=None):
                 text=log.read_text(encoding="utf-8")
                 assert 'peer event backlog' not in text
                 if plugin:
-                    assert 'events-demo' in text and 'api_version=6' in text
+                    assert 'events-demo' in text and f'api_version={api_version}' in text
                     assert re.search(r'events packet .*edition=Java .*name=minecraft:custom_payload dispatch=Unsupported',text)
                     assert re.search(r'events packet .*edition=Bedrock .*name=ScriptCustomEvent dispatch=Unsupported',text)
                     assert len(re.findall(r'events move player=',text))>=2

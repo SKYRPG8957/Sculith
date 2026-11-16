@@ -2,6 +2,113 @@ use super::*;
 use sculith_game::Edition;
 
 #[tokio::test]
+async fn plugin_inventory_results_are_private_and_notifications_read_current_owner_state() {
+    use sculith_core::inventory::{InventoryError, InventoryOperation, InventoryResult};
+    let (stop, receiver) = watch::channel(false);
+    let (world, task) = create(receiver);
+    let task = tokio::spawn(task);
+    let actor = world
+        .reserve(profile("api-inventory"), Permissions { can_build: true })
+        .await
+        .unwrap();
+    let viewer = world
+        .reserve(profile("api-viewer"), Permissions::default())
+        .await
+        .unwrap();
+    let id = actor.player.id;
+    world.activate(id).await.unwrap();
+    world.activate(viewer.player.id).await.unwrap();
+    world.configure_observations(crate::observations::INVENTORY);
+    let mut normal = world.subscribe();
+    let mut hooks = world.subscribe_game();
+    let mut peers = world.observe_players(viewer.player.id).await.unwrap();
+    world
+        .plugin_inventory(
+            "owner".into(),
+            id,
+            42,
+            InventoryOperation::Give {
+                item: "minecraft:dirt".into(),
+                count: 5,
+            },
+        )
+        .await
+        .unwrap();
+    let notification = normal.recv().await.unwrap();
+    assert!(
+        matches!(notification.as_ref(),WorldEvent::InventoryUpdated {player_id} if *player_id==id)
+    );
+    assert!(
+        matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::InventoryChanged {player_id,..} if *player_id==id)
+    );
+    let response = hooks.recv().await.unwrap();
+    assert!(
+        matches!(response.as_ref(),WorldEvent::PluginInventoryResult {plugin,player_id,request_id:42,result:InventoryResult::Snapshot {inventory}} if plugin=="owner" && *player_id==id && inventory.slots[3].as_ref().unwrap().count==5)
+    );
+    assert!(normal.try_recv().is_err() && peers.updates.try_recv().is_err());
+    // Consume a later client mutation before handling the queued server push.
+    world
+        .creative_slot(id, 3, Some(BlockKind::Bedrock), 7)
+        .await
+        .unwrap();
+    assert!(matches!(
+        hooks.recv().await.unwrap().as_ref(),
+        WorldEvent::InventoryChanged { .. }
+    ));
+    let WorldEvent::InventoryUpdated { player_id } = notification.as_ref() else {
+        unreachable!()
+    };
+    assert_eq!(
+        world.player_snapshot(*player_id).await.unwrap().inventory[3]
+            .unwrap()
+            .kind,
+        BlockKind::Bedrock
+    );
+    world
+        .plugin_inventory("owner".into(), id, 43, InventoryOperation::Get)
+        .await
+        .unwrap();
+    assert!(
+        matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::PluginInventoryResult {request_id:43,result:InventoryResult::Snapshot {inventory},..} if inventory.slots[3].as_ref().unwrap().count==7)
+    );
+    assert!(
+        normal.try_recv().is_err()
+            && peers.updates.try_recv().is_err()
+            && hooks.try_recv().is_err()
+    );
+    assert_eq!(world.capture().await.unwrap().revision(), 0);
+    assert!(
+        world
+            .command_specs()
+            .await
+            .unwrap()
+            .iter()
+            .all(|c| c.name != "kit" && !c.name.starts_with("sculith_test_"))
+    );
+    drop(actor);
+    world
+        .plugin_inventory("owner".into(), id, 44, InventoryOperation::Get)
+        .await
+        .unwrap();
+    assert!(
+        matches!(hooks.recv().await.unwrap().as_ref(),WorldEvent::Left {id:retired} if *retired==id)
+    );
+    assert!(matches!(
+        hooks.recv().await.unwrap().as_ref(),
+        WorldEvent::PluginInventoryResult {
+            request_id: 44,
+            result: InventoryResult::Rejected {
+                reason: InventoryError::PlayerUnavailable
+            },
+            ..
+        }
+    ));
+    assert!(world.player_snapshot(id).await.is_err());
+    stop.send(true).unwrap();
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn inventory_commits_are_private_with_counted_public_hands_and_idempotent_replays() {
     use sculith_game::inventory::{Action, Request, Slot, SlotRef};
     let (stop, receiver) = watch::channel(false);

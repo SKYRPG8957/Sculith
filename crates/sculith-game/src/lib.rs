@@ -120,6 +120,19 @@ pub struct PlayerSnapshot {
 }
 
 impl PlayerSnapshot {
+    pub fn inventory_view(&self) -> sculith_core::inventory::InventoryView {
+        let item = |stack: crate::inventory::ItemStack| sculith_core::inventory::InventoryItem {
+            item: crate::inventory::item_name(stack.kind).into(),
+            count: u16::from(stack.count),
+        };
+        sculith_core::inventory::InventoryView {
+            slots: self.inventory.iter().map(|stack| stack.map(item)).collect(),
+            selected_slot: self.selected_slot,
+            cursor: self.cursor.map(item),
+            created_output: self.created_output.map(item),
+        }
+    }
+
     pub fn held(&self) -> Option<crate::inventory::ItemStack> {
         self.inventory
             .get(usize::from(self.selected_slot))
@@ -212,6 +225,7 @@ struct Player {
     snapshot: PlayerSnapshot,
     inventory: crate::inventory::Inventory,
     inventory_budget: Budget,
+    plugin_inventory_budget: Budget,
     last_tick: Option<u64>,
     movement: Budget,
     building: Budget,
@@ -225,6 +239,20 @@ struct Player {
 }
 
 impl Player {
+    fn permit_plugin_inventory(&mut self, now: Instant) -> bool {
+        let Some(available) = self.plugin_inventory_budget.available(now, 8.0, 16.0) else {
+            return false;
+        };
+        if available < 1.0 {
+            return false;
+        }
+        self.plugin_inventory_budget = Budget {
+            remaining: available - 1.0,
+            updated: now,
+        };
+        true
+    }
+
     fn finish_inventory(&mut self, response: crate::inventory::Response) -> InventoryOutcome {
         self.snapshot.inventory = *self.inventory.slots();
         self.snapshot.cursor = self.inventory.cursor();
@@ -411,6 +439,10 @@ impl GameState {
                     remaining: 64.0,
                     updated: now,
                 },
+                plugin_inventory_budget: Budget {
+                    remaining: 16.0,
+                    updated: now,
+                },
                 last_tick: None,
                 movement: Budget {
                     remaining: MOVE_BURST,
@@ -476,6 +508,50 @@ impl GameState {
             .values()
             .filter(|player| player.snapshot.initialized)
             .count() as u32
+    }
+
+    /// Trusted server operations remain owner-validated and do not spend the
+    /// client's transaction budget. Building permission is not a grant right.
+    pub fn plugin_inventory(
+        &mut self,
+        id: u64,
+        operation: &sculith_core::inventory::InventoryOperation,
+        now: Instant,
+    ) -> Result<InventoryOutcome, sculith_core::inventory::InventoryError> {
+        use crate::inventory::RejectReason;
+        use sculith_core::inventory::{InventoryError, InventoryOperation};
+        operation
+            .validate()
+            .map_err(|_| InventoryError::InvalidRequest)?;
+        let player = self
+            .players
+            .get_mut(&id)
+            .filter(|p| p.snapshot.initialized)
+            .ok_or(InventoryError::PlayerUnavailable)?;
+        if !player.permit_plugin_inventory(now) {
+            return Err(InventoryError::RateLimited);
+        }
+        let changes = match operation {
+            InventoryOperation::Get => vec![],
+            InventoryOperation::Give { item, count } => {
+                let kind =
+                    crate::inventory::item_kind(item).ok_or(InventoryError::UnsupportedItem)?;
+                player
+                    .inventory
+                    .give(kind, *count)
+                    .map_err(|reason| match reason {
+                        RejectReason::Full => InventoryError::Full,
+                        RejectReason::InvalidCount => InventoryError::InvalidRequest,
+                        RejectReason::UnsupportedItem => InventoryError::UnsupportedItem,
+                        _ => InventoryError::Unavailable,
+                    })?
+            }
+        };
+        Ok(player.finish_inventory(crate::inventory::Response {
+            request_id: 0,
+            result: Ok(changes),
+            replayed: false,
+        }))
     }
 
     pub fn inventory_request(

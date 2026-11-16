@@ -31,6 +31,7 @@ pub struct Session {
     tick: u64,
     packet_sequence: u64,
     inventory_state: u16,
+    inventory_sent: [Option<sculith_game::inventory::ItemStack>; 36],
     teleport_id: i32,
     pending_teleport: Option<(i32, Instant)>,
     keepalive: Option<(i64, Instant)>,
@@ -124,6 +125,7 @@ pub async fn start(
         tick: 0,
         packet_sequence: 0,
         inventory_state: 0,
+        inventory_sent: [None; 36],
         teleport_id: 0,
         pending_teleport: None,
         keepalive: None,
@@ -425,7 +427,7 @@ impl Session {
         codec::send(stream, &selected).await
     }
 
-    async fn inventory_slot(&self, stream: &mut TcpStream, slot: u8) -> Result<()> {
+    async fn inventory_slot(&mut self, stream: &mut TcpStream, slot: u8) -> Result<()> {
         ensure!(slot < 41, "invalid Java inventory synchronization slot");
         let item = self
             .player
@@ -436,7 +438,11 @@ impl Session {
         let mut packet = codec::packet(0x6e);
         write_varint(i32::from(slot), &mut packet);
         super::inventory::write_stack(item, &mut packet)?;
-        codec::send(stream, &packet).await
+        codec::send(stream, &packet).await?;
+        if let Some(sent) = self.inventory_sent.get_mut(usize::from(slot)) {
+            *sent = item;
+        }
+        Ok(())
     }
 
     async fn teleport(&mut self, stream: &mut TcpStream) -> Result<()> {
@@ -863,6 +869,22 @@ impl Session {
     }
 
     async fn event(&mut self, stream: &mut TcpStream, event: &WorldEvent) -> Result<()> {
+        if let WorldEvent::InventoryUpdated { player_id } = event {
+            if *player_id == self.player.id {
+                self.player = self.world.player_snapshot(self.player.id).await?;
+                for slot in 0..36 {
+                    let value = |stack: Option<sculith_game::inventory::ItemStack>| {
+                        stack.map(|s| (s.kind, s.count))
+                    };
+                    if value(self.player.inventory[slot]) != value(self.inventory_sent[slot]) {
+                        self.inventory_slot(stream, slot as u8).await?;
+                    }
+                }
+                // Server grants change player slots, never the creative
+                // screen's locally carried stack or owner cursor/output.
+            }
+            return Ok(());
+        }
         if let WorldEvent::Chat(chat) = event {
             let mut packet = codec::packet(0x7c);
             codec::text(&format!("<{}> {}", chat.name, chat.message), &mut packet)?;

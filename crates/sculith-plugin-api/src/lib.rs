@@ -6,13 +6,14 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 6;
+pub const API_VERSION: u32 = 7;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
 pub const SOUND_API_VERSION: u32 = 4;
 pub const MODEL_API_VERSION: u32 = 5;
 pub const OBSERVATION_API_VERSION: u32 = 6;
+pub const INVENTORY_API_VERSION: u32 = 7;
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     LEGACY_API_VERSION,
     GAME_API_VERSION,
@@ -20,7 +21,11 @@ pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     SOUND_API_VERSION,
     MODEL_API_VERSION,
     OBSERVATION_API_VERSION,
+    INVENTORY_API_VERSION,
 ];
+pub use sculith_core::inventory::{
+    InventoryError, InventoryItem, InventoryOperation, InventoryResult, InventoryView,
+};
 pub use sculith_core::{CommandSpec, Edition, PacketDispatch, PacketInfo, SimpleForm};
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
 pub const MAX_ACTIONS: usize = 32;
@@ -40,6 +45,7 @@ pub enum Hook {
     PacketReceived,
     PlayerChat,
     PlayerInventoryChanged,
+    InventoryResponse,
     CommandSubmitted,
 }
 
@@ -58,11 +64,13 @@ impl Hook {
         Self::PlayerChat,
         Self::CommandSubmitted,
         Self::PlayerInventoryChanged,
+        Self::InventoryResponse,
     ];
     pub fn minimum_api(&self) -> u32 {
         match self {
             Self::Started | Self::Tick | Self::Stopping => LEGACY_API_VERSION,
             Self::FormSubmitted => UI_API_VERSION,
+            Self::InventoryResponse => INVENTORY_API_VERSION,
             Self::PlayerMoved
             | Self::PlayerEquipped
             | Self::PacketReceived
@@ -105,6 +113,12 @@ pub enum HostMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    /// Returned only to the plugin that issued this request.
+    InventoryResponse {
+        player_id: u64,
+        request_id: u32,
+        result: InventoryResult,
+    },
     /// Owner-committed item changes; stack-network IDs remain adapter-private.
     PlayerInventoryChanged {
         player_id: u64,
@@ -210,6 +224,7 @@ pub struct InventoryChange {
 impl Event {
     pub fn hook(&self) -> Hook {
         match self {
+            Self::InventoryResponse { .. } => Hook::InventoryResponse,
             Self::PlayerInventoryChanged { .. } => Hook::PlayerInventoryChanged,
             Self::CommandSubmitted { .. } => Hook::CommandSubmitted,
             Self::Started { .. } => Hook::Started,
@@ -248,6 +263,11 @@ pub enum PluginMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
+    Inventory {
+        player_id: u64,
+        request_id: u32,
+        operation: InventoryOperation,
+    },
     /// Register public player commands during Started, before sessions open.
     RegisterCommand {
         command: CommandSpec,
@@ -288,6 +308,7 @@ pub enum Action {
 impl Action {
     pub fn minimum_api(&self) -> u32 {
         match self {
+            Self::Inventory { .. } => INVENTORY_API_VERSION,
             Self::RegisterCommand { .. } => OBSERVATION_API_VERSION,
             Self::SetMotd { .. } | Self::Log { .. } => LEGACY_API_VERSION,
             Self::SendMessage { .. } => GAME_API_VERSION,
@@ -404,6 +425,57 @@ mod tests {
     use super::*;
 
     struct TestPlugin;
+
+    #[test]
+    fn inventory_capabilities_require_v7_instead_of_silently_loading_on_v6() {
+        struct InventoryPlugin;
+        impl Plugin for InventoryPlugin {
+            fn metadata(&self) -> Metadata {
+                Metadata {
+                    name: "inventory".into(),
+                    version: "1".into(),
+                    hooks: vec![Hook::InventoryResponse],
+                }
+            }
+            fn on_event(&mut self, _: Event) -> Vec<Action> {
+                vec![]
+            }
+        }
+        assert_eq!(Hook::InventoryResponse.minimum_api(), 7);
+        assert_eq!(
+            Action::Inventory {
+                player_id: 1,
+                request_id: 1,
+                operation: InventoryOperation::Get
+            }
+            .minimum_api(),
+            7
+        );
+        for highest in [6, 7] {
+            let request = Request {
+                id: 1,
+                message: HostMessage::Hello {
+                    api_version: 1,
+                    supported_versions: (1..=highest).collect(),
+                    server: ServerStatus::new("test".into(), 20).unwrap(),
+                },
+            };
+            let mut input = serde_json::to_vec(&request).unwrap();
+            input.push(b'\n');
+            let mut output = vec![];
+            let result = serve_io(InventoryPlugin, &input[..], &mut output);
+            if highest == 6 {
+                assert!(result.is_err() && output.is_empty());
+            } else {
+                result.unwrap();
+                let response: Response = serde_json::from_slice(&output).unwrap();
+                assert!(matches!(
+                    response.message,
+                    PluginMessage::Ready { api_version: 7, .. }
+                ));
+            }
+        }
+    }
     impl Plugin for TestPlugin {
         fn metadata(&self) -> Metadata {
             Metadata {

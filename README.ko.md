@@ -19,7 +19,7 @@ Rust로 개발하는 베드락 기반 Minecraft 구동기입니다.
 ```sh
 git clone https://github.com/SKYRPG8957/Sculith.git
 cd Sculith
-cargo build --workspace --locked
+cargo build --locked
 cargo run --locked -- run --config examples/configs/crossplay.toml
 ```
 

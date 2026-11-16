@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use sculith_world::BlockKind;
 
-pub const INVENTORY_SLOTS: usize = 36;
+pub const INVENTORY_SLOTS: usize = sculith_core::inventory::SLOT_COUNT;
 pub const MAX_STACK: u8 = 64;
 pub const MAX_ACTIONS: usize = 32;
 pub const REQUEST_HISTORY: usize = 64;
@@ -28,6 +28,22 @@ pub const CREATIVE_CATALOGUE: [BlockKind; 4] = [
     BlockKind::Grass,
     BlockKind::Bedrock,
 ];
+
+pub fn item_kind(name: &str) -> Option<BlockKind> {
+    CREATIVE_CATALOGUE
+        .into_iter()
+        .find(|kind| item_name(*kind) == name)
+}
+
+pub fn item_name(kind: BlockKind) -> &'static str {
+    match kind {
+        BlockKind::Air => "minecraft:air",
+        BlockKind::Stone => "minecraft:stone",
+        BlockKind::Dirt => "minecraft:dirt",
+        BlockKind::Grass => "minecraft:grass_block",
+        BlockKind::Bedrock => "minecraft:bedrock",
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ItemStack {
@@ -119,6 +135,7 @@ pub enum RejectReason {
     InvalidDestination,
     InvalidMiningSlot,
     StackIdExhausted,
+    Full,
 }
 
 impl std::fmt::Display for RejectReason {
@@ -227,6 +244,63 @@ impl Default for Inventory {
 }
 
 impl Inventory {
+    /// Server-authorized insertion. Merge existing stacks before using empty
+    /// player slots; cursor/output are untouched. A full inventory or exhausted
+    /// stack allocator rolls back the entire grant, including allocated IDs.
+    pub fn give(&mut self, kind: BlockKind, count: u16) -> Result<Vec<Change>, RejectReason> {
+        if !CREATIVE_CATALOGUE.contains(&kind) {
+            return Err(RejectReason::UnsupportedItem);
+        }
+        if !(1..=sculith_core::inventory::MAX_GIVE_COUNT).contains(&count) {
+            return Err(RejectReason::InvalidCount);
+        }
+        let capacity: u16 = self
+            .state
+            .slots
+            .iter()
+            .map(|stack| match stack {
+                None => u16::from(MAX_STACK),
+                Some(stack) if stack.kind == kind => u16::from(MAX_STACK - stack.count),
+                Some(_) => 0,
+            })
+            .sum();
+        if capacity < count {
+            return Err(RejectReason::Full);
+        }
+        let mut candidate = self.state.clone();
+        let mut remaining = count;
+        let mut changes = Vec::new();
+        for empty in [false, true] {
+            for slot in 0..INVENTORY_SLOTS {
+                if remaining == 0 {
+                    break;
+                }
+                let previous = candidate.slots[slot];
+                let available = match previous {
+                    None if empty => MAX_STACK,
+                    Some(stack) if !empty && stack.kind == kind => MAX_STACK - stack.count,
+                    _ => 0,
+                };
+                if available == 0 {
+                    continue;
+                }
+                let taken = remaining.min(u16::from(available)) as u8;
+                let stack = candidate.stack(kind, previous.map_or(0, |s| s.count) + taken)?;
+                candidate.slots[slot] = stack;
+                changes.push(Change {
+                    slot: Slot::Inventory(slot as u8),
+                    stack,
+                });
+                remaining -= u16::from(taken);
+            }
+        }
+        if remaining != 0 {
+            return Err(RejectReason::Full);
+        }
+        self.state = candidate;
+        Ok(changes)
+    }
+
     pub fn slots(&self) -> &[Option<ItemStack>; INVENTORY_SLOTS] {
         &self.state.slots
     }

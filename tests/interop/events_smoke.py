@@ -13,6 +13,7 @@ if __name__=="__main__":
     parser.add_argument("--server",type=Path,default=ROOT/("target/debug/sculith"+suffix))
     parser.add_argument("--plugin",type=Path,default=ROOT/("target/debug/sculith-events-plugin"+suffix))
     parser.add_argument("--client",type=Path,required=True)
+    parser.add_argument("--api-version",type=int,choices=(6,7),default=7)
     args=parser.parse_args();server=args.server.resolve(strict=True)
     entries=json.loads(subprocess.check_output([str(server),'packets'],text=True,encoding='utf-8'))
     java=[p for p in entries if p['edition']=='java'];native=[p for p in entries if p['edition']=='bedrock']
@@ -25,5 +26,5 @@ if __name__=="__main__":
     assert live_reference==reference['packets'],"pinned live Go packet pools differ from checked-in facts"
     assert {p['id'] for p in native}=={p['id'] for p in live_reference}
     assert sum(p['typed_codec'] for p in native)==239 and len({p['id'] for p in native})==244
-    smoke(server,args.client.resolve(strict=True),args.plugin.resolve(strict=True))
+    smoke(server,args.client.resolve(strict=True),args.plugin.resolve(strict=True),args.api_version)
     print('PASS: 260 Java and 244 native identifiers, API-v6 packet/move/equipment/chat hooks, public command catalogs, private Rust commands, origin rejection, gap detection and body redaction')

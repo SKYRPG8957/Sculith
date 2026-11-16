@@ -2878,6 +2878,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sculith-inventory-fixture"
+version = "0.1.0"
+dependencies = [
+ "sculith-plugin-api",
+]
+
+[[package]]
 name = "sculith-model-plugin"
 version = "0.1.0"
 dependencies = [

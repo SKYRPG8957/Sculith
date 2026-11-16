@@ -353,6 +353,14 @@ pub async fn handle_with_protection<T: Transport>(
                     Err(error)=>{let _=disconnect(conn,"Sculith: world event backlog; reconnect to resynchronize.").await;return Err(error.into());}
                 };
                 match event.as_ref() {
+                    WorldEvent::InventoryUpdated {player_id}=>{
+                        if *player_id==id {
+                            view_player=world.player_snapshot(id).await?;
+                            conn.send(&output::inventory(&view_player)?).await?;
+                            conn.send(&output::inventory_ui(&view_player)?).await?;
+                        }
+                    }
+                    WorldEvent::PluginInventoryResult {..}=>{},
                     WorldEvent::Chat(message)=>conn.send(&[output::chat(message)]).await?,
                     WorldEvent::Blocks {batch,revisions,..}=>{
                         for (position,revision) in revisions {

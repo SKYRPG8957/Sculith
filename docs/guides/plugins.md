@@ -1,4 +1,4 @@
-# Rust 플러그인 SDK v6 — 실행 파일 방식의 게임/UI API
+# Rust 플러그인 SDK v7
 
 현재 SDK는 생명주기·공통 MOTD에 더해 초기화가 확인된 플레이어의 접속/종료와 승인된 블록 변경을 받습니다.
 `SendMessage`는 월드 소유자가 접속 상태와 호출량을 검사한 뒤 한 플레이어에게만 보냅니다.
@@ -8,6 +8,7 @@ v3는 공통 `SimpleForm`과 소유자에게만 돌아오는 선택/취소 응�
 v4는 등록된 공통 팩 음원을 개인 재생하는 `PlaySound`를 제공합니다. [원본·매핑·검증](sounds.md).
 v5는 등록된 정적 모델을 개인 표시·교체·숨기는 `ShowModel`/`HideModel`을 제공합니다. [범위·소유권·검증](models.md).
 v6는 패킷 수신 메타데이터, 승인된 이동·장비·인벤토리 변경·공개 채팅, 플러그인 명령어 등록을 제공합니다. 공개 배포 패키지는 만들지 않습니다.
+v7는 인벤토리 조회·아이템 지급과 요청한 플러그인에만 돌아오는 결과를 제공합니다.
 Master Engineering Directive에 따라 공식 호스트는 WASI Component Model을 우선 후보로 검토합니다.
 현재 구현이 WASI 샌드박스, region scheduler, Player/World API를 제공한다고 표시하지 않습니다.
 플러그인은 신뢰된 별도 실행 파일이며, `.dll`/`.so` 로딩이나 OS 샌드박스를 제공하지 않습니다.
@@ -27,7 +28,6 @@ cargo run --locked -- run --config examples/configs/gameplay.toml
 ```
 
 이 소스 예제 설정은 Linux/macOS 경로입니다. Windows에서 직접 빌드했다면 플러그인 경로에 `.exe`를 붙이세요.
-공개 Preview 14에 동봉한 `plugins/sculith-gameplay-plugin.exe`는 별도 Rust 설치 없이 실행합니다.
 데모는 설정한 MOTD를 유지하고, 접속자에게 환영 메시지를 보낸 뒤 승인된 블록 변경의 리비전을 로그에 기록합니다.
 
 외부 Rust 프로젝트는 현재 `sculith-plugin-api`를 로컬 경로 의존성으로 사용할 수 있습니다.
@@ -94,6 +94,7 @@ timeout_ms = 1000
 | `PlayerMoved { player_id, tick, x, y, z, yaw, pitch, head_yaw }` | 승인돼 실제로 바뀐 위치·회전. `x/y/z`는 공통 발 좌표. API v6 필요 |
 | `PlayerEquipped { player_id, slot, item, count }` | 선택 슬롯이나 손에 든 아이템 종류·수량이 바뀐 뒤. API v6 필요 |
 | `PlayerInventoryChanged { player_id, changes }` | 커밋된 슬롯별 컨테이너·인덱스·아이템·수량. 재전송·실패·변경 없는 요청은 제외. API v6 필요 |
+| `InventoryResponse { player_id, request_id, result }` | 인벤토리 요청을 보낸 플러그인만 받는 조회·지급 결과. API v7 필요 |
 | `PlayerChat { player_id, name, message }` | 초기화된 세션에서 검사한 공개 채팅. 작성자는 서버 프로필 기준. API v6 필요 |
 | `PacketReceived { player_id, packet }` | 초기화 완료 후 play 패킷의 에디션·버전·ID·이름·처리 분류·수신 순번. 본문과 계정 정보는 제외. API v6 필요 |
 | `CommandSubmitted { player_id, name, command, arguments }` | 명령어를 등록한 플러그인만 수신. 인자는 공개 채팅이나 다른 플러그인에 전달하지 않음. API v6 필요 |
@@ -112,7 +113,7 @@ Stone/Dirt/Grass/Bedrock만 지원하며 한 스택은 최대 64개입니다.
 슬롯 변경 훅의 `container`는 `inventory`, `cursor`, `created_output`이고, 빈 슬롯은 `item: null`, `count: 0`입니다.
 베드락 예측용 스택 ID는 SDK에 노출하지 않습니다. 순정 Java 크리에이티브 화면의 커서는 클라이언트가 관리하며,
 서버에는 해당 화면이 제출한 슬롯 교체만 전달됩니다. 일반 클릭 요청과 베드락 거래는 소유자의 커서 상태로 계산합니다.
-아이템 지급/삭제 플러그인 액션, 일반 상자, 갑옷·보조 손, 드롭·제작·서바이벌은 아직 제공하지 않습니다.
+아이템 삭제·임의 슬롯 교체, 일반 상자, 갑옷·보조 손, 드롭·제작·서바이벌은 아직 제공하지 않습니다.
 
 | 액션 | 효과 |
 | --- | --- |
@@ -123,6 +124,7 @@ Stone/Dirt/Grass/Bedrock만 지원하며 한 스택은 최대 64개입니다.
 | `PlaySound { player_id, sound, volume, pitch }` | 등록된 팩 음원을 해당 플레이어에게만 재생. API v4 필요 |
 | `ShowModel { player_id, model }` / `HideModel { player_id }` | 등록된 정적 모델의 개인 미리보기 표시·교체·숨김. API v5 필요 |
 | `RegisterCommand { command: CommandSpec { name, description } }` | `Started`에서 공개 플레이어 명령 등록. `CommandSubmitted` 구독 필수. API v6 필요 |
+| `Inventory { player_id, request_id, operation }` | 소유자를 통한 인벤토리 조회·지급. `InventoryResponse` 구독 필수. API v7 필요 |
 
 MOTD는 비어 있지 않은 최대 192 UTF-8 바이트이며 제어문자와 `;`를 포함할 수 없습니다.
 로그 메시지는 최대 2048 바이트이며 제어문자를 포함할 수 없습니다.
@@ -131,6 +133,37 @@ MOTD는 비어 있지 않은 최대 192 UTF-8 바이트이며 제어문자와 `;
 소유자가 플레이어별로 초당 4개/순간 8개까지 허용합니다. 접속 종료나 호출량 제한에 따른 메시지 거절은
 로그에 남기며, 그 자체로 플러그인을 비활성화하지 않습니다. 메시지는 블록 리비전을 바꾸지 않습니다.
 플레이어 `id`는 현재 서버 프로세스의 세션 핸들입니다. 재시작을 넘겨 저장하거나 재사용하지 마세요.
+
+## 인벤토리 API
+
+```rust
+use sculith_plugin_api::{Action, InventoryOperation};
+
+Action::Inventory {
+    player_id,
+    request_id: 1,
+    operation: InventoryOperation::Give {
+        item: "minecraft:stone".into(),
+        count: 65,
+    },
+}
+```
+
+`InventoryOperation::Get`은 현재 상태를 조회합니다. `Give`는 기존 스택을 먼저 채우고 빈 칸에 넣습니다.
+한 요청은 1~2304개이며, 공간 부족·ID 할당 실패에서는 전체 지급을 취소합니다.
+요청마다 `InventoryResult::Snapshot { inventory }` 또는 `Rejected { reason }`이 돌아옵니다.
+성공 응답은 처리 직후 36칸, 선택 슬롯, 서버가 아는 커서·생성 결과를 담습니다. 네트워크 스택 ID는 보내지 않습니다.
+`request_id`는 플러그인 내부의 응답 연결용 값입니다. 같은 값으로 지급을 다시 요청하면 새 지급이므로 자동 재시도 키로 사용하지 마세요.
+
+플러그인은 서버 권한으로 지급합니다. 플레이어의 건축 권한을 변경하지 않으며, 초기화 전·종료된 세션은 거부합니다.
+플레이어별 조회·지급은 합쳐서 초당 8개·순간 16개이며 클라이언트 거래 예산과 별개입니다.
+플러그인별 초당 128개·순간 256개를 넘으면 해당 플러그인을 비활성화합니다.
+공간 부족, 유효하지만 미지원인 아이템, 플레이어 호출량 제한은 일반 거절 응답입니다.
+형식이 잘못된 액션은 응답 전체를 적용하기 전에 거부하며 기존 정책에 따라 플러그인을 비활성화합니다.
+
+조회는 클라이언트 업데이트나 변경 훅을 만들지 않습니다. 지급은 대상 플레이어의 슬롯과 필요한 손 아이템 표시만 갱신합니다.
+자바의 크리에이티브 화면에서 클라이언트가 따로 관리하는 마우스 아이템은 초기화하지 않습니다.
+검증용 플러그인은 `tests/fixtures`에 있으며 일반 설정과 서버 기본 빌드에는 포함하지 않습니다.
 
 ## 명령어와 패킷 관측
 
@@ -150,11 +183,11 @@ Java 기본 명령 트리와 베드락 명령 목록에서 같은 이름과 선�
 
 ## 통신과 종료
 
-- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `6`, 모델은 `5`, 사운드는 `4`, 폼은 `3`, 기존 게임 API는 `2`, 생명주기는 `1`입니다.
-- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6], ... }`를 보냅니다.
+- `stdin`/`stdout`의 JSON-lines 요청·응답이며 최신 API는 `7`, 기존 `1`~`6`도 협상할 수 있습니다.
+- 호스트는 `Hello { api_version: 1, supported_versions: [1,2,3,4,5,6,7], ... }`를 보냅니다.
   기존 v1 SDK는 추가 필드를 무시하고 그대로 동작합니다. SDK는 공통으로 지원하는 가장 높은 버전을 선택합니다.
   새 SDK의 기존 게임 훅은 v2 호스트에서도 동작하고, 폼 훅은 v3가 없는 호스트에서 로드를 거부합니다.
-- 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1·v2·v3·v4 Rust 실행 파일도 새 호스트에서 확인했습니다.
+- 협상한 버전보다 높은 훅/액션은 거부합니다. 보관한 실제 v1~v6 Rust 실행 파일도 새 호스트에서 확인했습니다.
 - 각 응답은 요청과 같은 `id`를 반환해야 합니다.
 - `stdout`은 프로토콜 전용입니다. 디버그 출력은 `eprintln!` 등으로 `stderr`에 기록하세요.
 - 메시지는 줄바꿈을 포함해 최대 64 KiB, 한 응답의 액션은 최대 32개입니다.
@@ -167,5 +200,5 @@ Java 기본 명령 트리와 베드락 명령 목록에서 같은 이름과 선�
 
 플러그인은 서버 사용자와 같은 OS 권한을 가집니다. 호스트의 API 검증은 시스템 접근을 제한하는 기능이 아닙니다.
 
-현재는 사전 취소 훅, 일반 World/Entity/Inventory API, region scheduler,
+현재는 사전 취소 훅, 일반 World/Entity API, 인벤토리 삭제·임의 슬롯 교체, region scheduler,
 WASI Component 샌드박스와 fuel/memory 제한을 제공하지 않습니다.

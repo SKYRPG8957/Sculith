@@ -1,5 +1,99 @@
 use super::*;
 
+#[test]
+fn server_grants_merge_before_empty_slots_and_preserve_cursor_output_and_history() {
+    let mut inventory = Inventory::default();
+    inventory.replace_creative(0, None, 0, true).unwrap();
+    inventory
+        .replace_creative(8, Some(BlockKind::Dirt), 60, true)
+        .unwrap();
+    inventory
+        .click(
+            Click::Pickup {
+                slot: 2,
+                right: true,
+            },
+            true,
+        )
+        .unwrap();
+    let cursor = inventory.cursor();
+    let history = inventory.history.clone();
+    let changes = inventory.give(BlockKind::Dirt, 10).unwrap();
+    assert_eq!(
+        changes.iter().map(|c| c.slot).collect::<Vec<_>>(),
+        [Slot::Inventory(8), Slot::Inventory(0)]
+    );
+    assert_eq!(inventory.slots()[8].unwrap().count, 64);
+    assert_eq!(inventory.slots()[0].unwrap().count, 6);
+    assert_eq!(inventory.cursor(), cursor);
+    assert_eq!(inventory.history, history);
+    assert!(changes.iter().all(|c| c.stack.unwrap().net_id > 0));
+}
+
+#[test]
+fn server_grants_roll_back_full_inventory_and_allocator_exhaustion() {
+    let mut inventory = Inventory::default();
+    for slot in 0..36 {
+        inventory
+            .replace_creative(slot, Some(BlockKind::Stone), 64, true)
+            .unwrap();
+    }
+    inventory
+        .replace_creative(20, Some(BlockKind::Dirt), 63, true)
+        .unwrap();
+    let before = inventory.clone();
+    assert_eq!(inventory.give(BlockKind::Dirt, 2), Err(RejectReason::Full));
+    assert_eq!(inventory, before);
+    assert_eq!(
+        inventory.give(BlockKind::Air, 1),
+        Err(RejectReason::UnsupportedItem)
+    );
+    assert_eq!(
+        inventory.give(BlockKind::Dirt, 0),
+        Err(RejectReason::InvalidCount)
+    );
+    assert_eq!(inventory, before);
+    let mut inventory = Inventory::default();
+    inventory.state.next_stack_id = i32::MAX as u64;
+    let before = inventory.clone();
+    assert_eq!(
+        inventory.give(BlockKind::Bedrock, 65),
+        Err(RejectReason::StackIdExhausted)
+    );
+    assert_eq!(inventory, before);
+}
+
+#[test]
+fn server_grants_cannot_be_undone_by_replayed_client_requests() {
+    let mut inventory = Inventory::default();
+    let request = Request {
+        id: -1,
+        actions: vec![Action::Transfer {
+            source: reference(Slot::Inventory(0), 1),
+            destination: reference(Slot::Inventory(3), 0),
+            count: 10,
+        }],
+    };
+    let original = inventory.apply(&request, true);
+    assert!(original.result.is_ok());
+    inventory.give(BlockKind::Stone, 5).unwrap();
+    let after = inventory.clone();
+    assert!(inventory.apply(&request, true).replayed);
+    assert_eq!(inventory, after);
+    let stale = Request {
+        id: -2,
+        actions: vec![Action::Destroy {
+            source: reference(Slot::Inventory(0), -1),
+            count: 1,
+        }],
+    };
+    assert_eq!(
+        inventory.apply(&stale, true).result,
+        Err(RejectReason::StackMismatch)
+    );
+    assert_eq!(inventory.state, after.state);
+}
+
 fn reference(slot: Slot, expected_id: i32) -> SlotRef {
     SlotRef { slot, expected_id }
 }
