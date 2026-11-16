@@ -1,5 +1,7 @@
 # Sculith
 
+> 기존 프리뷰 배포본은 철회했습니다. 새 패키지는 배포하지 않으며 소스 개발을 진행합니다.
+
 [English](README.md) · [기여 안내](CONTRIBUTING.md)
 
 **Rust로 만드는 베드락 기준 Minecraft 크로스플레이 구동기.**
