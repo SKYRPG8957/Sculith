@@ -32,6 +32,8 @@ online hosting and official Windows Bedrock rendering remain unverified.
 
 ## Verification
 
+[Actual unmodified Java screenshots, exact-source native Windows checks and hashes](verification/2026-11-16-shared-peers.md).
+
 ```sh
 . ./scripts/dev-env.sh
 cargo test --workspace --all-targets --locked

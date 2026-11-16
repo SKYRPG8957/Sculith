@@ -1,0 +1,220 @@
+{
+  "source": "44a6a681cfade5a2e6aa2a183f788ac4e5980920",
+  "official_java": {
+    "version": "26.3",
+    "protocol": 777,
+    "jar_sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+    "unmodified": true,
+    "mods": false,
+    "offline_loopback": true
+  },
+  "server_sha256": "db3bbe212c43e201dc8782de7fca2fd2082a9f251354c308f6c8cf0edc8f8dff",
+  "native_probe_sha256": "0d4d48275da03bf627228efe2cfb1b8c5fe4bfc0482b9a5c20f0f32d0fc3abf2",
+  "native_is_official_game": false,
+  "seconds": 33.75664879199758,
+  "captures": [
+    {
+      "file": "shared-peers-before-java.png",
+      "sha256": "8d3c5e0b9d4034960a2e6fe3b5e0fc7bef85c952e0428e49b4cc90f464af5c19"
+    },
+    {
+      "file": "shared-peers-visible-java.png",
+      "sha256": "a03cc7948ad2a4bab63b8ecbb1918597dab173426eab03ab7a546fe5dbc5aaf2"
+    },
+    {
+      "file": "shared-peers-roster-java.png",
+      "sha256": "2f485beb18112c6c2450fc02a063db2143e44d1c6e992d022353ed739424427b"
+    },
+    {
+      "file": "shared-peers-moved-java.png",
+      "sha256": "645d6c9655556de51fd0246e297f18ad355ed7d7e57ed2c1dcdb261ca52a45b9"
+    },
+    {
+      "file": "shared-peers-left-java.png",
+      "sha256": "ad815203d7e95617c97bac5381b171e93337b6675442f1c12ebb610ead4c7a60"
+    },
+    {
+      "file": "shared-peers-left-roster-java.png",
+      "sha256": "9dd232acf4be2c862f42ee2709fd811d29994a434f466429fd233c10c0bd6bfc"
+    }
+  ],
+  "native_output": [
+    "DIALED: independent gophertunnel Bedrock login completed\n",
+    "PASS: independent gophertunnel NetherNet world spawn 2\n",
+    "PEER_READY\n",
+    "PEER_VISUAL_READY\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 0.549] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 0.64259] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 0.77675694] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 0.9478488] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.1035424] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.2452236] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.3741535] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.4914798] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.5982466] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.6954044] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.7838181] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.8642745] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 1.9374899] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.0041158] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.0647454] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.1199183] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.1701257] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.2158146] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.2573912] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.295226] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.329656] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.360987] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.389498] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.4154432] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.4390535] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.4605386] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.4800904] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.4978821] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.514073] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.5288064] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.542214] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.5544147] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.5655174] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.575621] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.584815] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.5931818] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.6007955] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.607724] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.614029] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.6197662] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.6249874] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.6297386] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.6340623] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.6379967] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.641577] yaw=0\n",
+    "PEER_ACTUAL_JAVA_MOVED: id=1 position=[0.5 5.62 2.6448352] yaw=0\n",
+    "PASS: native peer held for actual stock Java rendering\n"
+  ],
+  "limitations": [
+    "Official Windows Bedrock rendering is unverified.",
+    "Java uses stock default avatar; native placeholder is original green geometry/skin.",
+    "No account-skin or equipment transfer."
+  ],
+  "interop_benchmark": {
+    "kind": "whole independent peer integration harness including Rust startup, Python/Go voxel decoding and local transports; not server TPS or latency",
+    "source": "44a6a681cfade5a2e6aa2a183f788ac4e5980920",
+    "samples_seconds": [
+      1.2642488240016974,
+      1.2076726619998226,
+      1.2007834109972464
+    ],
+    "median_seconds": 1.2076726619998226,
+    "harness_children_max_rss_kib": 51884,
+    "conditions": "Linux debug build; GUI client also running; no scalability claim"
+  },
+  "checks": {
+    "rust_project_tests": 134,
+    "vendor_tests": 256,
+    "clippy": "pass",
+    "ownership_doctest": "pass",
+    "independent_java": "pass",
+    "independent_nethernet": "pass",
+    "independent_aiortc": "pass",
+    "peer_membership_pose_unicode_late_join_leave": "pass",
+    "gameplay_plugin": "pass",
+    "forms": "pass",
+    "sound": "pass",
+    "model": "pass",
+    "packs_cache_consent_keepalive": "pass"
+  },
+  "windows_build": {
+    "version": "v0.1.0-preview.15",
+    "source": "44a6a681cfade5a2e6aa2a183f788ac4e5980920",
+    "run_id": 43816295927,
+    "bytes": 6591847,
+    "sha256": "b3e53d511f6613f52c1e2df5492ac9e3b974e4151e3f0b3eec02199d751c7175",
+    "members": [
+      "Cargo.lock",
+      "diagnose.cmd",
+      "LICENSE",
+      "packs/sculith-demo/entity/sculith_statue.entity.json",
+      "packs/sculith-demo/manifest.json",
+      "packs/sculith-demo/models/entity/sculith_statue.geo.json",
+      "packs/sculith-demo/render_controllers/sculith_static.render_controllers.json",
+      "packs/sculith-demo/sounds/sculith_demo.ogg",
+      "packs/sculith-demo/sounds/sound_definitions.json",
+      "packs/sculith-demo/textures/blocks/sculith_demo.png",
+      "packs/sculith-demo/textures/entity/sculith_statue.png",
+      "packs/sculith-demo/textures/terrain_texture.json",
+      "packs/sculith-demo-textures.json",
+      "plugins/sculith-forms-plugin.exe",
+      "plugins/sculith-gameplay-plugin.exe",
+      "plugins/sculith-model-plugin.exe",
+      "plugins/sculith-sound-plugin.exe",
+      "README.txt",
+      "release.json",
+      "sculith.exe",
+      "sculith.local.example.toml",
+      "start.cmd",
+      "THIRD_PARTY_LICENSES.txt",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "exes": [
+      {
+        "name": "sculith.exe",
+        "bytes": 14233600,
+        "sha256": "ee601f01efd1ace9a13c56cf1257a8f9c222665da656eb49537e6794a0a8e0b4",
+        "dlls": [
+          "bcryptprimitives.dll",
+          "kernel32.dll",
+          "api-ms-win-core-synch-l1-2-0.dll",
+          "bcrypt.dll",
+          "iphlpapi.dll",
+          "ntdll.dll",
+          "ws2_32.dll",
+          "crypt32.dll",
+          "KERNEL32.dll",
+          "ADVAPI32.dll"
+        ]
+      },
+      {
+        "name": "plugins/sculith-forms-plugin.exe",
+        "bytes": 470528,
+        "sha256": "af6cce55cbc32c3eb1e81617262b0082f43cbd3b62639804993db6d8aaec1d71",
+        "dlls": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      {
+        "name": "plugins/sculith-sound-plugin.exe",
+        "bytes": 460288,
+        "sha256": "059927936f25eb1bf529be1ffc73b436ad9aaee760172344725f2b3c9034b92f",
+        "dlls": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      {
+        "name": "plugins/sculith-gameplay-plugin.exe",
+        "bytes": 462336,
+        "sha256": "2c81a973ac950112f4931d74f5d20cd41c37629304e6dac965ee38d3211af2c8",
+        "dlls": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      },
+      {
+        "name": "plugins/sculith-model-plugin.exe",
+        "bytes": 489472,
+        "sha256": "05dd8316d389fb63a8fa6e8c3b607d4b1d47786bb2d61d94c2224090cc2ebd09",
+        "dlls": [
+          "KERNEL32.dll",
+          "ntdll.dll",
+          "api-ms-win-core-synch-l1-2-0.dll"
+        ]
+      }
+    ],
+    "source_asset_check": "JSON, LICENSE and Cargo.lock match with CRLF/LF normalization; PNG/OGG byte-identical",
+    "status": "success"
+  }
+}
