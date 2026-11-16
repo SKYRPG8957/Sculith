@@ -30,7 +30,7 @@ use bedrock::protocol::{
 };
 use sculith_world::BlockKind;
 
-use sculith_server::inventory::{
+use sculith_game::inventory::{
     Action, CREATIVE_CATALOGUE, Change, INVENTORY_SLOTS, ItemStack, MAX_ACTIONS, MAX_STACK,
     Request, Response, Slot, SlotRef,
 };
@@ -341,7 +341,7 @@ mod tests {
         PacketHeader, Packets, ProtoCodec,
         v662::packets::{ItemStackRequestPacket, RequestsEntry},
     };
-    use sculith_server::inventory::{Inventory, RejectReason};
+    use sculith_game::inventory::{Inventory, RejectReason};
     use std::io::Cursor;
 
     fn wire_slot(

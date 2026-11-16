@@ -30,6 +30,8 @@ jobs:
             windows-crt-static-
       - name: Install pinned toolchain
         run: rustup show
+      - name: Check workspace boundaries
+        run: python scripts/check_architecture.py
       - name: Check and test native Windows build
         env:
           RUST_LOG: 'warn,sculith::protocol::bedrock::nethernet=debug,nethernet=debug,nethernet_tokio=debug,rtc_ice=debug'
@@ -50,20 +52,20 @@ jobs:
         run: cargo build --workspace --release --locked
       - name: Exercise Windows network, plugin, graceful shutdown and persistence
         run: |
-          python scripts/smoke.py --server target/release/sculith.exe --plugin target/release/sculith-welcome.exe
+          python tests/interop/smoke.py --server target/release/sculith.exe --plugin target/release/sculith-welcome.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts/smoke.py --server target/release/sculith.exe --plugin target/release/sculith-welcome.exe --sessions
+          python tests/interop/smoke.py --server target/release/sculith.exe --plugin target/release/sculith-welcome.exe --sessions
           exit $LASTEXITCODE
       - name: Verify independent Java shared-world protocol client
-        run: python scripts/java_smoke.py --server target/release/sculith.exe
+        run: python tests/interop/java_smoke.py --server target/release/sculith.exe
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Verify independent WebRTC interoperability against the release executable
         run: |
-          python -m pip install -r scripts/requirements-webrtc.txt
+          python -m pip install -r tests/interop/requirements.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts/webrtc_smoke.py --server target/release/sculith.exe
+          python tests/interop/webrtc_smoke.py --server target/release/sculith.exe
           exit $LASTEXITCODE
       - uses: actions/setup-go@v5
         with:
@@ -73,22 +75,22 @@ jobs:
         working-directory: tests/interop/gophertunnel
         run: go build -mod=readonly -o ../../../target/gophertunnel-probe.exe .
       - name: Verify independent Bedrock login and world spawn
-        run: python scripts/gophertunnel_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
+        run: python tests/interop/gophertunnel_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify Rust plugin game hooks in both editions
-        run: python scripts/plugin_game_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-gameplay-plugin.exe
+        run: python tests/interop/plugin_game_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-gameplay-plugin.exe
       - name: Verify shared forms, callbacks and recipient isolation
-        run: python scripts/forms_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-forms-plugin.exe
+        run: python tests/interop/forms_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-forms-plugin.exe
       - name: Verify shared sound assets, playback packets and recipient isolation
-        run: python scripts/sound_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-sound-plugin.exe
+        run: python tests/interop/sound_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-sound-plugin.exe
       - name: Verify shared models, private actors and show-replace-hide lifecycle
-        run: python scripts/model_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-model-plugin.exe
+        run: python tests/interop/model_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-model-plugin.exe
       - name: Verify authoritative cross-edition held items and empty hands
-        run: python scripts/equipment_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
+        run: python tests/interop/equipment_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify packet registration, public chat and private Rust command hooks
-        run: python scripts/events_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-events-plugin.exe
+        run: python tests/interop/events_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-events-plugin.exe
       - name: Verify counted inventory transactions and cross-edition held items
-        run: python scripts/inventory_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-events-plugin.exe
+        run: python tests/interop/inventory_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-events-plugin.exe
       - name: Verify cross-edition player visibility, movement and leave
-        run: python scripts/peer_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
+        run: python tests/interop/peer_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify shared packs, native cache and consent keepalive
-        run: python scripts/pack_delivery_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --wait-for-keepalive
+        run: python tests/interop/pack_delivery_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --wait-for-keepalive

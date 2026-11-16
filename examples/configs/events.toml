@@ -1,0 +1,22 @@
+# Same-machine shared world with the Rust API-v6 command/event example.
+# Offline identities are restricted to loopback; this is not a hosting config.
+[server]
+motd = "Sculith / local event example"
+
+[java]
+sessions = true
+require_authentication = false
+
+[bedrock]
+sessions = true
+require_authentication = false
+nethernet_identity_path = "../../world/nethernet-identity.pem"
+
+[network.java]
+bind = "127.0.0.1:25565"
+
+[network.bedrock]
+bind = "127.0.0.1:19132"
+
+[[plugins]]
+path = "../../target/debug/sculith-events-plugin"

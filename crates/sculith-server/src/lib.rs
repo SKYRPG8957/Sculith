@@ -1,7 +1,3 @@
-//! Authoritative game state and its bounded asynchronous owner.
-pub mod commands;
-pub mod game;
-pub mod inventory;
-pub mod observations;
-pub mod peers;
-pub mod world;
+//! Public engine modules used by embedded integrations.
+pub use sculith_game::{self as game, commands, inventory};
+pub use sculith_runtime::{self as world, observations, peers};

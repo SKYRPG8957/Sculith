@@ -1,203 +1,83 @@
 # Sculith
 
-> 기존 프리뷰 배포본은 철회했습니다. 새 패키지는 배포하지 않으며 소스 개발을 진행합니다.
+**Fast. Light. Safe.**
 
-[English](README.md) · [기여 안내](CONTRIBUTING.md)
+Rust로 개발하는 베드락 기반 Minecraft 구동기입니다.
+서버 하나에 순정 Java와 Bedrock이 접속해 같은 월드·게임 규칙·Rust 플러그인을 사용합니다.
 
-**Rust로 만드는 베드락 기준 Minecraft 크로스플레이 구동기.**
+[English](README.md) · [문서](docs/README.md) · [기여 안내](CONTRIBUTING.md)
 
-목표는 서버 하나에 최신 Bedrock과 최신에 가까운 순정 Java 클라이언트가 함께 접속하고,
-베드락을 원본으로 정의한 콘텐츠와 게임 규칙을 공유하는 것입니다.
-순정 Java 호환 모드는 모드를 요구하지 않으며, 선택적인 Fabric Companion은 높은 표현 충실도를 목표로 합니다.
-두 모드의 게임 접속과 콘텐츠 호환성은 아직 구현 중입니다.
-서버와 공식 플러그인 SDK의 개발 언어는 Rust입니다.
+현재 개발 단계이며 로컬 크리에이티브 건축을 지원합니다.
+공개 서버 운영, 서바이벌, 전체 베드락 콘텐츠 호환은 개발 중입니다.
+개발 기준 버전은 Bedrock **1.26.60 / protocol 2225**, Java **26.3 / 777**입니다.
+[호환성과 검증 상태](docs/development/status.md).
 
-상용 운영을 포함해 누구나 설치하고 확장할 수 있는 공개 구동기를 목표로 합니다.
-주요 적용 서버는 에스테리아 일대기이며, 해당 서버의 RPG 규칙과 콘텐츠는 플러그인·팩으로 분리합니다.
-[프로젝트 범위](docs/project-scope.md).
+## 빌드와 실행
 
-> 기본 실행은 **`discovery-only`**입니다. 선택적으로 Java·베드락의 로컬 로그인·평지 스폰·제한된 크리에이티브 건축을
-> 시험할 수 있습니다. **순정 Java 26.3의 Linux 입장·이동·마우스 건축과 독립 베드락 클라이언트와의 블록 공유를 확인했습니다.**
-> 공식 Windows 베드락은 표시 모드 수정 이후 사용자가 입장을 확인했습니다. 전체 게임·콘텐츠 검증은 진행 중입니다. [검증 범위](docs/status.md)
-
-## 현재 동작하는 기능
-
-| 기능 | 상태 |
-| --- | --- |
-| 하나의 Rust 서버에서 Java TCP + Bedrock UDP 리스너 실행 | 구현 |
-| Java 서버 목록 상태 조회 / 핑 응답 | 구현 |
-| Java 26.3 로컬 로그인·설정·25청크 스폰·제한된 이동/건축 | 같은 월드 소유자에 연결. 순정 게임으로 Linux 입장·이동·마우스 편집 검증 |
-| Bedrock RakNet unconnected ping / pong | 구현 |
-| Bedrock RakNet 세션·압축·서명 검증·암호화 | 선택적 개발 경로 구현. 실제 UDP의 헤드리스 클라이언트로 검증 |
-| Bedrock 평지 25청크 전송·스폰 확인·세션 유지/정리 | 개발 경로 구현. 사용자가 공식 Windows 앱 입장 확인, 전체 게임 검증은 진행 중 |
-| 권위 있는 이동·블록 설치/파괴와 세션 간 변경 전송 | 제한된 크리에이티브 경로 구현. 충돌·속도·거리·시야·권한·서버 보유 아이템 검사 |
-| 단일 지역 소유권·리비전·불변 스냅샷·팔레트 저장 | 구현. 병렬 지역 틱이나 완성된 물리 엔진은 아님 |
-| 버전·체크섬을 검증하는 region snapshot 파일 저장·복구 | 선택적 시작 시 로드·정상 종료 시 저장 연결. 주기적 자동 저장은 미구현 |
-| 두 에디션이 읽는 공통 MOTD와 플레이어 수 | 구현. 초기화가 확인된 세션만 집계 |
-| Rust 플러그인 실행 파일 로드 / API 버전 확인 / 생명주기 훅 | 초기 구현. WASI Component 공식 호스트는 검토·구현 대상 |
-| 플러그인에서 공통 MOTD 변경 | 구현 |
-| Rust 게임 플러그인 API v2 | 초기화 후 접속/종료·커밋된 블록 훅·개인 메시지 구현. v1 실행 파일 호환, 순정 Java 한국어/이모지 표시 검증 |
-| Rust 공통 폼 API v3 | 기본 베드락 폼·순정 Java 대화상자·선택/취소 콜백 구현. [실제 화면과 범위](docs/forms.md) |
-| 베드락 PNG → 명시적으로 대응시킨 자바 텍스처 팩 변환 | 구현 |
-| 정적 모델과 Rust API v5 | 원본 직육면체 모델·순정 Java 표시·개인 미리보기 API 구현. [범위와 검증](docs/models.md) |
-| 공통 사운드와 Rust API v4 | 원본 OGG·팩 변환·개인 재생 구현. [검증과 제한](docs/sounds.md) |
-| 온라인 계정 인증·정식 월드 입장 | 구현/검증 진행 중. 공식 discovery 조회 성공 확인, 실제 계정 로그인은 미검증 |
-| 플레이어 상호 표시·이동·손 아이템 수량 공유 | 구현. 기본 Java 아바타·원본 베드락 임시 스킨 사용 |
-| 수량을 가진 인벤토리 | 크리에이티브 36칸·블록 아이템 4종. 베드락 거래, Java 슬롯 교체·클릭·단축키 교환 구현. 일반 상자·제작·서바이벌은 미구현 |
-| Rust 이벤트·명령어 API v6 | 이동·장비·인벤토리·공개 채팅·수신 메타데이터 관측과 `/hello` 예제. 패킷 등록과 게임 동작 지원은 별개 |
-| 물리/중력 | 미구현 |
-| NetherNet HTTP/WebRTC 전송 | loopback 개발 경로 구현. 실제 소켓에서 RakNet 세션과 같은 월드 변경 수신 검증. 공식 앱 입장은 사용자 확인 |
-| 플러그인 취소·일반 월드 API | 미구현 |
-| 공유 원본 팩 자동 전달 | 현재 소스에 로컬 개발 경로 구현. 순정 Java의 자동 다운로드·텍스처 표시, 독립 베드락의 청크 전송·캐시 재접속 검증 |
-| 베드락 모델·UI·스크립트의 자바 변환 | 미구현. 순정 클라이언트 제약에 따른 별도 설계 필요 |
-
-기본 모드는 Java 프로토콜 `-1`을 반환하고 월드 로그인을 거부합니다. 선택적으로 로컬 Java 26.3 세션을 켜면
-프로토콜 `777`과 개발 단계 문구를 표시합니다. 두 에디션 모두 공식 게임 입장·렌더링 검증은 별개입니다.
-
-## Windows에서 테스트
-
-이전 프리뷰 ZIP은 철회했고 새 바이너리를 게시하지 않습니다. 현재는 아래 소스 빌드를 사용합니다.
-빌드 후 `cargo run --locked -- run --config examples/crossplay-preview.toml`로 실행하세요.
-같은 PC에서 베드락은 **`127.0.0.1:19132`**, Java **26.3**은 **`127.0.0.1:25565`**로 접속합니다.
-Ctrl+C로 종료하면 설정된 지역 스냅샷을 저장합니다. 기존 설정과 월드는 삭제하지 마세요.
-Windows loopback 관련 안내는 [빠른 시작](docs/windows-quickstart.md)을 참고하세요.
-
-## 소스에서 빌드와 실행
-
-필요 도구는 Rust (`rust-toolchain.toml`에 고정), C 링커, 스모크 테스트용 Python 3입니다.
-외부 Minecraft 서버 프로세스, Java 런타임, 사용자 제공 Microsoft 비밀키는 이 단계에서 필요하지 않습니다.
-온라인 베드락 인증 경로는 공식 discovery/OIDC 서비스의 공개키를 HTTPS로 조회해야 합니다.
+고정된 Rust 툴체인과 네이티브 링커가 필요합니다.
 
 ```sh
 git clone https://github.com/SKYRPG8957/Sculith.git
 cd Sculith
-# 이 클라우드에 설치된 Rust를 현재 셸에서 활성화. 일반 Rust 설치 환경에서는 생략 가능.
-. ./scripts/dev-env.sh
-
 cargo build --workspace --locked
-cargo run --locked -- check --config sculith.example.toml
-cargo run --locked -- run --config sculith.example.toml
+cargo run --locked -- run --config examples/configs/crossplay.toml
 ```
 
-기본 주소는 Java `127.0.0.1:25565/TCP`, Bedrock `127.0.0.1:19132/UDP`입니다.
-하나의 프로세스에서 두 포트를 엽니다. 로컬 개발용으로 시작하며, 외부 노출은 설정의 `bind`를 바꿔야 합니다.
-TCP와 UDP는 같은 포트 번호를 사용할 수도 있습니다. 종료는 Ctrl+C입니다.
-현재 공개 서버 운영용 빌드가 아닙니다.
+같은 PC에서 접속합니다.
 
-별도 설정이 필요하면 `sculith.example.toml`을 `sculith.toml`로 복사해 수정하세요.
-인자 없이 실행하면 작업 디렉터리의 `sculith.toml`을 읽고, 그 파일이 없으면 기본값을 사용합니다.
-명시한 설정 파일이 없거나 잘못되었으면 오류로 종료하며, 설정 파일을 자동으로 덮어쓰지 않습니다.
+| 클라이언트 | 주소 |
+| --- | --- |
+| Bedrock | `127.0.0.1`, 포트 `19132` |
+| Java 26.3 | `127.0.0.1:25565` |
 
-## 베드락 스폰 개발 경로
+Ctrl+C로 정상 종료하면 `world/region.sculith`에 지역을 저장합니다.
+플레이어 데이터 저장과 비정상 종료 복구는 아직 없습니다.
+이전 프리뷰 배포본은 철회했으며 새 바이너리는 게시하지 않습니다.
+[Windows 설정](docs/guides/windows.md).
 
-```sh
-cargo run --locked -- run --config examples/bedrock-login-preview.toml
-```
+## 주요 기능
 
-현재 소스에서 두 에디션을 함께 시험하려면 `examples/crossplay-preview.toml`을 사용하세요.
-Java 26.3은 `127.0.0.1:25565`, 베드락은 `127.0.0.1:19132`이며, 블록 변경과 저장 월드를 공유합니다.
-Java 온라인 인증과 다른 Java 버전은 아직 구현하지 않았습니다. [접속 설정·검증·제한](docs/java-preview.md)을 참고하세요.
+- 두 에디션의 청크·플레이어 표시·이동·건축·채팅 공유
+- Stone·Dirt·Grass·Bedrock의 수량을 다루는 크리에이티브 인벤토리 36칸
+- 게임 이벤트·명령어·개인 메시지·폼·사운드·정적 모델을 지원하는 [Rust 플러그인 SDK](docs/guides/plugins.md)
+- 하나의 베드락 원본 팩과 명시적으로 지원하는 Java 텍스처·사운드·정적 모델 변환
+- 버전이 있는 지역 스냅샷과 크기가 제한된 월드 요청 대기열
 
-이 예제는 loopback에서 테스트용 자체 서명 신원을 허용하고, 빈 팩 협상 이후 25개의 평지 청크를 보냅니다.
-월드는 단일 소유자에게 스냅샷을 요청하는 방식이며, 초기화가 확인된 세션의 수명과 접속자 수를 관리합니다.
-**실제 Microsoft 계정 인증 또는 공식 Bedrock 클라이언트 렌더링을 검증한 예제가 아닙니다.**
-제한된 Creative 설정으로 Stone·Dirt·Grass 초기 슬롯을 제공합니다. 이동·블록 입력은 서버의 단일 월드 소유자가
-검증하고, 승인된 블록 변경만 관심 청크를 보는 세션에 전송합니다. 일반 인벤토리 거래나 완전한 물리 동작은 아직 없습니다.
+일반 상자, 제작, 물리·중력, 전투와 임의의 JSON UI·Molang·Script API 처리는 개발 중입니다.
 
-이 예제는 `world/region.sculith`를 시작 시 로드하고, Ctrl+C/SIGTERM으로 정상 종료할 때 저장합니다.
-다른 설정에서는 `[world]`의 `snapshot_path`를 지정하면 되며, 상대 경로는 설정 파일의 디렉터리 기준입니다.
-주기적 자동 저장은 아직 없으므로 강제 종료하면 시작 이후의 변경이 유실될 수 있습니다.
-다른 형식이나 손상된 기존 파일이 있으면 덮어쓰지 않고 오류로 종료합니다.
+## 프로젝트 구조
 
-`bedrock.require_authentication`의 기본값은 `true`입니다. 인증을 끄면 loopback 바인딩만 허용합니다.
-최대 64세션, IP당 4세션으로 제한하고, 메시지·압축 해제 배치·각 RakNet 신뢰성 큐는 최대 4 MiB입니다.
-앱의 전체 수신/송신 대기열에는 각각 16 MiB의 바이트 예산을 적용합니다. 이는 프로세스 전체 RAM 상한은 아닙니다.
-정식 온라인 신원을 쓰는 클라이언트는 공식 공개키 조회가 성공해야 합니다.
-로컬 세션은 NetherNet HTTP/WebRTC도 Bedrock TCP 포트에서 엽니다. 키 보관과 제한은 [NetherNet 문서](docs/nethernet.md)를 참고하세요.
-현재 환경의 제한과 검증 결과는 [개발 상태](docs/status.md)에 기록합니다.
+| 경로 | 내용 |
+| --- | --- |
+| `crates/` | 엔진·프로토콜·팩 변환·플러그인 SDK |
+| `examples/configs/` | 실행 가능한 서버 설정 |
+| `examples/plugins/` | 공개 SDK를 사용하는 Rust 예제 플러그인 |
+| `examples/pack/` | 원본 공통 리소스팩 |
+| `tests/interop/` | 독립 Java·Bedrock·WebRTC 클라이언트 검사 |
+| `scripts/` | 개발 도구와 프로토콜 생성기 |
+| `packaging/` | 플랫폼별 실행 템플릿 |
+| `docs/` | 사용 가이드·내부 설계·개발 기록 |
 
-## Rust 플러그인
+[크레이트 역할과 의존성](docs/internals/architecture.md).
 
-```sh
-cargo build --workspace --locked
-cargo run --locked -- run --config examples/with-plugin.toml
-```
-
-예제 플러그인은 시작 시 공통 MOTD를 변경합니다. 두 접속부에 같은 변경이 반영됩니다.
-새 게임 예제는 `examples/gameplay-preview.toml`로 실행하며, 접속자별 환영 메시지와 승인된 블록 변경 훅을 확인합니다.
-현재 소스는 API v6와 게임/폼/사운드/모델·이벤트 예제를 제공합니다. 기존 v1–v5 실행 파일도 지원합니다.
-새 Windows 설정에서는 자동으로 로드하며, 접속자별 환영 메시지와 승인된 블록 변경 로그를 제공합니다.
-기존 설정은 보존하며 플러그인을 자동 추가하지 않습니다. [순정 Java의 실제 메시지 화면](docs/verification/2026-11-16-plugin-api-v2.md)도 확인했습니다.
-플러그인은 별도 Rust 실행 파일이며 TOML의 `[[plugins]]`에 경로를 등록합니다.
-Rust의 불안정한 동적 라이브러리 ABI 대신 버전이 명시된 JSON-lines 메시지를 사용합니다.
-플러그인은 호스트와 같은 사용자 권한을 가진 **신뢰된 프로그램**이며 샌드박스가 아닙니다.
-공식 플러그인 구조는 WASI Component Model과 비교·검증할 예정이며 현재 실행 파일 방식은 초기 구현입니다.
-자세한 개발 방법은 [플러그인 문서](docs/plugins.md)를 참고하세요.
-
-## 베드락 팩 → 자바 텍스처 팩
-
-순정 Java는 베드락의 `manifest.json`, 모델, UI, 동작 스크립트를 그대로 해석하지 못합니다.
-베드락 팩을 원본으로 유지하고, 에디션별 대응표로 자바 팩을 생성하는 방향입니다.
-현재 변환기는 **지정한 PNG를 기존 자바 블록·아이템의 텍스처로 대응시키고, 단일 Vorbis 음원을 공통 이벤트로 변환**합니다. [공유 사운드와 실제 오디오 검증](docs/sounds.md)을 참고하세요.
-
-저장소의 예제는 Minecraft 에셋을 포함하지 않는 자체 제작 체크무늬 텍스처로 돌의 외형을 바꿉니다.
-다음 명령은 Java `26.3`의 팩 형식 `97.1`을 대상으로 합니다.
+## 개발
 
 ```sh
-mkdir -p packs/generated
-cargo run --locked -- pack convert \
-  --input examples/pack/bedrock \
-  --mapping examples/pack/textures.json \
-  --output packs/generated/java-demo \
-  --pack-format 97 --pack-format-minor 1
-```
-
-출력은 `pack.mcmeta`, `assets/`, 변환 범위가 적힌 `sculith-conversion.json`을 포함하는 디렉터리입니다.
-이미 있는 출력은 덮어쓰지 않으므로 재실행할 때 새 출력 경로를 지정하세요.
-이 디렉터리는 자바 클라이언트의 리소스팩 폴더에 수동으로 넣을 수 있습니다.
-현재 소스는 `examples/content-preview.toml`로 같은 베드락 원본에서 양쪽 팩을 생성하고 접속 시 자동 전달합니다.
-순정 Java 26.3에서 서버 팩을 내려받아 체크무늬 Stone을 표시한 것을 확인했습니다.
-원본 예제 팩은 소스의 `examples/pack`에 있습니다. [자동 전달 설정·제한·검증 범위](docs/content-delivery.md).
-변환하지 않은 자산은 결과에 포함되지 않으며, 변환 결과에 제한 사항을 기록합니다.
-
-대응표의 `bedrock`은 원본 팩 내부 PNG 경로이고, `java`는 확장자를 제외한 자바 리소스 ID입니다.
-클라이언트에 실제로 존재하는 ID를 사용해야 합니다. 새로운 ID를 적는 것만으로 커스텀 블록이 등록되지는 않습니다.
-
-## 버전 정책
-
-- Bedrock은 최신 정식 프로토콜을 우선 구현·검증하는 것을 목표로 합니다.
-- Java는 최신 정식 버전 중심으로, 변환 계층이 검증된 인접 버전까지 지원하는 것을 목표로 합니다.
-- 버전 번호만 바꾸거나 클라이언트 프로토콜 번호를 그대로 광고해서 지원한다고 처리하지 않습니다.
-- 실제 지원 목록은 로그인·인증·청크·이동·인벤토리·팩 적용 검증을 통과한 뒤 추가합니다.
-
-`protocol-targets.json`은 2026-11-16에 재확인한 Java `26.3 / 777`, Bedrock `1.26.60 / 2225`를
-**개발 참고값**으로 기록합니다. 현재 `gameplay_supported_versions`는 두 에디션 모두 빈 목록입니다.
-실행 시 자동으로 프로토콜 정의를 교체하지 않습니다.
-
-```sh
-cargo run --locked -- versions
-python3 scripts/check_protocol_updates.py  # GitHub 최신 정식 메타데이터와 비교. 파일은 변경하지 않음.
-```
-
-## 검증
-
-```sh
+python3 scripts/check_architecture.py
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --all-targets --locked
 cargo test --workspace --doc --locked
-cargo build --workspace --locked
-python3 scripts/smoke.py
-python3 scripts/smoke.py --sessions
-python3 scripts/java_smoke.py
+python3 tests/interop/smoke.py
 ```
 
-스모크 테스트는 임시 설정과 사용 가능한 로컬 포트로 실제 서버·Rust 플러그인을 실행합니다.
-Java 상태 조회·핑·로그인 거부, Bedrock pong, 공통 플러그인 상태, 잘못된 패킷,
-정상 종료, 설정 검증, 스냅샷 저장·재시작 복구·기존 파일 보호, PNG 팩 변환과 기존 출력 보호를 확인합니다.
-공식 게임 클라이언트의 월드 접속 테스트를 대체하지 않습니다.
-동일한 절차를 GitHub Actions에 등록했습니다.
+프로토콜 검사와 기여 규칙은 [기여 안내](CONTRIBUTING.md)를 참고하세요.
 
-설계와 단계별 개발 범위는 [아키텍처](docs/architecture.md)와 [로드맵](docs/roadmap.md)에 있습니다.
+## 라이선스
 
-MIT License. Mojang 또는 Microsoft의 공식 프로젝트가 아닙니다.
+[MIT](LICENSE)이며 상업적 이용을 허용합니다.
+에스테리아 일대기를 주요 적용 서버로 사용하되, 전용 RPG 규칙은 플러그인과 팩으로 분리합니다.
+[프로젝트 범위](docs/development/project-scope.md).
+
+타 프로젝트·라이브러리의 출처는 [서드파티 고지](THIRD_PARTY_NOTICES.md)에 기록합니다.
+Mojang·Microsoft와 무관한 독립 프로젝트입니다.

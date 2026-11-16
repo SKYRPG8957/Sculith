@@ -2861,6 +2861,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sculith-game"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sculith-core",
+ "sculith-world",
+ "uuid",
+]
+
+[[package]]
 name = "sculith-gameplay-plugin"
 version = "0.1.0"
 dependencies = [
@@ -2900,6 +2910,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "sculith-plugin-host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "sculith-core",
+ "sculith-game",
+ "sculith-plugin-api",
+ "sculith-runtime",
+ "sculith-world",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sculith-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sculith-core",
+ "sculith-game",
+ "sculith-world",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "sculith-server"
 version = "0.1.0"
 dependencies = [
@@ -2921,8 +2962,11 @@ dependencies = [
  "rcgen",
  "rustls",
  "sculith-core",
+ "sculith-game",
  "sculith-packs",
  "sculith-plugin-api",
+ "sculith-plugin-host",
+ "sculith-runtime",
  "sculith-world",
  "serde",
  "serde_json",

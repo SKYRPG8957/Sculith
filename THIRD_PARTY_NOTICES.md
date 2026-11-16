@@ -31,7 +31,7 @@ was consulted for Java protocol-777 packet layouts and known-core registry negot
 The independently implemented Rust adapter links no Java server or MCProtocolLib runtime.
 Its checked-in identifier, tag-membership and numeric wire facts are reproducibly extracted
 from official Java 26.3 reports and core file names; the pinned tool checksum and commands
-are recorded in [the Java preview guide](docs/java-preview.md). No Minecraft JAR,
+are recorded in [the Java preview guide](docs/guides/java.md). No Minecraft JAR,
 registry element definitions or game assets are included in the server distribution.
 
 Windows preview packages include `THIRD_PARTY_LICENSES.txt`, generated from the locked dependency graph and its source license files.

@@ -14,6 +14,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install pinned toolchain
         run: rustup show
+      - name: Check workspace boundaries
+        run: python3 scripts/check_architecture.py
       - name: Format
         run: cargo fmt --all --check
       - name: Format patched transport core
@@ -29,18 +31,18 @@ jobs:
       - name: Build server and Rust example plugin
         run: cargo build --workspace --locked
       - name: Exercise real network listeners and plugin
-        run: python3 scripts/smoke.py
+        run: python3 tests/interop/smoke.py
       - name: Exercise executable Bedrock session driver
-        run: python3 scripts/smoke.py --sessions
+        run: python3 tests/interop/smoke.py --sessions
       - name: Exercise independent Java shared-world protocol client
-        run: python3 scripts/java_smoke.py
+        run: python3 tests/interop/java_smoke.py
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Exercise independent WebRTC client
         run: |
-          python -m pip install -r scripts/requirements-webrtc.txt
-          python scripts/webrtc_smoke.py
+          python -m pip install -r tests/interop/requirements.txt
+          python tests/interop/webrtc_smoke.py
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.4'
@@ -49,22 +51,22 @@ jobs:
         working-directory: tests/interop/gophertunnel
         run: go build -mod=readonly -o ../../../target/gophertunnel-probe .
       - name: Exercise independent Bedrock login and world spawn
-        run: python scripts/gophertunnel_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/gophertunnel_smoke.py --client target/gophertunnel-probe
       - name: Exercise Rust plugin game hooks in both editions
-        run: python scripts/plugin_game_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/plugin_game_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared forms, callbacks and recipient isolation
-        run: python scripts/forms_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/forms_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared sounds and private playback
-        run: python scripts/sound_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/sound_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared static models and private actor lifecycle
-        run: python scripts/model_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/model_smoke.py --client target/gophertunnel-probe
       - name: Verify packet registration and Rust API-v6 packet/game observations
-        run: python scripts/events_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/events_smoke.py --client target/gophertunnel-probe
       - name: Verify counted inventory transactions and cross-edition held items
-        run: python scripts/inventory_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/inventory_smoke.py --client target/gophertunnel-probe
       - name: Verify authoritative cross-edition held items and empty hands
-        run: python scripts/equipment_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/equipment_smoke.py --client target/gophertunnel-probe
       - name: Verify cross-edition player visibility, movement and leave
-        run: python scripts/peer_smoke.py --client target/gophertunnel-probe
+        run: python tests/interop/peer_smoke.py --client target/gophertunnel-probe
       - name: Exercise shared packs, native cache and consent keepalive
-        run: python scripts/pack_delivery_smoke.py --client target/gophertunnel-probe --wait-for-keepalive
+        run: python tests/interop/pack_delivery_smoke.py --client target/gophertunnel-probe --wait-for-keepalive

@@ -3,7 +3,7 @@
 use super::{codec, write_string, write_varint};
 use crate::game::PlayerSnapshot;
 use anyhow::{Result, ensure};
-use sculith_server::peers::Change;
+use sculith_runtime::peers::Change;
 
 fn id(value: u64) -> Result<i32> {
     ensure!(

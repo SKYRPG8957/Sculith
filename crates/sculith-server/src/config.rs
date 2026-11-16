@@ -1,3 +1,4 @@
+use sculith_plugin_host::PluginConfig;
 use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
@@ -134,20 +135,6 @@ fn enabled() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PluginConfig {
-    pub path: PathBuf,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default = "default_timeout")]
-    pub timeout_ms: u64,
-}
-
-fn default_timeout() -> u64 {
-    1000
-}
-
 impl Config {
     pub fn load(path: Option<&Path>) -> Result<Self> {
         let default_path = Path::new("sculith.toml");
@@ -275,14 +262,11 @@ impl Config {
             "enable at least one edition listener"
         );
         ensure!(
-            self.plugins.len() <= 32,
+            self.plugins.len() <= sculith_plugin_host::MAX_PLUGINS,
             "at most 32 plugins may be configured"
         );
         for plugin in &self.plugins {
-            ensure!(
-                (10..=10_000).contains(&plugin.timeout_ms),
-                "plugin timeout_ms must be between 10 and 10000"
-            );
+            plugin.validate()?;
         }
         Ok(())
     }

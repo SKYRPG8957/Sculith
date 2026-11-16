@@ -1,6 +1,52 @@
-//! Edition-independent server state. Bedrock semantics will be authoritative.
+//! Shared engine types and validation.
 
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Edition {
+    Java,
+    Bedrock,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PacketDispatch {
+    Control,
+    Gameplay,
+    Notification,
+    Unsupported,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PacketInfo {
+    pub edition: Edition,
+    pub protocol: u32,
+    pub phase: String,
+    pub id: u32,
+    pub name: String,
+    /// Planned dispatch category, not a claim that body validation succeeded.
+    pub dispatch: PacketDispatch,
+    pub sequence: u64,
+}
+
+impl PacketInfo {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.sequence == 0 || self.protocol == 0 || self.id > i32::MAX as u32 {
+            return Err("invalid packet receipt counters");
+        }
+        if self.phase != "play"
+            || self.name.is_empty()
+            || self.name.len() > 128
+            || !self.name.is_ascii()
+            || self.name.chars().any(char::is_control)
+        {
+            return Err("invalid packet receipt metadata");
+        }
+        Ok(())
+    }
+}
 
 /// Public player command, with a single optional free-text argument tail.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

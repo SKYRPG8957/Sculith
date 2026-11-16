@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "examples/welcome-plugin", "examples/gameplay-plugin", "examples/forms-plugin", "examples/sound-plugin", "examples/model-plugin", "examples/events-plugin"]
+members = ["crates/*", "examples/plugins/*"]
 default-members = ["crates/sculith-server"]
 resolver = "3"
 exclude = ["vendor/nethernet"]
@@ -24,6 +24,8 @@ tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "net", "io-
 toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.18", features = ["v4"] }
+futures-util = "=0.3.34"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

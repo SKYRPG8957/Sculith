@@ -10,7 +10,7 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use md5::{Digest, Md5};
-use sculith_server::peers::{Change as PeerChange, Peers};
+use sculith_runtime::peers::{Change as PeerChange, Peers};
 use sculith_world::{BlockKind, BlockPos, ChunkPos};
 use std::{
     collections::BTreeMap,

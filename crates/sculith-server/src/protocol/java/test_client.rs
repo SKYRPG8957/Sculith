@@ -1,5 +1,5 @@
 //! Small socket fixture for cross-adapter owner tests. Independent full wire
-//! and voxel/lighting validation lives in scripts/java_smoke.py.
+//! and voxel/lighting validation lives in tests/interop/java_smoke.py.
 use super::{
     codec::{self, Fields},
     write_string, write_varint,

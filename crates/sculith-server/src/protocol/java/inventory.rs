@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 
 use anyhow::{Result, ensure};
-use sculith_server::inventory::{Click, ItemStack, MAX_STACK};
+use sculith_game::inventory::{Click, ItemStack, MAX_STACK};
 use sculith_world::BlockKind;
 
 use super::codec::Fields;
@@ -345,13 +345,13 @@ mod tests {
                 }
             }
         );
-        let mut owner = sculith_server::inventory::Inventory::default();
+        let mut owner = sculith_game::inventory::Inventory::default();
         owner.click(change.click, true).unwrap();
         assert_eq!(owner.cursor().unwrap().kind, BlockKind::Stone);
         assert_eq!(owner.cursor().unwrap().count, 64);
         assert_eq!(
             owner
-                .get(sculith_server::inventory::Slot::Inventory(9))
+                .get(sculith_game::inventory::Slot::Inventory(9))
                 .unwrap(),
             None
         );

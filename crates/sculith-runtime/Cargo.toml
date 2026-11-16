@@ -1,0 +1,21 @@
+[package]
+name = "sculith-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+sculith-core = { path = "../sculith-core" }
+sculith-game = { path = "../sculith-game" }
+sculith-world = { path = "../sculith-world" }
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

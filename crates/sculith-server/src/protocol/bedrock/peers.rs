@@ -17,7 +17,7 @@ use bedrock::{
         },
     },
 };
-use sculith_server::peers::Change;
+use sculith_runtime::peers::Change;
 
 pub async fn send<T: Transport>(
     conn: &mut Connection<V2225, T>,

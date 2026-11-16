@@ -26,23 +26,23 @@ Build from this directory with Go 1.27.4:
 
 From the repository root:
 
-    python3 scripts/gophertunnel_smoke.py --client target/gophertunnel-probe
+    python3 tests/interop/gophertunnel_smoke.py --client target/gophertunnel-probe
 
 On Windows use an .exe output path. CI runs this against the portable release executable.
 This is an independent headless protocol test, not official Minecraft rendering verification.
 
 Player membership/pose lifecycle (two Java peers, one native peer):
 
-    python3 scripts/peer_smoke.py --client target/gophertunnel-probe
+    python3 tests/interop/peer_smoke.py --client target/gophertunnel-probe
 
 This also checks a Korean/emoji native name through Java's bounded ASCII profile
 name and original display-name component. `--peer-visual` is a 30-second companion
 for a separately running stock Java game; it skips flat-voxel checks on that
-existing world and reports received Java movement. See [scope](../../../docs/peers.md).
+existing world and reports received Java movement. See [scope](../../../docs/internals/peers.md).
 
 Held-item projection and false claim correction:
 
-    python3 scripts/equipment_smoke.py --client target/gophertunnel-probe
+    python3 tests/interop/equipment_smoke.py --client target/gophertunnel-probe
 
 `--equipment-visual` extends the actual-game companion with timed native hotbar
 changes (Dirt after 7 seconds, empty after 14) and reports both sides' equipment.

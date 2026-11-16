@@ -1,0 +1,27 @@
+# Local development preview; not a public server configuration.
+[server]
+motd = "Sculith"
+max_players = 20
+
+[world]
+snapshot_path = "world/region.sculith"
+
+[java]
+sessions = true
+require_authentication = false
+login_timeout_secs = 60
+
+[bedrock]
+sessions = true
+require_authentication = false
+login_timeout_secs = 60
+nethernet = true
+nethernet_identity_path = "world/nethernet-identity.pem"
+
+[network.java]
+enabled = true
+bind = "127.0.0.1:25565"
+
+[network.bedrock]
+enabled = true
+bind = "127.0.0.1:19132"

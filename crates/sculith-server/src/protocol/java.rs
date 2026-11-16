@@ -141,9 +141,9 @@ async fn handle_with_preview(
         let mut fields = &login_start[..];
         ensure!(read_varint(&mut fields)? == 0, "expected login start");
         let reason = if preview.is_some() {
-            "Sculith local preview requires Java 26.3 (protocol 777)."
+            "This server requires Java 26.3."
         } else {
-            "Sculith development build: Java world login is disabled; enable the local preview explicitly."
+            "Java connections are disabled in the server configuration."
         };
         disconnect(stream, Phase::Login, reason).await?;
         stream.shutdown().await?;
@@ -168,11 +168,10 @@ async fn status_exchange(
     let snapshot = status.borrow().clone();
     let reference = super::references().java;
     let response = serde_json::json!({
-        "version": {"name": if preview {"Sculith / Java 26.3 local preview"} else {"Sculith / discovery only"},
+        "version": {"name": if preview {"Sculith / Java 26.3"} else {"Sculith / status only"},
             "protocol": if preview {registry::PROTOCOL} else {-1}},
         "players": {"max": snapshot.max_players, "online": snapshot.online_players, "sample": []},
-        "description": {"text": format!("{}\n{}", snapshot.motd,
-            if preview {"Local shared-world preview; official gameplay unverified"} else {"Development build: world login unavailable"})},
+        "description": {"text": snapshot.motd},
         "sculith": {"stage": snapshot.stage, "reference_version": reference.version, "reference_protocol": reference.protocol}
     });
     let mut packet = vec![0];
@@ -344,7 +343,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn login_start_receives_an_explicit_development_disconnect() {
+    async fn disabled_java_login_sends_configuration_reason_and_closes() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (_, status) = watch::channel(ServerStatus::new("test".into(), 20).unwrap());
@@ -373,7 +372,7 @@ mod tests {
             reason["text"]
                 .as_str()
                 .unwrap()
-                .contains("Java world login is disabled")
+                .contains("Java connections are disabled")
         );
         server.await.unwrap();
     }

@@ -1,0 +1,26 @@
+[package]
+name = "sculith-plugin-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+futures-util.workspace = true
+sculith-core = { path = "../sculith-core" }
+sculith-game = { path = "../sculith-game" }
+sculith-plugin-api = { path = "../sculith-plugin-api" }
+sculith-runtime = { path = "../sculith-runtime" }
+sculith-world = { path = "../sculith-world" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

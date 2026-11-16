@@ -1,12 +1,13 @@
 mod config;
 mod content;
-mod plugins;
+use sculith_plugin_host as plugins;
 mod protocol;
-use sculith_server::{game, world};
+use sculith_game as game;
+use sculith_runtime as world;
 
 use std::{
     path::PathBuf,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result};
@@ -24,11 +25,7 @@ use tracing_subscriber::EnvFilter;
 use config::Config;
 
 #[derive(Parser)]
-#[command(
-    name = "sculith",
-    version,
-    about = "Bedrock-first Rust server in development (opt-in local Java/Bedrock shared-world preview)"
-)]
+#[command(name = "sculith", version, about = "A Bedrock-native Minecraft server")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -36,7 +33,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run both discovery listeners and configured Rust plugins.
+    /// Start the server.
     Run {
         #[arg(long)]
         config: Option<PathBuf>,
@@ -88,8 +85,10 @@ enum PackCommand {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("warn,sculith=info")),
         )
+        .with_target(false)
         .with_writer(std::io::stderr)
         .init();
     match Cli::parse()
@@ -151,6 +150,8 @@ async fn main() -> Result<()> {
 }
 
 async fn run(config: Config) -> Result<()> {
+    let started = Instant::now();
+    info!("Starting Sculith v{}", env!("CARGO_PKG_VERSION"));
     let delivery = if let Some(settings) = &config.content {
         let source = settings.source.clone();
         let mapping = settings.mapping.clone();
@@ -269,11 +270,11 @@ async fn run(config: Config) -> Result<()> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut services = JoinSet::new();
     if let Some(delivery) = delivery {
-        info!(url = %delivery.content.java_url, "Immutable resource pack HTTP delivery listening");
+        info!(url = %delivery.content.java_url, "Resource packs available");
         services.spawn(delivery.serve(shutdown_rx.clone()));
     }
     if let Some(listener) = java {
-        info!(address = %listener.local_addr()?, "Java TCP discovery listening");
+        info!(address = %listener.local_addr()?, "Java listening");
         let preview = config.java.sessions.then(|| protocol::java::Preview {
             content: content.clone(),
             world: world.clone(),
@@ -288,7 +289,7 @@ async fn run(config: Config) -> Result<()> {
         ));
     }
     if let Some(server) = nethernet {
-        info!(address = %server.local_addr()?, "NetherNet HTTP signaling listening");
+        info!(address = %server.local_addr()?, "NetherNet listening");
         services.spawn(
             server.serve(protocol::bedrock::nethernet::ContextData {
                 settings: protocol::bedrock::session::Settings {
@@ -305,7 +306,7 @@ async fn run(config: Config) -> Result<()> {
         );
     }
     if let Some(socket) = bedrock {
-        info!(address = %socket.local_addr()?, "Bedrock UDP discovery listening");
+        info!(address = %socket.local_addr()?, "Bedrock listening");
         // Discovery GUID only, never an authenticated identity or secret.
         let guid = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -314,12 +315,6 @@ async fn run(config: Config) -> Result<()> {
             ^ u64::from(std::process::id());
         match authentication {
             Some(authentication) => {
-                info!("Bedrock encrypted login and authoritative creative-builder preview enabled");
-                if !config.bedrock.require_authentication {
-                    warn!(
-                        "Offline test identities enabled on loopback; this is not online account verification"
-                    );
-                }
                 services.spawn(protocol::bedrock::serve_sessions(
                     socket,
                     status_rx,
@@ -338,8 +333,17 @@ async fn run(config: Config) -> Result<()> {
             }
         }
     }
-    warn!(stage = %state.stage,
-        "Development build: shared-world preview; full gameplay and content compatibility are pending");
+    if (config.network.java.enabled && config.java.sessions && !config.java.require_authentication)
+        || (config.network.bedrock.enabled
+            && config.bedrock.sessions
+            && !config.bedrock.require_authentication)
+    {
+        warn!("Offline mode enabled; local connections only");
+    }
+    info!(
+        "Server started in {:.2}s. Press Ctrl+C to stop.",
+        started.elapsed().as_secs_f64()
+    );
     let mut ticker = tokio::time::interval(Duration::from_secs_f64(
         1.0 / f64::from(config.server.tick_rate),
     ));

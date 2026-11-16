@@ -1,0 +1,21 @@
+[server]
+motd = "Sculith / shared static model example"
+
+[java]
+sessions = true
+require_authentication = false
+login_timeout_secs = 60
+
+[bedrock]
+nethernet_identity_path = "../../world/nethernet-identity.pem"
+sessions = true
+require_authentication = false
+login_timeout_secs = 60
+
+[content]
+source = "../pack/bedrock"
+mapping = "../pack/textures.json"
+
+[[plugins]]
+path = "../../target/debug/sculith-model-plugin"
+timeout_ms = 1000

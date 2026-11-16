@@ -1,10 +1,10 @@
 # Contributing to Sculith
 
-Sculith is in early development. Working, tested increments are welcome; the [current status](docs/status.md) distinguishes implemented features from planned work.
+Sculith is in early development. Working, tested increments are welcome; the [current status](docs/development/status.md) distinguishes implemented features from planned work.
 
 ## Before changing code
 
-- Read [AGENTS.md](AGENTS.md), the [architecture](docs/architecture.md), and the [roadmap](docs/roadmap.md).
+- Read [AGENTS.md](AGENTS.md), the [architecture](docs/internals/architecture.md), and the [roadmap](docs/development/roadmap.md).
 - Keep one authoritative Bedrock-native world. Protocol adapters translate validated inputs and committed outputs; they do not run separate simulations.
 - Preserve region ownership, bounded queues, byte budgets, input validation and authentication.
 - Keep version-specific packet and registry facts separate from internal world IDs.
@@ -16,13 +16,14 @@ Sculith is in early development. Working, tested increments are welcome; the [cu
 Use the pinned Rust toolchain and checked-in lockfile:
 
 ```sh
+python3 scripts/check_architecture.py
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --all-targets --locked
 cargo test --workspace --doc --locked
 cargo build --workspace --locked
-python3 scripts/smoke.py
-python3 scripts/smoke.py --sessions
+python3 tests/interop/smoke.py
+python3 tests/interop/smoke.py --sessions
 ```
 
 The cloud workspace may need `. ./scripts/dev-env.sh` to activate its existing Rust installation. A normal Rust installation does not need the cloud-specific path.

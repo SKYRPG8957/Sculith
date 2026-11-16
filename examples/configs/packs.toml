@@ -1,0 +1,32 @@
+# Source-build demo; both editions use one authored Bedrock texture pack.
+[server]
+motd = "Sculith / shared resource pack example"
+
+[world]
+snapshot_path = "../../world/region.sculith"
+
+[java]
+sessions = true
+require_authentication = false
+login_timeout_secs = 60
+
+[bedrock]
+sessions = true
+require_authentication = false
+login_timeout_secs = 60
+nethernet = true
+nethernet_identity_path = "../../world/nethernet-identity.pem"
+
+[network.java]
+bind = "127.0.0.1:25565"
+
+[network.bedrock]
+bind = "127.0.0.1:19132"
+
+[content]
+source = "../pack/bedrock"
+mapping = "../pack/textures.json"
+
+[[plugins]]
+path = "../../target/debug/sculith-gameplay-plugin"
+timeout_ms = 1000

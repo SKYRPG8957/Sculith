@@ -21,7 +21,7 @@ pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     MODEL_API_VERSION,
     OBSERVATION_API_VERSION,
 ];
-pub use sculith_core::{CommandSpec, SimpleForm};
+pub use sculith_core::{CommandSpec, Edition, PacketDispatch, PacketInfo, SimpleForm};
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
 pub const MAX_ACTIONS: usize = 32;
 
@@ -173,52 +173,6 @@ pub enum Event {
         request_id: u32,
         selection: Option<u32>,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Edition {
-    Java,
-    Bedrock,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PacketDispatch {
-    Control,
-    Gameplay,
-    Notification,
-    Unsupported,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PacketInfo {
-    pub edition: Edition,
-    pub protocol: u32,
-    pub phase: String,
-    pub id: u32,
-    pub name: String,
-    /// Planned dispatch category, not a claim that body validation succeeded.
-    pub dispatch: PacketDispatch,
-    pub sequence: u64,
-}
-
-impl PacketInfo {
-    pub fn validate(&self) -> Result<(), &'static str> {
-        if self.sequence == 0 || self.protocol == 0 || self.id > i32::MAX as u32 {
-            return Err("invalid packet receipt counters");
-        }
-        if self.phase != "play"
-            || self.name.is_empty()
-            || self.name.len() > 128
-            || !self.name.is_ascii()
-            || self.name.chars().any(char::is_control)
-        {
-            return Err("invalid packet receipt metadata");
-        }
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

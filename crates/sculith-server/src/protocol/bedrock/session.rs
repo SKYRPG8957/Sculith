@@ -228,7 +228,7 @@ pub async fn handle_with_protection<T: Transport>(
     };
     let id = lease.player.id;
     let observation = world.observe_players(id).await?;
-    let mut peer_views = sculith_server::peers::Peers::new(id, observation.players)?;
+    let mut peer_views = sculith_runtime::peers::Peers::new(id, observation.players)?;
     let mut peer_updates = observation.updates;
     let initial_peers = peer_views.initial(&interest);
     tracing::debug!(
