@@ -1,7 +1,8 @@
 //! Explicit Bedrock PNG -> vanilla Java texture overrides.
-//! Models, behaviors, UI, materials and sounds are separate work.
+//! Explicit single-clip Vorbis sounds are shared; models and behaviors remain separate.
 
 pub mod bundle;
+mod sounds;
 
 use std::{
     collections::HashSet,
@@ -41,7 +42,10 @@ pub struct Module {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TextureMap {
+    #[serde(default)]
     pub textures: Vec<TextureMapping>,
+    #[serde(default)]
+    pub sounds: Vec<SoundMapping>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,6 +57,17 @@ pub struct TextureMapping {
     pub java: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SoundMapping {
+    /// Existing native event in sounds/sound_definitions.json.
+    pub bedrock: String,
+    /// Canonical API name and Java event, e.g. sculith:demo_tone.
+    pub java: String,
+    /// The exact single Vorbis clip used by the native event.
+    pub file: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConversionReport {
     pub bedrock_pack_uuid: String,
@@ -60,6 +75,7 @@ pub struct ConversionReport {
     pub java_pack_format: u32,
     pub java_pack_format_minor: u32,
     pub converted_textures: usize,
+    pub converted_sounds: Vec<SoundMapping>,
     pub scope: String,
     pub limitations: Vec<String>,
 }
@@ -123,7 +139,10 @@ pub fn convert(
         "only resource packs can be converted; behavior/script modules are unsupported"
     );
     let mapping: TextureMap = read_json(mapping)?;
-    ensure!(!mapping.textures.is_empty(), "texture mapping is empty");
+    ensure!(
+        !mapping.textures.is_empty() || !mapping.sounds.is_empty(),
+        "content mapping is empty"
+    );
     ensure!(
         mapping.textures.len() <= MAX_TEXTURES,
         "at most {MAX_TEXTURES} textures per conversion"
@@ -159,22 +178,25 @@ pub fn convert(
         fs::write(file, bytes)?;
     }
 
+    sounds::convert(&root, &mapping.sounds, stage.path(), &mut total_bytes)?;
+
     let report = ConversionReport {
         bedrock_pack_uuid: manifest.header.uuid,
         bedrock_pack_version: manifest.header.version,
         java_pack_format: pack_format,
         java_pack_format_minor: pack_format_minor,
         converted_textures: mapping.textures.len(),
-        scope: "explicit PNG texture overrides".into(),
+        converted_sounds: mapping.sounds,
+        scope: "explicit PNG overrides and single-clip Vorbis sound events".into(),
         limitations: vec![
-            "Only explicitly mapped PNG files are converted; unmapped assets are not included.".into(),
-            "Java targets must already exist in the target client's vanilla resource set.".into(),
-            "Models, animations, UI, fonts, sounds, materials and behavior/script packs are not converted.".into(),
+            "Only explicitly mapped PNG and OGG files are converted; unmapped assets are not included.".into(),
+            "PNG targets must already exist in the target client; custom sound events are registered by the pack.".into(),
+            "Models, animations, UI, fonts, materials and behavior/script packs are not converted; weighted/streaming sounds are unsupported.".into(),
             "Texture conversion does not register custom blocks/items; archive delivery is configured separately.".into(),
         ],
     };
     let metadata = serde_json::json!({"pack": {
-        "description": format!("{} — Sculith texture conversion", manifest.header.name),
+        "description": format!("{} — Sculith content conversion", manifest.header.name),
         "pack_format": pack_format,
         "min_format": [pack_format, pack_format_minor],
         "max_format": [pack_format, pack_format_minor]

@@ -187,3 +187,23 @@ pub fn simple_form(id: u32, form: &sculith_core::SimpleForm) -> anyhow::Result<V
         },
     )))
 }
+
+/// Same fixed-point position and parameters as the Java direct sound event.
+pub fn sound(effect: &crate::game::SoundEffect, native: &str) -> V2225 {
+    use bedrock::protocol::v2193::packets::{PlaySoundPacket, PlaySoundPosition};
+    let p = effect.position;
+    V2225::PlaySoundPacket(Box::new(PlaySoundPacket {
+        name: native.into(),
+        position: PlaySoundPosition::from_raw_x8(
+            (p.x * 8.0) as i32,
+            (p.y * 8.0) as i32,
+            (p.z * 8.0) as i32,
+        ),
+        volume: effect.volume,
+        pitch: effect.pitch,
+        loop_count: -1,
+        bypass_listener_range_check: false,
+        server_sound_handle: None,
+        playback_position_seconds: None,
+    }))
+}

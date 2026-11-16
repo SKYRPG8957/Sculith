@@ -4,7 +4,7 @@
 //! live here. The caller owns leases, scheduling and committed-event broadcasts.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
@@ -186,6 +186,7 @@ struct Player {
     building: Budget,
     messages: Budget,
     forms: Budget,
+    sounds: Budget,
     pending_form: Option<PendingForm>,
 }
 
@@ -206,6 +207,15 @@ pub struct FormSubmission {
     pub selection: Option<u32>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SoundEffect {
+    pub player_id: u64,
+    pub sound: String,
+    pub position: Position,
+    pub volume: f32,
+    pub pitch: f32,
+}
+
 /// One exclusively owned game state containing the existing authoritative Region.
 #[derive(Debug)]
 pub struct GameState {
@@ -214,10 +224,26 @@ pub struct GameState {
     spawn: Position,
     players: BTreeMap<u64, Player>,
     next_form_id: u32,
+    registered_sounds: BTreeSet<String>,
 }
 
 impl GameState {
     pub fn new(region: Region, max_players: u32) -> Result<Self> {
+        Self::with_sounds(region, max_players, BTreeSet::new())
+    }
+
+    pub fn with_sounds(
+        region: Region,
+        max_players: u32,
+        registered_sounds: BTreeSet<String>,
+    ) -> Result<Self> {
+        ensure!(
+            registered_sounds.len() <= 64,
+            "at most 64 registered sounds"
+        );
+        for sound in &registered_sounds {
+            sculith_core::validate_sound_id(sound).map_err(anyhow::Error::msg)?;
+        }
         ensure!(
             (1..=MAX_PLAYERS).contains(&max_players),
             "max_players must be between 1 and {MAX_PLAYERS}"
@@ -232,6 +258,7 @@ impl GameState {
             },
         )?;
         Ok(Self {
+            registered_sounds,
             next_form_id: 1,
             region,
             max_players,
@@ -304,6 +331,10 @@ impl GameState {
                     remaining: 1.0,
                     updated: now,
                 },
+                sounds: Budget {
+                    remaining: 4.0,
+                    updated: now,
+                },
                 pending_form: None,
             },
         );
@@ -348,6 +379,43 @@ impl GameState {
             updated: now,
         };
         Ok(())
+    }
+
+    pub fn play_sound(
+        &mut self,
+        id: u64,
+        sound: String,
+        volume: f32,
+        pitch: f32,
+        now: Instant,
+    ) -> Result<SoundEffect> {
+        sculith_core::validate_sound_id(&sound).map_err(anyhow::Error::msg)?;
+        sculith_core::validate_sound_parameters(volume, pitch).map_err(anyhow::Error::msg)?;
+        ensure!(
+            self.registered_sounds.contains(&sound),
+            "sound is not registered by the active content bundle"
+        );
+        let player = self
+            .players
+            .get_mut(&id)
+            .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
+        ensure!(player.snapshot.initialized, "player is not initialized");
+        let remaining = player
+            .sounds
+            .available(now, 4.0, 4.0)
+            .ok_or_else(|| anyhow::anyhow!("sound clock regression"))?;
+        ensure!(remaining >= 1.0, "player sound rate exceeded");
+        player.sounds = Budget {
+            remaining: remaining - 1.0,
+            updated: now,
+        };
+        Ok(SoundEffect {
+            player_id: id,
+            sound,
+            position: player.snapshot.feet.eye(),
+            volume,
+            pitch,
+        })
     }
 
     pub fn show_form(

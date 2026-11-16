@@ -114,6 +114,11 @@ impl Plugins {
                                 tracing::warn!(plugin = %process.metadata.name, player_id, %error, "plugin message rejected");
                             }
                         }
+                        Action::PlaySound { player_id, sound, volume, pitch } => {
+                            if let Err(error) = world.play_sound(player_id, sound, volume, pitch).await {
+                                tracing::warn!(plugin=%process.metadata.name, player_id, %error, "plugin sound rejected");
+                            }
+                        }
                         Action::ShowForm { player_id, request_id, form } => {
                             if let Err(error) = world.show_form(player_id, process.metadata.name.clone(), request_id, form).await {
                                 tracing::warn!(plugin=%process.metadata.name, player_id, %error, "plugin form rejected");
@@ -306,6 +311,17 @@ fn validate_actions(actions: &[Action]) -> Result<()> {
             Action::SendMessage { player_id, message } => {
                 ensure!(*player_id != 0, "invalid message recipient");
                 validate_system_message(message).map_err(anyhow::Error::msg)?;
+            }
+            Action::PlaySound {
+                player_id,
+                sound,
+                volume,
+                pitch,
+            } => {
+                ensure!(*player_id != 0, "invalid sound recipient");
+                sculith_core::validate_sound_id(sound).map_err(anyhow::Error::msg)?;
+                sculith_core::validate_sound_parameters(*volume, *pitch)
+                    .map_err(anyhow::Error::msg)?;
             }
             Action::ShowForm {
                 player_id, form, ..

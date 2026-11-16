@@ -4,5 +4,12 @@
       "bedrock": "textures/blocks/sculith_demo.png",
       "java": "minecraft:block/stone"
     }
+  ],
+  "sounds": [
+    {
+      "bedrock": "sculith.demo_tone",
+      "java": "sculith:demo_tone",
+      "file": "sounds/sculith_demo.ogg"
+    }
   ]
 }

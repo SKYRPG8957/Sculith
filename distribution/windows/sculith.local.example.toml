@@ -34,7 +34,11 @@ timeout_ms = 1000
 path = "plugins/sculith-forms-plugin.exe"
 timeout_ms = 1000
 
-# One authored Bedrock pack; Java receives its supported texture conversion.
+[[plugins]]
+path = "plugins/sculith-sound-plugin.exe"
+timeout_ms = 1000
+
+# One authored Bedrock pack; Java receives supported textures and sounds.
 [content]
 source = "packs/sculith-demo"
 mapping = "packs/sculith-demo-textures.json"

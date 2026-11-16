@@ -6,11 +6,17 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 3;
+pub const API_VERSION: u32 = 4;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
-pub const SUPPORTED_API_VERSIONS: &[u32] = &[LEGACY_API_VERSION, GAME_API_VERSION, UI_API_VERSION];
+pub const SOUND_API_VERSION: u32 = 4;
+pub const SUPPORTED_API_VERSIONS: &[u32] = &[
+    LEGACY_API_VERSION,
+    GAME_API_VERSION,
+    UI_API_VERSION,
+    SOUND_API_VERSION,
+];
 pub use sculith_core::SimpleForm;
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
 pub const MAX_ACTIONS: usize = 32;
@@ -171,6 +177,13 @@ pub enum Action {
         request_id: u32,
         form: SimpleForm,
     },
+    /// Play a registered pack sound privately at the initialized player's eye.
+    PlaySound {
+        player_id: u64,
+        sound: String,
+        volume: f32,
+        pitch: f32,
+    },
 }
 
 impl Action {
@@ -179,6 +192,7 @@ impl Action {
             Self::SetMotd { .. } | Self::Log { .. } => LEGACY_API_VERSION,
             Self::SendMessage { .. } => GAME_API_VERSION,
             Self::ShowForm { .. } => UI_API_VERSION,
+            Self::PlaySound { .. } => SOUND_API_VERSION,
         }
     }
 }
@@ -369,8 +383,13 @@ mod tests {
     }
 
     #[test]
-    fn negotiates_highest_common_version_and_retains_both_older_apis() {
-        for (supported, expected) in [(vec![1, 2, 3], 3), (vec![1, 2], 2), (vec![], 1)] {
+    fn negotiates_highest_common_version_and_retains_all_three_older_apis() {
+        for (supported, expected) in [
+            (vec![1, 2, 3, 4], 4),
+            (vec![1, 2, 3], 3),
+            (vec![1, 2], 2),
+            (vec![], 1),
+        ] {
             let mut input = serde_json::to_vec(&Request {
                 id: 1,
                 message: HostMessage::Hello {

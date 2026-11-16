@@ -209,8 +209,24 @@ async fn run(config: Config) -> Result<()> {
     };
     let mut state = config.status()?;
     let (world_stop, world_stop_rx) = watch::channel(false);
-    let (world, world_task) =
-        world::with_region(region, config.server.max_players.min(64), world_stop_rx)?;
+    let sounds = content
+        .as_ref()
+        .map(|content| {
+            content
+                .bundle
+                .report
+                .converted_sounds
+                .iter()
+                .map(|entry| entry.java.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let (world, world_task) = world::with_region_and_sounds(
+        region,
+        config.server.max_players.min(64),
+        world_stop_rx,
+        sounds,
+    )?;
     let mut world_task = tokio::spawn(world_task);
     let mut world_finished = false;
     let mut game_events = world.subscribe_game();

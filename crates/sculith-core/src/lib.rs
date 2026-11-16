@@ -29,6 +29,44 @@ impl SimpleForm {
     }
 }
 
+/// Canonical custom sound: a bounded Java-style resource identifier.
+pub fn validate_sound_id(id: &str) -> Result<(), String> {
+    let valid = || {
+        let (namespace, path) = id.split_once(':')?;
+        if id.len() > 128
+            || namespace.is_empty()
+            || namespace == "."
+            || namespace == ".."
+            || !namespace
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_.-".contains(&b))
+            || !path
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_/.-".contains(&b))
+            || path
+                .split('/')
+                .any(|p| p.is_empty() || p == "." || p == "..")
+        {
+            return None;
+        }
+        Some(())
+    };
+    valid().ok_or_else(|| {
+        "sound ID requires namespace:path, at most 128 bytes without traversal".into()
+    })
+}
+
+pub fn validate_sound_parameters(volume: f32, pitch: f32) -> Result<(), String> {
+    if !volume.is_finite()
+        || !(0.0..=1.0).contains(&volume)
+        || !pitch.is_finite()
+        || !(0.5..=2.0).contains(&pitch)
+    {
+        return Err("sound requires finite volume 0..1 and pitch 0.5..2".into());
+    }
+    Ok(())
+}
+
 /// Default configuration stays discovery-only; edition previews are explicit.
 pub const DEVELOPMENT_STAGE: &str = "discovery-only";
 
@@ -85,6 +123,26 @@ pub fn validate_system_message(message: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sound_identifiers_and_parameters_are_bounded() {
+        validate_sound_id("sculith:demo/tone").unwrap();
+        for id in ["bad", ":x", "..:x", ".:x", "a:../x", "a:x//y", "a:X", "a:"] {
+            assert!(validate_sound_id(id).is_err(), "{id}");
+        }
+        assert!(validate_sound_id(&format!("a:{}", "x".repeat(128))).is_err());
+        validate_sound_parameters(0.7, 1.0).unwrap();
+        for (volume, pitch) in [
+            (f32::NAN, 1.0),
+            (1.0, f32::INFINITY),
+            (-0.1, 1.0),
+            (1.1, 1.0),
+            (0.5, 0.49),
+            (0.5, 2.01),
+        ] {
+            assert!(validate_sound_parameters(volume, pitch).is_err());
+        }
+    }
 
     #[test]
     fn shared_motd_rejects_bedrock_field_injection_and_preserves_old_value() {

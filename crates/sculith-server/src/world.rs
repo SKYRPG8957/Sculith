@@ -30,6 +30,7 @@ pub enum WorldEvent {
         player_id: u64,
         message: String,
     },
+    Sound(crate::game::SoundEffect),
     FormRequested {
         player_id: u64,
         form_id: u32,
@@ -116,6 +117,13 @@ enum Command {
         message: String,
         reply: oneshot::Sender<Result<()>>,
     },
+    PlaySound {
+        id: u64,
+        sound: String,
+        volume: f32,
+        pitch: f32,
+        reply: oneshot::Sender<Result<()>>,
+    },
     ShowForm {
         id: u64,
         plugin: String,
@@ -132,6 +140,23 @@ enum Command {
 }
 
 impl WorldHandle {
+    pub async fn play_sound(&self, id: u64, sound: String, volume: f32, pitch: f32) -> Result<()> {
+        sculith_core::validate_sound_id(&sound).map_err(anyhow::Error::msg)?;
+        sculith_core::validate_sound_parameters(volume, pitch).map_err(anyhow::Error::msg)?;
+        let (reply, receiver) = oneshot::channel();
+        self.commands
+            .send(Command::PlaySound {
+                id,
+                sound,
+                volume,
+                pitch,
+                reply,
+            })
+            .await
+            .context("world owner stopped")?;
+        receiver.await.context("sound response lost")?
+    }
+
     pub async fn show_form(
         &self,
         id: u64,
@@ -344,9 +369,18 @@ fn retire(
 pub fn with_region(
     region: Region,
     max_players: u32,
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
 ) -> Result<(WorldHandle, impl Future<Output = Result<()>> + Send)> {
-    let mut state = GameState::new(region, max_players)?;
+    with_region_and_sounds(region, max_players, shutdown, Default::default())
+}
+
+pub fn with_region_and_sounds(
+    region: Region,
+    max_players: u32,
+    mut shutdown: watch::Receiver<bool>,
+    sounds: std::collections::BTreeSet<String>,
+) -> Result<(WorldHandle, impl Future<Output = Result<()>> + Send)> {
+    let mut state = GameState::with_sounds(region, max_players, sounds)?;
     let (commands, mut requests) = mpsc::channel(32);
     let weak_commands = commands.downgrade();
     let (events, _) = broadcast::channel(128);
@@ -427,6 +461,12 @@ pub fn with_region(
                             if result.is_ok() { let _ = events.send(Arc::new(WorldEvent::Message { player_id: id, message })); }
                             let _ = reply.send(result);
                         }
+                        Some(Command::PlaySound { id, sound, volume, pitch, reply }) => {
+                            let result = state.play_sound(id, sound, volume, pitch, Instant::now()).map(|effect| {
+                                let _ = events.send(Arc::new(WorldEvent::Sound(effect)));
+                            });
+                            let _ = reply.send(result);
+                        }
                         Some(Command::ShowForm { id, plugin, request_id, form, reply }) => {
                             let result = state.show_form(id, plugin, request_id, &form, Instant::now());
                             let result = result.map(|form_id| { let _ = events.send(Arc::new(WorldEvent::FormRequested { player_id: id, form_id, form })); });
@@ -467,6 +507,80 @@ mod tests {
             uuid: uuid::Uuid::new_v4(),
             edition: Edition::Bedrock,
         }
+    }
+
+    #[tokio::test]
+    async fn private_sound_requires_live_initialized_registered_player_and_never_changes_world_or_game_hooks()
+     {
+        let (stop, receiver) = watch::channel(false);
+        let (world, task) = with_region_and_sounds(
+            Region::flat_origin(),
+            20,
+            receiver,
+            ["sculith:demo_tone".into()].into(),
+        )
+        .unwrap();
+        let task = tokio::spawn(task);
+        let lease = world
+            .reserve(profile("sound"), Permissions { can_build: true })
+            .await
+            .unwrap();
+        let id = lease.player.id;
+        assert!(
+            world
+                .play_sound(id, "sculith:demo_tone".into(), 0.7, 1.0)
+                .await
+                .is_err()
+        );
+        world.activate(id).await.unwrap();
+        let mut events = world.subscribe();
+        let mut hooks = world.subscribe_game();
+        let revision = world.capture().await.unwrap().revision();
+        assert!(
+            world
+                .play_sound(id, "sculith:missing".into(), 0.7, 1.0)
+                .await
+                .is_err()
+        );
+        assert!(
+            world
+                .play_sound(id, "sculith:demo_tone".into(), f32::NAN, 1.0)
+                .await
+                .is_err()
+        );
+        for _ in 0..4 {
+            world
+                .play_sound(id, "sculith:demo_tone".into(), 0.7, 1.0)
+                .await
+                .unwrap();
+            let event = events.recv().await.unwrap();
+            let WorldEvent::Sound(effect) = event.as_ref() else {
+                panic!("wrong effect")
+            };
+            assert_eq!(effect.player_id, id);
+            assert_eq!(effect.position.x, lease.player.feet.x);
+            assert_eq!(effect.position.y, lease.player.feet.y + 1.62);
+        }
+        assert!(
+            world
+                .play_sound(id, "sculith:demo_tone".into(), 0.7, 1.0)
+                .await
+                .is_err()
+        );
+        assert!(matches!(
+            hooks.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        assert_eq!(world.capture().await.unwrap().revision(), revision);
+        drop(lease);
+        assert!(
+            world
+                .play_sound(id, "sculith:demo_tone".into(), 0.7, 1.0)
+                .await
+                .is_err()
+        );
+        stop.send(true).unwrap();
+        task.await.unwrap().unwrap();
     }
 
     #[tokio::test]

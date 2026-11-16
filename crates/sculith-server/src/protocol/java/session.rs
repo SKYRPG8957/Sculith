@@ -742,6 +742,22 @@ impl Session {
     }
 
     async fn event(&mut self, stream: &mut TcpStream, event: &WorldEvent) -> Result<()> {
+        if let WorldEvent::Sound(effect) = event
+            && effect.player_id == self.player.id
+        {
+            let mut packet = codec::packet(119); // 26.3 direct SoundEvent holder.
+            write_varint(0, &mut packet);
+            write_string(&effect.sound, &mut packet);
+            packet.push(0); // No fixed range override.
+            write_varint(7, &mut packet); // Players category.
+            for coordinate in [effect.position.x, effect.position.y, effect.position.z] {
+                packet.extend_from_slice(&((coordinate * 8.0) as i32).to_be_bytes());
+            }
+            packet.extend_from_slice(&effect.volume.to_be_bytes());
+            packet.extend_from_slice(&effect.pitch.to_be_bytes());
+            packet.extend_from_slice(&0i64.to_be_bytes());
+            codec::send(stream, &packet).await?;
+        }
         if let WorldEvent::FormRequested {
             player_id,
             form_id,

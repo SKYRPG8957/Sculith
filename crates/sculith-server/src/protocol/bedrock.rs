@@ -64,12 +64,15 @@ fn make_pong(
     port4: u16,
     port6: u16,
 ) -> Vec<u8> {
-    let stage = if status.stage == "bedrock-spawn-preview" {
-        "Sculith / Bedrock spawn preview"
-    } else {
-        "Sculith / discovery only"
+    let stage = match status.stage.as_str() {
+        "bedrock-spawn-preview" => "Sculith / Bedrock spawn preview",
+        "shared-world-preview" => "Sculith / shared-world preview",
+        _ => "Sculith / discovery only",
     };
-    let game_mode = if status.stage == "bedrock-spawn-preview" {
+    let game_mode = if matches!(
+        status.stage.as_str(),
+        "bedrock-spawn-preview" | "shared-world-preview"
+    ) {
         "Creative"
     } else {
         "Survival"
@@ -231,5 +234,25 @@ mod tests {
         assert_eq!(fields[10], address.port().to_string());
         task.abort();
         let _ = task.await;
+    }
+
+    #[test]
+    fn shared_world_discovery_advertises_its_actual_native_creative_mode() {
+        let mut status = ServerStatus::new("shared".into(), 20).unwrap();
+        status.stage = "shared-world-preview".into();
+        let bytes = make_pong(
+            &ping(),
+            &status,
+            123,
+            &super::super::references().bedrock,
+            19132,
+            0,
+        );
+        let fields: Vec<_> = std::str::from_utf8(&bytes[35..])
+            .unwrap()
+            .split(';')
+            .collect();
+        assert_eq!(fields[7], "Sculith / shared-world preview");
+        assert_eq!(fields[8], "Creative");
     }
 }

@@ -2867,6 +2867,7 @@ dependencies = [
  "anyhow",
  "crc32fast",
  "png",
+ "sculith-core",
  "serde",
  "serde_json",
  "sha1",
@@ -2918,6 +2919,13 @@ dependencies = [
  "tracing-subscriber",
  "ureq",
  "uuid",
+]
+
+[[package]]
+name = "sculith-sound-plugin"
+version = "0.1.0"
+dependencies = [
+ "sculith-plugin-api",
 ]
 
 [[package]]

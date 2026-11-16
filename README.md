@@ -40,9 +40,9 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Authoritative movement checks and limited creative block placement/breaking, with server-owned starter items and committed block deltas shared between sessions.
 - A single region owner, revision-checked block commits, compact uniform/palette sections and immutable copy-on-write snapshots.
 - Optional versioned, checksummed region snapshots loaded at startup and saved after sessions close on orderly shutdown. Periodic autosaving is pending.
-- Trusted-executable Rust plugin SDK v3 with v1/v2 compatibility, lifecycle/MOTD, initialized-player join/leave and committed-block hooks, plus owner-validated private messages in both editions. [Actual game evidence](docs/verification/2026-11-16-plugin-api-v2.md).
+- Trusted-executable Rust plugin SDK v4 with v1/v2/v3 compatibility, lifecycle/MOTD, initialized-player join/leave and committed-block hooks, plus owner-validated private messages in both editions. [Actual game evidence](docs/verification/2026-11-16-plugin-api-v2.md).
 - Shared simple forms: native Bedrock menus and vanilla Java dialogs with private, owner-validated Rust callbacks. [API, limits and actual game screenshots](docs/forms.md).
-- Explicit Bedrock PNG-to-Java texture overrides, with a conversion report describing unsupported assets.
+- Explicit Bedrock PNG-to-Java texture overrides and single-clip Vorbis sound events, with a conversion report describing unsupported assets. [Shared sound API and evidence](docs/sounds.md).
 - Optional automatic delivery from one frozen Bedrock pack to native clients and a converted Java ZIP, with immutable hashes/cache IDs and required-pack acknowledgements. [Configuration and test scope](docs/content-delivery.md). The stock Java game renders the server-delivered checkerboard texture.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
@@ -115,7 +115,7 @@ Bedrock packs are intended to be the source assets. **Vanilla Java cannot direct
 - **Java Vanilla Compatibility Mode** will use stock resource packs, display entities, dialogs and supported packets, with explicit fallbacks and unsupported-feature reports.
 - **Java Enhanced Compatibility Mode** is planned around an optional Fabric-based Sculith Companion for higher-fidelity rendering, animation and UI.
 
-Only explicit static PNG overrides are implemented today. The original checkerboard example can be converted into a Java `26.3` pack:
+Current source supports explicit static PNG overrides and bounded single-clip Vorbis sound events. The original checkerboard example can be converted into a Java `26.3` pack:
 
 ```sh
 mkdir -p packs/generated
@@ -126,7 +126,7 @@ cargo run --locked -- pack convert \
   --pack-format 97 --pack-format-minor 1
 ```
 
-The output must be a new directory. [Automatic local pack delivery](docs/content-delivery.md) is available in Preview 12 and in source with `examples/content-preview.toml`. Sound/model and arbitrary JSON-UI conversion remain unfinished; [simple shared forms](docs/forms.md) are available.
+The output must be a new directory. [Automatic local pack delivery](docs/content-delivery.md) is available in Preview 12 and in source with `examples/content-preview.toml`. Model and arbitrary JSON-UI conversion remain unfinished; [simple shared forms](docs/forms.md) are available.
 
 ## Development checks
 

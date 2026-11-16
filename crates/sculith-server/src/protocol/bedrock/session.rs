@@ -324,6 +324,13 @@ pub async fn handle_with_protection<T: Transport>(
                     WorldEvent::FormRequested {player_id,form_id,form}=>{
                         if *player_id == id { conn.send(&[output::simple_form(*form_id, form)?]).await?; }
                     }
+                    WorldEvent::Sound(effect)=>{
+                        if effect.player_id == id {
+                            let native = settings.content.as_ref().and_then(|content| content.bundle.report.converted_sounds.iter().find(|entry| entry.java == effect.sound))
+                                .context("registered sound missing from native bundle")?;
+                            conn.send(&[output::sound(effect, &native.bedrock)]).await?;
+                        }
+                    }
                     WorldEvent::FormSubmitted(_)=>{},
                 }
             }

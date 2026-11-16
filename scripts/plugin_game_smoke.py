@@ -28,7 +28,7 @@ def nbt_text(reader):
         "utf-16", "surrogatepass").decode("utf-16")
 
 
-def smoke(server, plugin, client, api_version=3):
+def smoke(server, plugin, client, api_version=4):
     with tempfile.TemporaryDirectory(prefix="sculith game plugin ") as temporary:
         root = Path(temporary)
         staged_plugin = root / "plugins with spaces" / plugin.name
@@ -110,6 +110,6 @@ if __name__ == "__main__":
     parser.add_argument("--server", type=Path, default=ROOT / ("target/debug/sculith" + suffix))
     parser.add_argument("--plugin", type=Path, default=ROOT / ("target/debug/sculith-gameplay-plugin" + suffix))
     parser.add_argument("--client", type=Path, required=True)
-    parser.add_argument("--api-version", type=int, choices=(2,3), default=3)
+    parser.add_argument("--api-version", type=int, choices=(2,3,4), default=4)
     args = parser.parse_args()
     smoke(args.server.resolve(strict=True), args.plugin.resolve(strict=True), args.client.resolve(strict=True), args.api_version)

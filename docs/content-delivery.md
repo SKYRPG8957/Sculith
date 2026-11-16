@@ -1,9 +1,9 @@
-# Shared texture pack delivery
+# Shared content pack delivery
 
 Current source can freeze one authored Bedrock resource-pack directory, convert
-its explicitly mapped PNG overrides and deliver the resulting archives at login.
+its explicitly mapped PNG overrides and single-clip Vorbis sound events and deliver the resulting archives at login.
 The two adapters still use one authoritative world. This adds content delivery;
-it does not implement custom block/item registration, sound/model/UI conversion
+it does not implement custom block/item registration, model/arbitrary-UI conversion
 or a separate Java simulation.
 
 ```sh
@@ -31,7 +31,7 @@ mapping = "packs/textures.json"
 bind = "127.0.0.1:0"
 ```
 
-The source must be a format-2 resources-only pack. A texture mapping is required,
+The source must be a format-2 resources-only pack. A content mapping (textures and/or sounds) is required,
 even for a native-only preview. Pack dependencies, subpack selection, scripts and
 behavior modules are rejected. Resource names currently require portable ASCII
 paths. Mapped PNGs keep the existing dimension/decoder limits and Java targets

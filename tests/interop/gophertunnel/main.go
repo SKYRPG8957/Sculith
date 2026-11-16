@@ -13,8 +13,8 @@ import (
 
 func main() {
 	packOutput := len(os.Args) == 4 && os.Args[2] == "--pack-output"
-	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput {
-		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--crossplay|--plugin-message|--form|--form-cancel|--pack-output file]")
+	if len(os.Args) != 2 && !(len(os.Args) == 3 && (os.Args[2] == "--sound" || os.Args[2] == "--crossplay" || os.Args[2] == "--plugin-message" || os.Args[2] == "--form" || os.Args[2] == "--form-cancel")) && !packOutput {
+		fmt.Fprintln(os.Stderr, "usage: gophertunnel-probe http://127.0.0.1:port [--sound|--crossplay|--plugin-message|--form|--form-cancel|--pack-output file]")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -57,7 +57,9 @@ func main() {
 	}
 	if len(os.Args) == 3 {
 		var err error
-		if os.Args[2] == "--crossplay" {
+		if os.Args[2] == "--sound" {
+			err = sharedSound(conn)
+		} else if os.Args[2] == "--crossplay" {
 			err = crossplay(conn, registry)
 		} else if os.Args[2] == "--form" || os.Args[2] == "--form-cancel" {
 			err = formResponse(conn, os.Args[2] == "--form-cancel")
