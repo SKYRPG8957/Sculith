@@ -14,7 +14,8 @@ Rust로 개발하는 베드락 기반 Minecraft 구동기입니다.
 
 ## 빌드와 실행
 
-고정된 Rust 툴체인과 네이티브 링커가 필요합니다.
+고정된 Rust 툴체인과 C 컴파일러·링커가 필요합니다.
+Windows MSVC 빌드에는 암호화 백엔드용 CMake도 필요합니다.
 
 ```sh
 git clone https://github.com/SKYRPG8957/Sculith.git

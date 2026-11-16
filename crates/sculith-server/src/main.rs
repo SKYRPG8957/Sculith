@@ -189,6 +189,16 @@ async fn run(config: Config) -> Result<()> {
     } else {
         None
     };
+    let java_authentication = if config.network.java.enabled
+        && config.java.sessions
+        && config.java.require_authentication
+    {
+        Some(std::sync::Arc::new(
+            protocol::java::Authentication::new().await?,
+        ))
+    } else {
+        None
+    };
     let java = if config.network.java.enabled {
         Some(
             TcpListener::bind(config.network.java.bind)
@@ -280,6 +290,7 @@ async fn run(config: Config) -> Result<()> {
     if let Some(listener) = java {
         info!(address = %listener.local_addr()?, "Java listening");
         let preview = config.java.sessions.then(|| protocol::java::Preview {
+            authentication: java_authentication,
             content: content.clone(),
             world: world.clone(),
             timeout: Duration::from_secs(config.java.login_timeout_secs),
@@ -340,12 +351,14 @@ async fn run(config: Config) -> Result<()> {
             }
         }
     }
-    if (config.network.java.enabled && config.java.sessions && !config.java.require_authentication)
-        || (config.network.bedrock.enabled
-            && config.bedrock.sessions
-            && !config.bedrock.require_authentication)
+    if config.network.java.enabled && config.java.sessions && !config.java.require_authentication {
+        warn!("Java offline mode: local connections only");
+    }
+    if config.network.bedrock.enabled
+        && config.bedrock.sessions
+        && !config.bedrock.require_authentication
     {
-        warn!("Offline mode enabled; local connections only");
+        warn!("Bedrock offline mode: local connections only");
     }
     info!(
         "Server started in {:.2}s. Press Ctrl+C to stop.",

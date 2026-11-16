@@ -1,8 +1,9 @@
-# Java 26.3 shared-world development preview
+# Java 26.3 connections
 
 Current source implements protocol **777** against the same `WorldHandle` and
-single region owner as Bedrock. This is an explicitly offline, loopback-only
-development path. Unmodified stock Java entry, rendering, keyboard movement and
+single region owner as Bedrock. Online mode uses the official account-session
+service and an encrypted TCP stream; offline mode is restricted to loopback.
+Unmodified stock Java offline entry, rendering, keyboard movement and
 mouse building have been verified on Linux. [Actual-client evidence](../development/verification/2026-11-16-java26.3.md).
 Current source also provides nearby peers, counted creative inventory, public chat,
 Rust plugin commands and selected shared textures/forms/sounds/static models.
@@ -11,7 +12,7 @@ Preview packages have been withdrawn; use a source build.
 ## Run from source
 
 ```sh
-cargo build --workspace --locked
+cargo build --locked
 cargo run --locked -- run --config examples/configs/crossplay.toml
 ```
 
@@ -29,10 +30,37 @@ require_authentication = false
 login_timeout_secs = 30
 ```
 
-The Java listener must be enabled and bound to a loopback address. Public/LAN
-bindings and online Java authentication are rejected in this preview. The source
-default remains discovery-only. Offline profile identifiers are conventional
-Java name-derived UUIDs; client-proposed UUIDs do not establish account identity.
+This offline listener must be enabled and bound to loopback. The source default
+remains discovery-only. Offline profile identifiers are conventional Java
+name-derived UUIDs; client-proposed UUIDs do not establish account identity.
+
+For an online Java listener, keep authentication enabled:
+
+```toml
+[java]
+sessions = true
+require_authentication = true
+login_timeout_secs = 30
+
+[network.java]
+enabled = true
+bind = "0.0.0.0:25565"
+```
+
+The server generates an ephemeral RSA-2048 key, validates a fresh challenge and
+uses AES-128/CFB8 for all subsequent frames. HTTPS `hasJoined` verification must
+return the requested account name and UUID before world reservation. Authentication
+workers are capped at 16, including work left running after a socket timeout.
+The session service needs outbound HTTPS access. Authentication failure never
+falls back to an offline profile. No Microsoft access token is sent to Sculith.
+
+Local socket tests exercise encrypted world entry with a test session verifier,
+invalid challenges/profiles and cancellation. An independent OpenSSL-backed client
+also reaches the actual official session endpoint and receives an encrypted
+rejection for an account that did not join. This does not establish successful
+sign-in with a real Microsoft account. The earlier actual-game evidence remains
+offline evidence. Public pack hosting and public NetherNet trust are separate
+pending work; the current pack delivery URL is local.
 
 ## Implemented and tested
 
@@ -77,8 +105,8 @@ portable release executable; official Windows game rendering remains unverified.
 
 ## Limits
 
-Only Java 26.3 is implemented. No online Java account authentication, encryption
-or compression is provided by this local path. The view radius is fixed at two
+Only Java 26.3 is implemented. Online authentication and encryption are present;
+Java packet compression is pending. The view radius is fixed at two
 chunks and clipped to the existing region. Only Air, Bedrock, Stone, Dirt and
 Grass are mapped. Sky lighting is direct vertical lighting; lateral propagation
 is pending. General entity simulation is not implemented.

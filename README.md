@@ -14,7 +14,8 @@ Development targets Bedrock **1.26.60 / protocol 2225** and stock Java **26.3 / 
 
 ## Build and run
 
-Requires the pinned Rust toolchain and a native linker.
+Requires the pinned Rust toolchain and a C compiler/linker. Windows MSVC builds
+also require CMake for the crypto backend.
 
 ```sh
 git clone https://github.com/SKYRPG8957/Sculith.git

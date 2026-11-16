@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Java online mode now exchanges an ephemeral RSA-2048 key/fresh challenge, encrypts subsequent frames with continuous AES-128/CFB8, and requires the official HTTPS `hasJoined` name/UUID before reserving a player. Private decryption uses AWS-LC rather than the existing Rust RSA crate's documented vulnerable PKCS#1-v1.5 path. Sixteen permits bound crypto/HTTPS jobs even after socket cancellation; profiles and replies are bounded, and errors do not downgrade authentication. Public Java binds require online mode; offline binds/peers remain local. This adds no game commands or default plugins.
+
 - API v8 adds opt-in connection lifecycle and inbound packet metadata across Java handshake/status/login/configuration/spawn/play and native settings/login/cipher/packs/spawn/play. Connections have separate non-reused process IDs and ordered receipts; active player attachment is explicit. Bounded observation queues do not block adapters and disable subscribers on loss. Payloads, account/profile data and addresses are excluded; undecodable frames, transport discovery/signaling/control and outbound packets are outside this hook. Existing initialized-play API-v6 callbacks are unchanged.
 
 - API v7 adds owner-validated inventory queries and atomic grants, with private correlated responses, separate player/plugin budgets, current-state notifications and Java slot deltas that preserve the creative carried stack. The server registers no reward/test commands. Command-driven verification lives only under `tests/fixtures`; default Cargo builds select the server.
@@ -57,6 +59,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- Local checks pass 200 project tests, Clippy, ownership doctest and the existing Java/native inventory, event, content and peer probes. New checks cover NIST CFB8 vectors, cancelled partial encrypted reads/writes, signed Java SHA-1 hashes, profile mismatch, encrypted initialized entry with a test-only verifier, wrong challenge and worker cancellation/backpressure. An independent Python/OpenSSL client negotiates RSA-2048/CFB8 against the executable; actual official HTTPS verification returns an unjoined-session rejection, delivered encrypted with no world entry. This is not successful real-account sign-in. REA inventories the pinned official Java 26.3 JAR; JDK `javap` separately establishes its login field order and cipher parameters, rather than REA runtime observation.
 
 - Local API-v8 checks pass 193 project tests, Clippy and the ownership doctest. Real TCP probes verify discovery-only and active sessions, Java status/login rejection/timeout/configuration/spawn/play, metadata redaction, shutdown cancellation and explicit observer backlog isolation. RakNet verifies cipher/pack/spawn/play receipt ordering and rejected batch prefixes cannot hide decoded trailing receipts; an independent Go/Pion native client verifies NetherNet attachment. Existing inventory/content/peer smokes and retained API-v1–v7 executables pass. These are protocol/plugin checks, not new official GDK rendering evidence.
   Source `e8f9f2c` passes Linux [run 43879256057](https://github.com/SKYRPG8957/Sculith/actions/runs/43879256057) and native Windows build/runtime/interop checks in [run 43879256019](https://github.com/SKYRPG8957/Sculith/actions/runs/43879256019). The preceding API-v8 source also passes both platforms; no packages or build artifacts are uploaded.
@@ -144,6 +148,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+A release-mode Java stream sample encrypts **64 MiB** in 64 KiB writes to a sink in a median of three runs of **1.077398616 s (59.40 MiB/s)**. This includes cipher-state copying/buffer allocation and excludes sockets, framing, RSA, HTTP, pack conversion and game simulation; it is not server TPS.
+
 A local release-mode API-v8 observer probe measures a median of five 10,000-cycle runs: disabled open/drop/drain **459.803 µs**; enabled open/one receipt/player attachment/close/drain **2.405614 ms**. The enabled cycle includes metadata allocation and bounded-ring delivery; both exclude sockets and plugin IPC. The different cycle contents are not a speedup comparison or TPS measurement.
 
 API-v7 kernel sample: `cargo run --release --locked -p sculith-game --example authority_bench` measures 10,000 grant/view/clear cycles in **2.624965 ms**. This synthetic clock excludes sockets, mailbox and plugin IPC costs and does not establish server TPS.
@@ -186,6 +192,6 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Continue online authentication and the public connection path, owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Public NetherNet trust, official GDK gameplay, general entities, broader inventory/content support and server-packet observations remain separate required work; the engineering directive is not complete.
+Continue public pack delivery and NetherNet trust, owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java sign-in, official GDK gameplay, general entities, broader inventory/content support and server-packet observations remain separate required work; the engineering directive is not complete.
 
 Use the available Linux stock Java game and independent native clients without asking the away user for repeated manual testing. Official GDK gameplay still needs an available Windows client environment. Accumulate source toward 0.1.0; keep withdrawn releases/tags/artifacts withdrawn.

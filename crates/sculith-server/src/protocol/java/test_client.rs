@@ -10,11 +10,21 @@ use std::{net::SocketAddr, time::Duration};
 use tokio::{io::AsyncReadExt, net::TcpStream};
 
 pub struct Probe {
-    stream: TcpStream,
+    stream: super::transport::Stream<TcpStream>,
 }
 impl Probe {
     pub async fn enter(address: SocketAddr) -> Result<Self> {
-        let mut stream = TcpStream::connect(address).await?;
+        Self::enter_mode(address, None).await
+    }
+    pub async fn enter_online(
+        address: SocketAddr,
+        uuid: uuid::Uuid,
+        corrupt_challenge: bool,
+    ) -> Result<Self> {
+        Self::enter_mode(address, Some((uuid, corrupt_challenge))).await
+    }
+    async fn enter_mode(address: SocketAddr, online: Option<(uuid::Uuid, bool)>) -> Result<Self> {
+        let mut stream = super::transport::Stream::new(TcpStream::connect(address).await?);
         let mut packet = codec::packet(0);
         write_varint(777, &mut packet);
         write_string("localhost", &mut packet);
@@ -23,9 +33,37 @@ impl Probe {
         codec::send(&mut stream, &packet).await?;
         let mut packet = codec::packet(0);
         write_string("JavaShared", &mut packet);
-        packet.extend_from_slice(&[0; 16]);
+        packet.extend_from_slice(online.map_or(uuid::Uuid::nil(), |v| v.0).as_bytes());
         codec::send(&mut stream, &packet).await?;
         let mut client = Self { stream };
+        if let Some((_, corrupt)) = online {
+            use aws_lc_rs::rsa::{Pkcs1PublicEncryptingKey, PublicEncryptingKey};
+            let packet = client.next().await?;
+            let mut fields = Fields(&packet);
+            ensure!(
+                fields.int()? == 1 && fields.string(20)?.is_empty(),
+                "expected Java Encryption Request"
+            );
+            let key = Pkcs1PublicEncryptingKey::new(PublicEncryptingKey::from_der(
+                fields.byte_array(512)?,
+            )?)?;
+            let mut challenge = fields.byte_array(64)?.to_vec();
+            ensure!(fields.boolean()?, "authentication must be required");
+            fields.end()?;
+            ensure!(challenge.len() == 16, "expected bounded fresh challenge");
+            if corrupt {
+                challenge[0] ^= 1;
+            }
+            let mut packet = codec::packet(1);
+            for plain in [&[0x42u8; 16][..], &challenge[..]] {
+                let mut encrypted = vec![0; key.ciphertext_size()];
+                let encrypted = key.encrypt(plain, &mut encrypted)?;
+                write_varint(encrypted.len() as i32, &mut packet);
+                packet.extend_from_slice(encrypted);
+            }
+            codec::send(&mut client.stream, &packet).await?;
+            client.stream.enable_encryption(&[0x42; 16])?;
+        }
         let packet = client.next().await?;
         ensure!(Fields(&packet).int()? == 2, "expected Java LoginSuccess");
         codec::send(&mut client.stream, &[3]).await?;

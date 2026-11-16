@@ -159,6 +159,14 @@ impl<'a> Fields<'a> {
         self.0 = tail;
         Ok(head)
     }
+    pub fn byte_array(&mut self, max: usize) -> Result<&'a [u8]> {
+        let size = self.int()?;
+        ensure!(
+            size >= 0 && size as usize <= max,
+            "Java byte array exceeds limit"
+        );
+        self.take(size as usize)
+    }
     pub fn byte(&mut self) -> Result<u8> {
         Ok(self.take(1)?[0])
     }

@@ -218,11 +218,14 @@ impl Config {
             );
         }
         ensure!(
+            !self.java.sessions || self.network.java.enabled,
+            "Java sessions require an enabled Java listener"
+        );
+        ensure!(
             !self.java.sessions
-                || (self.network.java.enabled
-                    && self.network.java.bind.ip().is_loopback()
-                    && !self.java.require_authentication),
-            "Java preview requires an enabled loopback listener and explicit require_authentication = false; online Java login is pending"
+                || self.java.require_authentication
+                || self.network.java.bind.ip().is_loopback(),
+            "unauthenticated Java sessions are restricted to a loopback bind"
         );
         ensure!(
             (1..=60).contains(&self.java.login_timeout_secs),
@@ -230,7 +233,7 @@ impl Config {
         );
         ensure!(
             !self.java.sessions || self.server.max_players <= 64,
-            "Java preview supports at most 64 simultaneous sessions"
+            "Java sessions support at most 64 simultaneous sessions"
         );
         ensure!(
             self.bedrock.nethernet != Some(true)
@@ -345,7 +348,10 @@ mod tests {
     fn java_offline_preview_requires_explicit_local_scope_and_capacity() {
         let mut config = Config::default();
         config.java.sessions = true;
-        assert!(config.validate().is_err());
+        config.validate().unwrap();
+        config.network.java.bind = "0.0.0.0:25565".parse().unwrap();
+        config.validate().unwrap();
+        config.network.java.bind = "127.0.0.1:25565".parse().unwrap();
         config.java.require_authentication = false;
         config.validate().unwrap();
         assert_eq!(config.status().unwrap().stage, "java-spawn-preview");

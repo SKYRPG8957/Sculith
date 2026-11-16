@@ -11,6 +11,11 @@ name = "sculith"
 path = "src/main.rs"
 
 [dependencies]
+aes = "=0.8.4"
+cfb8 = "=0.8.1"
+aws-lc-rs = { version = "=1.19.0", default-features = false, features = ["alloc", "non-fips", "prebuilt-nasm"] }
+sha1 = "=0.10.7"
+zeroize = "1"
 anyhow.workspace = true
 bedrock = { git = "https://github.com/bedrock-crustaceans/bedrock-rs.git", rev = "5221fcae8cc8468f523f3f58f129cb308e9d3369", default-features = false, features = ["network-tokio", "protocol-v2225", "protocol-unknown", "protocol-packet-meta", "auth-ureq"] }
 raknet = { git = "https://github.com/bedrock-crustaceans/raknet.git", version = "0.1.0" }

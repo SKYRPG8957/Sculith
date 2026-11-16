@@ -14,6 +14,15 @@ The following upstream libraries are used. The NetherNet core has a small, repro
 The Apache license is included in `LICENSES/Apache-2.0.txt`. These libraries are credited to their respective contributors.
 `Cargo.lock` records the complete Rust dependency graph. Binary distribution must also retain the applicable notices for the other transitive packages.
 
+Java online login additionally links the registry-pinned
+[aws-lc-rs 1.19.0](https://crates.io/crates/aws-lc-rs/1.19.0) and
+[aws-lc-sys 0.47.0](https://crates.io/crates/aws-lc-sys/0.47.0) for private RSA
+operations (`ISC AND (Apache-2.0 OR ISC)`), and RustCrypto
+[aes 0.8.4](https://crates.io/crates/aes/0.8.4)/
+[cfb8 0.8.1](https://crates.io/crates/cfb8/0.8.1) (`MIT OR Apache-2.0`) for Java's
+continuous stream cipher. Their upstream license/notice files must accompany a
+future binary distribution. No upstream server implementation is copied.
+
 The MIT-licensed [Dragonfly](https://github.com/df-mc/dragonfly/tree/0f9a3a5736267db60bf46e92d408f81be1de9a64)
 was consulted for documented network palette, canonical block hash, chunk encoding and starter item ID facts.
 Sculith's chunk encoder independently implements those protocol facts. Only the current five internal block states are mapped;

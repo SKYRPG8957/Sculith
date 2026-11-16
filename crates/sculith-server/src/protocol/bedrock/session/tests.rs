@@ -1066,6 +1066,7 @@ async fn java_and_both_bedrock_transports_share_bidirectional_commits_in_one_own
         tcp,
         server._status.subscribe(),
         Some(Preview {
+            authentication: None,
             content: None,
             world: server.world.clone(),
             timeout: Duration::from_secs(30),

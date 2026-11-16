@@ -1,4 +1,4 @@
-//! Loopback-only, explicitly offline protocol-777 shared-world preview.
+//! Protocol-777 sessions through the shared owner; offline mode is local only.
 use super::{
     chunk,
     codec::{self, Fields, Frames},
@@ -18,6 +18,8 @@ use std::{
 };
 use tokio::{net::TcpStream, sync::broadcast};
 use uuid::Uuid;
+
+type Connection<'a> = super::transport::Stream<&'a mut TcpStream>;
 
 pub struct Session {
     _lease: PlayerLease,
@@ -71,12 +73,13 @@ pub fn offline_uuid(name: &str) -> Uuid {
 }
 
 pub async fn start(
-    stream: &mut TcpStream,
+    stream: &mut Connection<'_>,
     frames: &mut Frames,
     world: WorldHandle,
     max_players: u32,
     phase: &mut super::Phase,
     content: Option<&crate::content::Content>,
+    authentication: Option<&super::Authentication>,
 ) -> Result<Session> {
     let packet = frames.next(stream).await?;
     let mut fields = Fields(&packet);
@@ -86,9 +89,19 @@ pub async fn start(
         !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),
         "invalid Java profile name"
     );
-    let _unverified_uuid = fields.take(16)?;
+    let claimed_uuid = Uuid::from_bytes(fields.take(16)?.try_into()?);
     fields.end()?;
-    let uuid = offline_uuid(&name);
+    let (name, uuid, subject) = if let Some(authentication) = authentication {
+        let profile = authentication
+            .verify(stream, frames, &name, claimed_uuid)
+            .await?;
+        let subject = format!("java:{}", profile.uuid);
+        (profile.name, profile.uuid, subject)
+    } else {
+        let subject = format!("offline-java:{}", name.to_ascii_lowercase());
+        let uuid = offline_uuid(&name);
+        (name, uuid, subject)
+    };
     let mut login = codec::packet(2);
     login.extend_from_slice(uuid.as_bytes());
     write_string(&name, &mut login);
@@ -106,7 +119,7 @@ pub async fn start(
     let lease = world
         .reserve(
             Profile {
-                subject: format!("offline-java:{}", name.to_ascii_lowercase()),
+                subject,
                 name,
                 uuid,
                 edition: Edition::Java,
@@ -188,7 +201,7 @@ pub async fn start(
 }
 
 async fn configure(
-    stream: &mut TcpStream,
+    stream: &mut Connection<'_>,
     frames: &mut Frames,
     content: Option<&crate::content::Content>,
 ) -> Result<()> {
@@ -337,7 +350,7 @@ fn client_information(mut fields: Fields<'_>) -> Result<()> {
 }
 
 impl Session {
-    async fn spawn(&mut self, stream: &mut TcpStream, max_players: u32) -> Result<()> {
+    async fn spawn(&mut self, stream: &mut Connection<'_>, max_players: u32) -> Result<()> {
         ensure!(
             (1..=64).contains(&max_players),
             "invalid Java preview capacity"
@@ -401,7 +414,7 @@ impl Session {
         Ok(())
     }
 
-    async fn inventory(&mut self, stream: &mut TcpStream) -> Result<()> {
+    async fn inventory(&mut self, stream: &mut Connection<'_>) -> Result<()> {
         self.inventory_state = (self.inventory_state + 1) & 0x7fff;
         for slot in 0..41 {
             self.inventory_slot(stream, slot).await?;
@@ -431,7 +444,7 @@ impl Session {
         codec::send(stream, &selected).await
     }
 
-    async fn inventory_slot(&mut self, stream: &mut TcpStream, slot: u8) -> Result<()> {
+    async fn inventory_slot(&mut self, stream: &mut Connection<'_>, slot: u8) -> Result<()> {
         ensure!(slot < 41, "invalid Java inventory synchronization slot");
         let item = self
             .player
@@ -449,7 +462,7 @@ impl Session {
         Ok(())
     }
 
-    async fn teleport(&mut self, stream: &mut TcpStream) -> Result<()> {
+    async fn teleport(&mut self, stream: &mut Connection<'_>) -> Result<()> {
         self.teleport_id = self
             .teleport_id
             .checked_add(1)
@@ -504,7 +517,7 @@ impl Session {
 
     pub async fn run(
         mut self,
-        stream: &mut TcpStream,
+        stream: &mut Connection<'_>,
         frames: &mut Frames,
         mut shutdown: tokio::sync::watch::Receiver<bool>,
     ) -> Result<()> {
@@ -553,7 +566,7 @@ impl Session {
         }
     }
 
-    async fn refresh(&mut self, stream: &mut TcpStream, initial: bool) -> Result<()> {
+    async fn refresh(&mut self, stream: &mut Connection<'_>, initial: bool) -> Result<()> {
         let center = ChunkPos {
             x: (self.player.feet.x.floor() as i32).div_euclid(16),
             z: (self.player.feet.z.floor() as i32).div_euclid(16),
@@ -609,7 +622,7 @@ impl Session {
         Ok(())
     }
 
-    async fn refresh_peer_visibility(&mut self, stream: &mut TcpStream) -> Result<()> {
+    async fn refresh_peer_visibility(&mut self, stream: &mut Connection<'_>) -> Result<()> {
         if let Some(peers) = &mut self.peers {
             let changes = peers.refresh(&self.interest);
             send_peer_changes(stream, changes).await?;
@@ -617,7 +630,7 @@ impl Session {
         Ok(())
     }
 
-    async fn input(&mut self, stream: &mut TcpStream, packet: &[u8]) -> Result<()> {
+    async fn input(&mut self, stream: &mut Connection<'_>, packet: &[u8]) -> Result<()> {
         if self.world.observes_packets() {
             let id = Fields(packet).int()?;
             self.packet_sequence = self
@@ -832,7 +845,7 @@ impl Session {
         Ok(())
     }
 
-    async fn sequence(&mut self, stream: &mut TcpStream, sequence: i32) -> Result<bool> {
+    async fn sequence(&mut self, stream: &mut Connection<'_>, sequence: i32) -> Result<bool> {
         ensure!(sequence >= 0, "negative Java block prediction sequence");
         let fresh = self.last_sequence.is_none_or(|last| sequence > last);
         if fresh {
@@ -844,7 +857,7 @@ impl Session {
         Ok(fresh)
     }
 
-    async fn restore_target(&self, stream: &mut TcpStream, p: BlockPos) -> Result<()> {
+    async fn restore_target(&self, stream: &mut Connection<'_>, p: BlockPos) -> Result<()> {
         if let Ok(snapshot) = self.world.snapshot(p.chunk()).await {
             let (x, _, z) = p.local();
             if let Ok(kind) = snapshot.get(x, p.y, z) {
@@ -854,7 +867,11 @@ impl Session {
         Ok(())
     }
 
-    async fn block_outcome(&self, stream: &mut TcpStream, outcome: BlockOutcome) -> Result<()> {
+    async fn block_outcome(
+        &self,
+        stream: &mut Connection<'_>,
+        outcome: BlockOutcome,
+    ) -> Result<()> {
         match outcome {
             BlockOutcome::Rejected {
                 position,
@@ -872,7 +889,7 @@ impl Session {
         Ok(())
     }
 
-    async fn event(&mut self, stream: &mut TcpStream, event: &WorldEvent) -> Result<()> {
+    async fn event(&mut self, stream: &mut Connection<'_>, event: &WorldEvent) -> Result<()> {
         if let WorldEvent::InventoryUpdated { player_id } = event {
             if *player_id == self.player.id {
                 self.player = self.world.player_snapshot(self.player.id).await?;
@@ -969,14 +986,14 @@ impl Session {
     }
 }
 
-async fn update(stream: &mut TcpStream, position: BlockPos, kind: BlockKind) -> Result<()> {
+async fn update(stream: &mut Connection<'_>, position: BlockPos, kind: BlockKind) -> Result<()> {
     let mut packet = codec::packet(8);
     codec::position(position, &mut packet);
     write_varint(registry::get().state(kind), &mut packet);
     codec::send(stream, &packet).await
 }
 
-async fn send_peer_changes(stream: &mut TcpStream, changes: Vec<PeerChange>) -> Result<()> {
+async fn send_peer_changes(stream: &mut Connection<'_>, changes: Vec<PeerChange>) -> Result<()> {
     for change in changes {
         for packet in super::peers::packets(&change)? {
             codec::send(stream, &packet).await?;

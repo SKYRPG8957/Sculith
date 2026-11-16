@@ -1,6 +1,9 @@
-//! Server-list discovery and an opt-in local protocol-777 shared-world adapter.
+//! Server-list discovery and the protocol-777 shared-world adapter.
 
+mod auth;
 mod chat;
+mod transport;
+pub use auth::Authentication;
 mod chunk;
 mod codec;
 mod commands;
@@ -31,6 +34,7 @@ const MAX_CONNECTIONS: usize = 64;
 
 #[derive(Clone)]
 pub struct Preview {
+    pub authentication: Option<Arc<Authentication>>,
     pub content: Option<Arc<crate::content::Content>>,
     pub world: crate::world::WorldHandle,
     pub timeout: Duration,
@@ -115,10 +119,12 @@ async fn handle_with_preview(
     if state == 2 {
         if let Some(preview) = preview.as_ref().filter(|_| protocol == registry::PROTOCOL) {
             ensure!(
-                stream.peer_addr()?.ip().is_loopback(),
-                "Java preview requires a loopback peer"
+                preview.authentication.is_some() || stream.peer_addr()?.ip().is_loopback(),
+                "Java offline sessions require a loopback peer"
             );
             let max_players = status.borrow().max_players;
+            let mut secured = transport::Stream::new(stream);
+            let stream = &mut secured;
             let mut phase = Phase::Login;
             let started = tokio::time::timeout(
                 preview.timeout,
@@ -129,6 +135,7 @@ async fn handle_with_preview(
                     max_players,
                     &mut phase,
                     preview.content.as_deref(),
+                    preview.authentication.as_deref(),
                 ),
             )
             .await;
@@ -221,7 +228,11 @@ fn parse_handshake(mut packet: &[u8]) -> Result<(i32, i32)> {
     Ok((protocol, state))
 }
 
-async fn disconnect(stream: &mut TcpStream, phase: Phase, reason: &str) -> Result<()> {
+async fn disconnect(
+    stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
+    phase: Phase,
+    reason: &str,
+) -> Result<()> {
     let mut packet = codec::packet(match phase {
         Phase::Login => 0,
         Phase::Configuration => 2,
