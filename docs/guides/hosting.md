@@ -14,6 +14,7 @@ max_players = 20
 
 [world]
 snapshot_path = "world/region.sculith"
+autosave_interval_secs = 60
 
 [java]
 sessions = true
@@ -76,5 +77,25 @@ the game may ask players to accept the server pack.
 
 Tests cover non-loopback HTTP, fixed UDP ports, ICE/DTLS/SCTP, test-issued account
 verification, key binding and world entry. Official-account positive entry and
-Internet/NAT deployment remain unverified. Stop with Ctrl+C to save the region;
-player persistence, periodic saving and crash recovery remain unfinished.
+Internet/NAT deployment remain unverified.
+
+## World saving
+
+Set `world.snapshot_path` to enable region persistence. It is relative to the
+configuration file. The server loads and validates it before opening listeners.
+`world.autosave_interval_secs` defaults to **60**; values **1–86400** checkpoint
+changed blocks at that interval. **0** disables periodic saving. Ctrl+C/SIGTERM
+still saves the final committed region after connections close.
+
+One worker captures immutable owner state and writes a checksummed file through
+a same-directory temporary file, file sync and atomic replacement. Encoding and
+I/O run outside the region owner; writes never overlap or accumulate. An unchanged
+region revision skips disk work. Shutdown waits for an active write before its
+final capture. An autosave failure stops the server with an error and attempts a
+final save; invalid, foreign or read-only destinations are never replaced.
+
+After a forced process stop, restart restores the last completed snapshot. Edits
+since that snapshot can be lost; the interval is not a durability deadline under
+slow storage or scheduling. Player data is not saved. There is no write-ahead log,
+automatic repair of corrupt files or cross-region checkpoint protocol. Back up
+world files independently; do not run two servers against the same world.

@@ -23,9 +23,10 @@ login_timeout_secs = 15
 # nethernet = false
 # nethernet_identity_path = "world/nethernet-identity.pem"
 
-# Optional persistence: load at startup and save after sessions close on Ctrl+C/SIGTERM.
+# Optional persistence: load at startup, checkpoint changed blocks and save on exit.
 # [world]
 # snapshot_path = "world/region.sculith"
+# autosave_interval_secs = 60 # 0 disables periodic saves; shutdown still saves.
 
 # Rust plugins are trusted executables; paths are relative to this config file.
 # Build the example first: cargo build -p sculith-welcome

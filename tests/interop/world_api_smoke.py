@@ -29,10 +29,10 @@ def wait(log, process, predicate, seconds=10):
         time.sleep(.02)
     raise TimeoutError(log.read_text(encoding="utf-8"))
 
-def start(server, plugin, root, flood=False):
+def start(server, plugin, root, flood=False, autosave_interval=60):
     settings,log=root/'server.toml',root/'server.log'
     config='[java]\nsessions=true\nrequire_authentication=false\n[bedrock]\nsessions=true\nrequire_authentication=false\nnethernet_identity_path='+json.dumps(str(root/'identity.pem'))+'\n[network.java]\nbind="127.0.0.1:0"\n[network.bedrock]\nbind="127.0.0.1:0"\n'
-    config+='[world]\nsnapshot_path='+json.dumps(str(root/'region.sculith'))+'\n'
+    config+='[world]\nsnapshot_path='+json.dumps(str(root/'region.sculith'))+'\nautosave_interval_secs='+str(autosave_interval)+'\n'
     modes=['--flood','--guard'] if flood else ['', '--observe','--guard','--legacy']
     for mode in modes:
         config+='[[plugins]]\npath='+json.dumps(str(plugin))+'\nargs='+json.dumps([mode] if mode else [])+'\ntimeout_ms=1000\n'

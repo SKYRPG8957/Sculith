@@ -15,8 +15,9 @@ cargo build --release --locked
 ```
 
 Add `127.0.0.1:19132` in Bedrock, or `127.0.0.1:25565` in Java 26.3 on the same PC.
-This configuration uses local offline identities. Ctrl+C saves the region and
-stops the server. Keep existing configuration and world files when updating.
+This configuration uses local offline identities. Changed blocks save every
+60 seconds; Ctrl+C saves again and stops the server. Keep existing configuration
+and world files when updating. See [save settings](hosting.md#world-saving).
 
 For Rust plugin examples, build the debug workspace and follow the
 [plugin guide](plugins.md). Windows plugin paths need the `.exe` extension.

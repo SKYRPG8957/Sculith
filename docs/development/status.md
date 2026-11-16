@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Configured region snapshots now checkpoint changed revisions every 60 seconds by default. One serial blocking writer prevents overlapping saves; final shutdown waits before capturing newer state. A zero interval retains final-only saving. Forced restart recovers completed plugin/block checkpoints; foreign/invalid files remain protected. Player persistence and a write-ahead log remain pending.
+
 - API v10 adds owner-serialized world reads and compare-and-set edits of up to 64 blocks. Reads return one consistent region revision without loading chunks; invalid/stale batches make no changes. Per-plugin and owner work quotas bound calls. Private results return only to the submitting plugin. Committed player/plugin edits share the existing Java/native delivery and expose explicit attribution through the new world hook, preserving the older player-only hook.
 
 - Production reservations/spawns now start with an empty 36-slot inventory and matching empty hotbar/hand. The prototype Stone/Dirt/Grass grants are removed; creative selection and plugin grants still use the existing owner validation. The bounded 64-entry transaction replay history allocates on first use. Test/benchmark setup explicitly creates its materials rather than adding an engine command or a special production mode.
@@ -67,15 +69,17 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Server-owned player state, hotbar selection and limited creative placement/breaking, validated before revision commits.
 - Movement uses monotonic client ticks plus a server-clock speed budget, swept body collision and region bounds. Building checks permission, rate, reach, line of sight, selected slot, held item and player-body overlap; Bedrock is immutable.
 - Only committed block deltas reach interested sessions; stale events are skipped, revision gaps trigger snapshot resynchronization and a lagging subscriber disconnects explicitly.
-- Versioned/checksummed immutable region snapshots with validated disk reload and conservative atomic file replacement. Optional runtime loading and orderly-shutdown saving are wired; periodic autosaving is pending.
+- Versioned/checksummed immutable region snapshots with validated disk reload and conservative atomic file replacement. Optional runtime loading, periodic changed-revision checkpoints and orderly-shutdown saving are wired. One writer operates outside the owner and is joined before the final capture; checkpoint failures stop the server.
 - Creative-builder preview with initialized session counting and cancellation-safe player leases. Login deadlines do not terminate already initialized sessions.
 - Explicit official online authentication initialization. Public-key lookup failure does not silently enable offline authentication.
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
 
+- Periodic checkpoint validation passes 235 project tests, Clippy, ownership doctests and architecture checks. A real Rust plugin edits two chunks; forced server termination and restart restore both blocks, revision, heightmaps and skylight through an independent Java decoder. Disabled periodic saves still retain final saving; unchanged revisions skip disk work. A changed checkpoint against a foreign destination exits nonzero and preserves it, reporting both failure causes. Existing Java/native world API and listener probes pass. [Scope and reproduction](verification/autosave.md).
+
 - World API validation passes 231 project tests, Clippy, ownership doctests and architecture checks. A real Rust controller edits two chunks; independent Java/native peers observe the same five plugin/player block changes over revisions 1–3. Rejected bounds/types/duplicates/stale revisions and no-op edits cause no public deltas. Separate workers verify private responses and legacy callbacks; a flooding worker is disabled while discovery keeps working. Orderly restart restores plugin edits and the shared CAS revision, including cross-chunk heightmap/skylight verification. Existing inventory, packet hooks, forms, sounds, static models, Java gameplay, native transports and public pack-proxy checks pass.
-  Source `0f20d6f` completes Linux CI and every configured native Windows build/runtime/interoperability step; only Windows cache/checkout cleanup remains at this observation. A separate local release build and world probe pass. These workflows upload no artifacts.
+  Source `0f20d6f` completes both Linux and native Windows CI. A separate local release build and world probe pass. These workflows upload no artifacts.
   An actual unmodified Java 26.3 profile also displays a block committed through the Rust fixture with the shared texture and static model. A separate peer decodes the edited spawn and reads back the same revision and block names. [Evidence and scope](verification/world-api.md).
 
 - Empty-start validation passes 221 project tests, Clippy, ownership doctests and independent Java/native startup/gameplay/inventory/peer/content probes. Every independent native spawn checks the empty main inventory, hand and auxiliary windows; Java verifies its empty baseline before optional creative fixture selection, and also enters without fixture items. A real RakNet request with an empty hand is corrected before explicit creative material is supplied. Both editions retain movement/building, grants, counted hands, forms, sounds, models and pack transfer.
@@ -191,6 +195,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+The periodic-checkpoint candidate retains the existing release storage probe: 1,000 encodes of a 1,193-byte region in **14.810168 ms**, 1,000 validation/decodes in **18.372249 ms** and 20 atomic save/reload operations in **17.357416 ms**. This is a local small-region/filesystem sample, not a full-region, server-TPS or optimization comparison.
+
 The release authority probe measures 10,000 world reads of 64 blocks in **14.273437 ms** and 1,000 atomic 32-block edit batches in **3.767321 ms**. Requests are prepared before the edit timer; typed response construction, validation and commit are included. Reads leave the loaded chunk count unchanged. The synthetic monotonic clock avoids quota exhaustion; sockets, plugin IPC, rendering and persistence are excluded. This is a local kernel sample, not server TPS or a comparison with another engine.
 
 After removing starter items, the release authority benchmark prepares Stone/Dirt/Grass explicitly before timing. One local sample measures 10,000 movement operations **779.723 µs**, 1,000 placement/break pairs **331.649 µs**, 10,000 inventory transfers **2.872583 ms**, and 10,000 plugin give/view/clear cycles **2.825661 ms**. It retains the same kernel assertions and synthetic clock, excluding sockets, rendering and persistence. These are local samples, not a claimed speedup; the replay cache's initially zero capacity is separately asserted.
@@ -247,7 +253,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Add bounded region saving/recovery, general entity APIs and region-safe scheduling. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
+Extend recovery beyond completed region snapshots, add general entity APIs and region-safe scheduling. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
 
 Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 

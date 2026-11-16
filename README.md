@@ -34,8 +34,10 @@ Connect on the same PC:
 New players start with an empty inventory. Select the supported blocks from the
 creative inventory.
 
-Stop with Ctrl+C. The example saves the region to `world/region.sculith` on
-orderly shutdown. Player data and crash recovery are not yet persistent.
+The example saves changed blocks to `world/region.sculith` every 60 seconds and
+again on Ctrl+C. After a forced stop, restart restores the last completed save.
+Changes since that save and player data are not persistent.
+[Save settings](docs/guides/hosting.md#world-saving).
 The previous preview downloads have been withdrawn; no new binaries are published.
 [Windows setup](docs/guides/windows.md).
 [Network hosting and ports](docs/guides/hosting.md).

@@ -1,6 +1,7 @@
 mod config;
 mod connections;
 mod content;
+mod persistence;
 use sculith_plugin_host as plugins;
 mod protocol;
 use sculith_game as game;
@@ -169,12 +170,16 @@ async fn run(config: Config) -> Result<()> {
         None
     };
     let content = delivery.as_ref().map(|delivery| delivery.content.clone());
-    let region = if let Some(path) = config.world.snapshot_path.clone() {
-        tokio::task::spawn_blocking(move || -> Result<sculith_world::Region> {
+    let (region, saved_revision) = if let Some(path) = config.world.snapshot_path.clone() {
+        tokio::task::spawn_blocking(move || -> Result<(sculith_world::Region, Option<u64>)> {
             match std::fs::symlink_metadata(&path) {
-                Ok(_) => Ok(sculith_world::storage::load(&path)?),
+                Ok(_) => {
+                    let region = sculith_world::storage::load(&path)?;
+                    let revision = region.revision();
+                    Ok((region, Some(revision)))
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    Ok(sculith_world::Region::flat_origin())
+                    Ok((sculith_world::Region::flat_origin(), None))
                 }
                 Err(error) => Err(error.into()),
             }
@@ -182,7 +187,7 @@ async fn run(config: Config) -> Result<()> {
         .await
         .context("snapshot loading worker failed")??
     } else {
-        sculith_world::Region::flat_origin()
+        (sculith_world::Region::flat_origin(), None)
     };
     let authentication = if config.network.bedrock.enabled && config.bedrock.sessions {
         Some(
@@ -290,6 +295,14 @@ async fn run(config: Config) -> Result<()> {
     observer.configure(plugins.observes_connections());
     observer.configure_sent(plugins.observes_outgoing());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let mut saving_task = tokio::spawn(persistence::run(
+        world.clone(),
+        config.world.snapshot_path.clone(),
+        Duration::from_secs(config.world.autosave_interval_secs),
+        saved_revision,
+        shutdown_rx.clone(),
+    ));
+    let mut saving_finished = false;
     let mut services = JoinSet::new();
     if let Some(delivery) = delivery {
         info!(address = %delivery.local_addr()?, url = %delivery.content.java_url, "Resource packs available");
@@ -382,6 +395,14 @@ async fn run(config: Config) -> Result<()> {
     let mut result = loop {
         tokio::select! {
             result = &mut shutdown => { break result; }
+            saved = &mut saving_task => {
+                saving_finished = true;
+                break match saved {
+                    Ok(Err(error)) => Err(error),
+                    Err(error) => Err(error.into()),
+                    Ok(Ok(())) => Err(anyhow::anyhow!("autosave worker stopped unexpectedly")),
+                };
+            }
             result = &mut world_task => {
                 world_finished = true;
                 break match result {
@@ -443,6 +464,15 @@ async fn run(config: Config) -> Result<()> {
         }
     };
     shutdown_tx.send_replace(true);
+    // A blocking atomic replacement cannot be cancelled halfway through. Join
+    // the serial writer before any final capture can overtake its checkpoint.
+    if !saving_finished {
+        match saving_task.await {
+            Ok(Err(error)) => result = Err(error),
+            Err(error) => result = Err(error.into()),
+            Ok(Ok(())) => {}
+        }
+    }
     // Java drains its owned connections; discovery has no background driver.
     // Give the session driver a chance to dispose of all of its child tasks first.
     if tokio::time::timeout(Duration::from_millis(250), async {
@@ -478,19 +508,16 @@ async fn run(config: Config) -> Result<()> {
         if let Some(path) = config.world.snapshot_path {
             let saved = async {
                 let snapshot = world.capture().await?;
-                tokio::task::spawn_blocking(move || -> Result<()> {
-                    if let Some(parent) = path.parent() {
-                        std::fs::create_dir_all(parent)?;
-                    }
-                    sculith_world::storage::save_snapshot(&path, &snapshot)?;
-                    Ok(())
-                })
-                .await
-                .context("snapshot saving worker failed")?
+                persistence::save(path, snapshot).await
             }
             .await;
             if let Err(error) = saved {
-                result = Err(error.context("final world snapshot was not saved"));
+                result = Err(match result {
+                    Ok(()) => error.context("final world snapshot was not saved"),
+                    Err(previous) => {
+                        previous.context(format!("final world snapshot was not saved: {error:#}"))
+                    }
+                });
             }
         }
         world_stop.send_replace(true);

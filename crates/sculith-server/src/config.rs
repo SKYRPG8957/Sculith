@@ -36,11 +36,22 @@ fn content_bind() -> SocketAddr {
     "127.0.0.1:0".parse().expect("literal loopback address")
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct World {
-    /// Optional Sculith snapshot, loaded before listeners start and saved at orderly shutdown.
+    /// Optional Sculith snapshot, loaded before listeners start.
     pub snapshot_path: Option<PathBuf>,
+    /// Checkpoint changed blocks at this interval; zero saves only on orderly shutdown.
+    pub autosave_interval_secs: u64,
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self {
+            snapshot_path: None,
+            autosave_interval_secs: 60,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -209,6 +220,10 @@ impl Config {
 
     fn validate(&self) -> Result<()> {
         self.status()?;
+        ensure!(
+            self.world.autosave_interval_secs <= 86_400,
+            "world.autosave_interval_secs must be 0 through 86400"
+        );
         if let Some(content) = &self.content {
             let public_url = content
                 .public_url
@@ -389,6 +404,24 @@ mod tests {
         config.network.java.enabled = false;
         config.network.bedrock.enabled = false;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn world_autosave_defaults_and_interval_bounds() {
+        let config: Config =
+            toml::from_str("[world]\nsnapshot_path = 'world/region.sculith'").unwrap();
+        assert_eq!(config.world.autosave_interval_secs, 60);
+        for seconds in [0, 1, 60, 86_400] {
+            let mut config = Config::default();
+            config.world.autosave_interval_secs = seconds;
+            config.validate().unwrap();
+        }
+        for seconds in [86_401, u64::MAX] {
+            let mut config = Config::default();
+            config.world.autosave_interval_secs = seconds;
+            assert!(config.validate().is_err());
+        }
+        assert!(toml::from_str::<Config>("[world]\nautosave_interval_secs = -1").is_err());
     }
 
     #[test]

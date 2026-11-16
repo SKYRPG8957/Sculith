@@ -8,9 +8,8 @@ connections and configured pack-proxy checks pass.
 [Linux run 43947207268](https://github.com/SKYRPG8957/Sculith/actions/runs/43947207268)
 completes successfully at `0f20d6f`. The matching native
 [Windows run 43947207304](https://github.com/SKYRPG8957/Sculith/actions/runs/43947207304)
-passes every configured build, runtime and interoperability step, including the
-release server and Rust world fixture. At this observation only cache/checkout
-cleanup remains. The previous Windows trial used the wrong fixture directory;
+completes successfully, including the release server and Rust world fixture.
+The previous Windows trial used the wrong fixture directory;
 `0f20d6f` corrects the check to use `target/release`. No runtime change was needed.
 These workflows upload no packages or build artifacts.
 

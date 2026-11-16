@@ -117,8 +117,9 @@ unfinished. Current source supports selected [static models](models.md),
 [automatic pack delivery](packs.md). Arbitrary Bedrock content
 conversion is not implemented.
 The known vanilla core supplies registry definitions, not Bedrock pack conversion.
-Both editions use the same orderly-shutdown region persistence; periodic saves
-and persistent player data are pending.
+Both editions use the same periodic and orderly-shutdown region snapshots.
+[Save settings and recovery limits](hosting.md#world-saving). Player data is not
+persistent.
 
 ## Reproduce version facts
 
