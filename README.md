@@ -47,13 +47,13 @@ These numbers identify development targets, **not verified gameplay support**. T
 - Optional automatic delivery from one frozen Bedrock pack to native clients and a converted Java ZIP, with immutable hashes/cache IDs and required-pack acknowledgements. [Configuration and test scope](docs/content-delivery.md). The stock Java game renders the server-delivered checkerboard texture.
 - Unit, codec, ownership, real-socket and executable smoke tests.
 
-Player rosters, nearby avatars, movement and leave updates now share the authoritative owner in Preview 15. Java uses default avatars and Bedrock uses an original placeholder skin; account skins and equipment are pending.
+Player rosters, nearby avatars, movement and leave updates now share the authoritative owner in Preview 15. Java uses default avatars and Bedrock uses an original placeholder skin; account skins, armour and offhand are pending. The owner’s starter held items, slot changes and empty hands are shared in Preview 16. [Actual held-item evidence](docs/verification/2026-11-16-shared-equipment.md).
 
 General inventory transactions, physics/gravity, public content hosting, and complete resource-pack conversion are still under development. WASI Component plugins, region-parallel ticking, public NetherNet, cameras, a Fabric Companion and packet-only LOD are planned work.
 
 ## Windows quick start
 
-For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.15), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
+For local testing, download the `windows-x86_64.zip` from the [development preview](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.16), extract the entire archive, and double-click **`start.cmd`**. Use **`diagnose.cmd`** for connection-stage logs. No Rust, Python or Java installation is required by the server.
 
 In Bedrock on the same PC, add **`127.0.0.1`**, port **`19132`**. Press **Ctrl+C** in the server window to save and stop. The launcher creates `sculith.toml` only when missing and preserves `world/region.sculith`.
 
@@ -107,7 +107,7 @@ cargo run --locked -- run --config examples/with-plugin.toml
 
 The original welcome example changes the common MOTD. The new gameplay example sends a private welcome after player initialization and observes accepted block changes; run it with `examples/gameplay-preview.toml`. Current plugins are trusted executable JSON-lines processes, not a sandbox. The official host design will evaluate the WASI Component Model, resource limits and region-aware APIs.
 
-Public Preview 15 includes API v5 and gameplay/forms/sound/model examples, enabled in new Windows configurations. Older v1/v2/v3/v4 executables remain supported. It sends each initialized player a private welcome and logs committed block changes. Existing configurations are preserved and do not automatically add plugins.
+Public Preview 16 includes API v5 and gameplay/forms/sound/model examples, enabled in new Windows configurations. Older v1/v2/v3/v4 executables remain supported. It sends each initialized player a private welcome and logs committed block changes. Existing configurations are preserved and do not automatically add plugins.
 
 See the [plugin SDK guide](docs/plugins.md) and [example source](examples/welcome-plugin/src/main.rs).
 

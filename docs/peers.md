@@ -60,7 +60,7 @@ the actual-game verification records); Apache-2.0 bedrock-rs
 `0f9a3a573626` pinned in the lockfiles. No official client code or assets are
 distributed. Existing MIT licensing is preserved.
 
-## Authoritative held-item candidate
+## Authoritative held items — Preview 16
 
 Peer spawn now includes the server's selected starter item. Changed hotbar slots
 publish a dedicated owner event to the peer stream only. A repeated selection

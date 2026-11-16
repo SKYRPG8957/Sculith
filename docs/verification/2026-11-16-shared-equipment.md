@@ -77,4 +77,8 @@ It contains 24 members and five EXEs with system DLLs only. The nine source pack
 files match (JSON with checkout CRLF/LF normalization; PNG/OGG byte-identical),
 with matching lockfile/license and exact-source metadata. The README describes
 held-item support correctly. No keys, worlds, game JARs or test clients are included.
-Public download and installation validation are pending.
+[Preview 16](https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.16)
+is public through [run 43820797047](https://github.com/SKYRPG8957/Sculith/actions/runs/43820797047).
+Fresh unauthenticated HTTPS ZIP/checksum downloads pass the exact-source/tag/hash
+verifier. Installer/download defaults select Preview 16; native Windows public
+installation validation is pending.
