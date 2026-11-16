@@ -81,4 +81,4 @@ held-item support correctly. No keys, worlds, game JARs or test clients are incl
 is public through [run 43820797047](https://github.com/SKYRPG8957/Sculith/actions/runs/43820797047).
 Fresh unauthenticated HTTPS ZIP/checksum downloads pass the exact-source/tag/hash
 verifier. Installer/download defaults select Preview 16; native Windows public
-installation validation is pending.
+installation [run 43821239760](https://github.com/SKYRPG8957/Sculith/actions/runs/43821239760) passes Windows PowerShell 5.1 direct/raw one-command installs, both launchers and existing-directory preservation. New configurations validate both adapters, four plugins and all pack paths.

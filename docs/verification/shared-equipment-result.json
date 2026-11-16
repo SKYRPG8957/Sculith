@@ -181,5 +181,24 @@
     "url": "https://github.com/SKYRPG8957/Sculith/releases/tag/v0.1.0-preview.16",
     "fresh_unauthenticated_zip_and_checksum_verified": true,
     "tag_source_matches_tested_windows_run": true
+  },
+  "installer": {
+    "run_id": 43821239760,
+    "status": "success",
+    "shell": "Windows PowerShell 5.1",
+    "direct_install": true,
+    "documented_raw_one_command": true,
+    "start_cmd_check": true,
+    "diagnose_cmd_check": true,
+    "existing_directory_preserved": true,
+    "java_enabled": true,
+    "bedrock_enabled": true,
+    "plugins": 4,
+    "stage": "shared-world-preview",
+    "pack_paths_valid": true
+  },
+  "official_windows_bedrock": {
+    "verified": false,
+    "external_requirement": "An available licensed official Windows Bedrock client execution environment; this task environment is Linux with no Windows desktop/client tool."
   }
 }
