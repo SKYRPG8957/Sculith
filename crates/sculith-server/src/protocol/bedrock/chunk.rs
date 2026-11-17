@@ -67,21 +67,20 @@ fn encode_storage(section: &Section, indices: &mut Vec<u8>, output: &mut Vec<u8>
     }
 
     indices.clear();
-    let mut palette = Vec::with_capacity(5);
+    let mut palette = Vec::with_capacity(BlockKind::ALL.len());
+    let mut reverse = [u8::MAX; BlockKind::ALL.len()];
     // Bedrock's linear order is Y-fast, then Z, then X: x*256 + z*16 + y.
     // sculith-world uses a different order, so explicit coordinate traversal is required.
     for x in 0..16 {
         for z in 0..16 {
             for y in 0..16 {
                 let kind = section.get(x, y, z)?;
-                let index = match palette.iter().position(|&entry| entry == kind) {
-                    Some(index) => index,
-                    None => {
-                        palette.push(kind);
-                        palette.len() - 1
-                    }
-                };
-                indices.push(index as u8);
+                let index = &mut reverse[kind as usize];
+                if *index == u8::MAX {
+                    *index = palette.len() as u8;
+                    palette.push(kind);
+                }
+                indices.push(*index);
             }
         }
     }

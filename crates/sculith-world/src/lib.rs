@@ -6,6 +6,9 @@
 
 pub mod storage;
 
+#[cfg(test)]
+mod height_tests;
+
 use std::{
     cell::Cell,
     collections::{BTreeMap, BTreeSet},
@@ -25,7 +28,7 @@ pub const SECTION_COUNT: usize = 24;
 pub const WORLD_BORDER: i32 = 30_000_000;
 pub const MAX_REGION_CHUNKS: usize = 64;
 pub const MAX_EDITS_PER_BATCH: usize = SECTION_BLOCKS;
-const BLOCK_KINDS: usize = 5;
+const BLOCK_KINDS: usize = BlockKind::ALL.len();
 
 /// Dense internal IDs. Neither Java state IDs nor Bedrock runtime IDs belong here.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -36,6 +39,17 @@ pub enum BlockKind {
     Stone = 2,
     Dirt = 3,
     Grass = 4,
+}
+
+impl BlockKind {
+    /// Dense internal registry, in ID order; these are not edition-specific IDs.
+    pub const ALL: [Self; 5] = [
+        Self::Air,
+        Self::Bedrock,
+        Self::Stone,
+        Self::Dirt,
+        Self::Grass,
+    ];
 }
 
 impl TryFrom<u8> for BlockKind {
@@ -241,6 +255,20 @@ impl Section {
     /// Iterates in the explicitly documented internal X/Z/Y order.
     pub fn blocks(&self) -> impl ExactSizeIterator<Item = BlockKind> + '_ {
         (0..SECTION_BLOCKS).map(|index| self.at_index(index))
+    }
+
+    /// Exact occupancy from the same counts used by palette mutation and decode.
+    pub fn count(&self, kind: BlockKind) -> u16 {
+        match &self.storage {
+            Storage::Uniform(value) => {
+                if *value == kind {
+                    SECTION_BLOCKS as u16
+                } else {
+                    0
+                }
+            }
+            Storage::Palette { counts, .. } => counts[kind as usize],
+        }
     }
 
     pub fn stats(&self) -> SectionStorageStats {
@@ -481,6 +509,45 @@ impl ChunkSnapshot {
         }
         self.section(world_y.div_euclid(16))?
             .get(local_x, world_y.rem_euclid(16) as u8, local_z)
+    }
+
+    /// World Y immediately above the highest non-air block in each X/Z column.
+    /// X is fastest (`x + 16*z`); an empty column returns [`MIN_Y`]. This is a
+    /// derived snapshot value, not a persistent cache or a light/opacity model.
+    pub fn non_air_heights(&self) -> [i32; 256] {
+        let mut heights = [MIN_Y; 256];
+        let mut remaining = heights.len();
+        for (index, section) in self.data.sections.iter().enumerate().rev() {
+            let air = section.count(BlockKind::Air);
+            if air == SECTION_BLOCKS as u16 {
+                continue;
+            }
+            let base = (MIN_SECTION_Y + index as i32) * 16;
+            if air == 0 {
+                for height in &mut heights {
+                    if *height == MIN_Y {
+                        *height = base + 16;
+                    }
+                }
+                return heights;
+            }
+            for (column, height) in heights.iter_mut().enumerate() {
+                if *height != MIN_Y {
+                    continue;
+                }
+                for y in (0..16).rev() {
+                    if section.at_index(column + 256 * y) != BlockKind::Air {
+                        *height = base + y as i32 + 1;
+                        remaining -= 1;
+                        break;
+                    }
+                }
+            }
+            if remaining == 0 {
+                break;
+            }
+        }
+        heights
     }
 }
 
