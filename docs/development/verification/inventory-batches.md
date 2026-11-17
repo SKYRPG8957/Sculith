@@ -45,6 +45,37 @@ evidence. The successful reference uses ordinary slots; the Sculith cursor/grid
 scenario below is independently tested against Sculith. This is runtime process
 observation plus native wire analysis, not decompilation or GDK screen testing.
 
+A follow-up reference sends `Interact(OpenInventory)` targeting the client's
+own runtime entity ID. BDS replies with `ContainerOpen` (window 2, type 255,
+entity -1), then accepts the cursor split and merge with the same 2/5 IDs in
+the table above. The earlier zero-target request had not established this screen
+context. Capture evidence is
+`ev_ae8ad1eab00f9b1191ce49b1b7e7782f4f5196970b206afafeea5b39dd710bb2`;
+`/tmp/sculith-native-inventory-reference/cursor/capture.json` has SHA-256
+`1e25bfa1bdabaca5609047b16074401936cd5624fa649469f80263d421fc2a82`.
+Its response log SHA-256 is
+`997047071df5ea5388c3a32d6c31fa919a112afb45e025d22213eb8d6b77d661`.
+This extends the protocol reference to the cursor after a valid open, without
+establishing official GDK input/rendering. Sculith currently ignores inventory
+open/close notifications; adding their bounded acknowledgements is the next
+adapter task, before claiming a complete native screen lifecycle.
+
+A further close/reopen run retains Grass35/ID2 in the ordinary slot and
+Grass1/ID5 on the cursor. BDS acknowledges client close for window 2 (responses
+with type bytes 255 and 247, both server-side=false), then opens window 3. A
+subsequent merge using the original cursor ID5 succeeds, restoring Grass36/ID2.
+Closing alone therefore did not return or destroy the cursor in this scenario.
+An earlier helper incorrectly waited for such a return and timed out; the
+corrected probe tests the retained cursor directly after reopening. Meaning of
+the additional type-247 close response is not established here.
+
+The completed reopen evidence is
+`ev_57a7c37fc4802335e439c132134779b0a1a84a35d55cbd9d7fa03703db3bf2d8`.
+`/tmp/sculith-native-inventory-reference/cursor/reopen-capture.json` SHA-256 is
+`2dc1d81d1c9bf352c6ccb7cc411b80b4848a96ac2eff63caae5b64deda1338cd`;
+the `reopen-probe.log` SHA-256 is
+`3c36ab38cab2243ef5270d366dba68af30721b399c68e19e805ff02c410ad4d4`.
+
 Completed reference evidence:
 
 | Local capture | REA evidence ID | Capture SHA-256 |
@@ -76,7 +107,7 @@ failed requests. Saturated 64-action histories therefore retain 32 requests;
 histories of requests up to 32 actions keep their former 64-request capacity.
 Evicted IDs remain stale, and aliases to their responses cannot resolve.
 
-Local validation passes 302 project tests, five ignored measurement tests,
+Local validation passes 302 project tests, five ignored tests,
 ownership doctests, Clippy, architecture checks and debug/release builds. Added
 checks cover stable positive IDs across compound swaps, a 36-action full-grid
 split, a 35-action cursor merge, distinct live IDs, rollback after a late error,
@@ -120,6 +151,15 @@ exit immediately, retains the last read error/revision and uses a ten-second CI
 readiness deadline. Exact revision ordering and final-save assertions are kept.
 The production checkpoint worker, save interval and storage format are unchanged.
 The four checkpoint tests, the full server test suite and Clippy pass locally.
+
+At follow-up source `3f8487ead8b47e96a9a14908db55ad5c9156dd3f`,
+[Linux main](https://github.com/SKYRPG8957/Sculith/actions/runs/44034331216)
+and [Linux branch](https://github.com/SKYRPG8957/Sculith/actions/runs/44034331184)
+workflows pass. Every build/test/interoperability step in the
+[Windows/static-CRT run](https://github.com/SKYRPG8957/Sculith/actions/runs/44034331149)
+also passes, including periodic/manual saves and forced-termination recovery;
+its cache finalization is still running at this record. Neither run has an
+uploaded build artifact, and the repository has no release or tag.
 
 ## Work/history measurement
 
