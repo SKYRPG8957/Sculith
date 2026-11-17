@@ -8,13 +8,15 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Local operator console: `help`, initialized-player `list`, serial manual `save` and orderly `stop`. Input is bounded to eight queued lines of at most 256 bytes; EOF leaves the server running and `--no-console` opts out. General examples no longer send an automatic welcome; private message delivery is exercised by a test-only fixture. [Console guide](../guides/hosting.md#console).
+
 - World mailbox profiling separates permit admission, queue wait and owner service wall time. Default Off skips profiler clocks/history; opt-in Monitor/Profile retain bounded recent/detailed metadata. Fixed operation names exclude game/account payloads. CLI captures support separate simultaneous plugin reports, new-file output and joined background writers. The existing 32-slot owner mailbox, leases and game decisions are preserved; this does not implement CPU sampling, simulation ticks or RMT. [Operator guide](../guides/world-profiling.md).
 
 - Subscription/private-recipient filtering precedes delivery, and selected workers serialize the shared immutable event without deep payload cloning. Fan-out encodes the body once while preserving independent request IDs; single-recipient events serialize directly. Bounded request/reply storage is reused, and unused dispatches skip IPC entirely. Action order and backpressure are preserved. Initial plugin IPC instrumentation adds Off/Monitor/bounded Profile modes, rolling exact recent quantiles, encoding/wall times, complete-frame bytes and versioned payload-free reports. A real-Rust fanout benchmark and Linux CPU/RSS/PSS driver provide repeatable baselines. This does not implement CPU sampling, a full game profiler or parallel region simulation. [Operator guide](../guides/profiling.md).
 
 - API v11 adds shared text, boolean, dropdown and integer-slider forms. The same owner validates complete typed replies, deadlines, session IDs and step/length bounds before a single private callback. Java uses stock dialog controls and a bounded flat modified-UTF-8 payload; native uses standard custom forms. Simple forms retain API v3 and the shared one-pending-form slot.
 
-- Configured region snapshots now checkpoint changed revisions every 60 seconds by default. One serial blocking writer prevents overlapping saves; final shutdown waits before capturing newer state. A zero interval retains final-only saving. Forced restart recovers completed plugin/block checkpoints; foreign/invalid files remain protected. Player persistence and a write-ahead log remain pending.
+- Configured region snapshots now checkpoint changed revisions every 60 seconds by default. One serial blocking writer prevents overlapping saves; final shutdown waits before capturing newer state. A zero interval disables periodic saving; console requests and final saving remain available. Forced restart recovers completed plugin/block checkpoints; foreign/invalid files remain protected. Player persistence and a write-ahead log remain pending.
 
 - API v10 adds owner-serialized world reads and compare-and-set edits of up to 64 blocks. Reads return one consistent region revision without loading chunks; invalid/stale batches make no changes. Per-plugin and owner work quotas bound calls. Private results return only to the submitting plugin. Committed player/plugin edits share the existing Java/native delivery and expose explicit attribution through the new world hook, preserving the older player-only hook.
 
@@ -81,6 +83,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- Operator console source `22c762b` passes 273 project tests, ownership doctests, Clippy, architecture checks and debug/release builds. Real processes verify player listing, manual saves with the timer disabled, recovery after restart, stop with stdin kept open, EOF, explicit console disablement and foreign-file protection. Existing game hooks, form callbacks, periodic recovery and world profiles pass. Linux/Windows workflows are running; no graphical client or new pack is needed for this stage.
 
 - Chunk encoding source `b798fc4` passes 269 project tests, Clippy, architecture/ownership checks, debug/release builds and independent Java/native edit/recovery/content probes. Frozen bytes match for all 15 encoding cases. Matching five-run measurements reduce flat Java chunk/light wall time by 93.5%/96.0% and flat native encoding by 22.3%; native uniform paths regress 1.1–4.2%, and short phases prevent a general memory claim. An exact-source unmodified Java client renders the shared world/model and submits all four inputs with both profilers active. [Changed files, full measurements and limits](performance-2026-11-17-chunks.md).
 
