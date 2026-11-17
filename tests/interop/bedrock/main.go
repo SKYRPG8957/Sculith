@@ -28,6 +28,9 @@ func run() error {
 	defer cancel()
 	d := minecraft.Dialer{}
 	d.IdentityData.DisplayName = "ForkProbe"
+	if len(os.Args) == 3 && os.Args[2] == "--forms-check" {
+		d.IdentityData.DisplayName = "FormBedrock"
+	}
 	c, err := d.DialContext(ctx, "local-evaluation", os.Args[1])
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
@@ -39,6 +42,9 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && os.Args[2] == "--forms-check" {
+		return checkForms(c)
+	}
 
 	if len(os.Args) == 3 && os.Args[2] == "--sound-check" {
 		play, worldPlay, stops := false, false, 0

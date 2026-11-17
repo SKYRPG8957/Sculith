@@ -88,7 +88,7 @@ pub mod enchantment;
 /// Event system and event handlers.
 pub mod events;
 mod ext;
-/// Bedrock UI form builders.
+/// Shared UI form builders.
 pub mod forms;
 pub(crate) mod generated;
 /// Unified inventory and container management utilities.

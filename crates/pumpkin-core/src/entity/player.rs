@@ -1,6 +1,7 @@
 pub mod advancement;
 pub mod client_move;
 pub mod client_push;
+pub mod forms;
 mod shoulders;
 pub mod statistics;
 
@@ -604,6 +605,7 @@ pub struct Player {
     pub ender_chest_inventory: Arc<EnderChestInventory>,
     /// The player's configuration settings. Changes when the player changes their settings.
     pub config: ArcSwap<PlayerConfig>,
+    forms: std::sync::Mutex<forms::FormSession>,
     /// The player's current gamemode (e.g., Survival, Creative, Adventure).
     pub gamemode: AtomicCell<GameMode>,
     /// The player's previous gamemode
@@ -963,6 +965,7 @@ impl Player {
             living_entity,
             shoulders: Mutex::new(shoulders::Shoulders::default()),
             config: ArcSwap::new(Arc::new(config)),
+            forms: std::sync::Mutex::new(forms::FormSession::default()),
             advancements: Arc::new(Mutex::new(
                 server
                     .advancement_manager

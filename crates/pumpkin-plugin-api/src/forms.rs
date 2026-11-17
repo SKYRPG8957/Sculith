@@ -1,10 +1,12 @@
+/// Shared form response event, retaining the existing component ABI.
+pub use crate::events::BedrockFormResponseEvent as FormResponseEvent;
 use crate::text::TextComponent;
 use crate::wit::pumpkin::plugin::forms::{
     CustomForm, CustomFormElement, Form, FormImage, ImageType, ModalForm, SimpleForm,
     SimpleFormButton,
 };
 
-/// Builder for creating a Bedrock simple form.
+/// Builder for a simple form on either edition.
 pub struct SimpleFormBuilder {
     title: TextComponent,
     content: TextComponent,
@@ -40,7 +42,7 @@ impl SimpleFormBuilder {
     }
 }
 
-/// Builder for creating a Bedrock modal form (two-button dialog).
+/// Builder for a modal form on either edition.
 pub struct ModalFormBuilder {
     title: TextComponent,
     content: TextComponent,
@@ -82,7 +84,7 @@ impl ModalFormBuilder {
     }
 }
 
-/// Builder for creating a Bedrock custom form with multiple input elements.
+/// Builder for a custom form on either edition.
 pub struct CustomFormBuilder {
     title: TextComponent,
     elements: Vec<CustomFormElement>,

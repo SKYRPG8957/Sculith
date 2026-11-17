@@ -280,6 +280,7 @@ interface event {
         cancelled: bool
     }
 
+    /// Also carries shared form responses from Java. The record name is retained for compatibility.
     record bedrock-form-response-event-data {
         player: player,
         form-id: u32,

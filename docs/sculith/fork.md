@@ -38,7 +38,7 @@ The modified fork passed these Linux checks on Rust 1.100.0:
 | --- | --- |
 | Protocol unit tests | 172 passed |
 | Configuration unit tests | 24 passed |
-| Game/server unit tests | 794 passed |
+| Game/server unit tests | 800 passed |
 | Shared resource converter unit tests | 14 passed |
 | Plugin runtime unit tests | 8 passed |
 | Experimental Wasm v0.2 host tests | 17 passed |
@@ -107,11 +107,26 @@ VarInt payload length in both configuration and play phases. Fixtures encoded
 with the official Java codec cover cancellation, a short payload and a payload
 requiring a two-byte length. The real TCP/Rust Wasm test receives all three with
 the expected bytes. The decoder bounds size, nesting and traversal without
-building an NBT tree. Shared UI display and its session API remain unfinished.
+building an NBT tree.
 
-Shared assets alone do not provide a common plugin UI or model spawning. Those
-runtime features still need integration. See the resource guide for the stable
-v0.1 contract and experimental v0.2 sound ABI change.
+The additive shared form API projects simple, modal and custom forms to both
+editions. The Rust fixture receives all four response paths, including dismissal,
+and opens the next form from each response callback while packet observers remain
+enabled. Invalid choices, wrong IDs and replays do not produce extra callbacks.
+Six session regressions cover ownership, validation, expiry and ID exhaustion.
+The official Java 26.3 dialog codec also decoded all four captured definitions.
+See the resource guide for layout differences and limits.
+
+An unmodified Java 26.3 GUI client displayed each form. Clicking the simple button
+and the modal's second choice, changing the custom form's checkbox and submitting
+all input values, then dismissing the final form with Escape produced the four
+expected Rust callbacks. The custom response retained the range, both option
+indices and Unicode text. The client returned to the world after dismissal.
+This verifies the vanilla Java projection; Bedrock rendering is still unverified.
+The component built before the new method was added also loaded and passed the
+previous join, sound and custom-dialog reply checks against the new host.
+
+Runtime model spawning and arbitrary Bedrock UI conversion remain unfinished.
 
 ## Remaining work
 

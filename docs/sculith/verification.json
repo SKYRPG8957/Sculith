@@ -1,8 +1,8 @@
 {
-  "date": "2026-11-17",
+  "date": "2026-11-18",
   "upstream_commit": "87f8822ac36da62102350977be2f62f155a303dc",
   "server": "Linux debug; Rust 1.100.0; plugin-v0_2 enabled; locally modified fork",
-  "server_sha256": "90f445445f8647b333552d8f470f5aab4e23ab463c256b0603f1acc69ecf4738",
+  "server_sha256": "608eb1a9f004f613a89541d30de46d034b583fe3ff5df433cfc3c4f5630741d4",
   "native_client": "gophertunnel e2251a60f71d",
   "block_registry": "Dragonfly 0f9a3a573626",
   "network": "loopback NetherNet, offline authentication for the test only",
@@ -24,7 +24,15 @@
     "callback_admission_regression_after": "c7a779cd44f7221d9be88b24746bc140781af9f4d5720b6dbba26e067ce39773",
     "java_dialog_codec_regression_before": "15ad41d54485dd160905b222e7a0670bafc1613c42c57febf9b9d005d11e6072",
     "java_dialog_reply_interop": "c907f4169823581f8065ac9b52a702eff6e35fed21626cc715528670a054d7d5",
-    "java_dialog_reply_events": "2ae34eb90947c5cd73b29ba0bcdb23c247c56d0aa96c44c59b1e9ccbda196362"
+    "java_dialog_reply_events": "2ae34eb90947c5cd73b29ba0bcdb23c247c56d0aa96c44c59b1e9ccbda196362",
+    "shared_form_interop": "2842aec9d4f79697989ed4f3cf5bddc4877d5f99a90e6adaed4b7ed05eb79c6a",
+    "shared_form_events": "e316345dd32ffe244b0e26bb29208e203eed2311bd5ed89a8ac2d55824b27524",
+    "shared_form_official_codec": "7acefc7e67228e591c75866f00db3ca039e2fe9540043c593d2f29cb209c75b9",
+    "shared_form_server_tests": "90764df741b170a3ef2dbe970cae29c439157aa9051bc8f67e448fbf05148cb5",
+    "shared_form_host_tests": "4b121ca0c0623b339d8e844b5fa79a21e6c354f5ee76ea9e6d6b327265f299c4",
+    "legacy_wasm_interop": "88bb4bb722a6b1600ebeecc41f2c86263aa60bf7a42934653fdf4eddd057b977",
+    "stock_java_form_server": "adab4917c354d9262a3f36e6d69bda1d708e9bf4e157fcedd4613f1aabde7085",
+    "stock_java_form_client": "88d8282e9c0f2d28e6c198a3ab1fff550c81be7aa9ac3882f5f5ec5fe9b39534"
   },
   "limitations": [
     "Flat-map marker test only",
@@ -35,7 +43,7 @@
   "shared_resources": {
     "protocol_tests": 172,
     "configuration_tests": 24,
-    "server_tests": 794,
+    "server_tests": 800,
     "converter_tests": 14,
     "native_building_paths": 4,
     "java_configuration_keepalives": 2,
@@ -47,5 +55,35 @@
     "experimental_host_tests": 17,
     "rust_wasm_plugin": "v0.1 component; release wasm32-wasip2 build; both editions observe join and packet events; player and world sound dispatch plus named stops verified on wire",
     "java_dialog_replies": "Official codec None/14/173-byte NBT payloads delivered through Java TCP to the Rust Wasm event; UI display not covered"
+  },
+  "shared_forms": {
+    "session_tests": 6,
+    "paths": [
+      "simple",
+      "modal",
+      "custom",
+      "dismissed"
+    ],
+    "protocol_clients": "Java TCP and Bedrock NetherNet; Rust Wasm v0.1 callbacks with packet observers enabled",
+    "custom_inputs": [
+      "label",
+      "toggle",
+      "slider",
+      "dropdown",
+      "step_slider",
+      "input"
+    ],
+    "validation": "busy; wrong ID; wrong value type; out-of-range choice; missing input; replay; session expiry; Java per-player token",
+    "official_java_codec": "26.3 CONTEXT_FREE_STREAM_CODEC decoded all four captured definitions",
+    "legacy_wasm_compatibility": "Wasm v0.1 component built before player.open-form loaded and completed both edition joins, sounds and dialog-reply callbacks",
+    "native_plugin_abi": 8,
+    "rendering": "Unmodified Java 26.3 GUI; simple button, modal second choice, custom checkbox change plus all input values, Escape dismissal; four expected Rust callbacks; no Windows GDK validation",
+    "stock_java_screenshot_sha256": {
+      "simple": "d038d84969cd3a4cf6a526197626f41e205b6d41ed1267b284e8bbf64de3a8dc",
+      "modal": "f4c573dcb3ce6d4700f6da7561d08ccd2d7892d466655265d885422936ca01cd",
+      "custom-selected": "016a8448f943f8554a3396f93e5f1f3cf40cafeb85521d0641ce21949cf2d866",
+      "dismiss": "d973a2c257ddac26efb826b7eb4d0bab3438db90c9c669b62dc9936628267972",
+      "closed": "d3357cb94bd30226635abf527ca32c93725e4d0f98e9a4f594cd022d815b0ef7"
+    }
   }
 }

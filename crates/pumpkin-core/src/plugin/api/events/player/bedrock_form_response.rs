@@ -5,7 +5,7 @@ use crate::entity::player::Player;
 
 use super::PlayerEvent;
 
-/// An event that occurs when a player responds to a Bedrock custom form.
+/// A form response from Bedrock, or from the shared form API on either edition.
 #[derive(Event, Clone)]
 pub struct BedrockFormResponseEvent {
     /// The player who responded to the form.

@@ -63,3 +63,7 @@ It changes the source after startup to check that active transfers use the same
 frozen snapshot. The copied test world disables spawn protection and removes mobs
 before the building probe. No original world is changed. This is protocol testing;
 it does not check rendering or audio playback.
+
+With the Rust fixture installed, `./probe http://127.0.0.1:19132 --forms-check`
+checks shared simple, modal, custom and dismissed forms. See the fixture README
+for the combined `--forms --plugin` harness invocation.

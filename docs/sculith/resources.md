@@ -63,7 +63,7 @@ of directories and 16 MiB per file. Symlinks, dependencies and subpack selection
 are rejected. Files under `crates/sculith-packs/tests/fixtures` are test inputs;
 they are never loaded by the default server.
 
-Native plugin ABI is 7 after adding shared resources to the server. Rebuild native
+Native plugin ABI is 8 after adding shared form sessions to players. Rebuild native
 plugins against this branch. The Wasm v0.1 interface is unchanged by pack delivery.
 
 ## Plugin sounds
@@ -89,3 +89,31 @@ host remains behind `plugin-v0_2` and is disabled in default builds.
 The Rust fixture under `tests/interop/plugin` verifies dispatch, named stops and
 join/packet callbacks on both editions. It is not default server content and
 does not establish audible playback or arbitrary sound-definition compatibility.
+
+## Shared forms
+
+`player.open-form` opens the same simple, modal or custom form on either edition.
+Rust plugins can use the builders in `pumpkin_plugin_api::forms` and subscribe
+to `forms::FormResponseEvent`. This aliases the existing component event named
+`bedrock-form-response-event`; its record is also used for Java shared forms.
+`FormResponse::parse(event.response_data)` gives the selected index, modal boolean,
+custom values or a closed result. The returned form ID identifies the request.
+
+Only one shared form can be pending per player. Requests expire after five
+minutes; unknown, malformed, expired and duplicate replies do not fire the
+response event. Java actions include a per-request token. The `sculith:ui/`
+action prefix and the upper half of Bedrock form IDs are reserved for this API.
+The lower half remains available to the edition-specific Bedrock form API.
+Closing a modal is distinct from choosing its second button.
+
+Shared forms support at most 64 buttons or elements, 32 KiB per definition or
+reply, and 1024 UTF-16 units per text input. Button images are rejected because
+vanilla Java dialogs cannot display them. The projection is verified on Java
+26.3; versions before 1.21.6 do not support dialogs.
+Java displays custom-form labels above its input controls, uses cycle buttons
+for dropdowns and step sliders, and shows text placeholders as label tooltips.
+The layouts differ; the response types and element indices are shared. This API
+does not translate arbitrary Bedrock UI JSON or add content to the default server.
+
+The v0.1 method is additive and synchronous to the guest; the host releases its
+borrow while packet observers run. The experimental v0.2 method is async.

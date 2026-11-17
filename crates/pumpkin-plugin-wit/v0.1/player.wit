@@ -835,6 +835,10 @@ interface player {
 
     /// A handle to a player on the server.
     resource player {
+        /// Opens a shared simple, modal or custom form on either edition.
+        /// One request per player, expiring after five minutes. Images are unsupported.
+        /// Responses use bedrock-form-response-event on both editions.
+        open-form: func(form: form) -> result<u32, string>;
         /// Returns the player as an entity.
         as-entity: func () -> entity;
         /// Returns the player's unique UUID as a string.

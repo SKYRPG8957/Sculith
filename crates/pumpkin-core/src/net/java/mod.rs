@@ -1267,6 +1267,14 @@ impl JavaClient {
                     &mut payload,
                     &version,
                 )?;
+                match player.java_form_response(packet.action_id, packet.payload) {
+                    crate::entity::player::forms::FormReply::Valid { id, data } => {
+                        player.fire_form_response(server, id, data);
+                        return Ok(());
+                    }
+                    crate::entity::player::forms::FormReply::Invalid => return Ok(()),
+                    crate::entity::player::forms::FormReply::Unhandled => {}
+                }
                 let mut event = crate::plugin::api::events::dialog::dialog_click_action::DialogClickActionEvent::new(
                     player.clone(),
                     packet.action_id.to_string(),

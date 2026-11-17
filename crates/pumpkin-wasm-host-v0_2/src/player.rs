@@ -2795,6 +2795,28 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
 }
 
 impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<PluginHostState> {
+    async fn open_form(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        form: Form,
+    ) -> wasmtime::Result<Result<u32, String>> {
+        let player = accessor.get_res(&player)?.clone();
+        let locale = Locale::from_str(&player.config.load().locale).unwrap_or(Locale::EnUs);
+        let form = accessor.with(|mut host| {
+            let state = host.get();
+            let json = match form {
+                Form::Simple(form) => state.serialize_simple_form_v0_2(form, locale),
+                Form::Modal(form) => state.serialize_modal_form_v0_2(form, locale),
+                Form::Custom(form) => state.serialize_custom_form_v0_2(form, locale),
+            };
+            pumpkin_core::entity::player::forms::Form::from_json(json)
+        });
+        run_blocking(accessor, move || {
+            form.and_then(|form| player.open_form(form))
+        })
+        .await
+    }
+
     async fn play_sound(
         accessor: &Accessor<PluginHostState, Self>,
         player: Resource<Player>,
@@ -4497,7 +4519,9 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
         let player = accessor.get_res(&player)?.clone();
 
         if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
-            let form_id = client.next_form_id.fetch_add(1, Ordering::Relaxed);
+            let form_id = client
+                .allocate_form_id()
+                .ok_or_else(|| wasmtime::Error::msg("Form IDs exhausted for this connection"))?;
 
             let locale_str = player.config.load().locale.clone();
             let locale = Locale::from_str(&locale_str).unwrap_or(Locale::EnUs);

@@ -209,6 +209,15 @@ pub struct BedrockClient {
 }
 
 impl BedrockClient {
+    /// Allocates an edition-specific form ID below the shared API's reserved range.
+    pub fn allocate_form_id(&self) -> Option<u32> {
+        self.next_form_id
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+                (next < crate::entity::player::forms::SHARED_FORM_BIT).then(|| next + 1)
+            })
+            .ok()
+    }
+
     #[must_use]
     pub fn new(
         id: u64,

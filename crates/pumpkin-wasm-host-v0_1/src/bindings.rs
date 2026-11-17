@@ -6,6 +6,7 @@ bindgen!({
     path: "../pumpkin-plugin-wit/v0.1",
     world: "plugin",
     imports: {
+        "pumpkin:plugin/player@0.1.0.[method]player.open-form": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.play-sound": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.play-sound-at": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.stop-sound": async | store | trappable,

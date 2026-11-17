@@ -19,6 +19,42 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 LIMIT = 8 * 1024 * 1024
+PACKETS = json.loads((ROOT / "assets/packets.json").read_text())
+
+
+def nbt_string(value):
+    # Java's modified UTF-8 represents supplementary characters as surrogate pairs.
+    utf16 = value.encode("utf-16-be")
+    units = "".join(chr(int.from_bytes(utf16[i:i + 2], "big")) for i in range(0, len(utf16), 2))
+    data = units.encode("utf-8", "surrogatepass").replace(b"\0", b"\xc0\x80")
+    return struct.pack(">H", len(data)) + data
+
+
+def read_nbt(fields, tag=None):
+    tag = fields.take(1)[0] if tag is None else tag
+    if tag == 0:
+        return None
+    if tag in (1, 2, 3, 4, 5, 6):
+        format_ = {1: ">b", 2: ">h", 3: ">i", 4: ">q", 5: ">f", 6: ">d"}[tag]
+        return struct.unpack(format_, fields.take(struct.calcsize(format_)))[0]
+    if tag == 8:
+        length, = struct.unpack(">H", fields.take(2))
+        text = fields.take(length).replace(b"\xc0\x80", b"\0").decode("utf-8", "surrogatepass")
+        return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le")
+    if tag == 9:
+        child = fields.take(1)[0]
+        count, = struct.unpack(">i", fields.take(4))
+        assert 0 <= count <= LIMIT
+        return [read_nbt(fields, child) for _ in range(count)]
+    if tag == 10:
+        out = {}
+        while True:
+            child = fields.take(1)[0]
+            if child == 0:
+                return out
+            name = read_nbt(fields, 8)
+            out[name] = read_nbt(fields, child)
+    raise AssertionError(("unexpected fixture tag", tag))
 
 
 def varint(value):
@@ -63,12 +99,12 @@ class Fields:
 
 
 class Java:
-    def __init__(self, port):
+    def __init__(self, port, name="ResourceJava"):
         self.socket = socket.create_connection(("127.0.0.1", port), timeout=10)
         self.socket.settimeout(40)
         self.compression = None
         self.send(0, varint(777) + string("127.0.0.1") + struct.pack(">H", port) + varint(2))
-        self.send(0, string("ResourceJava") + uuid.UUID(int=0).bytes)
+        self.send(0, string(name) + uuid.UUID(int=0).bytes)
         for _ in range(10):
             id_, data = self.receive()
             if id_ == 3:
@@ -224,6 +260,52 @@ class Java:
             return
         raise AssertionError("missing shared world sound broadcast")
 
+    def check_common_forms(self, output):
+        previous = None
+        for stage in range(4):
+            for _ in range(2048):
+                id_, fields = self.receive()
+                if id_ == PACKETS["clientbound"]["play"]["keep_alive"]:
+                    self.send(PACKETS["serverbound"]["play"]["keep_alive"], fields.take(8))
+                elif id_ == PACKETS["clientbound"]["play"]["show_dialog"]:
+                    assert fields.vi() == 0
+                    nbt = fields.rest()
+                    (output / f"java-form-{stage}.nbt").write_bytes(nbt)
+                    dialog_fields = Fields(nbt)
+                    dialog = read_nbt(dialog_fields)
+                    assert not dialog_fields.rest()
+                    break
+                elif id_ == PACKETS["clientbound"]["play"]["disconnect"]:
+                    raise AssertionError(("form disconnect", fields.rest()))
+            else:
+                raise AssertionError(("missing shared form", stage))
+            assert dialog["type"] == "minecraft:multi_action" and dialog["pause"] == 0
+            assert dialog["can_close_with_escape"] == 1 and dialog["after_action"] == "close"
+            if previous:
+                self.send(PACKETS["serverbound"]["play"]["custom_click_action"], previous)
+            if stage < 2:
+                action = dialog["actions"][stage]["action"]["id"]
+                payload = b"\0"
+                bad = action.rsplit("/", 1)[0] + "/99"
+                self.send(68, string(bad) + b"\1\0")
+                self.send(68, string("sculith:ui/forged/0") + b"\1\0")
+            elif stage == 2:
+                inputs = dialog["inputs"]
+                assert [value["key"] for value in inputs] == ["f1", "f2", "f3", "f4", "f5"]
+                assert [value["type"] for value in inputs] == ["minecraft:boolean", "minecraft:number_range", "minecraft:single_option", "minecraft:single_option", "minecraft:text"]
+                action = dialog["actions"][0]["action"]["id"]
+                assert dialog["actions"][0]["action"]["type"] == "minecraft:dynamic/custom"
+                payload = (b"\x0a\x01" + nbt_string("f1") + b"\x01\x05" + nbt_string("f2") + struct.pack(">f", 2.5)
+                    + b"".join(b"\x08" + nbt_string(key) + nbt_string(value)
+                    for key, value in [("f3", "1"), ("f4", "0"), ("f5", "가나다😀")]) + b"\0")
+                self.send(68, string(action) + b"\1\0")  # Missing inputs must leave the request pending.
+            else:
+                action = dialog["exit_action"]["action"]["id"]
+                payload = b"\0"
+            previous = string(action) + varint(len(payload)) + payload
+            self.send(PACKETS["serverbound"]["play"]["custom_click_action"], previous)
+        self.send(PACKETS["serverbound"]["play"]["custom_click_action"], previous)
+
 
 def free_port():
     with socket.socket() as stream:
@@ -254,9 +336,10 @@ def main():
     parser.add_argument("--building", action="store_true", help="also exercise native building in the copied flat world")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
+    parser.add_argument("--forms", action="store_true", help="exercise shared forms and Rust response events on both editions")
     args = parser.parse_args()
-    if args.dialog_replies and not args.plugin:
-        parser.error("--dialog-replies requires the Rust --plugin fixture")
+    if (args.dialog_replies or args.forms) and not args.plugin:
+        parser.error("--dialog-replies and --forms require the Rust --plugin fixture")
     root = Path(tempfile.mkdtemp(prefix="sculith-shared-resources-"))
     print("EVIDENCE", root, flush=True)
     server_path = args.server.resolve()
@@ -334,6 +417,27 @@ def main():
                     assert any(event in line and f"player={player}" in line
                                for line in log_text.splitlines()), ("missing plugin event", player, event)
             report["rust_wasm_sound_dispatch"] = "player and world; both editions; named stop; packet observer enabled"
+            if args.forms:
+                form_client = Java(java, "FormJava")
+                try:
+                    form_client.join_with_resources(java, root, False)
+                    form_client.check_common_forms(root)
+                    result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}", "--forms-check"], capture_output=True, text=True, timeout=35)
+                    (root / "forms.log").write_text(result.stdout + result.stderr)
+                    assert result.returncode == 0, result.stdout + result.stderr
+                    deadline = time.monotonic() + 10
+                    while True:
+                        lines = (root / "server.log").read_text().splitlines()
+                        if all(any("PROBE_FORMS_COMPLETE" in line and f"player={player}" in line for line in lines) for player in ["FormJava", "FormBedrock"]):
+                            break
+                        assert server.poll() is None and time.monotonic() < deadline, "missing common form completion"
+                        time.sleep(.1)
+                    for player in ["FormJava", "FormBedrock"]:
+                        replies = [line for line in lines if "PROBE_FORM_REPLY" in line and f"player={player}" in line]
+                        assert len(replies) == 4, ("unexpected form callback count", player, replies)
+                    report["shared_forms"] = "simple/modal/custom/cancel; Rust callbacks; busy and invalid/replayed replies rejected"
+                finally:
+                    form_client.socket.close()
         result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}", "--pack-output", str(root / "bedrock.mcpack")], capture_output=True, text=True, timeout=35)
         (root / "bedrock.log").write_text(result.stdout + result.stderr)
         assert result.returncode == 0, result.stdout + result.stderr

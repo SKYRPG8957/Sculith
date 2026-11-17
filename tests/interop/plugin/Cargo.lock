@@ -240,6 +240,7 @@ name = "sculith-wasm-audio-probe"
 version = "0.0.0"
 dependencies = [
  "pumpkin-plugin-api",
+ "serde_json",
  "tracing",
 ]
 
