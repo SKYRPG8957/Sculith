@@ -1,4 +1,4 @@
-# Connection and inventory event fixture
+# Native event fixture
 
 This native Rust plugin observes Java handshake, status, login and configuration
 packets, and Bedrock network-settings and login packets. It replaces the Java
@@ -33,3 +33,10 @@ new blocks and spawn eggs. `Mutate*` clients change slot 0 inside the callback;
 the server must preserve that change and reject the stale pick plan. The fixture
 reads the inventory during callbacks to catch locks held across event dispatch.
 These callbacks apply only to the named test clients.
+
+`--tracking-events` also removes a nearby pig from its outgoing spawn callback,
+then removes another pig from its velocity callback. Both packets are cancelled.
+The client checks the despawn and a subsequent latency reply; the fixture logs
+confirm that each removal finished. These cases catch entity-map and viewer-list
+locks retained across plugin packet events. The callbacks only affect
+`TrackerNative` and `TrackerDataNative`.

@@ -29,6 +29,11 @@ repetition bytes 0/1/255, stack counts, and every inventory slot after rejection
 Invalid creative IDs are also sent after a slot swap in the same request; the
 swap must not take effect. No plugin is needed for these checks.
 
+`--tracking-events` on the harness uses the native fixture to delete a nearby
+mob inside outgoing spawn and motion callbacks. It runs `--tracking-events`
+and `--tracking-data-events` in the client, checks packet cancellation and
+despawn, then requires a normal latency reply after removal completes.
+
 Prepare a Java 26.3 flat world with grass at Y=-61. In the official Java server:
 
 ```

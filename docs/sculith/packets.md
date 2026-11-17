@@ -60,6 +60,15 @@ The creative repetition byte does not multiply the result: a creation supplies
 one stack at the item's normal limit. Other crafting requests retain their own
 repetition handling.
 
+## Entity tracking callbacks
+
+Tracking releases its entity-map and viewer-list locks before sending packets
+or calling player filters. A packet observer may remove an entity during spawn
+or motion delivery without waiting on the tracker that invoked it. The pending
+spawn or motion can still be cancelled through `PacketSentEvent`. Removed
+entities are checked before pairing and non-player updates.
+The native ABI and Wasm interfaces are unchanged.
+
 ## Before player creation
 
 Native Rust plugins can subscribe to `JavaConnectionPacketReceivedEvent`,

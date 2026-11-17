@@ -32,6 +32,12 @@ func run() error {
 	var creativeItems creativeRegistry
 	modelMode := len(os.Args) == 3 && (os.Args[2] == "--models-check" || os.Args[2] == "--model-snapshot" || os.Args[2] == "--model-unavailable")
 	d.IdentityData.DisplayName = "ForkProbe"
+	if len(os.Args) == 3 && (os.Args[2] == "--tracking-events" || os.Args[2] == "--tracking-data-events") {
+		d.IdentityData.DisplayName = "TrackerNative"
+		if os.Args[2] == "--tracking-data-events" {
+			d.IdentityData.DisplayName = "TrackerDataNative"
+		}
+	}
 	if len(os.Args) == 3 && (os.Args[2] == "--creative-inventory-check" || os.Args[2] == "--survival-creative-check") {
 		d.IdentityData.DisplayName = "CreativeNative"
 		if os.Args[2] == "--survival-creative-check" {
@@ -84,6 +90,9 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && (os.Args[2] == "--tracking-events" || os.Args[2] == "--tracking-data-events") {
+		return checkTrackingEvents(c, os.Args[2] == "--tracking-data-events")
+	}
 	if len(os.Args) == 3 && (os.Args[2] == "--creative-inventory-check" || os.Args[2] == "--survival-creative-check") {
 		return checkCreativeInventory(c, &creativeItems, os.Args[2] == "--creative-inventory-check")
 	}

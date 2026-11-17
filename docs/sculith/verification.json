@@ -328,8 +328,8 @@
       "clippy": "Core, binary and native fixture; experimental v0.2 feature; all targets; warnings denied"
     },
     "interop": "Full resources, sounds, forms, dialog replies, building, both pick paths and cancellation, connection/packet hooks, models and normal restart passed on the traced retry; isolated creative/model matrix also passed",
-    "open_observation": "The first combined run timed out during model spawn after the cancellation callback. Isolated and traced retries passed; tracker lock investigation remains open.",
-    "official_probe": "REA 6.9.0 controlled BDS 1.26.63.1 copies accepted login and supplied catalogue ID 440. No stack response was observed over RakNet, including input-carried requests after a console teleport; this is not official creative-policy verification.",
+    "open_observation": "The first combined run timed out during model spawn after the cancellation callback. A deterministic tracking-map callback deadlock was subsequently reproduced and fixed; see tracking_callback_safety. The original timeout was not traced to a specific lock.",
+    "official_probe": "REA 6.9.0 controlled BDS 1.26.63.1 copies accepted login and supplied catalogue ID 440. Repetition 0 probes produced no response; a later normal-one probe returned InvalidCraftRequest, also with a deprecated-results step. This is not official creative-policy verification.",
     "log_sha256": {
       "before": "786dd1dedffca9db874df610cefb0aa1c76c7419954adf2ca5570108efec4da7",
       "target": "35391eb1abdad0875d300eea6a41f5455790e99f96727712133e4925adf367f0",
@@ -342,6 +342,37 @@
     "limits": [
       "No Windows GDK verification",
       "Creative slot plugin-event parity and general stack-request atomicity remain incomplete"
+    ]
+  },
+  "tracking_callback_safety": {
+    "baseline": "419d342a93d8e55f9b211677bd2943b507687362",
+    "server_sha256": "e20e9d320c7a368bd55cb3410910144ddf346b2d35bc728630c4068388f06dae",
+    "native_fixture_sha256": "38fcea7a0cd817c84e4015eadb42e784a3053b2f5b20e989ba2dd8c97e0ea7de",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "before": "The native outgoing spawn observer begins removal of the same nearby pig but never returns; no completion marker or subsequent latency reply; shutdown needs forced cleanup",
+    "behavior": "Snapshot tracked entity and viewer handles before invoking packet callbacks or player filters; skip removed entities during pairing and non-player updates",
+    "wire_checks": "A native Rust spawn observer cancels and removes a pig; a second client triggers velocity and removes another pig inside its outgoing motion observer. Both removals complete, cancelled packets are absent and the normal latency path responds afterward",
+    "regressions": "Untraced full Java/Bedrock matrix: resources, sounds, forms, dialog replies, building, block and mob picks, selection cancellation/mutation, creative inventory validation, tracking callbacks, packet edits, connection hooks, shared model lifecycle and normal restart",
+    "tests": {
+      "server": 803,
+      "clippy": "Core, binary and native fixture; experimental v0.2; all targets; warnings denied",
+      "go": "build, vet, gofmt"
+    },
+    "log_sha256": {
+      "before": "5b045037d6f76fd42560f87ef6a74d44fd125d6e3f89ef587374288951a98d3e",
+      "before_events": "febcd9e37eca050e6245213c1c58938c7faedb2ced78b59a2cbacb7247b8bc9e",
+      "target": "c03dbcc8b4c04781ceb1dfa530e05a528a022585d04de4f9d7ef8c95851565ef",
+      "full": "eea1c996a4297b5b2a061dc2d5468e3eec66fc935c31e914e693bc950b229900",
+      "full_events": "8fc11eefae8dc872bafaffe70659534769a84430ac24ee70ba39df5bc720c39a",
+      "final_native_and_wasm": "ab812358a61aa9038ee4771364482bd2bde9afecc3a29655773fc5b77b54be67",
+      "final_events": "37e3d90d1e35c3291a7b725ebfb6e74ebcc7927d6fc1acc880f98724b16a3f8c",
+      "core": "e065a424ce88c120b206215122ef4b3f182aa2acd7e220c85077d2e129a450bd",
+      "clippy": "15cbebde3a376e04a4bbf725a3efd02b07187f3e12a488b72c6f713848156f86"
+    },
+    "limits": [
+      "No Windows GDK rendering verification",
+      "No performance or load-test claim; transient handle snapshots depend on entity and viewer counts"
     ]
   }
 }

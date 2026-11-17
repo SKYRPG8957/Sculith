@@ -1,24 +1,28 @@
 //! Native connection-event fixture, installed only into the interop scratch server.
 
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{Arc, LazyLock, Weak, atomic::Ordering};
 
 use pumpkin_core::{
     plugin::player::item_held::PlayerItemHeldEvent,
     plugin::server::packet::{
         BedrockConnectionPacketReceivedEvent, BedrockConnectionPacketSentEvent,
-        JavaConnectionPacketReceivedEvent, JavaConnectionPacketSentEvent,
+        JavaConnectionPacketReceivedEvent, JavaConnectionPacketSentEvent, PacketReceivedEvent,
+        PacketSentEvent,
     },
     plugin::{
         BoxFuture, Context, EventHandler, EventPriority, Plugin, PluginFuture, PluginMetadata,
     },
     server::Server,
 };
-use pumpkin_data::{item::Item, item_stack::ItemStack};
+use pumpkin_data::{entity::EntityType, item::Item, item_stack::ItemStack};
 use pumpkin_protocol::{
     ConnectionState,
     bedrock::server::{login::SLogin, request_network_settings::SRequestNetworkSettings},
+    codec::var_long::VarLong,
+    codec::var_ulong::VarULong,
     java::client::status::CStatusResponse,
     packet::{MultiVersionJavaPacket, Packet},
+    serial::PacketRead,
 };
 
 #[unsafe(no_mangle)]
@@ -41,6 +45,8 @@ pub extern "Rust" fn plugin() -> Box<dyn Plugin> {
 
 struct Connections;
 struct Observer(Weak<Context>);
+
+const TRACKER_MOTION_TRIGGER: i64 = 0x212223242526272;
 
 impl Plugin for Connections {
     fn on_load(&self, context: Arc<Context>) -> PluginFuture<'_, Result<(), String>> {
@@ -67,9 +73,100 @@ impl Plugin for Connections {
                 EventPriority::Lowest,
                 true,
             );
-            context.register_event::<PlayerItemHeldEvent, _>(observer, EventPriority::Lowest, true);
+            context.register_event::<PlayerItemHeldEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
+            context.register_event::<PacketSentEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
+            context.register_event::<PacketReceivedEvent, _>(observer, EventPriority::Lowest, true);
             context.log("PROBE_CONNECTIONS_LOADED");
             Ok(())
+        })
+    }
+}
+
+impl EventHandler<PacketReceivedEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut PacketReceivedEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            if event.player.gameprofile.name != "TrackerDataNative"
+                || event.packet_id != pumpkin_data::bedrock_packet::NETWORK_STACK_LATENCY
+                || event.payload.get(..8) != Some(TRACKER_MOTION_TRIGGER.to_le_bytes().as_slice())
+            {
+                return;
+            }
+            let world = event.player.world();
+            let target = world
+                .entities
+                .load()
+                .iter()
+                .find(|target| {
+                    let entity = target.get_entity();
+                    entity.entity_type.id == EntityType::PIG.id && entity.pos.load().x < 6.0
+                })
+                .cloned();
+            if let Some(target) = target {
+                let entity = target.get_entity();
+                let mut velocity = entity.velocity.load();
+                velocity.z = 0.1;
+                entity.velocity.store(velocity);
+                entity.velocity_dirty.store(true, Ordering::Relaxed);
+            }
+        })
+    }
+}
+
+impl EventHandler<PacketSentEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut PacketSentEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = &event.player.gameprofile.name;
+            let id = if name == "TrackerNative"
+                && event.packet_id == pumpkin_data::bedrock_packet::ADD_ACTOR
+            {
+                VarLong::read(&mut event.payload.as_ref())
+                    .ok()
+                    .and_then(|id| i32::try_from(id.0).ok())
+            } else if name == "TrackerDataNative"
+                && event.packet_id == pumpkin_data::bedrock_packet::SET_ACTOR_MOTION
+            {
+                VarULong::read(&mut event.payload.as_ref())
+                    .ok()
+                    .and_then(|id| i32::try_from(id.0).ok())
+            } else {
+                None
+            };
+            let Some(id) = id else {
+                return;
+            };
+            let world = event.player.world();
+            let Some(target) = world.get_entity_by_id(id) else {
+                return;
+            };
+            let entity = target.get_entity();
+            if entity.entity_type.id != EntityType::PIG.id || entity.pos.load().x >= 6.0 {
+                return;
+            }
+            event.cancelled = true;
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!("PROBE_TRACKING_REMOVE_BEGIN player={name} id={id}"));
+                world.remove_entity(target.as_ref());
+                context.log(format!(
+                    "PROBE_TRACKING_REMOVE_END player={name} id={id} removed={}",
+                    world.get_entity_by_id(id).is_none()
+                ));
+            }
         })
     }
 }

@@ -164,6 +164,9 @@ impl TrackedEntity {
     /// Vanilla `ServerEntity.sendChanges`. Non-player entities only.
     pub fn send_changes(&self, world: &World) {
         let entity = self.entity.get_entity();
+        if entity.is_removed() {
+            return;
+        }
         self.send_bedrock_move(entity, world);
         let tick = self.tick_count.fetch_add(1, Relaxed);
         let needs_sync = entity.velocity_dirty.swap(false, Ordering::SeqCst);
@@ -463,7 +466,7 @@ impl TrackedEntity {
         effective_range: u32,
         chunk_changed: bool,
     ) {
-        if !self.entity.has_client_representation() {
+        if self.entity.get_entity().is_removed() || !self.entity.has_client_representation() {
             self.remove_player(player);
             return;
         }
@@ -1001,15 +1004,21 @@ impl TrackedEntity {
         }
     }
 
-    pub fn send_to_tracking_players<P: ClientPacket + Sync>(&self, packet: &P, _world: &World) {
-        let seen_by = self
-            .seen_by
+    fn viewers(&self) -> Vec<Arc<Player>> {
+        self.seen_by
             .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    pub fn send_to_tracking_players<P: ClientPacket + Sync>(&self, packet: &P, _world: &World) {
+        let seen_by = self.viewers();
         if seen_by.is_empty() {
             return;
         }
-        World::broadcast_java_players(packet, seen_by.values());
+        World::broadcast_java_players(packet, seen_by.iter());
     }
 
     pub fn send_to_tracking_players_bedrock<P: BClientPacket + Sync>(
@@ -1020,11 +1029,8 @@ impl TrackedEntity {
         if !self.has_bedrock_watchers() {
             return;
         }
-        let seen_by = self
-            .seen_by
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let recipients = seen_by.values().filter_map(|p| {
+        let seen_by = self.viewers();
+        let recipients = seen_by.iter().filter_map(|p| {
             if let ClientPlatform::Bedrock(client) = p.client.as_ref() {
                 return Some(client);
             }
@@ -1039,18 +1045,15 @@ impl TrackedEntity {
         be_packet: &B,
         _world: &World,
     ) {
-        let seen_by = self
-            .seen_by
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let seen_by = self.viewers();
         if seen_by.is_empty() {
             return;
         }
-        World::broadcast_java_players(je_packet, seen_by.values());
+        World::broadcast_java_players(je_packet, seen_by.iter());
         if self.has_bedrock_watchers() {
             World::broadcast_bedrock_grouped(
                 be_packet,
-                seen_by.values().filter_map(|p| match p.client.as_ref() {
+                seen_by.iter().filter_map(|p| match p.client.as_ref() {
                     ClientPlatform::Bedrock(be_client) => Some(be_client),
                     ClientPlatform::Java(_) => None,
                 }),
@@ -1090,14 +1093,11 @@ impl TrackedEntity {
         _world: &World,
         filter: F,
     ) {
-        let seen_by = self
-            .seen_by
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let seen_by = self.viewers();
         if seen_by.is_empty() {
             return;
         }
-        World::broadcast_java_players(packet, seen_by.values().filter(|p| filter(p)));
+        World::broadcast_java_players(packet, seen_by.iter().filter(|p| filter(p)));
     }
 
     pub fn send_to_tracking_players_filtered_editioned<
@@ -1111,20 +1111,17 @@ impl TrackedEntity {
         _world: &World,
         filter: F,
     ) {
-        let seen_by = self
-            .seen_by
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let seen_by = self.viewers();
         if seen_by.is_empty() {
             return;
         }
         if !self.has_bedrock_watchers() {
-            World::broadcast_java_players(je_packet, seen_by.values().filter(|p| filter(p)));
+            World::broadcast_java_players(je_packet, seen_by.iter().filter(|p| filter(p)));
             return;
         }
         let mut java_recipients = Vec::new();
         let mut bedrock_recipients = Vec::new();
-        for p in seen_by.values().filter(|p| filter(p)) {
+        for p in seen_by.iter().filter(|p| filter(p)) {
             match p.client.as_ref() {
                 ClientPlatform::Java(java_client) => java_recipients.push(java_client),
                 ClientPlatform::Bedrock(be_client) => bedrock_recipients.push(be_client),
@@ -1170,14 +1167,24 @@ impl EntityTracker {
             .is_some_and(|t| t.has_viewers())
     }
 
+    // Packet callbacks may add or remove tracked entities.
+    fn tracked_entities(&self) -> Vec<Arc<TrackedEntity>> {
+        self.entity_map
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
+    }
+
     pub fn for_each_entity_tracked_by<F: FnMut(&Arc<dyn EntityBase>)>(
         &self,
         player: &Player,
         mut f: F,
     ) {
-        for entry in &self.entity_map {
-            if entry.value().is_seen_by(&player.gameprofile.id) {
-                f(&entry.value().entity);
+        for tracked in self.tracked_entities() {
+            if !tracked.entity.get_entity().is_removed()
+                && tracked.is_seen_by(&player.gameprofile.id)
+            {
+                f(&tracked.entity);
             }
         }
     }
@@ -1207,9 +1214,9 @@ impl EntityTracker {
     /// Must only be called after the player's own `CLogin` packet has been sent.
     pub fn pair_new_player_with_tracked_entities(&self, player_arc: &Arc<Player>, world: &World) {
         let entity_id = player_arc.get_entity().entity_id;
-        for entry in &self.entity_map {
-            if *entry.key() != entity_id {
-                entry.value().update_player(player_arc, world);
+        for tracked in self.tracked_entities() {
+            if tracked.entity_id != entity_id {
+                tracked.update_player(player_arc, world);
             }
         }
     }
@@ -1225,10 +1232,10 @@ impl EntityTracker {
     /// Vanilla `PlayerList.respawn` recreates the player -> forget and re-pair it as a viewer.
     pub fn repair_respawned_player(&self, player: &Arc<Player>, world: &World) {
         let entity_id = player.get_entity().entity_id;
-        for entry in &self.entity_map {
-            if *entry.key() != entity_id {
-                entry.value().forget_player(player);
-                entry.value().update_player(player, world);
+        for tracked in self.tracked_entities() {
+            if tracked.entity_id != entity_id {
+                tracked.forget_player(player);
+                tracked.update_player(player, world);
             }
         }
     }
@@ -1245,11 +1252,11 @@ impl EntityTracker {
         }
         let chunks: FxHashSet<_> = chunks.iter().copied().collect();
         let entity_id = player.get_entity().entity_id;
-        for entry in &self.entity_map {
-            if *entry.key() != entity_id
-                && chunks.contains(&entry.value().entity.get_entity().chunk_pos.load())
+        for tracked in self.tracked_entities() {
+            if tracked.entity_id != entity_id
+                && chunks.contains(&tracked.entity.get_entity().chunk_pos.load())
             {
-                entry.value().update_player(player, world);
+                tracked.update_player(player, world);
             }
         }
     }
@@ -1257,8 +1264,8 @@ impl EntityTracker {
     pub fn remove_entity(&self, entity: &dyn EntityBase, world: &World) {
         let entity_id = entity.get_entity().entity_id;
         if let Some(player) = entity.get_player() {
-            for entry in &self.entity_map {
-                entry.value().remove_player(player);
+            for tracked in self.tracked_entities() {
+                tracked.remove_player(player);
             }
         }
 
@@ -1275,7 +1282,7 @@ impl EntityTracker {
     }
 
     pub fn update_entity_position(&self, entity: &dyn EntityBase, world: &World) {
-        if let Some(tracked) = self.entity_map.get(&entity.get_entity().entity_id) {
+        if let Some(tracked) = self.get_tracked_entity(entity.get_entity().entity_id) {
             let new_pos = chunk_section_from_pos(&entity.get_entity().block_pos.load());
             tracked.last_section_pos.store(new_pos);
             let players = world.players.load();
@@ -1299,11 +1306,7 @@ impl EntityTracker {
             })
             .collect();
 
-        let tracked_entities: Vec<Arc<TrackedEntity>> = self
-            .entity_map
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect();
+        let tracked_entities = self.tracked_entities();
 
         let mut entity_moved = vec![false; tracked_entities.len()];
         let moved_player_ids: FxHashSet<i32> = tracked_entities
