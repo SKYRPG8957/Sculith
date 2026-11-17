@@ -1,11 +1,12 @@
 Sculith
 
-Run start.cmd. Settings are stored in sculith.toml.
+Run start.cmd for account verification, or start-local.cmd for same-PC testing.
+Settings are stored in sculith.toml.
 Bedrock: 127.0.0.1:19132
 Java 26.3: 127.0.0.1:25565
 
 Press Ctrl+C to save and stop. Keep your configuration and world folder
-when updating. This local configuration uses offline identities.
+when updating. The local launcher uses offline identities on loopback only.
 
 Use diagnose.cmd for connection diagnostics. If a port is in use, stop the
 other server process first. Existing settings are never overwritten.
