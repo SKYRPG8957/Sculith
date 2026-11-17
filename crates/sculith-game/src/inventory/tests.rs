@@ -1,5 +1,61 @@
 use super::*;
 
+#[test]
+#[ignore = "manual inventory work/history measurement"]
+fn inventory_batch_measurement() {
+    use std::{hint::black_box, mem::size_of, time::Instant};
+    for actions in [32, 64].into_iter().filter(|&n| n <= MAX_ACTIONS) {
+        let mut inventory = fixture_inventory();
+        let start = Instant::now();
+        for sequence in 1..=20_000 {
+            let id = -sequence;
+            let mut batch = vec![
+                Action::Swap {
+                    source: reference(Slot::Inventory(0), id),
+                    destination: reference(Slot::Inventory(1), id),
+                };
+                actions
+            ];
+            batch[0] = Action::Swap {
+                source: exact(&inventory, Slot::Inventory(0)),
+                destination: exact(&inventory, Slot::Inventory(1)),
+            };
+            assert!(
+                black_box(inventory.apply(&Request { id, actions: batch }, true))
+                    .result
+                    .is_ok()
+            );
+        }
+        let elapsed = start.elapsed();
+        let cached_actions: usize = inventory
+            .history
+            .iter()
+            .map(|e| e.request.actions.len())
+            .sum();
+        let action_bytes: usize = inventory
+            .history
+            .iter()
+            .map(|e| e.request.actions.capacity() * size_of::<Action>())
+            .sum();
+        let response_bytes: usize = inventory
+            .history
+            .iter()
+            .map(|e| {
+                e.response
+                    .result
+                    .as_ref()
+                    .map_or(0, |c| c.capacity() * size_of::<Change>())
+            })
+            .sum();
+        println!(
+            "inventory_batch actions={actions} requests=20000 wall_ns={} inventory_bytes={} entries={} cached_actions={cached_actions} action_bytes={action_bytes} response_bytes={response_bytes}",
+            elapsed.as_nanos(),
+            size_of::<Inventory>(),
+            inventory.history.len()
+        );
+    }
+}
+
 fn fixture_inventory() -> Inventory {
     let mut inventory = Inventory::default();
     for kind in CREATIVE_CATALOGUE[..3].iter().copied() {
