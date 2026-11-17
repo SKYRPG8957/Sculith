@@ -72,8 +72,8 @@ At source-equivalent documentation head
 and [Linux branch](https://github.com/SKYRPG8957/Sculith/actions/runs/44039202293)
 workflows pass. Every build/test/interoperability step in the
 [Windows/static-CRT run](https://github.com/SKYRPG8957/Sculith/actions/runs/44039202349)
-passes, including the expanded window probe; its cache finalization is still
-running at this record. These runs upload no build artifact. No package,
+passes, including the expanded window probe; its cache finalization was still
+running at the original record and subsequently completes successfully. These runs upload no build artifact. No package,
 release, tag or environment is published.
 
 The state is **32 bytes** on this Linux x86_64 target with pinned Rust 1.100.0;
@@ -92,7 +92,8 @@ python3 tests/interop/inventory_smoke.py --client target/gophertunnel-probe
 ```
 
 The official Windows GDK's actual screen rendering/input is still unverified.
-General block/entity containers, Java drag distribution, crafting, dropped-item
-entities and persistent player inventories remain pending. The native screen
+General block/entity containers, crafting, dropped-item entities and persistent
+player inventories remain pending. Subsequent [left/right drag support](inventory-drag.md)
+is verified separately. The native screen
 state does not gate ordinary owner-validated stack requests, which can also
 originate outside a player-inventory screen.
