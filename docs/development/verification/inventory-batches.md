@@ -56,9 +56,9 @@ context. Capture evidence is
 Its response log SHA-256 is
 `997047071df5ea5388c3a32d6c31fa919a112afb45e025d22213eb8d6b77d661`.
 This extends the protocol reference to the cursor after a valid open, without
-establishing official GDK input/rendering. Sculith currently ignores inventory
-open/close notifications; adding their bounded acknowledgements is the next
-adapter task, before claiming a complete native screen lifecycle.
+establishing official GDK input/rendering. At this source Sculith ignored inventory open/close notifications. The
+subsequent [window implementation](inventory-windows.md) adds their bounded
+acknowledgements, with separate limits on actual GDK-screen claims.
 
 A further close/reopen run retains Grass35/ID2 in the ordinary slot and
 Grass1/ID5 on the cursor. BDS acknowledges client close for window 2 (responses
@@ -158,7 +158,7 @@ and [Linux branch](https://github.com/SKYRPG8957/Sculith/actions/runs/4403433118
 workflows pass. Every build/test/interoperability step in the
 [Windows/static-CRT run](https://github.com/SKYRPG8957/Sculith/actions/runs/44034331149)
 also passes, including periodic/manual saves and forced-termination recovery;
-its cache finalization is still running at this record. Neither run has an
+its cache finalization was still running at the original record and subsequently completes successfully. Neither run has an
 uploaded build artifact, and the repository has no release or tag.
 
 ## Work/history measurement
