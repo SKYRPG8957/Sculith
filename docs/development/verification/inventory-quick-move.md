@@ -1,5 +1,9 @@
 # Player inventory interactions — 2026-11-17 KST
 
+The source-specific results below retain their original ID-allocation behavior.
+Current source preserves IDs on moves and count changes instead; see
+[inventory batches](inventory-batches.md) for the BDS reference and updated checks.
+
 ## Main/hotbar quick moves
 
 Source: `0fc76d34b3642d415b3c9f785e5129ac18280c79`.

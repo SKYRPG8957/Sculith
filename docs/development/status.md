@@ -8,9 +8,11 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Native inventory requests accept up to 64 actions. Stack IDs follow moved items and survive count changes; only new stacks allocate IDs. Replay storage stays within 64 requests and 2,048 actions, and 33–64-action requests consume two existing work units. Full-grid splitting/merging remains atomic and uses the same owner as Java and plugins. [Reference, tests and bounds](verification/inventory-batches.md).
+
 - Java cursor collection resolves current cursor and inventory contents on the shared owner. Partial stacks precede full stacks; forward/reverse scans stop at 64 items and exclude cursor/output as sources. Empty/full cursors and occupied clicked slots do not change items. The complete candidate and stack IDs roll back on failure, and existing inventory/equipment hooks expose only committed changes.
 
-- Java main/hotbar quick moves compute destination merges and partial remainders on the shared owner. Changed stacks receive fresh IDs; allocation failure rolls back the entire operation. Cursor/output, selected slot and request history are preserved. Existing inventory/equipment hooks and native peer updates expose only committed changes. Block-pick packet observations now correctly report Gameplay in both adapters instead of Unsupported.
+- Java main/hotbar quick moves compute destination merges and partial remainders on the shared owner. Moved stacks and merge destinations retain their IDs; no new stack is created by this operation. Cursor/output, selected slot and request history are preserved. Existing inventory/equipment hooks and native peer updates expose only committed changes. Block-pick packet observations now correctly report Gameplay in both adapters instead of Unsupported.
 
 - NetherNet establishment can continue past an outbound UDP permission failure on one candidate while retaining its existing peer-address policy and establishment deadline. Permission loss on the active session path and socket-level receive permission errors remain fatal to that session. Bounded debug output identifies send/receive path errors without game payloads.
 
@@ -95,6 +97,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- Inventory-batch source `aaca190` passes **302 project tests**, five ignored measurement tests, ownership doctests, Clippy, architecture checks and debug/release builds. Independent debug/release Java/native probes verify 2/36/64-action positive-ID swaps, 65-action rejection, 36-slot split/merge, rollback, replay, counted peer hands and Rust inventory/equipment hooks. Plugin grant/query and block-pick regressions pass. Completed BDS 1.26.63.1 REA captures independently confirm accepted 36/64-action swaps, stable stack identity on moves/count changes and a new ID on splitting. These are native protocol observations, not official GDK gesture verification. [Evidence](verification/inventory-batches.md).
 
 - Cursor-collection source `dd5bdb3` passes 296 local project tests, ownership doctests, Clippy, architecture checks, debug/release mixed-edition probes and complete Linux/Windows workflows. Both scan directions, capacity/no-op cases, matching-output exclusion and whole-grid allocator rollback pass. A native peer observes Java's selected Dirt decrease from 64 to 34 after cursor collection; semantic callbacks follow committed state without a region revision change. [Reference, checks and scope](verification/inventory-quick-move.md#cursor-collection).
 
@@ -245,6 +249,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Performance
 
+Inventory-batch source `aaca190` keeps the replay action payload at **40,960 bytes** in the measured saturated 32/64-action cases; the owner object grows from 352 to 360 bytes for the cached-action counter. A five-run release kernel sample has 32-action median 12.008 ms versus baseline 14.935 ms for 20,000 requests; 64-action median is 22.249 ms. Stack-ID semantics intentionally change, so these are scoped work/history measurements, not equivalent-output optimization or server TPS claims. [Method and raw values](verification/inventory-batches.md).
+
 The matching release IPC benchmark (5,000 calls, 128 warmups, five repetitions) reduces 1/32 large-event dispatch wall time from 766.339 to 267.575 ms and host process CPU from 0.76 to 0.12 s. All-32 dispatch changes from 3,141.371 to 2,728.644 ms. Observed aggregate PSS changes by about 0.5%; single-subscriber tail values rise slightly. No game TPS, allocation count, profiler-mode overhead or RMT improvement is inferred. [Conditions, raw hashes, intermediate regression and scope](performance-2026-11-17.md).
 
 The input-form release kernel measures 10,000 four-control open/submit pairs in **1.587368 ms**. Definitions and reply vectors are prepared before the timer; owner validation, request attribution and response construction are included. A synthetic monotonic clock avoids form-rate exhaustion. This excludes rendering, sockets and plugin IPC and is not a server-TPS or optimization comparison.
@@ -307,7 +313,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Extend ordinary inventory interactions and persistent player state through the shared owner. Check full-grid native gestures against the BDS/REA reference before changing the current 32-action bound; preserve work and history budgets when extending input. Investigate another block-pick ordering failure if the expanded diagnostics reproduce it; keep supported packet dispatch metadata aligned with actual handlers. Preserve the measured chunk/profiler baselines and repeat measurements when changed runtime paths justify it. Extend recovery beyond completed snapshots, general entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
+Extend ordinary inventory interactions and persistent player state through the shared owner. Native batches now support 64 actions with preserved work/history bounds. Drag distribution, general containers and persistent player inventories remain pending; verify native screen contexts against BDS/REA before extending them. Official GDK gesture generation is still unverified. Investigate another block-pick ordering failure if the expanded diagnostics reproduce it; keep supported packet dispatch metadata aligned with actual handlers. Preserve the measured chunk/profiler baselines and repeat measurements when changed runtime paths justify it. Extend recovery beyond completed snapshots, general entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
 
 Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 
