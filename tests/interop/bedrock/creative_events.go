@@ -90,7 +90,7 @@ func checkCreativeEvents(c *minecraft.Conn, registry *creativeRegistry, mutate b
 			}
 			switch v := pk.(type) {
 			case *packet.AddItemActor:
-				return fmt.Errorf("cancelled creative request dropped an item")
+				return fmt.Errorf("unexpected item before creative correction: item=%d count=%d position=%v kind=%s mutation=%t responded=%t", v.Item.Stack.NetworkID, v.Item.Stack.Count, v.Position, kind, mutate, responded)
 			case *packet.ItemStackResponse:
 				for _, res := range v.Responses {
 					if res.RequestID == id {

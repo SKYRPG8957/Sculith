@@ -83,3 +83,22 @@ def events(server, java_port, port, root, probe):
         assert len(calls) == 1 and "before=64 screen_before=64" in calls[0], (name, calls)
     assert any("PROBE_INVENTORY_DROP before=64 screen_before=64 count=64 cancelled=true" in line for line in rows)
     return "both editions veto inventory interaction; native callback mutation and drop veto preserve inventory without held screen locks"
+
+
+def legacy(server, port, root, probe, inventory, callbacks):
+    server.stdin.write("defaultgamemode survival\n")
+    server.stdin.flush()
+    time.sleep(.2)
+    try:
+        if inventory:
+            native(server, port, root, probe, "--legacy-inventory", "LegacyTxnNative")
+        if callbacks:
+            native(server, port, root, probe, "--legacy-drop-veto", "LegacyDropDeny")
+            native(server, port, root, probe, "--legacy-held-veto", "LegacyHeldNative")
+            rows = (root / "server.log").read_text().splitlines()
+            assert any("PROBE_INVENTORY_DROP" in row and "count=1 cancelled=true player=LegacyDropDeny" in row for row in rows)
+            assert any("PROBE_PICK_HELD player=LegacyHeldNative previous=0 next=1 current=0" in row and "cancelled=true" in row for row in rows)
+    finally:
+        server.stdin.write("defaultgamemode creative\n")
+        server.stdin.flush()
+    return "legacy slot-query/journal/held-item validation and verified drop; optional Rust drop/held-slot vetoes"

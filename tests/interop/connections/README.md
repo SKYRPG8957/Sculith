@@ -55,3 +55,8 @@ before its following ping response. Only `Create*` test clients are affected.
 plan. `DropDenyNative` cancels `PlayerDropItemEvent` after a planned swap without
 losing inventory or spawning a drop. `InvDenyJava` checks the existing Java
 interaction veto and correction. These callbacks only affect the named clients.
+
+`--legacy-events` cancels a verified legacy drop for `LegacyDropDeny` and an
+implicit hotbar change for `LegacyHeldNative`. The inventory and player screen
+remain readable in the drop callback. `LegacyTxnNative` logs its allowed hotbar
+changes while running the ordinary legacy transaction checks.

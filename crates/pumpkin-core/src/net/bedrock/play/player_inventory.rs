@@ -8,13 +8,18 @@ use pumpkin_protocol::{
             inventory_content::CInventoryContent, inventory_slot::CInventorySlot,
             item_stack_response::CItemStackResponse,
         },
-        network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
-        server::item_stack_request::{
-            ItemStackRequest, ItemStackRequestAction as Action,
-            ItemStackRequestSlotInfo as SlotInfo,
+        network_item::{
+            ContainerName, FullContainerName, NetworkItemDescriptor, NetworkItemStackDescriptor,
+        },
+        server::{
+            inventory_transaction::{InventoryAction, InventoryActionSource, WINDOW_ID_INVENTORY},
+            item_stack_request::{
+                ItemStackRequest, ItemStackRequestAction as Action,
+                ItemStackRequestSlotInfo as SlotInfo,
+            },
         },
     },
-    codec::var_uint::VarUInt,
+    codec::{var_int::VarInt, var_uint::VarUInt},
 };
 use pumpkin_util::GameMode;
 
@@ -57,6 +62,17 @@ struct PlayerInventoryPlan {
 
 fn same_stack(a: &ItemStack, b: &ItemStack) -> bool {
     a.uid == b.uid && a.are_equal(b)
+}
+
+pub(super) fn matches_item_type_and_count(desc: &NetworkItemDescriptor, stack: &ItemStack) -> bool {
+    if stack.is_empty() {
+        return desc.id.0 == 0 || desc.stack_size == 0;
+    }
+    // Client NBT and runtime state never replace data on the server's stack.
+    let expected = NetworkItemDescriptor::from(stack);
+    desc.id == expected.id
+        && desc.aux_value == expected.aux_value
+        && desc.stack_size == expected.stack_size
 }
 
 const fn player_container(info: &SlotInfo) -> bool {
@@ -442,6 +458,25 @@ impl PlayerInventoryPlan {
         }
         true
     }
+
+    fn execute(self, player: &Arc<Player>) -> Option<Vec<SlotUpdate>> {
+        let accepted = self.authorize(player) && self.commit(player);
+        for (index, before) in self.before.iter().enumerate() {
+            let current = self.slots[index].get_cloned_stack();
+            if !before.are_equal(&current)
+                && let Some(slot) = player_slot(player, self.slots[index].as_ref())
+            {
+                player.sync_screen_slot_equipment(slot, &current);
+            }
+        }
+        if !accepted {
+            return None;
+        }
+        for stack in self.drops {
+            player.drop_item(stack);
+        }
+        Some(self.updates)
+    }
 }
 
 impl BedrockClient {
@@ -450,34 +485,79 @@ impl BedrockClient {
         player: &Arc<Player>,
         request: &ItemStackRequest,
     ) {
-        let (result, updates) = if let Ok(plan) = PlayerInventoryPlan::prepare(player, request) {
-            let accepted = plan.authorize(player) && plan.commit(player);
-            for (index, before) in plan.before.iter().enumerate() {
-                let current = plan.slots[index].get_cloned_stack();
-                if !before.are_equal(&current)
-                    && let Some(slot) = player_slot(player, plan.slots[index].as_ref())
-                {
-                    player.sync_screen_slot_equipment(slot, &current);
-                }
-            }
-            if accepted {
-                for stack in plan.drops {
-                    player.drop_item(stack);
-                }
-                (0, plan.updates)
-            } else {
-                (1, Vec::new())
-            }
-        } else {
-            (1, Vec::new())
-        };
+        let (result, updates) = PlayerInventoryPlan::prepare(player, request)
+            .ok()
+            .and_then(|plan| plan.execute(player))
+            .map_or_else(|| (1, Vec::new()), |updates| (0, updates));
         self.try_enqueue_client_packet(&CItemStackResponse {
             responses: vec![build_stack_response(request.request_id, result, updates)],
         });
         self.resend_player_inventory(player);
     }
 
-    fn resend_player_inventory(&self, player: &Player) {
+    pub(super) fn apply_legacy_inventory_drop(
+        player: &Arc<Player>,
+        actions: &[InventoryAction],
+    ) -> Option<Vec<SlotUpdate>> {
+        let [first, second] = actions else {
+            return None;
+        };
+        let (source, dropped) = match (
+            InventoryActionSource::from(first.source_type),
+            InventoryActionSource::from(second.source_type),
+        ) {
+            (InventoryActionSource::Container, InventoryActionSource::World) => (first, second),
+            (InventoryActionSource::World, InventoryActionSource::Container) => (second, first),
+            _ => return None,
+        };
+        if source.window_id != Some(WINDOW_ID_INVENTORY)
+            || source.inventory_slot >= 36
+            || dropped.inventory_slot != 0
+            || (dropped.old_item.id.0 != 0 && dropped.old_item.stack_size != 0)
+        {
+            return None;
+        }
+        let count = u8::try_from(dropped.new_item.stack_size).ok()?;
+        let slot = source.inventory_slot as u8;
+        let request = ItemStackRequest {
+            request_id: VarInt(0),
+            actions: vec![Action::Drop {
+                count,
+                source: SlotInfo {
+                    container_name: FullContainerName {
+                        container_name: ContainerName::Inventory,
+                        dynamic_id: None,
+                    },
+                    slot_id: slot,
+                    stack_id: 0,
+                },
+                randomly: false,
+            }],
+            filter_strings: Vec::new(),
+            filter_cause: 0,
+        };
+        let plan = PlayerInventoryPlan::prepare(player, &request).ok()?;
+        let screen_slot = if slot < 9 {
+            usize::from(slot) + 36
+        } else {
+            usize::from(slot)
+        };
+        let index = plan
+            .slots
+            .iter()
+            .position(|slot| player_slot(player, slot.as_ref()) == Some(screen_slot))?;
+        let actual = &plan.before[index];
+        let remaining = actual.copy_with_count(actual.item_count.checked_sub(count)?);
+        if !matches_item_type_and_count(&source.old_item, actual)
+            || !matches_item_type_and_count(&source.new_item, &remaining)
+            || !matches_item_type_and_count(&dropped.new_item, &actual.copy_with_count(count))
+        {
+            return None;
+        }
+        plan.execute(player)
+    }
+
+    pub(super) fn resend_player_inventory(&self, player: &Player) {
         let slots = player
             .inventory
             .main_inventory

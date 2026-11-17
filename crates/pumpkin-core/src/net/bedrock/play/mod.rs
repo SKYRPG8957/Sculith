@@ -20,9 +20,7 @@ use pumpkin_protocol::{
             inventory_content::CInventoryContent, player_hotbar::CPlayerHotbar,
             update_block::CUpdateBlock,
         },
-        network_item::{
-            ContainerName, FullContainerName, NetworkItemDescriptor, NetworkItemStackDescriptor,
-        },
+        network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
         server::{
             actor_event::{ActorEventID, SActorEvent},
             actor_pick_request::SActorPickRequest,
@@ -34,8 +32,7 @@ use pumpkin_protocol::{
             emote_list::SEmoteList,
             interact::{Action, SInteract},
             inventory_transaction::{
-                SInventoryTransaction, TransactionData, WINDOW_ID_ARMOUR, WINDOW_ID_INVENTORY,
-                WINDOW_ID_OFF_HAND,
+                TransactionData, WINDOW_ID_ARMOUR, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
             },
             mob_equipment::SMobEquipment,
             player_action::{PlayerActionType as PlayerAction, SPlayerAction},
@@ -78,28 +75,6 @@ use pumpkin_data::BlockDirection;
 use tracing::{debug, info};
 
 const MIN_PREDICTED_BREAK_PROGRESS: f32 = 0.65;
-
-fn descriptor_to_stack(desc: &NetworkItemDescriptor) -> ItemStack {
-    if desc.id.0 == 0 || desc.stack_size == 0 {
-        ItemStack::EMPTY.clone()
-    } else {
-        pumpkin_data::item::JavaToBedrockItemMapping::from_bedrock(
-            desc.id.0 as i16,
-            desc.aux_value.0,
-        )
-        .map_or_else(
-            || {
-                tracing::warn!(
-                    "Failed to map bedrock item id {} and data {} to Java item",
-                    desc.id.0,
-                    desc.aux_value.0
-                );
-                ItemStack::EMPTY.clone()
-            },
-            |mapping| ItemStack::new(desc.stack_size as u8, mapping.java_item),
-        )
-    }
-}
 
 /// The offhand is slot 1 of Bedrock's hand container (`HandSlot::Offhand`) in item stack requests
 pub(crate) const OFF_HAND_BEDROCK_SLOT: u32 = 1;
@@ -232,16 +207,16 @@ pub mod emote_list;
 pub mod interaction;
 pub mod inventory_action;
 pub mod item_stack_request;
-pub mod pick_item;
-mod player_inventory;
-pub(super) use item_stack_request::record_update;
+mod legacy_inventory;
 pub mod mob_equipment;
 pub mod modal_form_response;
 pub mod network_stack_latency;
+pub mod pick_item;
 pub mod player_action;
 pub mod player_auth_input;
 pub mod player_block_action;
 pub mod player_hotbar;
+mod player_inventory;
 pub mod request_ability;
 pub mod request_chunk_radius;
 pub mod respawn;

@@ -49,6 +49,17 @@ slot bounds, standalone consumption and Creative-only destruction. Positive
 cases cover same-slot transfers, cursor splits, storage swaps and world drops.
 A Spectator client must fail to move a stack.
 
+`--legacy-inventory` also uses console-seeded Survival inventory. A slot query
+must return the requested values without dropping items. Forged normal/mismatch
+journals, invalid query bounds, unowned hands and unmatched drops must preserve
+all slots. Predicted journals in standalone and input-carried item use cannot
+grant or spawn items. A valid legacy drop removes one server-owned item. Survival
+placement with a predicted inventory decrement must place a diamond block and
+consume exactly one item on both paths, checked against Dragonfly's block registry.
+
+`--legacy-events` requires the native fixture and checks that legacy drops and
+implicit hotbar selection honor the existing Rust cancellation callbacks.
+
 `--inventory-events` uses the native fixture to veto ordinary interaction or
 item dropping and mutate a destination during a callback. It checks the whole
 request is rejected while preserving callback-made changes. The Java check
@@ -115,8 +126,10 @@ This copies the world and test resource fixtures into a temporary directory. It
 checks both archive transfers, a delayed and fragmented Java pack acknowledgement,
 one configuration exchange, Java play entry, and the four native building paths.
 It changes the source after startup to check that active transfers use the same
-frozen snapshot. The copied test world disables spawn protection and removes mobs
-before the building probe. No original world is changed. This is protocol testing;
+frozen snapshot. The copied test world disables natural spawning and mob loot
+before joining, so entity cleanup cannot leave unrelated drops in later checks.
+It disables spawn protection and removes mobs before the building probe. No
+original world is changed. This is protocol testing;
 it does not check rendering or audio playback.
 
 With the Rust fixture installed, `./probe http://127.0.0.1:19132 --forms-check`

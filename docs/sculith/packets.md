@@ -90,8 +90,33 @@ including creative-output drops, fire `PlayerDropItemEvent` before the commit.
 Callbacks can read the screen and inventory without retaining their locks;
 cancellation leaves the plan unapplied and callback changes are retained.
 Actual inventory, cursor and equipment follow both successful and rejected
-requests. Recipe/container operations and legacy inventory transactions remain
-separate paths; these checks do not establish general transaction atomicity.
+requests. Recipe/container operations remain separate paths; these checks do
+not establish general transaction atomicity.
+
+## Legacy inventory transactions
+
+Legacy slot groups request synchronization. The server returns the actual slots
+without moving or dropping their contents. Queries allow two groups with two
+slots each. Invalid containers or indices reject the transaction and resynchronize
+the owner.
+
+Normal transactions accept a verified main-inventory/world drop pair. The old
+stack, remaining stack and dropped type/count must agree with the server's
+snapshot. The existing inventory plan runs interaction and drop callbacks before
+applying changes; only a copy of the server stack enters the world.
+
+Item-use, entity-use and release journals describe client predictions and are
+never applied as inventory writes. The declared hotbar and held type, aux value
+and count are checked against the server; client NBT and runtime state do not
+replace server data. Selection changes honor `PlayerItemHeldEvent` and recheck
+the stack, world and game mode after callbacks. Nearby rejected block predictions
+are corrected from the world, while air use does not read the supplied block
+position.
+
+Offhand air use and release are supported. Offhand block/entity transactions and
+the legacy item-use break subtype are rejected; native breaking continues through
+`PlayerAction` and input-carried block actions. Modern stack network-ID prediction
+journals and specialized container transactions remain separate work.
 
 ## Entity tracking callbacks
 

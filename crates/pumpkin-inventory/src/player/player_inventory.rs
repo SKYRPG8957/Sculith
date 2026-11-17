@@ -48,7 +48,7 @@ impl PlayerInventory {
     /// Size of the main inventory (36 slots: 27 storage + 9 hotbar).
     pub const MAIN_SIZE: usize = 36;
     /// Size of the hotbar (9 slots).
-    const HOTBAR_SIZE: usize = 9;
+    pub const HOTBAR_SIZE: usize = 9;
     /// Slot index for the off-hand (40).
     pub const OFF_HAND_SLOT: usize = 40;
 

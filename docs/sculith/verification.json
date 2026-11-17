@@ -463,9 +463,61 @@
       "core": "fee37a2df4afda296dad82bb64ebd8b5dc3b4f444a3fad8a318ba88419557938"
     },
     "limits": [
-      "Specialized recipe/container operations, legacy inventory transactions and full click/drag event parity remain separate work",
+      "Specialized recipe/container operations and full click/drag parity remain separate work; legacy_inventory_transactions adds legacy query/drop/use validation",
       "Wire stack-network-ID prediction journaling and general transaction atomicity remain incomplete",
       "No Windows GDK, official inventory-policy parity or load/performance claim; this path takes transient slot snapshots and sends owner corrections"
+    ]
+  },
+  "legacy_inventory_transactions": {
+    "baseline": "450d80ed9b2715c699e5b7ddd934b61404037494",
+    "server_sha256": "76ec6aa8d6c6c7324903acfd0e85a8d20deaf1ec5721d5b680d5cf84d0ac4f05",
+    "native_fixture_sha256": "9f0be888f9ecc9ed1596a01777f6dccec7afced45391544caf7ab60e334111fe",
+    "build": "Linux debug, default features; Rust 1.100.0",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "api": "Existing readonly HOTBAR_SIZE constant made public; no struct, vtable or WIT changes",
+    "reference": "Dragonfly 0f9a3a573626 handler_inventory_transaction.go and gophertunnel e2251a60f71d legacy slot/query and item-use definitions",
+    "before": "A Survival client asks to synchronize inventory slot0 with legacy request -2. The baseline instead drops its 64-item stack into the world; the regression observes an unexpected item actor",
+    "queries": "At most two groups with two valid player slots each; return actual slot values in the legacy response and owner corrections without moving or dropping inventory",
+    "normal_transactions": "Accept only a verified main-inventory/world drop pair or a synchronization/no-op. Validate old stack, remaining stack and dropped type/aux/count against the prepared server snapshot; use a copy of that server stack through the shared cancellable plan",
+    "item_use": "Predicted slot and world journals never become inventory writes. Validate hotbar, actual held type/aux/count, supported hand/action and block reach; selection changes honor PlayerItemHeldEvent and recheck stack identity/value, world and game mode after callbacks. Client metadata never replaces server properties",
+    "prediction": "Correct nearby rejected block predictions from actual world data. Air interactions do not look up the supplied block position; owner inventory/cursor/equipment corrections follow transaction processing",
+    "wire_checks": [
+      "Inventory, armor and offhand slot queries return actual requested counts; invalid indices and excessive query sizes reject without changes",
+      "Forged normal/mismatch grants, world-only drops and unmatched drop counts/types preserve all 36 inventory slots and cursor",
+      "Standalone and input-carried uses reject unowned hands and ignore predicted grant/world-drop journals while preserving actual stacks",
+      "A valid legacy drop debits one server item; drop and implicit held-slot vetoes run through Rust callbacks and preserve inventory",
+      "Survival standalone and input-carried block placements include predicted decrements but consume exactly one item; committed diamond blocks are independently decoded through Dragonfly block states"
+    ],
+    "regressions": "Full Java/Bedrock matrix with native and stable Wasm fixtures: resources, sounds, forms, dialog replies, four existing building paths, picks, held/creative/ordinary/legacy inventory events, tracking, packet edits, connections, shared models and normal restart",
+    "harness_isolation": "One full attempt saw unrelated mob loot during a creative cancellation check. Read-only saved Anvil/LZ4 entity inspection found 12 leather/feather/chicken/porkchop items aged 260/261 ticks after cleanup killed 14 entities, and no diamond item entities. Natural spawning and mob drops are now disabled and acknowledged before joining the scratch server; cancellation assertions remain active",
+    "tests": {
+      "clippy": "Inventory, core, binary and native fixture; experimental v0.2; all targets; warnings denied",
+      "go": "build and vet; independent protocol clients",
+      "format": "Rust fmt, gofmt, Python compilation and diff checks",
+      "server": 803,
+      "inventory": 46
+    },
+    "log_sha256": {
+      "before": "c5504d4208c740bfd7c5301420c8c4cdd50fb25294d611f7ad69645eb7679646",
+      "before_events": "9aed679406c1eef2ac81a4082c8780dae82b5875fdb442d6b83e36881fe81c8a",
+      "focused": "3db2ebe26aaf470397d2e954303c08a2efe76e8e055ea407f129a1ec87bf2bb8",
+      "expanded": "0dd096eaabba8b9124e5cfccb8bd35105efc284f2432731342a153ff84db93be",
+      "full_interrupted": "05f0421a4ccd955851a20ecd7518fbb4e10602f8cfcfb81737551e480b2b2e6f",
+      "full_foreign_item": "9426c39b5a91549964a2e9019140f0552f42e10d39b84550d485b9ce2466e7c4",
+      "foreign_item_readback": "44af43bd707ddc61c4b8d43a2ef7b46569fe0c7863b9bf973c42e175318df661",
+      "full": "5e6c5f9f9b99d985d5966ac815aaf6ccb1007176388db131aecc606fb5ecdbd6",
+      "full_events": "51009244208199b79f197ef24bf327f6fa7e6af700182c76ae232fcd6072530a",
+      "full_restart_events": "aec2ea761ee20b7d65c188392b4ec94772cf9b6eff0e89434cc712900c193412",
+      "clippy": "dd70b914d0f9225f4c225a57915058af1ef41ff4a67eb9c5adee72942507829b",
+      "build": "fbbbd3a1273ae5fe8ca2569e8e5924145a8d2739543e377e4eeb3b30acb88c11",
+      "core_and_inventory": "ec90a417adb61da0a1b04df6673a9efab0ed28e464d174e91b44bba3aa9ca4c9"
+    },
+    "limits": [
+      "Normal legacy inventory moves other than the verified drop are rejected; modern moves use ItemStackRequest",
+      "Offhand block/entity use and the legacy UseItem break subtype are rejected; native mining uses PlayerAction or input-carried block actions",
+      "General specialized-container atomicity, modern stack-network-ID prediction journals and complete item-component conversion remain incomplete",
+      "No Windows GDK, official inventory-policy parity or performance/load-test claim"
     ]
   }
 }

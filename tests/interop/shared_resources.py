@@ -359,6 +359,8 @@ def main():
     parser.add_argument("--creative-events", action="store_true", help="check creative veto, correction and callback inventory changes on both editions")
     parser.add_argument("--inventory-requests", action="store_true", help="check ordinary native requests, bounds and atomic rejection")
     parser.add_argument("--inventory-events", action="store_true", help="check native inventory/drop callbacks and Java inventory cancellation")
+    parser.add_argument("--legacy-inventory", action="store_true", help="check legacy slot queries, journals, held items and verified drops")
+    parser.add_argument("--legacy-events", action="store_true", help="check legacy drop and held-slot cancellation through Rust callbacks")
     parser.add_argument("--tracking-events", action="store_true", help="remove a tracked mob from its outgoing spawn callback")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
@@ -367,7 +369,7 @@ def main():
     parser.add_argument("--packet-edits", action="store_true", help="exercise outgoing packet edits and cancellation through Rust callbacks")
     parser.add_argument("--connections-plugin", type=Path, help="compiled native tests/interop/connections fixture")
     args = parser.parse_args()
-    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events) and not args.connections_plugin:
+    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events) and not args.connections_plugin:
         parser.error("event checks require --connections-plugin")
     if (args.dialog_replies or args.forms or args.models or args.packet_edits) and not args.plugin:
         parser.error("--dialog-replies, --forms, --models and --packet-edits require the Rust --plugin fixture")
@@ -407,7 +409,7 @@ def main():
         ("networking.bedrock.nethernet", "address"): json.dumps(f"127.0.0.1:{bedrock}"),
         ("world.chunk", "type"): '"anvil"',
     }
-    if args.building:
+    if args.building or args.legacy_inventory:
         changes[("", "spawn_protection")] = "0"
     for edition in ["java", "bedrock"]:
         for key in ["view_distance", "simulation_distance"]:
@@ -428,6 +430,14 @@ def main():
             assert server.poll() is None, (root / "server.log").read_text()
             assert time.monotonic() < deadline, "server startup timed out"
             time.sleep(.1)
+        for rule in ["spawn_mobs", "spawn_monsters", "mob_drops"]:
+            server.stdin.write(f"gamerule {rule} false\n")
+        server.stdin.flush()
+        deadline = time.monotonic() + 5
+        while not any("mob_drops" in row and "false" in row and "set" in row
+                      for row in (root / "server.log").read_text().splitlines()):
+            assert server.poll() is None and time.monotonic() < deadline, "scratch mob-drop rule was not applied"
+            time.sleep(.05)
         original = {str(p.relative_to(root / "source")): p.read_bytes() for p in (root / "source").rglob("*") if p.is_file()}
         # Both edition archives must remain frozen if the source changes mid-session.
         (root / "source/manifest.json").write_text("not a valid replacement pack")
@@ -493,10 +503,8 @@ def main():
             assert "pack.mcmeta" in archive.namelist()
             assert archive.read("assets/sculith/sounds/demo_tone.ogg") == original["sounds/sculith_demo.ogg"]
             assert "assets/sculith/models/sculith/demo_statue.json" in archive.namelist()
-        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events:
-            for command in ["gamerule spawn_mobs false", "gamerule spawn_monsters false",
-                            "kill @e[type=!minecraft:player]"]:
-                server.stdin.write(command + "\n")
+        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events:
+            server.stdin.write("kill @e[type=!minecraft:player]\n")
             server.stdin.flush()
             time.sleep(.5)
         if args.building:
@@ -534,6 +542,9 @@ def main():
         if args.inventory_events:
             from inventory_requests import events
             report["inventory_events"] = events(server, java, bedrock, root, args.bedrock_probe.resolve())
+        if args.legacy_inventory or args.legacy_events:
+            from inventory_requests import legacy
+            report["legacy_inventory"] = legacy(server, bedrock, root, args.bedrock_probe.resolve(), args.legacy_inventory, args.legacy_events)
         if args.tracking_events:
             for option, name in [("--tracking-events", "TrackerNative"), ("--tracking-data-events", "TrackerDataNative")]:
                 if name == "TrackerDataNative":

@@ -36,6 +36,7 @@ func run() error {
 		for option, name := range map[string]string{
 			"--inventory-requests": "InvSurvival", "--inventory-creative": "InvCreative", "--inventory-spectator": "InvSpectator",
 			"--inventory-events": "InvDenyNative", "--inventory-mutate": "InvMutNative", "--inventory-drop-event": "DropDenyNative",
+			"--legacy-inventory": "LegacyTxnNative", "--legacy-drop-veto": "LegacyDropDeny", "--legacy-held-veto": "LegacyHeldNative",
 		} {
 			if os.Args[2] == option {
 				d.IdentityData.DisplayName = name
@@ -111,6 +112,9 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && (os.Args[2] == "--legacy-inventory" || os.Args[2] == "--legacy-drop-veto" || os.Args[2] == "--legacy-held-veto") {
+		return checkLegacyInventory(c, os.Args[2] == "--legacy-drop-veto", os.Args[2] == "--legacy-held-veto")
+	}
 	if len(os.Args) == 3 && (os.Args[2] == "--inventory-events" || os.Args[2] == "--inventory-mutate" || os.Args[2] == "--inventory-drop-event") {
 		if g.PlayerGameMode != packet.GameTypeSurvival {
 			return fmt.Errorf("inventory event test must join in Survival, got %d", g.PlayerGameMode)

@@ -119,6 +119,7 @@ impl EventHandler<InventoryInteractEvent> for Observer {
             if !name.starts_with("InvDeny")
                 && !name.starts_with("InvMut")
                 && name != "DropDenyNative"
+                && name != "LegacyDropDeny"
             {
                 return;
             }
@@ -153,7 +154,8 @@ impl EventHandler<PlayerDropItemEvent> for Observer {
         event: &'a mut PlayerDropItemEvent,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            if event.player.gameprofile.name != "DropDenyNative" {
+            let name = &event.player.gameprofile.name;
+            if name != "DropDenyNative" && name != "LegacyDropDeny" {
                 return;
             }
             let count = event.player.inventory.get_slot(0).item_count;
@@ -167,7 +169,7 @@ impl EventHandler<PlayerDropItemEvent> for Observer {
                 .item_count;
             event.cancelled = true;
             if let Some(context) = self.0.upgrade() {
-                context.log(format!("PROBE_INVENTORY_DROP before={count} screen_before={screen} count={} cancelled=true", event.count));
+                context.log(format!("PROBE_INVENTORY_DROP before={count} screen_before={screen} count={} cancelled=true player={name}", event.count));
             }
         })
     }
@@ -298,7 +300,11 @@ impl EventHandler<PlayerItemHeldEvent> for Observer {
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let name = &event.player.gameprofile.name;
-            if !name.starts_with("Hold") && !name.starts_with("Mutate") {
+            if !name.starts_with("Hold")
+                && !name.starts_with("Mutate")
+                && name != "LegacyHeldNative"
+                && name != "LegacyTxnNative"
+            {
                 return;
             }
             let inventory = &event.player.inventory;
@@ -308,7 +314,9 @@ impl EventHandler<PlayerItemHeldEvent> for Observer {
                 name.starts_with("Mutate") && event.previous_slot == 5 && event.new_slot == 0;
             if mutate {
                 inventory.set_slot(0, ItemStack::new(7, &Item::DIAMOND_BLOCK));
-            } else if name.starts_with("Hold") && event.previous_slot == 5 && event.new_slot <= 1 {
+            } else if (name.starts_with("Hold") && event.previous_slot == 5 && event.new_slot <= 1)
+                || name == "LegacyHeldNative"
+            {
                 event.cancelled = true;
             }
             if let Some(context) = self.0.upgrade() {

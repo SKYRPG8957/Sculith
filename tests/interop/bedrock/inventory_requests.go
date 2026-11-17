@@ -15,10 +15,16 @@ type inventoryProbe struct {
 	expected [36]int32
 	id       int32
 	cursorID int32
+	reply    protocol.ItemStackResponse
+	blocks   map[protocol.BlockPos]uint32
 }
 
 func (p *inventoryProbe) observe(pk packet.Packet) {
 	switch v := pk.(type) {
+	case *packet.UpdateBlock:
+		if p.blocks != nil {
+			p.blocks[v.Position] = v.NewBlockRuntimeID
+		}
 	case *packet.InventoryContent:
 		if v.WindowID == 0 && len(v.Content) == len(p.items) {
 			copy(p.items[:], v.Content)
@@ -71,6 +77,10 @@ func (p *inventoryProbe) run(actions []protocol.StackRequestAction, accepted boo
 	if err := p.c.Flush(); err != nil {
 		return err
 	}
+	return p.response(accepted, counts, cursorCount, drop)
+}
+
+func (p *inventoryProbe) response(accepted bool, counts map[int]uint16, cursorCount uint16, drop bool) error {
 	p.c.SetReadDeadline(time.Now().Add(6 * time.Second))
 	responded, main, cursor, dropped := false, false, false, !drop
 	for n := 0; n < 8192 && !(responded && main && cursor && dropped); n++ {
@@ -87,6 +97,7 @@ func (p *inventoryProbe) run(actions []protocol.StackRequestAction, accepted boo
 						return fmt.Errorf("request %d status=%d accepted=%t", p.id, response.Status, accepted)
 					}
 					responded = true
+					p.reply = response
 				}
 			}
 		case *packet.InventoryContent:
@@ -108,7 +119,7 @@ func (p *inventoryProbe) run(actions []protocol.StackRequestAction, accepted boo
 			}
 		case *packet.AddItemActor:
 			if !drop {
-				return fmt.Errorf("rejected request %d spawned a drop", p.id)
+				return fmt.Errorf("request %d spawned an unexpected drop", p.id)
 			}
 			dropped = v.Item.Stack.Count == 1 && v.Item.Stack.NetworkID == p.expected[3]
 		}
