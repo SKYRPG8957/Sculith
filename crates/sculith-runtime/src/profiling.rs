@@ -466,6 +466,14 @@ mod tests {
         );
         drop(window);
         assert_eq!(shared.snapshot(32, 0, false).completed_commands, 1000);
+        assert!(std::mem::size_of::<Option<Stamp>>() <= 64);
+        println!(
+            "profiling layout: stamp={} optional_stamp={} envelope={} shared={}",
+            std::mem::size_of::<Stamp>(),
+            std::mem::size_of::<Option<Stamp>>(),
+            std::mem::size_of::<crate::Envelope>(),
+            std::mem::size_of::<Shared>()
+        );
     }
     #[test]
     fn bounded_history_exact_component_quantiles_and_window_reset() {
