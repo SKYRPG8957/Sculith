@@ -641,7 +641,7 @@ impl BedrockClient {
         &self,
         packet_data: &Bytes,
         observe: bool,
-    ) -> Option<(Arc<Server>, PacketSentEvent, bool)> {
+    ) -> Option<(Arc<Server>, PacketSentEvent)> {
         let current_version = self.is_current_protocol();
         if current_version && !observe {
             return None;
@@ -658,14 +658,10 @@ impl BedrockClient {
         }
         let (packet_id, payload) = split_raw_packet(packet_data)?;
         let event = PacketSentEvent::new_raw(player.clone(), i32::from(packet_id), payload);
-        Some((server, event, current_version))
+        Some((server, event))
     }
 
-    fn finish_play_sent_event(
-        packet_data: Bytes,
-        event: &PacketSentEvent,
-        current_version: bool,
-    ) -> TranslatedPacket {
+    fn finish_play_sent_event(packet_data: Bytes, event: &PacketSentEvent) -> TranslatedPacket {
         let extras = event
             .extra_packets
             .iter()
@@ -674,7 +670,9 @@ impl BedrockClient {
         if event.cancelled {
             return (None, extras);
         }
-        if current_version {
+        if split_raw_packet(&packet_data).is_some_and(|(id, payload)| {
+            event.packet_id == i32::from(id) && event.payload == payload
+        }) {
             return (Some(packet_data), extras);
         }
         (frame_raw_packet(event.packet_id, &event.payload), extras)
@@ -684,7 +682,7 @@ impl BedrockClient {
         &self,
         packet_data: &Bytes,
     ) -> Option<(Arc<Server>, BedrockConnectionPacketSentEvent)> {
-        if self.is_current_protocol() || self.player.load().is_some() {
+        if self.player.load().is_some() {
             return None;
         }
         let server = self.server.upgrade()?;
@@ -718,11 +716,9 @@ impl BedrockClient {
     }
 
     fn translate_outgoing(&self, packet_data: Bytes, observe: bool) -> TranslatedPacket {
-        if let Some((server, mut event, current_version)) =
-            self.prepare_play_sent_event(&packet_data, observe)
-        {
+        if let Some((server, mut event)) = self.prepare_play_sent_event(&packet_data, observe) {
             server.plugin_manager.fire_blocking(&server, &mut event);
-            return Self::finish_play_sent_event(packet_data, &event, current_version);
+            return Self::finish_play_sent_event(packet_data, &event);
         }
         if let Some((server, mut event)) = self.prepare_connection_sent_event(&packet_data) {
             server.plugin_manager.fire_blocking(&server, &mut event);
@@ -736,11 +732,9 @@ impl BedrockClient {
         packet_data: Bytes,
         observe: bool,
     ) -> TranslatedPacket {
-        if let Some((server, mut event, current_version)) =
-            self.prepare_play_sent_event(&packet_data, observe)
-        {
+        if let Some((server, mut event)) = self.prepare_play_sent_event(&packet_data, observe) {
             server.plugin_manager.fire(&server, &mut event).await;
-            return Self::finish_play_sent_event(packet_data, &event, current_version);
+            return Self::finish_play_sent_event(packet_data, &event);
         }
         if let Some((server, mut event)) = self.prepare_connection_sent_event(&packet_data) {
             server.plugin_manager.fire(&server, &mut event).await;
@@ -1027,10 +1021,9 @@ impl BedrockClient {
         server: &Arc<Server>,
         packet: RawPacket,
     ) -> Option<RawPacket> {
-        if self.is_current_protocol()
-            || !server
-                .plugin_manager
-                .has_handlers::<BedrockConnectionPacketReceivedEvent>()
+        if !server
+            .plugin_manager
+            .has_handlers::<BedrockConnectionPacketReceivedEvent>()
         {
             return Some(packet);
         }
@@ -1053,21 +1046,6 @@ impl BedrockClient {
         server: &Arc<Server>,
     ) -> PacketHandlerResult {
         while let Some(packet) = self.get_packet().await {
-            if packet.id == SRequestNetworkSettings::PACKET_ID {
-                let payload = &mut Cursor::new(&packet.payload);
-                let packet = match SRequestNetworkSettings::read(payload) {
-                    Ok(p) => p,
-                    Err(err) => {
-                        error!("Failed to read SRequestNetworkSettings: {err}");
-                        continue;
-                    }
-                };
-                if !self.handle_request_network_settings(packet, server).await {
-                    return PacketHandlerResult::Stop;
-                }
-                continue;
-            }
-
             // Pre-1.19.30 clients send SLogin directly without SRequestNetworkSettings.
             if self.protocol_version.load(Ordering::Relaxed) == 0
                 && packet.id == SLogin::PACKET_ID
@@ -1088,6 +1066,18 @@ impl BedrockClient {
             };
             let payload = &mut Cursor::new(&packet.payload);
             match packet.id {
+                SRequestNetworkSettings::PACKET_ID => {
+                    let packet = match SRequestNetworkSettings::read(payload) {
+                        Ok(p) => p,
+                        Err(err) => {
+                            error!("Failed to read SRequestNetworkSettings: {err}");
+                            continue;
+                        }
+                    };
+                    if !self.handle_request_network_settings(packet, server).await {
+                        return PacketHandlerResult::Stop;
+                    }
+                }
                 SLogin::PACKET_ID => {
                     let packet = match SLogin::read(payload) {
                         Ok(p) => p,

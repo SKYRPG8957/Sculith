@@ -73,3 +73,9 @@ registration, spawn metadata, scale and position updates, removal and late
 watchers against Java, then restarts the copied world and checks persistence.
 The `--models-check` and `--model-snapshot` probe modes are driven by that harness;
 `--model-unavailable` checks that a missing mapping does not leak a fallback actor.
+
+`--packet-edits` checks ID and payload replacement, cancellation and an untouched
+sentinel from the stable Rust Wasm fixture. `--connections-plugin` installs the
+native connection fixture into the scratch server and checks the pre-player
+stages. See the [connection fixture](../connections/README.md) for its build and
+harness invocation.

@@ -1,0 +1,19 @@
+[package]
+name = "sculith-interop-connections"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+pumpkin-core.workspace = true
+pumpkin-protocol.workspace = true
+pumpkin-world.workspace = true
+
+[lints]
+workspace = true

@@ -356,9 +356,11 @@ def main():
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
     parser.add_argument("--forms", action="store_true", help="exercise shared forms and Rust response events on both editions")
     parser.add_argument("--models", action="store_true", help="exercise shared model lifecycle, late joins and saved state")
+    parser.add_argument("--packet-edits", action="store_true", help="exercise outgoing packet edits and cancellation through Rust callbacks")
+    parser.add_argument("--connections-plugin", type=Path, help="compiled native tests/interop/connections fixture")
     args = parser.parse_args()
-    if (args.dialog_replies or args.forms or args.models) and not args.plugin:
-        parser.error("--dialog-replies, --forms and --models require the Rust --plugin fixture")
+    if (args.dialog_replies or args.forms or args.models or args.packet_edits) and not args.plugin:
+        parser.error("--dialog-replies, --forms, --models and --packet-edits require the Rust --plugin fixture")
     root = Path(tempfile.mkdtemp(prefix="sculith-shared-resources-"))
     print("EVIDENCE", root, flush=True)
     server_path = args.server.resolve()
@@ -375,9 +377,12 @@ def main():
         entity_file.write_text(json.dumps(entity))
     (root / "source/credits.bin").write_bytes(bytes(range(256)) * 9000)
     shutil.copytree(args.world, root / "world")
-    if args.plugin:
+    if args.plugin or args.connections_plugin:
         (root / "plugins").mkdir()
+    if args.plugin:
         shutil.copy2(args.plugin, root / "plugins/resource-probe.wasm")
+    if args.connections_plugin:
+        shutil.copy2(args.connections_plugin, root / "plugins" / args.connections_plugin.name)
     env = dict(os.environ, RUST_LOG=os.environ.get("SCULITH_INTEROP_LOG", "info"), NO_COLOR="1")
     subprocess.run([str(server_path), "--init-settings"], cwd=root, env=env, check=True, capture_output=True)
     java, bedrock = free_port(), free_port()
@@ -402,6 +407,8 @@ def main():
         config.write('[resource_pack.shared]\nsource="source"\nmapping="mapping.json"\nrequired=true\n')
         if args.plugin:
             config.write('[plugins.overrides.sculith-wasm-audio-probe]\nallow_unsigned=true\n')
+        if args.connections_plugin:
+            config.write('[plugins.overrides.sculith-interop-connections]\nallow_unsigned=true\n')
     log = (root / "server.log").open("w")
     server = subprocess.Popen([str(server_path)], cwd=root, env=env, stdin=subprocess.PIPE, stdout=log, stderr=log, text=True)
     client = None
@@ -487,6 +494,12 @@ def main():
             (root / "building.log").write_text(result.stdout + result.stderr)
             assert result.returncode == 0, result.stdout + result.stderr
             report["native_building_paths"] = 4
+        if args.packet_edits:
+            from packet_probe import check
+            report["packet_edits"] = check(java, bedrock, root, args.bedrock_probe.resolve())
+        if args.connections_plugin:
+            from packet_probe import connections
+            report["connection_events"] = connections(java, bedrock, root, args.bedrock_probe.resolve())
         if args.models:
             from model_probe import lifecycle
             report["shared_models"] = lifecycle(java, bedrock, root, args.bedrock_probe.resolve())

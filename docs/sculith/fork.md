@@ -149,6 +149,15 @@ synchronous contract. The experimental v0.2 method is async.
 
 Arbitrary Bedrock UI conversion, animated models and Molang remain unfinished.
 
+Current-client packet callbacks now apply returned ID and payload changes instead
+of retaining an unconditionally read-only result. The stable Rust Wasm fixture
+verifies replacement, cancellation and an untouched sentinel on both editions.
+Bedrock's initial network-settings request and current-client login also reach
+the connection hooks. A native Rust fixture checks Java's pre-player stages,
+status cancellation plus an extra packet, and a synthetic Bedrock proposal
+rewrite before admission. Both checks fail on the earlier server. See the
+[packet event guide](packets.md) for API versions and remaining protocol limits.
+
 ## Remaining work
 
 Bedrock LevelDB world import/export is not implemented. Java Anvil support does

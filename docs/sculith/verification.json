@@ -48,7 +48,15 @@
     "model_clippy": "083ad635a920e346298216e025c21a6700c15e631b345a29af9b6af51e1114a0",
     "model_server_and_host_tests": "49152b224b46fb67e7f58c862243df3b356150cc07f5060358be1359343a7c42",
     "model_legacy_wasm_interop": "6ccd2e0a50f661e3fafeebd2d7f68c73b142fe810bd87fa06f820efe6f7e4327",
-    "model_legacy_wasm_events": "9dfd00f5ed50937b681b470070c13b1eb04a5c8311c8634da684af5138f99654"
+    "model_legacy_wasm_events": "9dfd00f5ed50937b681b470070c13b1eb04a5c8311c8634da684af5138f99654",
+    "packet_edits_before": "7af83ebf5ff5731802e3aa89745e2e4b99ffa5f0f9e0fa8f661c06c9dc0659d4",
+    "connection_events_before": "528072547ce494831aef78b9171d4b39d47cf0c1be670feb422822e122772743",
+    "packet_hooks_full_interop": "805f0822b9fcfcec913d81f4a57f93c78ca8eca54e6305ffd68a2b79195e49c0",
+    "packet_hooks_full_events": "711f92dc93f00327c1b309b30fb813472f4187af7d585465e45ff850702f5d33",
+    "packet_hooks_final_interop": "89e99fa5cde2070a70206346edd33738deea779b815521815a4ad449f742b09b",
+    "packet_hooks_final_events": "3c0d9592e2a2824402358bba940b1cfa7f429bbe1e1edd98fe367265a6c072f8",
+    "packet_hooks_server_tests": "fe2e696fc72683cb78e89e30adc1c1f2d1a535496634719f66aaf3e5a3519bd6",
+    "packet_hooks_clippy": "ac2d341882dd459eaff9791b9b17dee401ebdf234c4cf3ac67a025f4dd9ff836"
   },
   "limitations": [
     "Flat-map marker test only",
@@ -139,6 +147,34 @@
       "Uniform scale greater than zero and at most 16",
       "No dimension transfer or runtime rotation",
       "No animation or Molang conversion"
+    ]
+  },
+  "packet_hooks": {
+    "server_sha256": "7be30ee3ae0d5340093544fdde14a745cd0f1e228082addeb372d02e995fe74b",
+    "native_fixture_sha256": "ea0856670e94791d97448dd6b8d92bd4b9bf20ea543ba4de15e20fc8c0c6c5e5",
+    "wasm_fixture_sha256": "55ae587b17c9bd182104c3dba1d51e59c6b571645df8b4d655baa7e73c0ceeb3",
+    "native_plugin_abi": 9,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "current_client_edits": "Java 26.3 TCP and Bedrock protocol2225 NetherNet: ID/body replacement, body-only replacement, cancellation and unchanged sentinel in exact order",
+    "java_connection_events": [
+      "handshake",
+      "status",
+      "login",
+      "configuration"
+    ],
+    "java_status_replacement": "Original reply cancelled and delivered through extra_packets; status JSON and ping response verified",
+    "bedrock_connection_events": "Initial network-settings and login received; current network-settings reply observed; synthetic proposal2224 rewritten to2225 before admission using the current schema",
+    "before_regressions": [
+      "Old outgoing observer sent the original sound instead of the returned packet",
+      "Old initial Bedrock negotiation bypassed connection hooks and rejected the synthetic proposal"
+    ],
+    "other_paths": "Full resources/forms/models/dialog-replies/building matrix and normal model restart passed with native and Wasm fixtures loaded together",
+    "server_tests": 803,
+    "limits": [
+      "Not an older-client compatibility test",
+      "No Windows GDK rendering or online-authentication claim",
+      "Typed packet views and Bedrock gameplay decoders remain partial",
+      "Connection-event component variants require experimental Wasm v0.2; native Rust works in default builds"
     ]
   }
 }

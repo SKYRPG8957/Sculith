@@ -12,6 +12,7 @@ use pumpkin_plugin_api::{Context, Plugin, PluginMetadata, Result, Server, regist
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::{collections::BTreeMap, sync::Mutex};
 mod models;
+mod packets;
 struct AudioProbe;
 struct Joined;
 struct Received(AtomicU32);
@@ -126,6 +127,9 @@ impl EventHandler<PlayerJoinEvent> for Joined {
     ) -> EventData<PlayerJoinEvent> {
         let name = event.player.get_name();
         tracing::info!(player=%name, "PROBE_JOIN");
+        if packets::on_join(&event.player) {
+            return event;
+        }
         event.player.play_custom_sound_at(
             (-1.25, -60.5, 3.875),
             "sculith:demo_tone",
@@ -169,11 +173,12 @@ impl EventHandler<PacketSentEvent> for Sent {
     fn handle(
         &self,
         _server: Server,
-        event: EventData<PacketSentEvent>,
+        mut event: EventData<PacketSentEvent>,
     ) -> EventData<PacketSentEvent> {
         if [86, 87, 119, 121].contains(&event.packet_id) {
             tracing::info!(player=%event.player.get_name(),id=event.packet_id,bytes=event.raw_payload.len(),"PROBE_SENT");
         }
+        packets::sent(&mut event);
         event
     }
 }

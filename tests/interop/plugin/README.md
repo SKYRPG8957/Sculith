@@ -12,7 +12,7 @@ cargo build --locked --release --target wasm32-wasip2 \
   --manifest-path tests/interop/plugin/Cargo.toml
 python3 tests/interop/shared_resources.py /path/to/sculith /path/to/bedrock-probe \
   --world /path/to/stopped-flat-world --delayed --building \
-  --dialog-replies --forms --models \
+  --dialog-replies --forms --models --packet-edits \
   --plugin tests/interop/plugin/target/wasm32-wasip2/release/sculith_wasm_audio_probe.wasm
 ```
 
@@ -40,3 +40,9 @@ creates, scales, moves and removes a model while packet observers stay active.
 The harness uses different native and Java model names, validates the native
 actor registry, and checks the retained UUID and transformation after a normal
 stop and restart. These fixture actions are not engine commands.
+
+`--packet-edits` sends a sound and named stops from a join callback, then changes
+the outgoing packet ID and payload, cancels a marked stop, and leaves a final
+sentinel untouched. Independent Java and Bedrock decoders check the exact result
+and order. The previous current-client observer path fails this check because
+it discards returned edits.

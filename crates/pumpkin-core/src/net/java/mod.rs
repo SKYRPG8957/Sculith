@@ -498,10 +498,8 @@ impl JavaClient {
     /// `CURRENT_MC_VERSION`: it gets the 26.3 id + payload and rewrites both.
     /// The packet is `None` when cancelled; the extra packets are sent either way.
     ///
-    /// For clients on `CURRENT_MC_VERSION` the event is fired as a read-only observation
-    /// (cancellable) for packets in the play state when `observe` is set, so packet-level
-    /// plugins (anti-cheats, protocol libraries) see every outbound packet. `observe` is
-    /// `false` for packets a plugin injected itself, to avoid echoing them back.
+    /// Current-version play packets use the same mutation and cancellation contract.
+    /// `observe` is false for packets a plugin injected itself, to avoid echoing them back.
     fn translate_outgoing(&self, packet_data: Bytes, observe: bool) -> (Option<Bytes>, Vec<Bytes>) {
         let current_version = self.version.load() == CURRENT_MC_VERSION;
         if current_version
@@ -525,7 +523,7 @@ impl JavaClient {
             return (Some(packet_data), Vec::new());
         };
         let payload = packet_data.slice(packet_data.len() - reader.len()..);
-        let mut event = PacketSentEvent::new_raw(player.clone(), packet_id.0, payload);
+        let mut event = PacketSentEvent::new_raw(player.clone(), packet_id.0, payload.clone());
         server.plugin_manager.fire_blocking(&server, &mut event);
 
         let extras = event
@@ -536,7 +534,7 @@ impl JavaClient {
         if event.cancelled {
             return (None, extras);
         }
-        if current_version {
+        if event.packet_id == packet_id.0 && event.payload == payload {
             return (Some(packet_data), extras);
         }
         (frame_packet(event.packet_id, &event.payload), extras)

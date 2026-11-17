@@ -29,6 +29,7 @@ prototype plugins need to be ported.
 
 Shared resources and their Rust plugin APIs are opt-in. See the
 [resource guide](docs/sculith/resources.md) for sounds, forms and static models.
+Protocol plugins can use the [packet events](docs/sculith/packets.md).
 
 ## Worlds
 

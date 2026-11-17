@@ -59,7 +59,7 @@ impl PacketSentEvent {
     }
 }
 
-/// A Java packet from a client below `CURRENT_MC_VERSION` before play, in the client's format.
+/// A Java packet before play, in the client's format, on any supported version.
 #[cancellable]
 #[derive(Event, Clone)]
 pub struct JavaConnectionPacketReceivedEvent {
@@ -89,7 +89,7 @@ impl JavaConnectionPacketReceivedEvent {
     }
 }
 
-/// A Java packet to a client below `CURRENT_MC_VERSION` before play, in the 26.3 format.
+/// A Java packet before play, in the server's format, on any supported version.
 #[cancellable]
 #[derive(Event, Clone)]
 pub struct JavaConnectionPacketSentEvent {
@@ -121,7 +121,7 @@ impl JavaConnectionPacketSentEvent {
     }
 }
 
-/// A Bedrock packet from a client on a non-current protocol before play, in the client's format.
+/// A Bedrock login packet in the client's format, including network-settings negotiation.
 #[cancellable]
 #[derive(Event, Clone)]
 pub struct BedrockConnectionPacketReceivedEvent {
@@ -151,7 +151,7 @@ impl BedrockConnectionPacketReceivedEvent {
     }
 }
 
-/// A Bedrock packet to a client on a non-current protocol before play, in the current server format.
+/// A Bedrock packet without an attached player, in the server's format.
 #[cancellable]
 #[derive(Event, Clone)]
 pub struct BedrockConnectionPacketSentEvent {
