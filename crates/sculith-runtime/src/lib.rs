@@ -965,6 +965,7 @@ pub fn with_region_and_content(
         observations: observations.clone(),
     };
     let task = async move {
+        let mut counts = profiling::Counts::default();
         let mut leases: BTreeMap<u64, Weak<AtomicBool>> = BTreeMap::new();
         let result = loop {
             let dead: Vec<_> = leases
@@ -992,7 +993,7 @@ pub fn with_region_and_content(
                 }
                 command = requests.recv() => {
                     let mut timing=command.as_ref().map(|envelope:&Envelope|
-                        telemetry.processing(envelope.stamp,||envelope.command.operation(),requests.len()));
+                        telemetry.processing(&mut counts,envelope.stamp,||envelope.command.operation(),requests.len()));
                     let command=command.map(|envelope|envelope.command);
                     // Leases may have died while recv was suspended. Retire them
                     // before accepting a queued intent from a closed connection.

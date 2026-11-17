@@ -6,7 +6,7 @@ use std::{
     num::NonZeroU64,
     sync::{
         Mutex,
-        atomic::{AtomicU8, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -251,7 +251,8 @@ struct Lifetime {
 }
 pub(super) struct Shared {
     region_id: u64,
-    enabled: AtomicU8,
+    generation: AtomicU64,
+    deadline_ns: AtomicU64,
     lifetime: Lifetime,
     epoch: Instant,
     window: Mutex<Window>,
@@ -259,16 +260,18 @@ pub(super) struct Shared {
 fn ns(duration: Duration) -> u64 {
     duration.as_nanos().min(u128::from(u64::MAX)) as u64
 }
-fn increment(counter: &AtomicU64) {
-    let _ = counter.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-        Some(n.saturating_add(1))
-    });
+/// Owned exclusively by the game task; only its published view is atomic.
+#[derive(Default)]
+pub(super) struct Counts {
+    completed: u64,
+    aborted: u64,
 }
 impl Shared {
     pub fn new(region_id: u64) -> Self {
         Self {
             region_id,
-            enabled: AtomicU8::new(0),
+            generation: AtomicU64::new(0),
+            deadline_ns: AtomicU64::new(u64::MAX),
             lifetime: Lifetime {
                 completed: AtomicU64::new(0),
                 aborted: AtomicU64::new(0),
@@ -292,29 +295,48 @@ impl Shared {
             .checked_add(1)
             .ok_or_else(|| anyhow::anyhow!("world profile generations exhausted"))?;
         let origin = Instant::now();
+        let deadline = duration.map(|d| origin + d);
+        // Publication of a new nonzero generation makes its deadline visible.
+        // A producer racing reconfiguration may omit a timing stamp; the owner
+        // still executes the request and rejects stale-generation measurements.
+        self.generation.store(0, Ordering::Release);
         *window = Window::new(
             generation,
             mode,
             ns(origin.saturating_duration_since(self.epoch)),
-            duration.map(|d| origin + d),
+            deadline,
         );
-        self.enabled
-            .store(u8::from(mode != Mode::Off), Ordering::Release);
+        self.deadline_ns.store(
+            deadline.map_or(
+                u64::MAX,
+                |end| ns(end.saturating_duration_since(self.epoch)),
+            ),
+            Ordering::Relaxed,
+        );
+        self.generation.store(
+            if mode == Mode::Off { 0 } else { generation },
+            Ordering::Release,
+        );
         Ok(())
     }
+    fn expire_if(&self, generation: u64) {
+        // An old producer must never disable a newer capture.
+        let _ =
+            self.generation
+                .compare_exchange(generation, 0, Ordering::AcqRel, Ordering::Relaxed);
+    }
     pub fn begin(&self) -> Option<Stamp> {
-        if self.enabled.load(Ordering::Acquire) == 0 {
+        let generation = NonZeroU64::new(self.generation.load(Ordering::Acquire))?;
+        let now_ns = self.now_ns();
+        if now_ns >= self.deadline_ns.load(Ordering::Relaxed) {
+            self.expire_if(generation.get());
             return None;
         }
-        let window = self.window.lock().unwrap_or_else(|e| e.into_inner());
-        let now = Instant::now();
-        if !window.collecting(now) {
-            self.enabled.store(0, Ordering::Release);
+        if self.generation.load(Ordering::Acquire) != generation.get() {
             return None;
         }
-        let now_ns = ns(now.saturating_duration_since(self.epoch));
         Some(Stamp {
-            generation: NonZeroU64::new(window.generation).expect("enabled capture generation"),
+            generation,
             started_ns: now_ns,
             queued_ns: now_ns,
         })
@@ -326,14 +348,16 @@ impl Shared {
     pub fn queued(&self, stamp: &mut Stamp) {
         stamp.queued_ns = self.now_ns();
     }
-    pub fn processing(
-        &self,
+    pub fn processing<'a>(
+        &'a self,
+        counts: &'a mut Counts,
         stamp: Option<Stamp>,
         operation: impl FnOnce() -> Operation,
         depth: usize,
-    ) -> Work<'_> {
+    ) -> Work<'a> {
         Work {
             shared: self,
+            counts,
             timed: stamp.map(|stamp| (stamp, operation(), self.now_ns(), depth)),
             complete: false,
         }
@@ -395,6 +419,7 @@ impl Shared {
 }
 pub(super) struct Work<'a> {
     shared: &'a Shared,
+    counts: &'a mut Counts,
     timed: Option<(Stamp, Operation, u64, usize)>,
     complete: bool,
 }
@@ -402,31 +427,46 @@ impl Work<'_> {
     pub fn complete(&mut self) {
         self.complete = true;
     }
+    fn publish_counts(&self) {
+        self.shared
+            .lifetime
+            .completed
+            .store(self.counts.completed, Ordering::Relaxed);
+        if !self.complete {
+            self.shared
+                .lifetime
+                .aborted
+                .store(self.counts.aborted, Ordering::Relaxed);
+        }
+    }
 }
 impl Drop for Work<'_> {
     fn drop(&mut self) {
-        increment(&self.shared.lifetime.completed);
+        self.counts.completed = self.counts.completed.saturating_add(1);
         if !self.complete {
-            increment(&self.shared.lifetime.aborted);
+            self.counts.aborted = self.counts.aborted.saturating_add(1);
         }
-        let Some((stamp, operation, processing, depth)) = self.timed else {
-            return;
-        };
-        let end = self.shared.now_ns();
-        let mut window = self.shared.window.lock().unwrap_or_else(|e| e.into_inner());
-        // Reconfiguration discards old in-flight samples, never game work.
-        if window.generation != stamp.generation.get() || window.mode == Mode::Off {
-            return;
+        if let Some((stamp, operation, processing, depth)) = self.timed {
+            let end = self.shared.now_ns();
+            let mut window = self.shared.window.lock().unwrap_or_else(|e| e.into_inner());
+            // Reconfiguration discards measurements, never game work. Publishing
+            // completion under this lock makes a subsequent snapshot include the
+            // finished timing record before it observes that command as ended.
+            if window.generation == stamp.generation.get() && window.mode != Mode::Off {
+                let times = Times::between(stamp.started_ns, stamp.queued_ns, processing, end);
+                let start_ns = stamp.started_ns.saturating_sub(window.origin_ns);
+                window.record(Sample {
+                    operation,
+                    start_ns,
+                    times,
+                    remaining_queue_depth: depth,
+                    aborted: !self.complete,
+                });
+            }
+            self.publish_counts();
+        } else {
+            self.publish_counts();
         }
-        let times = Times::between(stamp.started_ns, stamp.queued_ns, processing, end);
-        let start_ns = stamp.started_ns.saturating_sub(window.origin_ns);
-        window.record(Sample {
-            operation,
-            start_ns,
-            times,
-            remaining_queue_depth: depth,
-            aborted: !self.complete,
-        });
     }
 }
 
@@ -480,7 +520,55 @@ mod tests {
         owner.await.unwrap().unwrap();
     }
     #[test]
+    fn single_owner_publication_saturates_without_atomic_read_modify_write() {
+        let shared = Shared::new(0);
+        let mut counts = Counts {
+            completed: u64::MAX - 1,
+            aborted: u64::MAX - 1,
+        };
+        for _ in 0..2 {
+            let _aborted =
+                shared.processing(&mut counts, None, || panic!("Off classified a request"), 0);
+        }
+        let snapshot = shared.snapshot(32, 0, false);
+        assert_eq!(
+            (snapshot.completed_commands, snapshot.aborted_commands),
+            (u64::MAX, u64::MAX)
+        );
+    }
+    #[test]
+    fn admission_never_waits_for_the_history_lock() {
+        let shared = std::sync::Arc::new(Shared::new(0));
+        shared.configure(Mode::Monitor, None).unwrap();
+        let lock = shared.window.lock().unwrap();
+        let producer = shared.clone();
+        let (sent, received) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || sent.send(producer.begin().is_some()).unwrap());
+        let stamped = received.recv_timeout(Duration::from_secs(1));
+        drop(lock);
+        assert!(stamped.unwrap());
+        thread.join().unwrap();
+    }
+    #[test]
+    fn late_expiry_cannot_disable_a_new_capture_or_monitor() {
+        let shared = Shared::new(0);
+        shared
+            .configure(Mode::Profile, Some(Duration::from_secs(1)))
+            .unwrap();
+        let old = shared.begin().unwrap().generation;
+        shared.configure(Mode::Monitor, None).unwrap();
+        shared.expire_if(old.get());
+        let monitor = shared.begin().unwrap().generation;
+        assert!(monitor > old);
+        shared
+            .configure(Mode::Profile, Some(Duration::from_secs(1)))
+            .unwrap();
+        shared.expire_if(monitor.get());
+        assert!(shared.begin().unwrap().generation > monitor);
+    }
+    #[test]
     fn compact_timestamps_preserve_phase_units_and_capture_generations() {
+        let mut counts = Counts::default();
         let times = Times::between(1_000, 1_025, 1_075, 1_100);
         assert_eq!(
             (
@@ -514,7 +602,7 @@ mod tests {
             .unwrap();
         assert!(shared.begin().unwrap().generation > old_generation);
         {
-            let mut work = shared.processing(Some(stamp), || Operation::Capture, 0);
+            let mut work = shared.processing(&mut counts, Some(stamp), || Operation::Capture, 0);
             work.complete();
         }
         assert_eq!(shared.snapshot(32, 0, false).totals.calls, 0);
@@ -527,7 +615,7 @@ mod tests {
             queued_ns: origin_ns,
         };
         {
-            let mut work = shared.processing(Some(sample), || Operation::Snapshot, 0);
+            let mut work = shared.processing(&mut counts, Some(sample), || Operation::Snapshot, 0);
             work.complete();
         }
         let snapshot = shared.snapshot(32, 0, false);
@@ -536,6 +624,7 @@ mod tests {
         assert_eq!(snapshot.samples[0].times.admission_ns, 0);
         // Exhaustion refuses reconfiguration without wrapping to an untimed niche.
         shared.window.lock().unwrap().generation = u64::MAX;
+        shared.generation.store(u64::MAX, Ordering::Release);
         assert!(
             shared
                 .configure(Mode::Profile, Some(Duration::from_secs(30)))
@@ -545,10 +634,12 @@ mod tests {
     }
     #[test]
     fn off_has_no_clock_token_or_history_and_does_not_classify_payloads() {
+        let mut counts = Counts::default();
         let shared = Shared::new(7);
         for _ in 0..1000 {
             assert!(shared.begin().is_none());
-            let mut work = shared.processing(None, || panic!("Off classified a request"), 0);
+            let mut work =
+                shared.processing(&mut counts, None, || panic!("Off classified a request"), 0);
             work.complete();
         }
         let window = shared.window.lock().unwrap();
@@ -560,7 +651,7 @@ mod tests {
         assert_eq!(shared.snapshot(32, 0, false).completed_commands, 1000);
         assert!(std::mem::size_of::<Option<Stamp>>() <= 24);
         assert_ne!(
-            std::mem::offset_of!(Shared, enabled) / 64,
+            std::mem::offset_of!(Shared, generation) / 64,
             std::mem::offset_of!(Shared, lifetime) / 64
         );
 
@@ -574,6 +665,7 @@ mod tests {
     }
     #[test]
     fn bounded_history_exact_component_quantiles_and_window_reset() {
+        let mut counts = Counts::default();
         let shared = Shared::new(0);
         shared.configure(Mode::Monitor, None).unwrap();
         {
@@ -606,7 +698,7 @@ mod tests {
         let old = shared.begin().unwrap();
         shared.configure(Mode::Off, None).unwrap();
         {
-            let mut work = shared.processing(Some(old), || Operation::Capture, 0);
+            let mut work = shared.processing(&mut counts, Some(old), || Operation::Capture, 0);
             work.complete();
         }
         assert_eq!(shared.snapshot(32, 0, false).totals.calls, 0);
@@ -618,6 +710,7 @@ mod tests {
     }
     #[test]
     fn expiry_stops_new_clock_tokens_and_unwind_is_distinct_from_rejection() {
+        let mut counts = Counts::default();
         let shared = Shared::new(0);
         for duration in [Duration::ZERO, Duration::from_secs(301)] {
             assert!(shared.configure(Mode::Profile, Some(duration)).is_err());
@@ -626,12 +719,13 @@ mod tests {
             .configure(Mode::Profile, Some(Duration::from_secs(1)))
             .unwrap();
         {
-            let _work = shared.processing(shared.begin(), || Operation::Capture, 0);
+            let _work = shared.processing(&mut counts, shared.begin(), || Operation::Capture, 0);
         }
         assert_eq!(shared.snapshot(32, 0, false).aborted_commands, 1);
         assert!(shared.snapshot(32, 0, false).samples[0].aborted);
         shared.window.lock().unwrap().deadline = Some(Instant::now() - Duration::from_secs(1));
+        shared.deadline_ns.store(0, Ordering::Relaxed);
         assert!(shared.begin().is_none());
-        assert_eq!(shared.enabled.load(Ordering::Acquire), 0);
+        assert_eq!(shared.generation.load(Ordering::Acquire), 0);
     }
 }
