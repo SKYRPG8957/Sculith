@@ -60,6 +60,21 @@ The creative repetition byte does not multiply the result: a creation supplies
 one stack at the item's normal limit. Other crafting requests retain their own
 repetition handling.
 
+Both editions use `InventoryCreativeEvent` before writing the inventory.
+Native creation requests first calculate player-slot, cursor and drop changes.
+Each changed player slot uses its Java player-screen index in the event;
+native cursor changes and outside-inventory drops use `-1`. If any event is
+cancelled, the request applies none of its planned changes or drops.
+
+Callbacks run without screen or inventory guards. Before applying changes, the
+server checks the affected stacks, screen, world and game mode again. Plugin
+changes are retained if a plan becomes stale. Inventory and cursor corrections
+follow rejected native requests; Java also sends the actual slot after a veto
+or callback mutation. Equipment notifications and world drops run after unlocking.
+Native creation supports the player's inventory, equipment and cursor. Recipe
+and container-specific operations continue through the ordinary request path;
+mixing those operations into a creative creation request is rejected.
+
 ## Entity tracking callbacks
 
 Tracking releases its entity-map and viewer-list locks before sending packets

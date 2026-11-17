@@ -52,6 +52,31 @@ func (r *creativeRegistry) observe(header packet.Header, payload []byte, _, _ ne
 	}
 }
 
+func (r *creativeRegistry) item(c *minecraft.Conn, name string) (protocol.CreativeItem, error) {
+	var runtime int32
+	found := false
+	for _, entry := range c.GameData().Items {
+		if entry.Name == name {
+			runtime = int32(entry.RuntimeID)
+			found = true
+			break
+		}
+	}
+	r.Lock()
+	defer r.Unlock()
+	if r.err != nil {
+		return protocol.CreativeItem{}, r.err
+	}
+	if found {
+		for _, entry := range r.items {
+			if entry.Item.NetworkID == runtime {
+				return entry, nil
+			}
+		}
+	}
+	return protocol.CreativeItem{}, fmt.Errorf("missing creative entry %s", name)
+}
+
 func checkCreativeInventory(c *minecraft.Conn, registry *creativeRegistry, creative bool) error {
 	wantMode := int32(0)
 	if creative {
@@ -60,28 +85,11 @@ func checkCreativeInventory(c *minecraft.Conn, registry *creativeRegistry, creat
 	if c.GameData().PlayerGameMode != wantMode {
 		return fmt.Errorf("creative test mode %d, expected %d", c.GameData().PlayerGameMode, wantMode)
 	}
-	var diamondRuntime int32
-	for _, entry := range c.GameData().Items {
-		if entry.Name == "minecraft:diamond_block" {
-			diamondRuntime = int32(entry.RuntimeID)
-		}
+	entry, err := registry.item(c, "minecraft:diamond_block")
+	if err != nil {
+		return err
 	}
-	registry.Lock()
-	registryErr := registry.err
-	var diamond uint32
-	for _, entry := range registry.items {
-		if entry.Item.NetworkID == diamondRuntime {
-			diamond = entry.CreativeItemNetworkID
-			break
-		}
-	}
-	registry.Unlock()
-	if registryErr != nil {
-		return registryErr
-	}
-	if diamond == 0 {
-		return fmt.Errorf("missing diamond block in creative catalogue")
-	}
+	diamondRuntime, diamond := entry.Item.NetworkID, entry.CreativeItemNetworkID
 	write := func(pk packet.Packet) error {
 		if err := c.WritePacket(pk); err != nil {
 			return err
@@ -91,24 +99,29 @@ func checkCreativeInventory(c *minecraft.Conn, registry *creativeRegistry, creat
 	var snapshot []protocol.ItemInstance
 	filled := 0
 	for n, test := range []struct {
-		id     uint32
-		crafts byte
-	}{{diamond, 0}, {diamond, 1}, {diamond, 255}, {0, 1}, {^uint32(0), 1}} {
+		id                  uint32
+		crafts, count, slot byte
+		allowed             bool
+	}{
+		{diamond, 0, 64, 0, true}, {diamond, 1, 64, 1, true}, {diamond, 255, 64, 2, true},
+		{diamond, 255, 255, 3, false}, {diamond, 1, 1, 1, false}, {diamond, 1, 64, 255, false},
+		{0, 1, 64, 3, false}, {^uint32(0), 1, 64, 3, false},
+	} {
 		requestID := -int32(n + 1)
 		take := &protocol.TakeStackRequestAction{}
-		take.Count = 64
+		take.Count = test.count
 		take.Source = protocol.StackRequestSlotInfo{
 			Container: protocol.FullContainerName{ContainerID: protocol.ContainerCreatedOutput},
 			Slot:      50, StackNetworkID: requestID,
 		}
 		take.Destination = protocol.StackRequestSlotInfo{
 			Container: protocol.FullContainerName{ContainerID: protocol.ContainerCombinedHotBarAndInventory},
-			Slot:      byte(n),
+			Slot:      test.slot,
 		}
 		actions := []protocol.StackRequestAction{
 			&protocol.CraftCreativeStackRequestAction{CreativeItemNetworkID: test.id, NumberOfCrafts: test.crafts}, take,
 		}
-		allowed := creative && test.id == diamond
+		allowed := creative && test.allowed
 		if creative && !allowed {
 			// A rejected creative action must not leave a preceding inventory move applied.
 			actions = append([]protocol.StackRequestAction{&protocol.SwapStackRequestAction{

@@ -40,3 +40,11 @@ The client checks the despawn and a subsequent latency reply; the fixture logs
 confirm that each removal finished. These cases catch entity-map and viewer-list
 locks retained across plugin packet events. The callbacks only affect
 `TrackerNative` and `TrackerDataNative`.
+
+`--creative-events` cancels creative changes on both editions and reads the
+player inventory and screen during each callback. The native request includes
+a slot swap before creation, with a later slot event cancelling the whole
+request. Cursor creation and world drops are also cancelled. `CreateMut*`
+clients alter the destination in the callback; that stack must survive instead
+of being overwritten. The Java client requires an explicit slot correction
+before its following ping response. Only `Create*` test clients are affected.

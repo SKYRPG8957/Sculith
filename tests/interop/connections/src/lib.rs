@@ -3,6 +3,7 @@
 use std::sync::{Arc, LazyLock, Weak, atomic::Ordering};
 
 use pumpkin_core::{
+    plugin::inventory::inventory_creative::InventoryCreativeEvent,
     plugin::player::item_held::PlayerItemHeldEvent,
     plugin::server::packet::{
         BedrockConnectionPacketReceivedEvent, BedrockConnectionPacketSentEvent,
@@ -83,9 +84,54 @@ impl Plugin for Connections {
                 EventPriority::Lowest,
                 true,
             );
-            context.register_event::<PacketReceivedEvent, _>(observer, EventPriority::Lowest, true);
+            context.register_event::<PacketReceivedEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
+            context.register_event::<InventoryCreativeEvent, _>(
+                observer,
+                EventPriority::Lowest,
+                true,
+            );
             context.log("PROBE_CONNECTIONS_LOADED");
             Ok(())
+        })
+    }
+}
+
+impl EventHandler<InventoryCreativeEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut InventoryCreativeEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = &event.player.gameprofile.name;
+            if !name.starts_with("Create") {
+                return;
+            }
+            let count = event.player.inventory.get_slot(0).item_count;
+            let screen_count = event
+                .player
+                .player_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_slot(36)
+                .get_cloned_stack()
+                .item_count;
+            let mutate = name.contains("Mut");
+            if mutate {
+                event
+                    .player
+                    .inventory
+                    .set_slot(0, ItemStack::new(7, &Item::GRASS_BLOCK));
+            }
+            event.cancelled = name.contains("Deny")
+                && (name.ends_with("Java") || event.slot == 44 || event.slot < 0);
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!("PROBE_CREATIVE player={name} slot={} item={} count={} before={count} screen_before={screen_count} cancelled={} mutated={mutate}",event.slot,event.item_id,event.item_count,event.cancelled));
+            }
         })
     }
 }

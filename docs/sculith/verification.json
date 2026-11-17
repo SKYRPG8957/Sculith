@@ -341,7 +341,7 @@
     },
     "limits": [
       "No Windows GDK verification",
-      "Creative slot plugin-event parity and general stack-request atomicity remain incomplete"
+      "Player-owned creative creation events are covered by creative_inventory_events; general stack-request atomicity remains incomplete"
     ]
   },
   "tracking_callback_safety": {
@@ -373,6 +373,48 @@
     "limits": [
       "No Windows GDK rendering verification",
       "No performance or load-test claim; transient handle snapshots depend on entity and viewer counts"
+    ]
+  },
+  "creative_inventory_events": {
+    "baseline": "18dfc94655928d2846a63b57aa14c3124ad1b08c",
+    "server_sha256": "cf8bc61f3f061755599c08453f7879308e95fae4d5de514a1843555214c60ebc",
+    "native_fixture_sha256": "0d9ce712f4314ccf50f02cae79b8ff45c64bfdff90b5047186b8233e398d2215",
+    "wasm_fixture_sha256": "55ae587b17c9bd182104c3dba1d51e59c6b571645df8b4d655baa7e73c0ceeb3",
+    "build": "Linux debug, default server features; Rust 1.100.0",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "event_contract": "Both editions fire InventoryCreativeEvent before applying creative slot changes; native player slots use Java player-screen indices, cursor changes and outside-inventory drops use -1",
+    "before": "On the baseline, the native callback probe receives a successful creative request without any InventoryCreativeEvent; the cancellation regression fails",
+    "behavior": "Calculate native creation changes before mutation, run callbacks without screen or inventory guards, then check affected stack identity/value, screen, world and game mode before committing. A cancelled or stale plan applies none of its own slot changes or drops; callback-made changes remain",
+    "corrections": "Native requests resend actual inventory, cursor and equipment; Java explicitly corrects a cancelled or stale slot prediction. Equipment notifications and drops run after releasing screen guards",
+    "wire_checks": [
+      "Both editions: veto creation and preserve a grass-block stack written by a Rust callback; callbacks read the inventory and player screen",
+      "Native: a later veto leaves a preceding swap unapplied; cursor creation and virtual-output drops are cancellable; rejected requests preserve every main-inventory slot and correct the cursor",
+      "Native: reject Survival creation, invalid catalogue IDs, excessive transfer counts, full destinations and out-of-range slots without partial changes",
+      "Native: create a 64-item cursor stack, split 32 into the hotbar through an ordinary request, create another stack independently and drop a new stack into the world while retaining cursor and inventory state"
+    ],
+    "regressions": "Full Java/Bedrock resources, sounds, forms, dialog replies, four native building paths, block and mob picking, held-slot events, tracking callbacks, packet edits, connection hooks, shared models and normal model restart passed",
+    "tests": {
+      "clippy": "Core, binary and native fixture; experimental v0.2; all targets; warnings denied",
+      "go": "build, vet, gofmt",
+      "python": "Probe and harness compilation",
+      "server": 803
+    },
+    "log_sha256": {
+      "before": "a3726cc84ae929087883450910ec69831d8005d2d4f1269ea45faefd5eb6ec41",
+      "before_events": "c0b8a78d4975c980aaea2da91ee5e100f26d38fe415640540c6e54d420215490",
+      "expanded_target": "38cb920fec1ebe82adcc3be831dd07fc23c2df450a773aa1652ac7605efba333",
+      "full": "87d583b1c730de0726fd1e6315b7eea5bbd8f7c692b40eef0fd7d63b4c129051",
+      "full_events": "586b8d7f2b6f214d0fee08d85365a6f8d4ad34d4e31207050b21a26d5e3ec776",
+      "clippy": "dca962b4e3a05f49744a01405b269ff7f856c9e72013eda7618c2195095ac724",
+      "build": "61cea5b853e11389a88b1c9a28a9d3eb75e954552512ae5c5b5aae5c419ba887",
+      "full_restart_events": "f07901dcb9307271c7026838d49aa83579c31d9fa45ce946733d2a9a9897b7aa",
+      "core": "632ad5a6035cfe7bb561cd3d4bda5d573e32966b65e0baaadc1c353db6ade283"
+    },
+    "limits": [
+      "Native creation targets player-owned inventory, equipment and cursor; mixing other crafting/container operations into a creation request is rejected",
+      "Ordinary stack requests retain their existing handler; full inventory-event coverage, stack-network-ID journaling and general request atomicity remain incomplete",
+      "No Windows GDK, official creative-policy parity or load/performance claim"
     ]
   }
 }

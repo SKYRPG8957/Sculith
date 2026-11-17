@@ -25,9 +25,21 @@ harness also exercises the same operations over the stock Java protocol.
 `--creative-inventory` on the harness runs `--survival-creative-check` and
 `--creative-inventory-check` after changing the copied server's default mode.
 They check creative creation permissions, catalogue IDs 0 and UINT32_MAX,
-repetition bytes 0/1/255, stack counts, and every inventory slot after rejection.
+repetition bytes 0/1/255, excessive transfers, full stacks, invalid destinations,
+and every inventory slot after rejection.
 Invalid creative IDs are also sent after a slot swap in the same request; the
 swap must not take effect. No plugin is needed for these checks.
+
+The harness also runs `--creative-flow`: create a cursor stack, split it into
+the hotbar through an ordinary request, create another stack and drop a new
+stack into the world. It checks both inventory and cursor state throughout.
+
+`--creative-events` requires the native event fixture and runs `--creative-deny`
+and `--creative-mutate`. A later event vetoes an earlier planned swap, and
+cursor creation and drops must also be rejected without changing any slots.
+Callbacks read the screen and inventory; another callback writes a stack that
+must survive the rejected plan. The harness exercises the same veto and mutation
+over Java and requires an explicit correction packet there.
 
 `--tracking-events` on the harness uses the native fixture to delete a nearby
 mob inside outgoing spawn and motion callbacks. It runs `--tracking-events`

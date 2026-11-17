@@ -227,6 +227,7 @@ pub mod block_actor_data;
 pub mod chat_command;
 pub mod chat_message;
 pub mod container_close;
+mod creative_inventory;
 pub mod emote;
 pub mod emote_list;
 pub mod interaction;

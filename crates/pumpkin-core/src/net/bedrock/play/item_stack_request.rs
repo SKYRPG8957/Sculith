@@ -10,19 +10,49 @@ use pumpkin_inventory::{
     smithing_table_screen_handler::SmithingTableScreenHandler,
     stonecutter_screen_handler::StonecutterScreenHandler,
 };
-use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo;
+use pumpkin_protocol::bedrock::{
+    client::item_stack_response::{
+        CItemStackResponse, ItemStackResponseContainerInfo, ItemStackResponseInfo,
+        ItemStackResponseSlotInfo,
+    },
+    server::item_stack_request::{ItemStackRequestSlotInfo, SItemStackRequest},
+};
 
 impl BedrockClient {
+    pub fn handle_item_stack_request(&self, player: &Arc<Player>, packet: SItemStackRequest) {
+        use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
+        let creative =
+            |request: &pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequest| {
+                request
+                    .actions
+                    .iter()
+                    .any(|action| matches!(action, ItemStackRequestAction::CraftCreative { .. }))
+            };
+        if !packet.requests.iter().any(creative) {
+            self.handle_regular_stack_requests(player, packet);
+            return;
+        }
+        // Preserve request order when creative and ordinary actions share a batch.
+        for request in packet.requests {
+            if creative(&request) {
+                self.handle_creative_stack_request(player, &request);
+            } else {
+                self.handle_regular_stack_requests(
+                    player,
+                    SItemStackRequest {
+                        requests: vec![request],
+                    },
+                );
+            }
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
-    pub fn handle_item_stack_request(
+    fn handle_regular_stack_requests(
         &self,
         player: &Arc<Player>,
         packet: pumpkin_protocol::bedrock::server::item_stack_request::SItemStackRequest,
     ) {
-        use pumpkin_protocol::bedrock::client::item_stack_response::{
-            CItemStackResponse, ItemStackResponseContainerInfo, ItemStackResponseInfo,
-            ItemStackResponseSlotInfo,
-        };
         use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
 
         let (responses, inventory_updated) = {
@@ -55,56 +85,11 @@ impl BedrockClient {
                     request.actions.clear();
                 }
 
-                // Reject before a preceding move can change the inventory.
-                if request.actions.iter().any(|action| {
-                    matches!(action, ItemStackRequestAction::CraftCreative { creative_item_id, .. }
-                        if player.gamemode.load() != GameMode::Creative
-                            || creative_item_id.0 == 0
-                            || creative_item_id.0 as usize > pumpkin_data::bedrock_creative::CREATIVE_ENTRIES.len())
-                }) {
-                    tracing::debug!("Rejected creative inventory request");
-                    result = 1;
-                    request.actions.clear();
-                }
-
                 for action in request.actions {
                     match action {
-                        ItemStackRequestAction::CraftCreative {
-                            creative_item_id, ..
-                        } => {
-                            let index = (creative_item_id.0 - 1) as usize;
-                            if index < pumpkin_data::bedrock_creative::CREATIVE_ENTRIES.len() {
-                                let entry = pumpkin_data::bedrock_creative::CREATIVE_ENTRIES[index];
-                                if let Some(mapping) =
-                                    pumpkin_data::item::JavaToBedrockItemMapping::from_bedrock(
-                                        entry.item_id,
-                                        entry.item_aux_value,
-                                    )
-                                {
-                                    // The creative request's repetition byte is boilerplate.
-                                    let max_stack =
-                                        ItemStack::static_new_java(1, mapping.java_item)
-                                            .get_max_stack_size();
-                                    created_item =
-                                        Some(ItemStack::new(max_stack, mapping.java_item));
-                                } else {
-                                    tracing::warn!(
-                                        "Failed to map bedrock item id {} and data {} to Java item",
-                                        entry.item_id,
-                                        entry.item_aux_value
-                                    );
-                                    result = 1;
-                                    break;
-                                }
-                            } else {
-                                tracing::warn!(
-                                    "Creative item index {} out of bounds (len: {})",
-                                    index,
-                                    pumpkin_data::bedrock_creative::CREATIVE_ENTRIES.len()
-                                );
-                                result = 1;
-                                break;
-                            }
+                        ItemStackRequestAction::CraftCreative { .. } => {
+                            result = 1;
+                            break;
                         }
                         ItemStackRequestAction::Take {
                             count,
@@ -830,41 +815,7 @@ impl BedrockClient {
                     );
                 }
 
-                let mut container_infos = Vec::new();
-                if result == 0 {
-                    for update in updates {
-                        let container_info = container_infos.iter_mut().find(
-                            |info: &&mut ItemStackResponseContainerInfo| {
-                                info.full_container_name == update.container_name
-                            },
-                        );
-
-                        let slot_info = ItemStackResponseSlotInfo {
-                            requested_slot: update.slot_id,
-                            slot: update.slot_id,
-                            amount: update.count,
-                            item_stack_net_id: update.stack_id,
-                            custom_name: String::new(),
-                            filtered_custom_name: String::new(),
-                            durability_correction: VarInt(0),
-                        };
-
-                        if let Some(info) = container_info {
-                            info.slots.push(slot_info);
-                        } else {
-                            container_infos.push(ItemStackResponseContainerInfo {
-                                full_container_name: update.container_name,
-                                slots: vec![slot_info],
-                            });
-                        }
-                    }
-                }
-
-                responses.push(ItemStackResponseInfo {
-                    result,
-                    client_request_id: request.request_id,
-                    containers: container_infos,
-                });
+                responses.push(build_stack_response(request.request_id, result, updates));
             }
 
             // Send updates to Java client
@@ -912,6 +863,46 @@ impl BedrockClient {
                 storage_item: NetworkItemStackDescriptor::default(),
             });
         }
+    }
+}
+
+pub(super) fn build_stack_response(
+    request_id: VarInt,
+    result: u8,
+    updates: Vec<SlotUpdate>,
+) -> ItemStackResponseInfo {
+    let mut container_infos = Vec::new();
+    if result == 0 {
+        for update in updates {
+            let container_info =
+                container_infos
+                    .iter_mut()
+                    .find(|info: &&mut ItemStackResponseContainerInfo| {
+                        info.full_container_name == update.container_name
+                    });
+            let slot_info = ItemStackResponseSlotInfo {
+                requested_slot: update.slot_id,
+                slot: update.slot_id,
+                amount: update.count,
+                item_stack_net_id: update.stack_id,
+                custom_name: String::new(),
+                filtered_custom_name: String::new(),
+                durability_correction: VarInt(0),
+            };
+            if let Some(info) = container_info {
+                info.slots.push(slot_info);
+            } else {
+                container_infos.push(ItemStackResponseContainerInfo {
+                    full_container_name: update.container_name,
+                    slots: vec![slot_info],
+                });
+            }
+        }
+    }
+    ItemStackResponseInfo {
+        result,
+        client_request_id: request_id,
+        containers: container_infos,
     }
 }
 
