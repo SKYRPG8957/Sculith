@@ -2,6 +2,8 @@
 
 pub mod catalog;
 mod chunk;
+#[cfg(test)]
+pub(super) use chunk::encode_chunk as encode_chunk_for_tests;
 mod commands;
 mod forms;
 mod input;

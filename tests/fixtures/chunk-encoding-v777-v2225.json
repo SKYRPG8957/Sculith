@@ -1,0 +1,77 @@
+{
+  "bedrock_protocol": 2225,
+  "cases": {
+    "dense": {
+      "bedrock": {
+        "bytes": 40118,
+        "sha256": "6d29a4a97237048c133d6da71884b68837aaa959a4732490b2c29b0c7aafda77"
+      },
+      "java": {
+        "bytes": 103388,
+        "sha256": "8fdb8e2a2b4ae72b2ee00cbef516137f0d7450a5ba781daefe4c61f96f5f7e22"
+      },
+      "java-light": {
+        "bytes": 53325,
+        "sha256": "08cdc83ec7221397d5c4f739cb68df7ca2ad5af5d81a228755e12290ba6bcfeb"
+      }
+    },
+    "empty": {
+      "bedrock": {
+        "bytes": 253,
+        "sha256": "b059326ddd44893bbe12c9c7a84ef8f4180d626b3fdfbbe093882dd965c29a97"
+      },
+      "java": {
+        "bytes": 54115,
+        "sha256": "f04194f917009f93ee4aa7f9f07bc8575876b9c872314d2eac40b63e92de2e69"
+      },
+      "java-light": {
+        "bytes": 53317,
+        "sha256": "610f6dcafbb65d435ee333eebee927dcba3a082185717bc791311360a0d71c7e"
+      }
+    },
+    "flat": {
+      "bedrock": {
+        "bytes": 1293,
+        "sha256": "9182dd0df554435214c8cd52c193cbbf969fa3fc823319390c9cdd00c906c73b"
+      },
+      "java": {
+        "bytes": 56167,
+        "sha256": "35f9d53f5514cb31c5f457922ff64696aa91f39b3775e199d06de4db31478b8b"
+      },
+      "java-light": {
+        "bytes": 53321,
+        "sha256": "a2873bf3dd8cdfe456566d8491b1b58bee1fd5ea51b85292368a48536c7a27b6"
+      }
+    },
+    "solid": {
+      "bedrock": {
+        "bytes": 253,
+        "sha256": "be91f027f881924fb4f648d8ee5b5b2908448f6e675f59cd3d542b377f91ff55"
+      },
+      "java": {
+        "bytes": 54115,
+        "sha256": "bd5e09afa756eb505e74193c6370755a832fd30c36c2edb222ef5b61a8a1b0a1"
+      },
+      "java-light": {
+        "bytes": 53321,
+        "sha256": "d10e2bac2d58d1935f34c17315c3feb9e6727954e5ff0fd3e5b9e63fa80c802b"
+      }
+    },
+    "sparse": {
+      "bedrock": {
+        "bytes": 38876,
+        "sha256": "306931834c4f35aafeceb92b8711efa9e83f5516e074c61bb3edd6fcc7a7e434"
+      },
+      "java": {
+        "bytes": 103386,
+        "sha256": "7cee7bf9f185d048e22829f8345b963fbc8040fa9e987784be6a2bfb40fe4409"
+      },
+      "java-light": {
+        "bytes": 53321,
+        "sha256": "3cc010658e3bb5bcdb5e73d4c26cc3930073e2f2af5afe75529adfbe80d42219"
+      }
+    }
+  },
+  "java_protocol": 777,
+  "reference_commit": "da4f19524ceae7e3fdaecbfec8f585505cff7ea2"
+}

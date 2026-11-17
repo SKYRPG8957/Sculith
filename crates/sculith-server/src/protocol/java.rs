@@ -5,6 +5,8 @@ mod chat;
 mod transport;
 pub use auth::Authentication;
 mod chunk;
+#[cfg(test)]
+pub(super) use chunk::{encode as encode_chunk_for_tests, light_update as encode_light_for_tests};
 mod codec;
 mod commands;
 mod forms;

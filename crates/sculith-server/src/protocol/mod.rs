@@ -22,3 +22,6 @@ pub struct Reference {
 pub fn references() -> References {
     serde_json::from_str(REFERENCES_JSON).expect("bundled protocol references must be valid")
 }
+
+#[cfg(test)]
+mod chunk_bench;
