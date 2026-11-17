@@ -106,6 +106,21 @@ python3 tests/interop/block_pick_smoke.py --client target/gophertunnel-probe
 cargo test --release --locked -p sculith-game inventory_batch_measurement -- --ignored --nocapture
 ```
 
+## Windows check follow-up
+
+Initial Windows run [44033528126](https://github.com/SKYRPG8957/Sculith/actions/runs/44033528126)
+passes the new game/runtime tests but fails the pre-existing checkpoint test's
+three-second observation deadline. That helper performed blocking snapshot reads
+on its current-thread async runtime and discarded read errors and worker failures.
+The log does not identify which revision/read delayed; no production storage
+failure or inventory cause is established.
+
+The test helper now observes files on a blocking worker, reports checkpoint-worker
+exit immediately, retains the last read error/revision and uses a ten-second CI
+readiness deadline. Exact revision ordering and final-save assertions are kept.
+The production checkpoint worker, save interval and storage format are unchanged.
+The four checkpoint tests, the full server test suite and Clippy pass locally.
+
 ## Work/history measurement
 
 Five release runs use the pinned Rust 1.100.0 toolchain on the same Linux x86_64

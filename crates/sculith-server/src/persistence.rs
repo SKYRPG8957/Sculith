@@ -118,17 +118,40 @@ mod tests {
         assert_eq!(world.capture().await.unwrap().revision(), revision + 1);
     }
 
-    async fn saved(path: &std::path::Path, revision: u64) {
-        tokio::time::timeout(Duration::from_secs(3), async {
+    async fn saved(
+        path: &std::path::Path,
+        revision: u64,
+        worker: &mut tokio::task::JoinHandle<Result<()>>,
+    ) {
+        let mut last_read = String::new();
+        // This checks committed revisions, not a three-second disk-latency SLO.
+        // Keep blocking file reads off the same current-thread runtime as run().
+        let completed = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
-                if storage::load(path).is_ok_and(|region| region.revision() == revision) {
-                    return;
+                let path = path.to_path_buf();
+                let read = tokio::task::spawn_blocking(move || {
+                    storage::load(path).map(|region| region.revision())
+                });
+                let observed = tokio::select! {
+                    result = &mut *worker => panic!("checkpoint worker ended before revision {revision}: {result:?}"),
+                    result = read => result.expect("checkpoint observation worker failed"),
+                };
+                match observed {
+                    Ok(actual) if actual == revision => return,
+                    Ok(actual) => last_read = format!("observed revision {actual}"),
+                    Err(error) => last_read = error.to_string(),
                 }
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                tokio::select! {
+                    result = &mut *worker => panic!("checkpoint worker ended before revision {revision}: {result:?}"),
+                    _ = tokio::time::sleep(Duration::from_millis(10)) => {},
+                }
             }
         })
-        .await
-        .unwrap();
+        .await;
+        assert!(
+            completed.is_ok(),
+            "checkpoint revision {revision} not observed: {last_read}"
+        );
     }
 
     #[tokio::test]
@@ -137,7 +160,7 @@ mod tests {
         let path = directory.path().join("nested/region.sculith");
         let (world, stop_owner, owner_task) = owner();
         let (stop, shutdown) = watch::channel(false);
-        let task = tokio::spawn(run(
+        let mut task = tokio::spawn(run(
             world.clone(),
             Some(path.clone()),
             Duration::from_millis(5),
@@ -145,9 +168,9 @@ mod tests {
             shutdown,
             Arc::new(Notify::new()),
         ));
-        saved(&path, 0).await;
+        saved(&path, 0, &mut task).await;
         edit(&world, 0).await;
-        saved(&path, 1).await;
+        saved(&path, 1, &mut task).await;
         assert!(!owner_task.is_finished());
         stop.send_replace(true);
         task.await.unwrap().unwrap();
@@ -230,7 +253,7 @@ mod tests {
         for _ in 0..1000 {
             manual.notify_one();
         }
-        let task = tokio::spawn(run(
+        let mut task = tokio::spawn(run(
             world.clone(),
             Some(path.clone()),
             Duration::ZERO,
@@ -238,13 +261,13 @@ mod tests {
             shutdown,
             manual.clone(),
         ));
-        saved(&path, 0).await;
+        saved(&path, 0, &mut task).await;
         assert_eq!(world.profile_snapshot().completed_commands, 1);
         edit(&world, 0).await;
         tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(storage::load(&path).unwrap().revision(), 0);
         manual.notify_one();
-        saved(&path, 1).await;
+        saved(&path, 1, &mut task).await;
         stop.send_replace(true);
         task.await.unwrap().unwrap();
         stop_owner.send_replace(true);
