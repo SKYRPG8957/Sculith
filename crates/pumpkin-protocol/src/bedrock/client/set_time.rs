@@ -6,7 +6,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Sent by the server to synchronize the day-night cycle time (in ticks) with the client.
 #[derive(PacketWrite)]
-#[packet(10)]
+#[packet(pumpkin_data::bedrock_packet::SET_TIME)]
 pub struct CSetTime {
     /// In-game time of day in ticks.
     pub time: VarInt,

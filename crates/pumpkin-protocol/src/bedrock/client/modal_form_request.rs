@@ -4,7 +4,7 @@ use crate::{codec::var_uint::VarUInt, serial::PacketWrite};
 use pumpkin_macros::packet;
 
 /// Requests the client to open a server-defined UI form (modal dialog, list menu, or custom form).
-#[packet(100)]
+#[packet(pumpkin_data::bedrock_packet::MODAL_FORM_REQUEST)]
 #[derive(PacketWrite)]
 pub struct CModalFormRequest {
     /// Unique identifier assigned by the server to distinguish responses when the form is submitted.

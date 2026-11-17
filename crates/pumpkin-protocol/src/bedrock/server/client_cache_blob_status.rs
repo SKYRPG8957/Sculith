@@ -10,7 +10,7 @@ use crate::{codec::var_uint::VarUInt, serial::PacketRead};
 const MAX_BLOB_IDS: usize = 4095;
 
 /// Sent by the client to report cache hits and misses for chunk blobs requested by the server.
-#[packet(135)]
+#[packet(pumpkin_data::bedrock_packet::CLIENT_CACHE_BLOB_STATUS)]
 pub struct SClientCacheBlobStatus {
     /// Hashes of chunk blobs not found in the client cache, which the server must send.
     pub miss_hashes: Vec<u64>,

@@ -10,7 +10,7 @@ use crate::{
 
 /// Sent by the server to synchronize the entire contents of an inventory or container window.
 #[derive(PacketWrite)]
-#[packet(49)]
+#[packet(pumpkin_data::bedrock_packet::INVENTORY_CONTENT)]
 pub struct CInventoryContent {
     /// Window ID of the container being populated.
     pub container_id: VarUInt,

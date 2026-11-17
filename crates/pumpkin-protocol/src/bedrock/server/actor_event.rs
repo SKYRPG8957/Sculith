@@ -12,7 +12,7 @@ use crate::{
 
 /// Transmits actor-specific animations, sounds, and state changes (such as hurt, taming, or eating).
 #[derive(Debug, PacketRead, PacketWrite)]
-#[packet(27)]
+#[packet(pumpkin_data::bedrock_packet::ACTOR_EVENT)]
 pub struct SActorEvent {
     /// Runtime entity ID of the actor experiencing the event.
     pub target_runtime_id: VarULong,

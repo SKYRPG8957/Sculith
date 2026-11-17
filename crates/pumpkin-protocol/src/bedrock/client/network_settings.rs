@@ -6,7 +6,7 @@ use crate::serial::PacketWrite;
 
 /// Sent by the server in response to [`SRequestNetworkSettings`](crate::bedrock::server::request_network_settings::SRequestNetworkSettings) to configure packet compression and client throttling.
 #[derive(PacketWrite)]
-#[packet(143)]
+#[packet(pumpkin_data::bedrock_packet::NETWORK_SETTINGS)]
 pub struct CNetworkSettings {
     /// Byte size threshold above which packet payloads are compressed. If zero, packets are uncompressed.
     pub compression_threshold: u16,

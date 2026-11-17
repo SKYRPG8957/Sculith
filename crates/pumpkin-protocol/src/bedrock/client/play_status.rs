@@ -8,7 +8,7 @@ use crate::serial::PacketWrite;
 #[derive(Clone, Copy, PacketWrite)]
 #[repr(i32)]
 #[serial(big_endian)]
-#[packet(2)]
+#[packet(pumpkin_data::bedrock_packet::PLAY_STATUS)]
 pub enum CPlayStatus {
     /// Authentication and login succeeded; client proceeds to resource pack handshake.
     LoginSuccess = 0,

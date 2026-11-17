@@ -9,7 +9,7 @@ use crate::{
 
 /// Sent by the server to add, modify, or remove potion/status effects on an entity.
 #[derive(PacketWrite)]
-#[packet(28)]
+#[packet(pumpkin_data::bedrock_packet::MOB_EFFECT)]
 pub struct CMobEffect {
     /// Runtime entity ID of the target actor.
     pub target_runtime_id: VarULong,

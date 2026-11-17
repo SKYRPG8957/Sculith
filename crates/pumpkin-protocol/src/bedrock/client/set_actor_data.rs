@@ -12,7 +12,7 @@ use std::io::Error;
 
 /// Sent by the server to update metadata and Molang properties of an entity (e.g. name tags, fire, scale).
 #[derive(PacketWrite)]
-#[packet(39)]
+#[packet(pumpkin_data::bedrock_packet::SET_ACTOR_DATA)]
 pub struct CSetActorData {
     /// The unique runtime ID of the entity being updated
     pub target_runtime_id: VarULong,

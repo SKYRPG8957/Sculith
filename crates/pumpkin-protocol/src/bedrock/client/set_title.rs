@@ -5,7 +5,7 @@ use pumpkin_macros::packet;
 
 /// Displays or controls on-screen titles, subtitles, or action bar notices.
 #[derive(PacketWrite)]
-#[packet(88)]
+#[packet(pumpkin_data::bedrock_packet::SET_TITLE)]
 pub struct CSetTitle {
     /// Operation type to perform (show text, adjust timing, clear, or reset).
     pub title_type: TitleType,

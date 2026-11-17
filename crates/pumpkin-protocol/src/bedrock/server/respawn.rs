@@ -10,7 +10,7 @@ use crate::{
 
 /// Bidirectional packet managing player respawning and client spawn readiness.
 #[derive(PacketRead, PacketWrite)]
-#[packet(45)]
+#[packet(pumpkin_data::bedrock_packet::RESPAWN)]
 pub struct SRespawn {
     /// World coordinates where the player is to respawn.
     pub position: Vector3<f32>,

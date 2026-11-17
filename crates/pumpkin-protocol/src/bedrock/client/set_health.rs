@@ -5,7 +5,7 @@ use pumpkin_macros::packet;
 
 /// Updates player health (legacy packet; attribute updates are typically preferred).
 #[derive(PacketWrite)]
-#[packet(42)]
+#[packet(pumpkin_data::bedrock_packet::SET_HEALTH)]
 pub struct CSetHealth {
     /// New health value assigned to the player.
     pub health: VarInt,

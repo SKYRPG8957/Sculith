@@ -17,7 +17,7 @@ const DEFAULT_SKIN_GEOMETRY: &[u8] = include_bytes!(concat!(
 ));
 
 /// Sent by the server to add or remove players from the in-game pause screen player list.
-#[packet(63)]
+#[packet(pumpkin_data::bedrock_packet::PLAYER_LIST)]
 pub struct CPlayerList {
     /// Action type (`ACTION_ADD` = 0 to add, `ACTION_REMOVE` = 1 to remove).
     pub action: u8,

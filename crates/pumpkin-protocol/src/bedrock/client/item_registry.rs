@@ -4,7 +4,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Sent by the server to register custom and vanilla item identifiers with their component definitions.
 #[derive(PacketWrite)]
-#[packet(162)]
+#[packet(pumpkin_data::bedrock_packet::ITEM_REGISTRY)]
 pub struct CItemRegistry {
     // https://mojang.github.io/bedrock-protocol-docs/docs/ItemRegistryPacket.html
     /// List of registered item definitions and their component NBT data.

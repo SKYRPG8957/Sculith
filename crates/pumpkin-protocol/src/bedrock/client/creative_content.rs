@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// Sent by the server to populate the creative inventory menu with item categories, groups, and items.
-#[packet(145)]
+#[packet(pumpkin_data::bedrock_packet::CREATIVE_CONTENT)]
 pub struct CCreativeContent<'a> {
     /// Creative tab groups with category icons and display names.
     pub groups: &'a [CreativeGroupInfoPayload],

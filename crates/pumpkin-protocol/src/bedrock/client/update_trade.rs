@@ -10,7 +10,7 @@ use crate::{
 
 /// Opens or refreshes a Bedrock merchant screen with its complete offer list.
 #[derive(PacketWrite)]
-#[packet(80)]
+#[packet(pumpkin_data::bedrock_packet::UPDATE_TRADE)]
 pub struct CUpdateTrade {
     /// Window identifier of the active trade screen.
     pub container_id: u8,

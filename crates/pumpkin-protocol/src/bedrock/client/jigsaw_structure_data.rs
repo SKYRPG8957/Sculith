@@ -6,7 +6,7 @@ use pumpkin_macros::packet;
 use crate::serial::PacketWrite;
 
 /// Transmits server-defined jigsaw structure generation rules, processors, and template pools.
-#[packet(313)]
+#[packet(pumpkin_data::bedrock_packet::JIGSAW_STRUCTURE_DATA)]
 pub struct CJigsawStructureData;
 
 impl PacketWrite for CJigsawStructureData {

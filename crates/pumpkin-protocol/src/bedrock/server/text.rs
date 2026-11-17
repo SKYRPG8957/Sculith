@@ -8,7 +8,7 @@ use std::io::{Error, Read, Write};
 
 /// Transmits in-game chat messages, system alerts, popups, and raw JSON text between client and server.
 #[derive(Debug)]
-#[packet(9)]
+#[packet(pumpkin_data::bedrock_packet::TEXT)]
 pub struct SText<'a> {
     /// Whether translation is requested for localization strings in the message.
     pub needs_translation: bool,

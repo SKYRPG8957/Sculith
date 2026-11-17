@@ -6,7 +6,7 @@ use crate::{codec::var_int::VarInt, serial::PacketRead};
 
 /// Sent by the client to request a specific chunk render distance from the server.
 #[derive(PacketRead, Debug)]
-#[packet(69)]
+#[packet(pumpkin_data::bedrock_packet::REQUEST_CHUNK_RADIUS)]
 pub struct SRequestChunkRadius {
     /// Requested chunk render radius in chunks.
     pub chunk_radius: VarInt,

@@ -10,11 +10,12 @@ pub struct AudioContentRegistrationEntry {
     pub audio_content_id: String,
     pub shared_metadata: String,
     pub server_content: String,
+    pub playback_content: String,
 }
 
 /// Sent by the client to register service-signed audio content for the authenticated player session.
 #[derive(Debug)]
-#[packet(330)]
+#[packet(pumpkin_data::bedrock_packet::SERVERBOUND_REGISTER_AUDIO_CONTENT)]
 pub struct SRegisterAudioContent {
     pub registrations: Vec<AudioContentRegistrationEntry>,
 }

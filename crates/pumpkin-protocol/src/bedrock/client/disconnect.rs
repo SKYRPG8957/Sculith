@@ -6,7 +6,7 @@ use std::io::{Error, Write};
 use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Sent by the server to cleanly disconnect a client with an optional error code and kick message.
-#[packet(5)]
+#[packet(pumpkin_data::bedrock_packet::DISCONNECT)]
 pub struct CDisconnect {
     /// Disconnect reason code determining the message shown on the client disconnect screen.
     pub reason: VarInt,

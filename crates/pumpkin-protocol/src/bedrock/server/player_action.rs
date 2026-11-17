@@ -10,7 +10,7 @@ use crate::{
 
 /// Sent by the client when performing player actions such as mining, sprinting, sneaking, or dimensions changes.
 #[derive(Debug, PacketRead)]
-#[packet(36)]
+#[packet(pumpkin_data::bedrock_packet::PLAYER_ACTION)]
 pub struct SPlayerAction {
     /// Runtime entity ID of the executing player.
     pub player_runtime_id: VarULong,

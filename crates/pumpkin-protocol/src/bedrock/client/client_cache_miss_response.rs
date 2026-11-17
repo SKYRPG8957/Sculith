@@ -16,7 +16,7 @@ pub struct MissingBlobData {
 
 /// Sent by the server in response to [`SClientCacheBlobStatus`](crate::bedrock::server::client_cache_blob_status::SClientCacheBlobStatus) with requested chunk blobs.
 #[derive(PacketWrite)]
-#[packet(136)]
+#[packet(pumpkin_data::bedrock_packet::CLIENT_CACHE_MISS_RESPONSE)]
 pub struct CClientCacheMissResponse {
     /// Array of blob byte payloads corresponding to missed blob hashes.
     pub missing_blobs: Vec<MissingBlobData>,

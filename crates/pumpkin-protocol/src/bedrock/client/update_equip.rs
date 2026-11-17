@@ -11,7 +11,7 @@ pub const HORSE_CONTAINER_TYPE: u8 = 12;
 
 /// Opens a mount equipment screen (horse, llama) on the client.
 #[derive(PacketWrite)]
-#[packet(81)]
+#[packet(pumpkin_data::bedrock_packet::UPDATE_EQUIP)]
 pub struct CUpdateEquip {
     pub container_id: u8,
     pub container_type: u8,

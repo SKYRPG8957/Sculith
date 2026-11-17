@@ -15,7 +15,7 @@ use super::{
 
 /// Sent by the server to spawn non-player entities (mobs, projectiles, vehicles, items) on the client.
 #[derive(PacketWrite)]
-#[packet(13)]
+#[packet(pumpkin_data::bedrock_packet::ADD_ACTOR)]
 pub struct CAddActor {
     /// Unique entity ID across sessions.
     pub target_actor_id: VarLong,

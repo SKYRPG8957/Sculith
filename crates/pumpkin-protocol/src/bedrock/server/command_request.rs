@@ -8,7 +8,7 @@ use crate::serial::{PacketRead, PacketReadSlice};
 
 /// Sent by the client to request server-side execution of a slash command.
 #[derive(Debug, PacketRead, PacketReadSlice)]
-#[packet(77)]
+#[packet(pumpkin_data::bedrock_packet::COMMAND_REQUEST)]
 pub struct SCommandRequest<'a> {
     /// Raw command line string (with leading slash).
     pub command: Cow<'a, str>,

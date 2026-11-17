@@ -29,7 +29,7 @@ impl PacketRead for AbilityValue {
 
 /// Sent by the client to request permission to modify a player ability (such as flying).
 #[derive(PacketRead)]
-#[packet(184)]
+#[packet(pumpkin_data::bedrock_packet::REQUEST_ABILITY)]
 pub struct SRequestAbility {
     /// Identifier of the requested ability.
     pub ability: VarInt,

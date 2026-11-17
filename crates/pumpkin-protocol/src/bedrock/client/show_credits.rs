@@ -8,7 +8,7 @@ use pumpkin_macros::packet;
 
 /// Displays or dismisses the end-game rolling credits screen.
 #[derive(PacketWrite)]
-#[packet(75)]
+#[packet(pumpkin_data::bedrock_packet::SHOW_CREDITS)]
 pub struct CShowCredits {
     /// Runtime entity identifier of the player viewing the credits.
     pub player_runtime_id: VarULong,

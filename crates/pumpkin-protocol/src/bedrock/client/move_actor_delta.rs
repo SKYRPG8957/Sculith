@@ -26,7 +26,7 @@ pub const MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE_LOCAL_ENTITY: u16 = 0x0100;
 pub const MOVE_ACTOR_DELTA_FLAG_FORCE_COMPLETION: u16 = 0x0200;
 
 /// Bandwidth-optimized delta movement packet for updating an entity's position and rotation.
-#[packet(111)]
+#[packet(pumpkin_data::bedrock_packet::MOVE_ACTOR_DELTA)]
 pub struct CMoveActorDelta {
     /// Runtime entity ID of the moving actor.
     pub entity_runtime_id: VarULong,

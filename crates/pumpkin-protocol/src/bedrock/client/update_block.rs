@@ -7,7 +7,7 @@ use crate::{codec::var_uint::VarUInt, serial::PacketWrite};
 
 /// Updates a single block state client-side without retransmitting the entire chunk.
 #[derive(PacketWrite)]
-#[packet(21)]
+#[packet(pumpkin_data::bedrock_packet::UPDATE_BLOCK)]
 pub struct CUpdateBlock {
     /// World coordinates where the block state is being updated.
     pub block_position: BlockPos,

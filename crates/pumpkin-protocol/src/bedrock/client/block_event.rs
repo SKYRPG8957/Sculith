@@ -7,7 +7,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Updates a client-side block animation, such as a chest lid opening or closing.
 #[derive(PacketWrite)]
-#[packet(26)]
+#[packet(pumpkin_data::bedrock_packet::BLOCK_EVENT)]
 pub struct CBlockEvent {
     /// World coordinates of the block undergoing the event.
     pub block_position: BlockPos,

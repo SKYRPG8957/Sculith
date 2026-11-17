@@ -63,7 +63,7 @@ of directories and 16 MiB per file. Symlinks, dependencies and subpack selection
 are rejected. Files under `crates/sculith-packs/tests/fixtures` are test inputs;
 they are never loaded by the default server.
 
-Native plugin ABI is 9 after adding shared model tracking and actor registries.
+Native plugin ABI is 10 after correcting the public Bedrock packet records.
 Rebuild native plugins against `main`. The Wasm v0.1 additions preserve existing
 component imports.
 

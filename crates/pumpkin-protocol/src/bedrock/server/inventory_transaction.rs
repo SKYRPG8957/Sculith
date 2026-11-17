@@ -170,7 +170,7 @@ pub struct ReleaseItemTransactionData {
 
 #[derive(Debug)]
 /// Sent by the client when performing complex inventory interactions, item usages, and entity attacks.
-#[packet(30)]
+#[packet(pumpkin_data::bedrock_packet::INVENTORY_TRANSACTION)]
 pub struct SInventoryTransaction {
     /// Legacy transaction request ID used for rollback tracking.
     pub legacy_request_id: VarInt,

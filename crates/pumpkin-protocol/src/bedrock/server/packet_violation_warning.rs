@@ -6,7 +6,7 @@ use crate::{codec::var_int::VarInt, serial::PacketRead};
 
 /// Sent by the client to report malformed or unexpected packets received from the server.
 #[derive(Debug, PacketRead)]
-#[packet(156)]
+#[packet(pumpkin_data::bedrock_packet::PACKET_VIOLATION_WARNING)]
 pub struct SPacketViolationWarning {
     // TODO: enum PacketViolationType
     /// Violation category (e.g. unknown packet or malformed payload).

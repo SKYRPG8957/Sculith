@@ -5,7 +5,7 @@ use crate::serial::PacketWrite;
 
 /// Sent by the server to open the sign text editor on the Bedrock client.
 #[derive(PacketWrite)]
-#[packet(303)]
+#[packet(pumpkin_data::bedrock_packet::OPEN_SIGN)]
 pub struct COpenSign {
     /// Position of the sign being edited.
     pub position: BlockPos,

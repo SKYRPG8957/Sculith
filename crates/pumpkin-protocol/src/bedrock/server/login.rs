@@ -5,7 +5,7 @@ use std::io::{Error, ErrorKind, Read};
 use crate::{MAX_PACKET_DATA_SIZE, codec::var_uint::VarUInt, serial::PacketRead};
 
 /// Sent by the client to initiate the login handshake, containing authentication tokens and device information.
-#[packet(1)]
+#[packet(pumpkin_data::bedrock_packet::LOGIN)]
 pub struct SLogin {
     // https://mojang.github.io/bedrock-protocol-docs/html/LoginPacket.html
     //#[serial(big_endian)]

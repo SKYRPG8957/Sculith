@@ -9,7 +9,7 @@ use crate::{
 
 /// Sent by the server to synchronize the armor and body equipment worn by an actor.
 #[derive(PacketWrite, Debug)]
-#[packet(32)]
+#[packet(pumpkin_data::bedrock_packet::MOB_ARMOUR_EQUIPMENT)]
 pub struct CMobArmorEquipment {
     /// Runtime entity ID of the equipped actor.
     pub target_runtime_id: VarULong,

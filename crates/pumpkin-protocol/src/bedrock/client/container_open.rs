@@ -7,7 +7,7 @@ use crate::{codec::var_long::VarLong, serial::PacketWrite};
 
 /// Sent by the server to open an inventory container screen (chest, furnace, anvil) on the client.
 #[derive(PacketWrite)]
-#[packet(46)]
+#[packet(pumpkin_data::bedrock_packet::CONTAINER_OPEN)]
 pub struct CContainerOpen {
     /// Window ID assigned to the opened container session.
     pub container_id: u8,

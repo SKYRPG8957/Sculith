@@ -8,7 +8,7 @@ pub const CURSOR_ITEM_DRAG_STOP: u8 = 1;
 
 /// Sent by the client to signal the start and stop of a cursor item drag operation across inventory slots.
 #[derive(PacketRead)]
-#[packet(358)]
+#[packet(pumpkin_data::bedrock_packet::SERVERBOUND_CURSOR_ITEM_DRAG)]
 pub struct SCursorItemDrag {
     /// Drag operation state (`0` for start, `1` for stop).
     pub state: u8,

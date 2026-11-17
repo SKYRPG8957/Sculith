@@ -7,7 +7,7 @@ use crate::{
 
 /// Sent by the server to synchronize the selected stonecutter recipe index to the client.
 #[derive(Clone, Debug, PartialEq, Eq, PacketWrite)]
-#[packet(333)]
+#[packet(pumpkin_data::bedrock_packet::CLIENTBOUND_STONECUTTER_SET_RECIPE)]
 pub struct CStonecutterSetRecipe {
     /// Entity unique ID of the player owning the container.
     pub player_unique_id: VarLong,

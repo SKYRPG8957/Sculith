@@ -4,7 +4,7 @@ use crate::{codec::var_uint::VarUInt, serial::PacketRead};
 use pumpkin_macros::packet;
 
 /// Sent by the client during resource pack negotiation to acknowledge packs or request downloads.
-#[packet(8)]
+#[packet(pumpkin_data::bedrock_packet::RESOURCE_PACK_CLIENT_RESPONSE)]
 pub struct SResourcePackClientResponse {
     /// Pack response status (e.g. refused, send packs, have all packs, or completed).
     pub response: u8,

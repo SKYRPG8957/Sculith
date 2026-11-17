@@ -17,3 +17,4 @@ Keep Alive is a small example that touches every layer:
 - Bound every length and allocation you read from the wire. A client controls those bytes.
 - Add a round-trip test next to the existing ones. Where you can, also compare against known bytes from vanilla, because a round trip passes when the reader and writer share the same mistake.
 - Bedrock packets are a separate implementation. Changing a Java packet doesn't mean the Bedrock side needs the same change, and the reverse is also true.
+- Bedrock IDs come from `assets/bedrock/packets.json` through codegen. Use `#[packet(pumpkin_data::bedrock_packet::NAME)]`, not a literal ID.

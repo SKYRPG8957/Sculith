@@ -5,7 +5,7 @@ use std::io::{Error, Write};
 use crate::serial::PacketWrite;
 
 /// Instructs the client to disconnect and reconnect to another server address and port.
-#[packet(85)]
+#[packet(pumpkin_data::bedrock_packet::TRANSFER)]
 pub struct CTransfer {
     /// Destination server hostname or IP address.
     pub server_address: String,

@@ -6,7 +6,7 @@ use crate::{codec::var_ulong::VarULong, serial::PacketWrite};
 
 /// Sent by the server to update an entity's attribute values (e.g. health, absorption, movement speed, hunger).
 #[derive(PacketWrite)]
-#[packet(29)]
+#[packet(pumpkin_data::bedrock_packet::UPDATE_ATTRIBUTES)]
 pub struct CUpdateAttributes {
     /// Runtime entity ID of the target actor.
     pub target_runtime_id: VarULong,

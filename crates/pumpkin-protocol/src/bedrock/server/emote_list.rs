@@ -10,7 +10,7 @@ use pumpkin_macros::packet;
 
 /// Sent by the client to provide the server with a list of all emotes unlocked and equipped by the player.
 #[derive(Debug, PacketRead, PacketWrite)]
-#[packet(152)]
+#[packet(pumpkin_data::bedrock_packet::EMOTE_LIST)]
 pub struct SEmoteList {
     /// Runtime entity ID of the player sending their emote inventory.
     pub runtime_id: VarULong,

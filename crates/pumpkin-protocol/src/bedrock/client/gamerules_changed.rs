@@ -4,7 +4,7 @@ use crate::{codec::var_uint::VarUInt, serial::PacketWrite};
 
 /// Sent by the server to update gamerules on the client (e.g. `showcoordinates` or `dodaylightcycle`).
 #[derive(PacketWrite)]
-#[packet(72)]
+#[packet(pumpkin_data::bedrock_packet::GAME_RULES_CHANGED)]
 pub struct CGamerulesChanged {
     /// List of game rules being updated.
     pub rule_data: Vec<GameRule>,

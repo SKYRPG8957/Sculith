@@ -13,7 +13,7 @@ pub const EMOTE_FLAG_MUTE_CHAT: u8 = 1 << 1;
 
 /// Transmits player emote animations to the server and broadcasts them to nearby players.
 #[derive(Debug, PacketRead, PacketReadSlice, PacketWrite)]
-#[packet(138)]
+#[packet(pumpkin_data::bedrock_packet::EMOTE)]
 pub struct SEmote<'a> {
     /// Runtime entity ID of the emoting player.
     pub actor_runtime_id: VarULong,

@@ -78,7 +78,7 @@ impl ToString for ActorSwingSource {
 
 /// Plays animations (arm swing, critical strike particles, waking up) on an actor.
 #[derive(Debug, PacketRead, PacketWrite)]
-#[packet(44)]
+#[packet(pumpkin_data::bedrock_packet::ANIMATE)]
 pub struct SAnimate {
     /// Type of animation to display.
     pub action: AnimateAction,

@@ -16,7 +16,7 @@ use super::{
 
 /// Sent by the server to spawn another player client-side into the world.
 #[derive(PacketWrite)]
-#[packet(12)]
+#[packet(pumpkin_data::bedrock_packet::ADD_PLAYER)]
 pub struct CAddPlayer {
     /// UUID of the player being spawned.
     pub uuid: Uuid,

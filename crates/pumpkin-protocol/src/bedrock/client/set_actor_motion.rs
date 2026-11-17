@@ -7,7 +7,7 @@ use crate::{codec::var_ulong::VarULong, serial::PacketWrite};
 
 /// Sent by the server to set the movement velocity of an entity (e.g. knockback or explosion velocity).
 #[derive(PacketWrite)]
-#[packet(40)]
+#[packet(pumpkin_data::bedrock_packet::SET_ACTOR_MOTION)]
 pub struct CSetActorMotion {
     /// Runtime entity ID of the target actor.
     pub target_runtime_id: VarULong,

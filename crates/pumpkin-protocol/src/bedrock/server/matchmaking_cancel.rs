@@ -6,7 +6,7 @@ use crate::serial::PacketRead;
 
 /// Sent by the client to request cancellation of the matchmaking ticket it currently holds.
 #[derive(Debug)]
-#[packet(329)]
+#[packet(pumpkin_data::bedrock_packet::SERVERBOUND_MATCHMAKING_CANCEL)]
 pub struct SMatchmakingCancel;
 
 impl PacketRead for SMatchmakingCancel {

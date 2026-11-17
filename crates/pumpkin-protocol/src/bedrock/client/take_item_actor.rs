@@ -5,7 +5,7 @@ use pumpkin_macros::packet;
 
 /// Sent by the server when an entity or player picks up a dropped item, playing the pickup animation.
 #[derive(PacketWrite)]
-#[packet(17)]
+#[packet(pumpkin_data::bedrock_packet::TAKE_ITEM_ACTOR)]
 pub struct CTakeItemActor {
     /// Runtime entity ID of the item entity being collected.
     pub item_runtime_id: VarULong,

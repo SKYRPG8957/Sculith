@@ -6,7 +6,7 @@ use pumpkin_util::math::vector3::Vector3;
 
 /// Sent by the server to update an entity's absolute position and rotation angles.
 #[derive(PacketWrite)]
-#[packet(18)]
+#[packet(pumpkin_data::bedrock_packet::MOVE_ACTOR_ABSOLUTE)]
 pub struct CMoveActorAbsolute {
     /// Runtime entity ID of the moving actor.
     pub actor_runtime_id: VarULong,

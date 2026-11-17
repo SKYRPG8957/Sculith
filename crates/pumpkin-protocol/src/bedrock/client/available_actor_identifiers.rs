@@ -11,7 +11,7 @@ pub const VANILLA_ACTOR_IDENTIFIERS: &[u8] = include_bytes!(concat!(
 ));
 
 /// Registers actor identifiers before their first spawn packet.
-#[packet(119)]
+#[packet(pumpkin_data::bedrock_packet::AVAILABLE_ACTOR_IDENTIFIERS)]
 pub struct CAvailableActorIdentifiers {
     pub identifiers: Bytes,
 }

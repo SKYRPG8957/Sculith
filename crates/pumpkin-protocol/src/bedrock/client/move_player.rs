@@ -5,7 +5,7 @@ use std::io::{Error, Write};
 
 /// Sent by the server to update a player's movement, teleport, or view angle.
 #[derive(Debug)]
-#[packet(19)]
+#[packet(pumpkin_data::bedrock_packet::MOVE_PLAYER)]
 pub struct CMovePlayer {
     /// Runtime entity ID of the player being moved.
     pub player_runtime_id: VarULong,

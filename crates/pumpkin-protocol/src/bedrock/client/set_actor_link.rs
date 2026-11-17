@@ -6,7 +6,7 @@ use crate::{bedrock::client::common::ActorLink, serial::PacketWrite};
 
 /// Sent by the server to create, modify, or remove an attachment link between two entities (e.g. riding).
 #[derive(PacketWrite)]
-#[packet(41)]
+#[packet(pumpkin_data::bedrock_packet::SET_ACTOR_LINK)]
 pub struct CSetActorLink {
     /// Attachment link descriptor defining the vehicle and passenger entities.
     pub link: ActorLink,

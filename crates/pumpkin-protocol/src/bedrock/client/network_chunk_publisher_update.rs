@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// Sent by the server to update the center anchor position and radius around which chunks remain loaded on the client.
-#[packet(121)]
+#[packet(pumpkin_data::bedrock_packet::NETWORK_CHUNK_PUBLISHER_UPDATE)]
 pub struct CNetworkChunkPublisherUpdate {
     // https://mojang.github.io/bedrock-protocol-docs/html/NetworkChunkPublisherUpdatePacket.html
     /// Center block position of the loaded area.

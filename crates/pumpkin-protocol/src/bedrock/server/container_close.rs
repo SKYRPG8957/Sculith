@@ -6,7 +6,7 @@ use crate::serial::{PacketRead, PacketWrite};
 
 /// Sent by either client or server to close an open container inventory window.
 #[derive(Debug, PacketWrite, PacketRead)]
-#[packet(47)]
+#[packet(pumpkin_data::bedrock_packet::CONTAINER_CLOSE)]
 pub struct SContainerClose {
     /// Window ID of the container being closed.
     pub container_id: u8,

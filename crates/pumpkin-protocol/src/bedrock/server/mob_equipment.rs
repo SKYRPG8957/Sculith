@@ -8,7 +8,7 @@ use pumpkin_macros::packet;
 
 /// Sent by the client to update the item held or equipped in a mob or player slot.
 #[derive(Debug, PacketRead)]
-#[packet(31)]
+#[packet(pumpkin_data::bedrock_packet::MOB_EQUIPMENT)]
 pub struct SMobEquipment {
     /// Runtime entity ID of the mob or player changing equipment.
     pub entity_runtime_id: VarULong,

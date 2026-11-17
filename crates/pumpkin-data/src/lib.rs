@@ -33,6 +33,11 @@ pub mod item_stack;
 #[path = "generated/packet.rs"]
 pub mod packet;
 
+#[cfg(feature = "packet")]
+#[rustfmt::skip]
+#[path = "generated/bedrock_packet.rs"]
+pub mod bedrock_packet;
+
 #[cfg(feature = "jukebox_song")]
 #[rustfmt::skip]
 #[path = "generated/jukebox_song.rs"]

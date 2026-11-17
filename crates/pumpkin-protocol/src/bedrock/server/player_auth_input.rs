@@ -16,7 +16,7 @@ use crate::{
 
 /// Sent by the client every tick to transmit player movement, view orientation, and input state under server authoritative movement.
 #[derive(Debug)]
-#[packet(144)]
+#[packet(pumpkin_data::bedrock_packet::PLAYER_AUTH_INPUT)]
 pub struct SPlayerAuthInput {
     /// Pitch rotation angle in degrees.
     pub pitch: f32,

@@ -2,6 +2,11 @@
 
 This directory contains a number of different data files used to help support connecting via Bedrock Edition clients (including Java => Bedrock remapping).
 
+- `packets.json`
+    - Packet names and numeric IDs from [gophertunnel](https://github.com/Sandertv/gophertunnel/blob/e2251a60f71d/minecraft/protocol/packet/id.go), protocol 2225, including retained legacy IDs.
+    - `pumpkin-codegen` generates the constants used by Bedrock packet definitions and the diagnostic name lookup. This catalogue does not indicate codec or gameplay coverage.
+    - See `LICENSE-GOPHERTUNNEL` for the MIT license and copyright notice.
+
 - `block_states.nbt`
     - converted from [CloudburstMC/Data's 26.60 dump](https://github.com/CloudburstMC/Data) `block_palette.nbt` into concatenated Bedrock network NBT; the same dump supplies `runtime_item_states.json`, `item_components.nbt`, `creative_items.json`, `recipes.json.gz`, `jigsaw_structure_data.nbt`, and `voxel_shapes.json.gz`.
     - Provides a listing of all blocks and block states that exist in Bedrock. Used to build a mapping from Java block states to Bedrock ones by matching (string) identifiers and data components.

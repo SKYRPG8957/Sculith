@@ -29,7 +29,7 @@ pub struct PassengerOfBlockData {
 
 /// Sent by the server to attach or detach an entity to/from a block.
 #[derive(Clone, Debug, PartialEq, PacketWrite)]
-#[packet(335)]
+#[packet(pumpkin_data::bedrock_packet::SET_PASSENGER_OF_BLOCK)]
 pub struct CSetPassengerOfBlock {
     /// Unique entity ID of the passenger.
     pub passenger_unique_id: VarLong,

@@ -5,7 +5,7 @@ use pumpkin_macros::packet;
 
 /// Configures and displays a scoreboard objective in a specific UI slot.
 #[derive(PacketWrite)]
-#[packet(107)]
+#[packet(pumpkin_data::bedrock_packet::SET_DISPLAY_OBJECTIVE)]
 pub struct CSetDisplayObjective {
     /// Slot location where the objective is presented (`sidebar`, `list`, or `belowname`).
     pub display_slot_name: String,

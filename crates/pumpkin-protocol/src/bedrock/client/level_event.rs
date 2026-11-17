@@ -7,7 +7,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Broadcasts visual or auditory level-wide events, such as particles or block breaking.
 #[derive(PacketWrite)]
-#[packet(25)]
+#[packet(pumpkin_data::bedrock_packet::LEVEL_EVENT)]
 pub struct CLevelEvent {
     /// Identifier corresponding to the specific level event action.
     pub event_id: VarInt,

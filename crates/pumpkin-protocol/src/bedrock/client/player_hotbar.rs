@@ -6,7 +6,7 @@ use crate::{codec::var_uint::VarUInt, serial::PacketWrite};
 
 /// Sent by the server to update the active selected hotbar slot of the player.
 #[derive(PacketWrite)]
-#[packet(48)]
+#[packet(pumpkin_data::bedrock_packet::PLAYER_HOT_BAR)]
 pub struct CPlayerHotbar {
     /// Zero-based slot index selected in the hotbar.
     pub selected_slot: VarUInt,

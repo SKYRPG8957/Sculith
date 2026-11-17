@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// Sent by the server to transfer a single chunk of compressed resource pack data to the client.
-#[packet(83)]
+#[packet(pumpkin_data::bedrock_packet::RESOURCE_PACK_CHUNK_DATA)]
 pub struct CResourcePackChunkData {
     /// Identifier of the pack (e.g. `UUID` or `UUID_version`).
     pub pack_id: String,

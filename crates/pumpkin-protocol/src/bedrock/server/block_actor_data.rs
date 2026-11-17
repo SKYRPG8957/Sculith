@@ -6,7 +6,7 @@ use crate::serial::PacketRead;
 
 /// Synchronizes block-actor updates from the client, such as edited sign text.
 #[derive(PacketRead)]
-#[packet(56)]
+#[packet(pumpkin_data::bedrock_packet::BLOCK_ACTOR_DATA)]
 pub struct SBlockActorData {
     /// World coordinates of the block entity being updated.
     pub block_position: BlockPos,

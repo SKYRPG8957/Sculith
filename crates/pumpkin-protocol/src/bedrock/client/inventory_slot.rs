@@ -9,7 +9,7 @@ use pumpkin_macros::packet;
 
 /// Sent by the server to update a single item slot within an open inventory container.
 #[derive(PacketWrite)]
-#[packet(50)]
+#[packet(pumpkin_data::bedrock_packet::INVENTORY_SLOT)]
 pub struct CInventorySlot {
     /// Window ID of the container being updated.
     pub container_id: VarUInt,

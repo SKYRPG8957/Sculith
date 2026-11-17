@@ -28,7 +28,7 @@ pub struct PackInfoData {
 
 /// Sent by the server to list all resource and behavior packs required or available to download.
 #[derive(PacketWrite)]
-#[packet(6)]
+#[packet(pumpkin_data::bedrock_packet::RESOURCE_PACKS_INFO)]
 pub struct CResourcePacksInfo {
     /// If true, the client must accept and download all packs to join.
     pub resource_pack_required: bool,

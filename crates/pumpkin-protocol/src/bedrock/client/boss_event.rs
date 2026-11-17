@@ -43,7 +43,7 @@ pub const BOSS_EVENT_OVERLAY_NOTCHED_20: u8 = 4;
 ///
 /// Packet ID: `74`
 #[derive(PacketWrite, PacketRead, Clone, Debug, PartialEq)]
-#[packet(74)]
+#[packet(pumpkin_data::bedrock_packet::BOSS_EVENT)]
 pub struct CBossEvent {
     /// The unique ID of the boss entity that the boss event sent involves.
     pub boss_entity_id: VarLong,

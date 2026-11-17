@@ -16,7 +16,7 @@ pub struct PackInstanceId {
 
 /// Sent by the server to define the order in which resource and behavior packs are applied by the client.
 #[derive(PacketWrite)]
-#[packet(7)]
+#[packet(pumpkin_data::bedrock_packet::RESOURCE_PACK_STACK)]
 pub struct CResourcePackStackPacket {
     /// If true, textures from the resource packs are strictly required to join.
     pub texture_pack_required: bool,

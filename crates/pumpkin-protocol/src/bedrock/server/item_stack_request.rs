@@ -318,7 +318,7 @@ impl PacketRead for ItemStackRequest {
 
 /// A batch of item stack requests sent by the client to manipulate inventory slots.
 #[derive(Debug)]
-#[packet(147)]
+#[packet(pumpkin_data::bedrock_packet::ITEM_STACK_REQUEST)]
 pub struct SItemStackRequest {
     /// List of item stack requests to execute sequentially.
     pub requests: Vec<ItemStackRequest>,

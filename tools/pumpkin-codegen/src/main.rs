@@ -31,6 +31,7 @@ mod banner_pattern;
 mod bedrock_biome;
 mod bedrock_creative;
 mod bedrock_jigsaw;
+mod bedrock_packet;
 mod bedrock_recipe;
 mod bedrock_voxel_shape;
 mod biome;
@@ -158,6 +159,7 @@ pub fn main() {
         (bedrock_biome::build, "bedrock_biome.rs"),
         (bedrock_creative::build, "bedrock_creative.rs"),
         (bedrock_jigsaw::build, "bedrock_jigsaw.rs"),
+        (bedrock_packet::build, "bedrock_packet.rs"),
         (bedrock_recipe::build, "bedrock_recipe.rs"),
         (bedrock_voxel_shape::build, "bedrock_voxel_shape.rs"),
         (packet::build, "packet.rs"),

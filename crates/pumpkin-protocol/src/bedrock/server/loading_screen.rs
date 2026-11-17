@@ -6,7 +6,7 @@ use crate::serial::PacketRead;
 
 /// Sent by the client to update the server on client-side loading screen transitions.
 #[derive(PacketRead)]
-#[packet(312)]
+#[packet(pumpkin_data::bedrock_packet::SERVER_BOUND_LOADING_SCREEN)]
 pub struct SLoadingScreen {
     loading_screen_packet_type: LoadingScreenPacketType,
     _loading_screen_id: Option<u32>,

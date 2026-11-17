@@ -1,5 +1,18 @@
 # Protocol fixtures
 
+## Bedrock 2225 control packets
+
+`bedrock_controls_2225.json` contains complete packet headers and payloads encoded
+by gophertunnel `e2251a60f71d`, using its packet structs and writer. All subclient
+bits are zero. It covers both stonecutter directions, matchmaking state and
+cancellation, signed audio registration and playback, and block passengers.
+The fixtures include nested optional fields, two audio registrations and all
+trailing sound fields. Values are small test strings and the numeric values in
+`tests/bedrock_controls.rs`; no service credentials or signed content is included.
+
+These frames catch stale IDs as well as missing fields. The stonecutter request
+regression fails with the old ID 332 against the independent header ID 354.
+
 ## Bedrock 2225 sound payloads
 
 The sound fixtures were encoded independently with gophertunnel

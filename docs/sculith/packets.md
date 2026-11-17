@@ -11,6 +11,25 @@ packets. These are queued after the original, or on their own when it is cancell
 Stable Wasm v0.1 retains its existing record and supports ID, payload and
 cancellation changes without a component ABI change.
 
+## Bedrock packet IDs
+
+Bedrock packet definitions use generated constants from
+`assets/bedrock/packets.json`, pinned to gophertunnel's protocol 2225 catalogue.
+The name lookup includes retained legacy IDs. Names describe known wire IDs;
+they do not indicate gameplay or typed decoder coverage. Known packets without
+a gameplay handler still reach raw packet observers and are logged at debug level.
+
+The catalogue corrected seven stale IDs: both stonecutter directions,
+matchmaking state and cancellation, signed audio registration and playback,
+and block passengers. Signed audio now includes the fourth registration string
+and trailing playback options; matchmaking options use the two optional fields
+in protocol 2225. Neither matchmaking nor signed audio services are implemented
+by these codecs.
+
+The corrected public packet records require native plugin ABI 10. Rebuild
+native plugins against the same revision as the server. Stable Wasm v0.1 is
+unchanged; the experimental v0.2 packet records are regenerated with the codecs.
+
 ## Before player creation
 
 Native Rust plugins can subscribe to `JavaConnectionPacketReceivedEvent`,

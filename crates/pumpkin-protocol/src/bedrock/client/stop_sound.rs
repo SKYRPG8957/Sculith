@@ -4,7 +4,7 @@ use crate::serial::PacketWrite;
 
 /// Stop a named sound or all sounds. Bedrock has no per-category selector.
 #[derive(PacketWrite)]
-#[packet(87)]
+#[packet(pumpkin_data::bedrock_packet::STOP_SOUND)]
 pub struct CStopSound {
     pub sound_name: String,
     pub stop_all: bool,

@@ -7,7 +7,7 @@ use pumpkin_macros::packet;
 use crate::serial::{PacketRead, PacketWrite};
 
 #[derive(Debug, Clone, Copy, PacketRead, PacketWrite)]
-#[packet(115)]
+#[packet(pumpkin_data::bedrock_packet::NETWORK_STACK_LATENCY)]
 pub struct NetworkStackLatency {
     pub timestamp: u64,
     pub from_server: bool,

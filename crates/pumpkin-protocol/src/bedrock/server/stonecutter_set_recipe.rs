@@ -4,7 +4,7 @@ use crate::{codec::var_int::VarInt, serial::PacketRead};
 
 /// Sent by the client when selecting a recipe in the stonecutter container.
 #[derive(Debug, PartialEq, Eq, PacketRead)]
-#[packet(332)]
+#[packet(pumpkin_data::bedrock_packet::SERVERBOUND_STONECUTTER_SET_RECIPE)]
 pub struct SStonecutterSetRecipe {
     /// Container ID of the stonecutter.
     pub container_id: u8,

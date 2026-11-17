@@ -6,7 +6,7 @@ use pumpkin_macros::packet;
 use crate::serial::PacketWrite;
 
 /// Sends collision and selection voxel shapes to the client before `CStartGame`.
-#[packet(337)]
+#[packet(pumpkin_data::bedrock_packet::VOXEL_SHAPES)]
 pub struct CVoxelShapes;
 
 impl PacketWrite for CVoxelShapes {

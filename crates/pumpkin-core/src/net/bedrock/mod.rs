@@ -1278,8 +1278,15 @@ impl BedrockClient {
                     "Bedrock client rejected a server packet"
                 );
             }
-            _ => {
-                warn!("Bedrock: Received Unknown Game packet: {}", packet.id);
+            id => {
+                if let Some(name) = pumpkin_data::bedrock_packet::packet_name(id) {
+                    debug!(
+                        packet_id = id,
+                        name, "Bedrock packet has no gameplay handler"
+                    );
+                } else {
+                    warn!(packet_id = id, "Unknown Bedrock packet");
+                }
             }
         }
         Ok(())

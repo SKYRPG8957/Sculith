@@ -8,7 +8,7 @@ use crate::serial::PacketWrite;
 
 /// Synchronizes the complete block-actor data for a block position.
 #[derive(PacketWrite)]
-#[packet(56)]
+#[packet(pumpkin_data::bedrock_packet::BLOCK_ACTOR_DATA)]
 pub struct CBlockActorData {
     /// World coordinates of the block entity being updated.
     pub block_position: BlockPos,

@@ -7,7 +7,7 @@ use crate::{
 use pumpkin_macros::packet;
 
 /// Updates or removes scoreboard entries displayed to the client.
-#[packet(108)]
+#[packet(pumpkin_data::bedrock_packet::SET_SCORE)]
 pub struct CSetScore {
     /// Action type determining whether scores are modified (0) or removed (1).
     pub action: VarInt, // 0 = change, 1 = remove

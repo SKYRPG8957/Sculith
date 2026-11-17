@@ -224,7 +224,7 @@ impl PacketWrite for BedrockRecipe {
 }
 
 /// Sent by the server to send all crafting and smelting recipes available in the world.
-#[packet(52)]
+#[packet(pumpkin_data::bedrock_packet::CRAFTING_DATA)]
 pub struct CCraftingData {
     /// Additional shaped and shapeless recipes (or incremental recipes when `clean_recipes` is false).
     pub recipes: Vec<BedrockRecipe>,

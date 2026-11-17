@@ -6,7 +6,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Sent by the server to update container property data (e.g. furnace burn/cook progress or brewing stand timers).
 #[derive(PacketWrite, Debug)]
-#[packet(51)]
+#[packet(pumpkin_data::bedrock_packet::CONTAINER_SET_DATA)]
 pub struct CContainerSetData {
     /// Window ID assigned to the open container session.
     pub container_id: u8,

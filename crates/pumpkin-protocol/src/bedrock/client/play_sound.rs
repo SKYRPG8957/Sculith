@@ -6,7 +6,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 /// Play a named sound. Position components are signed eighth-block coordinates.
 /// Field layout verified against gophertunnel for Bedrock protocol 2225.
 #[derive(PacketWrite)]
-#[packet(86)]
+#[packet(pumpkin_data::bedrock_packet::PLAY_SOUND)]
 pub struct CPlaySound {
     pub sound_name: String,
     pub position: BlockPos,

@@ -12,7 +12,7 @@ use super::set_actor_data::SyncedActorDataList;
 
 /// Sent by the server to spawn a dropped item entity in the world.
 #[derive(PacketWrite)]
-#[packet(15)]
+#[packet(pumpkin_data::bedrock_packet::ADD_ITEM_ACTOR)]
 pub struct CAddItemActor {
     /// Persistent unique entity ID of the dropped item entity.
     pub target_actor_id: VarLong,

@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// Information describing a resource pack to be streamed in chunks to the client.
-#[packet(82)]
+#[packet(pumpkin_data::bedrock_packet::RESOURCE_PACK_DATA_INFO)]
 pub struct CResourcePackDataInfo {
     /// Identifier of the pack (e.g. `UUID` or `UUID_version`).
     pub pack_id: String,

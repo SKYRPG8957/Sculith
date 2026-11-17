@@ -6,7 +6,7 @@ use crate::serial::PacketRead;
 
 /// Sent by the client to query network settings (such as compression algorithms and thresholds) from the server.
 #[derive(PacketRead)]
-#[packet(193)]
+#[packet(pumpkin_data::bedrock_packet::REQUEST_NETWORK_SETTINGS)]
 pub struct SRequestNetworkSettings {
     /// Network protocol version supported by the connecting client.
     /// If unsupported by the server, the connection will be rejected.

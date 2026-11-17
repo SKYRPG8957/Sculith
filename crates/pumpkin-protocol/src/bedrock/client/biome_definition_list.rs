@@ -6,7 +6,7 @@ use pumpkin_macros::packet;
 use crate::serial::PacketWrite;
 
 /// Sent by the server to synchronize all available biome definitions and properties with the client.
-#[packet(122)]
+#[packet(pumpkin_data::bedrock_packet::BIOME_DEFINITION_LIST)]
 pub struct CBiomeDefinitionList;
 
 impl PacketWrite for CBiomeDefinitionList {

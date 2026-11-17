@@ -7,7 +7,7 @@ use crate::serial::PacketRead;
 
 /// Sent by the client when picking a targeted block (middle-click / pick block action).
 #[derive(Debug, PacketRead)]
-#[packet(34)]
+#[packet(pumpkin_data::bedrock_packet::BLOCK_PICK_REQUEST)]
 pub struct SBlockPickRequest {
     /// World position coordinates of the targeted block.
     pub position: BlockPos,

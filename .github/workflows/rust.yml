@@ -30,6 +30,7 @@ jobs:
       - run: cargo fmt --manifest-path tests/interop/plugin/Cargo.toml --check
       - run: cargo clippy --locked -p sculith-packs -p pumpkin-codegen -p pumpkin-protocol -p pumpkin-config -p pumpkin-world -p pumpkin-core -p pumpkin -p sculith-interop-connections --features pumpkin/plugin-v0_2 --all-targets -- -D warnings
       - run: cargo test --locked -p sculith-packs -p pumpkin-protocol -p pumpkin-config -p pumpkin-world -p pumpkin-core --lib
+      - run: cargo test --locked -p pumpkin-protocol --test bedrock_controls
       - run: cargo test --locked -p pumpkin-wasm-host-v0_2 -p pumpkin-plugin-runtime --lib
       - run: cargo build --locked --release --target wasm32-wasip2 --manifest-path tests/interop/plugin/Cargo.toml
       - run: cargo build --locked -p pumpkin --bin sculith

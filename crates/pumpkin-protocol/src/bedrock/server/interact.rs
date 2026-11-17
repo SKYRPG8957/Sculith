@@ -7,7 +7,7 @@ use crate::{codec::var_ulong::VarULong, serial::PacketRead};
 
 /// Sent by the client when interacting with an entity (mounting, NPC dialogue, opening inventory).
 #[derive(Debug, PacketRead)]
-#[packet(33)]
+#[packet(pumpkin_data::bedrock_packet::INTERACT)]
 pub struct SInteract {
     /// Type of interaction performed.
     pub action: Action,

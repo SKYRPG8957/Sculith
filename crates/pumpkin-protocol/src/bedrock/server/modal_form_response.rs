@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 /// Sent by the client in response to a server-sent modal form dialog.
 #[derive(Debug, PacketRead, PacketReadSlice)]
-#[packet(101)]
+#[packet(pumpkin_data::bedrock_packet::MODAL_FORM_RESPONSE)]
 pub struct SModalFormResponse<'a> {
     /// Form ID corresponding to the request sent by the server.
     pub form_id: VarUInt,

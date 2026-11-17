@@ -9,7 +9,7 @@ use pumpkin_macros::packet;
 
 /// Advertises available console and chat commands, arguments, overloads, and auto-completion structures.
 #[derive(PacketWrite)]
-#[packet(76)]
+#[packet(pumpkin_data::bedrock_packet::AVAILABLE_COMMANDS)]
 pub struct CAvailableCommands {
     /// Global table of all unique string arguments and options referenced by command enums.
     pub enum_values: Vec<String>,

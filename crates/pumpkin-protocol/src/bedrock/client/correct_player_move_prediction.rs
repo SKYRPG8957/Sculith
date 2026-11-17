@@ -7,7 +7,7 @@ use crate::{codec::var_ulong::VarULong, serial::PacketWrite};
 
 /// Sent by the server to correct the client's predicted movement under server authoritative movement.
 #[derive(PacketWrite)]
-#[packet(161)]
+#[packet(pumpkin_data::bedrock_packet::CORRECT_PLAYER_MOVE_PREDICTION)]
 pub struct CCorrectPlayerMovePrediction {
     /// Prediction mode type (e.g. player movement vs vehicle movement).
     pub prediction_type: u8,

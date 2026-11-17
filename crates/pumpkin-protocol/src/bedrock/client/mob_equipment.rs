@@ -8,7 +8,7 @@ use pumpkin_macros::packet;
 
 /// Sent by the server to show the item equipped or held by a mob or other player.
 #[derive(PacketWrite, Debug)]
-#[packet(31)]
+#[packet(pumpkin_data::bedrock_packet::MOB_EQUIPMENT)]
 pub struct CMobEquipment {
     /// Runtime entity ID of the equipped actor.
     pub target_runtime_id: VarULong,

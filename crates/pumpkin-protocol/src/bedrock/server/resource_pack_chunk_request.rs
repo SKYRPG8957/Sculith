@@ -4,7 +4,7 @@ use crate::serial::{PacketRead, PacketWrite};
 
 /// Sent by the client to request a specific chunk of a resource pack being downloaded.
 #[derive(Clone, Debug, PartialEq, Eq, PacketRead, PacketWrite)]
-#[packet(84)]
+#[packet(pumpkin_data::bedrock_packet::RESOURCE_PACK_CHUNK_REQUEST)]
 pub struct SResourcePackChunkRequest {
     /// Identifier of the resource pack being requested (`UUID` or `UUID_version`).
     pub pack_id: String,

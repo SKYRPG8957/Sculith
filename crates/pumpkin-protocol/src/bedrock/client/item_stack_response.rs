@@ -82,7 +82,7 @@ impl PacketWrite for ItemStackResponseInfo {
 
 /// Sent by the server to approve or reject item stack requests and sync modified slots.
 #[derive(Debug, Clone)]
-#[packet(148)]
+#[packet(pumpkin_data::bedrock_packet::ITEM_STACK_RESPONSE)]
 pub struct CItemStackResponse {
     /// List of response statuses corresponding to client requests.
     pub responses: Vec<ItemStackResponseInfo>,

@@ -7,7 +7,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Updates the player or world spawn coordinates, affecting respawning and compass orientation.
 #[derive(Clone, Copy, PacketWrite)]
-#[packet(43)]
+#[packet(pumpkin_data::bedrock_packet::SET_SPAWN_POSITION)]
 pub struct CSetSpawnPosition {
     /// Determines whether this update configures a player-specific or world spawn location.
     pub spawn_position_type: SpawnPositionType,

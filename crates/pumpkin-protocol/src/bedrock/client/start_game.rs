@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 /// Sent by the server to initialize the client's world, spawn coordinates, gamerules, and entity runtime ID.
 #[derive(PacketWrite)]
-#[packet(11)]
+#[packet(pumpkin_data::bedrock_packet::START_GAME)]
 pub struct CStartGame {
     /// Persistent unique ID of the player entity across sessions.
     pub entity_id: VarLong,

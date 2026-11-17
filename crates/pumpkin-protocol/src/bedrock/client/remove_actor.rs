@@ -5,7 +5,7 @@ use pumpkin_macros::packet;
 
 /// Sent by the server to despawn an entity from the client's world.
 #[derive(PacketWrite)]
-#[packet(14)]
+#[packet(pumpkin_data::bedrock_packet::REMOVE_ACTOR)]
 pub struct CRemoveActor {
     /// Unique entity ID of the entity to remove.
     pub target_actor_id: VarLong,

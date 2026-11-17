@@ -7,7 +7,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Transitions the player to a different dimension with a loading screen.
 #[derive(PacketWrite)]
-#[packet(61)]
+#[packet(pumpkin_data::bedrock_packet::CHANGE_DIMENSION)]
 pub struct CChangeDimension {
     /// Target dimension identifier (0: Overworld, 1: Nether, 2: The End).
     ///

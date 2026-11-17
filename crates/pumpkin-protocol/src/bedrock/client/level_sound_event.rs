@@ -7,7 +7,7 @@ use crate::{codec::var_int::VarInt, serial::PacketWrite};
 
 /// Plays a sound effect at a designated world position or associated with an actor.
 #[derive(PacketWrite)]
-#[packet(123)]
+#[packet(pumpkin_data::bedrock_packet::LEVEL_SOUND_EVENT)]
 pub struct CLevelSoundEvent {
     /// Canonical identifier string for the sound event.
     pub sound_event: String,

@@ -5,7 +5,7 @@ use pumpkin_macros::packet;
 
 /// Sent by the client to sync inventory UI layout options and selected crafting tabs.
 #[derive(PacketRead)]
-#[packet(307)]
+#[packet(pumpkin_data::bedrock_packet::SET_PLAYER_INVENTORY_OPTIONS)]
 pub struct SSetPlayerInventoryOptions {
     // TODO: enum InventoryLeftTabIndex
     /// Selected left inventory category tab.

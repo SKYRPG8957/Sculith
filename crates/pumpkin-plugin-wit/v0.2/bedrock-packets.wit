@@ -788,6 +788,7 @@ interface bedrock-packets {
     audio-content-id: string,
     shared-metadata: string,
     server-content: string,
+    playback-content: string,
   }
   /// Sent by the client to register service-signed audio content for the authenticated player session.
   record s-register-audio-content {
@@ -1541,12 +1542,8 @@ interface bedrock-packets {
   }
   /// Optional details regarding the matchmaking transition.
   record matchmaking-state-options {
-    triggering-player-net-id: string,
-    result-code: s32,
-    error-reason: string,
-    estimated-wait-seconds: s32,
-    match-id: string,
-    session-id: string,
+    triggering-player-name: option<string>,
+    triggered-by-local-player: option<bool>,
   }
   /// Sent by the server to inform the client of matchmaking status.
   record c-matchmaking-state {
@@ -1704,6 +1701,10 @@ interface bedrock-packets {
     position: tuple<s32, s32, s32>,
     volume: f32,
     pitch: f32,
+    loop-count: s32,
+    bypass-listener-range-check: bool,
+    handle: option<s64>,
+    playback-position-seconds: option<f32>,
   }
   /// Sent by the server to instruct the client to play signed audio content.
   record c-play-audio-content {
