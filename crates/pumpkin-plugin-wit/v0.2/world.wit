@@ -515,7 +515,7 @@ interface %world {
         /// Returns whether this entity carries the specified scoreboard tag.
         has-scoreboard-tag: func(tag: string) -> bool;
 
-        remove: func();
+        remove: async func();
 
         /// Performs a raycast from the entity's eye position in its looking direction.
         raycast: func(max-distance: f64, fluid-handling: bool) -> option<raycast-result>;

@@ -634,12 +634,6 @@ impl HostEntity for PluginHostState {
         Ok(pumpkin_core::entity::breath::MAX_AIR)
     }
 
-    fn remove(&mut self, entity: Resource<Entity>) -> wasmtime::Result<()> {
-        let entity = self.get(&entity)?;
-        entity.get_entity().remove();
-        Ok(())
-    }
-
     fn raycast(
         &mut self,
         entity: Resource<Entity>,
@@ -844,6 +838,14 @@ impl HostEntity for PluginHostState {
 }
 
 impl HostEntityWithStore<PluginHostState> for HasSelf<PluginHostState> {
+    async fn remove(
+        accessor: &Accessor<PluginHostState, Self>,
+        entity: Resource<Entity>,
+    ) -> wasmtime::Result<()> {
+        let entity = accessor.get_res(&entity)?;
+        run_blocking(accessor, move || entity.get_entity().remove()).await
+    }
+
     async fn teleport(
         accessor: &Accessor<PluginHostState, Self>,
         entity: Resource<Entity>,
