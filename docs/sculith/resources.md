@@ -1,0 +1,67 @@
+# Shared resources
+
+The fork can compile one authored Bedrock resource pack for both editions at
+startup. No pack or server-specific content is enabled by default.
+
+In `pumpkin.toml`:
+
+```toml
+[resource_pack.shared]
+source = "resource_packs/authored"
+mapping = "resource_packs/mapping.json"
+required = true
+```
+
+Paths are relative to the server's working directory. Disable edition-specific
+pack settings when using `shared`. Source validation finishes before worlds are
+opened. Restart the server after editing resources; existing sessions never read
+partly changed source files.
+
+The mapping names the resources to expose to vanilla Java. For example:
+
+```json
+{
+  "textures": [
+    { "bedrock": "textures/blocks/stone.png", "java": "minecraft:block/stone" }
+  ],
+  "sounds": [
+    { "bedrock": "example.bell", "java": "example:bell", "file": "sounds/bell.ogg" }
+  ],
+  "models": [
+    {
+      "bedrock": "example:statue",
+      "java": "example:statue",
+      "entity": "entity/statue.entity.json",
+      "geometry": "models/entity/statue.geo.json",
+      "texture": "textures/entity/statue.png",
+      "controller": "render_controllers/statue.render_controllers.json"
+    }
+  ]
+}
+```
+
+Java clients join with the normal server address and receive a download offer.
+The first connection still shows Minecraft's standard resource-pack consent
+screen. Java downloads use the Java TCP port, with no additional web server or
+client mod. Bedrock receives chunks from the same immutable source snapshot.
+Content IDs and hashes change when the corresponding archive changes.
+
+The direct listener currently requires a reachable join host and port. Java SRV
+records must resolve to that listener. Proxy mode is rejected for shared delivery;
+separate external pack URLs remain available through the edition-specific config.
+
+The supported conversion is explicit PNG texture overrides, single-clip Ogg Vorbis
+sounds, and static cuboid entity geometry with a direct texture and render
+controller. Java 26.3 uses pack format 97.1. These are converted assets: registering
+an asset alone does not spawn a model, play a sound, or create a plugin interface.
+Arbitrary Bedrock UI JSON, behavior packs, scripts, animation and Molang are not
+converted. Unsupported mapped features fail validation. Unmapped native assets
+remain in the Bedrock archive and are not automatically translated for Java.
+
+Single-pack delivery currently limits the source to 32 MiB, 512 files, 16 levels
+of directories and 16 MiB per file. Symlinks, dependencies and subpack selection
+are rejected. Files under `crates/sculith-packs/tests/fixtures` are test inputs;
+they are never loaded by the default server.
+
+Native plugin ABI is 7 after adding shared resources to the server. Rebuild native
+plugins against this branch. The Wasm v0.1 interface is unchanged by pack delivery.

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/sculith-packs",
     "crates/pumpkin",
     "crates/pumpkin-core",
     "crates/pumpkin-api-macros",

@@ -119,7 +119,7 @@ pub struct BedrockStreamingPack {
     pub chunk_size: u32,
     pub chunk_count: u32,
     pub total_size: u64,
-    pub data: Arc<Vec<u8>>,
+    pub data: Arc<[u8]>,
 }
 
 type TranslatedPacket = (Option<Bytes>, Vec<Bytes>);

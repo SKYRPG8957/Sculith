@@ -1,0 +1,7 @@
+{
+  "resource_pack_name": "Sculith texture example",
+  "texture_name": "atlas.terrain",
+  "texture_data": {
+    "stone": { "textures": "textures/blocks/sculith_demo" }
+  }
+}

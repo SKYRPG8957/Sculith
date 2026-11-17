@@ -5,10 +5,29 @@ use uuid::Uuid;
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default)]
 pub struct ResourcePackConfig {
+    /// One Bedrock source compiled for both editions at startup.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shared: Option<SharedResourcePackConfig>,
     /// Java Edition client resource pack configuration.
     pub java: JavaResourcePackConfig,
     /// Bedrock Edition client resource pack configuration.
     pub bedrock: BedrockResourcePackConfig,
+}
+
+/// Shared resource source and its explicit Java compatibility mapping.
+#[derive(Deserialize, Serialize, Clone)]
+pub struct SharedResourcePackConfig {
+    /// Authored Bedrock resource pack directory.
+    pub source: std::path::PathBuf,
+    /// Explicit texture, sound and model mappings for vanilla Java.
+    pub mapping: std::path::PathBuf,
+    /// Require clients to accept the shared resources before joining.
+    #[serde(default = "required_by_default")]
+    pub required: bool,
+}
+
+const fn required_by_default() -> bool {
+    true
 }
 
 /// Java-specific resource pack configuration (Single URL/Hash)

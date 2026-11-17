@@ -3,6 +3,10 @@ use super::*;
 use pumpkin_util::version::JavaMinecraftVersion;
 
 impl PendingConnection {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "configure the connection before offering its resource pack"
+    )]
     pub async fn handle_login_acknowledged(
         &mut self,
         server: &Server,
@@ -82,10 +86,28 @@ impl PendingConnection {
 
         let resource_config = &server.advanced_config.resource_pack.java;
         if resource_config.enabled {
-            let uuid = Uuid::new_v3(&uuid::Uuid::NAMESPACE_DNS, resource_config.url.as_bytes());
+            let (uuid, url) = if let Some(shared) = &server.shared_resources {
+                let url = match shared.java_url(&self.server_address, self.server_port) {
+                    Ok(url) => url,
+                    Err(error) => {
+                        tracing::warn!("Cannot construct shared resource URL: {error}");
+                        self.kick(TextComponent::text(
+                            "Cannot deliver the server resource pack.",
+                        ))
+                        .await;
+                        return None;
+                    }
+                };
+                (shared.bundle.java_id, url)
+            } else {
+                (
+                    Uuid::new_v3(&uuid::Uuid::NAMESPACE_DNS, resource_config.url.as_bytes()),
+                    resource_config.url.clone(),
+                )
+            };
             let resource_pack = CConfigAddResourcePack::new(
                 &uuid,
-                &resource_config.url,
+                &url,
                 &resource_config.sha1,
                 resource_config.force,
                 if resource_config.prompt_message.is_empty() {
@@ -95,6 +117,11 @@ impl PendingConnection {
                 },
             );
 
+            self.configuration_stage =
+                crate::net::java::pending::ConfigurationStage::ResourcePack {
+                    id: uuid,
+                    since: std::time::Instant::now(),
+                };
             self.send_packet_now(&resource_pack).await;
         } else {
             self.start_known_packs(server).await;
@@ -106,6 +133,14 @@ impl PendingConnection {
     /// Starts the known packs exchange. Clients before 1.20.5 have no known packs, so
     /// the registries follow right away.
     pub async fn start_known_packs(&mut self, server: &Server) {
+        if matches!(
+            self.configuration_stage,
+            crate::net::java::pending::ConfigurationStage::KnownPacks
+                | crate::net::java::pending::ConfigurationStage::Finished
+        ) {
+            return;
+        }
+        self.configuration_stage = crate::net::java::pending::ConfigurationStage::KnownPacks;
         if self.version.load() >= JavaMinecraftVersion::V_1_20_5 {
             self.send_known_packs(server).await;
         } else {

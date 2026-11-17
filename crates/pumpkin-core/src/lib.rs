@@ -39,6 +39,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use std::{net::SocketAddr, sync::LazyLock};
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::Mutex;
@@ -61,6 +62,7 @@ pub mod item;
 pub mod logging;
 pub mod net;
 pub mod plugin;
+pub mod resource_pack;
 pub mod server;
 pub mod telemetry;
 pub mod update_checker;
@@ -666,13 +668,34 @@ impl PumpkinServer {
                             let packet_limiter = PacketRateLimiter::from_config(
                                 &server_clone.advanced_config.networking.java.packet_limiter,
                             );
-                            let pending = PendingConnection::new(
-                                connection,
-                                client_addr,
-                                client_id,
-                                packet_limiter,
-                                Arc::downgrade(&server_clone),
-                            );
+                            let pending = if let Some(shared) = &server_clone.shared_resources {
+                                let mut connection = connection;
+                                let prefix = match shared.route_http(&mut connection).await {
+                                    Ok(Some(prefix)) => prefix,
+                                    Ok(None) => return,
+                                    Err(error) => {
+                                        debug!("Shared resource connection ended: {error}");
+                                        return;
+                                    }
+                                };
+                                let (read, write) = connection.into_split();
+                                PendingConnection::from_transport(
+                                    Box::new(std::io::Cursor::new(prefix).chain(read)),
+                                    Box::new(write),
+                                    client_addr,
+                                    client_id,
+                                    packet_limiter,
+                                    Arc::downgrade(&server_clone),
+                                )
+                            } else {
+                                PendingConnection::new(
+                                    connection,
+                                    client_addr,
+                                    client_id,
+                                    packet_limiter,
+                                    Arc::downgrade(&server_clone),
+                                )
+                            };
                             serve_java_connection(server_clone, pending).await;
                         });
                     }

@@ -1,0 +1,309 @@
+"""Real Java TCP and Bedrock NetherNet resource transfer, without game rendering."""
+import argparse
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import socket
+import struct
+import subprocess
+import tempfile
+import time
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+import uuid
+import zipfile
+import zlib
+
+ROOT = Path(__file__).resolve().parents[2]
+LIMIT = 8 * 1024 * 1024
+
+
+def varint(value):
+    out = bytearray()
+    while value >= 128:
+        out.append((value & 127) | 128)
+        value >>= 7
+    return bytes(out) + bytes([value])
+
+
+def string(value):
+    data = value.encode()
+    return varint(len(data)) + data
+
+
+class Fields:
+    def __init__(self, data):
+        self.data = memoryview(data)
+        self.offset = 0
+
+    def take(self, length):
+        assert 0 <= length <= len(self.data) - self.offset
+        out = self.data[self.offset:self.offset + length].tobytes()
+        self.offset += length
+        return out
+
+    def vi(self):
+        value = 0
+        for index in range(5):
+            byte = self.take(1)[0]
+            value |= (byte & 127) << (index * 7)
+            if byte < 128:
+                assert value <= LIMIT
+                return value
+        raise AssertionError("oversized VarInt")
+
+    def text(self):
+        return self.take(self.vi()).decode()
+
+    def rest(self):
+        return self.take(len(self.data) - self.offset)
+
+
+class Java:
+    def __init__(self, port):
+        self.socket = socket.create_connection(("127.0.0.1", port), timeout=10)
+        self.socket.settimeout(40)
+        self.compression = None
+        self.send(0, varint(777) + string("127.0.0.1") + struct.pack(">H", port) + varint(2))
+        self.send(0, string("ResourceJava") + uuid.UUID(int=0).bytes)
+        for _ in range(10):
+            id_, data = self.receive()
+            if id_ == 3:
+                self.compression = data.vi()
+            elif id_ == 2:
+                self.send(3)
+                self.send(0, string("en_us") + bytes([2, 0, 1, 127, 1, 0, 1, 0]))
+                return
+            else:
+                raise AssertionError(("login", id_, data.rest()))
+        raise AssertionError("login did not complete")
+
+    def exact(self, length):
+        out = bytearray()
+        while len(out) < length:
+            chunk = self.socket.recv(length - len(out))
+            if not chunk:
+                raise EOFError("Java connection closed")
+            out.extend(chunk)
+        return bytes(out)
+
+    def receive(self):
+        prefix = bytearray()
+        for _ in range(5):
+            prefix.extend(self.exact(1))
+            if prefix[-1] < 128:
+                break
+        size = Fields(prefix).vi()
+        assert 0 < size <= LIMIT
+        data = self.exact(size)
+        if self.compression is not None:
+            fields = Fields(data)
+            size = fields.vi()
+            compressed = fields.rest()
+            if size:
+                decoder = zlib.decompressobj()
+                data = decoder.decompress(compressed, size + 1)
+                assert len(data) == size and decoder.eof
+            else:
+                data = compressed
+        fields = Fields(data)
+        return fields.vi(), fields
+
+    def frame(self, id_, payload=b""):
+        data = varint(id_) + payload
+        if self.compression is not None:
+            data = (varint(len(data)) + zlib.compress(data)) if len(data) >= self.compression else bytes([0]) + data
+        return varint(len(data)) + data
+
+    def send(self, id_, payload=b""):
+        self.socket.sendall(self.frame(id_, payload))
+
+    def join_with_resources(self, port, output, delayed):
+        archive = None
+        pack_id = None
+        heartbeat_count = 0
+        known_count = 0
+        for _ in range(256):
+            id_, fields = self.receive()
+            if id_ == 9:
+                assert pack_id is None, "duplicate resource offer"
+                pack_id = fields.take(16)
+                url, sha1 = fields.text(), fields.text()
+                assert fields.take(1) == bytes([1]), "pack must be required"
+                assert fields.take(1) == bytes([0]), "unexpected prompt component"
+                assert url.startswith(f"http://127.0.0.1:{port}/sculith/packs/")
+                with urlopen(url, timeout=10) as response:
+                    archive = response.read(LIMIT)
+                assert hashlib.sha1(archive).hexdigest() == sha1
+                (output / "java.zip").write_bytes(archive)
+                with urlopen(Request(url, method="HEAD"), timeout=10) as response:
+                    assert int(response.headers["Content-Length"]) == len(archive)
+                    assert response.read() == b""
+                try:
+                    urlopen(url + "/../level.dat", timeout=10)
+                except HTTPError as error:
+                    assert error.code == 404
+                else:
+                    raise AssertionError("unexpected resource path accepted")
+                # Neither unknown IDs nor a download-only ACK may finish configuration.
+                self.send(6, uuid.uuid4().bytes + varint(0))
+                self.send(6, pack_id + varint(3))
+                self.send(6, pack_id + varint(4))
+                if not delayed:
+                    self.send(6, pack_id + varint(0))
+            elif id_ == 4:
+                heartbeat_count += 1
+                pong = fields.take(8)
+                if delayed and heartbeat_count == 1:
+                    self.send(4, pong)
+                    loaded = self.frame(6, pack_id + varint(0))
+                    # Hold an incomplete frame across the next server heartbeat.
+                    self.socket.sendall(loaded[:1])
+                elif delayed and heartbeat_count == 2:
+                    self.socket.sendall(loaded[1:])
+                    self.send(4, pong)
+                    self.send(6, pack_id + varint(0))
+                else:
+                    self.send(4, pong)
+            elif id_ == 15:
+                assert archive is not None
+                assert not delayed or heartbeat_count >= 2, "advanced before pack application"
+                known_count += 1
+                assert known_count == 1, "duplicate known-pack exchange"
+                self.send(7, fields.rest())
+            elif id_ == 3:
+                assert known_count == 1
+                self.send(3)
+                break
+            elif id_ == 2:
+                raise AssertionError(("configuration disconnect", fields.rest()))
+        else:
+            raise AssertionError("configuration did not finish")
+        for _ in range(256):
+            id_, fields = self.receive()
+            if id_ == 0x32:
+                return {"url": url, "sha1": sha1, "keepalives": heartbeat_count,
+                        "known_pack_exchanges": known_count, "play_login": True}
+            if id_ == 0x20:
+                raise AssertionError(("play disconnect", fields.rest()))
+        raise AssertionError("no play login")
+
+
+def free_port():
+    with socket.socket() as stream:
+        stream.bind(("127.0.0.1", 0))
+        return stream.getsockname()[1]
+
+
+def configure(path, changes):
+    section = ""
+    out = []
+    for line in path.read_text().splitlines():
+        text = line.strip()
+        if text.startswith("["):
+            section = text[1:-1]
+        key = text.split("=", 1)[0].strip()
+        if (section, key) in changes:
+            line = key + " = " + changes[(section, key)]
+        out.append(line)
+    path.write_text("\n".join(out) + "\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("server", type=Path)
+    parser.add_argument("bedrock_probe", type=Path)
+    parser.add_argument("--world", type=Path, required=True, help="stopped Java flat world copied for testing")
+    parser.add_argument("--delayed", action="store_true", help="hold a partial packet across two keepalives")
+    parser.add_argument("--building", action="store_true", help="also exercise native building in the copied flat world")
+    args = parser.parse_args()
+    root = Path(tempfile.mkdtemp(prefix="sculith-shared-resources-"))
+    print("EVIDENCE", root, flush=True)
+    server_path = args.server.resolve()
+    fixture = ROOT / "crates/sculith-packs/tests/fixtures"
+    shutil.copytree(fixture / "pack", root / "source")
+    shutil.copy2(fixture / "textures.json", root / "mapping.json")
+    (root / "source/credits.bin").write_bytes(bytes(range(256)) * 9000)
+    shutil.copytree(args.world, root / "world")
+    env = dict(os.environ, RUST_LOG="info", NO_COLOR="1")
+    subprocess.run([str(server_path), "--init-settings"], cwd=root, env=env, check=True, capture_output=True)
+    java, bedrock = free_port(), free_port()
+    changes = {
+        ("", "allow_nether"): "false", ("", "allow_end"): "false",
+        ("", "default_gamemode"): '"Creative"', ("", "force_gamemode"): "true",
+        ("networking.java", "address"): json.dumps(f"127.0.0.1:{java}"),
+        ("networking.java", "online_mode"): "false", ("networking.java", "encryption"): "false",
+        ("networking.java.authentication", "enabled"): "false",
+        ("networking.bedrock", "online_mode"): "false",
+        ("networking.bedrock.authentication", "enabled"): "false",
+        ("networking.bedrock.nethernet", "address"): json.dumps(f"127.0.0.1:{bedrock}"),
+        ("world.chunk", "type"): '"anvil"',
+    }
+    if args.building:
+        changes[("", "spawn_protection")] = "0"
+    for edition in ["java", "bedrock"]:
+        for key in ["view_distance", "simulation_distance"]:
+            changes[(f"networking.{edition}", key)] = "2"
+    configure(root / "pumpkin.toml", changes)
+    with (root / "pumpkin.toml").open("a") as config:
+        config.write('[resource_pack.shared]\nsource="source"\nmapping="mapping.json"\nrequired=true\n')
+    log = (root / "server.log").open("w")
+    server = subprocess.Popen([str(server_path)], cwd=root, env=env, stdin=subprocess.PIPE, stdout=log, stderr=log, text=True)
+    client = None
+    try:
+        deadline = time.monotonic() + 30
+        while "Server is now running" not in (root / "server.log").read_text():
+            assert server.poll() is None, (root / "server.log").read_text()
+            assert time.monotonic() < deadline, "server startup timed out"
+            time.sleep(.1)
+        original = {str(p.relative_to(root / "source")): p.read_bytes() for p in (root / "source").rglob("*") if p.is_file()}
+        # Both edition archives must remain frozen if the source changes mid-session.
+        (root / "source/manifest.json").write_text("not a valid replacement pack")
+        client = Java(java)
+        report = client.join_with_resources(java, root, args.delayed)
+        result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}", "--pack-output", str(root / "bedrock.mcpack")], capture_output=True, text=True, timeout=35)
+        (root / "bedrock.log").write_text(result.stdout + result.stderr)
+        assert result.returncode == 0, result.stdout + result.stderr
+        with zipfile.ZipFile(root / "bedrock.mcpack") as archive:
+            for name, content in original.items():
+                if name != "manifest.json":
+                    assert archive.read(name) == content, name
+        with zipfile.ZipFile(root / "java.zip") as archive:
+            assert "pack.mcmeta" in archive.namelist()
+            assert archive.read("assets/sculith/sounds/demo_tone.ogg") == original["sounds/sculith_demo.ogg"]
+            assert "assets/sculith/models/sculith/demo_statue.json" in archive.namelist()
+        if args.building:
+            for command in ["gamerule spawn_mobs false", "gamerule spawn_monsters false",
+                            "kill @e[type=!minecraft:player]"]:
+                server.stdin.write(command + "\n")
+            server.stdin.flush()
+            time.sleep(.5)
+            result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}"],
+                                    capture_output=True, text=True, timeout=35)
+            (root / "building.log").write_text(result.stdout + result.stderr)
+            assert result.returncode == 0, result.stdout + result.stderr
+            report["native_building_paths"] = 4
+        report.update({"bedrock_spawn": True, "frozen_source": True,
+                       "scope": "independent protocol clients; no rendering claim"})
+        (root / "result.json").write_text(json.dumps(report, indent=2) + "\n")
+        print("PASS", json.dumps(report), flush=True)
+    finally:
+        if client is not None:
+            client.socket.close()
+        if server.poll() is None:
+            server.stdin.write("stop\n")
+            server.stdin.flush()
+            try:
+                server.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                server.terminate()
+                server.wait(timeout=10)
+        log.close()
+    assert server.returncode == 0, f"server exit {server.returncode}"
+
+
+if __name__ == "__main__":
+    main()

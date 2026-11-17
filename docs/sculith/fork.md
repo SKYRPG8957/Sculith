@@ -36,9 +36,10 @@ The modified fork passed these Linux checks on Rust 1.100.0:
 
 | Check | Result |
 | --- | --- |
-| Protocol unit tests | 166 passed |
+| Protocol unit tests | 168 passed |
 | Configuration unit tests | 24 passed |
-| Game/server unit tests | 791 passed |
+| Game/server unit tests | 794 passed |
+| Shared resource converter unit tests | 14 passed |
 | World unit tests, including official 26.3 fixtures | 305 passed |
 | Clippy for the changed packages and binary, all targets | Passed with warnings denied |
 | Rust formatting, Go build and Go vet | Passed |
@@ -63,6 +64,31 @@ Official readback was captured with REA 6.9.0. Versioned test fixtures are under
 `crates/pumpkin-world/tests/fixtures/java26_3`; the native socket probe is under
 `tests/interop/bedrock`. Reproduction commands are in that directory's README.
 
+## Shared resource delivery
+
+An opt-in shared source now compiles explicit Bedrock textures, sounds and static
+cuboid models for Java 26.3. The converter comes from the former MIT Sculith
+implementation and retains its MIT license. The server serves the Java archive
+on its existing TCP port and transfers the native archive in Bedrock chunks.
+Both archives are frozen before worlds open. See [configuration and limits](resources.md).
+
+Independent Java and Bedrock clients passed archive/hash verification, native
+spawn and all four building paths with the shared pack enabled. The Java check
+also holds a fragmented acknowledgement across configuration keepalives and
+checks that download completion alone cannot enter play. Altering source files
+after startup did not alter either active archive.
+
+A fresh, unmodified Java 26.3 client joined with the server address, remained at
+the standard pack consent screen for about 90 seconds, accepted the download,
+and rendered the converted checker texture and static item model. Its downloaded
+archive matched the advertised SHA1. This was a Linux software-rendered client
+with a null audio device; it does not verify sound playback or Bedrock rendering.
+The independent native building probe disables protection only in its copied
+test world; production spawn protection is retained.
+
+Shared assets alone do not provide a common plugin UI, cross-edition custom sound
+dispatch or model spawning. Those runtime features still need integration.
+
 ## Remaining work
 
 Bedrock LevelDB world import/export is not implemented. Java Anvil support does
@@ -70,8 +96,8 @@ not provide it. Existing worlds must be copied before testing, and unknown
 blocks, entities and data must not be silently discarded.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
-Using this base does not establish Bedrock gameplay parity, Bedrock pack
-conversion for stock Java, authoritative movement and inventory validation,
+Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack
+compatibility, authoritative movement and inventory validation,
 production authentication coverage, the old Sculith plugin API, or production
 load capacity. Those remain
 Sculith work. No Windows GDK client test is claimed for this fork.

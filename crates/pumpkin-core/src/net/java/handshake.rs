@@ -13,6 +13,7 @@ impl PendingConnection {
     pub async fn handle_handshake(&mut self, server: &Arc<Server>, handshake: SHandShake) {
         let version = handshake.protocol_version.0 as u32;
         self.server_address = handshake.server_address.to_string();
+        self.server_port = handshake.server_port;
         self.version
             .store(JavaMinecraftVersion::from_protocol(version));
 

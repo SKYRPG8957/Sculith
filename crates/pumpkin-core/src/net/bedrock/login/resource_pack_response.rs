@@ -134,7 +134,7 @@ impl BedrockClient {
             };
 
             if !self
-                .stage_and_send_pack_info(requested_id, pack, br_config.force)
+                .stage_and_send_pack_info(requested_id, pack, br_config.force, server)
                 .await
             {
                 return;
@@ -147,40 +147,50 @@ impl BedrockClient {
         requested_id: &str,
         pack: &BedrockPack,
         force: bool,
+        server: &Server,
     ) -> bool {
-        let Some(resolved_path) = resolve_pack_path(pack) else {
-            tracing::warn!(
-                "Bedrock: Pack file for {requested_id} (UUID {}) not found on disk",
-                pack.uuid
-            );
-            if force {
-                self.kick(
-                    DisconnectReason::ResourcePackProblem,
-                    "Required resource pack not found on server.".into(),
-                )
-                .await;
-                return false;
-            }
-            return true;
-        };
-
-        let data = match tokio::fs::read(&resolved_path).await {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                tracing::error!(
-                    "Bedrock: Failed to read resource pack {}: {err}",
-                    resolved_path.display()
+        let data: Arc<[u8]> = if let Some(shared) = server
+            .shared_resources
+            .as_ref()
+            .filter(|shared| shared.bundle.bedrock_id == pack.uuid)
+        {
+            shared.bundle.bedrock.bytes.clone()
+        } else {
+            let Some(resolved_path) = resolve_pack_path(pack) else {
+                tracing::warn!(
+                    "Bedrock: Pack file for {requested_id} (UUID {}) not found on disk",
+                    pack.uuid
                 );
                 if force {
                     self.kick(
                         DisconnectReason::ResourcePackProblem,
-                        "Failed to read resource pack on server.".into(),
+                        "Required resource pack not found on server.".into(),
                     )
                     .await;
                     return false;
                 }
                 return true;
-            }
+            };
+
+            let bytes = match tokio::fs::read(&resolved_path).await {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    tracing::error!(
+                        "Bedrock: Failed to read resource pack {}: {err}",
+                        resolved_path.display()
+                    );
+                    if force {
+                        self.kick(
+                            DisconnectReason::ResourcePackProblem,
+                            "Failed to read resource pack on server.".into(),
+                        )
+                        .await;
+                        return false;
+                    }
+                    return true;
+                }
+            };
+            bytes.into()
         };
 
         let file_hash = Sha256::digest(&data).to_vec();
@@ -201,7 +211,7 @@ impl BedrockClient {
             chunk_size: BEDROCK_PACK_CHUNK_SIZE,
             chunk_count,
             total_size,
-            data: Arc::new(data),
+            data,
         };
 
         {

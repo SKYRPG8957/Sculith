@@ -73,6 +73,7 @@ use crate::data::advancement_data::AdvancementManager;
 pub struct Server {
     pub basic_config: BasicConfiguration,
     pub advanced_config: AdvancedConfiguration,
+    pub shared_resources: Option<Arc<crate::resource_pack::SharedResources>>,
     pub telemetry_config: TelemetryConfig,
     /// Tracks active and completed player session durations for anonymous telemetry.
     pub telemetry_sessions: crate::telemetry::TelemetrySessionTracker,
@@ -175,11 +176,12 @@ impl Server {
     #[expect(clippy::too_many_lines)]
     pub async fn new(
         basic_config: BasicConfiguration,
-        advanced_config: AdvancedConfiguration,
+        mut advanced_config: AdvancedConfiguration,
         telemetry_config: TelemetryConfig,
         vanilla_data: VanillaData,
         plugin_loaders: Vec<Arc<dyn PluginLoader>>,
     ) -> Result<Arc<Self>, WorldInfoError> {
+        let shared_resources = crate::resource_pack::prepare(&mut advanced_config).await?;
         let permission_manager = Arc::new(PermissionManager::new());
         // First register the default commands. After that, plugins can put in their own.
         let command_dispatcher = ArcSwap::from_pointee(default_dispatcher(
@@ -327,6 +329,7 @@ impl Server {
         let server = Self {
             basic_config,
             advanced_config,
+            shared_resources,
             telemetry_config,
             telemetry_sessions: crate::telemetry::TelemetrySessionTracker::default(),
             data: vanilla_data,

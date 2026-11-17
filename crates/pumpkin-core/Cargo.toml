@@ -11,6 +11,7 @@ license.workspace = true
 doctest = false
 
 [dependencies]
+sculith-packs = { path = "../sculith-packs" }
 # pumpkin
 arc-swap.workspace = true
 rayon.workspace = true

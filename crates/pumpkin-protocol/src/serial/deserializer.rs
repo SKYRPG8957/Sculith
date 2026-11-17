@@ -247,6 +247,8 @@ impl PacketRead for Uuid {
     fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
         let mut bytes = [0; 16];
         reader.read_exact(&mut bytes)?;
+        bytes[..8].reverse();
+        bytes[8..].reverse();
         Ok(Self::from_bytes(bytes))
     }
 }
@@ -427,7 +429,10 @@ impl<'a> PacketReadSlice<'a> for uuid::Uuid {
         let arr = bytes
             .try_into()
             .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid Uuid slice"))?;
-        Ok(Self::from_bytes(arr))
+        let mut bytes: [u8; 16] = arr;
+        bytes[..8].reverse();
+        bytes[8..].reverse();
+        Ok(Self::from_bytes(bytes))
     }
 }
 

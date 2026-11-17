@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/go-nethernet"
@@ -38,6 +39,22 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+
+	if len(os.Args) == 4 && os.Args[2] == "--pack-output" {
+		packs := c.ResourcePacks()
+		if len(packs) != 1 {
+			return fmt.Errorf("expected one shared pack, received %d", len(packs))
+		}
+		data := make([]byte, packs[0].Len())
+		if n, err := packs[0].ReadAt(data, 0); err != nil || n != len(data) {
+			return fmt.Errorf("read shared archive: %d bytes, %v", n, err)
+		}
+		if err := os.WriteFile(os.Args[3], data, 0600); err != nil {
+			return err
+		}
+		fmt.Printf("PASS: received shared Bedrock archive id=%s version=%s bytes=%d sha256=%x\n", packs[0].UUID(), packs[0].Version(), len(data), sha256.Sum256(data))
+		return nil
+	}
 	time.Sleep(1200 * time.Millisecond)
 	registry := world.NewBlockRegistry()
 	registry.Finalize()

@@ -57,11 +57,28 @@ const BRAND_CHANNEL_PREFIX: &str = "minecraft:brand";
 /// server. The timer covers silence rather than the whole handshake: it is reset
 /// on every packet, so a slow but progressing login is never cut off.
 const HANDSHAKE_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const CONFIG_KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+const RESOURCE_PACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum ConfigurationStage {
+    Initial,
+    ResourcePack {
+        id: uuid::Uuid,
+        since: std::time::Instant,
+    },
+    KnownPacks,
+    Finished,
+}
 
 pub struct PendingConnection {
     pub id: u64,
     pub address: SocketAddr,
     pub server_address: String,
+    pub server_port: u16,
+    pub(super) configuration_stage: ConfigurationStage,
+    config_keepalive: Option<(i64, std::time::Instant)>,
+    next_config_keepalive: std::time::Instant,
     pub version: AtomicCell<JavaMinecraftVersion>,
     pub connection_state: AtomicCell<ConnectionState>,
     pub close_token: CancellationToken,
@@ -118,6 +135,10 @@ impl PendingConnection {
             id,
             address,
             server_address: String::new(),
+            server_port: 0,
+            configuration_stage: ConfigurationStage::Initial,
+            config_keepalive: None,
+            next_config_keepalive: std::time::Instant::now() + CONFIG_KEEPALIVE_INTERVAL,
             version: AtomicCell::new(CURRENT_MC_VERSION),
             connection_state: AtomicCell::new(ConnectionState::HandShake),
             close_token: CancellationToken::new(),
@@ -174,21 +195,83 @@ impl PendingConnection {
     }
 
     pub async fn get_packet(&mut self) -> Option<RawPacket> {
-        let close_token = self.close_token.clone();
-        let packet_result = tokio::select! {
-            () = close_token.cancelled() => {
-                debug!("Canceling pending connection packet processing");
-                return None;
-            },
-            () = tokio::time::sleep(HANDSHAKE_IDLE_TIMEOUT) => {
-                debug!(
-                    "Client {} sent nothing for {}s before finishing login, dropping it",
-                    self.id,
-                    HANDSHAKE_IDLE_TIMEOUT.as_secs()
-                );
-                return None;
-            },
-            res = self.network_reader.get_raw_packet() => res,
+        if self
+            .config_keepalive
+            .is_some_and(|(_, sent)| sent.elapsed() >= HANDSHAKE_IDLE_TIMEOUT)
+        {
+            debug!(
+                "Client {} did not acknowledge its configuration keepalive",
+                self.id
+            );
+            return None;
+        }
+        let resource_since = match self.configuration_stage {
+            ConfigurationStage::ResourcePack { since, .. } => Some(since),
+            _ => None,
+        };
+        let resource_deadline =
+            resource_since.unwrap_or_else(std::time::Instant::now) + RESOURCE_PACK_TIMEOUT;
+        let context = (
+            self.translating_server(),
+            self.id,
+            self.version.load(),
+            self.connection_state.load(),
+        );
+        let packet_result = {
+            // Recreating this future on each heartbeat loses partially read frame bytes.
+            let packet = self.network_reader.get_raw_packet();
+            tokio::pin!(packet);
+            let idle = tokio::time::sleep(HANDSHAKE_IDLE_TIMEOUT);
+            tokio::pin!(idle);
+            loop {
+                tokio::select! {
+                    () = self.close_token.cancelled() => return None,
+                    () = &mut idle => {
+                        debug!("Client {} stalled before completing login", self.id);
+                        return None;
+                    },
+                    () = tokio::time::sleep_until(resource_deadline.into()), if resource_since.is_some() => {
+                        debug!("Client {} exceeded the resource pack deadline", self.id);
+                        return None;
+                    },
+                    result = &mut packet => break result,
+                    () = tokio::time::sleep_until(self.next_config_keepalive.into()), if resource_since.is_some() => {
+                        let now = std::time::Instant::now();
+                        self.next_config_keepalive = now + CONFIG_KEEPALIVE_INTERVAL;
+                        if let Some((_, sent)) = self.config_keepalive {
+                            if sent.elapsed() >= HANDSHAKE_IDLE_TIMEOUT {
+                                return None;
+                            }
+                            continue;
+                        }
+                        let id = rand::random::<i64>();
+                        let keepalive = pumpkin_protocol::java::client::config::CConfigKeepAlive::new(id);
+                        let mut bytes = Vec::new();
+                        if let Err(error) = JavaClient::write_packet_for_version(&keepalive, CURRENT_MC_VERSION, &mut bytes) {
+                            warn!("Cannot encode configuration keepalive: {error}");
+                            return None;
+                        }
+                        let (payload, extras) = Self::translate_outgoing_for(
+                            context.0.clone(), context.1, context.2, context.3, bytes.into()
+                        ).await;
+                        if let Some(payload) = payload
+                            && let Err(error) = self.network_writer.write_packet(payload).await
+                        {
+                            debug!("Cannot send configuration keepalive: {error}");
+                            return None;
+                        }
+                        for extra in extras {
+                            if self.network_writer.write_packet(extra).await.is_err() {
+                                return None;
+                            }
+                        }
+                        if self.network_writer.flush().await.is_err() {
+                            return None;
+                        }
+                        self.config_keepalive = Some((id, now));
+                    },
+                }
+            }
         };
 
         match packet_result {
@@ -204,13 +287,8 @@ impl PendingConnection {
         }
     }
 
-    /// Server for the connection packet events, only for clients below 26.3 after handshake.
+    /// Packet observers and translators can subscribe for every supported version.
     fn translating_server(&self) -> Option<Arc<Server>> {
-        if self.version.load() == CURRENT_MC_VERSION
-            || self.connection_state.load() == ConnectionState::HandShake
-        {
-            return None;
-        }
         self.server.upgrade()
     }
 
@@ -246,7 +324,24 @@ impl PendingConnection {
 
     /// `JavaConnectionPacketSentEvent` with the 26.3 packet. `(None, extras)` when cancelled.
     async fn translate_outgoing(&self, packet_data: Bytes) -> (Option<Bytes>, Vec<Bytes>) {
-        let Some(server) = self.translating_server() else {
+        Self::translate_outgoing_for(
+            self.translating_server(),
+            self.id,
+            self.version.load(),
+            self.connection_state.load(),
+            packet_data,
+        )
+        .await
+    }
+
+    async fn translate_outgoing_for(
+        server: Option<Arc<Server>>,
+        id: u64,
+        version: JavaMinecraftVersion,
+        state: ConnectionState,
+        packet_data: Bytes,
+    ) -> (Option<Bytes>, Vec<Bytes>) {
+        let Some(server) = server else {
             return (Some(packet_data), Vec::new());
         };
         if !server
@@ -261,13 +356,8 @@ impl PendingConnection {
             return (Some(packet_data), Vec::new());
         };
         let payload = packet_data.slice(packet_data.len() - reader.len()..);
-        let mut event = JavaConnectionPacketSentEvent::new(
-            self.id,
-            self.version.load(),
-            self.connection_state.load(),
-            packet_id.0,
-            payload,
-        );
+        let mut event =
+            JavaConnectionPacketSentEvent::new(id, version, state, packet_id.0, payload);
         server.plugin_manager.fire(&server, &mut event).await;
         let extras = event
             .extra_packets
@@ -594,6 +684,13 @@ impl PendingConnection {
                 Ok(None)
             }
             id if id == SAcknowledgeFinishConfig::to_id(version) => {
+                if !matches!(self.configuration_stage, ConfigurationStage::Finished) {
+                    self.kick(TextComponent::text(
+                        "Unexpected configuration acknowledgement",
+                    ))
+                    .await;
+                    return Ok(Some(PacketHandlerResult::Stop));
+                }
                 let Some(profile) = self.gameprofile.clone() else {
                     return Ok(Some(PacketHandlerResult::Stop));
                 };
@@ -607,11 +704,19 @@ impl PendingConnection {
                 }
             }
             id if id == SKnownPacks::to_id(version) => {
-                self.handle_known_packs(server).await;
+                if matches!(self.configuration_stage, ConfigurationStage::KnownPacks) {
+                    self.handle_known_packs(server).await;
+                }
                 Ok(None)
             }
             id if id == SKeepAlive::to_id(version) => {
-                let _keep_alive = SKeepAlive::read(&mut payload, &version)?;
+                let keep_alive = SKeepAlive::read(&mut payload, &version)?;
+                if self
+                    .config_keepalive
+                    .is_some_and(|(id, _)| id == keep_alive.keep_alive_id)
+                {
+                    self.config_keepalive = None;
+                }
                 Ok(None)
             }
             id if id == SConfigResourcePack::to_id(version) => {
@@ -687,17 +792,22 @@ impl PendingConnection {
         server: &Server,
         packet: SConfigResourcePack,
     ) {
+        let ConfigurationStage::ResourcePack { id, .. } = self.configuration_stage else {
+            return;
+        };
+        if self.version.load() >= JavaMinecraftVersion::V_1_20_3 && packet.uuid != id {
+            return;
+        }
         let resource_config = &server.advanced_config.resource_pack.java;
         if resource_config.enabled {
             use pumpkin_protocol::java::server::config::ResourcePackResponseResult;
             match packet.response_result() {
-                ResourcePackResponseResult::Downloaded
-                | ResourcePackResponseResult::DownloadSuccess
-                | ResourcePackResponseResult::Discarded
-                | ResourcePackResponseResult::Unknown(_) => {
+                ResourcePackResponseResult::DownloadSuccess => {
                     self.start_known_packs(server).await;
                 }
-                ResourcePackResponseResult::Accepted => {}
+                ResourcePackResponseResult::Accepted
+                | ResourcePackResponseResult::Downloaded
+                | ResourcePackResponseResult::Unknown(_) => {}
                 ResourcePackResponseResult::Declined => {
                     if resource_config.force {
                         self.kick(TextComponent::text("Required resource pack was declined"))
@@ -721,6 +831,14 @@ impl PendingConnection {
                 ResourcePackResponseResult::ReloadFailed => {
                     self.kick(TextComponent::text("Failed to reload resource pack"))
                         .await;
+                }
+                ResourcePackResponseResult::Discarded => {
+                    if resource_config.force {
+                        self.kick(TextComponent::text("Required resource pack was discarded"))
+                            .await;
+                    } else {
+                        self.start_known_packs(server).await;
+                    }
                 }
             }
         }

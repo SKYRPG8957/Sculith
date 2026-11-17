@@ -2,7 +2,7 @@
   "date": "2026-11-17",
   "upstream_commit": "87f8822ac36da62102350977be2f62f155a303dc",
   "server": "Linux debug; Rust 1.100.0; locally modified fork",
-  "server_sha256": "10539e0fccac09b078d178ef84383313dd4956a72904a2ae1e21da4372e4dab9",
+  "server_sha256": "d02ad2aeace46b0ce15d0e18748a1d5ceb778f61fe1e4ca139cd962fdc9f518d",
   "native_client": "gophertunnel e2251a60f71d",
   "block_registry": "Dragonfly 0f9a3a573626",
   "network": "loopback NetherNet, offline authentication for the test only",
@@ -13,12 +13,27 @@
     "upstream_input_failure": "7d7e755b891a894f719c92016157df5f7ae36dcdc1e1cb366c4671cbab37f8ba",
     "fork_building": "fd52ede4c82fa79a75b6863711eed161413140ecfd0e601bf4dbc062200cb814",
     "fork_restart": "d82db3e6c9f4fe58c7b311acefc6690b5a273a839ca0f1c719f0fa9d90916266",
-    "official_java_readback": "7cecd716186665197ac59a7c123aa418d679cf0ab75413cafd1a04237135f5f2"
+    "official_java_readback": "7cecd716186665197ac59a7c123aa418d679cf0ab75413cafd1a04237135f5f2",
+    "shared_resource_transfer": "a7384b694d7b353af3e048c425945a7fc88edd42eb7458ef5233717b854deddb",
+    "shared_native_building": "cbf26839e90d40a71d32826530ff23a00cd50e0aac46ad7d750b2dbf724310e8",
+    "stock_java_client": "69526f397329c64d94aa319de17544cb46b05f540230297a2750b4223d2c7247"
   },
   "limitations": [
     "Flat-map marker test only",
     "No Windows GDK client validation",
     "No load or performance claim",
     "Bedrock LevelDB import/export remains unsupported"
-  ]
+  ],
+  "shared_resources": {
+    "protocol_tests": 168,
+    "configuration_tests": 24,
+    "server_tests": 794,
+    "converter_tests": 14,
+    "native_building_paths": 4,
+    "java_configuration_keepalives": 2,
+    "java_known_pack_exchanges": 1,
+    "java_client": "Unmodified Java 26.3; fresh profile; local offline authentication",
+    "java_pack_sha1": "4ec0f94603861aeceb633e2384b12d7cc3213135",
+    "scope": "Texture and static item model rendered; null audio device; no Bedrock rendering claim"
+  }
 }
