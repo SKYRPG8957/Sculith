@@ -79,8 +79,9 @@ advertised URL; authenticated NetherNet hosting has its own [media configuration
 - Prediction sequences reject replay; corrections gate subsequent movement and
   building until acknowledged. The owner validates four creative block items,
   counts 1–64 and player slots 9–44 before committing permitted replacements.
-  Pickup/right-click splitting, hotbar swaps and Shift-click main/hotbar moves compute from owner state,
-  without trusting hashed client predictions. Unsupported actions restore state.
+  Pickup/right-click splitting, hotbar swaps and Shift-click main/hotbar moves
+  compute from owner state, without trusting hashed client predictions.
+  Unsupported actions restore state.
   Quick moves merge matching stacks before filling an empty slot and leave any
   remainder in the source. They preserve the cursor and selected hotbar slot;
   crafting, armour and offhand slots are outside this operation.

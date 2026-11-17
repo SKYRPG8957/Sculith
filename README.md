@@ -53,7 +53,8 @@ The previous preview downloads have been withdrawn; no new binaries are publishe
 ## Features
 
 - Shared chunks, player visibility, movement, creative building and chat.
-- Counted 36-slot creative inventory with Stone, Dirt, Grass and Bedrock, including main/hotbar quick moves.
+- Counted 36-slot creative inventory with Stone, Dirt, Grass and Bedrock,
+  including main/hotbar quick moves.
 - Rust plugin world queries and atomic block edits through the region owner.
 - Optional [plugin IPC monitoring and profiling](docs/guides/profiling.md).
 - Rust plugin SDK with game events, commands, private messages, forms, sounds
