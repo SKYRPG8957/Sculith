@@ -1,6 +1,13 @@
 # Sculith
 
+**Fast. Light. Safe.**
+
 Rust Minecraft server for Java and Bedrock clients, based on [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin).
+
+The target remains one Bedrock-based simulation shared by both editions, region
+ownership and parallel simulation, Rust plugins, and translated resources for
+unmodified Java clients. Performance work targets tick latency, chunk throughput,
+memory use and network cost, measured under the same world and client workload.
 
 This branch is the engine migration. It is not a production release. Java 26.3
 and Bedrock 1.26.63 (protocol 2225) are the initial targets.

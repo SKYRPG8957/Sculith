@@ -5,6 +5,13 @@
 The canonical repository is `SKYRPG8957/Sculith`; Pumpkin is the upstream.
 See `UPSTREAM.md` for the base commit and `docs/sculith/fork.md` for verification.
 
+- Keep Sculith's Bedrock-first target: one authoritative simulation, shared
+  content and rules, unmodified Java access, and Rust plugins. Bedrock defines
+  the target game rules; verify retained Java mechanics against that target.
+- Keep the performance goals. Measure tick latency, chunk throughput, CPU,
+  memory and network cost against the same world and client workload. Preserve
+  essential simulation and interaction when optimizing. Region ownership and
+  parallel game-state computation remain architectural targets.
 - Preserve the GPL-3.0 server license, upstream history and copyright notices.
   Keep the plugin SDK's individual permissive licenses intact. The former MIT
   Sculith engine has separate history and has not been relicensed.
@@ -18,6 +25,8 @@ See `UPSTREAM.md` for the base commit and `docs/sculith/fork.md` for verificatio
 
 The following notes are inherited from Pumpkin. Upstream contribution and PR
 rules concern submissions to Pumpkin; this fork is independently maintained.
+Vanilla-parity guidance below describes validation of inherited Java mechanics;
+Sculith's shared rule decisions follow the Bedrock-first target above.
 
 Notes for coding agents working on Pumpkin. Humans are welcome to read it too. [CONTRIBUTING.md](CONTRIBUTING.md) still applies. If a maintainer or the person you're working for tells you something different from this file, do what they say, with one exception: agents never open pull requests, even when asked. See the last section.
 
