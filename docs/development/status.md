@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Java main/hotbar quick moves compute destination merges and partial remainders on the shared owner. Changed stacks receive fresh IDs; allocation failure rolls back the entire operation. Cursor/output, selected slot and request history are preserved. Existing inventory/equipment hooks and native peer updates expose only committed changes. Block-pick packet observations now correctly report Gameplay in both adapters instead of Unsupported.
+
 - NetherNet establishment can continue past an outbound UDP permission failure on one candidate while retaining its existing peer-address policy and establishment deadline. Permission loss on the active session path and socket-level receive permission errors remain fatal to that session. Bounded debug output identifies send/receive path errors without game payloads.
 
 - First run creates an authenticated `sculith.toml` with both edition sessions, loopback listeners and periodic region saving. Existing and invalid configurations are preserved; explicit missing paths fail. `check` remains read-only. `run --offline` applies a local-only in-memory authentication override without enabling disabled legacy sessions. No plugin, welcome or content pack is loaded by default. Windows launchers use the same server-owned configuration path.
@@ -285,7 +287,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 - New first runs enable authenticated loopback sessions and world saving. Existing discovery configurations remain discovery-only until edited. Remote listeners require explicit bind/media configuration; official-client online gameplay remains unverified.
 - Successful real-account sign-in remains unverified. Test-issued online transcripts and actual official-endpoint negative checks pass. Offline identities are restricted to loopback binds.
-- Gameplay remains a bounded creative builder with four block items and 36 inventory slots. General containers, drop/drag/shift-click, armour/offhand, gravity, simulation ticks, survival, combat and crafting are not implemented.
+- Gameplay remains a bounded creative builder with four block items and 36 inventory slots. Main/hotbar quick moves are supported; general containers, drop/drag interactions, armour/offhand, gravity, simulation ticks, survival, combat and crafting are not implemented.
 - Region recovery restores completed periodic/final snapshots. Unflushed edits, persistent player state and a write-ahead log remain pending.
 - Initialized peer players and counted held items are displayed within loaded chunks; account skins, armour/offhand, general entity simulation and combat remain pending. The Java adapter has official-game evidence for the limited Linux offline scenario; official Windows game rendering and successful real-account sign-in remain unverified. No complete crossplay claim is made.
 - Java currently maps only the five core block states, uses a fixed two-chunk view, and supplies direct vertical skylight without lateral light propagation. General containers and packet compression are pending; login encryption, public chat, commands and configured pack delivery are implemented.

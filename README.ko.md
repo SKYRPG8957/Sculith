@@ -53,7 +53,7 @@ cargo run --locked -- run --offline
 ## 주요 기능
 
 - 두 에디션의 청크·플레이어 표시·이동·건축·채팅 공유
-- Stone·Dirt·Grass·Bedrock의 수량을 다루는 크리에이티브 인벤토리 36칸
+- Stone·Dirt·Grass·Bedrock의 수량을 다루는 인벤토리 36칸과 핫바·가방 간 빠른 이동
 - 지역 소유자가 처리하는 Rust 플러그인 월드 조회·원자적 블록 수정
 - 선택적으로 사용하는 [플러그인 IPC 모니터링·프로파일링](docs/guides/profiling.md)
 - 게임 이벤트·명령어·개인 메시지·폼·사운드·정적 모델을 지원하는 [Rust 플러그인 SDK](docs/guides/plugins.md)

@@ -19,6 +19,9 @@ use sculith_world::BlockKind;
 mod pick;
 #[cfg(test)]
 mod pick_tests;
+mod quick_move;
+#[cfg(test)]
+mod quick_move_tests;
 
 pub const INVENTORY_SLOTS: usize = sculith_core::inventory::SLOT_COUNT;
 pub const MAX_STACK: u8 = 64;
@@ -75,6 +78,7 @@ pub struct SlotRef {
 pub enum Click {
     Pickup { slot: u8, right: bool },
     HotbarSwap { slot: u8, hotbar: u8 },
+    QuickMove { slot: u8 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,6 +335,7 @@ impl Inventory {
             expected_id: stack.map_or(0, |stack| stack.net_id),
         };
         let action = match click {
+            Click::QuickMove { slot } => return Ok(self.quick_move(slot)?),
             Click::Pickup { slot, right } => {
                 let slot = Slot::Inventory(slot);
                 let item = self.get(slot)?;

@@ -123,8 +123,6 @@ def smoke(server, native, plugin):
                 until(java, lambda: getattr(java, "peer_entities", {}).get(2, {}).get("held") == (5, 55))
                 creative(java, 36, 2, 54)
                 barrier("INVENTORY_JAVA_HELD_READY")
-                assert probe.wait(timeout=10) == 0
-                reader.join(timeout=2)
                 click(java, 36, 1, 0, predictions=True)
                 slots = synchronize(java)
                 assert slots[0] == (1, 54) and java.cursor == (1, 54)
@@ -139,6 +137,21 @@ def smoke(server, native, plugin):
                 click(java, 36, 0, 5)
                 slots = synchronize(java)
                 assert slots[9] == slots[10] == (17, 55) and java.cursor == (1, 54)
+                # Shift clicks compute merges from owner counts, even with stale
+                # state and forged predictions. A nonempty cursor is untouched.
+                click(java, 36, 0, 1, predictions=True, state=0)
+                slots = synchronize(java)
+                assert slots[0] == (0, 0) and slots[9] == (64, 55) and slots[10] == (34, 55)
+                assert java.cursor == (1, 54)
+                click(java, 10, 1, 1)
+                slots = synchronize(java)
+                assert slots[0] == (34, 55) and slots[10] == (0, 0)
+                click(java, 9, 0, 1)
+                slots = synchronize(java)
+                assert slots[0] == (64, 55) and slots[3] == (34, 55) and slots[9] == (0, 0)
+                assert java.cursor == (1, 54)
+                assert probe.wait(timeout=10) == 0, "".join(lines)
+                reader.join(timeout=2)
                 before = slots.copy()
                 click(java, 36, 0, 5)  # Unsupported drag painting stays connected and unchanged.
                 assert synchronize(java) == before and java.cursor == (1, 54)
@@ -167,7 +180,7 @@ def smoke(server, native, plugin):
                 if process.poll() is None:
                     process.kill()
                     process.wait(timeout=5)
-    print("PASS: independent native transactions, Java creative/pickup/swap, forged-prediction rejection, counted peer hands, owner plugin events and no disconnect on unsupported inventory actions")
+    print("PASS: independent native transactions, Java creative/pickup/swap/quick-move, forged-prediction rejection, counted peer hands, owner plugin events and no disconnect on unsupported inventory actions")
 
 
 if __name__ == "__main__":

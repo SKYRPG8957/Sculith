@@ -72,6 +72,8 @@ def smoke(server,native,observer):
             process.send_signal(signal.CTRL_BREAK_EVENT if os.name=='nt' else signal.SIGINT);assert process.wait(timeout=10)==0
             text=log.read_text(encoding='utf-8');assert 'plugin disabled' not in text and 'events inventory' in text and 'events equipment' in text
             assert 'protocol=777 id=36 ' in text and 'protocol=2225 id=34 ' in text
+            assert re.search(r'edition=Java protocol=777 id=36 .*dispatch=Gameplay', text)
+            assert re.search(r'edition=Bedrock protocol=2225 id=34 .*dispatch=Gameplay', text)
         except Exception:
             print(log.read_text(encoding='utf-8'));raise
         finally:

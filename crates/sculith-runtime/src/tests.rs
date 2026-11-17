@@ -120,6 +120,31 @@ async fn block_pick_publishes_committed_inventory_and_equipment_only_once() {
     assert!(denied.response.result.is_err());
     assert!(events.try_recv().is_err());
     assert!(peers.updates.try_recv().is_err());
+    let moved = world
+        .inventory_click(
+            actor.player.id,
+            sculith_game::inventory::Click::QuickMove { slot: 0 },
+        )
+        .await
+        .unwrap();
+    assert!(moved.player.held().is_none());
+    assert_eq!(moved.player.selected_slot, 0);
+    assert_eq!(moved.player.inventory[9].unwrap().count, 1);
+    assert!(matches!(events.recv().await.unwrap().as_ref(),
+        WorldEvent::InventoryChanged {changes,..} if changes.len()==2));
+    assert!(matches!(events.recv().await.unwrap().as_ref(),
+        WorldEvent::Equipped(player) if player.held().is_none()));
+    assert!(matches!(peers.updates.recv().await.unwrap().as_ref(),
+        WorldEvent::Equipped(player) if player.held().is_none()));
+    world
+        .inventory_click(
+            actor.player.id,
+            sculith_game::inventory::Click::QuickMove { slot: 0 },
+        )
+        .await
+        .unwrap();
+    assert!(events.try_recv().is_err());
+    assert!(peers.updates.try_recv().is_err());
     assert_eq!(world.capture().await.unwrap().revision(), 0);
     stop.send_replace(true);
     task.await.unwrap().unwrap();

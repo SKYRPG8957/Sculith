@@ -448,6 +448,33 @@ func sharedInventory(conn *minecraft.Conn) error {
 		return fmt.Errorf("missing Java peer Grass2 equipment")
 	}
 	fmt.Println("INVENTORY_JAVA_HELD_READY")
-	fmt.Println("PASS: independent native creative creation, counts, predictions, rejections, replay, resync and Java held Grass2")
+	// Pickup/swap and then main/hotbar quick moves must publish all committed
+	// held changes, including the empty hand, to the other edition.
+	for _, want := range []struct {
+		item  int32
+		count uint16
+	}{{2, 1}, {3, 64}, {0, 0}, {3, 34}, {3, 64}} {
+		seen := false
+		for packets := 0; packets < 256; packets++ {
+			pk, err := conn.ReadPacket()
+			if err != nil {
+				return err
+			}
+			p, ok := pk.(*packet.MobEquipment)
+			if !ok || p.EntityRuntimeID != 1 {
+				continue
+			}
+			if p.HotBarSlot != 0 || p.InventorySlot != 0 || p.WindowID != 0 ||
+				p.NewItem.Stack.NetworkID != want.item || p.NewItem.Stack.Count != want.count {
+				return fmt.Errorf("Java quick-move peer equipment: got %+v want item%d count%d", p, want.item, want.count)
+			}
+			seen = true
+			break
+		}
+		if !seen {
+			return fmt.Errorf("missing Java quick-move peer equipment")
+		}
+	}
+	fmt.Println("PASS: independent native creative creation, counts, predictions, rejections, replay, resync and Java counted quick-move hands")
 	return nil
 }

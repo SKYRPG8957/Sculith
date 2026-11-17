@@ -116,6 +116,7 @@ pub fn click(mut fields: Fields<'_>) -> Result<Option<ClickChange>> {
         return Ok(None);
     }
     let click = match (mode, button) {
+        (1, 0..=1) => Click::QuickMove { slot },
         (0, 0..=1) => Click::Pickup {
             slot,
             right: button == 1,
@@ -281,6 +282,15 @@ mod tests {
 
     #[test]
     fn click_header_vectors_map_pickup_and_hotbar_swap() {
+        for button in [0, 1] {
+            assert_eq!(
+                click(Fields(&[0, 7, 0, 36, button, 1, 0, 0])).unwrap(),
+                Some(ClickChange {
+                    state_id: 7,
+                    click: Click::QuickMove { slot: 0 }
+                })
+            );
+        }
         assert_eq!(
             click(Fields(&[0, 7, 0, 36, 0, 0, 0, 0])).unwrap(),
             Some(ClickChange {
@@ -313,7 +323,7 @@ mod tests {
         );
         // Known but unsupported modes/menus/buttons/window and invalid state IDs.
         for bytes in [
-            vec![0, 0, 0, 36, 0, 1, 0, 0],
+            vec![0, 0, 0, 36, 2, 1, 0, 0],
             vec![0, 0, 0, 36, 2, 0, 0, 0],
             vec![0, 0, 0, 36, 9, 2, 0, 0],
             vec![0, 0, 0xff, 0xff, 0, 0, 0, 0],

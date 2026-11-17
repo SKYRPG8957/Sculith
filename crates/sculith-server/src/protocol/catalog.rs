@@ -82,7 +82,9 @@ pub fn java_receipt(id: i32, sequence: u64) -> Result<sculith_plugin_api::Packet
     } else {
         match id {
             0 | 0x0b | 0x0d | 0x0e | 0x1c | 0x2c => PacketDispatch::Control,
-            7 | 9 | 0x12 | 0x1e..=0x21 | 0x29 | 0x36 | 0x39 | 0x42 => PacketDispatch::Gameplay,
+            7 | 9 | 0x12 | 0x1e..=0x21 | 0x24 | 0x29 | 0x36 | 0x39 | 0x42 => {
+                PacketDispatch::Gameplay
+            }
             0x44 => PacketDispatch::Notification,
             _ => PacketDispatch::Unsupported,
         }
@@ -179,6 +181,16 @@ mod tests {
     #[test]
     fn connection_receipts_use_phase_and_selected_protocol() {
         use sculith_core::connections::PacketPhase;
+        assert_eq!(
+            java_receipt(0x24, 1).unwrap().dispatch,
+            sculith_core::PacketDispatch::Gameplay
+        );
+        assert_eq!(
+            java_connection_receipt(0x24, Some(777), PacketPhase::Play)
+                .unwrap()
+                .dispatch,
+            sculith_core::PacketDispatch::Gameplay
+        );
         for (phase, id, name) in [
             (PacketPhase::Handshake, 0, "minecraft:intention"),
             (PacketPhase::Status, 0, "minecraft:status_request"),

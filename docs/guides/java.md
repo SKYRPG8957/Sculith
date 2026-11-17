@@ -79,8 +79,11 @@ advertised URL; authenticated NetherNet hosting has its own [media configuration
 - Prediction sequences reject replay; corrections gate subsequent movement and
   building until acknowledged. The owner validates four creative block items,
   counts 1–64 and player slots 9–44 before committing permitted replacements.
-  Pickup/right-click splitting and hotbar swaps compute from owner state,
+  Pickup/right-click splitting, hotbar swaps and Shift-click main/hotbar moves compute from owner state,
   without trusting hashed client predictions. Unsupported actions restore state.
+  Quick moves merge matching stacks before filling an empty slot and leave any
+  remainder in the source. They preserve the cursor and selected hotbar slot;
+  crafting, armour and offhand slots are outside this operation.
 - Stock creative screens submit resulting slot replacements and keep their carried
   stack locally. Successful edits acknowledge only the affected slot; resetting
   the entire menu would erase that unsent carried stack. Actual Java mouse/key
@@ -114,7 +117,7 @@ chunks and clipped to the existing region. Only Air, Bedrock, Stone, Dirt and
 Grass are mapped. Sky lighting is direct vertical lighting; lateral propagation
 is pending. General entity simulation is not implemented.
 
-General containers, drag/shift-click, drops, survival, gravity and crafting remain
+General containers, drag painting, drops, survival, gravity and crafting remain
 unfinished. Current source supports selected [static models](models.md),
 [sounds](sounds.md), [simple forms](forms.md) and
 [automatic pack delivery](packs.md). Arbitrary Bedrock content

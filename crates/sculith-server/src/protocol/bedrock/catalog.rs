@@ -91,6 +91,7 @@ pub fn receipt(packet: &V2225, sequence: u64) -> sculith_plugin_api::PacketInfo 
             | V2225::TextPacket(_)
             | V2225::CommandRequestPacket(_)
             | V2225::PlayerActionPacket(_)
+            | V2225::BlockPickRequestPacket(_)
             | V2225::InventoryTransactionPacket(_)
             | V2225::MobEquipmentPacket(_)
             | V2225::PlayerHotbarPacket(_)
@@ -123,6 +124,17 @@ mod tests {
     use super::*;
     #[test]
     fn all_locked_native_types_are_registered_and_unknown_stays_explicit() {
+        let pick = V2225::BlockPickRequestPacket(Box::new(
+            bedrock::protocol::v662::packets::BlockPickRequestPacket {
+                position: bedrock::protocol::v662::types::BlockPos { x: 1, y: 3, z: 1 },
+                with_data: false,
+                max_slots: 9,
+            },
+        ));
+        assert_eq!(
+            receipt(&pick, 1).dispatch,
+            sculith_plugin_api::PacketDispatch::Gameplay
+        );
         let entries = typed();
         assert_eq!(entries.len(), 239);
         super::super::super::catalog::validate(&entries).unwrap();
