@@ -364,7 +364,7 @@ impl WorldHandle {
             .await
             .context("world owner stopped")?;
         if let Some(stamp) = &mut stamp {
-            stamp.queued();
+            self.telemetry.queued(stamp);
         }
         permit.send(Envelope { command, stamp });
         Ok(())

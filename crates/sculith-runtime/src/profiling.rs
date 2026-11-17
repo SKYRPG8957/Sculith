@@ -3,6 +3,7 @@ use anyhow::{Result, ensure};
 use serde::Serialize;
 use std::{
     collections::VecDeque,
+    num::NonZeroU64,
     sync::{
         Mutex,
         atomic::{AtomicU8, AtomicU64, Ordering},
@@ -101,6 +102,20 @@ pub struct Times {
     pub total_ns: u64,
 }
 impl Times {
+    fn between(started: u64, queued: u64, processing: u64, end: u64) -> Self {
+        let admission_ns = queued.saturating_sub(started);
+        let queue_ns = processing.saturating_sub(queued);
+        let service_ns = end.saturating_sub(processing);
+        Self {
+            admission_ns,
+            queue_ns,
+            service_ns,
+            total_ns: admission_ns
+                .saturating_add(queue_ns)
+                .saturating_add(service_ns),
+        }
+    }
+
     fn add(&mut self, other: Self) {
         self.admission_ns = self.admission_ns.saturating_add(other.admission_ns);
         self.queue_ns = self.queue_ns.saturating_add(other.queue_ns);
@@ -174,21 +189,16 @@ pub struct Snapshot {
 }
 #[derive(Clone, Copy)]
 pub(super) struct Stamp {
-    generation: u64,
-    origin: Instant,
-    started: Instant,
-    queued: Instant,
-}
-impl Stamp {
-    pub fn queued(&mut self) {
-        self.queued = Instant::now();
-    }
+    // An active generation is never zero, leaving a niche for untimed messages.
+    generation: NonZeroU64,
+    started_ns: u64,
+    queued_ns: u64,
 }
 #[derive(Clone)]
 struct Window {
     generation: u64,
     mode: Mode,
-    origin: Instant,
+    origin_ns: u64,
     deadline: Option<Instant>,
     totals: Totals,
     operations: [Totals; Operation::COUNT],
@@ -198,11 +208,11 @@ struct Window {
     overwritten: u64,
 }
 impl Window {
-    fn new(generation: u64, mode: Mode, origin: Instant, deadline: Option<Instant>) -> Self {
+    fn new(generation: u64, mode: Mode, origin_ns: u64, deadline: Option<Instant>) -> Self {
         Self {
             generation,
             mode,
-            origin,
+            origin_ns,
             deadline,
             totals: Totals::default(),
             operations: [Totals::default(); Operation::COUNT],
@@ -232,11 +242,18 @@ impl Window {
         }
     }
 }
+// Keep owner writes off the cache line repeatedly read by queue producers.
+// This is a layout choice, not a CPU-cache-miss measurement.
+#[repr(align(64))]
+struct Lifetime {
+    completed: AtomicU64,
+    aborted: AtomicU64,
+}
 pub(super) struct Shared {
     region_id: u64,
     enabled: AtomicU8,
-    completed: AtomicU64,
-    aborted: AtomicU64,
+    lifetime: Lifetime,
+    epoch: Instant,
     window: Mutex<Window>,
 }
 fn ns(duration: Duration) -> u64 {
@@ -252,9 +269,12 @@ impl Shared {
         Self {
             region_id,
             enabled: AtomicU8::new(0),
-            completed: AtomicU64::new(0),
-            aborted: AtomicU64::new(0),
-            window: Mutex::new(Window::new(0, Mode::Off, Instant::now(), None)),
+            lifetime: Lifetime {
+                completed: AtomicU64::new(0),
+                aborted: AtomicU64::new(0),
+            },
+            epoch: Instant::now(),
+            window: Mutex::new(Window::new(0, Mode::Off, 0, None)),
         }
     }
     pub fn configure(&self, mode: Mode, duration: Option<Duration>) -> Result<()> {
@@ -272,7 +292,12 @@ impl Shared {
             .checked_add(1)
             .ok_or_else(|| anyhow::anyhow!("world profile generations exhausted"))?;
         let origin = Instant::now();
-        *window = Window::new(generation, mode, origin, duration.map(|d| origin + d));
+        *window = Window::new(
+            generation,
+            mode,
+            ns(origin.saturating_duration_since(self.epoch)),
+            duration.map(|d| origin + d),
+        );
         self.enabled
             .store(u8::from(mode != Mode::Off), Ordering::Release);
         Ok(())
@@ -287,12 +312,19 @@ impl Shared {
             self.enabled.store(0, Ordering::Release);
             return None;
         }
+        let now_ns = ns(now.saturating_duration_since(self.epoch));
         Some(Stamp {
-            generation: window.generation,
-            origin: window.origin,
-            started: now,
-            queued: now,
+            generation: NonZeroU64::new(window.generation).expect("enabled capture generation"),
+            started_ns: now_ns,
+            queued_ns: now_ns,
         })
+    }
+    #[inline]
+    fn now_ns(&self) -> u64 {
+        ns(self.epoch.elapsed())
+    }
+    pub fn queued(&self, stamp: &mut Stamp) {
+        stamp.queued_ns = self.now_ns();
     }
     pub fn processing(
         &self,
@@ -302,7 +334,7 @@ impl Shared {
     ) -> Work<'_> {
         Work {
             shared: self,
-            timed: stamp.map(|stamp| (stamp, operation(), Instant::now(), depth)),
+            timed: stamp.map(|stamp| (stamp, operation(), self.now_ns(), depth)),
             complete: false,
         }
     }
@@ -339,8 +371,8 @@ impl Shared {
             owner_closed: closed,
             queue_capacity: capacity,
             occupied_capacity: occupied,
-            completed_commands: self.completed.load(Ordering::Relaxed),
-            aborted_commands: self.aborted.load(Ordering::Relaxed),
+            completed_commands: self.lifetime.completed.load(Ordering::Relaxed),
+            aborted_commands: self.lifetime.aborted.load(Ordering::Relaxed),
             totals: window.totals,
             maximum_remaining_queue_depth: window.maximum_depth,
             recent: Recent {
@@ -363,7 +395,7 @@ impl Shared {
 }
 pub(super) struct Work<'a> {
     shared: &'a Shared,
-    timed: Option<(Stamp, Operation, Instant, usize)>,
+    timed: Option<(Stamp, Operation, u64, usize)>,
     complete: bool,
 }
 impl Work<'_> {
@@ -373,28 +405,24 @@ impl Work<'_> {
 }
 impl Drop for Work<'_> {
     fn drop(&mut self) {
-        increment(&self.shared.completed);
+        increment(&self.shared.lifetime.completed);
         if !self.complete {
-            increment(&self.shared.aborted);
+            increment(&self.shared.lifetime.aborted);
         }
         let Some((stamp, operation, processing, depth)) = self.timed else {
             return;
         };
-        let end = Instant::now();
+        let end = self.shared.now_ns();
         let mut window = self.shared.window.lock().unwrap_or_else(|e| e.into_inner());
         // Reconfiguration discards old in-flight samples, never game work.
-        if window.generation != stamp.generation || window.mode == Mode::Off {
+        if window.generation != stamp.generation.get() || window.mode == Mode::Off {
             return;
         }
-        let times = Times {
-            admission_ns: ns(stamp.queued.saturating_duration_since(stamp.started)),
-            queue_ns: ns(processing.saturating_duration_since(stamp.queued)),
-            service_ns: ns(end.saturating_duration_since(processing)),
-            total_ns: ns(end.saturating_duration_since(stamp.started)),
-        };
+        let times = Times::between(stamp.started_ns, stamp.queued_ns, processing, end);
+        let start_ns = stamp.started_ns.saturating_sub(window.origin_ns);
         window.record(Sample {
             operation,
-            start_ns: ns(stamp.started.saturating_duration_since(stamp.origin)),
+            start_ns,
             times,
             remaining_queue_depth: depth,
             aborted: !self.complete,
@@ -452,6 +480,70 @@ mod tests {
         owner.await.unwrap().unwrap();
     }
     #[test]
+    fn compact_timestamps_preserve_phase_units_and_capture_generations() {
+        let times = Times::between(1_000, 1_025, 1_075, 1_100);
+        assert_eq!(
+            (
+                times.admission_ns,
+                times.queue_ns,
+                times.service_ns,
+                times.total_ns
+            ),
+            (25, 50, 25, 100)
+        );
+        let times = Times::between(u64::MAX - 100, u64::MAX - 75, u64::MAX - 25, u64::MAX);
+        assert_eq!(
+            (
+                times.admission_ns,
+                times.queue_ns,
+                times.service_ns,
+                times.total_ns
+            ),
+            (25, 50, 25, 100)
+        );
+        let shared = Shared::new(0);
+        shared
+            .configure(Mode::Profile, Some(Duration::from_secs(30)))
+            .unwrap();
+        let mut stamp = shared.begin().unwrap();
+        shared.queued(&mut stamp);
+        assert!(stamp.queued_ns >= stamp.started_ns);
+        let old_generation = stamp.generation;
+        shared
+            .configure(Mode::Profile, Some(Duration::from_secs(30)))
+            .unwrap();
+        assert!(shared.begin().unwrap().generation > old_generation);
+        {
+            let mut work = shared.processing(Some(stamp), || Operation::Capture, 0);
+            work.complete();
+        }
+        assert_eq!(shared.snapshot(32, 0, false).totals.calls, 0);
+        // A command starting exactly at the current capture origin reports zero,
+        // even though this owner's monotonic epoch predates both captures.
+        let origin_ns = shared.window.lock().unwrap().origin_ns;
+        let sample = Stamp {
+            generation: shared.begin().unwrap().generation,
+            started_ns: origin_ns,
+            queued_ns: origin_ns,
+        };
+        {
+            let mut work = shared.processing(Some(sample), || Operation::Snapshot, 0);
+            work.complete();
+        }
+        let snapshot = shared.snapshot(32, 0, false);
+        assert_eq!(snapshot.samples.len(), 1);
+        assert_eq!(snapshot.samples[0].start_ns, 0);
+        assert_eq!(snapshot.samples[0].times.admission_ns, 0);
+        // Exhaustion refuses reconfiguration without wrapping to an untimed niche.
+        shared.window.lock().unwrap().generation = u64::MAX;
+        assert!(
+            shared
+                .configure(Mode::Profile, Some(Duration::from_secs(30)))
+                .is_err()
+        );
+        assert_eq!(shared.begin().unwrap().generation.get(), u64::MAX);
+    }
+    #[test]
     fn off_has_no_clock_token_or_history_and_does_not_classify_payloads() {
         let shared = Shared::new(7);
         for _ in 0..1000 {
@@ -466,7 +558,12 @@ mod tests {
         );
         drop(window);
         assert_eq!(shared.snapshot(32, 0, false).completed_commands, 1000);
-        assert!(std::mem::size_of::<Option<Stamp>>() <= 64);
+        assert!(std::mem::size_of::<Option<Stamp>>() <= 24);
+        assert_ne!(
+            std::mem::offset_of!(Shared, enabled) / 64,
+            std::mem::offset_of!(Shared, lifetime) / 64
+        );
+
         println!(
             "profiling layout: stamp={} optional_stamp={} envelope={} shared={}",
             std::mem::size_of::<Stamp>(),
