@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- First run creates an authenticated `sculith.toml` with both edition sessions, loopback listeners and periodic region saving. Existing and invalid configurations are preserved; explicit missing paths fail. `check` remains read-only. `run --offline` applies a local-only in-memory authentication override without enabling disabled legacy sessions. No plugin, welcome or content pack is loaded by default. Windows launchers use the same server-owned configuration path.
+
 - Creative block picking resolves the target on the shared owner, checks initialization/build permission, reach, occlusion and inventory rate, reuses existing counts and preserves displaced items when space remains. Java PickItemFromBlock and native BlockPickRequest synchronize the selected slot and counted inventory. Existing inventory/equipment hooks observe committed changes, while duplicate picks do not duplicate semantic events.
 
 - API v12 adds private console command events with explicit player/console source eligibility. Console-only commands are absent from both edition catalogs; player-only registrations retain their previous behavior and wire format. Local operator requests carry no synthetic player ID and can use the existing world API without connected players. A failed worker disables only its own registrations.
@@ -273,7 +275,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Known Limitations
 
-- Default mode remains discovery-only. Authenticated remote listeners require explicit session/media configuration; official-client online gameplay remains unverified.
+- New first runs enable authenticated loopback sessions and world saving. Existing discovery configurations remain discovery-only until edited. Remote listeners require explicit bind/media configuration; official-client online gameplay remains unverified.
 - Successful real-account sign-in remains unverified. Test-issued online transcripts and actual official-endpoint negative checks pass. Offline identities are restricted to loopback binds.
 - Gameplay remains a bounded creative builder with four block items and 36 inventory slots. General containers, drop/drag/shift-click, armour/offhand, gravity, simulation ticks, survival, combat and crafting are not implemented.
 - Region recovery restores completed periodic/final snapshots. Unflushed edits, persistent player state and a write-ahead log remain pending.

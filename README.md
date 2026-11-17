@@ -21,8 +21,13 @@ also require CMake for the crypto backend.
 git clone https://github.com/SKYRPG8957/Sculith.git
 cd Sculith
 cargo build --locked
-cargo run --locked -- run --config examples/configs/crossplay.toml
+cargo run --locked -- run --offline
 ```
+
+The first run creates `sculith.toml` and stores the world under `world/` in the
+working directory. Existing configuration is preserved. `--offline` skips account
+verification for local testing only; running `sculith` without it requires account
+verification. The generated file keeps authentication enabled.
 
 Connect on the same PC:
 
@@ -37,7 +42,7 @@ creative inventory, or middle-click a supported block in the world.
 Use `list` to see connected players, `save` to checkpoint and `stop` to save and
 shut down.
 
-The example saves changed blocks to `world/region.sculith` every 60 seconds and
+The generated configuration saves changed blocks to `world/region.sculith` every 60 seconds and
 again on Ctrl+C. After a forced stop, restart restores the last completed save.
 Changes since that save and player data are not persistent.
 [Save settings](docs/guides/hosting.md#world-saving).

@@ -13,7 +13,7 @@ Preview packages have been withdrawn; use a source build.
 
 ```sh
 cargo build --locked
-cargo run --locked -- run --config examples/configs/crossplay.toml
+cargo run --locked -- run --offline
 ```
 
 On the same machine, enter `127.0.0.1:25565` in Java 26.3 multiplayer.
@@ -21,17 +21,20 @@ Bedrock uses `127.0.0.1`, port `19132`. No client mod, proxy or separate
 Minecraft server process is used. A Java runtime is needed by the Java game,
 not by Sculith itself.
 
-Existing configurations do not automatically enable Java sessions. The opt-in is:
+First run creates `sculith.toml` with both editions enabled, loopback listeners,
+account verification and world saving. `--offline` skips verification for local
+testing without changing the file; non-loopback game listeners reject that option.
+Existing configuration files keep their authored behavior. To enable Java sessions
+in an older discovery configuration, add:
 
 ```toml
 [java]
 sessions = true
-require_authentication = false
+require_authentication = true
 login_timeout_secs = 30
 ```
 
-This offline listener must be enabled and bound to loopback. The source default
-remains discovery-only. Offline profile identifiers are conventional Java
+Offline listeners must be enabled and bound to loopback. Offline profile identifiers are conventional Java
 name-derived UUIDs; client-proposed UUIDs do not establish account identity.
 
 For an online Java listener, keep authentication enabled:

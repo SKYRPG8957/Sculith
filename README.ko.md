@@ -21,8 +21,13 @@ Windows MSVC 빌드에는 암호화 백엔드용 CMake도 필요합니다.
 git clone https://github.com/SKYRPG8957/Sculith.git
 cd Sculith
 cargo build --locked
-cargo run --locked -- run --config examples/configs/crossplay.toml
+cargo run --locked -- run --offline
 ```
+
+처음 실행하면 작업 폴더에 `sculith.toml`을 만들고 `world/`에 월드를 저장합니다.
+기존 설정 파일은 보존합니다. `--offline`은 같은 PC에서 테스트할 때만 계정 인증을
+생략하는 옵션입니다. 옵션 없이 실행하면 인증을 요구하며, 생성된 설정 파일에도
+인증이 켜진 상태로 남습니다.
 
 같은 PC에서 접속합니다.
 
@@ -35,7 +40,7 @@ cargo run --locked -- run --config examples/configs/crossplay.toml
 
 콘솔에서 `list`로 접속자를 보고, `save`로 저장하고, `stop`으로 저장 후 종료합니다.
 
-예제 설정은 변경된 블록을 60초마다 `world/region.sculith`에 저장하고, Ctrl+C로
+생성된 설정은 변경된 블록을 60초마다 `world/region.sculith`에 저장하고, Ctrl+C로
 종료할 때 한 번 더 저장합니다. 강제 종료 후에는 마지막 저장 상태를 복구합니다.
 마지막 저장 이후 변경 사항과 플레이어 데이터는 보존되지 않습니다.
 [저장 설정](docs/guides/hosting.md#world-saving).

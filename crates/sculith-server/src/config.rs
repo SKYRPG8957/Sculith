@@ -8,6 +8,8 @@ use anyhow::{Context, Result, ensure};
 use sculith_core::ServerStatus;
 use serde::Deserialize;
 
+mod bootstrap;
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
@@ -75,7 +77,7 @@ impl Default for Java {
 #[derive(Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Bedrock {
-    /// Opt-in native preview until official-client compatibility is verified.
+    /// Enable native game sessions instead of discovery alone.
     pub sessions: bool,
     pub require_authentication: bool,
     pub login_timeout_secs: u64,
@@ -155,44 +157,63 @@ fn enabled() -> bool {
 impl Config {
     pub fn load(path: Option<&Path>) -> Result<Self> {
         let default_path = Path::new("sculith.toml");
-        let path = match path {
-            Some(path) => Some(path),
-            None if default_path.try_exists()? => Some(default_path),
-            None => None,
-        };
-        let mut config: Self = if let Some(path) = path {
-            let content = std::fs::read_to_string(path)
-                .with_context(|| format!("cannot read config {}", path.display()))?;
-            let mut config: Self =
-                toml::from_str(&content).context("invalid server configuration")?;
-            let absolute = path.canonicalize()?;
-            let base = absolute.parent().context("config path has no parent")?;
-            if config.bedrock.nethernet_identity_path.is_relative() {
-                config.bedrock.nethernet_identity_path =
-                    base.join(&config.bedrock.nethernet_identity_path);
-            }
-            if let Some(snapshot) = &mut config.world.snapshot_path
-                && snapshot.is_relative()
-            {
-                *snapshot = base.join(&*snapshot);
-            }
-            for plugin in &mut config.plugins {
-                if plugin.path.is_relative() {
-                    plugin.path = base.join(&plugin.path);
-                }
-            }
-            if let Some(content) = &mut config.content {
-                if content.source.is_relative() {
-                    content.source = base.join(&content.source);
-                }
-                if content.mapping.is_relative() {
-                    content.mapping = base.join(&content.mapping);
-                }
-            }
-            config
+        if path.is_none() && !bootstrap::exists(default_path)? {
+            // `check` inspects the same first-run settings without writing files.
+            return Self::parse(bootstrap::TEMPLATE, &std::env::current_dir()?, false);
+        }
+        Self::load_file(path.unwrap_or(default_path), false)
+    }
+
+    pub fn load_for_run(path: Option<&Path>, offline: bool) -> Result<Self> {
+        let path = if let Some(path) = path {
+            path
         } else {
-            Self::default()
+            let path = Path::new("sculith.toml");
+            if bootstrap::create(path)? {
+                tracing::info!(path = %path.display(), "Created server configuration");
+            }
+            path
         };
+        Self::load_file(path, offline)
+    }
+
+    fn load_file(path: &Path, offline: bool) -> Result<Self> {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("cannot read config {}", path.display()))?;
+        let absolute = path.canonicalize()?;
+        let base = absolute.parent().context("config path has no parent")?;
+        Self::parse(&content, base, offline)
+    }
+
+    fn parse(content: &str, base: &Path, offline: bool) -> Result<Self> {
+        let mut config: Self = toml::from_str(content).context("invalid server configuration")?;
+        if config.bedrock.nethernet_identity_path.is_relative() {
+            config.bedrock.nethernet_identity_path =
+                base.join(&config.bedrock.nethernet_identity_path);
+        }
+        if let Some(snapshot) = &mut config.world.snapshot_path
+            && snapshot.is_relative()
+        {
+            *snapshot = base.join(&*snapshot);
+        }
+        for plugin in &mut config.plugins {
+            if plugin.path.is_relative() {
+                plugin.path = base.join(&plugin.path);
+            }
+        }
+        if let Some(content) = &mut config.content {
+            if content.source.is_relative() {
+                content.source = base.join(&content.source);
+            }
+            if content.mapping.is_relative() {
+                content.mapping = base.join(&content.mapping);
+            }
+        }
+        if offline {
+            config.java.require_authentication = false;
+            config.bedrock.require_authentication = false;
+        }
+        // Apply runtime overrides before validating listener and media scope.
         config.validate()?;
         for plugin in &mut config.plugins {
             plugin.path = plugin.path.canonicalize().with_context(|| {

@@ -40,6 +40,9 @@ struct Cli {
 enum Command {
     /// Start the server.
     Run {
+        /// Skip account verification for loopback game sessions only; does not edit the config.
+        #[arg(long)]
+        offline: bool,
         /// Disable local stdin commands (for service managers).
         #[arg(long)]
         no_console: bool,
@@ -106,19 +109,21 @@ async fn main() -> Result<()> {
     match Cli::parse().command.unwrap_or(Command::Run {
         config: None,
         no_console: false,
+        offline: false,
         profiling: Default::default(),
         world_profiling: Default::default(),
     }) {
         Command::Run {
             config,
             no_console,
+            offline,
             profiling,
             world_profiling,
         } => {
             profiling.validate()?;
             world_profiling.validate(profiling.output_path())?;
             run(
-                Config::load(config.as_deref())?,
+                Config::load_for_run(config.as_deref(), offline)?,
                 profiling,
                 world_profiling,
                 !no_console,

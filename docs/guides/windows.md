@@ -11,11 +11,13 @@ From PowerShell:
 git clone https://github.com/SKYRPG8957/Sculith.git
 cd Sculith
 cargo build --release --locked
-.\target\release\sculith.exe run --config examples\configs\crossplay.toml
+.\target\release\sculith.exe run --offline
 ```
 
 Add `127.0.0.1:19132` in Bedrock, or `127.0.0.1:25565` in Java 26.3 on the same PC.
-This configuration uses local offline identities. Changed blocks save every
+First run creates `sculith.toml` in the working directory. `--offline` uses local
+offline identities without editing the generated authentication settings; omit
+it to require account verification. Changed blocks save every
 60 seconds; Ctrl+C saves again and stops the server. Keep existing configuration
 and world files when updating. See [save settings](hosting.md#world-saving).
 
@@ -29,7 +31,7 @@ each address/port. Enable transport diagnostics when needed:
 
 ```powershell
 $env:RUST_LOG='info,sculith::protocol::bedrock=debug,sculith::protocol::java=debug'
-.\target\release\sculith.exe run --config examples\configs\crossplay.toml
+.\target\release\sculith.exe run --offline
 ```
 
 Some UWP installations restrict loopback connections. Check the installed app:

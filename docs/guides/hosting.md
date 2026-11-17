@@ -4,6 +4,19 @@ Build from source with `cargo build --release --locked`. Keep authentication
 enabled for remote players. Current gameplay and content limits are listed in
 [development status](../development/status.md).
 
+Running `sculith` (or `sculith run`) creates `sculith.toml` in the working
+directory when absent. It enables both editions on loopback with account
+verification, a persistent region file under `world/` and 60-second saves. No
+plugins or resource packs are enabled. Existing files, including invalid ones,
+are never replaced. An explicit missing `--config` path is an error. `check`
+validates first-run settings without creating configuration, keys or a world.
+
+For same-PC testing, use `sculith run --offline`. This temporarily disables
+account verification for game sessions and rejects non-loopback game listeners;
+it does not edit authentication settings or enable sessions disabled in an older
+configuration. Omitting the option restores the authored settings. See below
+for remote listeners.
+
 Save this as `sculith.toml`, replacing the example IP with the server's reachable
 public or LAN IP:
 
