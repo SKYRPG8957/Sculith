@@ -1,4 +1,4 @@
-# Connection event fixture
+# Connection and inventory event fixture
 
 This native Rust plugin observes Java handshake, status, login and configuration
 packets, and Bedrock network-settings and login packets. It replaces the Java
@@ -26,3 +26,10 @@ On Windows the library is `sculith_interop_connections.dll`; on macOS it is
 server and allows that unsigned fixture explicitly. It is never installed by
 the default server. For play-phase mutation checks, also pass `--packet-edits`
 and the optimized Wasm fixture through `--plugin`.
+
+`--pick-events` uses this fixture to cancel automatic slot changes from block
+and mob picking on both editions. Dedicated `Hold*` clients test reused stacks,
+new blocks and spawn eggs. `Mutate*` clients change slot 0 inside the callback;
+the server must preserve that change and reject the stale pick plan. The fixture
+reads the inventory during callbacks to catch locks held across event dispatch.
+These callbacks apply only to the named test clients.

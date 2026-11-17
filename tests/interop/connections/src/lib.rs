@@ -3,6 +3,7 @@
 use std::sync::{Arc, LazyLock, Weak};
 
 use pumpkin_core::{
+    plugin::player::item_held::PlayerItemHeldEvent,
     plugin::server::packet::{
         BedrockConnectionPacketReceivedEvent, BedrockConnectionPacketSentEvent,
         JavaConnectionPacketReceivedEvent, JavaConnectionPacketSentEvent,
@@ -12,6 +13,7 @@ use pumpkin_core::{
     },
     server::Server,
 };
+use pumpkin_data::{item::Item, item_stack::ItemStack};
 use pumpkin_protocol::{
     ConnectionState,
     bedrock::server::{login::SLogin, request_network_settings::SRequestNetworkSettings},
@@ -61,12 +63,44 @@ impl Plugin for Connections {
                 true,
             );
             context.register_event::<JavaConnectionPacketSentEvent, _>(
-                observer,
+                observer.clone(),
                 EventPriority::Lowest,
                 true,
             );
+            context.register_event::<PlayerItemHeldEvent, _>(observer, EventPriority::Lowest, true);
             context.log("PROBE_CONNECTIONS_LOADED");
             Ok(())
+        })
+    }
+}
+
+impl EventHandler<PlayerItemHeldEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut PlayerItemHeldEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = &event.player.gameprofile.name;
+            if !name.starts_with("Hold") && !name.starts_with("Mutate") {
+                return;
+            }
+            let inventory = &event.player.inventory;
+            let current = inventory.get_selected_slot();
+            let count = inventory.get_slot(0).item_count;
+            let mutate =
+                name.starts_with("Mutate") && event.previous_slot == 5 && event.new_slot == 0;
+            if mutate {
+                inventory.set_slot(0, ItemStack::new(7, &Item::DIAMOND_BLOCK));
+            } else if name.starts_with("Hold") && event.previous_slot == 5 && event.new_slot <= 1 {
+                event.cancelled = true;
+            }
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!(
+                    "PROBE_PICK_HELD player={name} previous={} next={} current={current} count0={count} cancelled={} mutated={mutate}",
+                    event.previous_slot, event.new_slot, event.cancelled
+                ));
+            }
         })
     }
 }

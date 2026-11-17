@@ -288,5 +288,30 @@
       "No new Windows GDK rendering or online-authentication claim",
       "Overall gameplay and typed packet coverage remains partial"
     ]
+  },
+  "pick_selection_events": {
+    "baseline": "9faab6f9fcd13da12b78bea00b4a46a24e69fc61",
+    "server_sha256": "a529d820df25f1dff497bcbda9bef839a5ee837e2ccfa002f6d37e7582bab4fc",
+    "native_fixture_sha256": "cbccddc124922da9f0968af3e2b445cf4e38b335ce4f0527d777dd4ce13aca37",
+    "build": "Default features; native Rust and stable Wasm fixtures loaded together",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "behavior": "Both editions use the native pick inventory policy; PlayerItemHeldEvent runs before an automatic slot change; cancellation preserves items and selection and corrects the client",
+    "callback_mutation": "No inventory guard during dispatch; revalidate the plan and selected slot before committing; a callback-created stack invalidates the old plan and remains intact",
+    "before": "The previous server selects slot 0 despite the native Rust cancellation callback; the Java protocol regression expected slot 5",
+    "wire_checks": "Java TCP and Bedrock NetherNet; cancel existing-stack selection, new-block creation and mob spawn-egg creation; read and mutate the inventory inside the callback; verify selection, all slots and stack counts",
+    "server_tests": 803,
+    "regressions": "Full shared resources, building, block and mob picking, sounds, forms, dialog replies, models and normal restart, packet edits and connection events",
+    "log_sha256": {
+      "before": "8d98aef997d240b402e47084a1483d682210524cb156b724040d323f21144408",
+      "core": "c8c5389c7888832aef2574e545d205313a3dcc8b99a5e6958f91984289f6bb14",
+      "clippy": "7387d58f59aa1428dcd927f1971ccdb0f0f210889cef82f1a7a2c2804b4fcf7f",
+      "interop": "93a55d72023db1726953ce0e339496d7a4b2359353d950927c6162ab48d9f691",
+      "events": "f3dc3746e9f8568eec668e9e926cacd0a1acdb5651aad136c2788fb2344e35c8"
+    },
+    "limits": [
+      "Independent protocol clients; no new Windows GDK or rendering verification",
+      "Overall gameplay and typed packet coverage remains partial"
+    ]
   }
 }

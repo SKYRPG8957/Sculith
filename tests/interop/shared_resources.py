@@ -354,6 +354,7 @@ def main():
     parser.add_argument("--building", action="store_true", help="also exercise native building in the copied flat world")
     parser.add_argument("--picking", action="store_true", help="check native pick-block hotbar selection and inventory preservation")
     parser.add_argument("--actor-picking", action="store_true", help="check native mob picking, reach and entity ID bounds")
+    parser.add_argument("--pick-events", action="store_true", help="check native plugin cancellation and callback inventory changes on both editions")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
     parser.add_argument("--forms", action="store_true", help="exercise shared forms and Rust response events on both editions")
@@ -361,6 +362,8 @@ def main():
     parser.add_argument("--packet-edits", action="store_true", help="exercise outgoing packet edits and cancellation through Rust callbacks")
     parser.add_argument("--connections-plugin", type=Path, help="compiled native tests/interop/connections fixture")
     args = parser.parse_args()
+    if args.pick_events and not args.connections_plugin:
+        parser.error("--pick-events requires --connections-plugin")
     if (args.dialog_replies or args.forms or args.models or args.packet_edits) and not args.plugin:
         parser.error("--dialog-replies, --forms, --models and --packet-edits require the Rust --plugin fixture")
     root = Path(tempfile.mkdtemp(prefix="sculith-shared-resources-"))
@@ -485,7 +488,7 @@ def main():
             assert "pack.mcmeta" in archive.namelist()
             assert archive.read("assets/sculith/sounds/demo_tone.ogg") == original["sounds/sculith_demo.ogg"]
             assert "assets/sculith/models/sculith/demo_statue.json" in archive.namelist()
-        if args.building or args.picking or args.actor_picking:
+        if args.building or args.picking or args.actor_picking or args.pick_events:
             for command in ["gamerule spawn_mobs false", "gamerule spawn_monsters false",
                             "kill @e[type=!minecraft:player]"]:
                 server.stdin.write(command + "\n")
@@ -503,16 +506,20 @@ def main():
             (root / "picking.log").write_text(result.stdout + result.stderr)
             assert result.returncode == 0, result.stdout + result.stderr
             report["native_picking"] = "new and existing items; hotbar selection; inventory preserved"
-        if args.actor_picking:
+        if args.actor_picking or args.pick_events:
             for x in [1, 12]:
                 server.stdin.write(f'summon minecraft:pig {x} -60 2 {{NoAI:1b}}\n')
             server.stdin.flush()
             time.sleep(.5)
+        if args.actor_picking:
             result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}", "--actor-pick-check"],
                                     capture_output=True, text=True, timeout=35)
             (root / "actor-picking.log").write_text(result.stdout + result.stderr)
             assert result.returncode == 0, result.stdout + result.stderr
             report["native_actor_picking"] = "create/reuse correct egg; reach and 64-bit ID bounds"
+        if args.pick_events:
+            from pick_events import check
+            report["pick_events"] = check(java, bedrock, root, args.bedrock_probe.resolve())
         if args.packet_edits:
             from packet_probe import check
             report["packet_edits"] = check(java, bedrock, root, args.bedrock_probe.resolve())

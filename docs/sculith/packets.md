@@ -38,6 +38,19 @@ ignored. Entity data copying and targets without a spawn egg remain unsupported.
 The experimental v0.2 typed packet view includes this request; native Rust and
 stable v0.1 observers retain their raw packet interfaces and existing ABI.
 
+## Pick selection events
+
+Block and mob picks now use one inventory operation for both editions, following
+the native first-empty-hotbar policy. If a pick would change the selected slot,
+`PlayerItemHeldEvent` fires before changing items or selection. Cancellation
+leaves the inventory unchanged and resynchronizes the client.
+
+Callbacks run without an inventory guard. The operation checks its plan and
+selected slot again before committing, so callback changes are retained rather
+than overwritten. The native plugin ABI remains 10 and the Wasm interfaces are
+unchanged. The native fixture checks cancellation, callback reads and inventory
+mutation with independent Java and Bedrock clients.
+
 ## Before player creation
 
 Native Rust plugins can subscribe to `JavaConnectionPacketReceivedEvent`,

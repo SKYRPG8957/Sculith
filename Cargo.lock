@@ -4205,6 +4205,7 @@ name = "sculith-interop-connections"
 version = "0.0.0"
 dependencies = [
  "pumpkin-core",
+ "pumpkin-data",
  "pumpkin-protocol",
  "pumpkin-world",
 ]

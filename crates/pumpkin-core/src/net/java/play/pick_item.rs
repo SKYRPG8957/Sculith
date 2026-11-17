@@ -38,28 +38,7 @@ impl JavaClient {
             block_entity.collect_pick_item_components(&mut stack);
         }
 
-        let slot_with_stack = player.inventory().get_slot_with_stack(&stack);
-
-        if slot_with_stack != -1 {
-            if PlayerInventory::is_valid_hotbar_index(slot_with_stack as usize) {
-                player.inventory.set_selected_slot(slot_with_stack as u8);
-            } else {
-                player
-                    .inventory
-                    .swap_slot_with_hotbar(slot_with_stack as usize);
-            }
-        } else if player.gamemode.load() == GameMode::Creative {
-            player.inventory.swap_stack_with_hotbar(stack);
-        }
-
-        player.try_send_client_packet(&CSetSelectedSlot::new(
-            player.inventory.get_selected_slot() as i8
-        ));
-        player
-            .player_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .send_content_updates();
+        player.pick_item(stack);
     }
 
     pub fn handle_pick_item_from_entity(
@@ -97,28 +76,7 @@ impl JavaClient {
         if let Some(item) = found_egg.and_then(Item::from_id) {
             let stack = ItemStack::new(1, item);
 
-            let slot_with_stack = player.inventory().get_slot_with_stack(&stack);
-
-            if slot_with_stack != -1 {
-                if PlayerInventory::is_valid_hotbar_index(slot_with_stack as usize) {
-                    player.inventory.set_selected_slot(slot_with_stack as u8);
-                } else {
-                    player
-                        .inventory
-                        .swap_slot_with_hotbar(slot_with_stack as usize);
-                }
-            } else if player.gamemode.load() == GameMode::Creative {
-                player.inventory.swap_stack_with_hotbar(stack);
-            }
-
-            player.try_send_client_packet(&CSetSelectedSlot::new(
-                player.inventory.get_selected_slot() as i8,
-            ));
-            player
-                .player_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .send_content_updates();
+            player.pick_item(stack);
         }
     }
 }

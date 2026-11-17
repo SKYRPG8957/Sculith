@@ -48,9 +48,7 @@ use pumpkin_protocol::{
     },
     codec::{var_int::VarInt, var_long::VarLong, var_uint::VarUInt, var_ulong::VarULong},
     java::{
-        client::play::{
-            Animation, CEntityAnimation, CSetSelectedSlot, CSwingArm, CSystemChatMessage,
-        },
+        client::play::{Animation, CEntityAnimation, CSwingArm, CSystemChatMessage},
         server::play::ActionType,
     },
 };

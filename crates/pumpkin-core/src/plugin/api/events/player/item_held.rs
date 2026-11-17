@@ -6,6 +6,7 @@ use crate::entity::player::Player;
 use super::PlayerEvent;
 
 /// An event that occurs when a player changes their held hotbar slot.
+/// Picking a block or entity also fires it when the selected slot would change.
 #[cancellable]
 #[derive(Event, Clone)]
 pub struct PlayerItemHeldEvent {

@@ -12,6 +12,7 @@ doctest = false
 
 [dependencies]
 pumpkin-core.workspace = true
+pumpkin-data.workspace = true
 pumpkin-protocol.workspace = true
 pumpkin-world.workspace = true
 

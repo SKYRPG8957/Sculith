@@ -2,6 +2,7 @@ pub mod advancement;
 pub mod client_move;
 pub mod client_push;
 pub mod forms;
+mod picking;
 mod shoulders;
 pub mod statistics;
 

@@ -17,6 +17,11 @@ pig if truncated. The harness option `--actor-picking` prepares those entities.
 The client-origin latency echo orders the rejection checks before the valid pick.
 Actor data copying and entities without a mapped spawn egg are not implemented.
 
+`--pick-events` and `--pick-mutation` are driven by the harness's `--pick-events`
+option with the native connection fixture installed. They check cancellation and
+inventory changes made during a Rust slot-selection callback. The combined
+harness also exercises the same operations over the stock Java protocol.
+
 Prepare a Java 26.3 flat world with grass at Y=-61. In the official Java server:
 
 ```

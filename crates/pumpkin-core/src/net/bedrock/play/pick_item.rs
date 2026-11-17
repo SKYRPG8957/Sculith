@@ -18,7 +18,7 @@ impl BedrockClient {
             return;
         };
         let stack = ItemStack::new(1, item);
-        self.pick_item_stack(player, stack);
+        player.pick_item(stack);
     }
 
     pub fn handle_actor_pick_request(&self, player: &Arc<Player>, packet: &SActorPickRequest) {
@@ -44,83 +44,7 @@ impl BedrockClient {
             })
             .and_then(|&id| pumpkin_data::item::Item::from_id(id));
         if let Some(item) = item {
-            self.pick_item_stack(player, ItemStack::new(1, item));
+            player.pick_item(ItemStack::new(1, item));
         }
-    }
-
-    fn pick_item_stack(&self, player: &Arc<Player>, stack: ItemStack) {
-        {
-            let inventory = player.inventory();
-            let mut contents = inventory
-                .main_inventory
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut selected = inventory.get_selected_slot() as usize;
-
-            // Match Dragonfly's pick selection; the client hint is not a destination slot.
-            if let Some(slot) = contents
-                .iter()
-                .position(|item| !item.is_empty() && item.are_items_and_components_equal(&stack))
-            {
-                if PlayerInventory::is_valid_hotbar_index(slot) {
-                    inventory.set_selected_slot(slot as u8);
-                } else {
-                    contents.swap(selected, slot);
-                }
-            } else if player.gamemode.load() == GameMode::Creative {
-                if let Some(empty) = contents.iter().position(ItemStack::is_empty) {
-                    if PlayerInventory::is_valid_hotbar_index(empty) {
-                        selected = empty;
-                        inventory.set_selected_slot(empty as u8);
-                    } else {
-                        contents.swap(selected, empty);
-                    }
-                }
-                contents[selected] = stack;
-            } else {
-                return;
-            }
-        }
-
-        // Send hotbar updates
-        player.client.try_enqueue_packet_editioned(
-            &CSetSelectedSlot::new(player.inventory.get_selected_slot() as i8),
-            &CPlayerHotbar {
-                selected_slot: VarUInt(player.inventory.get_selected_slot() as u32),
-                container_id: 0,
-                should_select_slot: true,
-            },
-        );
-
-        // Send screen handler / Java inventory updates
-        player
-            .player_screen_handler
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .send_content_updates();
-
-        // Sync main hand equipment to other players
-        let stack_in_hand = player.inventory().held_item();
-        let equipment = &[(EquipmentSlot::MAIN_HAND, stack_in_hand)];
-        player.living_entity.send_equipment_changes(equipment);
-
-        // Sync bedrock inventory updates
-        let slots = player
-            .inventory()
-            .main_inventory
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .map(NetworkItemStackDescriptor::from)
-            .collect();
-        self.try_enqueue_client_packet(&CInventoryContent {
-            container_id: VarUInt(0),
-            slots,
-            full_container_name: FullContainerName {
-                container_name: ContainerName::Inventory,
-                dynamic_id: None,
-            },
-            storage_item: NetworkItemStackDescriptor::default(),
-        });
     }
 }

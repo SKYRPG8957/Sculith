@@ -31,6 +31,13 @@ func run() error {
 	var pickActors actorPickRegistry
 	modelMode := len(os.Args) == 3 && (os.Args[2] == "--models-check" || os.Args[2] == "--model-snapshot" || os.Args[2] == "--model-unavailable")
 	d.IdentityData.DisplayName = "ForkProbe"
+	if len(os.Args) == 3 && os.Args[2] == "--pick-events" {
+		d.IdentityData.DisplayName = "HoldNative"
+		d.PacketFunc = pickActors.observe
+	}
+	if len(os.Args) == 3 && os.Args[2] == "--pick-mutation" {
+		d.IdentityData.DisplayName = "MutateNative"
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--actor-pick-check" {
 		d.IdentityData.DisplayName = "ActorProbe"
 		d.PacketFunc = pickActors.observe
@@ -69,6 +76,9 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && (os.Args[2] == "--pick-events" || os.Args[2] == "--pick-mutation") {
+		return checkPickEvents(c, &pickActors, os.Args[2] == "--pick-mutation")
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--actor-pick-check" {
 		return checkActorPicking(c, &pickActors)
 	}
