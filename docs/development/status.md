@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- NetherNet establishment can continue past an outbound UDP permission failure on one candidate while retaining its existing peer-address policy and establishment deadline. Permission loss on the active session path and socket-level receive permission errors remain fatal to that session. Bounded debug output identifies send/receive path errors without game payloads.
+
 - First run creates an authenticated `sculith.toml` with both edition sessions, loopback listeners and periodic region saving. Existing and invalid configurations are preserved; explicit missing paths fail. `check` remains read-only. `run --offline` applies a local-only in-memory authentication override without enabling disabled legacy sessions. No plugin, welcome or content pack is loaded by default. Windows launchers use the same server-owned configuration path.
 
 - Creative block picking resolves the target on the shared owner, checks initialization/build permission, reach, occlusion and inventory rate, reuses existing counts and preserves displaced items when space remains. Java PickItemFromBlock and native BlockPickRequest synchronize the selected slot and counted inventory. Existing inventory/equipment hooks observe committed changes, while duplicate picks do not duplicate semantic events.

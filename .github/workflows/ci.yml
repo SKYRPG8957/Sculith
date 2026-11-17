@@ -56,6 +56,8 @@ jobs:
         run: python tests/interop/console_commands_smoke.py --client target/gophertunnel-probe
       - name: Verify first-run settings, local Java/native entry and world recovery
         run: python tests/interop/bootstrap_smoke.py --client target/gophertunnel-probe
+      - name: Verify denied UDP candidates, ICE deadline and active-path failure
+        run: python tests/interop/udp_path_smoke.py --client target/gophertunnel-probe
       - name: Verify shared creative block picking and inventory observations
         run: python tests/interop/block_pick_smoke.py --client target/gophertunnel-probe
       - name: Exercise independent Bedrock login and world spawn

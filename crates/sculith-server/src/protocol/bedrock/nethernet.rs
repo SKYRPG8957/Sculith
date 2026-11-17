@@ -673,7 +673,7 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
                     Err(error) if candidate_path_error(&error) => {
                         if !observed_path_error {
                             observed_path_error = true;
-                            tracing::debug!(%error, "NetherNet candidate path unavailable; continuing ICE");
+                            tracing::debug!(operation = "receive", %error, "NetherNet candidate path unavailable; continuing ICE");
                         }
                         continue;
                     },
@@ -710,12 +710,19 @@ async fn drive(socket: UdpSocket, mut peer: Peer, mut context: PeerContext) -> R
                         "NetherNet candidate outside peer policy"
                     );
                     if let Err(error) = socket.send_to(&data, remote).await {
-                        if !candidate_path_error(&error) {
+                        // A firewall may reject one local-interface candidate while
+                        // another is usable. Only defer permission errors during
+                        // establishment; socket receive errors and established-path
+                        // permission failures remain fatal. The ICE deadline bounds
+                        // peers for which every candidate is unavailable.
+                        let denied_candidate = receiver.is_some()
+                            && error.kind() == std::io::ErrorKind::PermissionDenied;
+                        if !candidate_path_error(&error) && !denied_candidate {
                             return Err(error.into());
                         }
                         if !observed_path_error {
                             observed_path_error = true;
-                            tracing::debug!(%error, "NetherNet candidate path unavailable; continuing ICE");
+                            tracing::debug!(operation = "send", %remote, %error, "NetherNet candidate path unavailable; continuing ICE");
                         }
                     }
                 }

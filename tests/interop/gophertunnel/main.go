@@ -40,7 +40,7 @@ func main() {
 	if packOutput {
 		dialer.ResourcePackCache = minecraft.DirResourcePackCache{Dir: filepath.Join(filepath.Dir(os.Args[3]), "cache")}
 	}
-	conn, err := dialer.DialContext(ctx, "nethernet", os.Args[1])
+	conn, err := dialer.DialContext(ctx, probeNetwork(), os.Args[1])
 	if err != nil {
 		panic(fmt.Errorf("dial: %w", err))
 	}
