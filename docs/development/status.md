@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Java cursor collection resolves current cursor and inventory contents on the shared owner. Partial stacks precede full stacks; forward/reverse scans stop at 64 items and exclude cursor/output as sources. Empty/full cursors and occupied clicked slots do not change items. The complete candidate and stack IDs roll back on failure, and existing inventory/equipment hooks expose only committed changes.
+
 - Java main/hotbar quick moves compute destination merges and partial remainders on the shared owner. Changed stacks receive fresh IDs; allocation failure rolls back the entire operation. Cursor/output, selected slot and request history are preserved. Existing inventory/equipment hooks and native peer updates expose only committed changes. Block-pick packet observations now correctly report Gameplay in both adapters instead of Unsupported.
 
 - NetherNet establishment can continue past an outbound UDP permission failure on one candidate while retaining its existing peer-address policy and establishment deadline. Permission loss on the active session path and socket-level receive permission errors remain fatal to that session. Bounded debug output identifies send/receive path errors without game payloads.

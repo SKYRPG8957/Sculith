@@ -150,11 +150,35 @@ def smoke(server, native, plugin):
                 slots = synchronize(java)
                 assert slots[0] == (64, 55) and slots[3] == (34, 55) and slots[9] == (0, 0)
                 assert java.cursor == (1, 54)
+                # Place the Grass cursor away, then split Dirt from an unselected
+                # hotbar stack. Collection must take that partial stack before
+                # reducing the full selected stack, with forged/stale predictions.
+                click(java, 10, 0, 0)
+                synchronize(java)
+                assert java.cursor == (0, 0)
+                click(java, 39, 1, 0)
+                slots = synchronize(java)
+                assert java.cursor == (17, 55) and slots[3] == (17, 55)
+                click(java, 9, 0, 6, predictions=True, state=0)
+                slots = synchronize(java)
+                assert java.cursor == (64, 55) and slots[0] == (34, 55) and slots[3] == (0, 0)
+                full = slots.copy()
+                click(java, 9, 0, 6)
+                assert synchronize(java) == full and java.cursor == (64, 55)
+                click(java, 9, 0, 0)
+                slots = synchronize(java)
+                assert slots[9] == (64, 55) and java.cursor == (0, 0)
+                click(java, 10, 0, 0)
+                synchronize(java)
+                assert java.cursor == (1, 54)
+                click(java, 10, 1, 6)
+                slots = synchronize(java)
+                assert java.cursor == (64, 54) and slots[1] == (0, 0) and slots[2] == (2, 54)
                 assert probe.wait(timeout=10) == 0, "".join(lines)
                 reader.join(timeout=2)
                 before = slots.copy()
                 click(java, 36, 0, 5)  # Unsupported drag painting stays connected and unchanged.
-                assert synchronize(java) == before and java.cursor == (1, 54)
+                assert synchronize(java) == before and java.cursor == (64, 54)
                 wire.send(java.socket, 57, struct.pack(">h", 36) + wire.vi(64) + wire.vi(2) + bytes(2))
                 assert synchronize(java) == before
                 java.socket.close()
@@ -180,7 +204,7 @@ def smoke(server, native, plugin):
                 if process.poll() is None:
                     process.kill()
                     process.wait(timeout=5)
-    print("PASS: independent native transactions, Java creative/pickup/swap/quick-move, forged-prediction rejection, counted peer hands, owner plugin events and no disconnect on unsupported inventory actions")
+    print("PASS: independent native transactions, Java creative/pickup/swap/quick-move/collect, forged-prediction rejection, counted peer hands, owner plugin events and no disconnect on unsupported inventory actions")
 
 
 if __name__ == "__main__":

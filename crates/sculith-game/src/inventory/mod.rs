@@ -16,6 +16,9 @@ use std::collections::{BTreeMap, VecDeque};
 
 use sculith_world::BlockKind;
 
+mod collect;
+#[cfg(test)]
+mod collect_tests;
 mod pick;
 #[cfg(test)]
 mod pick_tests;
@@ -79,6 +82,7 @@ pub enum Click {
     Pickup { slot: u8, right: bool },
     HotbarSwap { slot: u8, hotbar: u8 },
     QuickMove { slot: u8 },
+    Collect { slot: u8, reverse: bool },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -336,6 +340,7 @@ impl Inventory {
         };
         let action = match click {
             Click::QuickMove { slot } => return Ok(self.quick_move(slot)?),
+            Click::Collect { slot, reverse } => return Ok(self.collect(slot, reverse)?),
             Click::Pickup { slot, right } => {
                 let slot = Slot::Inventory(slot);
                 let item = self.get(slot)?;

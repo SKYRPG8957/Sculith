@@ -2,6 +2,74 @@ use super::*;
 use sculith_game::Edition;
 
 #[tokio::test]
+async fn collection_publishes_committed_cursor_and_hand_changes_without_world_edits() {
+    use sculith_game::inventory::Click;
+    let (stop, receiver) = watch::channel(false);
+    let (world, task) = create(receiver);
+    let task = tokio::spawn(task);
+    let actor = world
+        .reserve(profile("collect-actor"), Permissions { can_build: true })
+        .await
+        .unwrap();
+    let viewer = world
+        .reserve(profile("collect-viewer"), Permissions::default())
+        .await
+        .unwrap();
+    world.activate(actor.player.id).await.unwrap();
+    world.activate(viewer.player.id).await.unwrap();
+    world
+        .creative_slot(actor.player.id, 0, Some(BlockKind::Grass), 5)
+        .await
+        .unwrap();
+    world
+        .inventory_click(
+            actor.player.id,
+            Click::Pickup {
+                slot: 0,
+                right: true,
+            },
+        )
+        .await
+        .unwrap();
+    world.configure_observations(crate::observations::INVENTORY | crate::observations::EQUIPMENT);
+    let mut hooks = world.subscribe_game();
+    let mut peers = world.observe_players(viewer.player.id).await.unwrap();
+    let outcome = world
+        .inventory_click(
+            actor.player.id,
+            Click::Collect {
+                slot: 9,
+                reverse: false,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(outcome.player.cursor.unwrap().count, 5);
+    assert!(outcome.player.held().is_none());
+    assert_eq!(outcome.player.selected_slot, 0);
+    assert!(matches!(hooks.recv().await.unwrap().as_ref(),
+        WorldEvent::InventoryChanged { changes,.. } if changes.len()==2));
+    assert!(matches!(hooks.recv().await.unwrap().as_ref(),
+        WorldEvent::Equipped(player) if player.held().is_none()));
+    assert!(matches!(peers.updates.recv().await.unwrap().as_ref(),
+        WorldEvent::Equipped(player) if player.held().is_none()));
+    world
+        .inventory_click(
+            actor.player.id,
+            Click::Collect {
+                slot: 9,
+                reverse: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(hooks.try_recv().is_err() && peers.updates.try_recv().is_err());
+    assert_eq!(world.capture().await.unwrap().revision(), 0);
+    stop.send_replace(true);
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn operator_player_list_excludes_pending_and_dead_sessions() {
     let (stop, receiver) = watch::channel(false);
     let (world, task) = create(receiver);

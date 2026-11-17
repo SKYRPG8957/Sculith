@@ -85,6 +85,9 @@ advertised URL; authenticated NetherNet hosting has its own [media configuration
   Quick moves merge matching stacks before filling an empty slot and leave any
   remainder in the source. They preserve the cursor and selected hotbar slot;
   crafting, armour and offhand slots are outside this operation.
+  Double-click collection fills the current cursor from matching partial stacks
+  before full stacks, up to 64 items. It uses an empty clicked inventory slot;
+  an empty/full cursor or occupied clicked slot leaves items unchanged.
 - Stock creative screens submit resulting slot replacements and keep their carried
   stack locally. Successful edits acknowledge only the affected slot; resetting
   the entire menu would erase that unsent carried stack. Actual Java mouse/key
