@@ -36,6 +36,7 @@ interface java-packets {
   }
   record config-s-custom-click-action {
     action-id: string,
+    /// Complete unnamed network NBT, including its root tag; None is `TAG_End`.
     payload: option<list<u8>>,
   }
   record config-s-keep-alive {
@@ -222,6 +223,7 @@ interface java-packets {
   }
   record s-custom-click-action {
     action-id: string,
+    /// Complete unnamed network NBT, including its root tag; None is `TAG_End`.
     payload: option<list<u8>>,
   }
   /// A packet used for custom communication between the client and server.

@@ -2,7 +2,7 @@
   "date": "2026-11-17",
   "upstream_commit": "87f8822ac36da62102350977be2f62f155a303dc",
   "server": "Linux debug; Rust 1.100.0; plugin-v0_2 enabled; locally modified fork",
-  "server_sha256": "35283a232cdc4af99e9730caaed58eef41b5d47642fe8f6867f65ef8b7aa31f2",
+  "server_sha256": "90f445445f8647b333552d8f470f5aab4e23ab463c256b0603f1acc69ecf4738",
   "native_client": "gophertunnel e2251a60f71d",
   "block_registry": "Dragonfly 0f9a3a573626",
   "network": "loopback NetherNet, offline authentication for the test only",
@@ -21,7 +21,10 @@
     "shared_plugin_callbacks": "02bffb47a7e18cb3dd7d2cd9cbeb4151ca885b5418951a705937b6be1b51419d",
     "shared_plugin_host_tests": "79806c4e5f9577afaf1ee2e0729edd3a52cc7a3310aef2d93849b282c614d903",
     "callback_admission_regression_before": "1874675baf25cc4f4ba964e32db4fcbd18d79bfe0c02ed3c16d4560c09b6c6e8",
-    "callback_admission_regression_after": "c7a779cd44f7221d9be88b24746bc140781af9f4d5720b6dbba26e067ce39773"
+    "callback_admission_regression_after": "c7a779cd44f7221d9be88b24746bc140781af9f4d5720b6dbba26e067ce39773",
+    "java_dialog_codec_regression_before": "15ad41d54485dd160905b222e7a0670bafc1613c42c57febf9b9d005d11e6072",
+    "java_dialog_reply_interop": "c907f4169823581f8065ac9b52a702eff6e35fed21626cc715528670a054d7d5",
+    "java_dialog_reply_events": "2ae34eb90947c5cd73b29ba0bcdb23c247c56d0aa96c44c59b1e9ccbda196362"
   },
   "limitations": [
     "Flat-map marker test only",
@@ -30,7 +33,7 @@
     "Bedrock LevelDB import/export remains unsupported"
   ],
   "shared_resources": {
-    "protocol_tests": 170,
+    "protocol_tests": 172,
     "configuration_tests": 24,
     "server_tests": 794,
     "converter_tests": 14,
@@ -42,6 +45,7 @@
     "scope": "Texture and static item model rendered; null audio device; no Bedrock rendering claim",
     "plugin_runtime_tests": 8,
     "experimental_host_tests": 17,
-    "rust_wasm_plugin": "v0.1 component; release wasm32-wasip2 build; both editions observe join and packet events; player and world sound dispatch plus named stops verified on wire"
+    "rust_wasm_plugin": "v0.1 component; release wasm32-wasip2 build; both editions observe join and packet events; player and world sound dispatch plus named stops verified on wire",
+    "java_dialog_replies": "Official codec None/14/173-byte NBT payloads delivered through Java TCP to the Rust Wasm event; UI display not covered"
   }
 }

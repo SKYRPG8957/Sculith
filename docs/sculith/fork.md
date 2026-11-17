@@ -36,7 +36,7 @@ The modified fork passed these Linux checks on Rust 1.100.0:
 
 | Check | Result |
 | --- | --- |
-| Protocol unit tests | 170 passed |
+| Protocol unit tests | 172 passed |
 | Configuration unit tests | 24 passed |
 | Game/server unit tests | 794 passed |
 | Shared resource converter unit tests | 14 passed |
@@ -101,6 +101,13 @@ only after callback admission is registered. The shutdown fixture also explicitl
 joins its spawned Rust task, rather than treating it as a Wasmtime component task.
 Protocol tests also cover independently encoded 2225 sound payloads, and generated
 v0.2 packet mappings now include optional numeric fields needed by those packets.
+
+Custom dialog replies now retain their complete network NBT and decode the
+VarInt payload length in both configuration and play phases. Fixtures encoded
+with the official Java codec cover cancellation, a short payload and a payload
+requiring a two-byte length. The real TCP/Rust Wasm test receives all three with
+the expected bytes. The decoder bounds size, nesting and traversal without
+building an NBT tree. Shared UI display and its session API remain unfinished.
 
 Shared assets alone do not provide a common plugin UI or model spawning. Those
 runtime features still need integration. See the resource guide for the stable

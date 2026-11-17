@@ -1,5 +1,6 @@
 use pumpkin_plugin_api::events::{
-    EventData, EventHandler, EventPriority, PacketReceivedEvent, PacketSentEvent, PlayerJoinEvent,
+    DialogClickActionEvent, EventData, EventHandler, EventPriority, PacketReceivedEvent,
+    PacketSentEvent, PlayerJoinEvent,
 };
 use pumpkin_plugin_api::wit::pumpkin::plugin::sounds::SoundCategory;
 use pumpkin_plugin_api::{Context, Plugin, PluginMetadata, Result, Server, register_plugin};
@@ -8,6 +9,30 @@ struct AudioProbe;
 struct Joined;
 struct Received(AtomicU32);
 struct Sent;
+struct DialogReplies;
+
+impl EventHandler<DialogClickActionEvent> for DialogReplies {
+    fn handle(
+        &self,
+        _server: Server,
+        event: EventData<DialogClickActionEvent>,
+    ) -> EventData<DialogClickActionEvent> {
+        let small = include_bytes!(
+            "../../../../crates/pumpkin-protocol/tests/fixtures/java_custom_click_small_777.bin"
+        );
+        let large = include_bytes!(
+            "../../../../crates/pumpkin-protocol/tests/fixtures/java_custom_click_large_777.bin"
+        );
+        let case = match (event.id.as_str(), event.payload.as_deref()) {
+            ("sculith:form/7/cancel", None) => "none",
+            ("sculith:input/7/submit", Some(payload)) if payload == &small[24..] => "small",
+            ("sculith:input/7/submit", Some(payload)) if payload == &large[25..] => "large",
+            _ => return event,
+        };
+        tracing::info!(player=%event.player.get_name(), case=%case, "PROBE_DIALOG_REPLY");
+        event
+    }
+}
 impl EventHandler<PlayerJoinEvent> for Joined {
     fn handle(
         &self,
@@ -78,6 +103,11 @@ impl Plugin for AudioProbe {
         }
     }
     fn on_load(&self, ctx: Context) -> Result<()> {
+        ctx.register_event_handler::<DialogClickActionEvent, _>(
+            DialogReplies,
+            EventPriority::Normal,
+            true,
+        )?;
         ctx.register_event_handler::<PlayerJoinEvent, _>(Joined, EventPriority::Normal, true)?;
         ctx.register_event_handler::<PacketReceivedEvent, _>(
             Received(AtomicU32::new(0)),

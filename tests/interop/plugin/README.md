@@ -12,6 +12,7 @@ cargo build --locked --release --target wasm32-wasip2 \
   --manifest-path tests/interop/plugin/Cargo.toml
 python3 tests/interop/shared_resources.py /path/to/sculith /path/to/bedrock-probe \
   --world /path/to/stopped-flat-world --delayed --building \
+  --dialog-replies \
   --plugin tests/interop/plugin/target/wasm32-wasip2/release/sculith_wasm_audio_probe.wasm
 ```
 
@@ -20,3 +21,7 @@ allows that unsigned plugin there. It checks real Java and NetherNet packet
 transfers and preserves normal server plugin policies. Immediate play/stop is a
 dispatch check, not an audible-playback test. Use an optimized Wasm build; this
 fixture's debug build was rejected by the Wasmtime compiler and is not validated.
+
+`--dialog-replies` sends three official Java codec fixtures through the real TCP
+connection. The Rust handler checks the complete NBT bytes or absence of a
+payload. This checks reply framing and plugin delivery; it does not display a UI.
