@@ -29,8 +29,8 @@ use pumpkin_protocol::{
         packet_decoder::BedrockBatchDecoder,
         packet_encoder::BedrockBatchEncoder,
         server::{
-            actor_event::SActorEvent, animate::SAnimate, block_actor_data::SBlockActorData,
-            block_pick_request::SBlockPickRequest,
+            actor_event::SActorEvent, actor_pick_request::SActorPickRequest, animate::SAnimate,
+            block_actor_data::SBlockActorData, block_pick_request::SBlockPickRequest,
             client_cache_blob_status::SClientCacheBlobStatus,
             client_cache_status::SClientCacheStatus,
             client_movement_prediction_sync::SClientMovementPredictionSync,
@@ -1249,6 +1249,10 @@ impl BedrockClient {
             SBlockPickRequest::PACKET_ID => {
                 let packet = SBlockPickRequest::read(reader)?;
                 self.handle_block_pick_request(player, &packet);
+            }
+            SActorPickRequest::PACKET_ID => {
+                let packet = SActorPickRequest::read(reader)?;
+                self.handle_actor_pick_request(player, &packet);
             }
             SBlockActorData::PACKET_ID => {
                 let packet = SBlockActorData::read(reader)?;

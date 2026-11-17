@@ -644,4 +644,24 @@ mod tests {
         assert_eq!(encoded[0], 119);
         assert_eq!(&encoded[1..], nbt);
     }
+
+    #[test]
+    fn actor_pick_preserves_the_signed_id_in_the_plugin_view() {
+        use crate::generated_packets::deserialize_bedrock_serverbound_packet;
+        use crate::pumpkin::plugin::bedrock_packets::ServerboundPacket as BedrockPacket;
+        use pumpkin_protocol::codec::var_uint::VarUInt;
+        use pumpkin_protocol::serial::PacketRead;
+
+        let mut payload =
+            include_bytes!("../../pumpkin-protocol/tests/fixtures/actor_pick_2225.bin").as_slice();
+        let id = VarUInt::read(&mut payload).unwrap().0 as i32;
+        let Some(BedrockPacket::SActorPickRequest(data)) =
+            deserialize_bedrock_serverbound_packet(id, payload)
+        else {
+            panic!("actor pick was not mapped to its packet variant");
+        };
+        assert_eq!(data.entity_unique_id, -0x0102_0304_0506_0708);
+        assert_eq!(data.max_slots, 9);
+        assert!(data.with_data);
+    }
 }

@@ -30,6 +30,14 @@ The corrected public packet records require native plugin ABI 10. Rebuild
 native plugins against the same revision as the server. Stable Wasm v0.1 is
 unchanged; the experimental v0.2 packet records are regenerated with the codecs.
 
+`ActorPickRequest` (35) uses a fixed signed little-endian 64-bit entity ID.
+Creative players can now pick a nearby tracked mob to create or select its
+mapped spawn egg. It shares the block-pick inventory selection and updates.
+Unknown IDs, IDs outside the engine's entity ID range, and distant targets are
+ignored. Entity data copying and targets without a spawn egg remain unsupported.
+The experimental v0.2 typed packet view includes this request; native Rust and
+stable v0.1 observers retain their raw packet interfaces and existing ABI.
+
 ## Before player creation
 
 Native Rust plugins can subscribe to `JavaConnectionPacketReceivedEvent`,

@@ -246,5 +246,47 @@
       "before": "cf0a633905029b703eabe620a4c0444f1da430f51cc5372e29eccea5882f3b6e",
       "after": "b3472dad69a87ac7f29afca7ea6cd395d6a23d3f4c8b4abebef89593b4c971a3"
     }
+  },
+  "bedrock_actor_picking": {
+    "server_sha256": "7fd279330d0abad0aa82c55269d6843fc57919e60ba48776e09f7d42c51c5152",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "experimental_v0_2": "New typed ActorPickRequest packet variant; remains disabled by default",
+    "wire": "Protocol 2225 packet35: fixed signed little-endian i64 ID, u8 hint, bool data flag; independently encoded negative-ID fixture and all truncation prefixes checked",
+    "gameplay": "Creative picks resolve a nearby tracked mob and create or select its generated spawn egg through the shared native pick inventory path",
+    "official_reference": {
+      "version": "Bedrock Dedicated Server 1.26.63.1",
+      "binary_sha256": "dc9b3c566a014cf53930eb1b54c6b599a99a81cc32c68aba06a5d73a0fd63179",
+      "transport": "RakNet; offline local reference",
+      "rea_version": "6.9.0",
+      "evidence_id": "ev_5bcf90bcad2ccd83e87a4ff0b58c168021adb61d145c0c8dc13ceb1c059c8ddb",
+      "capture_sha256": "81f2ad245f1d3e429ec41e60bcc8d7d04fbf7ac2d937251dc18abe9328109bc1",
+      "wire_observation_sha256": "31245a3981e40a2a39cf6d9227445bc31a2586ce11a08113b5c89dfb2a6b76e5",
+      "observed": "Picking a pig selects one pig spawn egg; the subsequent armor-stand pick produces no additional inventory item",
+      "method": "Controlled process and independent wire observation; no decompiled implementation code"
+    },
+    "before": {
+      "server_commit": "5bffe81bc715e69033fbb643976e26ac0f53ada1",
+      "result": "Test actors and rejection barrier received; valid nearby actor pick times out",
+      "log_sha256": "3dbd9d21eae8388e3ba55ecf72b42b25f3af8784c4ec8a1bb8a42c064c5d6898"
+    },
+    "after": "Independent native client checks new egg, hotbar reuse without duplication, distant target rejection and rejection of a 64-bit ID that would alias the nearby actor if truncated",
+    "tests": {
+      "protocol": 178,
+      "server": 803,
+      "experimental_host": 19
+    },
+    "regressions": "Full shared resources, sounds, forms, dialog replies, models and normal restart, packet edits and connection hooks with both Rust plugin fixtures loaded",
+    "log_sha256": {
+      "protocol": "bb5aaeb22edbefd53cba12c29c1007ab297c11bd1ef84fb95f4f26308f716d59",
+      "core": "f20562d26af8b979c4fdfb3d3ec4876b65e8e2cd413e852192f343a33e2cdb29",
+      "clippy": "ea4602663c172f2d7627911bd095faa70a89cced8de1842f8ae6cd33c06ebef6",
+      "interop": "1dfe652115db17324147739e2f7e80bae554dc183a1cb38e23e974ada61219bf"
+    },
+    "limits": [
+      "Mapped spawn eggs only; no entity data copying",
+      "No new Windows GDK rendering or online-authentication claim",
+      "Overall gameplay and typed packet coverage remains partial"
+    ]
   }
 }

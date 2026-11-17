@@ -2,7 +2,6 @@
 use super::*;
 
 impl BedrockClient {
-    #[allow(clippy::too_many_lines)]
     pub fn handle_block_pick_request(&self, player: &Arc<Player>, packet: &SBlockPickRequest) {
         if !player.can_interact_with_block_at(&packet.position, 1.0) {
             return;
@@ -19,7 +18,37 @@ impl BedrockClient {
             return;
         };
         let stack = ItemStack::new(1, item);
+        self.pick_item_stack(player, stack);
+    }
 
+    pub fn handle_actor_pick_request(&self, player: &Arc<Player>, packet: &SActorPickRequest) {
+        if player.gamemode.load() != GameMode::Creative {
+            return;
+        }
+        let Ok(id) = i32::try_from(packet.entity_unique_id) else {
+            return;
+        };
+        let Some(target) = player.world().get_entity_by_id(id) else {
+            return;
+        };
+        if !player.can_interact_with_entity(target.as_ref(), 1.0) {
+            return;
+        }
+
+        let target_type = target.get_entity().entity_type;
+        let item = pumpkin_data::entity::spawn_egg_ids()
+            .iter()
+            .find(|&&id| {
+                pumpkin_data::entity::entity_from_egg(id)
+                    .is_some_and(|entity_type| entity_type.id == target_type.id)
+            })
+            .and_then(|&id| pumpkin_data::item::Item::from_id(id));
+        if let Some(item) = item {
+            self.pick_item_stack(player, ItemStack::new(1, item));
+        }
+    }
+
+    fn pick_item_stack(&self, player: &Arc<Player>, stack: ItemStack) {
         {
             let inventory = player.inventory();
             let mut contents = inventory

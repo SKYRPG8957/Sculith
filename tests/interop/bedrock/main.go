@@ -28,8 +28,13 @@ func run() error {
 	defer cancel()
 	d := minecraft.Dialer{}
 	var actors modelRegistry
+	var pickActors actorPickRegistry
 	modelMode := len(os.Args) == 3 && (os.Args[2] == "--models-check" || os.Args[2] == "--model-snapshot" || os.Args[2] == "--model-unavailable")
 	d.IdentityData.DisplayName = "ForkProbe"
+	if len(os.Args) == 3 && os.Args[2] == "--actor-pick-check" {
+		d.IdentityData.DisplayName = "ActorProbe"
+		d.PacketFunc = pickActors.observe
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--pick-check" {
 		d.IdentityData.DisplayName = "PickBedrock"
 	}
@@ -64,6 +69,9 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && os.Args[2] == "--actor-pick-check" {
+		return checkActorPicking(c, &pickActors)
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--pick-check" {
 		return checkPicking(c)
 	}

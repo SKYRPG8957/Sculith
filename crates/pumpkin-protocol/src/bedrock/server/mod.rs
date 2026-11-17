@@ -1,6 +1,7 @@
 //! Serverbound Bedrock protocol packets received from clients.
 
 pub mod actor_event;
+pub mod actor_pick_request;
 pub mod animate;
 pub mod block_actor_data;
 pub mod block_pick_request;
@@ -37,6 +38,7 @@ pub mod stonecutter_set_recipe;
 pub mod text;
 
 pub use actor_event::*;
+pub use actor_pick_request::*;
 pub use animate::*;
 pub use block_actor_data::*;
 pub use block_pick_request::*;

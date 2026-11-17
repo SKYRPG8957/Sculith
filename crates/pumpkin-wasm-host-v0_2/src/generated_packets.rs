@@ -3569,6 +3569,15 @@ pub fn deserialize_bedrock_serverbound_packet(
     payload: &[u8],
 ) -> Option<BServerboundPacket> {
     match id {
+        id if id == <pumpkin_protocol::bedrock::server::SActorPickRequest as pumpkin_protocol::Packet>::PACKET_ID as i32 => {
+            use pumpkin_protocol::BServerPacket;
+            let p = <pumpkin_protocol::bedrock::server::SActorPickRequest as pumpkin_protocol::BServerPacket>::read(&mut Cursor::new(payload)).ok()?;
+            Some(BServerboundPacket::SActorPickRequest(crate::pumpkin::plugin::bedrock_packets::SActorPickRequest {
+                entity_unique_id: p.entity_unique_id.try_into().ok()?,
+                max_slots: p.max_slots.try_into().ok()?,
+                with_data: p.with_data.try_into().ok()?,
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::server::SBlockPickRequest as pumpkin_protocol::Packet>::PACKET_ID as i32 => {
             use pumpkin_protocol::BServerPacket;
             let p = <pumpkin_protocol::bedrock::server::SBlockPickRequest as pumpkin_protocol::BServerPacket>::read(&mut Cursor::new(payload)).ok()?;

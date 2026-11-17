@@ -78,6 +78,13 @@ interface bedrock-packets {
     kinetic-damage-dealt,
     hurt-without-receiving-damage,
   }
+  /// Sent when a player picks a targeted entity.
+  record s-actor-pick-request {
+    /// Unlike most actor IDs, this field is a fixed little-endian integer.
+    entity-unique-id: s64,
+    max-slots: u8,
+    with-data: bool,
+  }
   /// Animation action performed on an actor.
   enum animate-action {
     no-action,
@@ -2584,6 +2591,8 @@ interface bedrock-packets {
   variant serverbound-packet {
     /// Transmits actor-specific animations, sounds, and state changes (such as hurt, taming, or eating).
     s-actor-event(s-actor-event),
+    /// Sent when a player picks a targeted entity.
+    s-actor-pick-request(s-actor-pick-request),
     /// Plays animations (arm swing, critical strike particles, waking up) on an actor.
     s-animate(s-animate),
     /// Synchronizes block-actor updates from the client, such as edited sign text.

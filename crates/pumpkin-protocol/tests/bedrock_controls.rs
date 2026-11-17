@@ -9,7 +9,9 @@ use pumpkin_protocol::{
             AudioContentSound, CMatchmakingState, CPlayAudioContent, CSetPassengerOfBlock,
             CStonecutterSetRecipe, MatchmakingStateOptions, PassengerOfBlockData,
         },
-        server::{SMatchmakingCancel, SRegisterAudioContent, SStonecutterSetRecipe},
+        server::{
+            SActorPickRequest, SMatchmakingCancel, SRegisterAudioContent, SStonecutterSetRecipe,
+        },
     },
     codec::{var_int::VarInt, var_long::VarLong, var_uint::VarUInt},
     serial::{PacketRead, PacketWrite},
@@ -49,6 +51,21 @@ fn stonecutter_frames_match_independent_2225() {
         },
         &fixtures["stonecutter_response"],
     );
+}
+
+#[test]
+fn actor_pick_uses_a_fixed_signed_id_in_2225() {
+    let bytes = include_bytes!("fixtures/actor_pick_2225.bin");
+    let packet: SActorPickRequest = read_fixture(bytes);
+    assert_eq!(packet.entity_unique_id, -0x0102_0304_0506_0708);
+    assert_eq!(packet.max_slots, 9);
+    assert!(packet.with_data);
+
+    let mut payload = bytes.as_slice();
+    VarUInt::read(&mut payload).unwrap();
+    for end in 0..payload.len() {
+        assert!(SActorPickRequest::read(&mut &payload[..end]).is_err());
+    }
 }
 
 #[test]

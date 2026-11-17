@@ -11,6 +11,12 @@ different client hint values, including 9, moves a stack into storage through
 `ItemStackRequest`, and picks it back into an occupied hand. It verifies all 36
 inventory slots after each pick. Run through the combined harness with `--picking`.
 
+`--actor-pick-check` picks a nearby pig, reuses its egg after selecting another
+hotbar slot, and rejects a distant pig and a 64-bit ID that would alias the nearby
+pig if truncated. The harness option `--actor-picking` prepares those entities.
+The client-origin latency echo orders the rejection checks before the valid pick.
+Actor data copying and entities without a mapped spawn egg are not implemented.
+
 Prepare a Java 26.3 flat world with grass at Y=-61. In the official Java server:
 
 ```

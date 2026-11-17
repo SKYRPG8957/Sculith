@@ -25,6 +25,7 @@ use pumpkin_protocol::{
         },
         server::{
             actor_event::{ActorEventID, SActorEvent},
+            actor_pick_request::SActorPickRequest,
             animate::{AnimateAction, SAnimate},
             block_pick_request::SBlockPickRequest,
             command_request::SCommandRequest,
@@ -225,7 +226,6 @@ pub(crate) fn send_bedrock_inventory_slot(
 pub mod actor_event;
 pub mod animate;
 pub mod block_actor_data;
-pub mod block_pick_request;
 pub mod chat_command;
 pub mod chat_message;
 pub mod container_close;
@@ -234,6 +234,7 @@ pub mod emote_list;
 pub mod interaction;
 pub mod inventory_action;
 pub mod item_stack_request;
+pub mod pick_item;
 pub(super) use item_stack_request::record_update;
 pub mod mob_equipment;
 pub mod modal_form_response;

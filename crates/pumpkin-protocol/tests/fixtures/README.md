@@ -1,5 +1,9 @@
 # Protocol fixtures
 
+`actor_pick_2225.bin` is a complete gophertunnel `e2251a60f71d` frame for picking
+actor `-0x0102030405060708`, with hint 9 and data requested. The actor ID is a
+fixed signed little-endian 64-bit value, unlike most Bedrock actor references.
+
 ## Bedrock 2225 control packets
 
 `bedrock_controls_2225.json` contains complete packet headers and payloads encoded
