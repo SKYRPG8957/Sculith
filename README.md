@@ -32,7 +32,7 @@ Connect on the same PC:
 | Java 26.3 | `127.0.0.1:25565` |
 
 New players start with an empty inventory. Select the supported blocks from the
-creative inventory.
+creative inventory, or middle-click a supported block in the world.
 
 Use `list` to see connected players, `save` to checkpoint and `stop` to save and
 shut down.

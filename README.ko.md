@@ -43,6 +43,8 @@ cargo run --locked -- run --config examples/configs/crossplay.toml
 [Windows 설정](docs/guides/windows.md).
 [외부 접속과 포트 설정](docs/guides/hosting.md).
 
+월드의 지원 블록을 중간 클릭해 인벤토리에서 선택할 수 있습니다.
+
 ## 주요 기능
 
 - 두 에디션의 청크·플레이어 표시·이동·건축·채팅 공유
