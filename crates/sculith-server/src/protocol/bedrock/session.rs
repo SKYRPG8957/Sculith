@@ -32,6 +32,7 @@ use crate::{
 };
 
 mod connection;
+mod inventory_window;
 mod packs;
 pub(super) use connection::Observed;
 #[cfg(test)]
@@ -280,6 +281,7 @@ pub async fn handle_with_protection<T: Transport>(
     let mut view_player = lease.player.clone();
     let mut view_center = (0, 0);
     let mut packet_sequence = 0u64;
+    let mut inventory_window = inventory_window::InventoryWindow::new(std::time::Instant::now());
     loop {
         tokio::select! {
             event=peer_updates.recv()=>{
@@ -294,6 +296,12 @@ pub async fn handle_with_protection<T: Transport>(
                     world.observe_packet(id,super::catalog::receipt(&packet,packet_sequence)).await?;
                 }
                 if session_control(conn, &packet, id).await? {
+                    continue;
+                }
+                if matches!(&packet, V2225::InteractPacket(_) | V2225::ContainerClosePacket(_)) {
+                    if let Some(reply) = inventory_window.handle(&packet, &view_player, std::time::Instant::now()) {
+                        conn.send(&[reply]).await?;
+                    }
                     continue;
                 }
                 if let V2225::TextPacket(text)=&packet {
@@ -536,7 +544,7 @@ async fn initialize<T: Transport>(
     } else {
         format!("selfsigned:{}", identity.public_key)
     };
-    let lease = world
+    let mut lease = world
         .reserve(
             Profile {
                 subject,
@@ -599,7 +607,7 @@ async fn initialize<T: Transport>(
                 }
                 tracing::info!(player = %login.authentication.identity().display_name, entity_id,
                     "Bedrock client acknowledged the flat-world spawn");
-                world.activate(entity_id).await?;
+                lease.player = world.activate(entity_id).await?;
                 packets.trace.attach(entity_id);
                 packets.set_phase(sculith_core::connections::PacketPhase::Play);
                 let (interest, radius) = interest.expect("checked above");

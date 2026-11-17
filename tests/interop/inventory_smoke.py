@@ -187,6 +187,8 @@ def smoke(server, native, plugin):
                 assert process.wait(timeout=5) == 0
                 text = log.read_text(encoding="utf-8")
                 assert 'events inventory player=1' in text and 'events inventory player=2' in text
+                for packet_id in (33, 47):
+                    assert re.search(r"events packet player=2 edition=Bedrock .*id=" + str(packet_id) + r" .*dispatch=Control", text)
                 assert re.search(r"events equipment player=1 .*count=2", text)
                 assert re.search(r"events equipment player=2 .*count=5", text)
                 assert 'plugin disabled' not in text and 'events plugin stopped' in text

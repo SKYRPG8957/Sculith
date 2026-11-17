@@ -5,11 +5,23 @@ import (
 
 	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
+	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
 
 // Exercise real native wire batches before the ordinary mixed-edition fixture.
 // The inventory is empty on entry and on return; no default gameplay is added.
 func (s *nativeInventoryState) batches(conn *minecraft.Conn) (int32, error) {
+	if err := s.windowRoundTrip(conn, []packet.Packet{inventoryOpen(conn)}, "open", 2); err != nil {
+		return 0, err
+	}
+	if err := s.windowRoundTrip(conn, []packet.Packet{
+		inventoryOpen(conn), inventoryClose(77),
+		&packet.Interact{ActionType: packet.InteractActionOpenInventory, TargetEntityRuntimeID: conn.GameData().EntityRuntimeID + 1000},
+		&packet.ContainerClose{WindowID: 2, ContainerType: 1, ServerSide: false},
+		&packet.ContainerClose{WindowID: 2, ContainerType: 255, ServerSide: true},
+	}, "", 0); err != nil {
+		return 0, err
+	}
 	id := int32(0)
 	request := func(actions ...protocol.StackRequestAction) protocol.ItemStackRequest {
 		id--
@@ -63,6 +75,16 @@ func (s *nativeInventoryState) batches(conn *minecraft.Conn) (int32, error) {
 			return id, fmt.Errorf("split slot %d: %+v", slot, stack)
 		}
 	}
+	if err := s.windowRoundTrip(conn, []packet.Packet{inventoryClose(2)}, "close", 2); err != nil {
+		return id, err
+	}
+	if err := s.windowRoundTrip(conn, []packet.Packet{inventoryClose(2), inventoryOpen(conn)}, "open", 3); err != nil {
+		return id, err
+	}
+	if err := s.windowRoundTrip(conn, []packet.Packet{inventoryClose(2), inventoryOpen(conn)}, "", 0); err != nil {
+		return id, err
+	}
+
 	before := *s
 	if err := s.exchange(conn, split, true); err != nil {
 		return id, err
@@ -100,6 +122,10 @@ func (s *nativeInventoryState) batches(conn *minecraft.Conn) (int32, error) {
 	if err := s.exchange(conn, request(&protocol.DestroyStackRequestAction{Source: s.reference(protocol.ContainerCursor, 0), Count: 36}), true); err != nil {
 		return id, err
 	}
+	if err := s.windowRoundTrip(conn, []packet.Packet{inventoryClose(3)}, "close", 3); err != nil {
+		return id, err
+	}
+	fmt.Println("PASS: native self-inventory open/close/reopen, duplicate/stale/forged notification rejection and retained cursor identity")
 	fmt.Println("PASS: native positive-ID batches 2/36/64, 65-action rejection, full inventory split/merge, rollback and replay")
 	return id, nil
 }

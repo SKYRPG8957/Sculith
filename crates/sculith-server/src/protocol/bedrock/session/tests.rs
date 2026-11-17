@@ -1,3 +1,5 @@
+mod inventory_window;
+
 use std::{collections::VecDeque, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, Result, ensure};

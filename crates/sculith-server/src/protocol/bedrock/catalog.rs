@@ -99,7 +99,16 @@ pub fn receipt(packet: &V2225, sequence: u64) -> sculith_plugin_api::PacketInfo 
             V2225::RequestChunkRadiusPacket(_)
             | V2225::NetworkStackLatencyPacket(_)
             | V2225::ClientCacheStatusPacket(_)
+            | V2225::ContainerClosePacket(_)
             | V2225::SetLocalPlayerAsInitializedPacket(_) => PacketDispatch::Control,
+            V2225::InteractPacket(request)
+                if matches!(
+                    request.action,
+                    bedrock::protocol::v898::packets::InteractPacketAction::OpenInventory
+                ) =>
+            {
+                PacketDispatch::Control
+            }
             V2225::AnimatePacket(_) | V2225::ModalFormResponsePacket(_) => {
                 PacketDispatch::Notification
             }
