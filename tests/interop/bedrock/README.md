@@ -4,6 +4,13 @@ This Go client uses pinned gophertunnel and Dragonfly implementations. It is a
 test tool, not a server dependency. Use a scratch world and loopback listeners.
 It connects through NetherNet; it does not verify Windows GDK rendering.
 
+`--pick-check` also checks hotbar selection against the pick behavior in
+Dragonfly `0f9a3a573626`: select an existing hotbar stack without moving it,
+or create a new Creative item in the first empty hotbar slot. The check sends
+different client hint values, including 9, moves a stack into storage through
+`ItemStackRequest`, and picks it back into an occupied hand. It verifies all 36
+inventory slots after each pick. Run through the combined harness with `--picking`.
+
 Prepare a Java 26.3 flat world with grass at Y=-61. In the official Java server:
 
 ```

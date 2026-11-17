@@ -176,5 +176,75 @@
       "Typed packet views and Bedrock gameplay decoders remain partial",
       "Connection-event component variants require experimental Wasm v0.2; native Rust works in default builds"
     ]
+  },
+  "bedrock_2225_packets": {
+    "baseline": "5bffe81bc715e69033fbb643976e26ac0f53ada1",
+    "server_sha256": "8f77d685c72d24193d31bb0950658c2a7de232900571b809d2bb3f17bf3629df",
+    "native_fixture_sha256": "b5b4d02a5dc7285b7dec6df923fec3191eee02acfd345eb50f7380dcbfedb24c",
+    "catalogue_source": "gophertunnel e2251a60f71d; protocol 2225; MIT notice retained",
+    "known_ids": 244,
+    "definitions_using_generated_ids": 108,
+    "corrected_ids": {
+      "matchmaking_state": [
+        328,
+        353
+      ],
+      "matchmaking_cancel": [
+        329,
+        356
+      ],
+      "play_audio": [
+        331,
+        359
+      ],
+      "register_audio": [
+        330,
+        360
+      ],
+      "passenger_of_block": [
+        335,
+        357
+      ],
+      "stonecutter_request": [
+        332,
+        354
+      ],
+      "stonecutter_response": [
+        333,
+        355
+      ]
+    },
+    "control_frames": "Seven independent gophertunnel headers and payloads; nested matchmaking options, two four-string audio registrations, trailing sound options and passenger data",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "tests": {
+      "protocol": 177,
+      "server": 803,
+      "experimental_host": 18
+    },
+    "interop": "Both editions; native and Wasm fixtures together; resources, sounds, forms, dialog replies, model lifecycle and normal restart, packet edits and pre-player hooks",
+    "log_sha256": {
+      "before_stonecutter": "36e3d25092e72f18ac5e9c0ffa742d745490c1a43d38a2b62c243011abdafffa",
+      "protocol": "b8bfd870163e127c642bc323a9aa9b16cfc3312c41ffba05960cb790e383a054",
+      "core": "516117f4f2602256e7c4c07c3320d1b8d7d3e8b737429b153579e910dab15856",
+      "clippy": "9ff442d66f2c088d06d84faf27b13b3bb8ae12c59c3917098071f132a56e3f66",
+      "interop": "833f23d0f06f19243e33aede7eb6288dec46c525687239f9da729223798f3aaa"
+    },
+    "limits": [
+      "Catalogue includes retained legacy IDs; it is not complete gameplay or typed codec coverage",
+      "Signed audio and matchmaking service support is not implemented by the wire schemas",
+      "Independent protocol clients; no new Windows GDK rendering or online-authentication claim"
+    ]
+  },
+  "bedrock_picking": {
+    "reference": "Dragonfly 0f9a3a573626 Player.PickBlock",
+    "behavior": "Select existing hotbar stacks without moving them; swap storage stacks into the selected hand; Creative picks use the first empty hotbar slot and preserve displaced stacks when storage has space",
+    "before": "Old server times out on the first pick with client hint 9",
+    "after": "Six picks with varying hints, selected slots and an approved ItemStackRequest swap into storage; all 36 inventory slots and item counts checked after each pick",
+    "building_paths": 4,
+    "log_sha256": {
+      "before": "cf0a633905029b703eabe620a4c0444f1da430f51cc5372e29eccea5882f3b6e",
+      "after": "b3472dad69a87ac7f29afca7ea6cd395d6a23d3f4c8b4abebef89593b4c971a3"
+    }
   }
 }

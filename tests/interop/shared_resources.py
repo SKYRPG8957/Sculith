@@ -352,6 +352,7 @@ def main():
     parser.add_argument("--world", type=Path, required=True, help="stopped Java flat world copied for testing")
     parser.add_argument("--delayed", action="store_true", help="hold a partial packet across two keepalives")
     parser.add_argument("--building", action="store_true", help="also exercise native building in the copied flat world")
+    parser.add_argument("--picking", action="store_true", help="check native pick-block hotbar selection and inventory preservation")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
     parser.add_argument("--forms", action="store_true", help="exercise shared forms and Rust response events on both editions")
@@ -483,17 +484,24 @@ def main():
             assert "pack.mcmeta" in archive.namelist()
             assert archive.read("assets/sculith/sounds/demo_tone.ogg") == original["sounds/sculith_demo.ogg"]
             assert "assets/sculith/models/sculith/demo_statue.json" in archive.namelist()
-        if args.building:
+        if args.building or args.picking:
             for command in ["gamerule spawn_mobs false", "gamerule spawn_monsters false",
                             "kill @e[type=!minecraft:player]"]:
                 server.stdin.write(command + "\n")
             server.stdin.flush()
             time.sleep(.5)
+        if args.building:
             result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}"],
                                     capture_output=True, text=True, timeout=35)
             (root / "building.log").write_text(result.stdout + result.stderr)
             assert result.returncode == 0, result.stdout + result.stderr
             report["native_building_paths"] = 4
+        if args.picking:
+            result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}", "--pick-check"],
+                                    capture_output=True, text=True, timeout=35)
+            (root / "picking.log").write_text(result.stdout + result.stderr)
+            assert result.returncode == 0, result.stdout + result.stderr
+            report["native_picking"] = "new and existing items; hotbar selection; inventory preserved"
         if args.packet_edits:
             from packet_probe import check
             report["packet_edits"] = check(java, bedrock, root, args.bedrock_probe.resolve())

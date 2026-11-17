@@ -30,6 +30,9 @@ func run() error {
 	var actors modelRegistry
 	modelMode := len(os.Args) == 3 && (os.Args[2] == "--models-check" || os.Args[2] == "--model-snapshot" || os.Args[2] == "--model-unavailable")
 	d.IdentityData.DisplayName = "ForkProbe"
+	if len(os.Args) == 3 && os.Args[2] == "--pick-check" {
+		d.IdentityData.DisplayName = "PickBedrock"
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--connection-probe" {
 		d.IdentityData.DisplayName = "ConnectionNative"
 		d.Protocol = proposedProtocol{minecraft.DefaultProtocol}
@@ -61,6 +64,9 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && os.Args[2] == "--pick-check" {
+		return checkPicking(c)
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--connection-probe" {
 		fmt.Printf("PASS: changed proposal %d reached current play through native connection hooks; request=%d login=%d settings=%d\n", protocol.CurrentProtocol-1, packet.IDRequestNetworkSettings, packet.IDLogin, packet.IDNetworkSettings)
 		return nil

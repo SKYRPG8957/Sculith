@@ -20,44 +20,38 @@ impl BedrockClient {
         };
         let stack = ItemStack::new(1, item);
 
-        let target_hotbar_slot = packet.max_slots as usize;
-        if target_hotbar_slot >= 9 {
-            return;
-        }
+        {
+            let inventory = player.inventory();
+            let mut contents = inventory
+                .main_inventory
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut selected = inventory.get_selected_slot() as usize;
 
-        let slot_with_stack = player.inventory().get_slot_with_stack(&stack);
-
-        if slot_with_stack != -1 {
-            if pumpkin_inventory::player::player_inventory::PlayerInventory::is_valid_hotbar_index(
-                slot_with_stack as usize,
-            ) {
-                if slot_with_stack as usize != target_hotbar_slot {
-                    let target_stack = player.inventory().get_stack(target_hotbar_slot);
-                    let source_stack = player.inventory().get_stack(slot_with_stack as usize);
-                    player
-                        .inventory()
-                        .set_stack(target_hotbar_slot, source_stack);
-                    player
-                        .inventory()
-                        .set_stack(slot_with_stack as usize, target_stack);
+            // Match Dragonfly's pick selection; the client hint is not a destination slot.
+            if let Some(slot) = contents
+                .iter()
+                .position(|item| !item.is_empty() && item.are_items_and_components_equal(&stack))
+            {
+                if PlayerInventory::is_valid_hotbar_index(slot) {
+                    inventory.set_selected_slot(slot as u8);
+                } else {
+                    contents.swap(selected, slot);
                 }
+            } else if player.gamemode.load() == GameMode::Creative {
+                if let Some(empty) = contents.iter().position(ItemStack::is_empty) {
+                    if PlayerInventory::is_valid_hotbar_index(empty) {
+                        selected = empty;
+                        inventory.set_selected_slot(empty as u8);
+                    } else {
+                        contents.swap(selected, empty);
+                    }
+                }
+                contents[selected] = stack;
             } else {
-                let target_stack = player.inventory().get_stack(target_hotbar_slot);
-                let source_stack = player.inventory().get_stack(slot_with_stack as usize);
-                player
-                    .inventory()
-                    .set_stack(target_hotbar_slot, source_stack);
-                player
-                    .inventory
-                    .set_stack(slot_with_stack as usize, target_stack);
+                return;
             }
-        } else if player.gamemode.load() == GameMode::Creative {
-            player.inventory.set_stack(target_hotbar_slot, stack);
-        } else {
-            return;
         }
-
-        player.inventory.set_selected_slot(target_hotbar_slot as u8);
 
         // Send hotbar updates
         player.client.try_enqueue_packet_editioned(
