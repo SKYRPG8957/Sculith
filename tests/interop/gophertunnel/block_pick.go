@@ -44,7 +44,7 @@ func blockPick(conn *minecraft.Conn) error {
 				held = held || p.EntityRuntimeID == conn.GameData().EntityRuntimeID
 			case *packet.PlayerHotBar:
 				if p.SelectedHotBarSlot != uint32(selected) || p.WindowID != 0 || !p.SelectHotBarSlot || !main || !held || gui != accepted {
-					return fmt.Errorf("invalid pick selection order %+v", p)
+					return fmt.Errorf("invalid pick selection order: packet=%+v target=%v hint=%d want_slot=%d gui=%v accepted=%v main=%v held=%v", p, position, hint, selected, gui, accepted, main, held)
 				}
 				if s.selected != selected {
 					return fmt.Errorf("equipment selection mismatch")

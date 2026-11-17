@@ -92,6 +92,10 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Verified — current local source
 
+- First-run source `60af92d` passes 286 project tests, ownership doctests, Clippy, architecture checks, debug/release process probes and complete Linux/Windows workflows. New-file creation, local Java/native entry, offline scope enforcement, stable config/key hashes, manual saves and restart recovery pass without plugins. Bare authenticated startup initializes official OIDC public keys and requests Java encryption; positive official-account entry remains unverified. [Reproduction and limits](verification/first-run-and-udp.md).
+
+- UDP correction `431a24e`, with fixture portability correction `95c7b61`, passes the same local checks and debug/release syscall-fault probes: one denied candidate falls back, all-denied establishment ends at its deadline, and active-path permission loss ends only the affected session while Java continues editing. The original release fails the same one-candidate fixture. Complete Linux and native Windows/static-CRT workflows pass. [Evidence, CI links and fixture scope](verification/first-run-and-udp.md#udp-failure-reproduction).
+
 - Block-pick source `5fac2b0` passes 281 project tests, ownership doctests, Clippy, architecture checks, debug/release builds, complete Linux/Windows workflows and mixed-edition inventory/plugin probes. REA-controlled official BDS observation confirms count-1 creation and existing-stack selection/swaps. A fresh unmodified Java client, without plugins, packs or mods, picks and places Grass using actual mouse input; the owner records one pick/placement and saves revision 1. [Behavior, reference hashes and limits](verification/block-pick.md).
 
 - Console plugin source `da38700` passes 276 project tests, ownership doctests, Clippy, architecture checks, debug/release builds and the complete main Linux workflow. A real Rust API-v12 controller and fixed-v11 worker verify console routing without players, player/console source isolation, private Java/native acknowledgements, console-origin spoof rejection, shared world edits, report redaction and timeout isolation. Release probes also pass. The complete native Windows static-CRT workflow also passes. A separate 32-case check with four parallel fresh servers does not reproduce the earlier ICE timeout; this is not a fix, one-server concurrency test or throughput result.
@@ -204,6 +208,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Failed / externally constrained
 
+- Development-branch run `44010428217` fails before ICE connects with UDP `EPERM`. A Linux sendto fault fixture reproduces it on `60af92d`; `431a24e` permits another candidate to complete world entry while retaining the deadline and fatal active-path behavior. Earlier ICE timeouts lacking socket-error evidence remain unlocalized. The fixture initially used a space-containing `LD_PRELOAD` path and correctly failed its injection assertion; it now uses an unambiguous `/tmp` path. The first `431a24e` Linux CI attempts then fail at fixture compilation under fortified libc, before its network scenarios; `95c7b61` checks logging writes and explicitly enables the same hardening locally. Its Windows predecessor also fails a block-pick ordering assertion after world entry; the unchanged Rust code passes that scenario in `95c7b61` and 20 fresh local servers. This separate failure remains unlocalized; strict assertions remain and rejection diagnostics now include receipt flags.
+
 - The initial autosave failure probe found that a failed final save hid the periodic-save cause. Shutdown now preserves both errors; the corrected real-process failure probe passes.
 
 - The first API-v10 Windows workflow passed native build/runtime checks but its new world probe referenced a debug fixture path after building release executables. The probe had not started; source `0f20d6f` corrects the path to the release executable. This was a workflow configuration failure rather than a runtime compatibility result.
@@ -293,7 +299,7 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Measure chunk encoding/loading and real owner workloads next. Continue reducing measured metadata/tail costs where justified, study plugin overhead separately and measure allocator/CPU behavior directly. Extend recovery beyond completed snapshots, general entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
+Extend ordinary inventory interactions and persistent player state through the shared owner. Investigate another block-pick ordering failure if the expanded diagnostics reproduce it; keep supported packet dispatch metadata aligned with actual handlers. Preserve the measured chunk/profiler baselines and repeat measurements when changed runtime paths justify it. Extend recovery beyond completed snapshots, general entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
 
 Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 
