@@ -6,7 +6,7 @@ use std::io::{self, BufRead, Write};
 use sculith_core::ServerStatus;
 use serde::{Deserialize, Serialize};
 
-pub const API_VERSION: u32 = 11;
+pub const API_VERSION: u32 = 12;
 pub const LEGACY_API_VERSION: u32 = 1;
 pub const GAME_API_VERSION: u32 = 2;
 pub const UI_API_VERSION: u32 = 3;
@@ -18,6 +18,7 @@ pub const CONNECTION_API_VERSION: u32 = 8;
 pub const PACKET_SENT_API_VERSION: u32 = 9;
 pub const WORLD_API_VERSION: u32 = 10;
 pub const CUSTOM_FORM_API_VERSION: u32 = 11;
+pub const CONSOLE_API_VERSION: u32 = 12;
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     LEGACY_API_VERSION,
     GAME_API_VERSION,
@@ -30,6 +31,7 @@ pub const SUPPORTED_API_VERSIONS: &[u32] = &[
     PACKET_SENT_API_VERSION,
     WORLD_API_VERSION,
     CUSTOM_FORM_API_VERSION,
+    CONSOLE_API_VERSION,
 ];
 pub use sculith_core::connections::{
     ConnectionEvent, ConnectionPacket, ConnectionTransport, PacketPhase,
@@ -69,6 +71,7 @@ pub enum Hook {
     PlayerInventoryChanged,
     InventoryResponse,
     CommandSubmitted,
+    ConsoleCommand,
 }
 
 impl Hook {
@@ -90,11 +93,13 @@ impl Hook {
         Self::PacketReceived,
         Self::PlayerChat,
         Self::CommandSubmitted,
+        Self::ConsoleCommand,
         Self::PlayerInventoryChanged,
         Self::InventoryResponse,
     ];
     pub fn minimum_api(&self) -> u32 {
         match self {
+            Self::ConsoleCommand => CONSOLE_API_VERSION,
             Self::WorldResponse | Self::WorldBlocksChanged => WORLD_API_VERSION,
             Self::Connection => CONNECTION_API_VERSION,
             Self::PacketSent => PACKET_SENT_API_VERSION,
@@ -177,6 +182,11 @@ pub enum Event {
     CommandSubmitted {
         player_id: u64,
         name: String,
+        command: String,
+        arguments: String,
+    },
+    /// Local operator command; private to its registered owner, with no player ID.
+    ConsoleCommand {
         command: String,
         arguments: String,
     },
@@ -278,6 +288,7 @@ impl Event {
             Self::InventoryResponse { .. } => Hook::InventoryResponse,
             Self::PlayerInventoryChanged { .. } => Hook::PlayerInventoryChanged,
             Self::CommandSubmitted { .. } => Hook::CommandSubmitted,
+            Self::ConsoleCommand { .. } => Hook::ConsoleCommand,
             Self::Started { .. } => Hook::Started,
             Self::Tick { .. } => Hook::Tick,
             Self::Stopping => Hook::Stopping,
@@ -324,7 +335,7 @@ pub enum Action {
         request_id: u32,
         operation: InventoryOperation,
     },
-    /// Register public player commands during Started, before sessions open.
+    /// Register during Started. Command hooks determine the eligible sources.
     RegisterCommand {
         command: CommandSpec,
     },
@@ -923,5 +934,60 @@ mod tests {
         assert!(serve_io(FormPlugin, &input[..], &mut Vec::new()).is_err());
         assert_eq!(Hook::PlayerJoined.minimum_api(), 2);
         assert_eq!(Hook::FormSubmitted.minimum_api(), 3);
+    }
+    #[test]
+    fn console_hook_is_versioned_separately_from_player_commands() {
+        struct Console;
+        impl Plugin for Console {
+            fn metadata(&self) -> Metadata {
+                Metadata {
+                    name: "console".into(),
+                    version: "1".into(),
+                    hooks: vec![Hook::ConsoleCommand],
+                }
+            }
+            fn on_event(&mut self, _: Event) -> Vec<Action> {
+                vec![]
+            }
+        }
+        for highest in [11, 12] {
+            let request = Request {
+                id: 1,
+                message: HostMessage::Hello {
+                    api_version: 1,
+                    supported_versions: (1..=highest).collect(),
+                    server: ServerStatus::new("test".into(), 20).unwrap(),
+                },
+            };
+            let mut input = serde_json::to_vec(&request).unwrap();
+            input.push(b'\n');
+            let mut output = Vec::new();
+            let result = serve_io(Console, &input[..], &mut output);
+            if highest == 11 {
+                assert!(result.is_err() && output.is_empty());
+            } else {
+                result.unwrap();
+                let response: Response = serde_json::from_slice(&output).unwrap();
+                assert!(matches!(
+                    response.message,
+                    PluginMessage::Ready {
+                        api_version: 12,
+                        ..
+                    }
+                ));
+            }
+        }
+        let event = Event::ConsoleCommand {
+            command: "admin".into(),
+            arguments: "private".into(),
+        };
+        assert_eq!(event.hook().minimum_api(), 12);
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            serde_json::json!({"type":"console_command","command":"admin","arguments":"private"})
+        );
+        let old = serde_json::json!({"type":"command_submitted","player_id":7,"name":"player","command":"old","arguments":"private"});
+        let decoded: Event = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), old);
     }
 }

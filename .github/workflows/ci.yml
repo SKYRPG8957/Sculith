@@ -52,6 +52,8 @@ jobs:
       - name: Build independent Bedrock world-spawn client
         working-directory: tests/interop/gophertunnel
         run: go build -mod=readonly -o ../../../target/gophertunnel-probe .
+      - name: Verify private console plugin commands and command sources
+        run: python tests/interop/console_commands_smoke.py --client target/gophertunnel-probe
       - name: Exercise independent Bedrock login and world spawn
         run: python tests/interop/gophertunnel_smoke.py --client target/gophertunnel-probe
       - name: Exercise Rust plugin game hooks in both editions

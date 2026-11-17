@@ -11,6 +11,7 @@ pub struct Submission {
     pub command: String,
     pub arguments: String,
 }
+#[derive(Debug, PartialEq, Eq)]
 pub enum Route {
     Plugin {
         owner: String,
@@ -19,14 +20,43 @@ pub enum Route {
     },
     Feedback(String),
 }
+#[derive(Debug, Clone, Copy)]
+pub struct Sources {
+    pub player: bool,
+    pub console: bool,
+}
+impl Sources {
+    pub const PLAYER: Self = Self {
+        player: true,
+        console: false,
+    };
+}
+struct Entry {
+    owner: String,
+    spec: CommandSpec,
+    enabled: bool,
+    sources: Sources,
+}
 #[derive(Default)]
 pub struct Registry {
-    entries: BTreeMap<String, (String, CommandSpec, bool)>,
+    entries: BTreeMap<String, Entry>,
     sealed: bool,
 }
 impl Registry {
     pub fn register(&mut self, plugin: &str, specs: Vec<CommandSpec>) -> Result<()> {
+        self.register_sources(plugin, specs, Sources::PLAYER)
+    }
+    pub fn register_sources(
+        &mut self,
+        plugin: &str,
+        specs: Vec<CommandSpec>,
+        sources: Sources,
+    ) -> Result<()> {
         ensure!(!self.sealed, "command registration has closed");
+        ensure!(
+            sources.player || sources.console,
+            "command requires a source"
+        );
         ensure!(
             !plugin.is_empty() && plugin.len() <= 64,
             "invalid command owner"
@@ -38,7 +68,7 @@ impl Registry {
         ensure!(
             self.entries
                 .values()
-                .filter(|(owner, _, _)| owner == plugin)
+                .filter(|entry| entry.owner == plugin)
                 .count()
                 + specs.len()
                 <= 32,
@@ -48,6 +78,10 @@ impl Registry {
         for spec in &specs {
             spec.validate().map_err(anyhow::Error::msg)?;
             ensure!(
+                !sources.console || !matches!(spec.name.as_str(), "list" | "save" | "stop"),
+                "reserved console command name"
+            );
+            ensure!(
                 spec.name != "help"
                     && !self.entries.contains_key(&spec.name)
                     && names.insert(&spec.name),
@@ -55,8 +89,15 @@ impl Registry {
             );
         }
         for spec in specs {
-            self.entries
-                .insert(spec.name.clone(), (plugin.into(), spec, true));
+            self.entries.insert(
+                spec.name.clone(),
+                Entry {
+                    owner: plugin.into(),
+                    spec,
+                    enabled: true,
+                    sources,
+                },
+            );
         }
         Ok(())
     }
@@ -64,13 +105,16 @@ impl Registry {
         self.sealed = true;
     }
     pub fn disable(&mut self, plugin: &str) {
-        for (owner, _, enabled) in self.entries.values_mut() {
-            if owner == plugin {
-                *enabled = false;
+        for entry in self.entries.values_mut() {
+            if entry.owner == plugin {
+                entry.enabled = false;
             }
         }
     }
     pub fn list(&self) -> Vec<CommandSpec> {
+        self.list_for(false)
+    }
+    fn list_for(&self, console: bool) -> Vec<CommandSpec> {
         let mut entries = vec![CommandSpec {
             name: "help".into(),
             description: "List available commands".into(),
@@ -78,19 +122,32 @@ impl Registry {
         entries.extend(
             self.entries
                 .values()
-                .filter(|(_, _, enabled)| *enabled)
-                .map(|(_, spec, _)| spec.clone()),
+                .filter(|entry| {
+                    entry.enabled
+                        && if console {
+                            entry.sources.console
+                        } else {
+                            entry.sources.player
+                        }
+                })
+                .map(|entry| entry.spec.clone()),
         );
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         entries
     }
     pub fn route(&self, input: &str) -> Route {
+        self.route_for(input, false)
+    }
+    pub fn route_console(&self, input: &str) -> Route {
+        self.route_for(input, true)
+    }
+    fn route_for(&self, input: &str, console: bool) -> Route {
         let input = input.strip_prefix('/').unwrap_or(input);
         let (command, arguments) = input
             .split_once(char::is_whitespace)
             .map_or((input, ""), |(command, args)| (command, args.trim()));
         if command == "help" {
-            let entries = self.list();
+            let entries = self.list_for(console);
             let pages = entries.len().div_ceil(8);
             let page = if arguments.is_empty() {
                 Some(1)
@@ -112,11 +169,23 @@ impl Registry {
             });
         }
         match self.entries.get(command) {
-            Some((owner, _, true)) => Route::Plugin {
-                owner: owner.clone(),
-                command: command.into(),
-                arguments: arguments.into(),
-            },
+            Some(entry)
+                if entry.enabled
+                    && if console {
+                        entry.sources.console
+                    } else {
+                        entry.sources.player
+                    } =>
+            {
+                Route::Plugin {
+                    owner: entry.owner.clone(),
+                    command: command.into(),
+                    arguments: arguments.into(),
+                }
+            }
+            Some(entry) if entry.enabled => {
+                Route::Feedback("This command is not available from this source.".into())
+            }
             Some(_) => Route::Feedback("This command is temporarily unavailable.".into()),
             None => Route::Feedback("Unknown command. Use /help.".into()),
         }
@@ -186,5 +255,67 @@ mod tests {
                 matches!(registry.route(&format!("help {args}")),Route::Feedback(text) if text.starts_with("Usage:"))
             );
         }
+    }
+    #[test]
+    fn command_sources_preserve_legacy_players_and_hide_console_only_commands() {
+        let mut registry = Registry::default();
+        registry
+            .register("old", vec![spec("legacy"), spec("save")])
+            .unwrap();
+        assert!(
+            registry
+                .register_sources(
+                    "admin",
+                    vec![spec("admin"), spec("stop")],
+                    Sources {
+                        player: false,
+                        console: true
+                    }
+                )
+                .is_err()
+        );
+        assert!(matches!(
+            registry.route_console("admin"),
+            Route::Feedback(_)
+        ));
+        registry
+            .register_sources(
+                "admin",
+                vec![spec("admin")],
+                Sources {
+                    player: false,
+                    console: true,
+                },
+            )
+            .unwrap();
+        registry
+            .register_sources(
+                "both",
+                vec![spec("both")],
+                Sources {
+                    player: true,
+                    console: true,
+                },
+            )
+            .unwrap();
+        assert!(!registry.list().iter().any(|s| s.name == "admin"));
+        assert!(matches!(registry.route("admin secret"), Route::Feedback(_)));
+        assert!(matches!(
+            registry.route_console("legacy secret"),
+            Route::Feedback(_)
+        ));
+        assert!(matches!(registry.route_console("save"), Route::Feedback(_)));
+        assert_eq!(
+            registry.route("both 안녕 ; $(echo value)"),
+            registry.route_console("both 안녕 ; $(echo value)")
+        );
+        assert!(
+            matches!(registry.route_console("admin secret"),Route::Plugin{owner,arguments,..} if owner=="admin" && arguments=="secret")
+        );
+        registry.disable("admin");
+        assert!(matches!(
+            registry.route_console("admin secret"),
+            Route::Feedback(_)
+        ));
     }
 }

@@ -74,7 +74,7 @@ def message(client, cancelled=False):
     reader.end()
 
 
-def smoke(server, plugin, native_client, api_version=11):
+def smoke(server, plugin, native_client, api_version=12):
     with tempfile.TemporaryDirectory(prefix="sculith forms ") as temporary:
         root = Path(temporary); settings=root/"server.toml";log=root/"server.log"
         settings.write_text('[java]\nsessions=true\nrequire_authentication=false\n'
@@ -135,6 +135,6 @@ if __name__=="__main__":
     parser.add_argument("--server",type=Path,default=ROOT/("target/debug/sculith"+suffix))
     parser.add_argument("--plugin",type=Path,default=ROOT/("target/debug/sculith-forms-plugin"+suffix))
     parser.add_argument("--client",type=Path,required=True)
-    parser.add_argument("--api-version",type=int,choices=(3,4,5,6,7,8,9,10,11),default=11)
+    parser.add_argument("--api-version",type=int,choices=(3,4,5,6,7,8,9,10,11,12),default=12)
     args=parser.parse_args()
     smoke(args.server.resolve(strict=True),args.plugin.resolve(strict=True),args.client.resolve(strict=True),args.api_version)

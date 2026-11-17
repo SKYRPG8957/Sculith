@@ -171,9 +171,14 @@ enum Command {
         count: u8,
         reply: oneshot::Sender<Result<sculith_game::InventoryOutcome>>,
     },
+    RouteConsole {
+        input: String,
+        reply: oneshot::Sender<sculith_game::commands::Route>,
+    },
     RegisterCommands {
         plugin: String,
         specs: Vec<sculith_core::CommandSpec>,
+        sources: sculith_game::commands::Sources,
         reply: oneshot::Sender<Result<()>>,
     },
     SealCommands {
@@ -308,6 +313,7 @@ impl Command {
             Self::InventoryClick { .. } => profiling::Operation::InventoryClick,
             Self::Inventory { .. } => profiling::Operation::Inventory,
             Self::CreativeSlot { .. } => profiling::Operation::CreativeSlot,
+            Self::RouteConsole { .. } => profiling::Operation::RouteConsole,
             Self::RegisterCommands { .. } => profiling::Operation::RegisterCommands,
             Self::SealCommands { .. } => profiling::Operation::SealCommands,
             Self::DisableCommands { .. } => profiling::Operation::DisableCommands,
@@ -493,15 +499,33 @@ impl WorldHandle {
         plugin: String,
         specs: Vec<sculith_core::CommandSpec>,
     ) -> Result<()> {
+        self.register_commands_from(plugin, specs, sculith_game::commands::Sources::PLAYER)
+            .await
+    }
+    pub async fn register_commands_from(
+        &self,
+        plugin: String,
+        specs: Vec<sculith_core::CommandSpec>,
+        sources: sculith_game::commands::Sources,
+    ) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
         self.send(Command::RegisterCommands {
             plugin,
             specs,
+            sources,
             reply,
         })
         .await
         .context("world owner stopped")?;
         receiver.await.context("command registration lost")?
+    }
+    /// Console routing is a private owner query; no player identity or public event.
+    pub async fn route_console(&self, input: String) -> Result<sculith_game::commands::Route> {
+        anyhow::ensure!(input.len() <= 256, "console input exceeds 256 bytes");
+        sculith_core::validate_player_text(&input).map_err(anyhow::Error::msg)?;
+        let (reply, receiver) = oneshot::channel();
+        self.send(Command::RouteConsole { input, reply }).await?;
+        receiver.await.context("console command route lost")
     }
     pub async fn seal_commands(&self) -> Result<()> {
         let (reply, receiver) = oneshot::channel();
@@ -1063,7 +1087,8 @@ pub fn with_region_and_content(
                             if let Ok(outcome)=&result {publish_inventory(previous.as_ref(),outcome,&game_events,&peer_events,observations.load(Ordering::Acquire));}
                             let _=reply.send(result);
                         }
-                        Some(Command::RegisterCommands {plugin,specs,reply})=>{let _=reply.send(command_registry.register(&plugin,specs));}
+                        Some(Command::RegisterCommands {plugin,specs,sources,reply})=>{let _=reply.send(command_registry.register_sources(&plugin,specs,sources));}
+                        Some(Command::RouteConsole {input,reply})=>{let _=reply.send(command_registry.route_console(&input));}
                         Some(Command::SealCommands {reply})=>{command_registry.seal();let _=reply.send(());}
                         Some(Command::DisableCommands {plugin,reply})=>{command_registry.disable(&plugin);let _=reply.send(());}
                         Some(Command::ListCommands {reply})=>{let _=reply.send(command_registry.list());}

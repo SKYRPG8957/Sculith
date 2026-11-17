@@ -2920,6 +2920,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sculith-console-fixture"
+version = "0.1.0"
+dependencies = [
+ "sculith-plugin-api",
+ "serde_json",
+]
+
+[[package]]
 name = "sculith-core"
 version = "0.1.0"
 dependencies = [

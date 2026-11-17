@@ -183,6 +183,46 @@ impl Plugins {
         self.dispatch_for(event, None, status, world).await;
     }
 
+    /// Local operator input is delivered only to its registered console subscriber.
+    pub async fn dispatch_console(
+        &mut self,
+        input: String,
+        status: &mut ServerStatus,
+        world: &WorldHandle,
+    ) -> Result<Option<String>> {
+        match world.route_console(input).await? {
+            sculith_game::commands::Route::Feedback(message) => Ok(Some(message)),
+            sculith_game::commands::Route::Plugin {
+                owner,
+                command,
+                arguments,
+            } => {
+                if !self.processes.iter().any(|p| {
+                    !p.disabled
+                        && p.metadata.name == owner
+                        && p.metadata
+                            .hooks
+                            .contains(&sculith_plugin_api::Hook::ConsoleCommand)
+                }) {
+                    return Ok(Some("This command is temporarily unavailable.".into()));
+                }
+                self.dispatch_for(
+                    Event::ConsoleCommand { command, arguments },
+                    Some(&owner),
+                    status,
+                    world,
+                )
+                .await;
+                Ok(self
+                    .processes
+                    .iter()
+                    .find(|p| p.metadata.name == owner)
+                    .filter(|p| p.disabled)
+                    .map(|_| "Command failed; the plugin was disabled.".into()))
+            }
+        }
+    }
+
     pub async fn dispatch_game(
         &mut self,
         event: &WorldEvent,
@@ -304,8 +344,12 @@ impl Plugins {
                 }
                 let registrations:Vec<_>=actions.iter().filter_map(|action|match action {Action::RegisterCommand {command}=>Some(command.clone()),_=>None}).collect();
                 if !registrations.is_empty() {
-                    ensure!(hook==sculith_plugin_api::Hook::Started && process.metadata.hooks.contains(&sculith_plugin_api::Hook::CommandSubmitted),"commands require Started registration and CommandSubmitted subscription");
-                    world.register_commands(process.metadata.name.clone(),registrations).await?;
+                    let sources = sculith_game::commands::Sources {
+                        player: process.metadata.hooks.contains(&sculith_plugin_api::Hook::CommandSubmitted),
+                        console: process.metadata.hooks.contains(&sculith_plugin_api::Hook::ConsoleCommand),
+                    };
+                    ensure!(hook==sculith_plugin_api::Hook::Started && (sources.player || sources.console),"commands require Started registration and a command subscription");
+                    world.register_commands_from(process.metadata.name.clone(),registrations,sources).await?;
                 }
                 for action in actions {
                     match action {

@@ -83,7 +83,12 @@ Internet/NAT deployment remain unverified.
 
 The local server console accepts `help`, `list`, `save` and `stop`. `list` shows
 initialized players; `stop` closes connections and saves before exiting. These
-commands are local operator input, not player commands or plugin hooks.
+four commands are handled by the server and are not exposed as player commands.
+
+Plugins may register additional console commands with the SDK's `ConsoleCommand`
+hook. `help` lists commands available from the console (`help 2` for the next page).
+`list`, `save` and `stop` remain server commands. Player-only commands are not
+invoked from the console, and console-only commands are not advertised to players.
 
 `save` checkpoints the current world even when periodic saving is disabled;
 `world.snapshot_path` must be configured. It uses the same serial writer as

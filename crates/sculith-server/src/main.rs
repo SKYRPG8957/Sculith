@@ -445,7 +445,16 @@ async fn run(
                 match input {
                     None => console = None,
                     Some(console::Input::Command(console::Command::Stop)) => break Ok(()),
-                    Some(console::Input::Command(console::Command::Help)) => info!("Commands: help, list, save, stop"),
+                    Some(console::Input::Command(console::Command::Help)) => {
+                        info!("Commands: help, list, save, stop");
+                        match plugins.dispatch_console("help".into(), &mut state, &world).await { Ok(Some(message))=>info!("{message}"), Ok(None)=>{}, Err(error)=>break Err(error) }
+                    }
+                    Some(console::Input::Plugin(input)) => {
+                        match plugins.dispatch_console(input, &mut state, &world).await { Ok(Some(message))=>info!("{message}"), Ok(None)=>{}, Err(error)=>break Err(error) }
+                        world.configure_observations(plugins.observation_flags());
+                        observer.configure(plugins.observes_connections());
+                        observer.configure_sent(plugins.observes_outgoing());
+                    }
                     Some(console::Input::Command(console::Command::List)) => {
                         match world.players().await {
                             Ok(players) => {

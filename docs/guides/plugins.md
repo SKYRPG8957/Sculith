@@ -1,4 +1,4 @@
-# Rust 플러그인 SDK v8
+# Rust 플러그인 SDK v12
 
 현재 SDK는 생명주기·공통 MOTD에 더해 초기화가 확인된 플레이어의 접속/종료와 승인된 블록 변경을 받습니다.
 `SendMessage`는 월드 소유자가 접속 상태와 호출량을 검사한 뒤 한 플레이어에게만 보냅니다.
@@ -10,8 +10,8 @@ v5는 등록된 정적 모델을 개인 표시·교체·숨기는 `ShowModel`/`H
 v6는 패킷 수신 메타데이터, 승인된 이동·장비·인벤토리 변경·공개 채팅, 플러그인 명령어 등록을 제공합니다. 공개 배포 패키지는 만들지 않습니다.
 v7는 인벤토리 조회·아이템 지급과 요청한 플러그인에만 돌아오는 결과를 제공합니다.
 v8는 입장 전부터 종료까지의 연결 수명주기와 수신 패킷 메타데이터를 제공합니다.
-Master Engineering Directive에 따라 공식 호스트는 WASI Component Model을 우선 후보로 검토합니다.
-현재 구현이 WASI 샌드박스, region scheduler, Player/World API를 제공한다고 표시하지 않습니다.
+v10은 [월드 조회와 원자적 블록 편집](#월드-api), v11은 [입력 폼](forms.md)을 제공합니다.
+v12는 플레이어 없이 실행하는 콘솔 명령 이벤트를 추가합니다.
 플러그인은 신뢰된 별도 실행 파일이며, `.dll`/`.so` 로딩이나 OS 샌드박스를 제공하지 않습니다.
 
 ## 예제 빌드와 등록
@@ -290,3 +290,38 @@ Bedrock은 디코딩된 배치 전체를 처리 전에 관찰합니다. 같은 �
 
 현재는 사전 취소 훅, 여러 지역을 다루는 World API·일반 Entity API, 인벤토리 삭제·임의 슬롯 교체, region scheduler,
 WASI Component 샌드박스와 fuel/memory 제한을 제공하지 않습니다.
+
+## 콘솔 명령
+
+`Started`에서 `RegisterCommand`를 반환하고 `ConsoleCommand`를 구독합니다.
+콘솔과 플레이어 양쪽에서 사용할 명령이면 `CommandSubmitted`도 구독하세요.
+각 이벤트는 등록한 플러그인에만 전달됩니다.
+
+```rust
+// metadata().hooks:
+vec![Hook::Started, Hook::ConsoleCommand]
+
+// on_event():
+match event {
+    Event::Started { .. } => vec![Action::RegisterCommand {
+        command: CommandSpec {
+            name: "maintenance".into(),
+            description: "Run server maintenance".into(),
+        },
+    }],
+    Event::ConsoleCommand { command, .. } => vec![Action::Log {
+        message: format!("{command} completed"),
+    }],
+    _ => vec![],
+}
+```
+
+`CommandSpec`은 `sculith_plugin_api`에서 가져옵니다. 콘솔 입력은 셸로 실행하거나
+플레이어 ID 0으로 바꾸지 않습니다. `World` 작업은 플레이어가 없어도 같은 월드
+소유자에게 요청하며, 결과는 `WorldResponse` 구독으로 받습니다.
+`help`, `list`, `save`, `stop`은 콘솔 플러그인에서 등록할 수 없습니다.
+
+콘솔 전용 명령은 플레이어 명령 목록에 나타나지 않고, 직접 입력해도 실행되지 않습니다.
+플레이어 전용 명령의 기존 메시지 형식과 API v1–v11 협상은 유지됩니다.
+콘솔 이벤트는 API v12에서만 전달합니다. 플러그인이 응답 기한을 넘기거나 잘못된
+응답을 보내면 해당 프로세스와 명령만 비활성화합니다.

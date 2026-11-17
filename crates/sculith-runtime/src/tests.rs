@@ -26,6 +26,62 @@ async fn operator_player_list_excludes_pending_and_dead_sessions() {
     task.await.unwrap().unwrap();
 }
 
+#[tokio::test]
+async fn console_routes_are_owner_queries_without_public_events_or_fake_players() {
+    let (stop, receiver) = watch::channel(false);
+    let (world, task) = create(receiver);
+    let task = tokio::spawn(task);
+    let mut events = world.subscribe_game();
+    world
+        .register_commands_from(
+            "console-owner".into(),
+            vec![sculith_core::CommandSpec {
+                name: "admin_probe".into(),
+                description: "test".into(),
+            }],
+            sculith_game::commands::Sources {
+                player: false,
+                console: true,
+            },
+        )
+        .await
+        .unwrap();
+    world.seal_commands().await.unwrap();
+    assert!(
+        !world
+            .command_specs()
+            .await
+            .unwrap()
+            .iter()
+            .any(|s| s.name == "admin_probe")
+    );
+    assert!(
+        matches!(world.route_console("admin_probe secret".into()).await.unwrap(),sculith_game::commands::Route::Plugin{owner,arguments,..} if owner=="console-owner" && arguments=="secret")
+    );
+    assert!(world.players().await.unwrap().is_empty());
+    assert!(events.try_recv().is_err());
+    assert!(world.route_console("x".repeat(257)).await.is_err());
+    assert!(
+        world
+            .route_console("admin_probe secret\nstop".into())
+            .await
+            .is_err()
+    );
+    world
+        .disable_commands("console-owner".into())
+        .await
+        .unwrap();
+    assert!(matches!(
+        world
+            .route_console("admin_probe secret".into())
+            .await
+            .unwrap(),
+        sculith_game::commands::Route::Feedback(_)
+    ));
+    stop.send_replace(true);
+    task.await.unwrap().unwrap();
+}
+
 async fn seed_inventory(world: &WorldHandle, id: u64) {
     for (index, item) in ["minecraft:stone", "minecraft:dirt", "minecraft:grass_block"]
         .iter()

@@ -121,7 +121,7 @@ def smoke(server, plugin, native):
             process.send_signal(signal.CTRL_BREAK_EVENT if os.name == 'nt' else signal.SIGINT)
             assert process.wait(timeout=10) == 0
             text = log.read_text(encoding='utf-8')
-            assert 'api_version=11' in text and text.count('input reply request=19') == 4, text
+            assert 'api_version=12' in text and text.count('input reply request=19') == 4, text
             assert 'unexpected foreign input reply' not in text and 'plugin disabled' not in text, text
             assert text.count('cancelled=true') == 2 and text.count('cancelled=false') == 2, text
         except Exception:

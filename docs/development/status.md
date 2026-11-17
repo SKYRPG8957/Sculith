@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- API v12 adds private console command events with explicit player/console source eligibility. Console-only commands are absent from both edition catalogs; player-only registrations retain their previous behavior and wire format. Local operator requests carry no synthetic player ID and can use the existing world API without connected players. A failed worker disables only its own registrations.
+
 - Local operator console: `help`, initialized-player `list`, serial manual `save` and orderly `stop`. Input is bounded to eight queued lines of at most 256 bytes; EOF leaves the server running and `--no-console` opts out. General examples no longer send an automatic welcome; private message delivery is exercised by a test-only fixture. [Console guide](../guides/hosting.md#console).
 
 - World mailbox profiling separates permit admission, queue wait and owner service wall time. Default Off skips profiler clocks/history; opt-in Monitor/Profile retain bounded recent/detailed metadata. Fixed operation names exclude game/account payloads. CLI captures support separate simultaneous plugin reports, new-file output and joined background writers. The existing 32-slot owner mailbox, leases and game decisions are preserved; this does not implement CPU sampling, simulation ticks or RMT. [Operator guide](../guides/world-profiling.md).
@@ -84,7 +86,7 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Verified — current local source
 
-- Operator console source `22c762b` passes 273 project tests, ownership doctests, Clippy, architecture checks and debug/release builds. Real processes verify player listing, manual saves with the timer disabled, recovery after restart, stop with stdin kept open, EOF, explicit console disablement and foreign-file protection. Existing game hooks, form callbacks, periodic recovery and world profiles pass. Linux/Windows workflows are running; no graphical client or new pack is needed for this stage.
+- Operator console source `22c762b` passes 273 project tests, ownership doctests, Clippy, architecture checks and debug/release builds. Real processes verify player listing, manual saves with the timer disabled, recovery after restart, stop with stdin kept open, EOF, explicit console disablement and foreign-file protection. Existing game hooks, form callbacks, periodic recovery and world profiles pass. Both main Linux and native Windows workflows pass. The development-branch Linux run initially timed out before native login during ICE establishment; the identical-source rerun passes. This intermittent transport failure remains a follow-up; no graphical client or new pack is needed for this stage.
 
 - Chunk encoding source `b798fc4` passes 269 project tests, Clippy, architecture/ownership checks, debug/release builds and independent Java/native edit/recovery/content probes. Frozen bytes match for all 15 encoding cases. Matching five-run measurements reduce flat Java chunk/light wall time by 93.5%/96.0% and flat native encoding by 22.3%; native uniform paths regress 1.1–4.2%, and short phases prevent a general memory claim. An exact-source unmodified Java client renders the shared world/model and submits all four inputs with both profilers active. [Changed files, full measurements and limits](performance-2026-11-17-chunks.md).
 

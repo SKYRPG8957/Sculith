@@ -16,6 +16,7 @@ pub enum Command {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Input {
     Command(Command),
+    Plugin(String),
     Invalid,
     TooLong,
     ReadError,
@@ -65,10 +66,20 @@ fn read(mut reader: impl BufRead, send: mpsc::Sender<Input>) {
         } else {
             match std::str::from_utf8(&line).map(str::trim) {
                 Ok("") => None,
-                Ok("help" | "?") => Some(Input::Command(Command::Help)),
-                Ok("list") => Some(Input::Command(Command::List)),
-                Ok("save") => Some(Input::Command(Command::Save)),
-                Ok("stop") => Some(Input::Command(Command::Stop)),
+                Ok(text) if sculith_core::validate_player_text(text).is_ok() => {
+                    let text = text.strip_prefix('/').unwrap_or(text);
+                    let name = text.split_whitespace().next().unwrap_or("");
+                    Some(match text {
+                        "help" | "?" => Input::Command(Command::Help),
+                        "list" => Input::Command(Command::List),
+                        "save" => Input::Command(Command::Save),
+                        "stop" => Input::Command(Command::Stop),
+                        _ if matches!(name, "list" | "save" | "stop" | "?") || name.is_empty() => {
+                            Input::Invalid
+                        }
+                        _ => Input::Plugin(text.into()),
+                    })
+                }
                 _ => Some(Input::Invalid),
             }
         };
