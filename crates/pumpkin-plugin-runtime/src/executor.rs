@@ -870,29 +870,34 @@ where
         self.ensure_sequential()?;
         let context = self.next_reentry_context()?;
         let (result, receiver) = oneshot::channel();
-        self.shared
-            .spawner
-            .spawn_blocking(Box::new(move || {
-                let output = catch_unwind(AssertUnwindSafe(|| sync_scope(context, operation)))
-                    .map_err(|payload| panic_message(payload.as_ref()));
-                let _ = result.send(output);
-            }))
-            .map_err(|error| {
-                wasmtime::Error::msg(format!(
-                    "Failed to spawn synchronous Wasm plugin host operation: {error}"
-                ))
-            })?;
-
-        self.pump_reentry_with_context(store, context, receiver)
-            .await?
-            .map_err(|_| {
-                wasmtime::Error::msg("Synchronous Wasm plugin host operation did not complete")
-            })?
-            .map_err(|message| {
-                wasmtime::Error::msg(format!(
-                    "Synchronous Wasm plugin host operation panicked: {message}"
-                ))
-            })
+        // The pump registers its callback route before polling this future.
+        // Starting a worker earlier can enqueue its callback behind the guest
+        // call that is waiting for it, leaving both calls blocked.
+        let work = async move {
+            self.shared
+                .spawner
+                .spawn_blocking(Box::new(move || {
+                    let output = catch_unwind(AssertUnwindSafe(|| sync_scope(context, operation)))
+                        .map_err(|payload| panic_message(payload.as_ref()));
+                    let _ = result.send(output);
+                }))
+                .map_err(|error| {
+                    wasmtime::Error::msg(format!(
+                        "Failed to spawn synchronous Wasm plugin host operation: {error}"
+                    ))
+                })?;
+            receiver
+                .await
+                .map_err(|_| {
+                    wasmtime::Error::msg("Synchronous Wasm plugin host operation did not complete")
+                })?
+                .map_err(|message| {
+                    wasmtime::Error::msg(format!(
+                        "Synchronous Wasm plugin host operation panicked: {message}"
+                    ))
+                })
+        };
+        self.pump_reentry_with_context(store, context, work).await?
     }
 }
 
@@ -1428,7 +1433,7 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, OnceLock};
 
     use tokio::{
         sync::{mpsc, oneshot},
@@ -1436,7 +1441,92 @@ mod tests {
     };
     use wasmtime::{Config, Engine, Store};
 
-    use super::{ControlMessage, DriverState, Lifecycle, StoreMode, run_driver};
+    use super::{
+        ControlMessage, DriverState, LegacyGuestAccess, Lifecycle, ReentryState, StoreExecutor,
+        StoreMode, run_driver,
+    };
+    use crate::{LegacySyncReentry, RuntimeSpawner, SpawnError, SpawnFuture};
+
+    struct CallbackReadySpawner {
+        runtime: tokio::runtime::Handle,
+        reentry: Arc<OnceLock<Arc<ReentryState<()>>>>,
+    }
+
+    impl RuntimeSpawner for CallbackReadySpawner {
+        fn spawn(&self, task: SpawnFuture) -> Result<(), SpawnError> {
+            drop(self.runtime.spawn(task));
+            Ok(())
+        }
+
+        fn spawn_blocking(
+            &self,
+            task: Box<dyn FnOnce() + Send + 'static>,
+        ) -> Result<(), SpawnError> {
+            // A worker may invoke a callback as soon as it starts. Check the
+            // admission invariant synchronously to reproduce that ordering.
+            let reentry = self.reentry.get().expect("initialized callback probe");
+            let scopes = reentry
+                .scopes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if scopes.values().all(Vec::is_empty) {
+                return Err(SpawnError::new(
+                    "blocking work started before callback admission",
+                ));
+            }
+            drop(scopes);
+            drop(self.runtime.spawn_blocking(task));
+            Ok(())
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn blocking_host_work_has_a_callback_route_before_it_can_start() {
+        let runtime = tokio::runtime::Handle::current();
+        let reentry = Arc::new(OnceLock::new());
+        let spawner = Arc::new(CallbackReadySpawner {
+            runtime: runtime.clone(),
+            reentry: Arc::clone(&reentry),
+        });
+        let mut config = Config::new();
+        config.wasm_component_model(true);
+        config.concurrency_support(false);
+        let engine = Engine::new(&config).expect("test engine");
+        let executor = StoreExecutor::start(
+            Store::new(&engine, ()),
+            LegacySyncReentry::new(),
+            spawner,
+            StoreMode::Sequential,
+        )
+        .await
+        .expect("start Store");
+        let handle = executor.handle();
+        assert!(reentry.set(Arc::clone(&handle.shared.reentry)).is_ok());
+        let pump = handle.clone();
+        let callback = handle.clone();
+        let value = timeout(
+            Duration::from_secs(5),
+            handle.call_guest(move |mut guest| {
+                Box::pin(async move {
+                    let LegacyGuestAccess::Sequential { store, .. } = &mut guest.access else {
+                        return Err(wasmtime::Error::msg("expected sequential Store"));
+                    };
+                    pump.pump_blocking(store, move || {
+                        runtime.block_on(callback.call_guest(|_| Box::pin(async { Ok(7u8) })))
+                    })
+                    .await?
+                })
+            }),
+        )
+        .await
+        .expect("callback completed")
+        .expect("blocking host operation");
+        assert_eq!(value, 7);
+        executor
+            .shutdown(|_| Box::pin(async { Ok(()) }))
+            .await
+            .expect("shutdown");
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn submission_close_waits_for_owner_control() {

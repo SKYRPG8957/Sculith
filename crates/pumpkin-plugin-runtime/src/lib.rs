@@ -558,22 +558,26 @@ mod tests {
         let task_started = Arc::clone(&started);
         let task_release = Arc::clone(&release);
 
-        // The guest call returns at once and leaves a task running in the Store's event loop.
-        store
-            .call_guest(move |scope| {
-                let accessor = scope.accessor().expect("concurrent store scope");
-                let spawned = accessor.spawn(async move |_accessor| {
-                    task_started.notify_one();
-                    task_release.notified().await;
-                    Ok(())
-                });
-                Box::pin(async move {
-                    spawned?;
-                    Ok(())
+        // Host-spawned Rust tasks are not Wasmtime component tasks and do not
+        // keep the Store alive by themselves. Join the child from accepted work
+        // so this actually tests the promised shutdown drain contract.
+        let call_store = store.clone();
+        let active_call = tokio::spawn(async move {
+            call_store
+                .call_guest(move |scope| {
+                    let accessor = scope.accessor().expect("concurrent store scope");
+                    let spawned = accessor.spawn(async move |_accessor| {
+                        task_started.notify_one();
+                        task_release.notified().await;
+                        Ok(())
+                    });
+                    Box::pin(async move {
+                        spawned?.await;
+                        Ok(())
+                    })
                 })
-            })
-            .await
-            .expect("spawn background task");
+                .await
+        });
         started.notified().await;
 
         let shutdown_store = store.clone();
@@ -588,6 +592,10 @@ mod tests {
         assert!(!shutdown.is_finished());
 
         release.notify_one();
+        active_call
+            .await
+            .expect("guest call task")
+            .expect("joined Store background task");
         shutdown
             .await
             .expect("shutdown task")
