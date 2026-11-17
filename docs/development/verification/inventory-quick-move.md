@@ -1,4 +1,6 @@
-# Inventory quick moves — 2026-11-17 KST
+# Player inventory interactions — 2026-11-17 KST
+
+## Main/hotbar quick moves
 
 Source: `0fc76d34b3642d415b3c9f785e5129ac18280c79`.
 
@@ -67,3 +69,42 @@ Logs, profiles and unedited captures remain outside the repository under
 processes have stopped. This is offline Linux evidence; no positive official
 account or official Windows GDK gameplay verification is added. No performance
 claim, release or package accompanies this change.
+
+## Cursor collection
+
+Source: `dd5bdb3dcee06ed9166e991b973424965438f685`.
+
+Protocol-777 `PICKUP_ALL` (mode 6) now collects matching items into the owner's
+cursor. The clicked player-inventory slot must currently be empty. Partial
+stacks precede full stacks; forward order traverses main inventory then hotbar,
+and the alternate button reverses that order. Collection stops at 64 items.
+Created output and cursor are excluded as sources. Empty/full cursors, occupied
+clicked slots and inventories without matching items do not change items or IDs.
+
+These rules were checked against `AbstractContainerMenu.doClick` for
+`ContainerInput.PICKUP_ALL` in the same pinned Java 26.3 server JAR. The Rust
+implementation operates only on the existing supported player inventory and
+four block-item kinds; no container, crafting, drop or drag support is implied.
+
+Local validation passes 296 project tests, ownership doctests, Clippy,
+architecture checks and debug/release builds. Unit checks cover both scan
+directions, partial-before-full priority, matching-output exclusion, whole-grid
+coverage, conservation, authorization and complete allocator rollback. A
+whole-grid candidate that drains 35 sources must also roll back if allocation
+of its final cursor ID fails. History, created output and selection are preserved.
+No-op collection emits no semantic inventory/equipment event; raw receipts
+remain observable. The region revision does not change.
+
+The existing independent inventory probe now sends collection with forged
+predictions and a stale state number, checks exact cursor/source counts, and
+checks reverse collection and a full-cursor no-op. The native peer observes
+Java's selected Dirt stack fall from 64 to 34 after a partial stack is consumed
+first. The same script runs against debug and release executables and is part
+of both existing CI workflows. The earlier graphical capture above uses the
+creative screen's slot-replacement path; it is not proof of a new graphical
+PICKUP_ALL attempt. No new pack, plugin or client mod is introduced.
+
+The complete [Linux workflow](https://github.com/SKYRPG8957/Sculith/actions/runs/44023814632)
+and [native Windows/static-CRT workflow](https://github.com/SKYRPG8957/Sculith/actions/runs/44023814547)
+pass at this source. Both contain zero uploaded build artifacts; no release or
+package is published.
