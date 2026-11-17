@@ -17,8 +17,8 @@ pub struct UpdateCheckerConfig {
 impl Default for UpdateCheckerConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
-            notify_ops_on_join: true,
+            enabled: false,
+            notify_ops_on_join: false,
             connect_timeout: 5000,
             read_timeout: 5000,
         }
@@ -32,8 +32,8 @@ mod tests {
     #[test]
     fn update_checker_default() {
         let config = UpdateCheckerConfig::default();
-        assert!(config.enabled);
-        assert!(config.notify_ops_on_join);
+        assert!(!config.enabled);
+        assert!(!config.notify_ops_on_join);
         assert_eq!(config.connect_timeout, 5000);
         assert_eq!(config.read_timeout, 5000);
     }

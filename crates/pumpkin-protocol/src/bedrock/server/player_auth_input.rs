@@ -3,7 +3,10 @@ use std::io::{Error, ErrorKind, Read};
 use pumpkin_macros::packet;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 
-use super::player_action::PlayerActionType;
+use super::{
+    inventory_transaction::{SInventoryTransaction, TransactionData, UseItemTransactionData},
+    player_action::PlayerActionType,
+};
 use crate::{
     codec::{
         bitset::Bitset, var_int::VarInt, var_long::VarLong, var_uint::VarUInt, var_ulong::VarULong,
@@ -174,7 +177,7 @@ pub struct PlayerInventoryAction {
     pub legacy_request_id: VarInt,
     pub legacy_slots: Vec<crate::bedrock::server::inventory_transaction::LegacySetItemSlot>,
     pub actions: Vec<crate::bedrock::server::inventory_transaction::InventoryAction>,
-    pub transaction: PlayerUseItemTransactionData,
+    pub transaction: UseItemTransactionData,
 }
 
 impl PacketRead for PlayerInventoryAction {
@@ -209,7 +212,7 @@ impl PacketRead for PlayerInventoryAction {
             actions
                 .push(crate::bedrock::server::inventory_transaction::InventoryAction::read(buf)?);
         }
-        let transaction = PlayerUseItemTransactionData::read(buf)?;
+        let transaction = UseItemTransactionData::read(buf)?;
         Ok(Self {
             legacy_request_id,
             legacy_slots,
@@ -219,36 +222,16 @@ impl PacketRead for PlayerInventoryAction {
     }
 }
 
-#[derive(Debug)]
-pub struct PlayerUseItemTransactionData {
-    pub action_type: VarInt,
-    pub trigger_type: u8,
-    pub block_position: BlockPos,
-    pub block_face: u8,
-    pub hot_bar_slot: VarInt,
-    pub item_in_hand: crate::bedrock::network_item::NetworkItemDescriptor,
-    pub player_position: Vector3<f32>,
-    pub click_position: Vector3<f32>,
-    pub block_runtime_id: VarUInt,
-    pub client_prediction: u8,
-    pub client_cooldown_state: u8,
-}
-
-impl PacketRead for PlayerUseItemTransactionData {
-    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
-        Ok(Self {
-            action_type: VarInt::read(reader)?,
-            trigger_type: u8::read(reader)?,
-            block_position: BlockPos::read(reader)?,
-            block_face: u8::read(reader)?,
-            hot_bar_slot: VarInt::read(reader)?,
-            item_in_hand: crate::bedrock::network_item::NetworkItemDescriptor::read(reader)?,
-            player_position: Vector3::read(reader)?,
-            click_position: Vector3::read(reader)?,
-            block_runtime_id: VarUInt::read(reader)?,
-            client_prediction: u8::read(reader)?,
-            client_cooldown_state: u8::read(reader)?,
-        })
+impl From<PlayerInventoryAction> for SInventoryTransaction {
+    fn from(interaction: PlayerInventoryAction) -> Self {
+        Self {
+            legacy_request_id: interaction.legacy_request_id,
+            legacy_set_item_slots: interaction.legacy_slots,
+            has_value: !interaction.actions.is_empty(),
+            actions: interaction.actions,
+            transaction_type: VarUInt(2),
+            transaction_data: TransactionData::UseItem(interaction.transaction),
+        }
     }
 }
 
@@ -374,7 +357,37 @@ pub enum InputData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bedrock::server::inventory_transaction::HandSlot;
     use crate::serial::PacketWrite;
+
+    #[test]
+    fn input_item_use_reads_gophertunnel_2225_and_keeps_the_transaction() {
+        // Encoded independently by gophertunnel e2251a60f71d, not this codec.
+        let mut reader = include_bytes!("fixtures/player_auth_input_item_use_2225.bin").as_slice();
+        let input = SPlayerAuthInput::read(&mut reader).unwrap();
+        assert!(reader.is_empty());
+        assert!(
+            input
+                .input_data
+                .get(InputData::PerformItemInteraction as usize)
+        );
+        assert_eq!(input.tick, VarULong(1));
+
+        let transaction = SInventoryTransaction::from(input.item_interaction.unwrap());
+        assert_eq!(transaction.legacy_request_id, VarInt(0));
+        assert!(transaction.legacy_set_item_slots.is_empty());
+        assert!(transaction.actions.is_empty());
+        assert!(!transaction.has_value);
+        assert_eq!(transaction.transaction_type, VarUInt(2));
+        let TransactionData::UseItem(data) = transaction.transaction_data else {
+            panic!("expected block use");
+        };
+        assert!(matches!(data.hand, HandSlot::Mainhand));
+        assert_eq!(data.block_position, BlockPos::new(2, -61, 4));
+        assert_eq!(data.hot_bar_slot, VarInt(0));
+        assert_eq!(data.item_in_hand.id, VarInt(57));
+        assert_eq!(data.block_face, 1);
+    }
 
     fn auth_input_prefix() -> Vec<u8> {
         let mut bytes = Vec::new();

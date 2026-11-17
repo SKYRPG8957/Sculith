@@ -590,7 +590,7 @@ impl ChunkData {
                     } else {
                         format!("minecraft:{}", block.name)
                     };
-                    comp.put_string("Name", name);
+                    comp.put_string("id", name);
                     if let Some(props) = block.properties(id) {
                         let prop_vec = props.to_props();
                         if !prop_vec.is_empty() {
@@ -598,7 +598,7 @@ impl ChunkData {
                             for p in prop_vec {
                                 props_comp.put_string(p.key_str(), p.value_str().to_string());
                             }
-                            comp.put_compound("Properties", props_comp);
+                            comp.put_compound("properties", props_comp);
                         }
                     }
                     NbtTag::Compound(comp)
@@ -1464,6 +1464,48 @@ mod tests {
     use pumpkin_data::Block;
     use pumpkin_nbt::compound::NbtCompound;
     use pumpkin_nbt::tag::NbtTag;
+
+    #[test]
+    fn java_26_3_chunk_saves_current_palette_keys() {
+        let source = include_bytes!("../../../tests/fixtures/java26_3/chunk_0_0.nbt");
+        let chunk = ChunkData::internal_from_bytes(source, Vector2::new(0, 0)).unwrap();
+        assert_eq!(
+            chunk.section.get_block_absolute_y(2, -60, 2),
+            Some(Block::DIAMOND_BLOCK.default_state.id)
+        );
+        let bytes = chunk.internal_to_bytes();
+        let mut cursor = std::io::Cursor::new(bytes.as_ref());
+        let mut reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
+        let saved = pumpkin_nbt::Nbt::read(&mut reader).unwrap();
+        let sections = saved.get_list("sections").unwrap();
+        let mut has_marker = false;
+        for section in sections {
+            let palette = section
+                .extract_compound()
+                .unwrap()
+                .get_compound("block_states")
+                .unwrap()
+                .get_list("palette")
+                .unwrap();
+            for entry in palette {
+                let entry = entry.extract_compound().unwrap();
+                let name = entry.get_string("id").unwrap();
+                has_marker |= name == "minecraft:diamond_block";
+                assert!(!entry.has("Name"));
+                assert!(!entry.has("Properties"));
+                if name == "minecraft:grass_block" {
+                    assert_eq!(
+                        entry
+                            .get_compound("properties")
+                            .unwrap()
+                            .get_string("snowy"),
+                        Some("false")
+                    );
+                }
+            }
+        }
+        assert!(has_marker);
+    }
 
     fn test_section(y: i32, block: &str, with_biomes: bool) -> NbtCompound {
         let mut block_states = NbtCompound::new();

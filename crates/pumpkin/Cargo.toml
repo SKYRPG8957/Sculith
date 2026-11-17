@@ -1,5 +1,6 @@
 [package]
 name = "pumpkin"
+autobins = false
 version.workspace = true
 description = "Empowering everyone to host fast and efficient Minecraft servers."
 edition.workspace = true
@@ -8,9 +9,13 @@ license.workspace = true
 
 [package.metadata.tauri-winres]
 # FileDescription is handled as the Program name by Windows!
-FileDescription = "Pumpkin"
-OriginalFilename = "pumpkin.exe"
+FileDescription = "Sculith"
+OriginalFilename = "sculith.exe"
 LegalCopyright = "Copyright © 2026 Aleksander Medvedev"
+
+[[bin]]
+name = "sculith"
+path = "src/main.rs"
 
 [dependencies]
 pumpkin-core.workspace = true

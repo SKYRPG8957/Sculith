@@ -1,0 +1,16 @@
+{
+  "source": "Minecraft Java 26.3 official server; locally generated flat world",
+  "server_jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c",
+  "rea_evidence_id": "ev_7ab6b624b0290e1c12954479c52fef3e09d887061e57b2f303bbe3b30d953ddf",
+  "marker": [
+    2,
+    -60,
+    2
+  ],
+  "files": {
+    "chunk_0_0.nbt": "4015305c791e209d847a2f54c0ab969ca98dacb2167ebf62a9c0d3c7fab17530",
+    "game_rules.dat": "dc79a42358c7bc5eb5b460bd84f06ff22f5c9d02e8e12a695931d7fa0cf2dadc",
+    "world_clocks.dat": "59f57ea282b5f4e58f0c3515b587c74deab663985ed500dcc1cc829618801fc3",
+    "world_gen_settings.dat": "8cee181dffaab055e1b9b239289ef903ad08549b1ca1fadba0eb74fec7b9a3d6"
+  }
+}

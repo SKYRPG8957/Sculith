@@ -363,7 +363,6 @@ pub fn write_world_gen_settings(
     let path = dir.join("world_gen_settings.dat");
     let file = File::create(&path)?;
     let mut inner = NbtCompound::new();
-    inner.put_int("DataVersion", data_version);
     inner.put_long("seed", settings.seed);
     inner.put_bool("generate_structures", true);
     inner.put_bool("bonus_chest", false);
@@ -408,6 +407,7 @@ pub fn write_world_gen_settings(
     inner.put_compound("dimensions", dims_comp);
 
     let mut root = NbtCompound::new();
+    root.put_int("DataVersion", data_version);
     root.put_compound("data", inner);
     pumpkin_nbt::nbt_compress::write_gzip_compound_tag(root, BufWriter::new(file))
         .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
@@ -423,9 +423,8 @@ pub fn game_rules_to_nbt(rules: &GameRuleRegistry, data_version: i32) -> NbtComp
             GameRuleValue::Int(i) => inner.put(&key, NbtTag::Int(*i as i32)),
         }
     }
-    inner.put_int("DataVersion", data_version);
-
     let mut root = NbtCompound::new();
+    root.put_int("DataVersion", data_version);
     root.put_compound("data", inner);
     root
 }
@@ -521,7 +520,10 @@ fn world_clocks_from_nbt(root: &NbtCompound) -> WorldClocksData {
         return result;
     };
 
-    result.data_version = inner.get_int("DataVersion").unwrap_or(0);
+    result.data_version = root
+        .get_int("DataVersion")
+        .or_else(|| inner.get_int("DataVersion"))
+        .unwrap_or(0);
 
     for (key, tag) in &inner.child_tags {
         if key.as_ref() == "DataVersion" {
@@ -551,9 +553,8 @@ pub fn write_world_clocks(
         dim_compound.put_long("total_ticks", clock.total_ticks);
         inner.put_compound(dim_name, dim_compound);
     }
-    inner.put_int("DataVersion", clocks.data_version);
-
     let mut root = NbtCompound::new();
+    root.put_int("DataVersion", clocks.data_version);
     root.put_compound("data", inner);
 
     let file = File::create(&path)?;
@@ -714,4 +715,61 @@ pub fn write_stopwatches_stub(
     let file = File::create(&path)?;
     pumpkin_nbt::nbt_compress::write_gzip_compound_tag(root, file)
         .map_err(|e| WorldInfoError::SerializationError(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_data_keeps_java_26_3_version_outside_the_payload() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let reference = read_gzip_compound_tag(std::io::Cursor::new(
+            include_bytes!("../../tests/fixtures/java26_3/game_rules.dat").as_slice(),
+        ))
+        .unwrap();
+        let version = reference.get_int("DataVersion").unwrap();
+        let saved = game_rules_to_nbt(&game_rules_from_nbt(&reference), version);
+        assert_eq!(saved.get_int("DataVersion"), Some(version));
+        assert!(!saved.get_compound("data").unwrap().has("DataVersion"));
+
+        let reference = read_gzip_compound_tag(std::io::Cursor::new(
+            include_bytes!("../../tests/fixtures/java26_3/world_clocks.dat").as_slice(),
+        ))
+        .unwrap();
+        let clocks = world_clocks_from_nbt(&reference);
+        assert_eq!(clocks.data_version, version);
+        write_world_clocks(dir.path(), &clocks).unwrap();
+        assert_eq!(read_world_clocks(dir.path()), clocks);
+        let saved = read_gzip_compound_tag(
+            File::open(minecraft_data_dir(dir.path()).join("world_clocks.dat")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved.get_int("DataVersion"), Some(version));
+        assert!(!saved.get_compound("data").unwrap().has("DataVersion"));
+
+        let path = minecraft_data_dir(dir.path()).join("world_gen_settings.dat");
+        fs::write(
+            &path,
+            include_bytes!("../../tests/fixtures/java26_3/world_gen_settings.dat"),
+        )
+        .unwrap();
+        let settings = read_world_gen_settings(dir.path()).unwrap();
+        write_world_gen_settings(dir.path(), &settings, version).unwrap();
+        let saved = read_gzip_compound_tag(File::open(path).unwrap()).unwrap();
+        assert_eq!(saved.get_int("DataVersion"), Some(version));
+        assert!(!saved.get_compound("data").unwrap().has("DataVersion"));
+    }
+
+    #[test]
+    fn clocks_still_read_the_old_pumpkin_version_location() {
+        let mut inner = NbtCompound::new();
+        inner.put_int("DataVersion", crate::CURRENT_MC_DATA_VERSION);
+        let mut root = NbtCompound::new();
+        root.put_compound("data", inner);
+        assert_eq!(
+            world_clocks_from_nbt(&root).data_version,
+            crate::CURRENT_MC_DATA_VERSION
+        );
+    }
 }

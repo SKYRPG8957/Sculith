@@ -110,6 +110,10 @@ impl BedrockClient {
             );
         }
 
+        if let Some(interaction) = packet.item_interaction {
+            self.handle_inventory_action(player, interaction.into());
+        }
+
         // Inventory moves can ride inside the input packet, like the standalone request
         if let Some(request) = packet.item_stack_request {
             self.handle_item_stack_request(

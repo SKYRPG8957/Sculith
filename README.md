@@ -1,126 +1,37 @@
-<div align="center">
+# Sculith
 
-# Pumpkin
+Rust Minecraft server for Java and Bedrock clients, based on [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin).
 
-[![CI](https://github.com/Pumpkin-MC/Pumpkin/actions/workflows/rust.yml/badge.svg)](https://github.com/Pumpkin-MC/Pumpkin/actions/workflows/rust.yml)
-[![Discord](https://img.shields.io/discord/1268592337445978193.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/wT8XjrjKkf)
-[![License: GPL](https://img.shields.io/badge/License-GPLv3-yellow.svg)](https://opensource.org/licenses/gpl-3-0)
+This branch is the engine migration. It is not a production release. Java 26.3
+and Bedrock 1.26.63 (protocol 2225) are the initial targets.
 
-[Website](https://pumpkinmc.org/) • [Download](https://pumpkinmc.org/download/) • [Docs](https://docs.pumpkinmc.org/) • [Discord](https://discord.gg/wT8XjrjKkf)
-
-</div>
-
-[Pumpkin](https://pumpkinmc.org/) is a Minecraft server built entirely in Rust, offering a fast, efficient,
-and customizable experience. It prioritizes performance and player enjoyment while adhering to the core mechanics of the game.
-<div align="center">
-
-![Pumpkin Chunk Loading](./assets/pumpkin-chunk-loading.webp)
-
-</div>
-
-> [!IMPORTANT]
-> Pumpkin is currently under heavy development.
->
-> [See what needs to be done before the 1.0.0 Release](https://github.com/Pumpkin-MC/Pumpkin/issues/449)
-
-## Quick Start
-
-Install on Linux / macOS:
+## Build
 
 ```sh
-curl -sSfL https://pumpkinmc.org/install.sh | sh
+cargo build --release --locked -p pumpkin --bin sculith
 ```
 
-Or grab a prebuilt binary from the [Download page](https://pumpkinmc.org/download/) (also available on [GitHub Releases](https://github.com/Pumpkin-MC/Pumpkin/releases)). See the [Quick Start guide](https://docs.pumpkinmc.org/#quick-start) and [Documentation](https://docs.pumpkinmc.org/) for setup details.
+Run `sculith` (`sculith.exe` on Windows) from the server directory. The first
+start creates `pumpkin.toml`. Existing Pumpkin configuration names and crate
+names are retained to keep upstream updates manageable. Stop with the console
+command `stop`.
 
-## Goals
+Java uses TCP 25565. Bedrock uses NetherNet on TCP/UDP 19132. Authentication is
+on by default. Plugins use the upstream Rust/Wasm API; Sculith's previous
+prototype plugins need to be ported.
 
-- **Performance**: Leveraging multi-threading for maximum speed and efficiency.
-- **Compatibility**: Supports the latest Java & Bedrock Minecraft server version while adhering to vanilla game mechanics.
-- **Security**: Prioritizes security by preventing known security exploits.
-- **Flexibility**: Highly configurable, with the ability to disable unnecessary features.
-- **Extensibility**: Provides a foundation for plugin development.
+## Worlds
 
-## Features
+Pumpkin's Anvil, Linear and Pump storage backends are retained. Back up a world
+before opening it. The Java 26.3 Anvil import test and remaining gaps are recorded
+in [the fork notes](docs/sculith/fork.md). Bedrock LevelDB worlds are not supported
+yet. Joining from Bedrock does not add LevelDB world support.
 
-- [x] Configuration (toml)
-- [Tracking: Protocol](https://github.com/Pumpkin-MC/Pumpkin/issues/1401)
-  - [x] Server Status/Ping
-  - [x] Encryption
-  - [x] Packet Compression
-  - [x] Java Edition
-  - [x] Bedrock Edition (W.I.P)
-  - ...
-- [Tracking: World](https://github.com/Pumpkin-MC/Pumpkin/issues/1403)
-  - [x] Player Tab-list
-  - [x] Scoreboard
-  - [x] World Loading
-  - [x] World Time
-  - [x] World Borders
-  - [x] World Saving
-  - [x] Lighting
-  - [x] Entity Spawning
-  - [x] Bossbar
-  - [x] Chunk Loading (Vanilla, Linear, Pump)
-  - [Chunk Generation](https://github.com/Pumpkin-MC/Pumpkin/issues/36)
-  - [x] Chunk Saving (Vanilla, Linear, Pump)
-  - [Redstone](https://github.com/Pumpkin-MC/Pumpkin/issues/1402)
-  - [x] Liquid Physics
-  - ...
-- [Tracking: Player](https://github.com/Pumpkin-MC/Pumpkin/issues/1405)
-  - [x] Skins
-  - [x] Teleport
-  - [x] Movement
-  - [x] Animation
-  - [x] Inventory
-  - [Combat](https://github.com/Pumpkin-MC/Pumpkin/issues/1404)
-  - [x] Experience
-  - [x] Hunger
-  - [X] Off Hand
-  - [X] Advancements (W.I.P)
-  - [x] Eating
-  - ...
-- Entities
-  - [x] Non-Living (Minecart, Eggs...) (W.I.P)
-  - [x] Entity Effects
-  - [x] Players
-  - [x] Mobs (W.I.P)
-  - [x] Animals (W.I.P)
-  - [Entity AI](https://github.com/Pumpkin-MC/Pumpkin/issues/1406)
-  - [x] Boss (W.I.P)
-  - [x] Villagers (W.I.P)
-  - [X] Entity Saving
-- Server
-  - [Plugins](https://github.com/Pumpkin-MC/Pumpkin/issues/1407)
-  - [x] Query
-  - [x] [Minecraft Server Management Protocol (MSMP)](https://minecraft.wiki/w/Minecraft_Server_Management_Protocol)
-  - [x] Inventories
-  - [x] Particles
-  - [x] Chat
-  - [Commands](https://github.com/Pumpkin-MC/Pumpkin/issues/15)
-  - [x] Permissions
-  - [x] Translations
-- Proxy
-  - [x] [BungeeCord](https://github.com/SpigotMC/BungeeCord)
-  - [x] [BungeeGuard](https://github.com/lucko/BungeeGuard)
-  - [x] [Velocity](https://github.com/PaperMC/Velocity)
+## License
 
-<!-- Check out our [Github Project](https://github.com/orgs/Pumpkin-MC/projects/3) to see current progress. -->
+The server is GPL-3.0. Commercial hosting and distribution are allowed under its
+terms. Distributed modified binaries need the corresponding source. Plugin SDK
+crates keep their own MIT OR Apache-2.0 licenses.
 
-## Contributions
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## Communication
-
-Consider joining [our Discord server](https://discord.gg/wT8XjrjKkf) to stay up-to-date on events, updates, and connect with other members.
-
-## Funding
-
-If you want to fund me and help the project, check out the [Donation Page](https://pumpkinmc.org/donate/).
-
-## License & Attribution
-
-* **Pumpkin Server**: Licensed under the [GNU General Public License v3.0 (GPLv3)](LICENSE).
-* **Plugin API (`pumpkin-plugin-api` & `pumpkin-plugin-wit`)**: Dual-licensed under [MIT](crates/pumpkin-plugin-api/LICENSE-MIT) OR [Apache-2.0](crates/pumpkin-plugin-api/LICENSE-APACHE) for maximum flexibility when writing plugins.
-* **Third-Party Assets & Data**: Bedrock mappings, protocol conversion data, and Minecraft assets are subject to their respective licenses and attribution terms. See [assets/NOTICE.md](assets/NOTICE.md) for full details.
+See [upstream attribution](UPSTREAM.md) and [LICENSE](LICENSE). The previous MIT
+Sculith engine remains on its existing branch; it has not been relicensed.

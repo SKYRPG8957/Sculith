@@ -80,6 +80,15 @@ async fn main() {
 
     pumpkin_core::init_logger(&config.advanced);
 
+    let world_dir = exec_dir.join(config.basic.get_world_path());
+    if world_dir.join("db/CURRENT").is_file() {
+        tracing::error!(
+            "Bedrock LevelDB world import is not implemented. Copy or convert this world before starting Sculith: {}",
+            world_dir.display()
+        );
+        exit(1);
+    }
+
     if let Some(target_arg) = parse_convert_world_arg(std::env::args().skip(1)) {
         let anvil_default = match &config.advanced.world.chunk {
             pumpkin_config::chunk::ChunkConfig::Anvil(cfg) => cfg.clone(),
@@ -123,7 +132,7 @@ async fn main() {
         "{}",
         TextComponent::text(format!(
             "Starting {} {} Java Minecraft (Protocol {}) | {} Bedrock (Protocol {})",
-            TextComponent::text("Pumpkin")
+            TextComponent::text("Sculith")
                 .color_named(NamedColor::Gold)
                 .to_pretty_console(),
             TextComponent::text(CARGO_PKG_VERSION.to_string())
@@ -154,11 +163,8 @@ async fn main() {
         }
     );
     if cfg!(debug_assertions) {
-        warn!(
-            "Pumpkin is running an unoptimized debug build. Do not use this build for performance testing; run `cargo run --release` or use a release binary."
-        );
+        warn!("Debug build; use a release build for performance testing.");
     }
-    print_support_links_and_warning();
 
     tokio::spawn(async {
         if let Err(err) = setup_sighandler().await {
@@ -243,39 +249,6 @@ async fn main() {
 
     exit(SERVER_EXIT_CODE.load(Ordering::Acquire));
 }
-fn print_support_links_and_warning() {
-    warn!(
-        "{}",
-        TextComponent::text("Pumpkin is currently under heavy development!")
-            .color_named(NamedColor::DarkRed)
-            .to_pretty_console(),
-    );
-    info!(
-        "Report issues on {}",
-        TextComponent::text("https://github.com/Pumpkin-MC/Pumpkin/issues")
-            .color_named(NamedColor::DarkAqua)
-            .to_pretty_console()
-    );
-    info!(
-        "Join our {} for community support: {}",
-        TextComponent::text("Discord")
-            .color_named(NamedColor::DarkBlue)
-            .to_pretty_console(),
-        TextComponent::text("https://discord.gg/wT8XjrjKkf")
-            .color_named(NamedColor::Aqua)
-            .to_pretty_console()
-    );
-    info!(
-        "Consider {} to {}",
-        TextComponent::text("Donating")
-            .color_named(NamedColor::DarkPurple)
-            .to_pretty_console(),
-        TextComponent::text("https://pumpkinmc.org/donate/")
-            .color_named(NamedColor::Gold)
-            .to_pretty_console()
-    );
-}
-
 fn handle_interrupt() {
     warn!(
         "{}",

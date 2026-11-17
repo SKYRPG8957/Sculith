@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-17",
+  "upstream_commit": "87f8822ac36da62102350977be2f62f155a303dc",
+  "server": "Linux debug; Rust 1.100.0; locally modified fork",
+  "server_sha256": "10539e0fccac09b078d178ef84383313dd4956a72904a2ae1e21da4372e4dab9",
+  "native_client": "gophertunnel e2251a60f71d",
+  "block_registry": "Dragonfly 0f9a3a573626",
+  "network": "loopback NetherNet, offline authentication for the test only",
+  "official_java_jar_sha1": "33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c",
+  "rea_version": "6.9.0",
+  "official_readback_evidence_id": "ev_76b91a8c3343ce0d791e18faf8564e2669459514da50d35b39df01f439db2e45",
+  "raw_log_sha256": {
+    "upstream_input_failure": "7d7e755b891a894f719c92016157df5f7ae36dcdc1e1cb366c4671cbab37f8ba",
+    "fork_building": "fd52ede4c82fa79a75b6863711eed161413140ecfd0e601bf4dbc062200cb814",
+    "fork_restart": "d82db3e6c9f4fe58c7b311acefc6690b5a273a839ca0f1c719f0fa9d90916266",
+    "official_java_readback": "7cecd716186665197ac59a7c123aa418d679cf0ab75413cafd1a04237135f5f2"
+  },
+  "limitations": [
+    "Flat-map marker test only",
+    "No Windows GDK client validation",
+    "No load or performance claim",
+    "Bedrock LevelDB import/export remains unsupported"
+  ]
+}

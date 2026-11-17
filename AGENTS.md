@@ -1,5 +1,24 @@
 # AGENTS.md
 
+## Sculith fork
+
+The canonical repository is `SKYRPG8957/Sculith`; Pumpkin is the upstream.
+See `UPSTREAM.md` for the base commit and `docs/sculith/fork.md` for verification.
+
+- Preserve the GPL-3.0 server license, upstream history and copyright notices.
+  Keep the plugin SDK's individual permissive licenses intact. The former MIT
+  Sculith engine has separate history and has not been relicensed.
+- Do not publish releases, preview tags, build artifacts, container images or
+  the cloud environment. Announce source pushes first.
+- Prioritize Bedrock interaction, shared-world behavior, both world formats and
+  stock Java compatibility. A bot test is not Windows GDK verification.
+- Keep kits, automatic welcome messages and server-specific RPG rules out of
+  the default engine. Use plugins for server-specific behavior.
+- Test on copies of worlds. Unsupported formats must fail before writing.
+
+The following notes are inherited from Pumpkin. Upstream contribution and PR
+rules concern submissions to Pumpkin; this fork is independently maintained.
+
 Notes for coding agents working on Pumpkin. Humans are welcome to read it too. [CONTRIBUTING.md](CONTRIBUTING.md) still applies. If a maintainer or the person you're working for tells you something different from this file, do what they say, with one exception: agents never open pull requests, even when asked. See the last section.
 
 ## What Pumpkin is
