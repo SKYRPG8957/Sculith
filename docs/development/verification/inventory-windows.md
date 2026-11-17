@@ -66,6 +66,16 @@ and live Rust inventory/equipment hooks pass; Rust packet traces now classify
 native open and close requests as Control. Unimplemented Interact actions stay
 Unsupported. Packet registration counts and SDK version are unchanged.
 
+At source-equivalent documentation head
+`97c4c3e25ee1b9b5ad53147cf733363b18f71f87`, complete
+[Linux main](https://github.com/SKYRPG8957/Sculith/actions/runs/44039202308)
+and [Linux branch](https://github.com/SKYRPG8957/Sculith/actions/runs/44039202293)
+workflows pass. Every build/test/interoperability step in the
+[Windows/static-CRT run](https://github.com/SKYRPG8957/Sculith/actions/runs/44039202349)
+passes, including the expanded window probe; its cache finalization is still
+running at this record. These runs upload no build artifact. No package,
+release, tag or environment is published.
+
 The state is **32 bytes** on this Linux x86_64 target with pinned Rust 1.100.0;
 the unit bound is at most 64 bytes. It holds no heap history or pending-window
 queue. Opens have a 16-request burst and refill at eight per second. Duplicate
