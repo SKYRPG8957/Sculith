@@ -14,6 +14,7 @@ impl Inventory {
         selected: u8,
         authorized: bool,
     ) -> Result<(u8, Vec<Change>), RejectReason> {
+        self.cancel_drag();
         if !authorized {
             return Err(RejectReason::Unauthorized);
         }

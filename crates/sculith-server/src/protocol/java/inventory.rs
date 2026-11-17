@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 
 use anyhow::{Result, ensure};
-use sculith_game::inventory::{Click, ItemStack, MAX_STACK};
+use sculith_game::inventory::{Click, DragMode, ItemStack, MAX_STACK};
 use sculith_world::BlockKind;
 
 use super::codec::Fields;
@@ -90,11 +90,13 @@ pub fn creative(mut fields: Fields<'_>) -> Result<Option<CreativeChange>> {
 
 /// Decode protocol 777 click metadata and bounded HashedStack predictions.
 /// Hashes are parsed solely for validation and are never replacement authority.
-/// The owner applies the click even with a stale state ID, then sends full state.
+/// Ordinary stale clicks still use owner state. Stale drag phases cancel the
+/// gesture; accepted intermediate phases retain the client preview.
 pub fn click(mut fields: Fields<'_>) -> Result<Option<ClickChange>> {
     let container = fields.int()?;
     let state_id = fields.int()?;
-    let slot = owner_slot(fields.short()?);
+    let menu_slot = fields.short()?;
+    let slot = owner_slot(menu_slot);
     let button = fields.byte()?;
     let mode = fields.int()?;
     let mut supported = container == 0 && (0..=32767).contains(&state_id);
@@ -111,10 +113,30 @@ pub fn click(mut fields: Fields<'_>) -> Result<Option<ClickChange>> {
     }
     supported &= hashed_stack(&mut fields)?;
     fields.end()?;
-    let Some(slot) = slot else { return Ok(None) };
     if !supported {
         return Ok(None);
     }
+    if mode == 5 {
+        let drag = match button >> 2 {
+            0 => DragMode::Even,
+            1 => DragMode::OneEach,
+            _ => return Ok(None),
+        };
+        let click = match button & 3 {
+            0 if menu_slot == -999 => Click::DragStart { mode: drag },
+            1 => {
+                let Some(slot) = slot else { return Ok(None) };
+                Click::DragAdd { slot, mode: drag }
+            }
+            2 if menu_slot == -999 => Click::DragFinish { mode: drag },
+            _ => return Ok(None),
+        };
+        return Ok(Some(ClickChange {
+            state_id: state_id as u16,
+            click,
+        }));
+    }
+    let Some(slot) = slot else { return Ok(None) };
     let click = match (mode, button) {
         (6, 0..=1) => Click::Collect {
             slot,
@@ -468,5 +490,43 @@ mod tests {
             assert!(write_stack(Some(stack), &mut bytes).is_err());
             assert_eq!(bytes, before);
         }
+    }
+}
+#[test]
+fn drag_buttons_require_ordered_owner_slots_and_the_outside_sentinel() {
+    for (base, mode) in [(0, DragMode::Even), (4, DragMode::OneEach)] {
+        for (stage, menu, expected) in [
+            (0, -999i16, Click::DragStart { mode }),
+            (1, 36, Click::DragAdd { slot: 0, mode }),
+            (1, 9, Click::DragAdd { slot: 9, mode }),
+            (2, -999, Click::DragFinish { mode }),
+        ] {
+            let mut bytes = vec![0, 7];
+            bytes.extend(menu.to_be_bytes());
+            bytes.extend([base + stage, 5, 0, 0]);
+            assert_eq!(
+                click(Fields(&bytes)).unwrap(),
+                Some(ClickChange {
+                    state_id: 7,
+                    click: expected
+                })
+            );
+        }
+    }
+    for (menu, button) in [
+        (-999i16, 1),
+        (36, 0),
+        (36, 2),
+        (-999, 3),
+        (-999, 7),
+        (-999, 8),
+        (36, 9),
+        (-999, 10),
+        (-999, 255),
+    ] {
+        let mut bytes = vec![0, 0];
+        bytes.extend(menu.to_be_bytes());
+        bytes.extend([button, 5, 0, 0]);
+        assert_eq!(click(Fields(&bytes)).unwrap(), None);
     }
 }

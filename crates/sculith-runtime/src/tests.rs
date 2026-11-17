@@ -1,3 +1,5 @@
+mod inventory_drag;
+
 use super::*;
 use sculith_game::Edition;
 

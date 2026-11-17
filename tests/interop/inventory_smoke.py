@@ -174,11 +174,44 @@ def smoke(server, native, plugin):
                 click(java, 10, 1, 6)
                 slots = synchronize(java)
                 assert java.cursor == (64, 54) and slots[1] == (0, 0) and slots[2] == (2, 54)
+                # Intermediate drag phases retain the stock screen's preview;
+                # only completion sends authoritative contents and changes items.
+                creative(java, 36, 0, 0)
+                creative(java, 9, 0, 0)
+                # Closing the menu cancels a pending gesture without consuming cursor items.
+                click(java, -999, 0, 5)
+                click(java, 36, 1, 5)
+                wire.send(java.socket, 19, wire.vi(0))
+                click(java, -999, 2, 5)
+                slots = synchronize(java)
+                assert slots[0] == (0, 0) and java.cursor == (64, 54)
+                # A stale phase cancels rather than completing an earlier drag.
+                click(java, -999, 0, 5)
+                click(java, 36, 1, 5, state=(java.inventory_state + 1) & 0x7fff)
+                slots = synchronize(java)
+                click(java, -999, 2, 5)
+                assert synchronize(java) == slots and java.cursor == (64, 54)
+                # A changed drag mode is also rejected without a partial commit.
+                click(java, -999, 0, 5)
+                click(java, 36, 1, 5)
+                click(java, -999, 6, 5)
+                assert synchronize(java) == slots and java.cursor == (64, 54)
+                click(java, -999, 0, 5)
+                for menu in (36, 37, 9):
+                    click(java, menu, 1, 5, predictions=(menu == 36))
+                click(java, -999, 2, 5)
+                slots = synchronize(java)
+                assert all(slots[s] == (21, 54) for s in (0, 1, 9)) and java.cursor == (1, 54)
+                click(java, -999, 4, 5)
+                click(java, 36, 5, 5)
+                click(java, -999, 6, 5)
+                slots = synchronize(java)
+                assert slots[0] == (22, 54) and java.cursor == (0, 0)
                 assert probe.wait(timeout=10) == 0, "".join(lines)
                 reader.join(timeout=2)
                 before = slots.copy()
-                click(java, 36, 0, 5)  # Unsupported drag painting stays connected and unchanged.
-                assert synchronize(java) == before and java.cursor == (64, 54)
+                click(java, 36, 0, 5)  # A non-sentinel drag start is unsupported.
+                assert synchronize(java) == before and java.cursor == (0, 0)
                 wire.send(java.socket, 57, struct.pack(">h", 36) + wire.vi(64) + wire.vi(2) + bytes(2))
                 assert synchronize(java) == before
                 java.socket.close()
@@ -189,6 +222,7 @@ def smoke(server, native, plugin):
                 assert 'events inventory player=1' in text and 'events inventory player=2' in text
                 for packet_id in (33, 47):
                     assert re.search(r"events packet player=2 edition=Bedrock .*id=" + str(packet_id) + r" .*dispatch=Control", text)
+                assert re.search(r"events packet player=1 edition=Java .*id=19 .*dispatch=Control", text)
                 assert re.search(r"events equipment player=1 .*count=2", text)
                 assert re.search(r"events equipment player=2 .*count=5", text)
                 assert 'plugin disabled' not in text and 'events plugin stopped' in text

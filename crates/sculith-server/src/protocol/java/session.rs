@@ -10,6 +10,7 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use md5::{Digest, Md5};
+use sculith_game::inventory::Click;
 use sculith_runtime::peers::{Change as PeerChange, Peers};
 use sculith_world::{BlockKind, BlockPos, ChunkPos};
 use std::{
@@ -843,24 +844,69 @@ impl Session {
                         self.inventory_slot(stream, change.slot).await?;
                         return Ok(());
                     }
+                } else {
+                    self.player = self
+                        .world
+                        .inventory_click(self.player.id, Click::CancelDrag)
+                        .await?
+                        .player;
                 }
                 self.inventory(stream).await?;
             }
             0x12 => {
                 if let Some(change) = super::inventory::click(fields)? {
-                    if change.state_id != self.inventory_state {
+                    let stale = change.state_id != self.inventory_state;
+                    let drag = matches!(
+                        change.click,
+                        Click::DragStart { .. } | Click::DragAdd { .. } | Click::DragFinish { .. }
+                    );
+                    if stale {
                         tracing::debug!(
                             player = self.player.id,
                             "Java inventory prediction state resynchronized"
                         );
                     }
+                    let outcome = self
+                        .world
+                        .inventory_click(
+                            self.player.id,
+                            if stale && drag {
+                                Click::CancelDrag
+                            } else {
+                                change.click
+                            },
+                        )
+                        .await?;
+                    let pending = matches!(
+                        change.click,
+                        Click::DragStart { .. } | Click::DragAdd { .. }
+                    );
+                    let accepted = outcome.response.result.is_ok();
+                    self.player = outcome.player;
+                    // The stock screen keeps its preview between drag phases.
+                    // Full contents are required at completion or after rejection.
+                    if pending && !stale && accepted {
+                        return Ok(());
+                    }
+                } else {
                     self.player = self
                         .world
-                        .inventory_click(self.player.id, change.click)
+                        .inventory_click(self.player.id, Click::CancelDrag)
                         .await?
                         .player;
                 }
                 self.inventory(stream).await?;
+            }
+            0x13 => {
+                let container = fields.int()?;
+                fields.end()?;
+                if container == 0 {
+                    self.player = self
+                        .world
+                        .inventory_click(self.player.id, Click::CancelDrag)
+                        .await?
+                        .player;
+                }
             }
             0x0e => client_information(fields)?,
             0x0d | 0x2c => fields.end()?,

@@ -22,6 +22,9 @@ mod batch_tests;
 mod collect;
 #[cfg(test)]
 mod collect_tests;
+mod drag;
+#[cfg(test)]
+mod drag_tests;
 mod pick;
 #[cfg(test)]
 mod pick_tests;
@@ -94,6 +97,16 @@ pub enum Click {
     HotbarSwap { slot: u8, hotbar: u8 },
     QuickMove { slot: u8 },
     Collect { slot: u8, reverse: bool },
+    DragStart { mode: DragMode },
+    DragAdd { slot: u8, mode: DragMode },
+    DragFinish { mode: DragMode },
+    CancelDrag,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DragMode {
+    Even,
+    OneEach,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -242,6 +255,7 @@ pub struct Inventory {
     history: VecDeque<CachedRequest>,
     history_actions: usize,
     lowest_request_id: Option<i32>,
+    drag: Option<drag::Drag>,
 }
 
 impl Default for Inventory {
@@ -256,6 +270,7 @@ impl Default for Inventory {
             history: VecDeque::new(),
             history_actions: 0,
             lowest_request_id: None,
+            drag: None,
         }
     }
 }
@@ -318,6 +333,7 @@ impl Inventory {
             return Err(RejectReason::Full);
         }
         self.state = candidate;
+        self.cancel_drag();
         Ok(changes)
     }
 
@@ -348,7 +364,18 @@ impl Inventory {
     /// prediction hashes and Bedrock request IDs play no part in this operation.
     pub fn click(&mut self, click: Click, authorized: bool) -> anyhow::Result<Vec<Change>> {
         if !authorized {
+            self.cancel_drag();
             return Err(RejectReason::Unauthorized.into());
+        }
+        if matches!(
+            click,
+            Click::DragStart { .. } | Click::DragAdd { .. } | Click::DragFinish { .. }
+        ) {
+            return Ok(self.drag(click)?);
+        }
+        // Vanilla cancels an interrupted gesture without applying that click.
+        if self.drag.take().is_some() || matches!(click, Click::CancelDrag) {
+            return Ok(vec![]);
         }
         let reference = |slot, stack: Option<ItemStack>| SlotRef {
             slot,
@@ -404,6 +431,10 @@ impl Inventory {
                     })
                 }
             }
+            Click::DragStart { .. }
+            | Click::DragAdd { .. }
+            | Click::DragFinish { .. }
+            | Click::CancelDrag => unreachable!("drag handled above"),
         };
         let Some(action) = action else {
             return Ok(vec![]);
@@ -465,6 +496,7 @@ impl Inventory {
         };
         if result.is_ok() {
             self.state = candidate;
+            self.cancel_drag();
         }
         let response = Response {
             request_id: request.id,
@@ -620,6 +652,7 @@ impl Inventory {
         count: u8,
         authorized: bool,
     ) -> anyhow::Result<Vec<Change>> {
+        self.cancel_drag();
         if !authorized {
             return Err(RejectReason::Unauthorized.into());
         }

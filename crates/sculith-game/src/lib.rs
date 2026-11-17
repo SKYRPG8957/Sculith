@@ -623,6 +623,7 @@ impl GameState {
                         .unwrap_or(crate::inventory::RejectReason::UnsupportedAction)
                 })
         } else {
+            player.inventory.cancel_drag();
             Err(crate::inventory::RejectReason::RateLimited)
         };
         Ok(player.finish_inventory(crate::inventory::Response {

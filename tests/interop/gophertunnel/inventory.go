@@ -461,7 +461,7 @@ func sharedInventory(conn *minecraft.Conn) error {
 	for _, want := range []struct {
 		item  int32
 		count uint16
-	}{{2, 1}, {3, 64}, {0, 0}, {3, 34}, {3, 64}, {3, 34}} {
+	}{{2, 1}, {3, 64}, {0, 0}, {3, 34}, {3, 64}, {3, 34}, {0, 0}, {2, 21}, {2, 22}} {
 		seen := false
 		for packets := 0; packets < 256; packets++ {
 			pk, err := conn.ReadPacket()

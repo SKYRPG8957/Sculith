@@ -1,6 +1,78 @@
 use super::*;
 
 #[test]
+fn rate_limited_drag_completion_discards_the_gesture_without_changing_items() {
+    use crate::inventory::{Click, DragMode};
+    let now = Instant::now();
+    let mut game = GameState::new(Region::flat_origin(), 1).unwrap();
+    let player = game
+        .reserve(profile(1), Permissions { can_build: true }, now)
+        .unwrap();
+    game.activate(player.id).unwrap();
+    game.creative_slot(player.id, 0, Some(BlockKind::Grass), 11, now)
+        .unwrap();
+    game.inventory_click(
+        player.id,
+        Click::Pickup {
+            slot: 0,
+            right: false,
+        },
+        now,
+    )
+    .unwrap();
+    game.inventory_click(
+        player.id,
+        Click::DragStart {
+            mode: DragMode::Even,
+        },
+        now,
+    )
+    .unwrap();
+    // Spend the remainder on repeated adds; no item changes are committed.
+    for _ in 0..61 {
+        assert!(
+            game.inventory_click(
+                player.id,
+                Click::DragAdd {
+                    slot: 0,
+                    mode: DragMode::Even
+                },
+                now
+            )
+            .unwrap()
+            .response
+            .result
+            .is_ok()
+        );
+    }
+    let before = game.player(player.id).unwrap();
+    let denied = game
+        .inventory_click(
+            player.id,
+            Click::DragFinish {
+                mode: DragMode::Even,
+            },
+            now,
+        )
+        .unwrap();
+    assert_eq!(
+        denied.response.result,
+        Err(crate::inventory::RejectReason::RateLimited)
+    );
+    let after = game
+        .inventory_click(
+            player.id,
+            Click::DragFinish {
+                mode: DragMode::Even,
+            },
+            now + std::time::Duration::from_secs(1),
+        )
+        .unwrap();
+    assert!(after.response.result.unwrap().is_empty());
+    assert_eq!(after.player, before);
+}
+
+#[test]
 fn inventory_batches_preserve_the_previous_action_work_budget() {
     use crate::inventory::{Action, RejectReason, Request, Slot, SlotRef};
     let now = Instant::now();

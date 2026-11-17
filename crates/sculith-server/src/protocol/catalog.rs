@@ -81,7 +81,7 @@ pub fn java_receipt(id: i32, sequence: u64) -> Result<sculith_plugin_api::Packet
         PacketDispatch::Unknown
     } else {
         match id {
-            0 | 0x0b | 0x0d | 0x0e | 0x1c | 0x2c => PacketDispatch::Control,
+            0 | 0x0b | 0x0d | 0x0e | 0x13 | 0x1c | 0x2c => PacketDispatch::Control,
             7 | 9 | 0x12 | 0x1e..=0x21 | 0x24 | 0x29 | 0x36 | 0x39 | 0x42 => {
                 PacketDispatch::Gameplay
             }
