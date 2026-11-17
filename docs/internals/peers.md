@@ -1,4 +1,4 @@
-# Player visibility preview
+# Player visibility
 
 One world owner commits initialized player membership and movement for both
 adapters. A viewer gets an atomic membership snapshot and its bounded continuation;
@@ -9,8 +9,11 @@ The stream holds at most 128 shared events. Each viewer tracks at most 63 other
 players, with an online roster and entities only inside its loaded chunks. Leaving
 loaded chunks removes the entity while preserving roster membership. Returning
 spawns its latest owner position. Disconnect removes the entity before its roster
-entry. A missed event backlog closes the session instead of continuing with stale
-membership. Global player/presentation IDs remain distinct.
+entry. A lagged peer stream gets a new atomic owner snapshot and continuation.
+Reconciliation removes departed identities, adds new ones and refreshes visible
+poses and equipment using the last accepted movement sequence. The 128-event
+bound remains unchanged. Closed streams and lost block/private updates still
+fail explicitly. Global player/presentation IDs remain distinct.
 
 Java 26.3 uses player-info entries, the stock default avatar, player entities,
 absolute position/rotation updates and head rotation. Names outside Java's ASCII
@@ -25,6 +28,13 @@ payload was rejected by the independent decoder when its minimal item registry
 had no shield entry. Peer abilities reuse the same owner-derived base layer as
 local abilities. Native wire player positions include the 1.62-block offset;
 Java positions use feet coordinates.
+
+Native movement presentation runs at 20 Hz with at most one pending pose per
+visible peer. Equipment, spawn and removal flush earlier pending poses before
+their own records. Small records share batches of at most 64 packets; skin-bearing
+roster additions keep separate batches. Committed world/plugin observations are
+unchanged. Session block/chat/private queues exclude the presence events already
+handled by the peer stream, while the full observer stream remains available.
 
 Account skins, capes/persona, armour/offhand, arm swings, damage/combat, player collision,
 general entity AI and persistent player state are outside this preview. Public

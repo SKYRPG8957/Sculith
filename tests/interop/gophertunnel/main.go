@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/world"
@@ -12,6 +13,19 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 5 && os.Args[2] == "--stress" {
+		clients, countErr := strconv.Atoi(os.Args[3])
+		seconds, durationErr := strconv.Atoi(os.Args[4])
+		if countErr != nil || durationErr != nil {
+			fmt.Fprintln(os.Stderr, "stress requires client count and duration in seconds")
+			os.Exit(2)
+		}
+		if err := nativeStress(os.Args[1], clients, seconds); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--packet-catalog" {
 		if err := packetCatalog(); err != nil {
 			panic(err)

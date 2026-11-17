@@ -114,6 +114,8 @@ pub struct PlayerSnapshot {
     /// Feet in world coordinates; eye/base offsets are not accepted as a position.
     pub feet: Position,
     pub rotation: Rotation,
+    /// Last accepted movement sequence, including stationary inputs.
+    pub movement_tick: Option<u64>,
     pub selected_slot: u8,
     pub initialized: bool,
     pub hotbar: [Option<BlockKind>; 9],
@@ -230,7 +232,6 @@ struct Player {
     inventory: crate::inventory::Inventory,
     inventory_budget: Budget,
     plugin_inventory_budget: Budget,
-    last_tick: Option<u64>,
     movement: Budget,
     building: Budget,
     messages: Budget,
@@ -406,6 +407,7 @@ impl GameState {
             permissions,
             feet,
             rotation: Rotation::default(),
+            movement_tick: None,
             selected_slot: 0,
             initialized: false,
             inventory: *inventory.slots(),
@@ -426,7 +428,6 @@ impl GameState {
                     remaining: 16.0,
                     updated: now,
                 },
-                last_tick: None,
                 movement: Budget {
                     remaining: MOVE_BURST,
                     updated: now,
@@ -843,7 +844,7 @@ impl GameState {
         let changed = player.snapshot.feet != feet || player.snapshot.rotation != rotation;
         player.snapshot.feet = feet;
         player.snapshot.rotation = rotation;
-        player.last_tick = Some(tick);
+        player.snapshot.movement_tick = Some(tick);
         player.movement = Budget {
             remaining,
             updated: now,
@@ -866,7 +867,11 @@ impl GameState {
         let player = self.active(id)?;
         let rotation = rotation.validated().ok_or(RejectReason::InvalidRotation)?;
         validate_body(&self.region, feet)?;
-        if player.last_tick.is_some_and(|last| tick <= last) {
+        if player
+            .snapshot
+            .movement_tick
+            .is_some_and(|last| tick <= last)
+        {
             return Err(RejectReason::StaleTick);
         }
         let available = player
@@ -1224,7 +1229,39 @@ fn line_of_sight(
     origin: Position,
     target: BlockPos,
 ) -> sculith_world::Result<bool> {
-    let end = block_center(target).axes();
+    // A visible face need not expose the buried centre of a solid voxel: on
+    // flat ground the centre ray hits a neighbour before reaching the target.
+    // Retain the centre ray, then test centres of faces facing the eye (at
+    // most three). Each ray still traverses solid voxels; a solid intervening
+    // wall blocks all of them. Reach and permissions remain separate.
+    let start = origin.axes();
+    let min = [target.x, target.y, target.z].map(f64::from);
+    let center = block_center(target).axes();
+    if clear_ray(region, origin, target, center)? {
+        return Ok(true);
+    }
+    for axis in [1, 0, 2] {
+        let mut surface = center;
+        surface[axis] = if start[axis] < min[axis] {
+            min[axis] + 1e-6
+        } else if start[axis] > min[axis] + 1.0 {
+            min[axis] + 1.0 - 1e-6
+        } else {
+            continue;
+        };
+        if clear_ray(region, origin, target, surface)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn clear_ray(
+    region: &Region,
+    origin: Position,
+    target: BlockPos,
+    end: [f64; 3],
+) -> sculith_world::Result<bool> {
     let start = origin.axes();
     let mut cell = [
         origin.x.floor() as i32,

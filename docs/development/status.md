@@ -8,6 +8,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 
 ## Implemented — current source toward 0.1.0
 
+- Native sessions accept ordinary batches beyond 64 packets within the existing codec bounds. Exposed ground faces support pick/place/break; empty-hand and air-use requests no longer disconnect the current solid-block client. Chunks start at the viewer's centre. Native pose updates coalesce at 20 Hz, session queues exclude duplicate presence traffic, and both editions recover lagged peers from an atomic owner snapshot. [Checks and load scope](verification/bedrock-play.md).
+
 - Java left/right cursor drags track a fixed owner selection mask and commit only at completion. Division, per-slot capacity and remainders use current server counts; close/stale/malformed/interrupted gestures cancel without partial item changes. Valid intermediate phases retain the stock preview. [Reference, checks and measured bounds](verification/inventory-drag.md).
 
 - Native self-inventory windows acknowledge open/close/reopen once, ignore duplicates and stale/forged notifications, and preserve all owner item state. IDs reuse a bounded 2–100 range; open replies have a 16-request burst/eight-per-second refill. The connection now retains the activated owner snapshot before its first play request. [BDS reference and checks](verification/inventory-windows.md).
@@ -101,6 +103,8 @@ The full requirements are in [engineering-directive.md](engineering-directive.md
 - Windows preview packaging: a portable executable with static CRT, double-click launcher, local configuration, SHA-256 checksums, build metadata and locked dependency license texts. The PowerShell installer preserves existing directories and verifies the archive before installing.
 
 ## Verified — current local source
+
+- 322 project tests, six ignored manual checks, Clippy, ownership doctests, architecture checks, release builds and independent membership/inventory/plugin/block-pick/chunk socket probes pass. Three serial 64-client NetherNet runs complete 30 active seconds each with no failed sessions or unprocessed movement; control RTT p95 remains 71–135 ms on the shared host. These are bounded flat-world protocol checks, not official GDK or long-term capacity verification. [Results and limitations](verification/bedrock-play.md).
 
 - Drag source `6387910` passes 315 project tests, six ignored manual checks, Clippy, ownership doctests, architecture checks and debug/release independent Java/native probes. Native peers observe Java Grass21/22 after final owner commits, and Rust hooks see no intermediate item mutations. A fresh stock creative screen shows Grass32/32 after actual mouse dragging; its nine creative-slot calls are distinguished from the new wire handler. Plugin grant/query checks pass. [Evidence and limits](verification/inventory-drag.md).
 
@@ -321,7 +325,9 @@ The counted-inventory candidate measures 10,000 validated movement operations in
 
 ## Next Action
 
-Extend ordinary inventory interactions and persistent player state through the shared owner. Native batches now support 64 actions with preserved work/history bounds. Native self-inventory acknowledgements are implemented. Java left/right drag distribution is implemented. Add persistent player inventory recovery next; keep per-connection IDs/drag state separate from saved item data and preserve verified identity boundaries. Middle-button creative fill, general containers and persistent player inventories remain pending; verify native screen contexts against BDS/REA before extending them. Official GDK gesture generation is still unverified. Investigate another block-pick ordering failure if the expanded diagnostics reproduce it; keep supported packet dispatch metadata aligned with actual handlers. Preserve the measured chunk/profiler baselines and repeat measurements when changed runtime paths justify it. Extend recovery beyond completed snapshots, general entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis using completed runtime observations and bounded function-level work; the timed-out full static analysis remains incomplete.
+The user's requested completion target is 2026-11-22. Prioritize usable Bedrock movement, building and inventory, mixed-edition load and chunk streaming over additional demonstration content. Current load checks are short and headless; verify official GDK behaviour when an actual client environment is available, reduce tail latency, extend action/mixed-client workloads and run longer sessions. The complete engineering directive remains unfinished, including world expansion, physics/entities, persistent players, content fidelity, bounded plugin isolation and region scheduling.
+
+Persistent player recovery follows the play/stress fixes; keep per-connection stack IDs and drag state separate from saved items and preserve verified identity boundaries. Middle-button creative fill and general containers remain pending. Keep dispatch metadata aligned with actual handlers and retain measured baselines. Extend storage recovery, entity APIs and region-safe scheduling before claiming RMT or simulation LOD. Continue focused Bedrock reference analysis; the earlier timed-out full static analysis remains incomplete.
 
 Continue owner-validated world APIs, storage/recovery and bounded plugin execution needed by public operators. Keep RPG content in plugins/packs. Successful real-account Java/Bedrock sign-in, Internet/NAT deployment, official GDK gameplay, general entities and broader inventory/content support remain separate required work; the engineering directive is not complete.
 

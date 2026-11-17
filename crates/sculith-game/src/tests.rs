@@ -510,19 +510,24 @@ fn rejected_move(
     expected: RejectReason,
 ) {
     let before = game.player(id);
-    let budget = game
-        .players
-        .get(&id)
-        .map(|player| (player.last_tick, player.movement, player.building));
+    let budget = game.players.get(&id).map(|player| {
+        (
+            player.snapshot.movement_tick,
+            player.movement,
+            player.building,
+        )
+    });
     let world = sculith_world::storage::encode_snapshot(&game.capture()).unwrap();
     assert!(
         matches!(game.move_player(id, tick, feet, rotation, now), MoveOutcome::Rejected { reason, .. } if reason == expected)
     );
     assert_eq!(game.player(id), before, "rejection changed player snapshot");
     assert_eq!(
-        game.players
-            .get(&id)
-            .map(|player| (player.last_tick, player.movement, player.building)),
+        game.players.get(&id).map(|player| (
+            player.snapshot.movement_tick,
+            player.movement,
+            player.building
+        )),
         budget,
         "rejection changed anti-cheat state"
     );
@@ -1018,6 +1023,50 @@ fn permissions_and_immutable_bedrock_are_enforced_before_committing() {
     game.activate(other.id).unwrap();
     let result = game.break_block(other.id, BlockPos { x: 1, y: 3, z: 0 }, now);
     rejected_block(&mut game, result, RejectReason::PermissionDenied, &before);
+}
+
+#[test]
+fn visible_ground_surfaces_can_be_broken_picked_and_used_for_placement() {
+    let now = Instant::now();
+    // These top faces are visible from the spawn eye, although a ray aimed at
+    // the buried voxel centre crosses the neighbouring ground first.
+    for target in [
+        BlockPos { x: -3, y: 3, z: -3 },
+        BlockPos { x: 3, y: 3, z: 3 },
+        BlockPos { x: -4, y: 3, z: 0 },
+    ] {
+        let (mut game, id) = active(Region::flat_origin(), now);
+        let picked = game.pick_block(id, target, now).unwrap();
+        assert!(
+            picked.response.result.is_ok(),
+            "{target:?}: {:?}",
+            picked.response
+        );
+        assert_eq!(
+            picked.player.inventory[usize::from(picked.player.selected_slot)]
+                .unwrap()
+                .kind,
+            BlockKind::Grass
+        );
+        assert!(
+            matches!(
+                game.break_block(id, target, now),
+                BlockOutcome::Committed { .. }
+            ),
+            "{target:?}"
+        );
+
+        let (mut game, id) = active(Region::flat_origin(), now);
+        game.creative_slot(id, 0, Some(BlockKind::Stone), 1, now)
+            .unwrap();
+        assert!(
+            matches!(
+                game.place_block(id, target, 1, 0, BlockKind::Stone, now),
+                BlockOutcome::Committed { .. }
+            ),
+            "{target:?}"
+        );
+    }
 }
 
 #[test]

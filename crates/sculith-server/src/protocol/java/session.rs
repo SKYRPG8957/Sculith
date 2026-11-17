@@ -116,7 +116,7 @@ pub async fn start(
     configure(stream, frames, content).await?;
     *phase = super::Phase::Play;
     frames.set_phase(sculith_core::connections::PacketPhase::Spawn);
-    let events = world.subscribe();
+    let events = world.subscribe_session();
     let lease = world
         .reserve(
             Profile {
@@ -529,6 +529,7 @@ impl Session {
         let mut pulse = tokio::time::interval(Duration::from_secs(1));
         pulse.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut last_ping = Instant::now();
+        let mut peer_resyncs = 0u64;
         loop {
             tokio::select! {
                 changed=shutdown.changed()=>{
@@ -540,8 +541,18 @@ impl Session {
                     self.input(stream,&packet).await?;
                 }
                 event=peer_updates.recv()=>{
-                    let event=event.context("Java peer event backlog; reconnect")?;
-                    let changes=self.peers.as_mut().context("missing Java peer projection")?.event(event.as_ref(),&self.interest)?;
+                    let peers=self.peers.as_mut().context("missing Java peer projection")?;
+                    let changes=match event {
+                        Ok(event)=>peers.event(event.as_ref(),&self.interest)?,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped))=>{
+                            let observation=self.world.observe_players(self.player.id).await?;
+                            peer_updates=observation.updates;
+                            peer_resyncs=peer_resyncs.saturating_add(1);
+                            if peer_resyncs<=8 {tracing::debug!(skipped,peer_resyncs,"Java peer snapshot refreshed");}
+                            peers.synchronize(observation.players,&self.interest)?
+                        }
+                        Err(error)=>return Err(error).context("Java peer stream closed"),
+                    };
                     send_peer_changes(stream,changes).await?;
                 }
                 event=self.events.recv()=>{

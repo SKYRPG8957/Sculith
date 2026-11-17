@@ -1,8 +1,10 @@
 //! A bounded mailbox owns the one authoritative game/region state.
 
+mod events;
 pub mod observations;
 pub mod peers;
 pub mod profiling;
+use events::Events;
 
 use anyhow::{Context, Result};
 use sculith_game::{
@@ -98,7 +100,7 @@ pub struct WorldHandle {
     commands: mpsc::Sender<Envelope>,
     telemetry: Arc<profiling::Shared>,
     online: Arc<AtomicU32>,
-    events: broadcast::Sender<Arc<WorldEvent>>,
+    events: Events,
     game_events: broadcast::Sender<Arc<WorldEvent>>,
     observations: Arc<AtomicU8>,
 }
@@ -822,6 +824,12 @@ impl WorldHandle {
         self.events.subscribe()
     }
 
+    /// Presentation updates other than presence, which uses observe_players.
+    /// Both queues remain bounded; an actual lag is still an explicit error.
+    pub fn subscribe_session(&self) -> broadcast::Receiver<Arc<WorldEvent>> {
+        self.events.subscribe_sessions()
+    }
+
     /// Semantic game hooks exclude high-frequency movement and private messages.
     pub fn subscribe_game(&self) -> broadcast::Receiver<Arc<WorldEvent>> {
         self.game_events.subscribe()
@@ -839,7 +847,7 @@ impl WorldHandle {
 
 fn publish_game(
     event: WorldEvent,
-    events: &broadcast::Sender<Arc<WorldEvent>>,
+    events: &Events,
     game_events: &broadcast::Sender<Arc<WorldEvent>>,
 ) {
     let event = Arc::new(event);
@@ -849,7 +857,7 @@ fn publish_game(
 
 fn publish_presence(
     event: WorldEvent,
-    events: &broadcast::Sender<Arc<WorldEvent>>,
+    events: &Events,
     game_events: &broadcast::Sender<Arc<WorldEvent>>,
     peer_events: &broadcast::Sender<Arc<WorldEvent>>,
 ) {
@@ -930,7 +938,7 @@ fn chunk_revisions(
 
 fn publish_blocks(
     state: &mut GameState,
-    events: &broadcast::Sender<Arc<WorldEvent>>,
+    events: &Events,
     game_events: &broadcast::Sender<Arc<WorldEvent>>,
     player_id: u64,
     outcome: &BlockOutcome,
@@ -953,7 +961,7 @@ fn publish_blocks(
 fn retire(
     state: &mut GameState,
     leases: &mut BTreeMap<u64, Weak<AtomicBool>>,
-    events: &broadcast::Sender<Arc<WorldEvent>>,
+    events: &Events,
     game_events: &broadcast::Sender<Arc<WorldEvent>>,
     peer_events: &broadcast::Sender<Arc<WorldEvent>>,
     id: u64,
@@ -1006,7 +1014,7 @@ pub fn with_region_and_content(
     let mut command_registry = sculith_game::commands::Registry::default();
     let (commands, mut requests) = mpsc::channel(32);
     let weak_commands = commands.downgrade();
-    let (events, _) = broadcast::channel(128);
+    let events = Events::new(128);
     let (game_events, _) = broadcast::channel(128);
     let (peer_events, _) = broadcast::channel(128);
     let online = Arc::new(AtomicU32::new(0));

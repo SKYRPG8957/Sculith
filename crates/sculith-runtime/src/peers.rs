@@ -61,6 +61,64 @@ impl Peers {
         out
     }
 
+    /// Recover a lagged presentation stream from a new atomic owner snapshot.
+    /// Remove old identities before adding replacements, refresh current poses
+    /// and equipment, then continue exclusively on the snapshot's new receiver.
+    pub fn synchronize(
+        &mut self,
+        players: Vec<PlayerSnapshot>,
+        interest: &BTreeMap<ChunkPos, u64>,
+    ) -> Result<Vec<Change>> {
+        let mut next = Self::new(self.viewer, players)?;
+        for (&id, player) in &next.known {
+            if let Some(previous) = self.known.get(&id) {
+                ensure!(
+                    previous.profile == player.profile,
+                    "peer identity changed during resynchronization"
+                );
+            }
+        }
+        let mut out = Vec::new();
+        for (&id, player) in &self.known {
+            if !next.known.contains_key(&id) {
+                if self.visible.contains(&id) {
+                    out.push(Change::Despawn { id });
+                }
+                out.push(Change::InfoRemove {
+                    uuid: player.profile.uuid,
+                });
+            }
+        }
+        for (&id, player) in &next.known {
+            let previous = self.known.get(&id);
+            if previous.is_none() {
+                out.push(Change::InfoAdd(player.clone()));
+            }
+            if interested(player, interest) {
+                next.visible.insert(id);
+                if previous.is_none() || !self.visible.contains(&id) {
+                    out.push(Change::Spawn(player.clone()));
+                } else {
+                    if previous.is_some_and(|old| {
+                        old.selected_slot != player.selected_slot || old.held() != player.held()
+                    }) {
+                        out.push(Change::Equipment(player.clone()));
+                    }
+                    // An older pose may still have been waiting for transport;
+                    // always refresh visible actors, even if our cache matches.
+                    out.push(Change::Move {
+                        player: player.clone(),
+                        tick: player.movement_tick.unwrap_or(0),
+                    });
+                }
+            } else if self.visible.contains(&id) {
+                out.push(Change::Despawn { id });
+            }
+        }
+        *self = next;
+        Ok(out)
+    }
+
     pub fn refresh(&mut self, interest: &BTreeMap<ChunkPos, u64>) -> Vec<Change> {
         let mut out = vec![];
         for (&id, player) in &self.known {

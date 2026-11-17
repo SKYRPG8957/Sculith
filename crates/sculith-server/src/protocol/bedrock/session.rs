@@ -23,7 +23,7 @@ use bedrock::{
 };
 
 const PROTOCOL: i32 = V2225::PROTOCOL_VERSION as i32;
-const MAX_BATCH_PACKETS: usize = 64;
+const DRAIN_YIELD_INTERVAL: usize = 64;
 use super::{input::Intent, output, spawn};
 use crate::world::WorldHandle;
 use crate::{
@@ -138,18 +138,18 @@ impl Packets {
     }
 
     async fn next<T: Transport>(&mut self, conn: &mut Observed<'_, T>) -> Result<V2225> {
+        // The codec bounds decompressed bytes and frame count before decoding
+        // (4 MiB / 4096 frames on both transports). A second, smaller frame
+        // limit here rejects ordinary client bursts, including 67-packet GDK
+        // batches. Drain every validated frame and cooperate with other tasks.
+        if !self.pending.is_empty() && self.pending.len().is_multiple_of(DRAIN_YIELD_INTERVAL) {
+            tokio::task::yield_now().await;
+        }
         if let Some(packet) = self.pending.pop_front() {
             return Ok(packet);
         }
         let packets = conn.recv_with_headers().await?;
-        if packets.is_empty() || packets.len() > MAX_BATCH_PACKETS {
-            tracing::warn!(
-                packet_count = packets.len(),
-                limit = MAX_BATCH_PACKETS,
-                "Bedrock packet batch count out of bounds"
-            );
-            bail!("invalid login packet batch size");
-        }
+        ensure!(!packets.is_empty(), "empty Bedrock packet batch");
         // Observe the complete bounded batch before interpreting any member.
         // A rejected prefix must not hide already decoded trailing packets.
         // Phase is the ingress state, even if a prefix later advances it.
@@ -231,7 +231,7 @@ pub async fn handle_with_protection<T: Transport>(
     let mut packets = Packets::new(&settings.observer, &protection);
     let mut observed = Observed::new(conn, packets.trace.clone());
     let conn = &mut observed;
-    let mut events = world.subscribe();
+    let mut events = world.subscribe_session();
     let mut stage = "network-settings";
     let result = tokio::time::timeout(
         settings.timeout,
@@ -282,12 +282,27 @@ pub async fn handle_with_protection<T: Transport>(
     let mut view_center = (0, 0);
     let mut packet_sequence = 0u64;
     let mut inventory_window = inventory_window::InventoryWindow::new(std::time::Instant::now());
+    let mut peer_pending = super::peers::Pending::default();
+    let mut peer_tick = tokio::time::interval(Duration::from_millis(50));
+    peer_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut peer_resyncs = 0u64;
     loop {
         tokio::select! {
+            _=peer_tick.tick()=>super::peers::send(conn,peer_pending.drain()).await?,
             event=peer_updates.recv()=>{
-                let event=event.context("Bedrock peer event backlog; reconnect")?;
-                let changes=peer_views.event(event.as_ref(),&interest)?;
-                super::peers::send(conn,changes).await?;
+                let changes=match event {
+                    Ok(event)=>peer_views.event(event.as_ref(),&interest)?,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped))=>{
+                        let observation=world.observe_players(id).await?;
+                        peer_updates=observation.updates;
+                        peer_pending.clear();
+                        peer_resyncs=peer_resyncs.saturating_add(1);
+                        if peer_resyncs<=8 {tracing::debug!(skipped,peer_resyncs,"Bedrock peer snapshot refreshed");}
+                        peer_views.synchronize(observation.players,&interest)?
+                    }
+                    Err(error)=>return Err(error).context("Bedrock peer stream closed"),
+                };
+                super::peers::send(conn,peer_pending.queue(changes)?).await?;
             }
             packet = packets.next(conn) => {
                 let packet = packet?;
@@ -344,7 +359,7 @@ pub async fn handle_with_protection<T: Transport>(
                     if requested != radius {
                         spawn::refresh(conn, world, &mut interest, &view_player, requested).await?;
                         radius = requested;
-                        super::peers::send(conn,peer_views.refresh(&interest)).await?;
+                        super::peers::send(conn,peer_pending.queue(peer_views.refresh(&interest))?).await?;
                     }
                     continue;
                 }
@@ -380,7 +395,7 @@ pub async fn handle_with_protection<T: Transport>(
                                 }
                                 MoveOutcome::Accepted {player,..}=>{
                                     let center=((player.feet.x.floor() as i32).div_euclid(16),(player.feet.z.floor() as i32).div_euclid(16));
-                                    if center!=view_center {spawn::refresh(conn,world,&mut interest,&player,radius).await?;view_center=center;super::peers::send(conn,peer_views.refresh(&interest)).await?;}
+                                    if center!=view_center {spawn::refresh(conn,world,&mut interest,&player,radius).await?;view_center=center;super::peers::send(conn,peer_pending.queue(peer_views.refresh(&interest))?).await?;}
                                     view_player=player;
                                 }
                                 _=>{},

@@ -1,4 +1,5 @@
 mod inventory_drag;
+mod session_events;
 
 use super::*;
 use sculith_game::Edition;

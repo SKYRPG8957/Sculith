@@ -47,3 +47,17 @@ Held-item projection and false claim correction:
 `--equipment-visual` extends the actual-game companion with timed native hotbar
 changes (Dirt after 7 seconds, empty after 14) and reports both sides' equipment.
 It remains a headless native implementation, not official Bedrock rendering.
+
+Local session load (Linux loopback):
+
+    python3 scripts/bench/native_sessions.py --server target/release/sculith --client target/gophertunnel-probe --clients 32 --seconds 30 --output /tmp/sculith-native-load
+
+The output directory must be new. Each client receives 25 chunks, sends a
+67-packet burst, empty-hand/air-use transactions and movement at a requested 20 Hz, breaks one visible ground
+block and checks latency fences through the final input. Separate loopback
+source addresses preserve the server's four-sessions-per-IP limit; at most eight
+clients negotiate concurrently. Limits are 64 clients and 300 active seconds.
+The runner retains client results, server logs, bounded owner timings and Linux
+process CPU/RSS counters. It verifies that all sent movement reached the owner.
+This measures the current flat-world workload; it does not establish official
+GDK rendering, internet latency, TPS, plugins or production player capacity.

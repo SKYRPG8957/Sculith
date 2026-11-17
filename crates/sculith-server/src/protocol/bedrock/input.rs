@@ -92,7 +92,9 @@ pub fn decode(packet: &V2225, expected_entity_id: u64) -> Result<Vec<Intent>> {
                 "unsupported inventory mutation action list"
             );
             match &transaction.data {
-                InventoryTransactionData::ItemUse(data) => Ok(vec![item_use(data)?]),
+                InventoryTransactionData::ItemUse(data) => {
+                    Ok(item_use(data)?.into_iter().collect())
+                }
                 _ => bail!("unsupported inventory transaction type"),
             }
         }
@@ -239,7 +241,9 @@ fn auth_input(input: &PlayerAuthInputPacket<V2225>) -> Result<Vec<Intent>> {
             transaction.actions.action.is_empty(),
             "unsupported embedded inventory mutation action list"
         );
-        intents.push(item_use(&transaction.item_use)?);
+        if let Some(intent) = item_use(&transaction.item_use)? {
+            intents.push(intent);
+        }
     }
     if let Some(actions) = &input.player_block_actions {
         for action in actions {
@@ -308,13 +312,12 @@ fn block_action(
     Ok(())
 }
 
-fn item_use(data: &ItemUseTransactionData<V2225>) -> Result<Intent> {
+fn item_use(data: &ItemUseTransactionData<V2225>) -> Result<Option<Intent>> {
     let position = BlockPos {
         x: data.block_position.x,
         y: data.block_position.y,
         z: data.block_position.z,
     };
-    validate_block(position)?;
     let slot = hotbar(data.hotbar_slot)?;
     ensure!(data.hand == 0, "offhand item interaction is unsupported");
     validate_item(&data.held_item)?;
@@ -325,25 +328,36 @@ fn item_use(data: &ItemUseTransactionData<V2225>) -> Result<Intent> {
         data.click_position.2,
     ] {
         ensure!(
-            value.is_finite() && (-0.001..=1.001).contains(&value),
+            value.is_finite() && (data.action_type == 1 || (-0.001..=1.001).contains(&value)),
             "invalid local block click position"
         );
     }
+    if data.action_type == 1 {
+        // Air use has no hit block; 0xff is the native no-face sentinel. The
+        // current core has no usable air items, so this is a validated no-op.
+        ensure!(
+            data.block_face <= 5 || data.block_face == u8::MAX,
+            "invalid air-use face"
+        );
+        return Ok(None);
+    }
+    validate_block(position)?;
     let face = face(i32::from(data.block_face))?;
     match data.action_type {
         0 => {
-            ensure!(
-                data.held_item.id != 0,
-                "cannot request placement with an empty item"
-            );
-            Ok(Intent::Place {
+            if data.held_item.id == 0 {
+                // All current blocks are solid, non-interactive cubes. An
+                // empty-hand click does not request placement or change items.
+                return Ok(None);
+            }
+            Ok(Some(Intent::Place {
                 against: position,
                 face,
                 hotbar_slot: slot,
                 claimed_item_network_id: i32::from(data.held_item.id),
-            })
+            }))
         }
-        2 => Ok(Intent::Break { position }),
+        2 => Ok(Some(Intent::Break { position })),
         _ => bail!("unsupported item-use action"),
     }
 }
@@ -668,9 +682,25 @@ pub(in crate::protocol::bedrock) mod tests {
                 position: BlockPos { x: -1, y: 3, z: 0 },
             }]
         );
-        for kind in [-1, 1, 3] {
+        for kind in [-1, 3] {
             assert!(decode(&transaction(kind), 1).is_err());
         }
+    }
+
+    #[test]
+    fn air_use_and_empty_hand_clicks_preserve_connection_without_build_intents() {
+        let mut air = item_use_request(1);
+        air.block_face = u8::MAX;
+        air.block_position.y = MIN_Y - 1; // unused hit position on air use
+        assert_eq!(item_use(&air).unwrap(), None);
+        let mut empty = item_use_request(0);
+        empty.held_item.id = 0;
+        empty.held_item.stack_size = 0;
+        assert_eq!(item_use(&empty).unwrap(), None);
+        empty.hotbar_slot = 9;
+        assert!(item_use(&empty).is_err());
+        air.held_item.stack_size = 65;
+        assert!(item_use(&air).is_err());
     }
 
     #[test]

@@ -34,6 +34,19 @@ pub const RADIUS: i32 = 2;
 pub const EYE_OFFSET: f32 = 1.62;
 pub type Interest = std::collections::BTreeMap<ChunkPos, u64>;
 
+fn view_positions(center: ChunkPos, radius: i32) -> impl Iterator<Item = ChunkPos> {
+    (0..=radius).flat_map(move |ring| {
+        (-ring..=ring).flat_map(move |z| {
+            (-ring..=ring)
+                .filter(move |x| x.abs().max(z.abs()) == ring)
+                .map(move |x| ChunkPos {
+                    x: center.x + x,
+                    z: center.z + z,
+                })
+        })
+    })
+}
+
 pub fn initial_packets(player: &crate::game::PlayerSnapshot) -> Result<Vec<V2225>> {
     let mut packets = vec![
         // V2225 clients fail with MissingStructureData (148) if StartGame
@@ -222,6 +235,9 @@ pub async fn send_chunks<T: Transport>(
     radius: i32,
 ) -> Result<Interest> {
     let mut interest = Interest::new();
+    let mut snapshots = std::time::Duration::ZERO;
+    let mut encoding = std::time::Duration::ZERO;
+    let mut sending = std::time::Duration::ZERO;
     conn.send(&[
         V2225::ChunkRadiusUpdatedPacket(Box::new(ChunkRadiusUpdatedPacket {
             chunk_radius: radius,
@@ -233,15 +249,26 @@ pub async fn send_chunks<T: Transport>(
         })),
     ])
     .await?;
-    for z in -radius..=radius {
-        for x in -radius..=radius {
-            let snapshot = world.snapshot(ChunkPos { x, z }).await?;
-            let packet = super::chunk::encode_chunk(&snapshot)?;
-            interest.insert(snapshot.position(), snapshot.revision());
-            conn.send(&[V2225::LevelChunkPacket(Box::new(packet))])
-                .await?;
-        }
+    for position in view_positions(ChunkPos { x: 0, z: 0 }, radius) {
+        let started = std::time::Instant::now();
+        let snapshot = world.snapshot(position).await?;
+        snapshots += started.elapsed();
+        let started = std::time::Instant::now();
+        let packet = super::chunk::encode_chunk(&snapshot)?;
+        encoding += started.elapsed();
+        interest.insert(snapshot.position(), snapshot.revision());
+        let started = std::time::Instant::now();
+        conn.send(&[V2225::LevelChunkPacket(Box::new(packet))])
+            .await?;
+        sending += started.elapsed();
     }
+    tracing::debug!(
+        chunks = interest.len(),
+        snapshot_us = snapshots.as_micros(),
+        encode_us = encoding.as_micros(),
+        send_us = sending.as_micros(),
+        "Bedrock initial chunk timings"
+    );
     conn.send(&[V2225::PlayStatusPacket(Box::new(PlayStatusPacket {
         status: PlayStatus::PlayerSpawn,
     }))])
@@ -276,17 +303,14 @@ pub async fn refresh<T: Transport>(
         },
     ))])
     .await?;
-    for z in center.z - radius..=center.z + radius {
-        for x in center.x - radius..=center.x + radius {
-            let position = ChunkPos { x, z };
-            if bounds.contains(position) && !interest.contains_key(&position) {
-                let snapshot = world.snapshot(position).await?;
-                conn.send(&[V2225::LevelChunkPacket(Box::new(
-                    super::chunk::encode_chunk(&snapshot)?,
-                ))])
-                .await?;
-                interest.insert(position, snapshot.revision());
-            }
+    for position in view_positions(center, radius) {
+        if bounds.contains(position) && !interest.contains_key(&position) {
+            let snapshot = world.snapshot(position).await?;
+            conn.send(&[V2225::LevelChunkPacket(Box::new(
+                super::chunk::encode_chunk(&snapshot)?,
+            ))])
+            .await?;
+            interest.insert(position, snapshot.revision());
         }
     }
     Ok(())

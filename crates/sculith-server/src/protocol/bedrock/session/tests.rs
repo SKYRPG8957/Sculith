@@ -1,4 +1,5 @@
 mod inventory_window;
+mod packet_batches;
 
 use std::{collections::VecDeque, net::SocketAddr, time::Duration};
 
@@ -442,10 +443,16 @@ impl<T: Transport> TestClient<T> {
             V2225::NetworkChunkPublisherUpdatePacket(_)
         ));
         let mut chunks = std::collections::BTreeSet::new();
-        for _ in 0..(expected_radius * 2 + 1).pow(2) {
+        for index in 0..(expected_radius * 2 + 1).pow(2) {
             let V2225::LevelChunkPacket(chunk) = self.next().await? else {
                 anyhow::bail!("expected LevelChunk");
             };
+            if index == 0 {
+                ensure!(
+                    chunk.chunk_position.x == 0 && chunk.chunk_position.z == 0,
+                    "spawn chunk must arrive first"
+                );
+            }
             ensure!(chunk.dimension_id == 0 && chunk.sub_chunk_count == 24 && !chunk.cache_enabled);
             ensure!(chunk.serialized_chunk_data.len() == 1282);
             ensure!(
