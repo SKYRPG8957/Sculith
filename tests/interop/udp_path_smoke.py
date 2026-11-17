@@ -39,7 +39,7 @@ def smoke(server, native):
         root = Path(temporary)
         shim = root / 'sendto.so'
         subprocess.run([
-            'cc', '-O2', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
+            'cc', '-O2', '-D_FORTIFY_SOURCE=3', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
             '-o', str(shim), str(ROOT / 'tests/interop/udp_path_shim.c'), '-ldl'], check=True)
         for case in ['candidate', 'all', 'established']:
             directory = root / case

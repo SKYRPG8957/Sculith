@@ -22,7 +22,10 @@ ssize_t sendto(int fd, const void *buf, size_t len, int flags,
         static atomic_int reported;
         if (!atomic_exchange(&reported, 1)) {
             const char note[] = "TEST: sendto candidate rejected with EPERM\n";
-            (void)write(2, note, sizeof(note) - 1);
+            if (write(2, note, sizeof(note) - 1) != (ssize_t)(sizeof(note) - 1)) {
+                errno = EIO;
+                return -1;
+            }
         }
         errno = EPERM;
         return -1;
