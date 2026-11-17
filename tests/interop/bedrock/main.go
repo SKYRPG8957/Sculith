@@ -32,6 +32,16 @@ func run() error {
 	var creativeItems creativeRegistry
 	modelMode := len(os.Args) == 3 && (os.Args[2] == "--models-check" || os.Args[2] == "--model-snapshot" || os.Args[2] == "--model-unavailable")
 	d.IdentityData.DisplayName = "ForkProbe"
+	if len(os.Args) == 3 {
+		for option, name := range map[string]string{
+			"--inventory-requests": "InvSurvival", "--inventory-creative": "InvCreative", "--inventory-spectator": "InvSpectator",
+			"--inventory-events": "InvDenyNative", "--inventory-mutate": "InvMutNative", "--inventory-drop-event": "DropDenyNative",
+		} {
+			if os.Args[2] == option {
+				d.IdentityData.DisplayName = name
+			}
+		}
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--creative-flow" {
 		d.IdentityData.DisplayName = "FlowNative"
 		d.PacketFunc = creativeItems.observe
@@ -101,6 +111,24 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && (os.Args[2] == "--inventory-events" || os.Args[2] == "--inventory-mutate" || os.Args[2] == "--inventory-drop-event") {
+		if g.PlayerGameMode != packet.GameTypeSurvival {
+			return fmt.Errorf("inventory event test must join in Survival, got %d", g.PlayerGameMode)
+		}
+		return checkInventoryEvents(c, os.Args[2] == "--inventory-mutate", os.Args[2] == "--inventory-drop-event")
+	}
+	if len(os.Args) == 3 && (os.Args[2] == "--inventory-requests" || os.Args[2] == "--inventory-creative" || os.Args[2] == "--inventory-spectator") {
+		want := int32(packet.GameTypeSurvival)
+		if os.Args[2] == "--inventory-creative" {
+			want = packet.GameTypeCreative
+		} else if os.Args[2] == "--inventory-spectator" {
+			want = packet.GameTypeSpectator
+		}
+		if g.PlayerGameMode != want {
+			return fmt.Errorf("inventory test mode=%d expected=%d", g.PlayerGameMode, want)
+		}
+		return checkInventoryRequests(c, os.Args[2] == "--inventory-spectator")
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--creative-flow" {
 		return checkCreativeFlow(c, &creativeItems)
 	}

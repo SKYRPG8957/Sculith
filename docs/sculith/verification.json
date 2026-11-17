@@ -413,8 +413,59 @@
     },
     "limits": [
       "Native creation targets player-owned inventory, equipment and cursor; mixing other crafting/container operations into a creation request is rejected",
-      "Ordinary stack requests retain their existing handler; full inventory-event coverage, stack-network-ID journaling and general request atomicity remain incomplete",
+      "Player-owned ordinary requests are extended by player_inventory_requests; full click/drag events, wire prediction journals and specialized transaction atomicity remain incomplete",
       "No Windows GDK, official creative-policy parity or load/performance claim"
+    ]
+  },
+  "player_inventory_requests": {
+    "baseline": "97c07d9e17f33716f915217d28885506064c98c0",
+    "server_sha256": "36d8559f773506ba37e44ff882a4f03974e105ccbf965ef05363b8ae352b262c",
+    "native_fixture_sha256": "bb08081fc3bd55ab7e64202f3d1a95c42f19fab4295bf2b61a207aa616681526",
+    "build": "Linux debug, default server features; Rust 1.100.0",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "reference": "Dragonfly 0f9a3a573626 ItemStackRequest handleTransfer/handleSwap/handleDestroy/handleDrop; existing Java InventoryInteractEvent contract",
+    "before": [
+      "A swap followed by an incompatible transfer returns an error but leaves slot0 empty. A temporary pick of an existing block stack reads back the partially changed inventory without moving stacks",
+      "Without that temporary readback, the regression times out waiting for a correction after the error",
+      "The native interaction-veto fixture receives a successful swap and no InventoryInteractEvent"
+    ],
+    "routing": "Reuse the creative inventory plan for ordinary requests whose actions address only player-owned inventory, equipment and cursor; preserve request order and leave specialized recipe/container processing on its existing path",
+    "behavior": "Prepare all changes before effects, validate source counts, component compatibility, stack capacity, slot ownership and game mode. Legal same-slot transfer is a no-op; Spectator cannot move items, destruction requires Creative, and standalone consumption has no valid crafting context on this path",
+    "events": "Ordinary requests fire InventoryInteractEvent once; planned drops including creative-output drops fire PlayerDropItemEvent. Callbacks run without screen or inventory guards. A veto or stale plan applies none of its own slots or drops and retains callback changes",
+    "commit": "Recheck affected stack identity/value, current screen, world and the captured game mode; publish equipment changes, drops and actual inventory/cursor/equipment corrections after releasing guards",
+    "wire_checks": [
+      "Survival and Creative: incompatible/full destination, excessive/zero count, invalid inventory/cursor/offhand slots and standalone consumption reject preceding swaps with all 36 inventory slots and cursor intact",
+      "Invalid actions after a drop spawn no item actor; a delayed latency barrier also observes deferred tracking",
+      "Positive same-slot transfer, cursor split, storage swap and world drop preserve item types and counts; Creative also permits destruction; Spectator movement rejects",
+      "Native interaction veto, callback-written grass stack and drop veto preserve inventory; callbacks read the original inventory and player screen",
+      "Java inventory swap is cancelled by the same InventoryInteractEvent type and receives an explicit correction before the following ping reply"
+    ],
+    "regressions": "Full Java/Bedrock resources, sounds, forms, dialog replies, four building paths, block/mob picks, held-slot and creative callbacks, tracking, packet edits, connection hooks, models and normal restart passed with native and stable Wasm fixtures",
+    "tests": {
+      "clippy": "Core, binary and native fixture; experimental v0.2; all targets; warnings denied",
+      "go": "build, vet, gofmt",
+      "format": "Rust fmt, Python probe compilation and diff checks",
+      "server": 803
+    },
+    "log_sha256": {
+      "before_slot_readback": "68e537425fdab4988c176e6ad40320978469908dc735eb08e4db51f032ae28b7",
+      "before_slot_events": "8b92255ffd1797ae097f0f73b8a5c7e39fef92d643d4bd6ab8d7300b772b194d",
+      "before_missing_correction": "dc0f4d73a5ed10d6775243d06c834fb6bfbddeb63a8e8498a8699f097b921341",
+      "before_interaction": "7ec0cd0f6c399b231bb6bdfdfe7cfdb4f182c82313adc2eea170778ab9757470",
+      "before_interaction_events": "8084c12308a3c2cf0f35d33716fa1acb7dc7838ab437fee425a33b4b63f25df1",
+      "focused": "4ada5b3cc6b96fe4a3b781e1669c18091dbdd4e7e0b01e61d82d978165c663f0",
+      "full": "2ba5aede29d98ff12677f086ba253e0cd8634a17d0c692fee7d29de9f834e2ac",
+      "full_events": "2360beb92e3e26afe9386271c9242851ce41acea5f5c87685220f5733086d88d",
+      "full_restart_events": "7f888a69541ec4cecbd69d144399dec7400496c87f179ba9354ea4507f66bb92",
+      "clippy": "2808a28f2f91d9c5ef0ad5c6d862d7bf88c3778381884b4f5538544cf85a189e",
+      "build": "3eb3de93ca54e8f4c7e091b49bdd8beedd3eb0611b8624961d48820b4b1a30ca",
+      "core": "fee37a2df4afda296dad82bb64ebd8b5dc3b4f444a3fad8a318ba88419557938"
+    },
+    "limits": [
+      "Specialized recipe/container operations, legacy inventory transactions and full click/drag event parity remain separate work",
+      "Wire stack-network-ID prediction journaling and general transaction atomicity remain incomplete",
+      "No Windows GDK, official inventory-policy parity or load/performance claim; this path takes transient slot snapshots and sends owner corrections"
     ]
   }
 }

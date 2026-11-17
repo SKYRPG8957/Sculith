@@ -48,3 +48,10 @@ request. Cursor creation and world drops are also cancelled. `CreateMut*`
 clients alter the destination in the callback; that stack must survive instead
 of being overwritten. The Java client requires an explicit slot correction
 before its following ping response. Only `Create*` test clients are affected.
+
+`--inventory-events` reads the inventory and player screen from
+`InventoryInteractEvent` before a native swap. `InvDenyNative` cancels it;
+`InvMutNative` writes a grass stack which must survive rejection of the stale
+plan. `DropDenyNative` cancels `PlayerDropItemEvent` after a planned swap without
+losing inventory or spawning a drop. `InvDenyJava` checks the existing Java
+interaction veto and correction. These callbacks only affect the named clients.

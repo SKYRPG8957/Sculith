@@ -41,6 +41,19 @@ Callbacks read the screen and inventory; another callback writes a stack that
 must survive the rejected plan. The harness exercises the same veto and mutation
 over Java and requires an explicit correction packet there.
 
+`--inventory-requests` seeds two diamond stacks and a grass stack through console
+commands in the copied world. Survival and Creative clients send failing
+requests after a slot swap or drop; every main-inventory slot and the cursor
+must retain their previous state. Cases cover incompatible/full stacks, counts,
+slot bounds, standalone consumption and Creative-only destruction. Positive
+cases cover same-slot transfers, cursor splits, storage swaps and world drops.
+A Spectator client must fail to move a stack.
+
+`--inventory-events` uses the native fixture to veto ordinary interaction or
+item dropping and mutate a destination during a callback. It checks the whole
+request is rejected while preserving callback-made changes. The Java check
+vetoes a normal inventory swap and requires a correction before its ping reply.
+
 `--tracking-events` on the harness uses the native fixture to delete a nearby
 mob inside outgoing spawn and motion callbacks. It runs `--tracking-events`
 and `--tracking-data-events` in the client, checks packet cancellation and

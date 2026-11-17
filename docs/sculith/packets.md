@@ -72,8 +72,26 @@ changes are retained if a plan becomes stale. Inventory and cursor corrections
 follow rejected native requests; Java also sends the actual slot after a veto
 or callback mutation. Equipment notifications and world drops run after unlocking.
 Native creation supports the player's inventory, equipment and cursor. Recipe
-and container-specific operations continue through the ordinary request path;
+and container-specific operations continue through their specialized handlers;
 mixing those operations into a creative creation request is rejected.
+
+## Player inventory requests
+
+Native take, place, swap, drop and destroy requests against player-owned slots
+and the cursor use the same snapshot and commit checks as creative creation.
+Counts, matching components, stack limits, slot permissions and game mode are
+validated before any changes. A later invalid action also rejects preceding
+swaps and world drops. A legal transfer from a slot to itself changes nothing.
+Spectators cannot move stacks; only Creative mode can destroy them. Standalone
+consume requests need a crafting context and are rejected on this path.
+
+Ordinary requests fire the existing `InventoryInteractEvent`. Planned drops,
+including creative-output drops, fire `PlayerDropItemEvent` before the commit.
+Callbacks can read the screen and inventory without retaining their locks;
+cancellation leaves the plan unapplied and callback changes are retained.
+Actual inventory, cursor and equipment follow both successful and rejected
+requests. Recipe/container operations and legacy inventory transactions remain
+separate paths; these checks do not establish general transaction atomicity.
 
 ## Entity tracking callbacks
 

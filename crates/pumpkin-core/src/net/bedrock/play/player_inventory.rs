@@ -18,7 +18,15 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::GameMode;
 
-use crate::{entity::player::Player, net::bedrock::BedrockClient, world::World};
+use crate::{
+    entity::player::Player,
+    net::bedrock::BedrockClient,
+    plugin::{
+        inventory::inventory_interact::InventoryInteractEvent,
+        player::player_drop_item::PlayerDropItemEvent,
+    },
+    world::World,
+};
 
 use super::item_stack_request::{
     SlotUpdate, build_stack_response, map_bedrock_container_slot, record_update,
@@ -31,8 +39,10 @@ enum Target {
     Created,
 }
 
-struct CreativePlan {
+struct PlayerInventoryPlan {
     world: Arc<World>,
+    mode: GameMode,
+    creative: bool,
     screen: Arc<Mutex<dyn ScreenHandler>>,
     slots: Vec<Arc<dyn Slot>>,
     before: Vec<ItemStack>,
@@ -47,6 +57,38 @@ struct CreativePlan {
 
 fn same_stack(a: &ItemStack, b: &ItemStack) -> bool {
     a.uid == b.uid && a.are_equal(b)
+}
+
+const fn player_container(info: &SlotInfo) -> bool {
+    matches!(
+        info.container_name.container_name,
+        ContainerName::Inventory
+            | ContainerName::CombinedHotBarAndInventory
+            | ContainerName::HotBar
+            | ContainerName::Armor
+            | ContainerName::Offhand
+            | ContainerName::Cursor
+    )
+}
+
+pub(super) fn is_player_inventory_request(request: &ItemStackRequest) -> bool {
+    request.actions.iter().all(|action| match action {
+        Action::Take {
+            source,
+            destination,
+            ..
+        }
+        | Action::Place {
+            source,
+            destination,
+            ..
+        } => player_container(source) && player_container(destination),
+        Action::Swap { slot1, slot2 } => player_container(slot1) && player_container(slot2),
+        Action::Drop { source, .. }
+        | Action::Destroy { source, .. }
+        | Action::Consume { source, .. } => player_container(source),
+        _ => false,
+    })
 }
 
 fn player_slot(player: &Player, slot: &dyn Slot) -> Option<usize> {
@@ -74,9 +116,14 @@ fn creative_stack(network_id: u32) -> Option<ItemStack> {
     Some(ItemStack::new(limit, mapping.java_item))
 }
 
-impl CreativePlan {
+impl PlayerInventoryPlan {
     fn prepare(player: &Arc<Player>, request: &ItemStackRequest) -> Result<Self, ()> {
-        if player.gamemode.load() != GameMode::Creative {
+        let mode = player.gamemode.load();
+        let creative = request
+            .actions
+            .iter()
+            .any(|action| matches!(action, Action::CraftCreative { .. }));
+        if mode == GameMode::Spectator || (creative && mode != GameMode::Creative) {
             return Err(());
         }
         let screen = player
@@ -87,6 +134,9 @@ impl CreativePlan {
         let handler = screen
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !handler.can_use(player.as_ref()) {
+            return Err(());
+        }
         let slots = handler.get_behaviour().slots.clone();
         let before: Vec<_> = slots.iter().map(|slot| slot.get_cloned_stack()).collect();
         let cursor = handler.get_behaviour().cursor_stack.clone();
@@ -96,6 +146,8 @@ impl CreativePlan {
             .clone();
         let mut plan = Self {
             world: player.world(),
+            mode,
+            creative,
             screen: screen.clone(),
             slots,
             after: before.clone(),
@@ -107,6 +159,16 @@ impl CreativePlan {
             updates: Vec::new(),
             drops: Vec::new(),
         };
+        plan.apply(player, &*handler, request)?;
+        Ok(plan)
+    }
+
+    fn apply(
+        &mut self,
+        player: &Player,
+        handler: &dyn ScreenHandler,
+        request: &ItemStackRequest,
+    ) -> Result<(), ()> {
         let mut created = false;
         for action in &request.actions {
             match action {
@@ -116,7 +178,7 @@ impl CreativePlan {
                     if created {
                         return Err(());
                     }
-                    plan.created = creative_stack(creative_item_id.0).ok_or(())?;
+                    self.created = creative_stack(creative_item_id.0).ok_or(())?;
                     created = true;
                 }
                 Action::Take {
@@ -129,43 +191,48 @@ impl CreativePlan {
                     source,
                     destination,
                 } => {
-                    plan.transfer(player, &*handler, *count, source, destination)?;
+                    self.transfer(player, handler, *count, source, destination)?;
                 }
                 Action::Swap { slot1, slot2 } => {
-                    let a = plan.target(player, &*handler, slot1)?;
-                    let b = plan.target(player, &*handler, slot2)?;
+                    let a = self.target(player, handler, slot1)?;
+                    let b = self.target(player, handler, slot2)?;
                     if a == Target::Created || b == Target::Created {
                         return Err(());
                     }
-                    let first = plan.get(a);
-                    let second = plan.get(b);
-                    plan.can_take(player, a)?;
-                    plan.can_take(player, b)?;
-                    plan.can_put(a, &second)?;
-                    plan.can_put(b, &first)?;
-                    plan.put(a, second, slot1);
-                    plan.put(b, first, slot2);
+                    let first = self.get(a);
+                    let second = self.get(b);
+                    self.can_take(player, a)?;
+                    self.can_take(player, b)?;
+                    self.can_put(a, &second)?;
+                    self.can_put(b, &first)?;
+                    self.put(a, second, slot1);
+                    self.put(b, first, slot2);
                 }
                 Action::Destroy { count, source }
                 | Action::Consume { count, source }
                 | Action::Drop { count, source, .. } => {
-                    let from = plan.target(player, &*handler, source)?;
-                    let mut stack = plan.get(from);
+                    if (matches!(action, Action::Destroy { .. }) && self.mode != GameMode::Creative)
+                        || (matches!(action, Action::Consume { .. }) && !self.creative)
+                    {
+                        return Err(());
+                    }
+                    let from = self.target(player, handler, source)?;
+                    let mut stack = self.get(from);
                     if *count == 0 || *count > stack.item_count {
                         return Err(());
                     }
-                    plan.can_take(player, from)?;
+                    self.can_take(player, from)?;
                     if matches!(action, Action::Drop { .. }) {
-                        plan.drops.push(stack.copy_with_count(*count));
+                        self.drops.push(stack.copy_with_count(*count));
                     }
                     stack.decrement(*count);
-                    plan.put(from, stack, source);
+                    self.put(from, stack, source);
                 }
                 Action::CraftResultsDeprecated { .. } | Action::Create { .. } => {}
                 _ => return Err(()),
             }
         }
-        Ok(plan)
+        Ok(())
     }
 
     fn transfer(
@@ -215,8 +282,8 @@ impl CreativePlan {
         }
         let name = info.container_name.container_name;
         match name {
-            ContainerName::CreatedOutput => return Ok(Target::Created),
-            ContainerName::Cursor => return Ok(Target::Cursor),
+            ContainerName::CreatedOutput if self.creative => return Ok(Target::Created),
+            ContainerName::Cursor if info.slot_id == 0 => return Ok(Target::Cursor),
             ContainerName::HotBar if info.slot_id >= 9 => return Err(()),
             ContainerName::Inventory
             | ContainerName::CombinedHotBarAndInventory
@@ -282,24 +349,47 @@ impl CreativePlan {
     }
 
     fn authorize(&self, player: &Arc<Player>) -> bool {
-        for (index, stack) in self.after.iter().enumerate() {
-            if !same_stack(stack, &self.before[index]) {
-                let Some(slot) = player_slot(player, self.slots[index].as_ref()) else {
-                    return false;
-                };
-                if !player.allow_creative_change(slot as i16, stack) {
-                    return false;
+        let Some(server) = self.world.server.upgrade() else {
+            return false;
+        };
+        if self.creative {
+            for (index, stack) in self.after.iter().enumerate() {
+                if !same_stack(stack, &self.before[index]) {
+                    let Some(slot) = player_slot(player, self.slots[index].as_ref()) else {
+                        return false;
+                    };
+                    if !player.allow_creative_change(slot as i16, stack) {
+                        return false;
+                    }
                 }
             }
+            if !same_stack(&self.cursor_before, &self.cursor_after)
+                && !player.allow_creative_change(-1, &self.cursor_after)
+            {
+                return false;
+            }
+        } else {
+            let mut event = InventoryInteractEvent::new(player.clone());
+            server.plugin_manager.fire_blocking(&server, &mut event);
+            if event.cancelled {
+                return false;
+            }
         }
-        if !same_stack(&self.cursor_before, &self.cursor_after)
-            && !player.allow_creative_change(-1, &self.cursor_after)
-        {
-            return false;
+        for stack in &self.drops {
+            if self.creative && !player.allow_creative_change(-1, stack) {
+                return false;
+            }
+            let mut event = PlayerDropItemEvent::new(
+                player.clone(),
+                stack.item.registry_key.to_string(),
+                stack.item_count,
+            );
+            server.plugin_manager.fire_blocking(&server, &mut event);
+            if event.cancelled {
+                return false;
+            }
         }
-        self.drops
-            .iter()
-            .all(|stack| player.allow_creative_change(-1, stack))
+        true
     }
 
     fn commit(&self, player: &Player) -> bool {
@@ -309,7 +399,7 @@ impl CreativePlan {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !Arc::ptr_eq(&current, &self.screen)
             || !Arc::ptr_eq(&player.world(), &self.world)
-            || player.gamemode.load() != GameMode::Creative
+            || player.gamemode.load() != self.mode
         {
             return false;
         }
@@ -355,12 +445,12 @@ impl CreativePlan {
 }
 
 impl BedrockClient {
-    pub(super) fn handle_creative_stack_request(
+    pub(super) fn handle_player_inventory_request(
         &self,
         player: &Arc<Player>,
         request: &ItemStackRequest,
     ) {
-        let (result, updates) = if let Ok(plan) = CreativePlan::prepare(player, request) {
+        let (result, updates) = if let Ok(plan) = PlayerInventoryPlan::prepare(player, request) {
             let accepted = plan.authorize(player) && plan.commit(player);
             for (index, before) in plan.before.iter().enumerate() {
                 let current = plan.slots[index].get_cloned_stack();
@@ -384,10 +474,10 @@ impl BedrockClient {
         self.try_enqueue_client_packet(&CItemStackResponse {
             responses: vec![build_stack_response(request.request_id, result, updates)],
         });
-        self.resend_creative_inventory(player);
+        self.resend_player_inventory(player);
     }
 
-    fn resend_creative_inventory(&self, player: &Player) {
+    fn resend_player_inventory(&self, player: &Player) {
         let slots = player
             .inventory
             .main_inventory

@@ -21,21 +21,21 @@ use pumpkin_protocol::bedrock::{
 impl BedrockClient {
     pub fn handle_item_stack_request(&self, player: &Arc<Player>, packet: SItemStackRequest) {
         use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
-        let creative =
+        let planned =
             |request: &pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequest| {
-                request
-                    .actions
-                    .iter()
-                    .any(|action| matches!(action, ItemStackRequestAction::CraftCreative { .. }))
+                super::player_inventory::is_player_inventory_request(request)
+                    || request.actions.iter().any(|action| {
+                        matches!(action, ItemStackRequestAction::CraftCreative { .. })
+                    })
             };
-        if !packet.requests.iter().any(creative) {
+        if !packet.requests.iter().any(planned) {
             self.handle_regular_stack_requests(player, packet);
             return;
         }
-        // Preserve request order when creative and ordinary actions share a batch.
+        // Preserve request order when planned and specialized operations share a batch.
         for request in packet.requests {
-            if creative(&request) {
-                self.handle_creative_stack_request(player, &request);
+            if planned(&request) {
+                self.handle_player_inventory_request(player, &request);
             } else {
                 self.handle_regular_stack_requests(
                     player,
