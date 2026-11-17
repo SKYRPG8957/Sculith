@@ -7,7 +7,7 @@ use std::time::Instant;
 impl Inventory {
     /// Reuse an existing stack before creating a single creative item. When
     /// replacing a full hotbar, keep its old stack in the first empty main slot.
-    /// All occupied slots that move receive fresh IDs, atomically or not at all.
+    /// Existing stacks retain their IDs; only newly picked items allocate IDs.
     pub fn pick(
         &mut self,
         kind: BlockKind,
@@ -44,10 +44,7 @@ impl Inventory {
         // Existing main-inventory stack swaps with the held slot. Otherwise,
         // preserve the displaced held stack if any empty main slot exists.
         if let Some(destination) = existing.or_else(|| empty.filter(|&slot| slot >= 9)) {
-            let replacement = match previous {
-                Some(stack) => candidate.stack(stack.kind, stack.count)?,
-                None => None,
-            };
+            let replacement = previous;
             candidate.slots[destination] = replacement;
             if previous.is_some() || existing.is_some() {
                 changes.push(Change {
@@ -56,7 +53,10 @@ impl Inventory {
                 });
             }
         }
-        let stack = candidate.stack(kind, picked.map_or(1, |stack| stack.count))?;
+        let stack = match picked {
+            Some(stack) => Some(stack),
+            None => candidate.stack(kind, 1)?,
+        };
         candidate.slots[target] = stack;
         changes.push(Change {
             slot: Slot::Inventory(target as u8),

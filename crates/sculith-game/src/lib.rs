@@ -269,14 +269,18 @@ impl Player {
         }
     }
     fn permit_inventory(&mut self, now: Instant) -> bool {
+        self.permit_inventory_units(now, 1)
+    }
+    fn permit_inventory_units(&mut self, now: Instant, units: usize) -> bool {
+        let cost = units as f64;
         let Some(available) = self.inventory_budget.available(now, 40.0, 64.0) else {
             return false;
         };
-        if available < 1.0 {
+        if available < cost {
             return false;
         }
         self.inventory_budget = Budget {
-            remaining: available - 1.0,
+            remaining: available - cost,
             updated: now,
         };
         true
@@ -544,7 +548,13 @@ impl GameState {
             .get_mut(&id)
             .ok_or_else(|| anyhow::anyhow!("unknown player"))?;
         ensure!(player.snapshot.initialized, "player is not initialized");
-        let response = if player.permit_inventory(now) {
+        // Keep the former 32-action work budget when accepting larger batches.
+        let units = request
+            .actions
+            .len()
+            .clamp(1, inventory::MAX_ACTIONS)
+            .div_ceil(inventory::ACTIONS_PER_UNIT);
+        let response = if player.permit_inventory_units(now, units) {
             player
                 .inventory
                 .apply(&request, player.snapshot.permissions.can_build)

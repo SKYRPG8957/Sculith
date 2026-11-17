@@ -37,7 +37,7 @@ fn picks_create_one_reuse_counts_and_preserve_displaced_items() {
         ),
         (BlockKind::Grass, 7)
     );
-    assert_ne!(inventory.slots()[2].unwrap().net_id, before.net_id);
+    assert_eq!(inventory.slots()[2].unwrap().net_id, before.net_id);
     assert_eq!(
         (
             inventory.slots()[19].unwrap().kind,
@@ -97,10 +97,14 @@ fn picks_preserve_cursor_output_history_and_roll_back_allocator_exhaustion() {
     inventory
         .replace_creative(20, Some(BlockKind::Dirt), 17, true)
         .unwrap();
-    inventory.state.next_stack_id = i32::MAX as u64;
+    let dirt_id = inventory.slots()[20].unwrap().net_id;
+    inventory.state.next_stack_id = i32::MAX as u64 + 1;
+    inventory.pick(BlockKind::Dirt, 0, true).unwrap();
+    assert_eq!(inventory.slots()[0].unwrap().net_id, dirt_id);
+    assert_eq!(inventory.state.next_stack_id, i32::MAX as u64 + 1);
     let before = inventory.clone();
     assert_eq!(
-        inventory.pick(BlockKind::Dirt, 0, true),
+        inventory.pick(BlockKind::Bedrock, 0, true),
         Err(RejectReason::StackIdExhausted)
     );
     assert_eq!(inventory, before);

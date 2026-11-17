@@ -36,7 +36,7 @@ impl Inventory {
                     continue;
                 }
                 let taken = stack.count.min(MAX_STACK - count);
-                let remaining = candidate.stack(stack.kind, stack.count - taken)?;
+                let remaining = stack.with_count(stack.count - taken);
                 candidate.slots[slot] = remaining;
                 changes.push(Change {
                     slot: Slot::Inventory(slot as u8),
@@ -48,7 +48,7 @@ impl Inventory {
         if count == cursor.count {
             return Ok(vec![]);
         }
-        candidate.cursor = candidate.stack(cursor.kind, count)?;
+        candidate.cursor = cursor.with_count(count);
         changes.push(Change {
             slot: Slot::Cursor,
             stack: candidate.cursor,

@@ -27,7 +27,10 @@ impl Inventory {
                 if moved == 0 {
                     continue;
                 }
-                let stack = candidate.stack(item.kind, previous.map_or(0, |s| s.count) + moved)?;
+                let stack = match previous {
+                    Some(stack) => stack.with_count(stack.count + moved),
+                    None => item.with_count(moved),
+                };
                 candidate.slots[slot] = stack;
                 changes.push(Change {
                     slot: Slot::Inventory(slot as u8),
@@ -39,7 +42,7 @@ impl Inventory {
         if remaining == item.count {
             return Ok(vec![]);
         }
-        let stack = candidate.stack(item.kind, remaining)?;
+        let stack = item.with_count(remaining);
         candidate.slots[usize::from(source)] = stack;
         changes.push(Change {
             slot: Slot::Inventory(source),

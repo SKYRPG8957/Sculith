@@ -1,5 +1,49 @@
 use super::*;
 
+#[test]
+fn inventory_batches_preserve_the_previous_action_work_budget() {
+    use crate::inventory::{Action, RejectReason, Request, Slot, SlotRef};
+    let now = Instant::now();
+    for actions in [1, 32, 33, 64] {
+        let mut game = GameState::new(Region::flat_origin(), 20).unwrap();
+        let player = game
+            .reserve(profile(1), Permissions { can_build: true }, now)
+            .unwrap();
+        game.activate(player.id).unwrap();
+        let mine = Action::Mine {
+            source: SlotRef {
+                slot: Slot::Inventory(0),
+                expected_id: 0,
+            },
+        };
+        let mut sequence = 0;
+        let mut run = |game: &mut GameState, time| {
+            sequence -= 1;
+            game.inventory_request(
+                player.id,
+                Request {
+                    id: sequence,
+                    actions: vec![mine.clone(); actions],
+                },
+                time,
+            )
+            .unwrap()
+            .response
+            .result
+        };
+        let cost = actions.div_ceil(32);
+        for _ in 0..64 / cost {
+            assert!(run(&mut game, now).is_ok());
+        }
+        assert_eq!(run(&mut game, now), Err(RejectReason::RateLimited));
+        let later = now + std::time::Duration::from_secs(1);
+        for _ in 0..40 / cost {
+            assert!(run(&mut game, later).is_ok());
+        }
+        assert_eq!(run(&mut game, later), Err(RejectReason::RateLimited));
+    }
+}
+
 impl GameState {
     // Explicit fixture setup: the production reservation always starts empty.
     fn reserve_fixture(

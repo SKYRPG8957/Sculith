@@ -2,6 +2,72 @@ use super::*;
 use sculith_game::Edition;
 
 #[tokio::test]
+async fn full_inventory_batch_publishes_one_committed_event_and_no_replay_events() {
+    use sculith_game::inventory::{Action, Request, Slot, SlotRef};
+    let (stop, receiver) = watch::channel(false);
+    let (world, task) = create(receiver);
+    let task = tokio::spawn(task);
+    let actor = world
+        .reserve(profile("batch-actor"), Permissions { can_build: true })
+        .await
+        .unwrap();
+    let id = actor.player.id;
+    world.activate(id).await.unwrap();
+    let source = world
+        .creative_slot(id, 0, Some(BlockKind::Grass), 36)
+        .await
+        .unwrap();
+    let reference = SlotRef {
+        slot: Slot::Inventory(0),
+        expected_id: source.player.held().unwrap().net_id,
+    };
+    world.configure_observations(crate::observations::INVENTORY | crate::observations::EQUIPMENT);
+    let mut hooks = world.subscribe_game();
+    let revision = world.capture().await.unwrap().revision();
+    let request = Request {
+        id: -1,
+        actions: std::iter::once(Slot::Cursor)
+            .chain((1..36).map(Slot::Inventory))
+            .map(|slot| Action::Transfer {
+                source: reference,
+                destination: SlotRef {
+                    slot,
+                    expected_id: 0,
+                },
+                count: 1,
+            })
+            .collect(),
+    };
+    let result = world.inventory_request(id, request.clone()).await.unwrap();
+    assert_eq!(result.response.result.unwrap().len(), 37);
+    assert!(
+        matches!(hooks.recv().await.unwrap().as_ref(), WorldEvent::InventoryChanged { player_id, changes }
+        if *player_id == id && changes.len() == 37)
+    );
+    assert!(
+        matches!(hooks.recv().await.unwrap().as_ref(), WorldEvent::Equipped(player) if player.id == id && player.held().is_none())
+    );
+    assert!(hooks.try_recv().is_err());
+    assert_eq!(
+        world.player_snapshot(id).await.unwrap().inventory,
+        result.player.inventory
+    );
+    assert!(
+        world
+            .inventory_request(id, request)
+            .await
+            .unwrap()
+            .response
+            .replayed
+    );
+    assert!(hooks.try_recv().is_err());
+    assert_eq!(world.capture().await.unwrap().revision(), revision);
+    drop(actor);
+    stop.send(true).unwrap();
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn collection_publishes_committed_cursor_and_hand_changes_without_world_edits() {
     use sculith_game::inventory::Click;
     let (stop, receiver) = watch::channel(false);

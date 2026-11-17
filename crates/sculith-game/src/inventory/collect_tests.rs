@@ -28,7 +28,7 @@ fn collect(inventory: &mut Inventory, reverse: bool) -> Vec<Change> {
 }
 
 #[test]
-fn collect_partial_stacks_before_full_stacks_and_conserve_counts_and_fresh_ids() {
+fn collect_partial_stacks_before_full_stacks_and_preserve_surviving_ids() {
     let mut inventory = with_cursor(5);
     set(&mut inventory, 9, 64);
     set(&mut inventory, 10, 20);
@@ -58,7 +58,7 @@ fn collect_partial_stacks_before_full_stacks_and_conserve_counts_and_fresh_ids()
         .collect();
     assert_eq!(all.iter().map(|s| u16::from(s.count)).sum::<u16>(), 139);
     for change in changes.iter().filter_map(|c| c.stack) {
-        assert!(!old_ids.contains(&change.net_id));
+        assert!(old_ids.contains(&change.net_id));
     }
     assert_ne!(
         inventory.slots()[0].unwrap().net_id,
@@ -81,7 +81,7 @@ fn collect_direction_reverses_main_and_hotbar_order_without_exceeding_capacity()
 }
 
 #[test]
-fn collect_covers_every_inventory_slot_once_and_rolls_back_a_whole_inventory_on_failure() {
+fn collect_covers_every_inventory_slot_once_without_allocating_ids() {
     let mut inventory = with_cursor(1);
     for slot in 0..INVENTORY_SLOTS as u8 {
         if slot != 5 {
@@ -90,19 +90,13 @@ fn collect_covers_every_inventory_slot_once_and_rolls_back_a_whole_inventory_on_
     }
     let mut exhausted = inventory.clone();
     exhausted.state.next_stack_id = i32::MAX as u64 + 1;
-    let before = exhausted.clone();
-    assert!(
-        exhausted
-            .click(
-                Click::Collect {
-                    slot: 5,
-                    reverse: false
-                },
-                true
-            )
-            .is_err()
+    let changes = collect(&mut exhausted, false);
+    assert_eq!(exhausted.state.next_stack_id, i32::MAX as u64 + 1);
+    assert_eq!(changes.len(), INVENTORY_SLOTS);
+    assert_eq!(
+        exhausted.cursor().unwrap().net_id,
+        inventory.cursor().unwrap().net_id
     );
-    assert_eq!(exhausted, before);
     let changes = collect(&mut inventory, false);
     assert_eq!(changes.len(), INVENTORY_SLOTS);
     assert_eq!(
@@ -157,7 +151,7 @@ fn collect_empty_full_occupied_or_incompatible_cursor_cases_do_not_mutate_or_all
 }
 
 #[test]
-fn collect_rolls_back_allocator_failure_rejects_invalid_access_and_preserves_output_history() {
+fn collect_rejects_invalid_access_and_preserves_ids_output_and_history() {
     let mut inventory = with_cursor(62);
     set(&mut inventory, 9, 3);
     assert!(
@@ -173,20 +167,18 @@ fn collect_rolls_back_allocator_failure_rejects_invalid_access_and_preserves_out
             .is_ok()
     );
     let previous = inventory.clone();
-    inventory.state.next_stack_id = i32::MAX as u64;
-    let exhausted = inventory.clone();
-    assert!(
-        inventory
-            .click(
-                Click::Collect {
-                    slot: 5,
-                    reverse: false
-                },
-                true
-            )
-            .is_err()
+    inventory.state.next_stack_id = i32::MAX as u64 + 1;
+    collect(&mut inventory, false);
+    assert_eq!(inventory.state.next_stack_id, i32::MAX as u64 + 1);
+    assert_eq!(
+        inventory.cursor().unwrap().net_id,
+        previous.cursor().unwrap().net_id
     );
-    assert_eq!(inventory, exhausted);
+    assert_eq!(
+        inventory.slots()[9].unwrap().net_id,
+        previous.slots()[9].unwrap().net_id
+    );
+    let exhausted = inventory.clone();
     for slot in [36, 255] {
         assert!(
             inventory

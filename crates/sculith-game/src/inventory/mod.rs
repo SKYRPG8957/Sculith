@@ -3,12 +3,13 @@
 //! Inventory slots 0..9 are the hotbar. Cursor and created output are separate
 //! slots; edition adapters translate their own container and menu indices.
 //! Fresh request IDs must be negative and strictly decrease, allowing gaps. The
-//! last 64 bounded requests (including failures) can be replayed only with equal
-//! semantic contents. Older IDs remain stale after eviction. This matches the
+//! up to 64 requests (including failures), within 2,048 cached actions, can be
+//! replayed only with equal semantic contents. Older IDs remain stale after eviction. This matches the
 //! negative, decreasing request IDs used for client prediction and prevents an
 //! evicted creative request from being applied twice.
 //!
-//! Every changed occupied slot receives a fresh positive stack ID. Requests
+//! Stack IDs follow items through moves and count changes. Splitting into an
+//! empty slot creates a fresh positive ID; merging retains the destination ID. Requests
 //! operate on a candidate state: failure changes neither stacks nor ID allocation.
 //! Request sequence/cache metadata still records a failed bounded request.
 
@@ -16,6 +17,8 @@ use std::collections::{BTreeMap, VecDeque};
 
 use sculith_world::BlockKind;
 
+#[cfg(test)]
+mod batch_tests;
 mod collect;
 #[cfg(test)]
 mod collect_tests;
@@ -28,7 +31,9 @@ mod quick_move_tests;
 
 pub const INVENTORY_SLOTS: usize = sculith_core::inventory::SLOT_COUNT;
 pub const MAX_STACK: u8 = 64;
-pub const MAX_ACTIONS: usize = 32;
+pub const MAX_ACTIONS: usize = 64;
+const HISTORY_ACTIONS: usize = 2048;
+pub(crate) const ACTIONS_PER_UNIT: usize = 32;
 pub const REQUEST_HISTORY: usize = 64;
 
 /// Catalogue identifiers are independent of both editions' item runtime IDs.
@@ -60,6 +65,12 @@ pub struct ItemStack {
     pub kind: BlockKind,
     pub count: u8,
     pub net_id: i32,
+}
+
+impl ItemStack {
+    fn with_count(self, count: u8) -> Option<Self> {
+        (count != 0).then_some(Self { count, ..self })
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -229,6 +240,7 @@ struct CachedRequest {
 pub struct Inventory {
     state: State,
     history: VecDeque<CachedRequest>,
+    history_actions: usize,
     lowest_request_id: Option<i32>,
 }
 
@@ -242,6 +254,7 @@ impl Default for Inventory {
                 next_stack_id: 1,
             },
             history: VecDeque::new(),
+            history_actions: 0,
             lowest_request_id: None,
         }
     }
@@ -289,7 +302,10 @@ impl Inventory {
                     continue;
                 }
                 let taken = remaining.min(u16::from(available)) as u8;
-                let stack = candidate.stack(kind, previous.map_or(0, |s| s.count) + taken)?;
+                let stack = match previous {
+                    Some(stack) => stack.with_count(stack.count + taken),
+                    None => candidate.stack(kind, taken)?,
+                };
                 candidate.slots[slot] = stack;
                 changes.push(Change {
                     slot: Slot::Inventory(slot as u8),
@@ -455,9 +471,13 @@ impl Inventory {
             result,
             replayed: false,
         };
-        if self.history.len() == REQUEST_HISTORY {
-            self.history.pop_front();
+        while self.history.len() >= REQUEST_HISTORY
+            || self.history_actions + request.actions.len() > HISTORY_ACTIONS
+        {
+            let previous = self.history.pop_front().expect("nonempty bounded history");
+            self.history_actions -= previous.request.actions.len();
         }
+        self.history_actions += request.actions.len();
         self.history.push_back(CachedRequest {
             request: request.clone(),
             response: response.clone(),
@@ -538,8 +558,12 @@ impl Inventory {
                     if total > MAX_STACK {
                         return Err(RejectReason::StackOverflow);
                     }
-                    let after_from = state.stack(from.kind, from.count - count)?;
-                    let after_to = state.stack(from.kind, total)?;
+                    let after_from = from.with_count(from.count - count);
+                    let after_to = match to {
+                        Some(stack) => stack.with_count(total),
+                        None if count == from.count => Some(from),
+                        None => state.stack(from.kind, count)?,
+                    };
                     state.set(source.slot, after_from)?;
                     state.set(destination.slot, after_to)?;
                     changes.insert(source.slot, after_from);
@@ -555,18 +579,10 @@ impl Inventory {
                     }
                     let from = self.validate_ref(source, request.id, state, &changes)?;
                     let to = self.validate_ref(destination, request.id, state, &changes)?;
-                    let after_from = to
-                        .map(|stack| state.stack(stack.kind, stack.count))
-                        .transpose()?
-                        .flatten();
-                    let after_to = from
-                        .map(|stack| state.stack(stack.kind, stack.count))
-                        .transpose()?
-                        .flatten();
-                    state.set(source.slot, after_from)?;
-                    state.set(destination.slot, after_to)?;
-                    changes.insert(source.slot, after_from);
-                    changes.insert(destination.slot, after_to);
+                    state.set(source.slot, to)?;
+                    state.set(destination.slot, from)?;
+                    changes.insert(source.slot, to);
+                    changes.insert(destination.slot, from);
                 }
                 Action::Destroy { source, count } => {
                     valid_count(count)?;
@@ -576,7 +592,7 @@ impl Inventory {
                     if count > from.count {
                         return Err(RejectReason::InvalidCount);
                     }
-                    let after = state.stack(from.kind, from.count - count)?;
+                    let after = from.with_count(from.count - count);
                     state.set(source.slot, after)?;
                     changes.insert(source.slot, after);
                 }

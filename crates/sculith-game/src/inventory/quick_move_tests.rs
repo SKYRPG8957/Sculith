@@ -27,7 +27,7 @@ fn quick_move_merges_before_empty_slots_in_both_directions() {
             ]
         );
         assert_eq!(inventory.slots()[matching as usize].unwrap().count, 64);
-        assert_ne!(inventory.slots()[matching as usize].unwrap().net_id, old);
+        assert_eq!(inventory.slots()[matching as usize].unwrap().net_id, old);
         assert_eq!(inventory.slots()[empty as usize].unwrap().count, 17);
         assert!(inventory.slots()[source as usize].is_none());
         let occupied: Vec<_> = inventory.slots().iter().flatten().collect();
@@ -55,15 +55,18 @@ fn quick_move_partially_fills_and_a_full_destination_does_not_allocate_ids() {
 }
 
 #[test]
-fn quick_move_rolls_back_all_merges_and_ids_on_exhaustion_and_rejects_invalid_access() {
+fn quick_move_needs_no_new_ids_and_rejects_invalid_access() {
     let mut inventory = Inventory::default();
     set(&mut inventory, 0, BlockKind::Dirt, 10);
     set(&mut inventory, 12, BlockKind::Dirt, 63);
-    // The merge succeeds in the candidate, then allocation of the empty slot fails.
-    inventory.state.next_stack_id = i32::MAX as u64;
+    let source_id = inventory.slots()[0].unwrap().net_id;
+    inventory.state.next_stack_id = i32::MAX as u64 + 1;
+    move_stack(&mut inventory, 0);
+    assert_eq!(inventory.slots()[12].unwrap().count, 64);
+    assert_eq!(inventory.slots()[9].unwrap().count, 9);
+    assert_eq!(inventory.slots()[9].unwrap().net_id, source_id);
+    assert_eq!(inventory.state.next_stack_id, i32::MAX as u64 + 1);
     let before = inventory.clone();
-    assert!(inventory.click(Click::QuickMove { slot: 0 }, true).is_err());
-    assert_eq!(inventory, before);
     for slot in [36, 255] {
         assert!(inventory.click(Click::QuickMove { slot }, true).is_err());
         assert_eq!(inventory, before);

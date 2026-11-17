@@ -267,11 +267,15 @@ func (s *nativeInventoryState) expect(slot byte, item int32, count uint16) error
 }
 
 func fixtureInventoryRequest() protocol.ItemStackRequest {
-	request := protocol.ItemStackRequest{RequestID: -1, FilterCause: -1}
+	return fixtureInventoryRequestID(-1)
+}
+
+func fixtureInventoryRequestID(id int32) protocol.ItemStackRequest {
+	request := protocol.ItemStackRequest{RequestID: id, FilterCause: -1}
 	for index := 0; index < 3; index++ {
 		request.Actions = append(request.Actions,
 			&protocol.CraftCreativeStackRequestAction{CreativeItemNetworkID: uint32(index + 1), NumberOfCrafts: 1},
-			nativeInventoryMove(nativeInventoryReference(protocol.ContainerCreatedOutput, 50, -1), nativeInventoryReference(protocol.ContainerInventory, byte(index), 0), 64, false))
+			nativeInventoryMove(nativeInventoryReference(protocol.ContainerCreatedOutput, 50, id), nativeInventoryReference(protocol.ContainerInventory, byte(index), 0), 64, false))
 	}
 	return request
 }
@@ -285,10 +289,14 @@ func seedFixtureInventory(conn *minecraft.Conn) error {
 
 func sharedInventory(conn *minecraft.Conn) error {
 	s := new(nativeInventoryState)
-	if err := s.exchange(conn, fixtureInventoryRequest(), true); err != nil {
+	id, err := s.batches(conn)
+	if err != nil {
 		return err
 	}
-	id := int32(-1)
+	id--
+	if err := s.exchange(conn, fixtureInventoryRequestID(id), true); err != nil {
+		return err
+	}
 	request := func(actions ...protocol.StackRequestAction) protocol.ItemStackRequest {
 		id--
 		return protocol.ItemStackRequest{RequestID: id, Actions: actions, FilterCause: -1}

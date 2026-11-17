@@ -170,18 +170,23 @@ fn server_grants_cannot_be_undone_by_replayed_client_requests() {
     let after = inventory.clone();
     assert!(inventory.apply(&request, true).replayed);
     assert_eq!(inventory, after);
-    let stale = Request {
+    // A prior prediction still names the same stack after a server merge.
+    // Its count comes from the current owner, so this cannot restore old items.
+    let followup = Request {
         id: -2,
         actions: vec![Action::Destroy {
             source: reference(Slot::Inventory(0), -1),
             count: 1,
         }],
     };
+    assert!(inventory.apply(&followup, true).result.is_ok());
     assert_eq!(
-        inventory.apply(&stale, true).result,
-        Err(RejectReason::StackMismatch)
+        inventory.slots()[0].unwrap().count,
+        after.slots()[0].unwrap().count - 1
     );
-    assert_eq!(inventory.state, after.state);
+    let committed = inventory.clone();
+    assert!(inventory.apply(&request, true).replayed);
+    assert_eq!(inventory, committed);
 }
 
 fn reference(slot: Slot, expected_id: i32) -> SlotRef {
@@ -370,7 +375,30 @@ fn predictions_are_scoped_to_changed_slots_and_current_or_retained_request() {
         },
         true,
     );
-    assert_eq!(result.result, Err(RejectReason::StackMismatch));
+    assert!(result.result.is_ok()); // The cursor still contains the predicted stack.
+    assert_eq!(
+        inventory.cursor().unwrap().net_id,
+        before.cursor.unwrap().net_id
+    );
+    let cursor = exact(&inventory, Slot::Cursor);
+    apply(
+        &mut inventory,
+        -5,
+        vec![transfer(cursor, reference(Slot::Inventory(11), 0), 60)],
+    );
+    let before = inventory.state.clone();
+    let rejected = inventory.apply(
+        &Request {
+            id: -6,
+            actions: vec![transfer(
+                reference(Slot::Cursor, -1),
+                reference(Slot::Inventory(12), 0),
+                1,
+            )],
+        },
+        true,
+    );
+    assert_eq!(rejected.result, Err(RejectReason::StackMismatch));
     assert_eq!(inventory.state, before);
 }
 
@@ -604,7 +632,14 @@ fn last_positive_id_is_usable_and_exhaustion_rolls_back_partial_allocation() {
     let before = inventory.state.clone();
     let request = Request {
         id: -1,
-        actions: vec![transfer(source, reference(Slot::Cursor, 0), 1)],
+        actions: vec![
+            transfer(source, reference(Slot::Cursor, 0), 1),
+            transfer(
+                reference(Slot::Inventory(0), -1),
+                reference(Slot::Inventory(9), 0),
+                1,
+            ),
+        ],
     };
     assert_eq!(
         inventory.apply(&request, true).result,
@@ -892,7 +927,7 @@ fn hotbar_swap_self_empty_and_bounds_preserve_authority() {
 #[test]
 fn click_stack_id_exhaustion_rolls_back_and_fresh_ids_are_unique() {
     let mut inventory = fixture_inventory();
-    inventory.state.next_stack_id = i32::MAX as u64;
+    inventory.state.next_stack_id = i32::MAX as u64 + 1;
     let before = inventory.clone();
     assert!(
         inventory
@@ -926,8 +961,10 @@ fn click_stack_id_exhaustion_rolls_back_and_fresh_ids_are_unique() {
         changes
             .iter()
             .filter_map(|change| change.stack)
-            .all(|stack| stack.net_id > 0 && !old_ids.contains(&stack.net_id))
+            .all(|stack| stack.net_id > 0)
     );
+    assert!(old_ids.contains(&inventory.slots()[0].unwrap().net_id));
+    assert!(!old_ids.contains(&inventory.cursor().unwrap().net_id));
     let slot_id = inventory.selected(0).unwrap().unwrap().net_id;
     assert_ne!(inventory.cursor().unwrap().net_id, slot_id);
 }
