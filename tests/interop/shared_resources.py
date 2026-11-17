@@ -355,6 +355,7 @@ def main():
     parser.add_argument("--picking", action="store_true", help="check native pick-block hotbar selection and inventory preservation")
     parser.add_argument("--actor-picking", action="store_true", help="check native mob picking, reach and entity ID bounds")
     parser.add_argument("--pick-events", action="store_true", help="check native plugin cancellation and callback inventory changes on both editions")
+    parser.add_argument("--creative-inventory", action="store_true", help="check native creative permissions, catalogue IDs and stack limits")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
     parser.add_argument("--forms", action="store_true", help="exercise shared forms and Rust response events on both editions")
@@ -520,6 +521,20 @@ def main():
         if args.pick_events:
             from pick_events import check
             report["pick_events"] = check(java, bedrock, root, args.bedrock_probe.resolve())
+        if args.creative_inventory:
+            try:
+                for mode, option in [("survival", "--survival-creative-check"), ("creative", "--creative-inventory-check")]:
+                    server.stdin.write(f"defaultgamemode {mode}\n")
+                    server.stdin.flush()
+                    time.sleep(.3)
+                    result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}", option],
+                                            capture_output=True, text=True, timeout=35)
+                    (root / f"creative-{mode}.log").write_text(result.stdout + result.stderr)
+                    assert result.returncode == 0, result.stdout + result.stderr
+            finally:
+                server.stdin.write("defaultgamemode creative\n")
+                server.stdin.flush()
+            report["native_creative_inventory"] = "Survival rejects creation; Creative creates one legal stack; invalid catalogue IDs reject the whole request"
         if args.packet_edits:
             from packet_probe import check
             report["packet_edits"] = check(java, bedrock, root, args.bedrock_probe.resolve())

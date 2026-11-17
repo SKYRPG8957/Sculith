@@ -55,13 +55,24 @@ impl BedrockClient {
                     request.actions.clear();
                 }
 
+                // Reject before a preceding move can change the inventory.
+                if request.actions.iter().any(|action| {
+                    matches!(action, ItemStackRequestAction::CraftCreative { creative_item_id, .. }
+                        if player.gamemode.load() != GameMode::Creative
+                            || creative_item_id.0 == 0
+                            || creative_item_id.0 as usize > pumpkin_data::bedrock_creative::CREATIVE_ENTRIES.len())
+                }) {
+                    tracing::debug!("Rejected creative inventory request");
+                    result = 1;
+                    request.actions.clear();
+                }
+
                 for action in request.actions {
                     match action {
                         ItemStackRequestAction::CraftCreative {
-                            creative_item_id,
-                            repetitions,
+                            creative_item_id, ..
                         } => {
-                            let index = (creative_item_id.0.saturating_sub(1)) as usize;
+                            let index = (creative_item_id.0 - 1) as usize;
                             if index < pumpkin_data::bedrock_creative::CREATIVE_ENTRIES.len() {
                                 let entry = pumpkin_data::bedrock_creative::CREATIVE_ENTRIES[index];
                                 if let Some(mapping) =
@@ -70,14 +81,12 @@ impl BedrockClient {
                                         entry.item_aux_value,
                                     )
                                 {
-                                    // Bedrock `repetitions` represents how many stacks to create; use the item's max stack size
+                                    // The creative request's repetition byte is boilerplate.
                                     let max_stack =
                                         ItemStack::static_new_java(1, mapping.java_item)
                                             .get_max_stack_size();
-                                    let count = ((max_stack as u16) * (repetitions as u16))
-                                        .min(u8::MAX as u16)
-                                        as u8;
-                                    created_item = Some(ItemStack::new(count, mapping.java_item));
+                                    created_item =
+                                        Some(ItemStack::new(max_stack, mapping.java_item));
                                 } else {
                                     tracing::warn!(
                                         "Failed to map bedrock item id {} and data {} to Java item",

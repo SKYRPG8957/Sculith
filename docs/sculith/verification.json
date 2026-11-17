@@ -313,5 +313,35 @@
       "Independent protocol clients; no new Windows GDK or rendering verification",
       "Overall gameplay and typed packet coverage remains partial"
     ]
+  },
+  "creative_inventory": {
+    "baseline": "59e902893187f169c53deb57986853a7ac765e2b",
+    "server_sha256": "ac01f69b94613403d3521ac41c838898188f5862104aed05b4c0c504a6257f20",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "reference": "Dragonfly 0f9a3a573626 handleCreativeCraft; gophertunnel e2251a60f71d CraftCreativeStackRequestAction",
+    "before": "A Survival client receives a successful response for creative catalogue item 440 with repetition 0",
+    "behavior": "Validate Creative mode and one-based catalogue IDs before applying any action in the request; repetition does not multiply the single created stack",
+    "wire_checks": "Survival rejects five requests; Creative accepts repetition 0/1/255 as one 64-item diamond-block stack each; IDs 0 and UINT32_MAX reject a request with a preceding swap; all 36 slots checked after every request",
+    "tests": {
+      "server": 803,
+      "clippy": "Core, binary and native fixture; experimental v0.2 feature; all targets; warnings denied"
+    },
+    "interop": "Full resources, sounds, forms, dialog replies, building, both pick paths and cancellation, connection/packet hooks, models and normal restart passed on the traced retry; isolated creative/model matrix also passed",
+    "open_observation": "The first combined run timed out during model spawn after the cancellation callback. Isolated and traced retries passed; tracker lock investigation remains open.",
+    "official_probe": "REA 6.9.0 controlled BDS 1.26.63.1 copies accepted login and supplied catalogue ID 440. No stack response was observed over RakNet, including input-carried requests after a console teleport; this is not official creative-policy verification.",
+    "log_sha256": {
+      "before": "786dd1dedffca9db874df610cefb0aa1c76c7419954adf2ca5570108efec4da7",
+      "target": "35391eb1abdad0875d300eea6a41f5455790e99f96727712133e4925adf367f0",
+      "core": "0696fe394dbca0b9e3bbb05f6ac510b4e9c785e1b62bae549d9f8ae935e1cdea",
+      "clippy": "ccca86284657c1bd332c6204d97f121dec8526553c75417aeb147ff85ae6c642",
+      "full_timeout": "50cac5c6792350cba8c753f1c750740b72936f536bc20dcea32a628975167686",
+      "isolated_models": "284de281222f66f4259c60ad7ad80b28dbdc95631c49b6ae5899d31fa8ecbd3e",
+      "full_traced": "1d417211a1e3a74dba9fda5d746acbcccc9bdd8113b5131fa3d197ee82de9d26"
+    },
+    "limits": [
+      "No Windows GDK verification",
+      "Creative slot plugin-event parity and general stack-request atomicity remain incomplete"
+    ]
   }
 }

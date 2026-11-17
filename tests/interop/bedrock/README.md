@@ -22,6 +22,13 @@ option with the native connection fixture installed. They check cancellation and
 inventory changes made during a Rust slot-selection callback. The combined
 harness also exercises the same operations over the stock Java protocol.
 
+`--creative-inventory` on the harness runs `--survival-creative-check` and
+`--creative-inventory-check` after changing the copied server's default mode.
+They check creative creation permissions, catalogue IDs 0 and UINT32_MAX,
+repetition bytes 0/1/255, stack counts, and every inventory slot after rejection.
+Invalid creative IDs are also sent after a slot swap in the same request; the
+swap must not take effect. No plugin is needed for these checks.
+
 Prepare a Java 26.3 flat world with grass at Y=-61. In the official Java server:
 
 ```

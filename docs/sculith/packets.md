@@ -51,6 +51,15 @@ than overwritten. The native plugin ABI remains 10 and the Wasm interfaces are
 unchanged. The native fixture checks cancellation, callback reads and inventory
 mutation with independent Java and Bedrock clients.
 
+## Creative inventory requests
+
+The server checks the player's game mode and every creative catalogue ID before
+applying any action in that request. Only Creative mode can create items this
+way. IDs start at 1; 0 and IDs beyond the advertised catalogue are rejected.
+The creative repetition byte does not multiply the result: a creation supplies
+one stack at the item's normal limit. Other crafting requests retain their own
+repetition handling.
+
 ## Before player creation
 
 Native Rust plugins can subscribe to `JavaConnectionPacketReceivedEvent`,
