@@ -4,8 +4,8 @@
 
 Sculith is moving to a Pumpkin fork to reuse its Rust game implementation,
 world storage, generation, entities, inventories and Rust/Wasm plugin API.
-The prior MIT implementation remains at Sculith `9ad4bf8`; it is not replaced
-or relicensed by this branch. The fork server remains GPL-3.0.
+The prior MIT implementation is preserved at Sculith `9ad4bf8`. Its original
+history and license remain unchanged. The fork server remains GPL-3.0.
 
 ## Initial change
 

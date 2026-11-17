@@ -5,6 +5,7 @@
 The canonical repository is `SKYRPG8957/Sculith`; Pumpkin is the upstream.
 See `UPSTREAM.md` for the base commit and `docs/sculith/fork.md` for verification.
 
+- Develop and push Sculith changes on `main`.
 - Keep Sculith's Bedrock-first target: one authoritative simulation, shared
   content and rules, unmodified Java access, and Rust plugins. Bedrock defines
   the target game rules; verify retained Java mechanics against that target.

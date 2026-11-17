@@ -2,7 +2,7 @@ name: Rust
 
 on:
   push:
-    branches: [main, codex/pumpkin-foundation]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
