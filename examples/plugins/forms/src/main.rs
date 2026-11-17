@@ -114,7 +114,7 @@ impl Plugin for Forms {
                 player_id: player.id,
                 request_id: 7,
                 form: SimpleForm {
-                    title: "Sculith에 오신 것을 환영합니다 👋".into(),
+                    title: "메뉴".into(),
                     body: "Java와 베드락에서 같은 메뉴를 사용합니다.\n원하는 항목을 선택하세요."
                         .into(),
                     buttons: vec!["기능 안내".into(), "닫기".into()],

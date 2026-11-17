@@ -63,18 +63,18 @@ def smoke(server, plugin, client, api_version=11):
                     time.sleep(.05)
                 else:
                     raise TimeoutError(text)
-                assert f"api_version={api_version}" in text and "gameplay-demo" in text
+                assert f"api_version={api_version}" in text and "gameplay-fixture" in text
                 java = wire.Client(("127.0.0.1", int(tcp[1])), "PluginJavaProbe")
                 id_, reader = wire.receive_play(java)
                 assert id_ == 0x7c
-                assert nbt_text(reader) == "Sculith: PluginJavaProbe님, 환영합니다 👋"
+                assert nbt_text(reader) == "plugin message: PluginJavaProbe / 테스트 😀"
                 assert reader.number(">B") == 0
                 reader.end()
                 native = subprocess.run([str(client), "http://127.0.0.1:" + nether[1], "--plugin-message"],
                     capture_output=True, text=True, encoding="utf-8", timeout=40)
                 assert native.returncode == 0, native.stdout + native.stderr
                 assert "PASS: independent Bedrock decoder received Rust plugin's private Unicode system message" in native.stdout
-                # Java must not receive the other player's private welcome. An
+                # Java must not receive the other player's private message. An
                 # extra chat packet makes this independent block reader fail.
                 wire.send(java.socket, 0x29, wire.vi(0) + wire.pos(1, 3, 1) + b"\x01" + wire.vi(1))
                 java.block((1, 3, 1), 0, "air")
@@ -101,14 +101,14 @@ def smoke(server, plugin, client, api_version=11):
                 if process.poll() is None:
                     process.kill()
                     process.wait(timeout=5)
-    print(f"PASS: real Rust API-v{api_version} plugin, private Unicode welcome in both editions, no cross-player leak, committed block hook and graceful stopping")
+    print(f"PASS: real Rust API-v{api_version} plugin, private Unicode message in both editions, no cross-player leak, committed block hook and graceful stopping")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     suffix = ".exe" if os.name == "nt" else ""
     parser.add_argument("--server", type=Path, default=ROOT / ("target/debug/sculith" + suffix))
-    parser.add_argument("--plugin", type=Path, default=ROOT / ("target/debug/sculith-gameplay-plugin" + suffix))
+    parser.add_argument("--plugin", type=Path, default=ROOT / ("target/debug/sculith-gameplay-fixture" + suffix))
     parser.add_argument("--client", type=Path, required=True)
     parser.add_argument("--api-version", type=int, choices=(2,3,4,5,6,7,8,9,10,11), default=11)
     args = parser.parse_args()

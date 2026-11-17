@@ -15,8 +15,8 @@ func pluginMessage(conn *minecraft.Conn) error {
 		}
 		if message, ok := pk.(*packet.Text); ok {
 			if message.TextType != packet.TextTypeSystem || message.NeedsTranslation ||
-				!strings.HasPrefix(message.Message, "Sculith: ") ||
-				!strings.HasSuffix(message.Message, "님, 환영합니다 👋") || message.XUID != "" || message.PlatformChatID != "" {
+				!strings.HasPrefix(message.Message, "plugin message: ") ||
+				!strings.HasSuffix(message.Message, " / 테스트 😀") || message.XUID != "" || message.PlatformChatID != "" {
 				return fmt.Errorf("invalid plugin system message: %+v", message)
 			}
 			fmt.Println("PASS: independent Bedrock decoder received Rust plugin's private Unicode system message")

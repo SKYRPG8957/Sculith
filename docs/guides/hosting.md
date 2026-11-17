@@ -79,6 +79,18 @@ Tests cover non-loopback HTTP, fixed UDP ports, ICE/DTLS/SCTP, test-issued accou
 verification, key binding and world entry. Official-account positive entry and
 Internet/NAT deployment remain unverified.
 
+## Console
+
+The local server console accepts `help`, `list`, `save` and `stop`. `list` shows
+initialized players; `stop` closes connections and saves before exiting. These
+commands are local operator input, not player commands or plugin hooks.
+
+`save` checkpoints the current world even when periodic saving is disabled;
+`world.snapshot_path` must be configured. It uses the same serial writer as
+automatic saves. Repeated pending requests coalesce and unchanged revisions skip
+disk work. Closing stdin leaves the server running. Use `run --no-console` when
+a service manager owns stdin; Ctrl+C/SIGTERM still stops the server.
+
 ## World saving
 
 Set `world.snapshot_path` to enable region persistence. It is relative to the

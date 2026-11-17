@@ -1,6 +1,31 @@
 use super::*;
 use sculith_game::Edition;
 
+#[tokio::test]
+async fn operator_player_list_excludes_pending_and_dead_sessions() {
+    let (stop, receiver) = watch::channel(false);
+    let (world, task) = create(receiver);
+    let task = tokio::spawn(task);
+    let ready = world
+        .reserve(profile("list-ready"), Permissions::default())
+        .await
+        .unwrap();
+    let pending = world
+        .reserve(profile("list-pending"), Permissions::default())
+        .await
+        .unwrap();
+    assert!(world.players().await.unwrap().is_empty());
+    world.activate(ready.player.id).await.unwrap();
+    let players = world.players().await.unwrap();
+    assert_eq!(players.len(), 1);
+    assert_eq!(players[0].id, ready.player.id);
+    drop(ready);
+    assert!(world.players().await.unwrap().is_empty());
+    drop(pending);
+    stop.send_replace(true);
+    task.await.unwrap().unwrap();
+}
+
 async fn seed_inventory(world: &WorldHandle, id: u64) {
     for (index, item) in ["minecraft:stone", "minecraft:dirt", "minecraft:grass_block"]
         .iter()

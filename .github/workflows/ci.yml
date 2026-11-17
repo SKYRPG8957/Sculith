@@ -36,6 +36,8 @@ jobs:
         run: python3 tests/interop/smoke.py --sessions
       - name: Exercise independent Java shared-world protocol client
         run: python3 tests/interop/java_smoke.py
+      - name: Verify local operator commands and manual checkpoint recovery
+        run: python3 tests/interop/console_smoke.py
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

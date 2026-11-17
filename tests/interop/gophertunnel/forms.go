@@ -29,7 +29,7 @@ func formResponse(conn *minecraft.Conn, cancelled bool) error {
 		if err := json.Unmarshal(request.FormData, &form); err != nil {
 			return err
 		}
-		if form.Type != "form" || form.Title != "Sculith에 오신 것을 환영합니다 👋" ||
+		if form.Type != "form" || form.Title != "메뉴" ||
 			form.Content != "Java와 베드락에서 같은 메뉴를 사용합니다.\n원하는 항목을 선택하세요." ||
 			len(form.Buttons) != 2 || form.Buttons[0].Text != "기능 안내" || form.Buttons[1].Text != "닫기" {
 			return fmt.Errorf("unexpected shared form: %+v", form)

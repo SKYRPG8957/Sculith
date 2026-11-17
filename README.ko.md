@@ -33,6 +33,8 @@ cargo run --locked -- run --config examples/configs/crossplay.toml
 
 새 플레이어는 빈 인벤토리로 시작합니다. 지원 블록은 크리에이티브 목록에서 선택하세요.
 
+콘솔에서 `list`로 접속자를 보고, `save`로 저장하고, `stop`으로 저장 후 종료합니다.
+
 예제 설정은 변경된 블록을 60초마다 `world/region.sculith`에 저장하고, Ctrl+C로
 종료할 때 한 번 더 저장합니다. 강제 종료 후에는 마지막 저장 상태를 복구합니다.
 마지막 저장 이후 변경 사항과 플레이어 데이터는 보존되지 않습니다.

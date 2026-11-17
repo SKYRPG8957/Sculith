@@ -1,5 +1,6 @@
 mod config;
 mod connections;
+mod console;
 mod content;
 mod persistence;
 mod profiling;
@@ -39,6 +40,9 @@ struct Cli {
 enum Command {
     /// Start the server.
     Run {
+        /// Disable local stdin commands (for service managers).
+        #[arg(long)]
+        no_console: bool,
         #[arg(long)]
         config: Option<PathBuf>,
         #[command(flatten)]
@@ -101,17 +105,25 @@ async fn main() -> Result<()> {
         .init();
     match Cli::parse().command.unwrap_or(Command::Run {
         config: None,
+        no_console: false,
         profiling: Default::default(),
         world_profiling: Default::default(),
     }) {
         Command::Run {
             config,
+            no_console,
             profiling,
             world_profiling,
         } => {
             profiling.validate()?;
             world_profiling.validate(profiling.output_path())?;
-            run(Config::load(config.as_deref())?, profiling, world_profiling).await
+            run(
+                Config::load(config.as_deref())?,
+                profiling,
+                world_profiling,
+                !no_console,
+            )
+            .await
         }
         Command::Check { config } => {
             let config = Config::load(config.as_deref())?;
@@ -170,6 +182,7 @@ async fn run(
     config: Config,
     profiling: profiling::Options,
     world_profiling: world_profiling::Options,
+    console_enabled: bool,
 ) -> Result<()> {
     let started = Instant::now();
     info!("Starting Sculith v{}", env!("CARGO_PKG_VERSION"));
@@ -316,12 +329,14 @@ async fn run(
     observer.configure(plugins.observes_connections());
     observer.configure_sent(plugins.observes_outgoing());
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let manual_save = std::sync::Arc::new(tokio::sync::Notify::new());
     let mut saving_task = tokio::spawn(persistence::run(
         world.clone(),
         config.world.snapshot_path.clone(),
         Duration::from_secs(config.world.autosave_interval_secs),
         saved_revision,
         shutdown_rx.clone(),
+        manual_save.clone(),
     ));
     let mut saving_finished = false;
     let mut services = JoinSet::new();
@@ -410,12 +425,46 @@ async fn run(
         1.0 / f64::from(config.server.tick_rate),
     ));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let mut console = if console_enabled {
+        Some(console::start()?)
+    } else {
+        None
+    };
     let mut tick = 0u64;
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
     let mut result = loop {
         tokio::select! {
             result = &mut shutdown => { break result; }
+            input = async {
+                match console.as_mut() {
+                    Some(receiver) => receiver.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                match input {
+                    None => console = None,
+                    Some(console::Input::Command(console::Command::Stop)) => break Ok(()),
+                    Some(console::Input::Command(console::Command::Help)) => info!("Commands: help, list, save, stop"),
+                    Some(console::Input::Command(console::Command::List)) => {
+                        match world.players().await {
+                            Ok(players) => {
+                                let names = players.iter().map(|p|p.profile.name.as_str()).collect::<Vec<_>>().join(", ");
+                                info!("Players ({}/{}): {}", players.len(), state.max_players, names);
+                            }
+                            Err(error) => break Err(error),
+                        }
+                    }
+                    Some(console::Input::Command(console::Command::Save)) => {
+                        if config.world.snapshot_path.is_some() {
+                            manual_save.notify_one();
+                        } else { warn!("Saving is disabled: set world.snapshot_path"); }
+                    }
+                    Some(console::Input::Invalid) => warn!("Unknown command. Type help."),
+                    Some(console::Input::TooLong) => warn!("Console command exceeds 256 bytes"),
+                    Some(console::Input::ReadError) => { warn!("Console input closed after a read error"); console = None; }
+                }
+            }
             saved = &mut saving_task => {
                 saving_finished = true;
                 break match saved {

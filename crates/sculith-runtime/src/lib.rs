@@ -140,6 +140,9 @@ enum Command {
         operation: sculith_core::world::WorldOperation,
         reply: oneshot::Sender<()>,
     },
+    PlayerList {
+        reply: oneshot::Sender<Vec<PlayerSnapshot>>,
+    },
     PlayerSnapshot {
         id: u64,
         reply: oneshot::Sender<Result<PlayerSnapshot>>,
@@ -299,6 +302,7 @@ impl Command {
     fn operation(&self) -> profiling::Operation {
         match self {
             Self::PluginWorld { .. } => profiling::Operation::PluginWorld,
+            Self::PlayerList { .. } => profiling::Operation::PlayerList,
             Self::PlayerSnapshot { .. } => profiling::Operation::PlayerSnapshot,
             Self::PluginInventory { .. } => profiling::Operation::PluginInventory,
             Self::InventoryClick { .. } => profiling::Operation::InventoryClick,
@@ -368,6 +372,13 @@ impl WorldHandle {
         }
         permit.send(Envelope { command, stamp });
         Ok(())
+    }
+
+    /// Initialized players only, captured on the owner after dead lease cleanup.
+    pub async fn players(&self) -> Result<Vec<PlayerSnapshot>> {
+        let (reply, receiver) = oneshot::channel();
+        self.send(Command::PlayerList { reply }).await?;
+        receiver.await.context("player list response lost")
     }
 
     /// Adapters read current owner state when consuming an asynchronous update;
@@ -1002,6 +1013,7 @@ pub fn with_region_and_content(
                     ).collect();
                     for id in dead { retire(&mut state, &mut leases, &events, &game_events, &peer_events, id); }
                     match command {
+                        Some(Command::PlayerList {reply})=>{let _=reply.send(state.initialized_players());}
                         Some(Command::PlayerSnapshot {id,reply})=>{
                             let result=state.player(id).filter(|p|p.initialized).ok_or_else(||anyhow::anyhow!("player is not initialized"));
                             let _=reply.send(result);

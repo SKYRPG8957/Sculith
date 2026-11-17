@@ -23,9 +23,8 @@ impl Plugin for Gameplay {
             Event::Started { .. } => vec![Action::Log {
                 message: "gameplay plugin started".into(),
             }],
-            Event::PlayerJoined { player } => vec![Action::SendMessage {
-                player_id: player.id,
-                message: format!("Sculith: {}님, 환영합니다 👋", player.name),
+            Event::PlayerJoined { player } => vec![Action::Log {
+                message: format!("player joined id={}", player.id),
             }],
             Event::PlayerLeft { player_id } => vec![Action::Log {
                 message: format!("gameplay player left id={player_id}"),

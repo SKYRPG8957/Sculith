@@ -58,6 +58,8 @@ jobs:
           exit $LASTEXITCODE
       - name: Verify independent Java shared-world protocol client
         run: python tests/interop/java_smoke.py --server target/release/sculith.exe
+      - name: Verify local operator commands and manual checkpoint recovery
+        run: python tests/interop/console_smoke.py --server target/release/sculith.exe --plugin target/release/sculith-gameplay-plugin.exe
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -77,7 +79,7 @@ jobs:
       - name: Verify independent Bedrock login and world spawn
         run: python tests/interop/gophertunnel_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe
       - name: Verify Rust plugin game hooks in both editions
-        run: python tests/interop/plugin_game_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-gameplay-plugin.exe
+        run: python tests/interop/plugin_game_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-gameplay-fixture.exe
       - name: Verify shared forms, callbacks and recipient isolation
         run: python tests/interop/forms_smoke.py --client target/gophertunnel-probe.exe --server target/release/sculith.exe --plugin target/release/sculith-forms-plugin.exe
       - name: Verify performance comparison contracts

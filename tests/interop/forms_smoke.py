@@ -50,7 +50,7 @@ def dialog(client):
     assert id_ == 143 and reader.varint() == 0
     value = nbt(reader); reader.end()
     assert value["type"] == "minecraft:multi_action"
-    assert value["title"] == "Sculith에 오신 것을 환영합니다 👋"
+    assert value["title"] == "메뉴"
     assert value["pause"] == 0 and value["can_close_with_escape"] == 1
     assert value["body"][0]["contents"] == "Java와 베드락에서 같은 메뉴를 사용합니다.\n원하는 항목을 선택하세요."
     assert [item["label"] for item in value["actions"]] == ["기능 안내", "닫기"]

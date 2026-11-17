@@ -34,6 +34,9 @@ Connect on the same PC:
 New players start with an empty inventory. Select the supported blocks from the
 creative inventory.
 
+Use `list` to see connected players, `save` to checkpoint and `stop` to save and
+shut down.
+
 The example saves changed blocks to `world/region.sculith` every 60 seconds and
 again on Ctrl+C. After a forced stop, restart restores the last completed save.
 Changes since that save and player data are not persistent.

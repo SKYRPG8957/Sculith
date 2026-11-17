@@ -29,7 +29,8 @@ cargo run --locked -- run --config examples/configs/gameplay.toml
 ```
 
 이 소스 예제 설정은 Linux/macOS 경로입니다. Windows에서 직접 빌드했다면 플러그인 경로에 `.exe`를 붙이세요.
-데모는 설정한 MOTD를 유지하고, 접속자에게 환영 메시지를 보낸 뒤 승인된 블록 변경의 리비전을 로그에 기록합니다.
+예제는 접속·종료와 승인된 블록 변경을 서버 로그에 기록합니다. 플레이어에게 자동 메시지를 보내지 않습니다.
+개인 메시지 전달 검증은 `tests/fixtures/gameplay-plugin`에서만 실행합니다.
 
 외부 Rust 프로젝트는 현재 `sculith-plugin-api`를 로컬 경로 의존성으로 사용할 수 있습니다.
 아직 crates.io 패키지를 게시하지 않았습니다.

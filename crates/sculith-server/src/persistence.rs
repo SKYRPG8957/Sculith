@@ -1,11 +1,14 @@
 //! Serial checkpoints of immutable owner captures; no filesystem work on the owner.
 
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use sculith_runtime::WorldHandle;
 use sculith_world::RegionSnapshot;
-use tokio::{sync::watch, time::MissedTickBehavior};
+use tokio::{
+    sync::{Notify, watch},
+    time::MissedTickBehavior,
+};
 use tracing::info;
 
 /// One active capture/write at most. Shutdown waits for an in-flight write;
@@ -16,31 +19,45 @@ pub async fn run(
     period: Duration,
     mut saved_revision: Option<u64>,
     mut shutdown: watch::Receiver<bool>,
+    manual: Arc<Notify>,
 ) -> Result<()> {
     if *shutdown.borrow() {
         return Ok(());
     }
-    let Some(path) = path.filter(|_| !period.is_zero()) else {
+    let Some(path) = path else {
         let _ = shutdown.changed().await;
         return Ok(());
     };
-    let mut timer = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
-    timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let mut timer = (!period.is_zero()).then(|| {
+        let mut timer = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        timer
+    });
     loop {
-        tokio::select! {
+        let requested = tokio::select! {
             biased;
             _ = shutdown.changed() => return Ok(()),
-            _ = timer.tick() => {
-                let snapshot = world.capture().await.context("autosave capture failed")?;
-                let revision = snapshot.revision();
-                if saved_revision == Some(revision) {
-                    continue;
+            _ = manual.notified() => true,
+            _ = async {
+                match timer.as_mut() {
+                    Some(timer) => { timer.tick().await; }
+                    None => std::future::pending::<()>().await,
                 }
-                save(path.clone(), snapshot).await.context("autosave failed")?;
-                saved_revision = Some(revision);
-                info!(revision, "World saved");
+            } => false,
+        };
+        let snapshot = world.capture().await.context("checkpoint capture failed")?;
+        let revision = snapshot.revision();
+        if saved_revision == Some(revision) {
+            if requested {
+                info!(revision, "World already saved");
             }
+            continue;
         }
+        save(path.clone(), snapshot)
+            .await
+            .context("autosave failed")?;
+        saved_revision = Some(revision);
+        info!(revision, "World saved");
     }
 }
 
@@ -126,6 +143,7 @@ mod tests {
             Duration::from_millis(5),
             None,
             shutdown,
+            Arc::new(Notify::new()),
         ));
         saved(&path, 0).await;
         edit(&world, 0).await;
@@ -155,6 +173,7 @@ mod tests {
             Duration::from_millis(5),
             Some(0),
             shutdown,
+            Arc::new(Notify::new()),
         ));
         let foreign = b"This file must not be replaced.";
         std::fs::write(&path, foreign).unwrap();
@@ -187,6 +206,7 @@ mod tests {
             Duration::ZERO,
             None,
             shutdown,
+            Arc::new(Notify::new()),
         ));
         edit(&world, 0).await;
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -197,6 +217,36 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(storage::load(path).unwrap().revision(), 1);
+        stop_owner.send_replace(true);
+        owner_task.await.unwrap().unwrap();
+    }
+    #[tokio::test]
+    async fn manual_saves_work_without_a_timer_and_coalesce_pending_requests() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("region.sculith");
+        let (world, stop_owner, owner_task) = owner();
+        let (stop, shutdown) = watch::channel(false);
+        let manual = Arc::new(Notify::new());
+        for _ in 0..1000 {
+            manual.notify_one();
+        }
+        let task = tokio::spawn(run(
+            world.clone(),
+            Some(path.clone()),
+            Duration::ZERO,
+            None,
+            shutdown,
+            manual.clone(),
+        ));
+        saved(&path, 0).await;
+        assert_eq!(world.profile_snapshot().completed_commands, 1);
+        edit(&world, 0).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(storage::load(&path).unwrap().revision(), 0);
+        manual.notify_one();
+        saved(&path, 1).await;
+        stop.send_replace(true);
+        task.await.unwrap().unwrap();
         stop_owner.send_replace(true);
         owner_task.await.unwrap().unwrap();
     }
