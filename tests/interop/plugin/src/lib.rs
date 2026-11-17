@@ -11,6 +11,7 @@ use pumpkin_plugin_api::wit::pumpkin::plugin::sounds::SoundCategory;
 use pumpkin_plugin_api::{Context, Plugin, PluginMetadata, Result, Server, register_plugin};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::{collections::BTreeMap, sync::Mutex};
+mod models;
 struct AudioProbe;
 struct Joined;
 struct Received(AtomicU32);
@@ -98,6 +99,9 @@ impl EventHandler<DialogClickActionEvent> for DialogReplies {
         _server: Server,
         event: EventData<DialogClickActionEvent>,
     ) -> EventData<DialogClickActionEvent> {
+        if models::action(&event.player, &event.id) {
+            return event;
+        }
         let small = include_bytes!(
             "../../../../crates/pumpkin-protocol/tests/fixtures/java_custom_click_small_777.bin"
         );
@@ -145,6 +149,7 @@ impl EventHandler<PlayerJoinEvent> for Joined {
         if name.starts_with("Form") {
             open_form(&event.player, 0);
         }
+        models::on_join(&event.player);
         event
     }
 }
@@ -187,6 +192,11 @@ impl Plugin for AudioProbe {
         }
     }
     fn on_load(&self, ctx: Context) -> Result<()> {
+        ctx.register_event_handler::<pumpkin_plugin_api::events::EntitySpawnEvent, _>(
+            models::Spawned,
+            EventPriority::Normal,
+            true,
+        )?;
         ctx.register_event_handler::<FormResponseEvent, _>(
             FormReplies,
             EventPriority::Normal,

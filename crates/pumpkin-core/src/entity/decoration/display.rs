@@ -800,6 +800,9 @@ impl ItemDisplayEntity {
 impl EntityBase for ItemDisplayEntity {
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         self.display.write_display_nbt(nbt);
+        let mut item = NbtCompound::new();
+        self.get_item().write_item_stack(&mut item);
+        nbt.put_compound("item", item);
         let display_mode_str = match self.item_display.load(Ordering::Relaxed) {
             1 => "thirdperson_lefthand",
             2 => "thirdperson_righthand",
@@ -816,6 +819,15 @@ impl EntityBase for ItemDisplayEntity {
 
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
         self.display.read_display_nbt(nbt);
+        if let Some(item) = nbt
+            .get_compound("item")
+            .and_then(ItemStack::read_item_stack)
+        {
+            *self
+                .item_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = item;
+        }
         if let Some(mode_str) = nbt.get_string("item_display") {
             let mode = match mode_str {
                 "thirdperson_lefthand" => 1,

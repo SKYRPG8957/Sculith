@@ -3,6 +3,18 @@ interface display {
     use text.{text-component};
     use item-stack.{item-stack};
     use uuid.{uuid};
+    use common.{position};
+
+    /// A shared static model. Both editions track the same server entity.
+    resource model-display-entity {
+        from-entity: static func(entity: borrow<entity>) -> option<model-display-entity>;
+        get-entity: func() -> entity;
+        get-model: func() -> string;
+        get-scale: func() -> f32;
+        set-scale: func(scale: f32) -> result<_, string>;
+        /// Moves within the current world. Dimension transfer is not supported.
+        set-position: func(pos: position) -> result<_, string>;
+    }
 
     /// Billboard rendering constraints for display entities.
     enum billboard-mode {

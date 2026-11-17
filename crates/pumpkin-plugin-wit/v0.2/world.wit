@@ -1085,6 +1085,9 @@ interface %world {
 
         /// Spawns an entity of the specified type at the given position.
         spawn-entity: async func(entity-type: entity-type, pos: position) -> entity;
+        /// Spawns an authored shared static model with one position and uniform scale.
+        /// Fails for unknown models, invalid coordinates or a cancelled spawn event.
+        spawn-model: async func(model: string, pos: position, scale: f32) -> result<entity, string>;
 
         /// Spawns a dropped item entity with the given item stack at the exact position with zero initial velocity.
         drop-item: async func(pos: position, item: item-stack) -> entity;

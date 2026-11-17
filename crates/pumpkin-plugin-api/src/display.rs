@@ -1,6 +1,7 @@
 pub use crate::wit::pumpkin::plugin::display::{
     BillboardMode, BlockDisplayEntity, DisplayEntity, DisplayTransformation, InteractionEntity,
-    ItemDisplayEntity, ItemDisplayMode, Quaternionf, TextAlignment, TextDisplayEntity, Vector3f,
+    ItemDisplayEntity, ItemDisplayMode, ModelDisplayEntity, Quaternionf, TextAlignment,
+    TextDisplayEntity, Vector3f,
 };
 use crate::wit::pumpkin::plugin::item_stack::ItemStack;
 use crate::wit::pumpkin::plugin::text::TextComponent;
@@ -104,6 +105,8 @@ impl TransformationBuilder {
 
 /// Extension trait on generic [`Entity`] for downcasting to specialized Display / Interaction resources.
 pub trait EntityDisplayExt {
+    /// Attempts to view this entity as a shared static model.
+    fn as_model_display(&self) -> Option<ModelDisplayEntity>;
     /// Attempts to view this entity as a base [`DisplayEntity`].
     fn as_display(&self) -> Option<DisplayEntity>;
     /// Attempts to view this entity as a [`BlockDisplayEntity`].
@@ -117,6 +120,9 @@ pub trait EntityDisplayExt {
 }
 
 impl EntityDisplayExt for Entity {
+    fn as_model_display(&self) -> Option<ModelDisplayEntity> {
+        ModelDisplayEntity::from_entity(self)
+    }
     fn as_display(&self) -> Option<DisplayEntity> {
         DisplayEntity::from_entity(self)
     }

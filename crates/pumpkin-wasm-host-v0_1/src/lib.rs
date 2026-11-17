@@ -336,6 +336,9 @@ mod resource_with {
     impl FromResource for plugin::display::ItemDisplayEntity {
         type Internal = Arc<pumpkin_core::entity::decoration::display::ItemDisplayEntity>;
     }
+    impl FromResource for plugin::display::ModelDisplayEntity {
+        type Internal = Arc<pumpkin_core::entity::decoration::model::ModelDisplayEntity>;
+    }
     impl FromResource for plugin::display::TextDisplayEntity {
         type Internal = Arc<pumpkin_core::entity::decoration::display::TextDisplayEntity>;
     }

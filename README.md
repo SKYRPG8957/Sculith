@@ -27,6 +27,9 @@ Java uses TCP 25565. Bedrock uses NetherNet on TCP/UDP 19132. Authentication is
 on by default. Plugins use the upstream Rust/Wasm API; Sculith's previous
 prototype plugins need to be ported.
 
+Shared resources and their Rust plugin APIs are opt-in. See the
+[resource guide](docs/sculith/resources.md) for sounds, forms and static models.
+
 ## Worlds
 
 Pumpkin's Anvil, Linear and Pump storage backends are retained. Back up a world
@@ -41,4 +44,4 @@ terms. Distributed modified binaries need the corresponding source. Plugin SDK
 crates keep their own MIT OR Apache-2.0 licenses.
 
 See [upstream attribution](UPSTREAM.md) and [LICENSE](LICENSE). The previous MIT
-Sculith engine remains on its existing branch; it has not been relicensed.
+Sculith engine remains in its original history; it has not been relicensed.

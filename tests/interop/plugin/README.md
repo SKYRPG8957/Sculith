@@ -12,7 +12,7 @@ cargo build --locked --release --target wasm32-wasip2 \
   --manifest-path tests/interop/plugin/Cargo.toml
 python3 tests/interop/shared_resources.py /path/to/sculith /path/to/bedrock-probe \
   --world /path/to/stopped-flat-world --delayed --building \
-  --dialog-replies --forms \
+  --dialog-replies --forms --models \
   --plugin tests/interop/plugin/target/wasm32-wasip2/release/sculith_wasm_audio_probe.wasm
 ```
 
@@ -33,3 +33,10 @@ Unicode text, and opens each next form from inside the response callback. Each
 open also checks the busy error. The protocol clients send wrong IDs, choices,
 types and replays; those must not produce extra callbacks. These are packet and
 runtime checks, not a claim about the rendered Windows Bedrock interface.
+
+`--models` adds an owner and late watchers on both editions. The Rust fixture
+checks rejected inputs, spawn cancellation and shared-resource casts, then
+creates, scales, moves and removes a model while packet observers stay active.
+The harness uses different native and Java model names, validates the native
+actor registry, and checks the retained UUID and transformation after a normal
+stop and restart. These fixture actions are not engine commands.

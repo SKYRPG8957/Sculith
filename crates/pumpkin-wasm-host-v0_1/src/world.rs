@@ -1104,6 +1104,32 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
 }
 
 impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<PluginHostState> {
+    async fn spawn_model(
+        mut host: Access<'_, PluginHostState, Self>,
+        world: Resource<World>,
+        model: String,
+        pos: WitPosition,
+        scale: f32,
+    ) -> wasmtime::Result<Result<Resource<pumpkin::plugin::world::Entity>, String>> {
+        let (world, plugin) = world_and_plugin(host.get(), &world)?;
+        let pos = super::events::from_wasm_position(pos);
+        let result = plugin
+            .store
+            .pump_blocking(&mut host, move || {
+                pumpkin_core::entity::decoration::model::ModelDisplayEntity::spawn(
+                    &world, &model, pos, scale,
+                )
+            })
+            .await?;
+        match result {
+            Ok(entity) => host
+                .get()
+                .add(entity as Arc<dyn pumpkin_core::entity::EntityBase>)
+                .map(Ok),
+            Err(error) => Ok(Err(error)),
+        }
+    }
+
     async fn play_sound(
         mut host: Access<'_, PluginHostState, Self>,
         world: Resource<World>,

@@ -1,8 +1,11 @@
 //! One immutable Bedrock source and its vanilla Java representation.
 
-use std::{io, net::IpAddr, sync::Arc, time::Duration};
+use std::{collections::HashSet, io, net::IpAddr, sync::Arc, time::Duration};
 
+use bytes::Bytes;
 use pumpkin_config::{AdvancedConfiguration, resource_pack::BedrockPack};
+use pumpkin_nbt::{Nbt, NbtCompound, deserializer::NbtReadHelperBedrock, tag::NbtTag};
+use pumpkin_protocol::bedrock::client::VANILLA_ACTOR_IDENTIFIERS;
 use sculith_packs::bundle::Bundle;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -18,6 +21,7 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct SharedResources {
     pub bundle: Bundle,
+    pub actor_identifiers: Bytes,
     java_path: String,
     http_slots: Semaphore,
 }
@@ -77,14 +81,67 @@ pub async fn prepare(
         models = bundle.report.converted_models.len(),
         "Loaded shared resource pack"
     );
+    let actor_identifiers = actor_identifiers(&bundle.report.converted_models)?;
     Ok(Some(Arc::new(SharedResources {
         java_path: format!("/sculith/packs/{}/{}.zip", bundle.java_id, bundle.java.sha1),
         bundle,
+        actor_identifiers,
         http_slots: Semaphore::new(HTTP_CONNECTIONS),
     })))
 }
 
+fn actor_identifiers(models: &[sculith_packs::ModelMapping]) -> io::Result<Bytes> {
+    if models.is_empty() {
+        return Ok(Bytes::from_static(VANILLA_ACTOR_IDENTIFIERS));
+    }
+    let invalid = || io::Error::new(io::ErrorKind::InvalidData, "Invalid actor registry");
+    let mut reader = NbtReadHelperBedrock::new(io::Cursor::new(VANILLA_ACTOR_IDENTIFIERS));
+    let mut registry = Nbt::read(&mut reader).map_err(io::Error::other)?;
+    let Some(NbtTag::List(actors)) = registry.root_tag.child_tags.get_mut("idlist") else {
+        return Err(invalid());
+    };
+    let mut names: HashSet<String> = actors
+        .iter()
+        .filter_map(NbtTag::extract_compound)
+        .filter_map(|actor| actor.get_string("id").map(str::to_owned))
+        .collect();
+    // Geyser reserves this range for custom actors; vanilla actor IDs stay intact.
+    let mut runtime_id = actors
+        .iter()
+        .filter_map(NbtTag::extract_compound)
+        .filter_map(|actor| actor.get_int("rid"))
+        .max()
+        .unwrap_or(0)
+        .max(99_999);
+    for model in models {
+        if !names.insert(model.bedrock.clone()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Duplicate actor identifier: {}", model.bedrock),
+            ));
+        }
+        runtime_id = runtime_id.checked_add(1).ok_or_else(invalid)?;
+        let mut actor = NbtCompound::new();
+        actor.put_string("id", model.bedrock.clone());
+        actor.put_string("bid", String::new());
+        actor.put_int("rid", runtime_id);
+        actor.put_bool("hasspawnegg", false);
+        actor.put_bool("summonable", true);
+        actor.put_bool("experimental", false);
+        actors.push(NbtTag::Compound(actor));
+    }
+    Ok(registry.write_bedrock())
+}
+
 impl SharedResources {
+    pub fn model(&self, name: &str) -> Option<&sculith_packs::ModelMapping> {
+        self.bundle
+            .report
+            .converted_models
+            .iter()
+            .find(|mapping| mapping.java == name)
+    }
+
     /// Resolve a shared Java sound identifier to its authored Bedrock event name.
     pub fn bedrock_sound_name<'a>(&'a self, sound_name: &'a str) -> &'a str {
         self.bundle

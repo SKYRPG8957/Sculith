@@ -6,6 +6,9 @@ bindgen!({
     path: "../pumpkin-plugin-wit/v0.1",
     world: "plugin",
     imports: {
+        "pumpkin:plugin/world@0.1.0.[method]world.spawn-model": async | store | trappable,
+        "pumpkin:plugin/display@0.1.0.[method]model-display-entity.set-scale": async | store | trappable,
+        "pumpkin:plugin/display@0.1.0.[method]model-display-entity.set-position": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.open-form": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.play-sound": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.play-sound-at": async | store | trappable,

@@ -3,6 +3,7 @@
 pub mod add_actor;
 pub mod add_item_actor;
 pub mod add_player;
+pub mod available_actor_identifiers;
 pub mod available_commands;
 pub mod biome_definition_list;
 pub mod block_actor_data;
@@ -76,6 +77,7 @@ pub mod voxel_shapes;
 pub use add_actor::*;
 pub use add_item_actor::*;
 pub use add_player::*;
+pub use available_actor_identifiers::*;
 pub use available_commands::*;
 pub use biome_definition_list::*;
 pub use block_actor_data::*;

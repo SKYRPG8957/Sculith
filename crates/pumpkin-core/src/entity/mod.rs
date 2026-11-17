@@ -241,6 +241,10 @@ pub const fn entity_type_to_bedrock_identifier(entity_type: &EntityType) -> &'st
 }
 
 pub trait EntityBase: Send + Sync + std::any::Any {
+    /// Whether the entity currently has a client representation.
+    fn has_client_representation(&self) -> bool {
+        true
+    }
     fn write_nbt(&self, nbt: &mut NbtCompound) {
         self.get_entity().write_nbt(nbt);
         if let Some(living) = self.get_living_entity() {
@@ -423,6 +427,12 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     /// Extra metadata to accompany this entity when spawned for Bedrock clients (e.g. falling block variant, TNT fuse).
     fn entity_bedrock_spawn_metadata(&self) -> Option<SyncedActorDataList> {
         None
+    }
+
+    fn bedrock_identifier(&self) -> &str {
+        self.get_mob()
+            .and_then(mob::Mob::mob_bedrock_identifier)
+            .unwrap_or_else(|| entity_type_to_bedrock_identifier(self.get_entity().entity_type))
     }
 
     /// Bedrock network Y above the feet. Endstone `getBaseOffset`.
@@ -866,12 +876,12 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     }
 
     fn send_bedrock_spawn_packet(&self, client: &BedrockClient) {
+        if !self.has_client_representation() {
+            return;
+        }
         let entity = self.get_entity();
         let runtime_id = entity.entity_id as u64;
-        let identifier = self
-            .get_mob()
-            .and_then(mob::Mob::mob_bedrock_identifier)
-            .unwrap_or_else(|| entity_type_to_bedrock_identifier(entity.entity_type));
+        let identifier = self.bedrock_identifier();
         let mut metadata = entity.bedrock_metadata();
         if let Some(extra_meta) = self.entity_bedrock_spawn_metadata() {
             metadata.merge(extra_meta);
@@ -907,6 +917,9 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     }
 
     fn send_java_spawn_packet(&self, client: &JavaClient) {
+        if !self.has_client_representation() {
+            return;
+        }
         let entity = self.get_entity();
         let metadata = self.java_spawn_metadata(CURRENT_MC_VERSION);
         let spawn_packet = entity.create_spawn_packet();

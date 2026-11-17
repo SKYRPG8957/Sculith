@@ -327,6 +327,24 @@ def configure(path, changes):
     path.write_text("\n".join(out) + "\n")
 
 
+def stop_server(server):
+    if server.poll() is None:
+        try:
+            server.stdin.write("stop\n")
+            server.stdin.flush()
+        except BrokenPipeError:
+            pass
+        try:
+            server.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            server.terminate()
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=10)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("server", type=Path)
@@ -337,15 +355,24 @@ def main():
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
     parser.add_argument("--forms", action="store_true", help="exercise shared forms and Rust response events on both editions")
+    parser.add_argument("--models", action="store_true", help="exercise shared model lifecycle, late joins and saved state")
     args = parser.parse_args()
-    if (args.dialog_replies or args.forms) and not args.plugin:
-        parser.error("--dialog-replies and --forms require the Rust --plugin fixture")
+    if (args.dialog_replies or args.forms or args.models) and not args.plugin:
+        parser.error("--dialog-replies, --forms and --models require the Rust --plugin fixture")
     root = Path(tempfile.mkdtemp(prefix="sculith-shared-resources-"))
     print("EVIDENCE", root, flush=True)
     server_path = args.server.resolve()
     fixture = ROOT / "crates/sculith-packs/tests/fixtures"
     shutil.copytree(fixture / "pack", root / "source")
     shutil.copy2(fixture / "textures.json", root / "mapping.json")
+    if args.models:
+        mapping = json.loads((root / "mapping.json").read_text())
+        mapping["models"][0]["bedrock"] = "sculith:native_statue"
+        (root / "mapping.json").write_text(json.dumps(mapping))
+        entity_file = root / "source" / mapping["models"][0]["entity"]
+        entity = json.loads(entity_file.read_text())
+        entity["minecraft:client_entity"]["description"]["identifier"] = "sculith:native_statue"
+        entity_file.write_text(json.dumps(entity))
     (root / "source/credits.bin").write_bytes(bytes(range(256)) * 9000)
     shutil.copytree(args.world, root / "world")
     if args.plugin:
@@ -460,6 +487,9 @@ def main():
             (root / "building.log").write_text(result.stdout + result.stderr)
             assert result.returncode == 0, result.stdout + result.stderr
             report["native_building_paths"] = 4
+        if args.models:
+            from model_probe import lifecycle
+            report["shared_models"] = lifecycle(java, bedrock, root, args.bedrock_probe.resolve())
         report.update({"bedrock_spawn": True, "frozen_source": True,
                        "scope": "independent protocol clients; no rendering claim"})
         (root / "result.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -467,20 +497,28 @@ def main():
     finally:
         if client is not None:
             client.socket.close()
-        if server.poll() is None:
-            server.stdin.write("stop\n")
-            server.stdin.flush()
-            try:
-                server.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                server.terminate()
-                try:
-                    server.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    server.kill()
-                    server.wait(timeout=10)
+        stop_server(server)
         log.close()
     assert server.returncode == 0, f"server exit {server.returncode}"
+    if args.models:
+        from model_probe import restored
+        (root / "source/manifest.json").write_bytes(original["manifest.json"])
+        restart_log = (root / "models-restart-server.log").open("w")
+        restarted = subprocess.Popen([str(server_path)], cwd=root, env=env, stdin=subprocess.PIPE,
+                                     stdout=restart_log, stderr=restart_log, text=True)
+        try:
+            deadline = time.monotonic() + 30
+            while "Server is now running" not in (root / "models-restart-server.log").read_text():
+                assert restarted.poll() is None and time.monotonic() < deadline, "model restart failed"
+                time.sleep(.1)
+            restored(java, bedrock, root, args.bedrock_probe.resolve(), report["shared_models"]["uuid"])
+            report["shared_models"]["normal_restart"] = True
+            (root / "result.json").write_text(json.dumps(report, indent=2) + "\n")
+        finally:
+            stop_server(restarted)
+            restart_log.close()
+        assert restarted.returncode == 0, f"restart exit {restarted.returncode}"
+        print("PASS MODELS", json.dumps(report["shared_models"]), flush=True)
 
 
 if __name__ == "__main__":

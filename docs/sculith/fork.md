@@ -36,12 +36,12 @@ The modified fork passed these Linux checks on Rust 1.100.0:
 
 | Check | Result |
 | --- | --- |
-| Protocol unit tests | 172 passed |
+| Protocol unit tests | 173 passed |
 | Configuration unit tests | 24 passed |
-| Game/server unit tests | 800 passed |
+| Game/server unit tests | 803 passed |
 | Shared resource converter unit tests | 14 passed |
 | Plugin runtime unit tests | 8 passed |
-| Experimental Wasm v0.2 host tests | 17 passed |
+| Experimental Wasm v0.2 host tests | 18 passed |
 | World unit tests, including official 26.3 fixtures | 305 passed |
 | Clippy for the changed packages and binary, all targets | Passed with warnings denied |
 | Rust formatting, Go build and Go vet | Passed |
@@ -126,7 +126,28 @@ This verifies the vanilla Java projection; Bedrock rendering is still unverified
 The component built before the new method was added also loaded and passed the
 previous join, sound and custom-dialog reply checks against the new host.
 
-Runtime model spawning and arbitrary Bedrock UI conversion remain unfinished.
+Shared static models now have one tracked server entity, exposed through the
+Rust plugin API. The interop fixture covers creation, scaling, movement, removal,
+late watchers on both editions, spawn cancellation, invalid inputs and a normal
+restart. Bedrock receives an actor registry containing its mapped native name;
+Java receives an item display carrying the canonical name. The vanilla registry
+comes from Cloudburst's network data; custom registration follows Geyser's actor
+identifier format.
+
+The same saved model survived an official Java 26.3 server load and save, then
+was restored for both editions by Sculith. Removing its mapping hid the model
+without deleting its saved data; restoring the mapping recovered its original
+UUID and transformation. This also fixes the inherited item display serializer,
+which omitted its item stack. A new unmodified Java 26.3 client rendered the
+model and its scale, position and removal updates. Bedrock rendering remains
+unverified.
+
+Removal testing caught another host reentry deadlock: the synchronous entity
+removal import held the store while dispatching its own packet events. Both
+hosts now release that borrow during removal; v0.1 plugin calls retain their
+synchronous contract. The experimental v0.2 method is async.
+
+Arbitrary Bedrock UI conversion, animated models and Molang remain unfinished.
 
 ## Remaining work
 

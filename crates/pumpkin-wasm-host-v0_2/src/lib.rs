@@ -464,6 +464,9 @@ mod resource_with {
     impl FromResource for plugin::display::ItemDisplayEntity {
         type Internal = Arc<pumpkin_core::entity::decoration::display::ItemDisplayEntity>;
     }
+    impl FromResource for plugin::display::ModelDisplayEntity {
+        type Internal = Arc<pumpkin_core::entity::decoration::model::ModelDisplayEntity>;
+    }
     impl FromResource for plugin::display::TextDisplayEntity {
         type Internal = Arc<pumpkin_core::entity::decoration::display::TextDisplayEntity>;
     }
@@ -619,5 +622,26 @@ mod tests {
             packet.write(&mut expected).unwrap();
             assert_eq!(encoded.as_ref(), expected);
         }
+    }
+
+    #[test]
+    fn actor_registry_packet_reaches_the_typed_plugin_view() {
+        use crate::generated_packets::{clientbound_bedrock_any_to_wit, serialize_bedrock_packet};
+        use crate::pumpkin::plugin::bedrock_packets::ClientboundPacket as BedrockPacket;
+        use bytes::Bytes;
+        use pumpkin_protocol::bedrock::client::CAvailableActorIdentifiers;
+
+        let nbt = b"\x0a\x00\x09\x06idlist\x0a\x00\x00";
+        let packet = CAvailableActorIdentifiers {
+            identifiers: Bytes::from_static(nbt),
+        };
+        let wit = clientbound_bedrock_any_to_wit(&packet).unwrap();
+        let BedrockPacket::CAvailableActorIdentifiers(data) = &wit else {
+            panic!("actor registry was not mapped to its packet variant");
+        };
+        assert_eq!(data.identifiers, nbt);
+        let encoded = serialize_bedrock_packet(&wit).unwrap();
+        assert_eq!(encoded[0], 119);
+        assert_eq!(&encoded[1..], nbt);
     }
 }

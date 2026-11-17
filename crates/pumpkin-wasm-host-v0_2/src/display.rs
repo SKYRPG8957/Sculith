@@ -4,6 +4,9 @@ use crate::pumpkin::plugin::display::HostItemDisplayEntityWithStore;
 use std::sync::Arc;
 use wasmtime::component::{Accessor, HasSelf, Resource};
 
+use crate::pumpkin::plugin::display::{HostModelDisplayEntity, ModelDisplayEntity};
+use pumpkin_core::entity::decoration::model::ModelDisplayEntity as InternalModelDisplayEntity;
+
 use pumpkin_util::math::vector3::Vector3;
 
 use crate::{
@@ -28,6 +31,65 @@ use pumpkin_core::entity::decoration::display::{
 use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl Host for PluginHostState {}
+
+impl HostModelDisplayEntity for PluginHostState {
+    fn from_entity(
+        &mut self,
+        entity: Resource<Entity>,
+    ) -> wasmtime::Result<Option<Resource<ModelDisplayEntity>>> {
+        if let Ok(model) = Arc::downcast::<InternalModelDisplayEntity>(self.get(&entity)?.clone())
+            && model.model_name().is_some()
+        {
+            return self.add(model).map(Some);
+        }
+        Ok(None)
+    }
+
+    fn get_entity(
+        &mut self,
+        model: Resource<ModelDisplayEntity>,
+    ) -> wasmtime::Result<Resource<Entity>> {
+        self.add(self.get(&model)?.clone() as Arc<dyn pumpkin_core::entity::EntityBase>)
+    }
+
+    fn get_model(&mut self, model: Resource<ModelDisplayEntity>) -> wasmtime::Result<String> {
+        self.get(&model)?
+            .model_name()
+            .map(str::to_owned)
+            .ok_or_else(|| wasmtime::Error::msg("Shared model is unavailable"))
+    }
+
+    fn get_scale(&mut self, model: Resource<ModelDisplayEntity>) -> wasmtime::Result<f32> {
+        Ok(self.get(&model)?.scale())
+    }
+
+    fn drop(&mut self, model: Resource<ModelDisplayEntity>) -> wasmtime::Result<()> {
+        self.drop(model)
+    }
+}
+
+impl crate::pumpkin::plugin::display::HostModelDisplayEntityWithStore<PluginHostState>
+    for HasSelf<PluginHostState>
+{
+    async fn set_scale(
+        accessor: &Accessor<PluginHostState, Self>,
+        model: Resource<ModelDisplayEntity>,
+        scale: f32,
+    ) -> wasmtime::Result<Result<(), String>> {
+        let model = accessor.get_res(&model)?;
+        super::run_blocking(accessor, move || model.set_scale(scale)).await
+    }
+
+    async fn set_position(
+        accessor: &Accessor<PluginHostState, Self>,
+        model: Resource<ModelDisplayEntity>,
+        pos: crate::pumpkin::plugin::common::Position,
+    ) -> wasmtime::Result<Result<(), String>> {
+        let model = accessor.get_res(&model)?;
+        let pos = Vector3::new(pos.0, pos.1, pos.2);
+        super::run_blocking(accessor, move || model.set_position(pos)).await
+    }
+}
 
 const fn map_billboard_mode(mode: u8) -> BillboardMode {
     match mode {

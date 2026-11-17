@@ -8,7 +8,8 @@ use pumpkin_data::poi_type::PoiType;
 use pumpkin_protocol::bedrock::client::item_registry::{CItemRegistry, ItemData};
 use pumpkin_protocol::bedrock::client::level_event::{CLevelEvent, LevelEvent};
 use pumpkin_protocol::bedrock::client::{
-    CBiomeDefinitionList, CJigsawStructureData, CVoxelShapes, block_actor_data::CBlockActorData,
+    CAvailableActorIdentifiers, CBiomeDefinitionList, CJigsawStructureData, CVoxelShapes,
+    VANILLA_ACTOR_IDENTIFIERS, block_actor_data::CBlockActorData,
 };
 use pumpkin_protocol::bedrock::network_item::NetworkItemDescriptor;
 use pumpkin_protocol::codec::data_component::data_to_proto_sound;
@@ -3313,6 +3314,7 @@ impl World {
             server_editor_connection_policy: VarInt(0),
             allow_anonymous_block_drops_in_editor_worlds: false,
         };
+        let level_name = level_info.level_name.clone();
         drop(level_info);
 
         let Some(client) = player.client.bedrock() else {
@@ -3333,7 +3335,7 @@ impl World {
             yaw,
             level_settings,
             level_id: String::new(),
-            level_name: "Pumpkin world".to_string(),
+            level_name,
             premium_world_template_id: String::new(),
             is_trial: false,
             // Vanilla rewind window so a tick-tagged `SetActorMotion` can replay a jump
@@ -3345,7 +3347,7 @@ impl World {
             // TODO Make this unique
             multiplayer_correlation_id: Uuid::default().to_string(),
             enable_itemstack_net_manager: true,
-            server_version: "Pumpkin Rust Server".to_string(),
+            server_version: format!("Sculith {}", env!("CARGO_PKG_VERSION")),
             compound_id: 10,
             compound_len: VarUInt(0),
             compound_end: 0,
@@ -3371,6 +3373,14 @@ impl World {
         if let Ok(data) = client.serialize_packet(&CBiomeDefinitionList) {
             client.send_game_packet(data).await;
         }
+
+        let actors = CAvailableActorIdentifiers {
+            identifiers: server.shared_resources.as_ref().map_or_else(
+                || bytes::Bytes::from_static(VANILLA_ACTOR_IDENTIFIERS),
+                |resources| resources.actor_identifiers.clone(),
+            ),
+        };
+        client.send_packet(&actors).await;
 
         let item_registry = CItemRegistry {
             items: BedrockItem::ALL_BEDROCK_ITEMS

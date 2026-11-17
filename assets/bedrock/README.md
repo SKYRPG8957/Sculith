@@ -32,6 +32,9 @@ This directory contains a number of different data files used to help support co
     - downloaded from [Kaooot/bedrock-network-data](https://github.com/Kaooot/bedrock-network-data/blob/427acba7044a75fb9ee884ec347704927968098f/release/1.26.60/biome_definitions.nbt)
     - Contains the gzip-compressed vanilla biome registry extracted from Bedrock Dedicated Server 1.26.60 (unchanged through 1.26.63).
     - Validated and converted by `pumpkin-codegen` into the static `BiomeDefinitionList` wire payload used during Bedrock world initialization.
+- `entity_identifiers.dat`
+    - downloaded from [CloudburstMC/Data](https://github.com/CloudburstMC/Data/blob/8754b101680c9235fbf18e6c6072d5e35c5805ff/entity_identifiers.dat), alongside the 26.60 registry data above.
+    - Contains the vanilla `AvailableActorIdentifiers` network NBT. Shared models append their native identifiers to an immutable startup copy; vanilla runtime IDs are preserved.
 - `player_geometry.json`
     - adapted from [GeyserMC/Geyser](https://github.com/GeyserMC/Geyser/blob/master/core/src/main/resources/bedrock/geometries/geo.json) (MIT License)
     - Provides valid standard wide and slim Bedrock player geometry for Java Edition player skins.

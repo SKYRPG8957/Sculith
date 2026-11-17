@@ -63,8 +63,43 @@ of directories and 16 MiB per file. Symlinks, dependencies and subpack selection
 are rejected. Files under `crates/sculith-packs/tests/fixtures` are test inputs;
 they are never loaded by the default server.
 
-Native plugin ABI is 8 after adding shared form sessions to players. Rebuild native
-plugins against this branch. The Wasm v0.1 interface is unchanged by pack delivery.
+Native plugin ABI is 9 after adding shared model tracking and actor registries.
+Rebuild native plugins against `main`. The Wasm v0.1 additions preserve existing
+component imports.
+
+## Shared models
+
+`world.spawn-model` creates one tracked server entity with a native Bedrock actor
+and a Java item display. The API uses the mapping's Java identifier; the native
+identifier can differ. Bedrock receives the actor registry before any spawn.
+
+```rust
+use pumpkin_plugin_api::display::EntityDisplayExt;
+
+let entity = player.get_world().spawn_model("example:statue", (0.0, 64.0, 0.0), 1.0)?;
+let model = entity.as_model_display().ok_or("Shared model unavailable")?;
+model.set_scale(2.0)?;
+model.set_position((2.0, 64.0, 0.0))?;
+entity.remove();
+```
+
+These are static decorative entities without collision or damage. Uniform scale
+must be finite, greater than zero and at most 16. Positions must be finite and
+within the current world's limits. Dimension transfer and runtime rotation are
+not implemented. Spawns honor the cancellable entity spawn event. Removed handles
+reject further model changes; Java-only display setters cannot bypass these
+shared constraints.
+
+Models persist as standard Java item displays. Their item carries the canonical
+identifier in `minecraft:item_model` and `minecraft:custom_data.sculith.model`.
+If a mapping is unavailable or the saved transformation is unsupported, Sculith
+retains the display data without showing a fallback actor. Restore the mapping
+and restart to load its shared representation again.
+
+Model updates and entity removal release the Wasm host borrow while nested
+packet events run. The v0.1 calls stay synchronous for plugin callers. The
+experimental v0.2 model mutators and `entity.remove` are async; rebuild v0.2
+components after updating the interface.
 
 ## Plugin sounds
 

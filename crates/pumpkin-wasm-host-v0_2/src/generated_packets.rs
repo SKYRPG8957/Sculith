@@ -3135,6 +3135,14 @@ use crate::pumpkin::plugin::bedrock_packets::{
 #[must_use]
 pub fn serialize_bedrock_packet(packet: &BClientboundPacket) -> Option<Bytes> {
     match packet {
+        BClientboundPacket::CAvailableActorIdentifiers(data) => {
+            let p = pumpkin_protocol::bedrock::client::CAvailableActorIdentifiers {
+                identifiers: data.identifiers.clone().into(),
+            };
+            let mut buf = Vec::new();
+            pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
+            Some(buf.into())
+        }
         BClientboundPacket::CBlockEvent(data) => {
             let p = pumpkin_protocol::bedrock::client::CBlockEvent {
                 block_position: pumpkin_util::math::position::BlockPos::new(
@@ -3669,6 +3677,16 @@ pub trait ToWitClientboundBedrock {
     fn to_wit(&self) -> BClientboundPacket;
 }
 
+impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CAvailableActorIdentifiers {
+    fn to_wit(&self) -> BClientboundPacket {
+        BClientboundPacket::CAvailableActorIdentifiers(
+            crate::pumpkin::plugin::bedrock_packets::CAvailableActorIdentifiers {
+                identifiers: self.identifiers.to_vec(),
+            },
+        )
+    }
+}
+
 impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CBlockEvent {
     fn to_wit(&self) -> BClientboundPacket {
         BClientboundPacket::CBlockEvent(crate::pumpkin::plugin::bedrock_packets::CBlockEvent {
@@ -4085,6 +4103,11 @@ impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CUpdateBlock
 
 #[must_use]
 pub fn clientbound_bedrock_any_to_wit(any: &dyn Any) -> Option<BClientboundPacket> {
+    if let Some(p) =
+        any.downcast_ref::<pumpkin_protocol::bedrock::client::CAvailableActorIdentifiers>()
+    {
+        return Some(p.to_wit());
+    }
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CBlockEvent>() {
         return Some(p.to_wit());
     }

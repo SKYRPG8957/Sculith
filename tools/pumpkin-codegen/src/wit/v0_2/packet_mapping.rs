@@ -482,6 +482,12 @@ fn convert_value(
             MappingMode::Downcast => String::new(),
         },
 
+        "Bytes" => match mode {
+            MappingMode::Serialize => format!("{}.clone().into()", src),
+            MappingMode::Deserialize | MappingMode::ToWit => format!("{}.to_vec()", src),
+            MappingMode::Downcast => String::new(),
+        },
+
         "Uuid" => match mode {
             MappingMode::Serialize => {
                 let tmp = dst.unwrap_or("tmp").replace('.', "_");

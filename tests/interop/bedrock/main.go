@@ -27,7 +27,19 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	d := minecraft.Dialer{}
+	var actors modelRegistry
+	modelMode := len(os.Args) == 3 && (os.Args[2] == "--models-check" || os.Args[2] == "--model-snapshot" || os.Args[2] == "--model-unavailable")
 	d.IdentityData.DisplayName = "ForkProbe"
+	if modelMode {
+		d.IdentityData.DisplayName = "ModelNative"
+		if os.Args[2] == "--model-snapshot" {
+			d.IdentityData.DisplayName = "ModelSnapshot"
+		}
+		if os.Args[2] == "--model-unavailable" {
+			d.IdentityData.DisplayName = "ModelUnavailable"
+		}
+		d.PacketFunc = actors.observe
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--forms-check" {
 		d.IdentityData.DisplayName = "FormBedrock"
 	}
@@ -42,6 +54,15 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if modelMode {
+		if err := actors.check(os.Args[2] != "--model-unavailable"); err != nil {
+			return err
+		}
+		if os.Args[2] == "--model-unavailable" {
+			return checkUnavailableModel(c)
+		}
+		return checkModels(c, os.Args[2] == "--model-snapshot")
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--forms-check" {
 		return checkForms(c)
 	}

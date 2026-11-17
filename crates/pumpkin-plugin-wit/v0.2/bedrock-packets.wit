@@ -1025,6 +1025,10 @@ interface bedrock-packets {
     /// Operating system platform of the player.
     build-platform: build-platform,
   }
+  /// Registers actor identifiers before their first spawn packet.
+  record c-available-actor-identifiers {
+    identifiers: list<u8>,
+  }
   /// Advertises available console and chat commands, arguments, overloads, and auto-completion structures.
   record c-available-commands {
     /// Global table of all unique string arguments and options referenced by command enums.
@@ -2657,6 +2661,8 @@ interface bedrock-packets {
     c-add-item-actor(c-add-item-actor),
     /// Sent by the server to spawn another player client-side into the world.
     c-add-player(c-add-player),
+    /// Registers actor identifiers before their first spawn packet.
+    c-available-actor-identifiers(c-available-actor-identifiers),
     /// Advertises available console and chat commands, arguments, overloads, and auto-completion structures.
     c-available-commands(c-available-commands),
     /// Sent by the server to synchronize all available biome definitions and properties with the client.

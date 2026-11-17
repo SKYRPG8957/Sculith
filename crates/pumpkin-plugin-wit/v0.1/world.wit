@@ -899,6 +899,9 @@ interface %world {
 
         /// Spawns an entity of the specified type at the given position.
         spawn-entity: func(entity-type: entity-type, pos: position) -> entity;
+        /// Spawns an authored shared static model with one position and uniform scale.
+        /// Fails for unknown models, invalid coordinates or a cancelled spawn event.
+        spawn-model: func(model: string, pos: position, scale: f32) -> result<entity, string>;
 
         /// Returns a list of all entities in this world.
         get-entities: func() -> list<entity>;

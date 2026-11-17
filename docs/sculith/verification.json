@@ -2,7 +2,7 @@
   "date": "2026-11-18",
   "upstream_commit": "87f8822ac36da62102350977be2f62f155a303dc",
   "server": "Linux debug; Rust 1.100.0; plugin-v0_2 enabled; locally modified fork",
-  "server_sha256": "608eb1a9f004f613a89541d30de46d034b583fe3ff5df433cfc3c4f5630741d4",
+  "server_sha256": "87da9512542ed9f94803bda360fffd2b974501e6e4626c775e2daef6ff891da4",
   "native_client": "gophertunnel e2251a60f71d",
   "block_registry": "Dragonfly 0f9a3a573626",
   "network": "loopback NetherNet, offline authentication for the test only",
@@ -32,7 +32,23 @@
     "shared_form_host_tests": "4b121ca0c0623b339d8e844b5fa79a21e6c354f5ee76ea9e6d6b327265f299c4",
     "legacy_wasm_interop": "88bb4bb722a6b1600ebeecc41f2c86263aa60bf7a42934653fdf4eddd057b977",
     "stock_java_form_server": "adab4917c354d9262a3f36e6d69bda1d708e9bf4e157fcedd4613f1aabde7085",
-    "stock_java_form_client": "88d8282e9c0f2d28e6c198a3ab1fff550c81be7aa9ac3882f5f5ec5fe9b39534"
+    "stock_java_form_client": "88d8282e9c0f2d28e6c198a3ab1fff550c81be7aa9ac3882f5f5ec5fe9b39534",
+    "model_interop": "048d7f7a76d138c8af1c997e3db0a1f5e75ccdc6008cd0f19eb96b6e55aeca28",
+    "model_events": "57835dc49ea21bdc195829bf197a929aa80d027cbe4d3502df75b67b4b052514",
+    "model_restart": "4a6846cfd760fb89735cca2ba680cf329c887b84e39836825eb22536f80e60e8",
+    "model_native": "291e12b9fa3342f4432ceb6ae5152f34c72f7fc6616a623d013b9fb4efa2b518",
+    "model_remove_deadlock_before": "30e5213d266b1b4ebaf32e9554836c9370724bd9de1237b7cfc8559831000c50",
+    "model_official_java": "baa74ee2a5fc575a80a4385fee4fb23f778355872a8bb57f57d14d3a0bd6550a",
+    "model_official_roundtrip": "86fd7099c22f6a695d5eac3e477edb42be8fdb02170bba9c661438c44cba20b5",
+    "model_missing_mapping": "46d82f89e8fcd961ea59a1fe870f6f3251e7eaf755cbb50d50016ba468c80394",
+    "model_missing_mapping_events": "59a2b0525dcdddce0fa44c6ec82c8e40b163c9d0fc5f5504f5df68d88f13ea84",
+    "model_mapping_restored_events": "55eff695e848778fe7c893e7fb5c0f81ef51729592a1d62d5c8cf27a6106d530",
+    "model_stock_java_server": "b33e0bf7b8fb143cf2c162441f4471f51fdab321bee162b54823f8a9d635dad0",
+    "model_stock_java_client": "2752b19db9456cf509f88ab1d6549e6656f7e644703e3a2b9a3892d1ca87cad1",
+    "model_clippy": "083ad635a920e346298216e025c21a6700c15e631b345a29af9b6af51e1114a0",
+    "model_server_and_host_tests": "49152b224b46fb67e7f58c862243df3b356150cc07f5060358be1359343a7c42",
+    "model_legacy_wasm_interop": "6ccd2e0a50f661e3fafeebd2d7f68c73b142fe810bd87fa06f820efe6f7e4327",
+    "model_legacy_wasm_events": "9dfd00f5ed50937b681b470070c13b1eb04a5c8311c8634da684af5138f99654"
   },
   "limitations": [
     "Flat-map marker test only",
@@ -41,9 +57,9 @@
     "Bedrock LevelDB import/export remains unsupported"
   ],
   "shared_resources": {
-    "protocol_tests": 172,
+    "protocol_tests": 173,
     "configuration_tests": 24,
-    "server_tests": 800,
+    "server_tests": 803,
     "converter_tests": 14,
     "native_building_paths": 4,
     "java_configuration_keepalives": 2,
@@ -52,7 +68,7 @@
     "java_pack_sha1": "4ec0f94603861aeceb633e2384b12d7cc3213135",
     "scope": "Texture and static item model rendered; null audio device; no Bedrock rendering claim",
     "plugin_runtime_tests": 8,
-    "experimental_host_tests": 17,
+    "experimental_host_tests": 18,
     "rust_wasm_plugin": "v0.1 component; release wasm32-wasip2 build; both editions observe join and packet events; player and world sound dispatch plus named stops verified on wire",
     "java_dialog_replies": "Official codec None/14/173-byte NBT payloads delivered through Java TCP to the Rust Wasm event; UI display not covered"
   },
@@ -76,7 +92,7 @@
     "validation": "busy; wrong ID; wrong value type; out-of-range choice; missing input; replay; session expiry; Java per-player token",
     "official_java_codec": "26.3 CONTEXT_FREE_STREAM_CODEC decoded all four captured definitions",
     "legacy_wasm_compatibility": "Wasm v0.1 component built before player.open-form loaded and completed both edition joins, sounds and dialog-reply callbacks",
-    "native_plugin_abi": 8,
+    "native_plugin_abi": 9,
     "rendering": "Unmodified Java 26.3 GUI; simple button, modal second choice, custom checkbox change plus all input values, Escape dismissal; four expected Rust callbacks; no Windows GDK validation",
     "stock_java_screenshot_sha256": {
       "simple": "d038d84969cd3a4cf6a526197626f41e205b6d41ed1267b284e8bbf64de3a8dc",
@@ -85,5 +101,44 @@
       "dismiss": "d973a2c257ddac26efb826b7eb4d0bab3438db90c9c669b62dc9936628267972",
       "closed": "d3357cb94bd30226635abf527ca32c93725e4d0f98e9a4f594cd022d815b0ef7"
     }
+  },
+  "shared_models": {
+    "native_plugin_abi": 9,
+    "api": "world.spawn-model; display.model-display-entity; stable Wasm v0.1 additions; experimental v0.2 async mutators",
+    "identity": "One tracked server entity and UUID; native alias sculith:native_statue and Java sculith:demo_statue in the protocol fixture",
+    "protocol_paths": [
+      "spawn",
+      "uniform scale",
+      "same-world movement",
+      "removal",
+      "late watchers on both editions",
+      "cancelled spawn",
+      "invalid input",
+      "removed handle rejection"
+    ],
+    "actor_registry": {
+      "packet": 119,
+      "source_commit": "8754b101680c9235fbf18e6c6072d5e35c5805ff",
+      "source_sha256": "5f01f36caa4ea927e62a544b9e887415bdc43c3d4a7a3e994299871d589036bb",
+      "registration_reference": "Geyser 668658bb5d6d1747931a3d74c40bcb8ac210127a EntityUtils.callEntityEvents",
+      "validation": "Independent gophertunnel NBT decoder; vanilla runtime IDs preserved; custom native identifier registered before spawn; typed experimental packet mapping regression"
+    },
+    "persistence": "Normal restart; official Java 26.3 load/save followed by Sculith restoration on both editions; same UUID, position and scale",
+    "missing_mapping": "Hidden on both editions, saved without the mapping, then restored with original UUID and transform",
+    "removal_regression": "Before: nested packet observers deadlocked entity.remove. After: both editions observe removal and normal shutdown; stale model setters reject updates.",
+    "legacy_wasm_compatibility": "Pre-model v0.1 component completed Java/native joins, sounds, dialog replies and building; fragmented Java pack response crossed two keepalives",
+    "rendering": "Unmodified Java 26.3, fresh profile and standard pack consent; model spawned by Rust Wasm; scale, movement and removal observed on screen. Linux software rendering with null audio. No Windows GDK rendering verification.",
+    "stock_java_screenshot_sha256": {
+      "pack": "0201355b375f5844e9eab640f55b8f37a2a9e80db213e9c78140422f3c6d8c54",
+      "model": "b7ea7b779f5bc660d0581214d41b0c5057ffb8242ce4b5b434dfe4dad675e700",
+      "scaled-moved": "40cb6befee7c6406c49d41965fc95ad14e7d70709decc2ed909734a70bae985d",
+      "removed": "25bbeb94982fb234d335b498063f1801c8dc21d4e19f2a3bdfb33409f5843b34"
+    },
+    "limits": [
+      "Static cuboids only",
+      "Uniform scale greater than zero and at most 16",
+      "No dimension transfer or runtime rotation",
+      "No animation or Molang conversion"
+    ]
   }
 }

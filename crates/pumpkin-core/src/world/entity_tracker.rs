@@ -463,6 +463,10 @@ impl TrackedEntity {
         effective_range: u32,
         chunk_changed: bool,
     ) {
+        if !self.entity.has_client_representation() {
+            self.remove_player(player);
+            return;
+        }
         let dx = player_pos.x - entity_pos.x;
         let dz = player_pos.z - entity_pos.z;
         let dist_sq = dx.mul_add(dx, dz * dz);

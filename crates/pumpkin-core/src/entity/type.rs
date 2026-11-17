@@ -374,6 +374,13 @@ fn create_entity(
     world: &Arc<World>,
 ) -> Arc<dyn EntityBase> {
     let uuid = nbt.get_uuid("UUID").unwrap_or_else(Uuid::new_v4);
+    if entity_type == &EntityType::ITEM_DISPLAY
+        && crate::entity::decoration::model::is_saved_model(nbt)
+    {
+        let entity = crate::entity::Entity::from_uuid(uuid, world.clone(), position, entity_type);
+        entity.read_nbt_non_mut(nbt);
+        return crate::entity::decoration::model::ModelDisplayEntity::from_saved(entity, nbt);
+    }
     let entity = from_type(entity_type, position, world, uuid);
     entity.read_nbt_non_mut(nbt);
     entity

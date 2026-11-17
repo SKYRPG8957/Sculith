@@ -67,3 +67,9 @@ it does not check rendering or audio playback.
 With the Rust fixture installed, `./probe http://127.0.0.1:19132 --forms-check`
 checks shared simple, modal, custom and dismissed forms. See the fixture README
 for the combined `--forms --plugin` harness invocation.
+
+The same harness accepts `--models` with the Rust fixture. It checks native actor
+registration, spawn metadata, scale and position updates, removal and late
+watchers against Java, then restarts the copied world and checks persistence.
+The `--models-check` and `--model-snapshot` probe modes are driven by that harness;
+`--model-unavailable` checks that a missing mapping does not leak a fallback actor.
