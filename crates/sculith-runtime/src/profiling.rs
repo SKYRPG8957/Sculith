@@ -50,9 +50,10 @@ pub enum Operation {
     SubmitForm,
     PlayerList,
     RouteConsole,
+    PickBlock,
 }
 impl Operation {
-    const COUNT: usize = 33;
+    const COUNT: usize = 34;
     const ALL: [Self; Self::COUNT] = [
         Self::PluginWorld,
         Self::PlayerSnapshot,
@@ -87,6 +88,7 @@ impl Operation {
         Self::SubmitForm,
         Self::PlayerList,
         Self::RouteConsole,
+        Self::PickBlock,
     ];
 }
 

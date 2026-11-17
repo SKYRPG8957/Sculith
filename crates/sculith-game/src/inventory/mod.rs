@@ -16,6 +16,10 @@ use std::collections::{BTreeMap, VecDeque};
 
 use sculith_world::BlockKind;
 
+mod pick;
+#[cfg(test)]
+mod pick_tests;
+
 pub const INVENTORY_SLOTS: usize = sculith_core::inventory::SLOT_COUNT;
 pub const MAX_STACK: u8 = 64;
 pub const MAX_ACTIONS: usize = 32;

@@ -98,7 +98,7 @@ pub fn claimed_block(id: i32) -> Result<BlockKind> {
         3 => BlockKind::Dirt,
         2 => BlockKind::Grass,
         7 => BlockKind::Bedrock,
-        _ => bail!("item is not in the server starter registry"),
+        _ => bail!("unsupported block item"),
     })
 }
 pub fn inventory(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
@@ -118,6 +118,38 @@ pub fn inventory(player: &PlayerSnapshot) -> Result<Vec<V2225>> {
         })),
         equipment(player)?,
     ])
+}
+/// BDS 1.26.63.1 pick ordering: UI item hint, inventory, selected hotbar.
+/// The incoming byte is only a hint; selection always comes from the owner.
+pub fn picked(player: &PlayerSnapshot, accepted: bool) -> Result<Vec<V2225>> {
+    use bedrock::protocol::v662::{
+        enums::ContainerID,
+        packets::{GuiDataPickItemPacket, PlayerHotbarPacket},
+    };
+    let mut packets = Vec::new();
+    if accepted && let Some(item) = player.held() {
+        let name = match item.kind {
+            BlockKind::Stone => "tile.stone.stone.name",
+            BlockKind::Dirt => "tile.dirt.default.name",
+            BlockKind::Grass => "tile.grass.name",
+            BlockKind::Bedrock => "tile.bedrock.name",
+            BlockKind::Air => anyhow::bail!("air has no picked item"),
+        };
+        packets.push(V2225::GuiDataPickItemPacket(Box::new(
+            GuiDataPickItemPacket {
+                item_name: name.into(),
+                item_effect_name: String::new(),
+                slot: i32::from(player.selected_slot),
+            },
+        )));
+    }
+    packets.extend(inventory(player)?);
+    packets.push(V2225::PlayerHotbarPacket(Box::new(PlayerHotbarPacket {
+        selected_slot: u32::from(player.selected_slot),
+        container_id: ContainerID::INVENTORY,
+        should_select_slot: true,
+    })));
+    Ok(packets)
 }
 pub fn held(player: &PlayerSnapshot) -> Result<NetworkItemStackDescriptorV2> {
     anyhow::ensure!(player.selected_slot <= 8, "invalid owner hotbar slot");

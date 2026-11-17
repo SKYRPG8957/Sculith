@@ -311,6 +311,15 @@ pub async fn handle_with_protection<T: Transport>(
                     if let Err(error)=result {tracing::debug!(player=id,%error,"Bedrock command rejected");}
                     continue;
                 }
+                if let V2225::BlockPickRequestPacket(request)=&packet {
+                    let accepted=if (0..=9).contains(&request.max_slots) {
+                        let outcome=world.pick_block(id,sculith_world::BlockPos{x:request.position.x,y:request.position.y,z:request.position.z}).await?;
+                        let accepted=outcome.response.result.is_ok();view_player=outcome.player;accepted
+                    } else {view_player=world.player_snapshot(id).await?;false};
+                    // Core registry blocks have no block-entity NBT to copy.
+                    conn.send(&output::picked(&view_player,accepted)?).await?;
+                    continue;
+                }
                 if let V2225::ModalFormResponsePacket(response) = &packet {
                     let result=match super::forms::response(response.json_response.as_deref(),response.form_cancel_reason.is_some()) {
                         Ok(super::forms::Reply::Choice(choice))=>world.submit_form(id,response.form_id,Some(choice)).await,

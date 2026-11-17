@@ -82,6 +82,49 @@ async fn console_routes_are_owner_queries_without_public_events_or_fake_players(
     task.await.unwrap().unwrap();
 }
 
+#[tokio::test]
+async fn block_pick_publishes_committed_inventory_and_equipment_only_once() {
+    let (stop, receiver) = watch::channel(false);
+    let (world, task) = create(receiver);
+    let task = tokio::spawn(task);
+    let actor = world
+        .reserve(profile("pick-actor"), Permissions { can_build: true })
+        .await
+        .unwrap();
+    let viewer = world
+        .reserve(profile("pick-viewer"), Permissions::default())
+        .await
+        .unwrap();
+    world.activate(actor.player.id).await.unwrap();
+    world.activate(viewer.player.id).await.unwrap();
+    world.configure_observations(crate::observations::INVENTORY | crate::observations::EQUIPMENT);
+    let mut events = world.subscribe_game();
+    let mut peers = world.observe_players(viewer.player.id).await.unwrap();
+    let target = BlockPos { x: 1, y: 3, z: 1 };
+    let result = world.pick_block(actor.player.id, target).await.unwrap();
+    assert_eq!(result.player.held().unwrap().count, 1);
+    assert!(
+        matches!(events.recv().await.unwrap().as_ref(),WorldEvent::InventoryChanged{player_id,changes} if *player_id==actor.player.id && changes.len()==1 && changes[0].stack.unwrap().count==1)
+    );
+    assert!(
+        matches!(events.recv().await.unwrap().as_ref(),WorldEvent::Equipped(player) if player.id==actor.player.id && player.held().unwrap().kind==BlockKind::Grass)
+    );
+    assert!(
+        matches!(peers.updates.recv().await.unwrap().as_ref(),WorldEvent::Equipped(player) if player.id==actor.player.id)
+    );
+    world.pick_block(actor.player.id, target).await.unwrap();
+    let denied = world
+        .pick_block(actor.player.id, BlockPos { x: 63, y: 3, z: 63 })
+        .await
+        .unwrap();
+    assert!(denied.response.result.is_err());
+    assert!(events.try_recv().is_err());
+    assert!(peers.updates.try_recv().is_err());
+    assert_eq!(world.capture().await.unwrap().revision(), 0);
+    stop.send_replace(true);
+    task.await.unwrap().unwrap();
+}
+
 async fn seed_inventory(world: &WorldHandle, id: u64) {
     for (index, item) in ["minecraft:stone", "minecraft:dirt", "minecraft:grass_block"]
         .iter()

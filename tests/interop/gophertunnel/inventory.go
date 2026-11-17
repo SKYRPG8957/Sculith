@@ -18,6 +18,7 @@ type nativeInventoryStack struct {
 }
 
 type nativeInventoryState struct {
+	selected     byte
 	main         [36]nativeInventoryStack
 	cursor       nativeInventoryStack
 	output       nativeInventoryStack
@@ -119,14 +120,15 @@ func (s *nativeInventoryState) observe(conn *minecraft.Conn, pk packet.Packet) e
 		}
 	case *packet.MobEquipment:
 		if p.EntityRuntimeID == conn.GameData().EntityRuntimeID {
-			if p.WindowID != 0 || p.InventorySlot != 0 || p.HotBarSlot != 0 {
-				return fmt.Errorf("native selected slot unexpectedly changed")
+			if p.WindowID != 0 || p.InventorySlot != p.HotBarSlot || p.HotBarSlot > 8 {
+				return fmt.Errorf("native selected slot is invalid")
 			}
 			stack, err := nativeStack(p.NewItem)
 			if err != nil {
 				return err
 			}
 			s.held = stack
+			s.selected = p.HotBarSlot
 		} else if p.EntityRuntimeID == 1 && p.HotBarSlot == 0 && p.WindowID == 0 && p.NewItem.Stack.NetworkID == 2 && p.NewItem.Stack.Count == 2 {
 			if p.InventorySlot != p.HotBarSlot {
 				return fmt.Errorf("Java peer equipment slot mismatch")
@@ -212,8 +214,8 @@ func (s *nativeInventoryState) exchange(conn *minecraft.Conn, req protocol.ItemS
 			outputSeen = outputSeen || (responseSeen && p.WindowID == protocol.WindowIDUI && p.Slot == 50)
 		}
 		if responseSeen && mainSeen && heldSeen && cursorSeen && outputSeen {
-			if s.held != s.main[0] {
-				return fmt.Errorf("held equipment differs from owner slot zero")
+			if s.selected != before.selected || s.held != s.main[s.selected] {
+				return fmt.Errorf("held equipment differs from selected owner slot")
 			}
 			ids := map[int32]bool{}
 			for _, stack := range append(s.main[:], s.cursor, s.output) {

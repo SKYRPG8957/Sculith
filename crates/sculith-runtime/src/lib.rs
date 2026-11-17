@@ -164,6 +164,11 @@ enum Command {
         request: sculith_game::inventory::Request,
         reply: oneshot::Sender<Result<sculith_game::InventoryOutcome>>,
     },
+    PickBlock {
+        id: u64,
+        position: BlockPos,
+        reply: oneshot::Sender<Result<sculith_game::InventoryOutcome>>,
+    },
     CreativeSlot {
         id: u64,
         slot: u8,
@@ -312,6 +317,7 @@ impl Command {
             Self::PluginInventory { .. } => profiling::Operation::PluginInventory,
             Self::InventoryClick { .. } => profiling::Operation::InventoryClick,
             Self::Inventory { .. } => profiling::Operation::Inventory,
+            Self::PickBlock { .. } => profiling::Operation::PickBlock,
             Self::CreativeSlot { .. } => profiling::Operation::CreativeSlot,
             Self::RouteConsole { .. } => profiling::Operation::RouteConsole,
             Self::RegisterCommands { .. } => profiling::Operation::RegisterCommands,
@@ -474,6 +480,20 @@ impl WorldHandle {
             .await
             .context("world owner stopped")?;
         receiver.await.context("inventory response lost")?
+    }
+    pub async fn pick_block(
+        &self,
+        id: u64,
+        position: BlockPos,
+    ) -> Result<sculith_game::InventoryOutcome> {
+        let (reply, receiver) = oneshot::channel();
+        self.send(Command::PickBlock {
+            id,
+            position,
+            reply,
+        })
+        .await?;
+        receiver.await.context("block pick response lost")?
     }
     pub async fn creative_slot(
         &self,
@@ -1078,6 +1098,12 @@ pub fn with_region_and_content(
                         Some(Command::Inventory {id,request,reply})=>{
                             let previous=state.player(id);
                             let result=state.inventory_request(id,request,Instant::now());
+                            if let Ok(outcome)=&result {publish_inventory(previous.as_ref(),outcome,&game_events,&peer_events,observations.load(Ordering::Acquire));}
+                            let _=reply.send(result);
+                        }
+                        Some(Command::PickBlock {id,position,reply})=>{
+                            let previous=state.player(id);
+                            let result=state.pick_block(id,position,Instant::now());
                             if let Ok(outcome)=&result {publish_inventory(previous.as_ref(),outcome,&game_events,&peer_events,observations.load(Ordering::Acquire));}
                             let _=reply.send(result);
                         }

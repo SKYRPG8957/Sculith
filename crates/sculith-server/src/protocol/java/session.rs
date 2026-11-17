@@ -736,6 +736,21 @@ impl Session {
                     MoveOutcome::Rejected { .. } => bail!("Java player lease expired"),
                 }
             }
+            0x24 => {
+                // PickItemFromBlock, position followed by include-data.
+                let position = fields.position()?;
+                fields.boolean()?; // Current core blocks have no block-entity data.
+                fields.end()?;
+                self.player = if self.pending_teleport.is_some() {
+                    self.world.player_snapshot(self.player.id).await?
+                } else {
+                    self.world
+                        .pick_block(self.player.id, position)
+                        .await?
+                        .player
+                };
+                self.inventory(stream).await?;
+            }
             0x36 => {
                 let slot = fields.short()?;
                 fields.end()?;
