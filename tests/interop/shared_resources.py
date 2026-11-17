@@ -191,6 +191,39 @@ class Java:
                 raise AssertionError(("play disconnect", fields.rest()))
         raise AssertionError("no play login")
 
+    def check_plugin_sounds(self):
+        played, stopped = False, False
+        for _ in range(512):
+            id_, fields = self.receive()
+            if id_ == 119:
+                assert fields.vi() == 0
+                assert fields.text() == "sculith:demo_tone"
+                assert fields.take(1) == bytes([0])
+                assert fields.vi() == 0
+                assert struct.unpack(">iii", fields.take(12)) == (-10, -484, 31)
+                assert struct.unpack(">ff", fields.take(8)) == (2.5, .75)
+                played = True
+            elif id_ == 121:
+                assert fields.take(1) == bytes([2])
+                assert fields.text() == "sculith:demo_tone"
+                stopped = True
+            if played and stopped:
+                self.send(44)  # Java 26.3 player_loaded, observed by the Rust fixture.
+                return
+        raise AssertionError("missing plugin sound or named stop")
+
+    def check_plugin_world_sound(self):
+        for _ in range(512):
+            id_, fields = self.receive()
+            if id_ != 119 or fields.vi() != 0:
+                continue
+            assert fields.text() == "sculith:demo_tone"
+            assert fields.take(1) == bytes([0]) and fields.vi() == 0
+            assert struct.unpack(">iii", fields.take(12)) == (9, -482, 36)
+            assert struct.unpack(">ff", fields.take(8)) == (.625, 1.25)
+            return
+        raise AssertionError("missing shared world sound broadcast")
+
 
 def free_port():
     with socket.socket() as stream:
@@ -219,6 +252,7 @@ def main():
     parser.add_argument("--world", type=Path, required=True, help="stopped Java flat world copied for testing")
     parser.add_argument("--delayed", action="store_true", help="hold a partial packet across two keepalives")
     parser.add_argument("--building", action="store_true", help="also exercise native building in the copied flat world")
+    parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     args = parser.parse_args()
     root = Path(tempfile.mkdtemp(prefix="sculith-shared-resources-"))
     print("EVIDENCE", root, flush=True)
@@ -228,7 +262,10 @@ def main():
     shutil.copy2(fixture / "textures.json", root / "mapping.json")
     (root / "source/credits.bin").write_bytes(bytes(range(256)) * 9000)
     shutil.copytree(args.world, root / "world")
-    env = dict(os.environ, RUST_LOG="info", NO_COLOR="1")
+    if args.plugin:
+        (root / "plugins").mkdir()
+        shutil.copy2(args.plugin, root / "plugins/resource-probe.wasm")
+    env = dict(os.environ, RUST_LOG=os.environ.get("SCULITH_INTEROP_LOG", "info"), NO_COLOR="1")
     subprocess.run([str(server_path), "--init-settings"], cwd=root, env=env, check=True, capture_output=True)
     java, bedrock = free_port(), free_port()
     changes = {
@@ -250,6 +287,8 @@ def main():
     configure(root / "pumpkin.toml", changes)
     with (root / "pumpkin.toml").open("a") as config:
         config.write('[resource_pack.shared]\nsource="source"\nmapping="mapping.json"\nrequired=true\n')
+        if args.plugin:
+            config.write('[plugins.overrides.sculith-wasm-audio-probe]\nallow_unsigned=true\n')
     log = (root / "server.log").open("w")
     server = subprocess.Popen([str(server_path)], cwd=root, env=env, stdin=subprocess.PIPE, stdout=log, stderr=log, text=True)
     client = None
@@ -264,6 +303,21 @@ def main():
         (root / "source/manifest.json").write_text("not a valid replacement pack")
         client = Java(java)
         report = client.join_with_resources(java, root, args.delayed)
+        if args.plugin:
+            client.check_plugin_sounds()
+            client.check_plugin_world_sound()
+            result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}", "--sound-check"],
+                                    capture_output=True, text=True, timeout=35)
+            (root / "sounds.log").write_text(result.stdout + result.stderr)
+            assert result.returncode == 0, result.stdout + result.stderr
+            client.check_plugin_world_sound()
+            log_text = (root / "server.log").read_text()
+            assert "PROBE_LOADED" in log_text
+            for player in ["ResourceJava", "ForkProbe"]:
+                for event in ["PROBE_JOIN", "PROBE_RECEIVED", "PROBE_SENT"]:
+                    assert any(event in line and f"player={player}" in line
+                               for line in log_text.splitlines()), ("missing plugin event", player, event)
+            report["rust_wasm_sound_dispatch"] = "player and world; both editions; named stop; packet observer enabled"
         result = subprocess.run([str(args.bedrock_probe.resolve()), f"http://127.0.0.1:{bedrock}", "--pack-output", str(root / "bedrock.mcpack")], capture_output=True, text=True, timeout=35)
         (root / "bedrock.log").write_text(result.stdout + result.stderr)
         assert result.returncode == 0, result.stdout + result.stderr
@@ -300,7 +354,11 @@ def main():
                 server.wait(timeout=30)
             except subprocess.TimeoutExpired:
                 server.terminate()
-                server.wait(timeout=10)
+                try:
+                    server.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    server.kill()
+                    server.wait(timeout=10)
         log.close()
     assert server.returncode == 0, f"server exit {server.returncode}"
 

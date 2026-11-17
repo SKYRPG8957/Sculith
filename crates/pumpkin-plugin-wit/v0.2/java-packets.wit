@@ -536,8 +536,7 @@ interface java-packets {
   enum test-instance-block-status {
     cleared,
     running,
-    success,
-    failed,
+    finished,
   }
   record s-update-sign {
     location: tuple<s32, s32, s32>,
@@ -591,6 +590,9 @@ interface java-packets {
   }
   record config-c-feature-flags {
     features: list<string>,
+  }
+  record config-c-config-keep-alive {
+    id: s64,
   }
   record config-c-known-packs {
     /// WARNING: Could not fully translate type `& 'a [KnownPack < 'a >]` to WIT
@@ -2141,9 +2143,8 @@ interface java-packets {
     on-ground: bool,
   }
   record c-test-instance-block-status {
-    pos: tuple<s32, s32, s32>,
-    status: s32,
-    message: option<string>,
+    status: string,
+    size: option<list<s32>>,
   }
   record c-ticking-state {
     tick-rate: f32,
@@ -2454,6 +2455,7 @@ interface java-packets {
     config-c-config-custom-report-details(config-c-config-custom-report-details),
     config-c-feature-flags(config-c-feature-flags),
     config-c-finish-config,
+    config-c-config-keep-alive(config-c-config-keep-alive),
     config-c-known-packs(config-c-known-packs),
     config-c-config-ping(config-c-config-ping),
     config-c-plugin-message(config-c-plugin-message),

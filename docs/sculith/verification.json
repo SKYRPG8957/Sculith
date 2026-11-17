@@ -1,8 +1,8 @@
 {
   "date": "2026-11-17",
   "upstream_commit": "87f8822ac36da62102350977be2f62f155a303dc",
-  "server": "Linux debug; Rust 1.100.0; locally modified fork",
-  "server_sha256": "d02ad2aeace46b0ce15d0e18748a1d5ceb778f61fe1e4ca139cd962fdc9f518d",
+  "server": "Linux debug; Rust 1.100.0; plugin-v0_2 enabled; locally modified fork",
+  "server_sha256": "35283a232cdc4af99e9730caaed58eef41b5d47642fe8f6867f65ef8b7aa31f2",
   "native_client": "gophertunnel e2251a60f71d",
   "block_registry": "Dragonfly 0f9a3a573626",
   "network": "loopback NetherNet, offline authentication for the test only",
@@ -16,7 +16,12 @@
     "official_java_readback": "7cecd716186665197ac59a7c123aa418d679cf0ab75413cafd1a04237135f5f2",
     "shared_resource_transfer": "a7384b694d7b353af3e048c425945a7fc88edd42eb7458ef5233717b854deddb",
     "shared_native_building": "cbf26839e90d40a71d32826530ff23a00cd50e0aac46ad7d750b2dbf724310e8",
-    "stock_java_client": "69526f397329c64d94aa319de17544cb46b05f540230297a2750b4223d2c7247"
+    "stock_java_client": "69526f397329c64d94aa319de17544cb46b05f540230297a2750b4223d2c7247",
+    "shared_plugin_dispatch": "6446d7eb127b7afc8440bf0730df7a1c2525ee190521a4340fd29df4b25b03d1",
+    "shared_plugin_callbacks": "02bffb47a7e18cb3dd7d2cd9cbeb4151ca885b5418951a705937b6be1b51419d",
+    "shared_plugin_host_tests": "79806c4e5f9577afaf1ee2e0729edd3a52cc7a3310aef2d93849b282c614d903",
+    "callback_admission_regression_before": "1874675baf25cc4f4ba964e32db4fcbd18d79bfe0c02ed3c16d4560c09b6c6e8",
+    "callback_admission_regression_after": "c7a779cd44f7221d9be88b24746bc140781af9f4d5720b6dbba26e067ce39773"
   },
   "limitations": [
     "Flat-map marker test only",
@@ -25,7 +30,7 @@
     "Bedrock LevelDB import/export remains unsupported"
   ],
   "shared_resources": {
-    "protocol_tests": 168,
+    "protocol_tests": 170,
     "configuration_tests": 24,
     "server_tests": 794,
     "converter_tests": 14,
@@ -34,6 +39,9 @@
     "java_known_pack_exchanges": 1,
     "java_client": "Unmodified Java 26.3; fresh profile; local offline authentication",
     "java_pack_sha1": "4ec0f94603861aeceb633e2384b12d7cc3213135",
-    "scope": "Texture and static item model rendered; null audio device; no Bedrock rendering claim"
+    "scope": "Texture and static item model rendered; null audio device; no Bedrock rendering claim",
+    "plugin_runtime_tests": 8,
+    "experimental_host_tests": 17,
+    "rust_wasm_plugin": "v0.1 component; release wasm32-wasip2 build; both editions observe join and packet events; player and world sound dispatch plus named stops verified on wire"
   }
 }

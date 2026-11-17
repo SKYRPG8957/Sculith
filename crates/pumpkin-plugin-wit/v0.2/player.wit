@@ -943,20 +943,20 @@ interface player {
         // Audio & Particles
 
         /// Plays a sound effect for this player at their current location.
-        play-sound: func(sound: sound, category: sound-category, volume: f32, pitch: f32);
+        play-sound: async func(sound: sound, category: sound-category, volume: f32, pitch: f32);
         /// Plays a sound effect for this player at a specific location.
-        play-sound-at: func(pos: position, sound: sound, category: sound-category, volume: f32, pitch: f32);
+        play-sound-at: async func(pos: position, sound: sound, category: sound-category, volume: f32, pitch: f32);
         /// Stops a sound effect from playing for this player.
-        stop-sound: func(sound: option<sound>, category: option<sound-category>);
+        stop-sound: async func(sound: option<sound>, category: option<sound-category>);
 
         /// Plays a custom resource pack sound identifier for this player at their current location.
-        play-custom-sound: func(sound-name: string, category: sound-category, volume: f32, pitch: f32);
+        play-custom-sound: async func(sound-name: string, category: sound-category, volume: f32, pitch: f32);
         /// Plays a custom resource pack sound identifier for this player at a specific location.
-        play-custom-sound-at: func(pos: position, sound-name: string, category: sound-category, volume: f32, pitch: f32);
+        play-custom-sound-at: async func(pos: position, sound-name: string, category: sound-category, volume: f32, pitch: f32);
         /// Stops a custom sound identifier from playing for this player.
-        stop-custom-sound: func(sound-name: option<string>, category: option<sound-category>);
+        stop-custom-sound: async func(sound-name: option<string>, category: option<sound-category>);
         /// Stops all sounds currently playing for this player across all categories.
-        stop-all-sounds: func();
+        stop-all-sounds: async func();
 
         /// Spawns particles visible only to this player.
         spawn-particles: func(particle: particle, pos: position, count: u32, offset: position, max-speed: f32);

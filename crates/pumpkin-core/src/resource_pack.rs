@@ -85,6 +85,16 @@ pub async fn prepare(
 }
 
 impl SharedResources {
+    /// Resolve a shared Java sound identifier to its authored Bedrock event name.
+    pub fn bedrock_sound_name<'a>(&'a self, sound_name: &'a str) -> &'a str {
+        self.bundle
+            .report
+            .converted_sounds
+            .iter()
+            .find(|mapping| mapping.java == sound_name)
+            .map_or(sound_name, |mapping| mapping.bedrock.as_str())
+    }
+
     /// Derive the download address from the address used to join this server.
     ///
     /// # Errors

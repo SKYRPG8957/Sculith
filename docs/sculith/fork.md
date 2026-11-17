@@ -36,10 +36,12 @@ The modified fork passed these Linux checks on Rust 1.100.0:
 
 | Check | Result |
 | --- | --- |
-| Protocol unit tests | 168 passed |
+| Protocol unit tests | 170 passed |
 | Configuration unit tests | 24 passed |
 | Game/server unit tests | 794 passed |
 | Shared resource converter unit tests | 14 passed |
+| Plugin runtime unit tests | 8 passed |
+| Experimental Wasm v0.2 host tests | 17 passed |
 | World unit tests, including official 26.3 fixtures | 305 passed |
 | Clippy for the changed packages and binary, all targets | Passed with warnings denied |
 | Rust formatting, Go build and Go vet | Passed |
@@ -86,8 +88,23 @@ with a null audio device; it does not verify sound playback or Bedrock rendering
 The independent native building probe disables protection only in its copied
 test world; production spawn protection is retained.
 
-Shared assets alone do not provide a common plugin UI, cross-edition custom sound
-dispatch or model spawning. Those runtime features still need integration.
+Rust Wasm plugin custom-sound calls now dispatch to both editions using the shared
+mapping. The interop fixture registers join and packet observers, plays and stops
+the sound inside the join callback, and verifies both wire formats. This caught a
+host reentry deadlock: the old synchronous sound imports could not service their
+own nested packet event. Sound imports now use the existing runtime admission and
+reentry paths. The corrected fixture completes both joins and a normal shutdown.
+World-broadcast testing also exposed a race in the runtime itself: it could start
+blocking host work before registering a route for its immediate callback. A
+deterministic regression fails on the previous ordering. Host work now starts
+only after callback admission is registered. The shutdown fixture also explicitly
+joins its spawned Rust task, rather than treating it as a Wasmtime component task.
+Protocol tests also cover independently encoded 2225 sound payloads, and generated
+v0.2 packet mappings now include optional numeric fields needed by those packets.
+
+Shared assets alone do not provide a common plugin UI or model spawning. Those
+runtime features still need integration. See the resource guide for the stable
+v0.1 contract and experimental v0.2 sound ABI change.
 
 ## Remaining work
 

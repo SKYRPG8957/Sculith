@@ -595,4 +595,29 @@ mod tests {
             ))
         ));
     }
+
+    #[test]
+    fn sound_packet_mapping_preserves_optional_wire_fields() {
+        use crate::generated_packets::{clientbound_bedrock_any_to_wit, serialize_bedrock_packet};
+        use pumpkin_protocol::bedrock::client::CPlaySound;
+        use pumpkin_protocol::serial::PacketWrite;
+        use pumpkin_util::math::vector3::Vector3;
+
+        let mut packet = CPlaySound::new(
+            "sculith.demo_tone".into(),
+            &Vector3::new(-1.25, -60.5, 3.875),
+            2.5,
+            0.75,
+        )
+        .unwrap();
+        for handle in [None, Some(42), Some(u64::MAX)] {
+            packet.handle = handle;
+            packet.playback_position_seconds = handle.map(|_| 1.25);
+            let wit = clientbound_bedrock_any_to_wit(&packet).unwrap();
+            let encoded = serialize_bedrock_packet(&wit).unwrap();
+            let mut expected = vec![86];
+            packet.write(&mut expected).unwrap();
+            assert_eq!(encoded.as_ref(), expected);
+        }
+    }
 }

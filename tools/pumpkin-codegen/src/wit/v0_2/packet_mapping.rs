@@ -216,6 +216,31 @@ fn get_type_info(ty: &syn::Type) -> (String, bool, bool) {
     match ty {
         syn::Type::Path(tp) => {
             let segment = tp.path.segments.last().unwrap();
+            if segment.ident == "Option"
+                && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+            {
+                let (inner, is_ref, is_slice) = get_type_info(inner);
+                if !is_ref
+                    && !is_slice
+                    && matches!(
+                        inner.as_str(),
+                        "i32"
+                            | "u32"
+                            | "i64"
+                            | "u64"
+                            | "bool"
+                            | "f32"
+                            | "f64"
+                            | "u8"
+                            | "i8"
+                            | "u16"
+                            | "i16"
+                    )
+                {
+                    return (format!("Option<{inner}>"), false, false);
+                }
+            }
             if segment.ident == "Box"
                 && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
                 && let Some(syn::GenericArgument::Type(syn::Type::Slice(slice))) = args.args.first()
@@ -257,6 +282,23 @@ fn convert_value(
 ) -> (String, String, bool) {
     let mut prep = String::new();
     let mut possible = true;
+
+    if let Some(inner) = type_ident
+        .strip_prefix("Option<")
+        .and_then(|name| name.strip_suffix('>'))
+    {
+        if is_ref || is_slice {
+            return (prep, String::new(), false);
+        }
+        let expr = if matches!(inner, "u64" | "u32") {
+            // These existing WIT packet fields use signed integers. Preserve the
+            // wire bit pattern in both directions, including a high-bit handle.
+            format!("{src}.map(|value| value as _)")
+        } else {
+            format!("{src}.map(|value| value.try_into().unwrap())")
+        };
+        return (prep, expr, true);
+    }
 
     let expr = match type_ident {
         "String" | "str" => match mode {

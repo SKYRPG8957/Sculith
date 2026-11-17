@@ -666,20 +666,7 @@ interface bedrock-packets {
     legacy-request-id: s32,
     legacy-slots: list<legacy-set-item-slot>,
     actions: list<inventory-action>,
-    transaction: player-use-item-transaction-data,
-  }
-  record player-use-item-transaction-data {
-    action-type: s32,
-    trigger-type: u8,
-    block-position: tuple<s32, s32, s32>,
-    block-face: u8,
-    hot-bar-slot: s32,
-    item-in-hand: network-item-descriptor,
-    player-position: tuple<f64, f64, f64>,
-    click-position: tuple<f64, f64, f64>,
-    block-runtime-id: s32,
-    client-prediction: u8,
-    client-cooldown-state: u8,
+    transaction: use-item-transaction-data,
   }
   /// A block action (e.g. start/stop breaking) executed within a player input tick.
   record player-block-action {
@@ -1361,9 +1348,9 @@ interface bedrock-packets {
   }
   /// Sent by the server to send all crafting and smelting recipes available in the world.
   record c-crafting-data {
-    /// List of shaped and shapeless crafting recipes.
+    /// Additional shaped and shapeless recipes (or incremental recipes when `clean_recipes` is false).
     recipes: list<bedrock-recipe>,
-    /// Whether previous recipe entries should be cleared on the client.
+    /// Whether previous recipe entries should be cleared and replaced with the full static + dynamic set.
     clean-recipes: bool,
   }
   /// Sent by the server to populate the creative inventory menu with item categories, groups, and items.
@@ -1720,6 +1707,18 @@ interface bedrock-packets {
     playback-content: string,
     playback-type: string,
     sound: audio-content-sound,
+  }
+  /// Play a named sound. Position components are signed eighth-block coordinates.
+  /// Field layout verified against gophertunnel for Bedrock protocol 2225.
+  record c-play-sound {
+    sound-name: string,
+    position: tuple<s32, s32, s32>,
+    volume: f32,
+    pitch: f32,
+    loop-count: s32,
+    bypass-listener-range-check: bool,
+    handle: option<s64>,
+    playback-position-seconds: option<f32>,
   }
   /// Sent by the server to inform the client of login results, version compatibility, or player spawn readiness.
   enum c-play-status {
@@ -2288,6 +2287,12 @@ interface bedrock-packets {
     /// Selected recipe index.
     recipe-index: s32,
   }
+  /// Stop a named sound or all sounds. Bedrock has no per-category selector.
+  record c-stop-sound {
+    sound-name: string,
+    stop-all: bool,
+    stop-music-legacy: bool,
+  }
   /// Sent by the server when an entity or player picks up a dropped item, playing the pickup animation.
   record c-take-item-actor {
     /// Runtime entity ID of the item entity being collected.
@@ -2722,6 +2727,9 @@ interface bedrock-packets {
     c-open-sign(c-open-sign),
     /// Sent by the server to instruct the client to play signed audio content.
     c-play-audio-content(c-play-audio-content),
+    /// Play a named sound. Position components are signed eighth-block coordinates.
+    /// Field layout verified against gophertunnel for Bedrock protocol 2225.
+    c-play-sound(c-play-sound),
     /// Sent by the server to inform the client of login results, version compatibility, or player spawn readiness.
     c-play-status(c-play-status),
     /// Sent by the server to update the active selected hotbar slot of the player.
@@ -2770,6 +2778,8 @@ interface bedrock-packets {
     c-start-game(c-start-game),
     /// Sent by the server to synchronize the selected stonecutter recipe index to the client.
     c-stonecutter-set-recipe(c-stonecutter-set-recipe),
+    /// Stop a named sound or all sounds. Bedrock has no per-category selector.
+    c-stop-sound(c-stop-sound),
     /// Sent by the server when an entity or player picks up a dropped item, playing the pickup animation.
     c-take-item-actor(c-take-item-actor),
     /// Instructs the client to disconnect and reconnect to another server address and port.
@@ -2784,7 +2794,7 @@ interface bedrock-packets {
     c-update-equip(c-update-equip),
     /// Opens or refreshes a Bedrock merchant screen with its complete offer list.
     c-update-trade(c-update-trade),
-    /// Sends custom collision and selection voxel shapes to the client.
+    /// Sends collision and selection voxel shapes to the client before `CStartGame`.
     c-voxel-shapes,
     unknown,
   }

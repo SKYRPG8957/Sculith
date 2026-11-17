@@ -40,6 +40,40 @@ func run() error {
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
 
+	if len(os.Args) == 3 && os.Args[2] == "--sound-check" {
+		play, worldPlay, stops := false, false, 0
+		for n := 0; n < 4096 && !(play && worldPlay && stops == 2); n++ {
+			pk, e := c.ReadPacket()
+			if e != nil {
+				return e
+			}
+			switch v := pk.(type) {
+			case *packet.PlaySound:
+				if v.SoundName != "sculith.demo_tone" || v.LoopCount != -1 || v.BypassListenerRangeCheck {
+					return fmt.Errorf("unexpected shared sound: %#v", v)
+				}
+				switch {
+				case v.Position == (mgl32.Vec3{-1.25, -60.5, 3.875}) && v.Volume == 2.5 && v.Pitch == .75:
+					play = true
+				case v.Position == (mgl32.Vec3{1.125, -60.25, 4.5}) && v.Volume == .625 && v.Pitch == 1.25:
+					worldPlay = true
+				default:
+					return fmt.Errorf("unexpected shared sound parameters: %#v", v)
+				}
+			case *packet.StopSound:
+				if v.SoundName != "sculith.demo_tone" || v.StopAll || v.StopMusicLegacy {
+					return fmt.Errorf("unexpected named stop: %#v", v)
+				}
+				stops++
+			}
+		}
+		if !play || !worldPlay || stops != 2 {
+			return fmt.Errorf("missing sound dispatch: player=%v world=%v stops=%d", play, worldPlay, stops)
+		}
+		fmt.Println("PASS: Rust Wasm player and world sound dispatch and named stops")
+		return nil
+	}
+
 	if len(os.Args) == 4 && os.Args[2] == "--pack-output" {
 		packs := c.ResourcePacks()
 		if len(packs) != 1 {

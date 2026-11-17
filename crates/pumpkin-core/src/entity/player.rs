@@ -2859,8 +2859,32 @@ impl Player {
     /// * `sound_id`: An optional [`ResourceLocation`] specifying the sound to stop. If [`None`], all sounds in the specified category (if any) will be stopped.
     /// * `category`: An optional [`SoundCategory`] specifying the sound category to stop. If [`None`], all sounds with the specified resource location (if any) will be stopped.
     pub fn stop_sound(&self, sound_id: Option<ResourceLocation>, category: Option<SoundCategory>) {
-        let packet = CStopSound::new(sound_id, category);
-        self.try_send_client_packet(&packet);
+        match self.client.as_ref() {
+            ClientPlatform::Java(_) => {
+                let packet = CStopSound::new(sound_id, category);
+                self.try_send_client_packet(&packet);
+            }
+            ClientPlatform::Bedrock(client) => {
+                if sound_id.is_none() && category.is_some() {
+                    // A category-only stop cannot be represented without stopping
+                    // unrelated sounds on Bedrock. Leave those sounds alone.
+                    tracing::debug!("Bedrock does not support a category-only sound stop");
+                    return;
+                }
+                let world = self.world();
+                let server = world.server.upgrade();
+                let name = sound_id.as_ref().map_or("", |id| id.as_ref());
+                let name = server
+                    .as_ref()
+                    .and_then(|server| server.shared_resources.as_ref())
+                    .map_or(name, |shared| shared.bedrock_sound_name(name));
+                client.try_enqueue_client_packet(&pumpkin_protocol::bedrock::client::CStopSound {
+                    sound_name: name.into(),
+                    stop_all: sound_id.is_none(),
+                    stop_music_legacy: false,
+                });
+            }
+        }
     }
 
     /// Plays a custom sound event by identifier for the player.
@@ -2872,6 +2896,23 @@ impl Player {
         volume: f32,
         pitch: f32,
     ) {
+        if let ClientPlatform::Bedrock(client) = self.client.as_ref() {
+            let world = self.world();
+            let server = world.server.upgrade();
+            let name = server
+                .as_ref()
+                .and_then(|server| server.shared_resources.as_ref())
+                .map_or(sound_name, |shared| shared.bedrock_sound_name(sound_name));
+            if let Some(packet) = pumpkin_protocol::bedrock::client::CPlaySound::new(
+                name.into(),
+                position,
+                volume,
+                pitch,
+            ) {
+                client.try_enqueue_client_packet(&packet);
+            }
+            return;
+        }
         self.play_sound_event(
             pumpkin_protocol::SoundEvent {
                 sound_name: sound_name.into(),

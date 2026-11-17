@@ -1,0 +1,11 @@
+[package]
+name = "sculith-wasm-audio-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+pumpkin-plugin-api = { path = "../../../crates/pumpkin-plugin-api" }
+tracing = "0.1"
+[workspace]

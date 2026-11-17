@@ -65,3 +65,27 @@ they are never loaded by the default server.
 
 Native plugin ABI is 7 after adding shared resources to the server. Rebuild native
 plugins against this branch. The Wasm v0.1 interface is unchanged by pack delivery.
+
+## Plugin sounds
+
+The existing `player.play-custom-sound` and `play-custom-sound-at` methods now
+dispatch to both editions. Plugins use the Java identifier from the mapping
+(for example `example:bell`); Bedrock receives the authored event name
+(`example.bell`). World custom-sound broadcasts use the same mapping.
+
+Named sound stops and stopping all sounds also work on Bedrock. Its wire format
+has no category selector: a named stop stops every instance of that event, and a
+category-only stop is not sent. Bedrock's authored sound definition determines
+its mixer category. Java retains category selection.
+
+Sound calls can produce nested packet events. Both host implementations release
+their state borrow while running these calls through the plugin runtime, so a
+packet observer can run while another handler from that plugin is active.
+The stable Wasm v0.1 contract remains synchronous to plugin callers. The
+experimental v0.2 player and world sound methods are now `async func`, consistent
+with its other event-producing methods; v0.2 components must be rebuilt. That
+host remains behind `plugin-v0_2` and is disabled in default builds.
+
+The Rust fixture under `tests/interop/plugin` verifies dispatch, named stops and
+join/packet callbacks on both editions. It is not default server content and
+does not establish audible playback or arbitrary sound-definition compatibility.

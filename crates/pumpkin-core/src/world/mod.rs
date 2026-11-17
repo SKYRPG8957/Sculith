@@ -1495,6 +1495,17 @@ impl World {
             seed,
         );
         self.broadcast_packet_all(&packet);
+
+        let server = self.server.upgrade();
+        let name = server
+            .as_ref()
+            .and_then(|server| server.shared_resources.as_ref())
+            .map_or(sound_name, |shared| shared.bedrock_sound_name(sound_name));
+        if let Some(packet) =
+            pumpkin_protocol::bedrock::client::CPlaySound::new(name.into(), position, volume, pitch)
+        {
+            self.broadcast_bedrock_all(&packet);
+        }
     }
 
     /// Spawns a cluster of particles in the world for all players in range.

@@ -1412,129 +1412,6 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         Ok(())
     }
 
-    fn play_sound(
-        &mut self,
-        player: Resource<Player>,
-        sound: pumpkin::plugin::sounds::Sound,
-        category: pumpkin::plugin::sounds::SoundCategory,
-        volume: f32,
-        pitch: f32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        let sound_name = format!("{sound:?}").to_lowercase().replace('_', ".");
-        let sound_data = pumpkin_data::sound::Sound::from_name(&sound_name)
-            .ok_or_else(|| wasmtime::Error::msg(format!("Unknown sound: {sound_name}")))?;
-        let internal_category = super::world::from_wit_sound_category(category);
-        let pos = player.position();
-        player.play_sound(
-            sound_data as u16,
-            internal_category,
-            &pos,
-            volume,
-            pitch,
-            rand::random::<i64>(),
-        );
-        Ok(())
-    }
-
-    fn play_sound_at(
-        &mut self,
-        player: Resource<Player>,
-        pos: pumpkin::plugin::common::Position,
-        sound: pumpkin::plugin::sounds::Sound,
-        category: pumpkin::plugin::sounds::SoundCategory,
-        volume: f32,
-        pitch: f32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        let sound_name = format!("{sound:?}").to_lowercase().replace('_', ".");
-        let sound_data = pumpkin_data::sound::Sound::from_name(&sound_name)
-            .ok_or_else(|| wasmtime::Error::msg(format!("Unknown sound: {sound_name}")))?;
-        let internal_category = super::world::from_wit_sound_category(category);
-        player.play_sound(
-            sound_data as u16,
-            internal_category,
-            &pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
-            volume,
-            pitch,
-            rand::random::<i64>(),
-        );
-        Ok(())
-    }
-
-    fn stop_sound(
-        &mut self,
-        player: Resource<Player>,
-        sound: Option<pumpkin::plugin::sounds::Sound>,
-        category: Option<pumpkin::plugin::sounds::SoundCategory>,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        let sound_rl = sound.and_then(|s| {
-            let sound_name = format!("{s:?}").to_lowercase().replace('_', ".");
-            pumpkin_data::sound::Sound::from_name(&sound_name).map(|s| s.to_name().into())
-        });
-        let cat = category.map(super::world::from_wit_sound_category);
-        player.stop_sound(sound_rl, cat);
-        Ok(())
-    }
-
-    fn play_custom_sound(
-        &mut self,
-        player: Resource<Player>,
-        sound_name: String,
-        category: pumpkin::plugin::sounds::SoundCategory,
-        volume: f32,
-        pitch: f32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        let internal_category = super::world::from_wit_sound_category(category);
-        let pos = player.position();
-        player.play_custom_sound(&sound_name, internal_category, &pos, volume, pitch);
-        Ok(())
-    }
-
-    fn play_custom_sound_at(
-        &mut self,
-        player: Resource<Player>,
-        pos: pumpkin::plugin::common::Position,
-        sound_name: String,
-        category: pumpkin::plugin::sounds::SoundCategory,
-        volume: f32,
-        pitch: f32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        let internal_category = super::world::from_wit_sound_category(category);
-        player.play_custom_sound(
-            &sound_name,
-            internal_category,
-            &pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
-            volume,
-            pitch,
-        );
-        Ok(())
-    }
-
-    fn stop_custom_sound(
-        &mut self,
-        player: Resource<Player>,
-        sound_name: Option<String>,
-        category: Option<pumpkin::plugin::sounds::SoundCategory>,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        let sound_rl = sound_name
-            .as_deref()
-            .map(pumpkin_util::resource_location::ResourceLocation::from);
-        let cat = category.map(super::world::from_wit_sound_category);
-        player.stop_sound(sound_rl, cat);
-        Ok(())
-    }
-
-    fn stop_all_sounds(&mut self, player: Resource<Player>) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.stop_sound(None, None);
-        Ok(())
-    }
-
     fn spawn_particles(
         &mut self,
         player: Resource<Player>,
@@ -2918,6 +2795,153 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
 }
 
 impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<PluginHostState> {
+    async fn play_sound(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        sound: pumpkin::plugin::sounds::Sound,
+        category: pumpkin::plugin::sounds::SoundCategory,
+        volume: f32,
+        pitch: f32,
+    ) -> wasmtime::Result<()> {
+        let player = accessor.get_res(&player)?;
+        run_blocking(accessor, move || {
+            let sound_name = format!("{sound:?}").to_lowercase().replace('_', ".");
+            let sound_data = pumpkin_data::sound::Sound::from_name(&sound_name)
+                .ok_or_else(|| wasmtime::Error::msg(format!("Unknown sound: {sound_name}")))?;
+            let internal_category = super::world::from_wit_sound_category(category);
+            let pos = player.position();
+            player.play_sound(
+                sound_data as u16,
+                internal_category,
+                &pos,
+                volume,
+                pitch,
+                rand::random::<i64>(),
+            );
+            Ok(())
+        })
+        .await?
+    }
+
+    async fn play_sound_at(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        pos: pumpkin::plugin::common::Position,
+        sound: pumpkin::plugin::sounds::Sound,
+        category: pumpkin::plugin::sounds::SoundCategory,
+        volume: f32,
+        pitch: f32,
+    ) -> wasmtime::Result<()> {
+        let player = accessor.get_res(&player)?;
+        run_blocking(accessor, move || {
+            let sound_name = format!("{sound:?}").to_lowercase().replace('_', ".");
+            let sound_data = pumpkin_data::sound::Sound::from_name(&sound_name)
+                .ok_or_else(|| wasmtime::Error::msg(format!("Unknown sound: {sound_name}")))?;
+            let internal_category = super::world::from_wit_sound_category(category);
+            player.play_sound(
+                sound_data as u16,
+                internal_category,
+                &pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+                volume,
+                pitch,
+                rand::random::<i64>(),
+            );
+            Ok(())
+        })
+        .await?
+    }
+
+    async fn stop_sound(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        sound: Option<pumpkin::plugin::sounds::Sound>,
+        category: Option<pumpkin::plugin::sounds::SoundCategory>,
+    ) -> wasmtime::Result<()> {
+        let player = accessor.get_res(&player)?;
+        run_blocking(accessor, move || {
+            let sound_rl = sound.and_then(|s| {
+                let sound_name = format!("{s:?}").to_lowercase().replace('_', ".");
+                pumpkin_data::sound::Sound::from_name(&sound_name).map(|s| s.to_name().into())
+            });
+            let cat = category.map(super::world::from_wit_sound_category);
+            player.stop_sound(sound_rl, cat);
+            Ok(())
+        })
+        .await?
+    }
+
+    async fn play_custom_sound(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        sound_name: String,
+        category: pumpkin::plugin::sounds::SoundCategory,
+        volume: f32,
+        pitch: f32,
+    ) -> wasmtime::Result<()> {
+        let player = accessor.get_res(&player)?;
+        run_blocking(accessor, move || {
+            let internal_category = super::world::from_wit_sound_category(category);
+            let pos = player.position();
+            player.play_custom_sound(&sound_name, internal_category, &pos, volume, pitch);
+            Ok(())
+        })
+        .await?
+    }
+
+    async fn play_custom_sound_at(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        pos: pumpkin::plugin::common::Position,
+        sound_name: String,
+        category: pumpkin::plugin::sounds::SoundCategory,
+        volume: f32,
+        pitch: f32,
+    ) -> wasmtime::Result<()> {
+        let player = accessor.get_res(&player)?;
+        run_blocking(accessor, move || {
+            let internal_category = super::world::from_wit_sound_category(category);
+            player.play_custom_sound(
+                &sound_name,
+                internal_category,
+                &pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+                volume,
+                pitch,
+            );
+            Ok(())
+        })
+        .await?
+    }
+
+    async fn stop_custom_sound(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        sound_name: Option<String>,
+        category: Option<pumpkin::plugin::sounds::SoundCategory>,
+    ) -> wasmtime::Result<()> {
+        let player = accessor.get_res(&player)?;
+        run_blocking(accessor, move || {
+            let sound_rl = sound_name
+                .as_deref()
+                .map(pumpkin_util::resource_location::ResourceLocation::from);
+            let cat = category.map(super::world::from_wit_sound_category);
+            player.stop_sound(sound_rl, cat);
+            Ok(())
+        })
+        .await?
+    }
+
+    async fn stop_all_sounds(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+    ) -> wasmtime::Result<()> {
+        let player = accessor.get_res(&player)?;
+        run_blocking(accessor, move || {
+            player.stop_sound(None, None);
+            Ok(())
+        })
+        .await?
+    }
+
     async fn perform_command(
         accessor: &Accessor<PluginHostState, Self>,
         player: Resource<Player>,

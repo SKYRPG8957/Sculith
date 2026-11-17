@@ -47,6 +47,15 @@ pub fn serialize_java_packet(
                 .unwrap();
             Some(buf.into())
         }
+        ClientboundPacket::ConfigCConfigKeepAlive(data) => {
+            let p = pumpkin_protocol::java::client::config::CConfigKeepAlive {
+                id: data.id.try_into().unwrap(),
+            };
+            let mut buf = Vec::new();
+            pumpkin_core::net::java::JavaClient::write_packet_for_version(&p, version, &mut buf)
+                .unwrap();
+            Some(buf.into())
+        }
         ClientboundPacket::ConfigCConfigPing(data) => {
             let p = pumpkin_protocol::java::client::config::CConfigPing {
                 id: data.id.try_into().unwrap(),
@@ -1452,6 +1461,17 @@ pub fn deserialize_java_serverbound_packet(
                     },
                 ))
             }
+            id if id == pumpkin_protocol::java::server::play::SPlayerAbilities::to_id(version) => {
+                use pumpkin_protocol::ServerPacket;
+                let p = <pumpkin_protocol::java::server::play::SPlayerAbilities as pumpkin_protocol::ServerPacket>::read(&mut payload, &version).ok()?;
+                Some(ServerboundPacket::SPlayerAbilities(
+                    crate::pumpkin::plugin::java_packets::SPlayerAbilities {
+                        flags: p.flags,
+                        fly_speed: p.fly_speed.map(|value| value.try_into().unwrap()),
+                        walk_speed: p.walk_speed.map(|value| value.try_into().unwrap()),
+                    },
+                ))
+            }
             id if id == pumpkin_protocol::java::server::play::SPlayerAction::to_id(version) => {
                 use pumpkin_protocol::ServerPacket;
                 let p = <pumpkin_protocol::java::server::play::SPlayerAction as pumpkin_protocol::ServerPacket>::read(&mut payload, &version).ok()?;
@@ -1809,6 +1829,16 @@ impl ToWitClientboundJava for pumpkin_protocol::java::client::config::CFeatureFl
         ClientboundPacket::ConfigCFeatureFlags(
             crate::pumpkin::plugin::java_packets::ConfigCFeatureFlags {
                 features: self.features.iter().map(|s| s.to_string()).collect(),
+            },
+        )
+    }
+}
+
+impl ToWitClientboundJava for pumpkin_protocol::java::client::config::CConfigKeepAlive {
+    fn to_wit(&self) -> ClientboundPacket {
+        ClientboundPacket::ConfigCConfigKeepAlive(
+            crate::pumpkin::plugin::java_packets::ConfigCConfigKeepAlive {
+                id: self.id.try_into().unwrap(),
             },
         )
     }
@@ -2788,6 +2818,10 @@ pub fn clientbound_java_any_to_wit(any: &dyn Any) -> Option<ClientboundPacket> {
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::java::client::config::CFeatureFlags>() {
         return Some(p.to_wit());
     }
+    if let Some(p) = any.downcast_ref::<pumpkin_protocol::java::client::config::CConfigKeepAlive>()
+    {
+        return Some(p.to_wit());
+    }
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::java::client::config::CConfigPing>() {
         return Some(p.to_wit());
     }
@@ -3131,6 +3165,21 @@ pub fn serialize_bedrock_packet(packet: &BClientboundPacket) -> Option<Bytes> {
             pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
             Some(buf.into())
         }
+        BClientboundPacket::CChangeDimension(data) => {
+            let p = pumpkin_protocol::bedrock::client::CChangeDimension {
+                dimension_id: VarInt(data.dimension_id),
+                position: pumpkin_util::math::vector3::Vector3::new(
+                    data.position.0 as _,
+                    data.position.1 as _,
+                    data.position.2 as _,
+                ),
+                respawn: data.respawn.try_into().unwrap(),
+                loading_screen_id: data.loading_screen_id.map(|value| value as _),
+            };
+            let mut buf = Vec::new();
+            pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
+            Some(buf.into())
+        }
         BClientboundPacket::CChunkRadiusUpdated(data) => {
             let p = pumpkin_protocol::bedrock::client::CChunkRadiusUpdated {
                 chunk_radius: VarInt(data.chunk_radius),
@@ -3307,6 +3356,27 @@ pub fn serialize_bedrock_packet(packet: &BClientboundPacket) -> Option<Bytes> {
             pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
             Some(buf.into())
         }
+        BClientboundPacket::CPlaySound(data) => {
+            let p = pumpkin_protocol::bedrock::client::CPlaySound {
+                sound_name: data.sound_name.clone(),
+                position: pumpkin_util::math::position::BlockPos::new(
+                    data.position.0,
+                    data.position.1,
+                    data.position.2,
+                ),
+                volume: data.volume.try_into().unwrap(),
+                pitch: data.pitch.try_into().unwrap(),
+                loop_count: VarInt(data.loop_count),
+                bypass_listener_range_check: data.bypass_listener_range_check.try_into().unwrap(),
+                handle: data.handle.map(|value| value as _),
+                playback_position_seconds: data
+                    .playback_position_seconds
+                    .map(|value| value.try_into().unwrap()),
+            };
+            let mut buf = Vec::new();
+            pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
+            Some(buf.into())
+        }
         BClientboundPacket::CPlayStatus(data) => {
             let p = match data {
                 crate::pumpkin::plugin::bedrock_packets::CPlayStatus::LoginSuccess => pumpkin_protocol::bedrock::client::CPlayStatus::LoginSuccess,
@@ -3426,6 +3496,16 @@ pub fn serialize_bedrock_packet(packet: &BClientboundPacket) -> Option<Bytes> {
                 ),
                 container_id: data.container_id.try_into().unwrap(),
                 recipe_index: VarInt(data.recipe_index),
+            };
+            let mut buf = Vec::new();
+            pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
+            Some(buf.into())
+        }
+        BClientboundPacket::CStopSound(data) => {
+            let p = pumpkin_protocol::bedrock::client::CStopSound {
+                sound_name: data.sound_name.clone(),
+                stop_all: data.stop_all.try_into().unwrap(),
+                stop_music_legacy: data.stop_music_legacy.try_into().unwrap(),
             };
             let mut buf = Vec::new();
             pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
@@ -3617,6 +3697,23 @@ impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CBossEvent {
     }
 }
 
+impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CChangeDimension {
+    fn to_wit(&self) -> BClientboundPacket {
+        BClientboundPacket::CChangeDimension(
+            crate::pumpkin::plugin::bedrock_packets::CChangeDimension {
+                dimension_id: self.dimension_id.0.try_into().unwrap(),
+                position: (
+                    self.position.x as _,
+                    self.position.y as _,
+                    self.position.z as _,
+                ),
+                respawn: self.respawn.try_into().unwrap(),
+                loading_screen_id: self.loading_screen_id.map(|value| value as _),
+            },
+        )
+    }
+}
+
 impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CChunkRadiusUpdated {
     fn to_wit(&self) -> BClientboundPacket {
         BClientboundPacket::CChunkRadiusUpdated(
@@ -3785,6 +3882,23 @@ impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::COpenSign {
     }
 }
 
+impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CPlaySound {
+    fn to_wit(&self) -> BClientboundPacket {
+        BClientboundPacket::CPlaySound(crate::pumpkin::plugin::bedrock_packets::CPlaySound {
+            sound_name: self.sound_name.to_string(),
+            position: (self.position.0.x, self.position.0.y, self.position.0.z),
+            volume: self.volume.try_into().unwrap(),
+            pitch: self.pitch.try_into().unwrap(),
+            loop_count: self.loop_count.0.try_into().unwrap(),
+            bypass_listener_range_check: self.bypass_listener_range_check.try_into().unwrap(),
+            handle: self.handle.map(|value| value as _),
+            playback_position_seconds: self
+                .playback_position_seconds
+                .map(|value| value.try_into().unwrap()),
+        })
+    }
+}
+
 impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CPlayStatus {
     fn to_wit(&self) -> BClientboundPacket {
         match self {
@@ -3923,6 +4037,16 @@ impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CStonecutter
     }
 }
 
+impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CStopSound {
+    fn to_wit(&self) -> BClientboundPacket {
+        BClientboundPacket::CStopSound(crate::pumpkin::plugin::bedrock_packets::CStopSound {
+            sound_name: self.sound_name.to_string(),
+            stop_all: self.stop_all.try_into().unwrap(),
+            stop_music_legacy: self.stop_music_legacy.try_into().unwrap(),
+        })
+    }
+}
+
 impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CTakeItemActor {
     fn to_wit(&self) -> BClientboundPacket {
         BClientboundPacket::CTakeItemActor(
@@ -3967,6 +4091,9 @@ pub fn clientbound_bedrock_any_to_wit(any: &dyn Any) -> Option<BClientboundPacke
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CBossEvent>() {
         return Some(p.to_wit());
     }
+    if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CChangeDimension>() {
+        return Some(p.to_wit());
+    }
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CChunkRadiusUpdated>() {
         return Some(p.to_wit());
     }
@@ -4003,6 +4130,9 @@ pub fn clientbound_bedrock_any_to_wit(any: &dyn Any) -> Option<BClientboundPacke
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::COpenSign>() {
         return Some(p.to_wit());
     }
+    if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CPlaySound>() {
+        return Some(p.to_wit());
+    }
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CPlayStatus>() {
         return Some(p.to_wit());
     }
@@ -4035,6 +4165,9 @@ pub fn clientbound_bedrock_any_to_wit(any: &dyn Any) -> Option<BClientboundPacke
     }
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CStonecutterSetRecipe>()
     {
+        return Some(p.to_wit());
+    }
+    if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CStopSound>() {
         return Some(p.to_wit());
     }
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CTakeItemActor>() {
