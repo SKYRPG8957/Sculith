@@ -759,5 +759,58 @@
       "clippy": "All targets for affected crates and native fixture, with experimental v0.2 enabled and warnings denied",
       "client_probe": "Go build, vet and format checks"
     }
+  },
+  "storage_input_order": {
+    "baseline": "0d18ac1c77b8bbefdf5e602d6bbc27474e4c0190",
+    "behavior": "Dispatch each world's input queues in order for running and frozen ticks before player updates.",
+    "wire_checks": [
+      "A Java quick move and a Bedrock withdrawal for the same chest item conserve the single item with running and frozen ticks.",
+      "Full Java and Bedrock interop matrix with the native and stable Wasm fixtures, including resource edits and normal saved-model restart."
+    ],
+    "local_load": {
+      "workload": "16 independent Java protocol clients, 9,600 input and ping packets over 15 seconds per run, matched Linux debug builds and copied Anvil world.",
+      "order": [
+        "previous",
+        "ordered",
+        "ordered",
+        "previous"
+      ],
+      "samples": {
+        "previous": [
+          {
+            "cpu_seconds": 7.34,
+            "peak_rss_kib": 183220,
+            "received_wire_bytes": 859104,
+            "late_tick_p95_ms": 14.07
+          },
+          {
+            "cpu_seconds": 8.63,
+            "peak_rss_kib": 182476,
+            "received_wire_bytes": 851050,
+            "late_tick_p95_ms": 39.68
+          }
+        ],
+        "ordered": [
+          {
+            "cpu_seconds": 7.1,
+            "peak_rss_kib": 179336,
+            "received_wire_bytes": 847680,
+            "late_tick_p95_ms": 13.12
+          },
+          {
+            "cpu_seconds": 8.47,
+            "peak_rss_kib": 180720,
+            "received_wire_bytes": 671296,
+            "late_tick_p95_ms": 38.07
+          }
+        ]
+      },
+      "scope": "Each run received 4,800 replies. CPU, network output and tick times varied across runs. A slowdown in the first sequential trials did not recur in this interleaved check. This sample does not establish performance at larger populations, native Bedrock load or rendering compatibility."
+    },
+    "log_sha256": {
+      "running_and_regressions": "1e9d3245324920aa063dc24780aa3c6d44bf5a9f47d9d8b3774af2900fa9f3ff",
+      "frozen": "84ac636591053562425ac10dcd5860b6bac2143323db21d8a73840e778ae99cf",
+      "paired_load": "dceb7f000cbafb8765bb1a6f4c3871c4443a7cbaa7e32725fba603265f1e656f"
+    }
   }
 }

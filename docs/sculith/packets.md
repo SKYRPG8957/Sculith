@@ -120,8 +120,10 @@ with the player's inventory and cursor, including changes made by callbacks.
 When the chunk unloads, the scheduler saves the current block entity data with
 that chunk. On reload, the next viewer receives the saved contents.
 
-This covers individual requests. Simultaneous transactions by separate
-viewers of the same container still need shared inventory ownership.
+The world processes player input queues in order before ticking players. Java
+and Bedrock requests that touch the same storage see the effects of earlier
+requests in that tick. Frozen ticks use the same input order. The input queues
+preserve each player's packet order and per-tick limit.
 
 ## Item use events
 

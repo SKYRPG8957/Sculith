@@ -1287,9 +1287,7 @@ impl Server {
             world.flush_synced_block_events();
 
             let players = world.players.load();
-            players.par_iter().for_each(|player| {
-                player.process_inbound_packets();
-            });
+            World::process_player_packets(&players);
             players.par_iter().for_each(|player| {
                 player.tick(self);
             });

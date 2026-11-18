@@ -55,7 +55,11 @@ func checkStorageInventory(c *minecraft.Conn, mode string) error {
 	if err := openStorage(); err != nil {
 		return err
 	}
-	if p.storage[0].Stack.Count != 64 || p.storage[1].Stack.Count != 64 {
+	seeded := uint16(64)
+	if mode == "--storage-race" {
+		seeded = 1
+	}
+	if p.storage[0].Stack.Count != seeded || p.storage[1].Stack.Count != 64 {
 		return fmt.Errorf("incorrect seeded chest contents")
 	}
 	chest := func(slot byte) protocol.StackRequestSlotInfo {
@@ -68,7 +72,7 @@ func checkStorageInventory(c *minecraft.Conn, mode string) error {
 		return a
 	}
 	counts := map[int]uint16{0: 64, 1: 64, 2: 64}
-	storage := map[int]uint16{0: 64, 1: 64}
+	storage := map[int]uint16{0: seeded, 1: 64}
 	storageIDs := map[int]int32{0: p.expected[0], 1: p.expected[2]}
 	checkContents := func() error {
 		for slot, item := range p.storage {
@@ -78,39 +82,35 @@ func checkStorageInventory(c *minecraft.Conn, mode string) error {
 		}
 		return nil
 	}
-	run := func(actions []protocol.StackRequestAction, accepted bool) error {
+	request := func(actions []protocol.StackRequestAction) (bool, error) {
 		p.id--
 		if err := c.WritePacket(&packet.ItemStackRequest{Requests: []protocol.ItemStackRequest{{RequestID: p.id, Actions: actions}}}); err != nil {
-			return err
+			return false, err
 		}
 		if err := c.Flush(); err != nil {
-			return err
+			return false, err
 		}
 		c.SetReadDeadline(time.Now().Add(6 * time.Second))
-		responded := false
-		for n := 0; n < 8192 && !responded; n++ {
+		for n := 0; n < 8192; n++ {
 			pk, err := c.ReadPacket()
 			if err != nil {
-				return err
+				return false, err
 			}
 			p.observe(pk)
 			if reply, ok := pk.(*packet.ItemStackResponse); ok {
 				for _, response := range reply.Responses {
 					if response.RequestID == p.id {
-						if (response.Status == protocol.ItemStackResponseStatusOK) != accepted {
-							return fmt.Errorf("storage request %d status=%d expected accepted=%t", p.id, response.Status, accepted)
-						}
-						responded = true
+						return response.Status == protocol.ItemStackResponseStatusOK, nil
 					}
 				}
 			}
 			if _, ok := pk.(*packet.AddItemActor); ok {
-				return fmt.Errorf("storage request spawned an unexpected drop")
+				return false, fmt.Errorf("storage request spawned an unexpected drop")
 			}
 		}
-		if !responded {
-			return fmt.Errorf("missing storage response")
-		}
+		return false, fmt.Errorf("missing storage response")
+	}
+	readback := func() error {
 		// Read current server inventory after the response, even if an old error path
 		// failed to correct the owner's prediction. Legacy queries never move items.
 		p.id -= 2
@@ -135,6 +135,31 @@ func checkStorageInventory(c *minecraft.Conn, mode string) error {
 			return err
 		}
 		return checkContents()
+	}
+	run := func(actions []protocol.StackRequestAction, accepted bool) error {
+		ok, err := request(actions)
+		if err != nil {
+			return err
+		}
+		if ok != accepted {
+			return fmt.Errorf("storage request %d accepted=%t expected=%t", p.id, ok, accepted)
+		}
+		return readback()
+	}
+	if mode == "--storage-race" {
+		accepted, err := request([]protocol.StackRequestAction{take(1, chest(0), p.slot(8))})
+		if err != nil {
+			return err
+		}
+		if accepted {
+			counts[8] = 1
+		}
+		storage[0] = 0
+		if err := readback(); err != nil {
+			return err
+		}
+		fmt.Printf("STORAGE_NATIVE acquired=%d\n", p.items[8].Stack.Count)
+		return nil
 	}
 	if mode != "--storage-inventory" {
 		actions := []protocol.StackRequestAction{take(1, chest(0), p.slot(8)), take(1, chest(1), p.slot(9))}

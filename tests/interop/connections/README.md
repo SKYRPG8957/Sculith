@@ -96,6 +96,11 @@ client checks corrections, reopens the chest to read its contents and checks
 that no item was dropped. The harness waits for the storage chunk to unload
 before the second viewer joins.
 
+`--storage-contention` sends a Java quick move and a Bedrock withdrawal for
+one chest item in the same tick. The clients check the chest and both players'
+inventories after the requests. Pass `frozen` to exercise incoming packets
+while the world is frozen.
+
 `--resource-edits` holds a pack offer open on each edition. A `PackEditor`
 login invokes the native pack API. An edit that removes the mapped geometry must
 fail, then a valid edit changes the model. The held offers complete with their

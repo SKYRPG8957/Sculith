@@ -63,6 +63,7 @@ func run() error {
 			"--close-inventory": "CloseNative", "--close-mutate": "CloseMutNative",
 			"--storage-inventory":  "StoreNative",
 			"--storage-click-deny": "StoreClickDeny", "--storage-mutate": "StoreMutNative", "--storage-drop-deny": "StoreDropDeny",
+			"--storage-race": "RaceChestBed",
 		} {
 			if os.Args[2] == option {
 				d.IdentityData.DisplayName = name
@@ -140,7 +141,7 @@ func run() error {
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
 	if len(os.Args) == 3 {
 		switch os.Args[2] {
-		case "--storage-inventory", "--storage-click-deny", "--storage-mutate", "--storage-drop-deny":
+		case "--storage-inventory", "--storage-click-deny", "--storage-mutate", "--storage-drop-deny", "--storage-race":
 			return checkStorageInventory(c, os.Args[2])
 		}
 	}

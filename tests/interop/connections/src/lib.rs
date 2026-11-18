@@ -1,5 +1,7 @@
 //! Native connection-event fixture, installed only into the interop scratch server.
 
+mod storage_contention;
+
 use std::sync::{
     Arc, LazyLock, Weak,
     atomic::{AtomicBool, Ordering},
@@ -128,6 +130,7 @@ impl Plugin for Connections {
                 true,
             );
             context.register_event::<InventoryCloseEvent, _>(observer, EventPriority::Lowest, true);
+            storage_contention::register(&context);
             context.log("PROBE_CONNECTIONS_LOADED");
             Ok(())
         })

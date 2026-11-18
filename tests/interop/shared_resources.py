@@ -367,6 +367,7 @@ def main():
     parser.add_argument("--item-use-events", action="store_true", help="check interaction vetoes before equipment and timed item use on both editions")
     parser.add_argument("--close-events", action="store_true", help="check cursor restitution and actual inventory correction after close callbacks")
     parser.add_argument("--storage-inventory", action="store_true", help="check native storage transfers and whole-request rejection in a real chest")
+    parser.add_argument("--storage-contention", nargs="?", const="running", choices=["running", "frozen"], help="check simultaneous Java and Bedrock withdrawals")
     parser.add_argument("--resource-edits", action="store_true", help="edit the authored pack while both editions are joining")
     parser.add_argument("--tracking-events", action="store_true", help="remove a tracked mob from its outgoing spawn callback")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
@@ -376,7 +377,7 @@ def main():
     parser.add_argument("--packet-edits", action="store_true", help="exercise outgoing packet edits and cancellation through Rust callbacks")
     parser.add_argument("--connections-plugin", type=Path, help="compiled native tests/interop/connections fixture")
     args = parser.parse_args()
-    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.resource_edits) and not args.connections_plugin:
+    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.resource_edits or args.storage_contention) and not args.connections_plugin:
         parser.error("event checks require --connections-plugin")
     if (args.dialog_replies or args.forms or args.models or args.packet_edits) and not args.plugin:
         parser.error("--dialog-replies, --forms, --models and --packet-edits require the Rust --plugin fixture")
@@ -416,7 +417,7 @@ def main():
         ("networking.bedrock.nethernet", "address"): json.dumps(f"127.0.0.1:{bedrock}"),
         ("world.chunk", "type"): '"anvil"',
     }
-    if args.building or args.legacy_inventory or args.storage_inventory:
+    if args.building or args.legacy_inventory or args.storage_inventory or args.storage_contention:
         changes[("", "spawn_protection")] = "0"
     for edition in ["java", "bedrock"]:
         for key in ["view_distance", "simulation_distance"]:
@@ -513,7 +514,7 @@ def main():
         if args.resource_edits:
             from resource_edits import check
             report["resource_edits"] = check(java, bedrock, root, args.bedrock_probe.resolve(), report["sha1"])
-        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.storage_inventory:
+        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.storage_inventory or args.storage_contention:
             server.stdin.write("kill @e[type=!minecraft:player]\n")
             server.stdin.flush()
             time.sleep(.5)
@@ -566,6 +567,9 @@ def main():
             client.socket.close()
             client = None
             report["storage_inventory"] = check(server, bedrock, root, args.bedrock_probe.resolve(), args.connections_plugin is not None)
+        if args.storage_contention:
+            from storage_contention import check
+            report["storage_contention"] = check(server, java, bedrock, root, args.bedrock_probe.resolve(), args.storage_contention == "frozen")
         if args.legacy_inventory or args.legacy_events:
             from inventory_requests import legacy
             report["legacy_inventory"] = legacy(server, bedrock, root, args.bedrock_probe.resolve(), args.legacy_inventory, args.legacy_events)

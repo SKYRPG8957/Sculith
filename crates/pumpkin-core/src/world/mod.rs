@@ -1649,6 +1649,13 @@ impl World {
         self.play_sound_expect(player, sound, category, &new_vec);
     }
 
+    pub(crate) fn process_player_packets(players: &[Arc<Player>]) {
+        // Different players' screens can mutate the same inventory.
+        for player in players {
+            player.process_inbound_packets();
+        }
+    }
+
     #[expect(clippy::too_many_lines)]
     pub fn tick(self: &Arc<Self>, server: &Arc<Server>) {
         let start = std::time::Instant::now();
@@ -1687,9 +1694,7 @@ impl World {
 
         let t_players = std::time::Instant::now();
         // Vanilla handles all packets before any player ticks
-        players.par_iter().for_each(|player| {
-            player.process_inbound_packets();
-        });
+        Self::process_player_packets(&players);
         players.par_iter().for_each(|player| {
             player.tick(server);
         });
