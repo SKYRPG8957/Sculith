@@ -122,7 +122,8 @@ impl EventHandler<InventoryClickEvent> for Observer {
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let name = &event.player.gameprofile.name;
-            if !name.starts_with("Click") && name != "LegacyTxnNative" {
+            if !name.starts_with("Click") && !name.starts_with("Erase") && name != "LegacyTxnNative"
+            {
                 return;
             }
             let before = event.player.inventory.get_slot(0).item_count;
@@ -168,6 +169,7 @@ impl EventHandler<InventoryInteractEvent> for Observer {
                 && name != "DropDenyNative"
                 && name != "LegacyDropDeny"
                 && !name.starts_with("Click")
+                && !name.starts_with("Erase")
             {
                 return;
             }
@@ -231,7 +233,7 @@ impl EventHandler<InventoryCreativeEvent> for Observer {
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let name = &event.player.gameprofile.name;
-            if !name.starts_with("Create") {
+            if !name.starts_with("Create") && !name.starts_with("Erase") {
                 return;
             }
             let count = event.player.inventory.get_slot(0).item_count;
@@ -250,8 +252,9 @@ impl EventHandler<InventoryCreativeEvent> for Observer {
                     .inventory
                     .set_slot(0, ItemStack::new(7, &Item::GRASS_BLOCK));
             }
-            event.cancelled = name.contains("Deny")
-                && (name.ends_with("Java") || event.slot == 44 || event.slot < 0);
+            event.cancelled = name.starts_with("EraseDeny")
+                || name.contains("Deny")
+                    && (name.ends_with("Java") || event.slot == 44 || event.slot < 0);
             if let Some(context) = self.0.upgrade() {
                 context.log(format!("PROBE_CREATIVE player={name} slot={} item={} count={} before={count} screen_before={screen_count} cancelled={} mutated={mutate}",event.slot,event.item_id,event.item_count,event.cancelled));
             }

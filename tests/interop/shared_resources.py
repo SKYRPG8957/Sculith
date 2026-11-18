@@ -536,7 +536,7 @@ def main():
             report["pick_events"] = check(java, bedrock, root, args.bedrock_probe.resolve())
         if args.creative_events:
             from creative_events import check
-            report["creative_events"] = check(java, bedrock, root, args.bedrock_probe.resolve())
+            report["creative_events"] = check(server, java, bedrock, root, args.bedrock_probe.resolve())
         if args.inventory_requests:
             from inventory_requests import check
             report["inventory_requests"] = check(server, bedrock, root, args.bedrock_probe.resolve())

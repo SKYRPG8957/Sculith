@@ -24,7 +24,61 @@ def barrier(client, nonce, correction=False):
     raise AssertionError("missing creative Java ordering barrier")
 
 
-def check(java_port, native_port, root, probe):
+def destruction(server, java_port, native_port, root, probe):
+    from inventory_requests import native
+
+    for option, name in [("--destroy-deny", "EraseDenyNative"),
+                         ("--destroy-mutate", "EraseMutNative"),
+                         ("--destroy-allow", "EraseAllowNative")]:
+        native(server, native_port, root, probe, option, name)
+    for mode in ["Deny", "Mut", "Allow"]:
+        name = f"Erase{mode}Java"
+        client = PickJava(java_port, name)
+        try:
+            client.join_with_resources(java_port, root, False)
+            client.send(SB["player_loaded"])
+            server.stdin.write(f"give {name} minecraft:diamond_block 64\n")
+            server.stdin.flush()
+            original = {36: ("diamond_block", 64)}
+            for _ in range(8192):
+                client.event()
+                if {i: value for i, value in client.contents.items() if value} == original:
+                    break
+            assert {i: value for i, value in client.contents.items() if value} == original, client.contents
+            barrier(client, 711)
+            client.send(SB["set_creative_mode_slot"], struct.pack(">h", 36) + b"\0")
+            barrier(client, 712, correction=True)
+            expected = original if mode == "Deny" else {36: ("grass_block", 7)} if mode == "Mut" else {}
+            assert {i: value for i, value in client.contents.items() if value} == expected, client.contents
+        finally:
+            client.socket.close()
+    rows = (root / "server.log").read_text().splitlines()
+    for name, payloads in {
+        "EraseDenyNative": [(44, "diamond_block", 63), (36, "air", 0), (-1, "air", 0)],
+        "EraseAllowNative": [(36, "diamond_block", 61), (36, "air", 0), (-1, "air", 0)],
+        "EraseMutNative": [(36, "air", 0)],
+        "EraseDenyJava": [(36, "air", 0)],
+        "EraseMutJava": [(36, "air", 0)],
+        "EraseAllowJava": [(36, "air", 0)],
+    }.items():
+        events = [row for row in rows if "PROBE_CREATIVE" in row and f"player={name} " in row]
+        assert len(events) == len(payloads), (name, events)
+        for event, (slot, item, count) in zip(events, payloads):
+            assert f"slot={slot} item={item} count={count} " in event, event
+            assert f"cancelled={'true' if 'Deny' in name else 'false'}" in event, event
+        if "Mut" in name:
+            assert "before=64 screen_before=64" in events[0] and "mutated=true" in events[0], events
+        trace = [row for row in rows if f"player={name} " in row and any(
+            marker in row for marker in ["PROBE_INVENTORY_CLICK", "PROBE_INVENTORY_INTERACT", "PROBE_CREATIVE"])]
+        if name.endswith("Native"):
+            for i, row in enumerate(trace):
+                if "PROBE_CREATIVE" in row:
+                    assert i >= 2 and "PROBE_INVENTORY_CLICK" in trace[i - 2] and "PROBE_INVENTORY_INTERACT" in trace[i - 1], trace
+        else:
+            assert trace == events, trace
+
+
+def check(server, java_port, native_port, root, probe):
     for mutation, name in [(False, "CreateDenyJava"), (True, "CreateMutJava")]:
         # Check native cancellation first: the old native path never fires this event.
         option = "--creative-mutate" if mutation else "--creative-deny"
@@ -57,4 +111,5 @@ def check(java_port, native_port, root, probe):
         else:
             assert all("before=1 screen_before=1" in row for row in events), events
             assert any("cancelled=true" in row for row in events), events
-    return "both editions; creative veto/correction; native prefix swap, cursor and drop rejected; callback mutation retained"
+    destruction(server, java_port, native_port, root, probe)
+    return "both editions; creative creation and destruction veto/correction; native prefix swap, cursor and drop rejected; callback mutation retained"

@@ -66,6 +66,7 @@ struct PlayerInventoryPlan {
     created: ItemStack,
     updates: Vec<SlotUpdate>,
     drops: Vec<ItemStack>,
+    destroyed: Vec<Target>,
 }
 
 fn same_stack(a: &ItemStack, b: &ItemStack) -> bool {
@@ -184,6 +185,7 @@ impl PlayerInventoryPlan {
             created: ItemStack::EMPTY.clone(),
             updates: Vec::new(),
             drops: Vec::new(),
+            destroyed: Vec::new(),
         };
         plan.apply(player, &*handler, request)?;
         if !creative && !request.actions.is_empty() {
@@ -273,6 +275,9 @@ impl PlayerInventoryPlan {
                     }
                     stack.decrement(*count);
                     self.put(from, stack, source);
+                    if matches!(action, Action::Destroy { .. }) && !self.destroyed.contains(&from) {
+                        self.destroyed.push(from);
+                    }
                 }
                 Action::CraftResultsDeprecated { .. } | Action::Create { .. } => {}
                 _ => return Err(()),
@@ -432,6 +437,22 @@ impl PlayerInventoryPlan {
             server.plugin_manager.fire_blocking(&server, &mut event);
             if event.cancelled {
                 return false;
+            }
+            // Destroy has no CraftCreative action, but still sets a creative slot.
+            for target in &self.destroyed {
+                let slot = match *target {
+                    Target::Slot(index) => {
+                        let Some(slot) = player_slot(player, self.slots[index].as_ref()) else {
+                            return false;
+                        };
+                        slot as i16
+                    }
+                    Target::Cursor => -1,
+                    Target::Created => return false,
+                };
+                if !player.allow_creative_change(slot, &self.get(*target)) {
+                    return false;
+                }
             }
         }
         for stack in &self.drops {

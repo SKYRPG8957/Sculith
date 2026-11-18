@@ -295,3 +295,83 @@ func checkClickCursor(c *minecraft.Conn) error {
 	fmt.Println("PASS: outside click veto retains cursor; destination click returns the item without a world drop")
 	return nil
 }
+
+func checkCreativeDestroy(c *minecraft.Conn, option string) error {
+	if c.GameData().PlayerGameMode != packet.GameTypeCreative {
+		return fmt.Errorf("creative destruction requires Creative mode")
+	}
+	p := inventoryProbe{c: c}
+	if err := p.seed(); err != nil {
+		return err
+	}
+	counts := map[int]uint16{0: 64, 1: 64, 2: 64}
+	if option == "--destroy-mutate" {
+		counts[0], p.expected[0] = 7, p.expected[2]
+		if err := p.run([]protocol.StackRequestAction{&protocol.DestroyStackRequestAction{Count: 64, Source: p.slot(0)}}, false, counts, 0, false); err != nil {
+			return err
+		}
+		return p.noDrop()
+	}
+	allowed := option == "--destroy-allow"
+	if !allowed {
+		source := p.slot(8)
+		source.StackNetworkID = p.id - 1
+		if err := p.run([]protocol.StackRequestAction{
+			&protocol.SwapStackRequestAction{Source: p.slot(0), Destination: p.slot(8)},
+			&protocol.DestroyStackRequestAction{Count: 1, Source: source},
+		}, false, counts, 0, false); err != nil {
+			return err
+		}
+	}
+	if allowed {
+		counts[0] = 61
+		next := p.slot(0)
+		next.StackNetworkID = p.id - 1
+		if err := p.run([]protocol.StackRequestAction{
+			&protocol.DestroyStackRequestAction{Count: 1, Source: p.slot(0)},
+			&protocol.DestroyStackRequestAction{Count: 2, Source: next},
+		}, true, counts, 0, false); err != nil {
+			return err
+		}
+	}
+	count := byte(64)
+	if allowed {
+		count, counts[0] = 61, 0
+	}
+	if err := p.run([]protocol.StackRequestAction{&protocol.DestroyStackRequestAction{Count: count, Source: p.slot(0)}}, allowed, counts, 0, false); err != nil {
+		return err
+	}
+	from := byte(0)
+	if allowed {
+		from = 1
+	}
+	cursor := protocol.StackRequestSlotInfo{Container: protocol.FullContainerName{ContainerID: protocol.ContainerCursor}}
+	take := &protocol.TakeStackRequestAction{}
+	take.Count, take.Source, take.Destination = 1, p.slot(from), cursor
+	counts[int(from)] = 63
+	if err := p.run([]protocol.StackRequestAction{take}, true, counts, 1, false); err != nil {
+		return err
+	}
+	cursor.StackNetworkID = p.cursorID
+	cursorCount := uint16(1)
+	if allowed {
+		cursorCount = 0
+	}
+	if err := p.run([]protocol.StackRequestAction{&protocol.DestroyStackRequestAction{Count: 1, Source: cursor}}, allowed, counts, cursorCount, false); err != nil {
+		return err
+	}
+	if !allowed {
+		place := &protocol.PlaceStackRequestAction{}
+		cursor.StackNetworkID = p.cursorID
+		place.Count, place.Source, place.Destination = 1, cursor, p.slot(from)
+		counts[int(from)] = 64
+		if err := p.run([]protocol.StackRequestAction{place}, true, counts, 0, false); err != nil {
+			return err
+		}
+	}
+	if err := p.noDrop(); err != nil {
+		return err
+	}
+	fmt.Println("PASS: creative destruction honors slot and cursor events without partial moves or world drops")
+	return nil
+}

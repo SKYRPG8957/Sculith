@@ -103,6 +103,12 @@ Legacy hotbar drops have no UI click event; creative creation retains its
 `InventoryCreativeEvent` path. Specialized container clicks and drag gestures
 remain separate work.
 
+Creative destruction also fires `InventoryCreativeEvent` after the click and
+interaction callbacks, once per affected target with its final planned stack.
+Slot numbers use the player's canonical inventory layout; the cursor uses `-1`.
+An empty result reports air with count zero. A veto leaves preceding moves and
+destruction unapplied; callback changes survive stale-plan rejection.
+
 ## Legacy inventory transactions
 
 Legacy slot groups request synchronization. The server returns the actual slots

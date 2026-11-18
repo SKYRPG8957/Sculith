@@ -567,5 +567,52 @@
       "Modern stack-network-ID prediction journaling, general specialized-container atomicity and complete item-component conversion remain incomplete",
       "No new Windows GDK, rendering, official inventory-policy parity or load/performance claim"
     ]
+  },
+  "creative_destruction_events": {
+    "baseline": "3ff6ddef4d8fb7a3cd2d732d8303c0ba6d302145",
+    "server_sha256": "eed9df50c17935949f05f80d8ad13e874a0454965a1ef44c8f033a3178c73d01",
+    "native_fixture_sha256": "a173556e55378dca18bc7d39e2c44f98ca05d5276397ddd6338bf1f2b05142d7",
+    "build": "Linux debug, default server features; Rust 1.100.0",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "api": "Existing InventoryCreativeEvent and creative-change helper; private plan state only; no struct, vtable or WIT changes in the public API",
+    "reference": "Existing Java direct creative-slot assignment contract and native planned player-inventory requests",
+    "before": "A Creative native client swaps slot0 into slot8 and destroys one item. The registered creative-veto listener is never called and the request succeeds with status 0",
+    "behavior": "Record unique validated Destroy targets and authorize their final proposed stacks through InventoryCreativeEvent after the ordinary click and interaction events. Use canonical player inventory indices and cursor slot -1; empty results retain the existing air/count-zero payload",
+    "commit": "Callbacks run without screen or inventory guards. A veto rejects the entire plan including earlier moves and drops; existing snapshot checks preserve callback-written inventory instead of committing stale proposals",
+    "wire_checks": [
+      "Native veto: swap followed by partial destruction, full-stack clear and cursor clear all reject without partial moves, lost cursor items or world drops; the vetoed cursor is returned afterward",
+      "Native allowed controls: two reductions of one slot produce a single event for the final 61-item proposal; a subsequent full clear and cursor clear also succeed without world drops",
+      "Both editions: a creative listener reads the original inventory and player screen, writes seven grass blocks, and its stack survives the rejected stale clear",
+      "Java veto and allowed clear controls receive the actual slot before a following ping reply; native click/interaction/creative order is logged and checked while Java direct creative assignment retains its creative-only path"
+    ],
+    "regressions": "Full Java/Bedrock matrix with native and stable Wasm fixtures: resources, sounds, forms, dialog replies, four building paths, picks, held/creative/ordinary/legacy inventory events, tracking, packet edits, connections, models and normal restart",
+    "tests": {
+      "clippy": "Inventory, core, binary and native fixture; experimental v0.2; all targets; warnings denied",
+      "go": "build, vet and gofmt; independent protocol client",
+      "format": "Rust fmt, Python compilation and diff checks",
+      "server": 803,
+      "inventory": 46,
+      "typos": "v1.52.2; changed files"
+    },
+    "log_sha256": {
+      "before": "a7efdc7b6fe3897ce6f07388e0668bfd2e79a1849ed1006e79c41267ed812c7b",
+      "before_events": "305f43af797d6b51e1cf68acc3ec36c404e71586ea5dac17e3acae51fca10f13",
+      "focused": "472ef37e031652ca2a4e681fb7b96df8c055bf5315859ce1daba5972c33ca968",
+      "focused_events": "3961c3105d7a3689250fd26de76a20375bdc7ed38bad92cb2aac484c8ccc3688",
+      "full": "fdd7f172ae5540d7607c0691600bd55fe669a0099510b4cccc2583bed0d4c4ba",
+      "full_events": "91208aaa790713bdfd7ca44da453390f777618d85a34fe997a142243b52bee26",
+      "full_restart_events": "45b7788b6c58c7bf981b39bc16afe23d1f7f05f194df1a33f1b9e7913fe9922b",
+      "clippy": "274fd2063f58cc0e6d2eca96a05deabd491ed52679181041f445b9e8c978fb30",
+      "build": "4631fc506d7cb99a7e6b16116dffd28f454d88e4d8ef9aa97708061655b93b6c",
+      "build_final": "b13d4ca76ec50c363eaf0bbbecd3069fc54c6110513d6b2c1fae834966364ca4",
+      "runtime_build": "427a9c09642e9d3bc27437b702f1cc4b9cedce6f72ebd6040fd60916de96e034",
+      "core_and_inventory": "d481e3225eaad208eabd67b69c14af6dfec73fa1d5b8b3f5ee342e0aded848ff"
+    },
+    "limits": [
+      "Player-owned planned destruction only; specialized container and recipe transaction/event parity remain incomplete",
+      "Modern stack-network-ID prediction journals and complete item-component conversion remain incomplete",
+      "No new Windows GDK, rendering, official creative-policy parity or load/performance claim"
+    ]
   }
 }

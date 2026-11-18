@@ -41,6 +41,12 @@ Callbacks read the screen and inventory; another callback writes a stack that
 must survive the rejected plan. The harness exercises the same veto and mutation
 over Java and requires an explicit correction packet there.
 
+It also runs `--destroy-deny`, `--destroy-mutate` and `--destroy-allow` for partial
+and full destruction, including a cursor clear and multiple reductions of one
+slot. A veto preserves preceding moves; a callback-written stack survives.
+Both editions include allowed clears as controls. Destruction must not spawn
+a world item.
+
 `--inventory-requests` seeds two diamond stacks and a grass stack through console
 commands in the copied world. Survival and Creative clients send failing
 requests after a slot swap or drop; every main-inventory slot and the cursor

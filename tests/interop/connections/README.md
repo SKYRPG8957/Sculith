@@ -47,7 +47,16 @@ a slot swap before creation, with a later slot event cancelling the whole
 request. Cursor creation and world drops are also cancelled. `CreateMut*`
 clients alter the destination in the callback; that stack must survive instead
 of being overwritten. The Java client requires an explicit slot correction
-before its following ping response. Only `Create*` test clients are affected.
+before its following ping response. These creation callbacks affect only
+`Create*` test clients.
+
+Destruction cases use `EraseDeny*`, `EraseMut*` and `EraseAllow*` clients.
+They veto, mutate or allow a creative slot clear. Native cases also check a
+partial reduction, repeated reductions of one slot, a preceding move and cursor
+destruction. Event payloads describe the final proposed stack, including air
+with count zero for a clear. Callbacks read the inventory and player screen.
+Native destruction follows click and interaction events; Java direct creative
+slot assignment keeps its existing creative-only event path.
 
 `--inventory-events` reads the inventory and player screen from
 `InventoryInteractEvent` before a native swap. `InvDenyNative` cancels it;

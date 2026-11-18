@@ -39,6 +39,7 @@ func run() error {
 			"--legacy-inventory": "LegacyTxnNative", "--legacy-drop-veto": "LegacyDropDeny", "--legacy-held-veto": "LegacyHeldNative",
 			"--click-events": "ClickDenyNative", "--click-mutation": "ClickMutNative",
 			"--click-cursor": "ClickCurNative",
+			"--destroy-deny": "EraseDenyNative", "--destroy-mutate": "EraseMutNative", "--destroy-allow": "EraseAllowNative",
 		} {
 			if os.Args[2] == option {
 				d.IdentityData.DisplayName = name
@@ -114,6 +115,9 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && (os.Args[2] == "--destroy-deny" || os.Args[2] == "--destroy-mutate" || os.Args[2] == "--destroy-allow") {
+		return checkCreativeDestroy(c, os.Args[2])
+	}
 	if len(os.Args) == 3 && os.Args[2] == "--click-cursor" {
 		return checkClickCursor(c)
 	}
