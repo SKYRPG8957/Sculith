@@ -237,32 +237,46 @@ impl EventHandler<InventoryClickEvent> for Observer {
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let name = &event.player.gameprofile.name;
-            if !name.starts_with("Click") && !name.starts_with("Erase") && name != "LegacyTxnNative"
+            let storage = matches!(
+                name.as_str(),
+                "StoreClickDeny" | "StoreMutNative" | "StoreDropDeny"
+            );
+            if !name.starts_with("Click")
+                && !name.starts_with("Erase")
+                && name != "LegacyTxnNative"
+                && !storage
             {
                 return;
             }
             let before = event.player.inventory.get_slot(0).item_count;
-            let screen = event
-                .player
-                .player_screen_handler
+            let handler = if storage {
+                event
+                    .player
+                    .current_screen_handler
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone()
+            } else {
+                event.player.player_screen_handler.clone()
+            };
+            let slot = handler
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get_slot(36)
-                .get_cloned_stack()
-                .item_count;
+                .get_behaviour()
+                .slots[if storage { 0 } else { 36 }]
+            .clone();
+            let screen = slot.get_cloned_stack().item_count;
             let clicked = event
                 .clicked_item
                 .as_ref()
                 .map_or(0, |stack| stack.item_count);
             let cursor = event.cursor.as_ref().map_or(0, |stack| stack.item_count);
-            let mutate = name == "ClickMutNative";
+            let mutate = name == "ClickMutNative" || name == "StoreMutNative";
             if mutate {
-                event
-                    .player
-                    .inventory
-                    .set_slot(0, ItemStack::new(7, &Item::GRASS_BLOCK));
+                slot.set_stack(ItemStack::new(7, &Item::GRASS_BLOCK));
             }
             event.cancelled = name.starts_with("ClickDeny")
+                || name == "StoreClickDeny"
                 || (name == "ClickCurNative" && event.raw_slot == -999);
             if let Some(context) = self.0.upgrade() {
                 context.log(format!("PROBE_INVENTORY_CLICK player={name} slot={} raw={} type={:?} button={} window={:?} clicked={clicked} cursor={cursor} before={before} screen_before={screen} cancelled={} mutated={mutate}", event.slot, event.raw_slot, event.click_type, event.hotbar_button, event.window_type, event.cancelled));
@@ -285,6 +299,10 @@ impl EventHandler<InventoryInteractEvent> for Observer {
                 && name != "LegacyDropDeny"
                 && !name.starts_with("Click")
                 && !name.starts_with("Erase")
+                && !matches!(
+                    name.as_str(),
+                    "StoreClickDeny" | "StoreMutNative" | "StoreDropDeny"
+                )
             {
                 return;
             }
@@ -320,7 +338,7 @@ impl EventHandler<PlayerDropItemEvent> for Observer {
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             let name = &event.player.gameprofile.name;
-            if name != "DropDenyNative" && name != "LegacyDropDeny" {
+            if name != "DropDenyNative" && name != "LegacyDropDeny" && name != "StoreDropDeny" {
                 return;
             }
             let count = event.player.inventory.get_slot(0).item_count;

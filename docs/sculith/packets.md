@@ -26,9 +26,9 @@ and trailing playback options; matchmaking options use the two optional fields
 in protocol 2225. Neither matchmaking nor signed audio services are implemented
 by these codecs.
 
-The corrected public packet records require native plugin ABI 10. Rebuild
-native plugins against the same revision as the server. Stable Wasm v0.1 is
-unchanged; the experimental v0.2 packet records are regenerated with the codecs.
+The public packet records changed in ABI 10. Rebuild native plugins against
+the same revision as the server. The experimental v0.2 packet records are
+regenerated with the codecs.
 
 `ActorPickRequest` (35) uses a fixed signed little-endian 64-bit entity ID.
 Creative players can now pick a nearby tracked mob to create or select its
@@ -90,8 +90,7 @@ including creative-output drops, fire `PlayerDropItemEvent` before the commit.
 Callbacks can read the screen and inventory without retaining their locks;
 cancellation leaves the plan unapplied and callback changes are retained.
 Actual inventory, cursor and equipment follow both successful and rejected
-requests. Recipe/container operations remain separate paths; these checks do
-not establish general transaction atomicity.
+requests. Recipes and specialized screens retain their separate handlers.
 
 Planned ordinary UI requests first fire `InventoryClickEvent`, then the general
 interaction event. A click veto skips the interaction event and leaves the plan
@@ -108,6 +107,21 @@ interaction callbacks, once per affected target with its final planned stack.
 Slot numbers use the player's canonical inventory layout; the cursor uses `-1`.
 An empty result reports air with count zero. A veto leaves preceding moves and
 destruction unapplied; callback changes survive stale-plan rejection.
+
+## Storage requests
+
+Ordinary stack requests in a generic storage screen use the same plan. The
+server binds the packet to its open screen and world, validates storage indices
+and the rest of the request, then runs the click, interaction and drop
+callbacks before applying changes. A veto or an invalid later action leaves
+the request unapplied. The response corrects the active storage window along
+with the player's inventory and cursor, including changes made by callbacks.
+
+When the chunk unloads, the scheduler saves the current block entity data with
+that chunk. On reload, the next viewer receives the saved contents.
+
+This covers individual requests. Simultaneous transactions by separate
+viewers of the same container still need shared inventory ownership.
 
 ## Item use events
 

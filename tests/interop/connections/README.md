@@ -88,3 +88,10 @@ equipment or food consumption starts, without retaining inventory locks.
 close, `CloseMutNative` writes seven grass blocks into inventory and three onto
 the cursor; both changes must reach the owner. Later disconnect callbacks do not
 repeat that mutation.
+
+`--storage-inventory` opens a real chest. `StoreClickDeny` vetoes a withdrawal
+before the interaction callback. `StoreDropDeny` vetoes a drop after a planned
+withdrawal. `StoreMutNative` replaces the clicked chest stack with grass. The
+client checks corrections, reopens the chest to read its contents and checks
+that no item was dropped. The harness waits for the storage chunk to unload
+before the second viewer joins.

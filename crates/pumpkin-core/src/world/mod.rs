@@ -722,11 +722,7 @@ impl World {
         }
     }
 
-    /// Serializes the live block entities of a chunk back into that chunk's block
-    /// entity data. The live map is the source of truth while a chunk is loaded -
-    /// `get_block_entity` takes the saved NBT out of the chunk when it wakes an
-    /// entity up - so this has to run before the chunk is dropped, or everything
-    /// the entity did since it was loaded is lost.
+    /// Refresh the saved data for an explicit save while the chunk is loaded.
     fn save_block_entities(&self, chunk_pos: Vector2<i32>) {
         let Some(block_entities) = self
             .block_entities
@@ -737,17 +733,22 @@ impl World {
         };
 
         for block_entity in block_entities {
-            let mut nbt = NbtCompound::new();
-            block_entity.write_internal(&mut nbt);
-            if let Some(custom_data) = self
-                .custom_block_entity_data
-                .get(&block_entity.get_position())
-                && !custom_data.is_empty()
-            {
-                nbt.put_compound("PumpkinCustomData", custom_data.clone());
-            }
+            let nbt = self.block_entity_save_data(block_entity.as_ref());
             self.add_block_entity_nbt(block_entity.get_position(), &nbt);
         }
+    }
+
+    fn block_entity_save_data(&self, block_entity: &dyn BlockEntity) -> NbtCompound {
+        let mut nbt = NbtCompound::new();
+        block_entity.write_internal(&mut nbt);
+        if let Some(custom_data) = self
+            .custom_block_entity_data
+            .get(&block_entity.get_position())
+            && !custom_data.is_empty()
+        {
+            nbt.put_compound("PumpkinCustomData", custom_data.clone());
+        }
+        nbt
     }
 
     /// Broadcasts an entity status update / event to all players tracking the specified entity,
@@ -5632,11 +5633,6 @@ impl World {
                 mob.get_mob_entity().finish_removal(mob);
             }
         }
-
-        for chunk_pos in &chunks_set {
-            self.save_block_entities(*chunk_pos);
-            self.block_entities.remove(chunk_pos);
-        }
     }
 
     pub(crate) fn set_block_breaking(
@@ -8338,6 +8334,22 @@ pub struct WorldPortal(pub Arc<World>);
 
 // Pure Beauty :cap:
 impl WorldPortalExt for WorldPortal {
+    fn save_evicted_block_entities(&self, pos: Vector2<i32>, chunk: &ChunkData) {
+        let Some((_, live)) = self.0.block_entities.remove(&pos) else {
+            return;
+        };
+        let saved: Vec<_> = live
+            .into_iter()
+            .map(|(pos, entity)| (pos, self.0.block_entity_save_data(entity.as_ref())))
+            .collect();
+        chunk
+            .pending_block_entities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(saved);
+        chunk.mark_dirty(true);
+    }
+
     fn can_place_at(
         &self,
         block: &pumpkin_data::Block,

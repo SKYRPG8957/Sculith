@@ -10,13 +10,15 @@ import (
 )
 
 type inventoryProbe struct {
-	c        *minecraft.Conn
-	items    [36]protocol.ItemInstance
-	expected [36]int32
-	id       int32
-	cursorID int32
-	reply    protocol.ItemStackResponse
-	blocks   map[protocol.BlockPos]uint32
+	c             *minecraft.Conn
+	items         [36]protocol.ItemInstance
+	expected      [36]int32
+	id            int32
+	cursorID      int32
+	reply         protocol.ItemStackResponse
+	blocks        map[protocol.BlockPos]uint32
+	storageWindow uint32
+	storage       []protocol.ItemInstance
 }
 
 func (p *inventoryProbe) observe(pk packet.Packet) {
@@ -26,10 +28,16 @@ func (p *inventoryProbe) observe(pk packet.Packet) {
 			p.blocks[v.Position] = v.NewBlockRuntimeID
 		}
 	case *packet.InventoryContent:
+		if p.storage != nil && v.WindowID == p.storageWindow && len(v.Content) == len(p.storage) {
+			copy(p.storage, v.Content)
+		}
 		if v.WindowID == 0 && len(v.Content) == len(p.items) {
 			copy(p.items[:], v.Content)
 		}
 	case *packet.InventorySlot:
+		if p.storage != nil && v.WindowID == p.storageWindow && v.Slot < uint32(len(p.storage)) {
+			p.storage[v.Slot] = v.NewItem
+		}
 		if v.WindowID == 0 && v.Slot < uint32(len(p.items)) {
 			p.items[v.Slot] = v.NewItem
 		}

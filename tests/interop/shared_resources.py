@@ -364,6 +364,7 @@ def main():
     parser.add_argument("--click-events", action="store_true", help="check shared inventory click callbacks, vetoes and native snapshot payloads")
     parser.add_argument("--item-use-events", action="store_true", help="check interaction vetoes before equipment and timed item use on both editions")
     parser.add_argument("--close-events", action="store_true", help="check cursor restitution and actual inventory correction after close callbacks")
+    parser.add_argument("--storage-inventory", action="store_true", help="check native storage transfers and whole-request rejection in a real chest")
     parser.add_argument("--tracking-events", action="store_true", help="remove a tracked mob from its outgoing spawn callback")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
@@ -412,7 +413,7 @@ def main():
         ("networking.bedrock.nethernet", "address"): json.dumps(f"127.0.0.1:{bedrock}"),
         ("world.chunk", "type"): '"anvil"',
     }
-    if args.building or args.legacy_inventory:
+    if args.building or args.legacy_inventory or args.storage_inventory:
         changes[("", "spawn_protection")] = "0"
     for edition in ["java", "bedrock"]:
         for key in ["view_distance", "simulation_distance"]:
@@ -506,7 +507,7 @@ def main():
             assert "pack.mcmeta" in archive.namelist()
             assert archive.read("assets/sculith/sounds/demo_tone.ogg") == original["sounds/sculith_demo.ogg"]
             assert "assets/sculith/models/sculith/demo_statue.json" in archive.namelist()
-        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events or args.item_use_events or args.close_events:
+        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.storage_inventory:
             server.stdin.write("kill @e[type=!minecraft:player]\n")
             server.stdin.flush()
             time.sleep(.5)
@@ -554,6 +555,11 @@ def main():
         if args.close_events:
             from inventory_close import check
             report["close_events"] = check(server, java, bedrock, root, args.bedrock_probe.resolve())
+        if args.storage_inventory:
+            from storage_inventory import check
+            client.socket.close()
+            client = None
+            report["storage_inventory"] = check(server, bedrock, root, args.bedrock_probe.resolve(), args.connections_plugin is not None)
         if args.legacy_inventory or args.legacy_events:
             from inventory_requests import legacy
             report["legacy_inventory"] = legacy(server, bedrock, root, args.bedrock_probe.resolve(), args.legacy_inventory, args.legacy_events)

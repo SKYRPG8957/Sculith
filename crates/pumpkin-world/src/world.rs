@@ -2,7 +2,7 @@ use crate::generation::proto_chunk::GenerationCache;
 use bitflags::bitflags;
 use pumpkin_data::{Block, BlockState, BlockStateId, Mirror, Rotation, chunk::Biome};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use thiserror::Error;
 
 bitflags! {
@@ -83,6 +83,9 @@ pub trait WorldPortalExt: Send + Sync {
     );
 
     fn spawn_structure_entities(&self, _entities: Vec<(NbtCompound, &'static Biome)>) {}
+
+    /// Transfer live block entities to the chunk before it is saved and discarded.
+    fn save_evicted_block_entities(&self, _pos: Vector2<i32>, _chunk: &crate::chunk::ChunkData) {}
 }
 
 pub trait BlockAccessor: Send + Sync {

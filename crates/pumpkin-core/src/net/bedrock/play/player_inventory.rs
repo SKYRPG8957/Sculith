@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex};
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::{
     container_click::SLOT_INDEX_OUTSIDE,
+    generic_container_screen_handler::GenericContainerScreenHandler,
     inventory::Inventory,
+    player::player_inventory::PlayerInventory,
     screen_handler::{ClickType, ScreenHandler},
     slot::Slot,
 };
@@ -50,7 +52,31 @@ enum Target {
     Created,
 }
 
-struct PlayerInventoryPlan {
+pub(super) struct StorageContext {
+    screen: Arc<Mutex<dyn ScreenHandler>>,
+    world: Arc<World>,
+}
+
+impl StorageContext {
+    pub(super) fn capture(player: &Player) -> Option<Self> {
+        let screen = player
+            .current_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let storage = screen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_any()
+            .is::<GenericContainerScreenHandler>();
+        storage.then(|| Self {
+            screen,
+            world: player.world(),
+        })
+    }
+}
+
+struct InventoryPlan {
     world: Arc<World>,
     mode: GameMode,
     creative: bool,
@@ -141,8 +167,12 @@ fn creative_stack(network_id: u32) -> Option<ItemStack> {
     Some(ItemStack::new(limit, mapping.java_item))
 }
 
-impl PlayerInventoryPlan {
-    fn prepare(player: &Arc<Player>, request: &ItemStackRequest) -> Result<Self, ()> {
+impl InventoryPlan {
+    fn prepare(
+        player: &Arc<Player>,
+        request: &ItemStackRequest,
+        storage: Option<&StorageContext>,
+    ) -> Result<Self, ()> {
         let mode = player.gamemode.load();
         let creative = request
             .actions
@@ -156,6 +186,11 @@ impl PlayerInventoryPlan {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
+        if storage.is_some_and(|context| {
+            !Arc::ptr_eq(&screen, &context.screen) || !Arc::ptr_eq(&player.world(), &context.world)
+        }) {
+            return Err(());
+        }
         let handler = screen
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -279,7 +314,7 @@ impl PlayerInventoryPlan {
                         self.destroyed.push(from);
                     }
                 }
-                Action::CraftResultsDeprecated { .. } | Action::Create { .. } => {}
+                Action::CraftResultsDeprecated { .. } | Action::Create { .. } if self.creative => {}
                 _ => return Err(()),
             }
         }
@@ -344,11 +379,15 @@ impl PlayerInventoryPlan {
             | ContainerName::HotBar
             | ContainerName::Armor
             | ContainerName::Offhand => {}
+            ContainerName::LevelEntity
+                if !self.creative && handler.as_any().is::<GenericContainerScreenHandler>() => {}
             _ => return Err(()),
         }
         let index = map_bedrock_container_slot(handler, name, info.slot_id).ok_or(())?;
         let slot = self.slots.get(index).ok_or(())?;
-        player_slot(player, slot.as_ref()).ok_or(())?;
+        if name != ContainerName::LevelEntity {
+            player_slot(player, slot.as_ref()).ok_or(())?;
+        }
         Ok(Target::Slot(index))
     }
 
@@ -486,7 +525,7 @@ impl PlayerInventoryPlan {
         let mut handler = current
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if handler.get_behaviour().slots.len() != self.slots.len() {
+        if handler.get_behaviour().slots.len() != self.slots.len() || !handler.can_use(player) {
             return false;
         }
         for (index, before) in self.before.iter().enumerate() {
@@ -544,12 +583,13 @@ impl PlayerInventoryPlan {
 }
 
 impl BedrockClient {
-    pub(super) fn handle_player_inventory_request(
+    pub(super) fn handle_inventory_request(
         &self,
         player: &Arc<Player>,
         request: &ItemStackRequest,
+        storage: Option<&StorageContext>,
     ) {
-        let (result, updates) = PlayerInventoryPlan::prepare(player, request)
+        let (result, updates) = InventoryPlan::prepare(player, request, storage)
             .ok()
             .and_then(|plan| plan.execute(player))
             .map_or_else(|| (1, Vec::new()), |updates| (0, updates));
@@ -600,7 +640,7 @@ impl BedrockClient {
             filter_strings: Vec::new(),
             filter_cause: 0,
         };
-        let mut plan = PlayerInventoryPlan::prepare(player, &request).ok()?;
+        let mut plan = InventoryPlan::prepare(player, &request, None).ok()?;
         // Legacy hotbar drops do not carry an inventory click gesture.
         plan.click = None;
         let screen_slot = if slot < 9 {
@@ -637,12 +677,29 @@ impl BedrockClient {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        let cursor = current
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get_behaviour()
-            .cursor_stack
-            .clone();
+        let (cursor, storage) = {
+            let handler = current
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let behaviour = handler.get_behaviour();
+            let storage = handler
+                .as_any()
+                .is::<GenericContainerScreenHandler>()
+                .then(|| {
+                    let count = behaviour
+                        .slots
+                        .len()
+                        .saturating_sub(PlayerInventory::MAIN_SIZE);
+                    (
+                        behaviour.sync_id,
+                        behaviour.slots[..count]
+                            .iter()
+                            .map(|slot| NetworkItemStackDescriptor::from(&slot.get_cloned_stack()))
+                            .collect(),
+                    )
+                });
+            (behaviour.cursor_stack.clone(), storage)
+        };
         let cursor = cursor
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -662,6 +719,17 @@ impl BedrockClient {
             },
             storage_item: NetworkItemStackDescriptor::default(),
         });
+        if let Some((window, slots)) = storage {
+            self.try_enqueue_client_packet(&CInventoryContent {
+                container_id: VarUInt(u32::from(window)),
+                slots,
+                full_container_name: FullContainerName {
+                    container_name: ContainerName::LevelEntity,
+                    dynamic_id: None,
+                },
+                storage_item: NetworkItemStackDescriptor::default(),
+            });
+        }
         self.try_enqueue_client_packet(&CInventorySlot {
             container_id: VarUInt(124),
             slot: VarUInt(0),

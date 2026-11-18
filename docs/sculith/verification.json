@@ -712,5 +712,22 @@
       "The native handler changes owner synchronization only; Java close behavior is a control",
       "No new Windows GDK, rendering, official server-policy parity or load/performance claim"
     ]
+  },
+  "storage_inventory": {
+    "baseline": "4909ba1874af93fc837154fa00658392db197bb6",
+    "protocol": 2225,
+    "before": "An invalid later action returned an error after the first withdrawal had already changed the owner's inventory. A separate rejoin test found an empty chest after the block chunk was evicted before its live contents were copied into the save.",
+    "checks": [
+      "Real chest withdrawals and deposits followed by fresh server readback",
+      "Invalid slot, unsupported consumption and drop rejection with every affected slot intact",
+      "Rust click and drop vetoes, and a callback replacement preserved in both the response and fresh chest readback",
+      "A second viewer receives the saved contents after the console confirms the chunk is absent"
+    ],
+    "scope": "Individual requests and saved Anvil chest reload. Simultaneous writes through separate viewers remain outside these checks.",
+    "log_sha256": {
+      "before_request": "cfa7de11d508f9abd8324985aa170cc561cf3a7f149ee7f464cda7519bc18cfa",
+      "before_unload": "1079089887f3505b259130f741e14b4886ca4b3b72f6326657e1fc3dab798c75",
+      "unload_and_reload": "84424f462498eca7c86eaa6656fc40d6859aac73f36a9c6a76abe49efa875587"
+    }
   }
 }
