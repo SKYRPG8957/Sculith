@@ -76,3 +76,9 @@ changes while running the ordinary legacy transaction checks.
 moving onto the cursor, cancels its outside drop and permits returning it. Logs
 check the original clicked item and cursor, screen indices and gesture metadata.
 `LegacyTxnNative` observes no click while making its non-UI transactions.
+
+`--item-use-events` observes right-click-air for `Use*` and `Eat*` test clients.
+`*Deny*` cancels use, `*Mut*` replaces the held item with grass, and `*Allow*`
+provides the normal behavior control. Logs capture the original hand and screen
+counts, empty head slot and inactive use timer. Callbacks must run before helmet
+equipment or food consumption starts, without retaining inventory locks.

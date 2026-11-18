@@ -8,6 +8,7 @@ use pumpkin_core::{
     plugin::player::inventory_interact::InventoryClickEvent,
     plugin::player::item_held::PlayerItemHeldEvent,
     plugin::player::player_drop_item::PlayerDropItemEvent,
+    plugin::player::player_interact_event::{InteractAction, PlayerInteractEvent},
     plugin::server::packet::{
         BedrockConnectionPacketReceivedEvent, BedrockConnectionPacketSentEvent,
         JavaConnectionPacketReceivedEvent, JavaConnectionPacketSentEvent, PacketReceivedEvent,
@@ -18,7 +19,9 @@ use pumpkin_core::{
     },
     server::Server,
 };
-use pumpkin_data::{entity::EntityType, item::Item, item_stack::ItemStack};
+use pumpkin_data::{
+    data_component_impl::EquipmentSlot, entity::EntityType, item::Item, item_stack::ItemStack,
+};
 use pumpkin_protocol::{
     ConnectionState,
     bedrock::server::{login::SLogin, request_network_settings::SRequestNetworkSettings},
@@ -107,9 +110,64 @@ impl Plugin for Connections {
                 EventPriority::Lowest,
                 true,
             );
-            context.register_event::<InventoryClickEvent, _>(observer, EventPriority::Lowest, true);
+            context.register_event::<InventoryClickEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
+            context.register_event::<PlayerInteractEvent, _>(observer, EventPriority::Lowest, true);
             context.log("PROBE_CONNECTIONS_LOADED");
             Ok(())
+        })
+    }
+}
+
+impl EventHandler<PlayerInteractEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut PlayerInteractEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = &event.player.gameprofile.name;
+            if (!name.starts_with("Use") && !name.starts_with("Eat"))
+                || event.action != InteractAction::RightClickAir
+            {
+                return;
+            }
+            let held = event.player.inventory.get_slot(0).item_count;
+            let screen = event
+                .player
+                .player_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_slot(36)
+                .get_cloned_stack()
+                .item_count;
+            let head = event
+                .player
+                .inventory
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&EquipmentSlot::HEAD)
+                .item_count;
+            let active = event
+                .player
+                .living_entity
+                .item_use_time
+                .load(Ordering::Relaxed);
+            let mutate = name.contains("Mut");
+            if mutate {
+                event
+                    .player
+                    .inventory
+                    .set_slot(0, ItemStack::new(7, &Item::GRASS_BLOCK));
+            }
+            event.cancelled = name.contains("Deny");
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!("PROBE_ITEM_USE player={name} held={held} screen={screen} head={head} active={active} air={} cancelled={} mutated={mutate}", event.clicked_pos.is_none(), event.cancelled));
+            }
         })
     }
 }

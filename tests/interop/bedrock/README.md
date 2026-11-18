@@ -79,6 +79,14 @@ item dropping and mutate a destination during a callback. It checks the whole
 request is rejected while preserving callback-made changes. The Java check
 vetoes a normal inventory swap and requires a correction before its ping reply.
 
+`--item-use-events` checks that interaction callbacks precede equipping a helmet
+and starting consumption. Cancelled uses preserve inventory; callback-written
+grass stacks survive. Allowed controls equip the helmet or eat a golden apple.
+Native checks include standalone and input-carried use requests, head-slot
+queries and delayed drop checks. Java checks require an explicit correction
+after veto or mutation. Callbacks read the inventory, screen, head equipment
+and active-use timer before any default effects.
+
 `--tracking-events` on the harness uses the native fixture to delete a nearby
 mob inside outgoing spawn and motion callbacks. It runs `--tracking-events`
 and `--tracking-data-events` in the client, checks packet cancellation and

@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use crate::item::registry::should_try_block_placement;
+use crate::{entity::player::ItemUseSnapshot, item::registry::should_try_block_placement};
 use pumpkin_protocol::bedrock::server::inventory_transaction::HandSlot;
 
 impl BedrockClient {
@@ -187,7 +187,20 @@ impl BedrockClient {
                         HandSlot::Mainhand => Hand::Right,
                         HandSlot::Offhand => Hand::Left,
                     };
-                    let mut held = player.inventory().get_stack_in_hand(hand);
+                    let snapshot = ItemUseSnapshot::new(player, hand);
+                    let mut held = snapshot.stack.clone();
+
+                    let mut event = PlayerInteractEvent::new(
+                        player,
+                        InteractAction::RightClickAir,
+                        &pumpkin_data::Block::AIR,
+                        None,
+                    );
+                    server.plugin_manager.fire_blocking(&server, &mut event);
+                    if event.cancelled || !snapshot.unchanged(player) {
+                        snapshot.correct(player);
+                        return;
+                    }
 
                     if !held.is_empty() {
                         player.increment_stat(
@@ -196,13 +209,6 @@ impl BedrockClient {
                             1,
                         );
                     }
-
-                    let event = PlayerInteractEvent::new(
-                        player,
-                        InteractAction::RightClickAir,
-                        &pumpkin_data::Block::AIR,
-                        None,
-                    );
 
                     let stack_for_use = held.clone();
 
@@ -287,13 +293,7 @@ impl BedrockClient {
                         }
                     }
 
-                    send_cancellable_blocking! {{
-                        &server;
-                        event;
-                        'after: {
-                            server.item_registry.on_use(&stack_for_use, player, hand);
-                        }
-                    }}
+                    server.item_registry.on_use(&stack_for_use, player, hand);
                 }
             }
             TransactionData::UseItemOnEntity(data) => {

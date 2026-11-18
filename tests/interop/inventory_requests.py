@@ -5,7 +5,7 @@ import struct
 import time
 
 
-def native(server, port, root, probe, option, name):
+def native(server, port, root, probe, option, name, seed=None):
     path = root / f"{name}.log"
     with path.open("w") as log:
         process = subprocess.Popen([str(probe), f"http://127.0.0.1:{port}", option],
@@ -15,8 +15,9 @@ def native(server, port, root, probe, option, name):
             while "SPAWN " not in path.read_text():
                 assert process.poll() is None and time.monotonic() < deadline, path.read_text()
                 time.sleep(.05)
-            server.stdin.write(f"give {name} minecraft:diamond_block 128\n")
-            server.stdin.write(f"give {name} minecraft:grass_block 64\n")
+            stacks = seed if seed is not None else [("diamond_block", 128), ("grass_block", 64)]
+            for item, count in stacks:
+                server.stdin.write(f"give {name} minecraft:{item} {count}\n")
             server.stdin.flush()
             assert process.wait(timeout=30) == 0, path.read_text()
             server.stdin.write("kill @e[type=minecraft:item]\n")

@@ -614,5 +614,56 @@
       "Modern stack-network-ID prediction journals and complete item-component conversion remain incomplete",
       "No new Windows GDK, rendering, official creative-policy parity or load/performance claim"
     ]
+  },
+  "item_use_events": {
+    "baseline": "1d6debef7c5e453b1f0114df410fd675878ced58",
+    "server_sha256": "c5f5c6a3cb5050c38f5701e4e25878fe4615c204f0b1c8d1fc3903d89815c1b4",
+    "native_fixture_sha256": "9e476fbaabd135c2abbdd90432821e4b4da42a630523c47facce24133d7554a7",
+    "build": "Linux debug, default server features; Rust 1.100.0",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "api": "Existing interaction/consume/fishing events; snapshot helper stays behind a private module and crate-only re-export; no public layout, vtable or WIT changes",
+    "reference": "PlayerInteractEvent cancellation contract; existing Java and native item-use preparation, cooldown and timed-use paths; extracted golden-apple always-edible and 1.6-second consumable properties",
+    "before": {
+      "native": "A helmet equips despite interaction cancellation: main slot0 becomes empty, and the callback already observes held=0, screen=0, head=1",
+      "java": "The cancelled use leaves the helmet in screen slot5 instead of slot36. A private baseline driver skips the already-covered native cases to reach the unchanged Java wire assertions"
+    },
+    "behavior": "Run interaction approval before statistics, active-hand preparation, equipment changes and the item registry callback. Java keeps consume and fishing callbacks before interaction. Recheck stack identity/value, selected slot, game mode and world after callbacks before default effects",
+    "correction": "Vetoes and stale actions resend actual hand inventory, equipment and health without retaining inventory/screen guards or clearing active-use state created by a callback",
+    "wire_checks": [
+      "Both editions: cancelled helmet use preserves the held item and empty head slot; a callback-written seven-item grass stack survives without equipping the stale helmet",
+      "Both editions: cancelled golden-apple use retains the item beyond its normal consumption time; allowed controls consume it, while allowed helmet use equips one item",
+      "Native standalone and input-carried helmet vetoes receive owner corrections; a legacy head-slot query verifies actual equipment and a delayed latency barrier observes no world drop",
+      "Java veto and mutation receive explicit inventory correction before the following ping reply",
+      "All eleven callbacks read original inventory/screen counts, empty head equipment and inactive use timer before default effects"
+    ],
+    "regressions": "Full Java/Bedrock matrix with native and stable Wasm fixtures: resources, sounds, forms, dialog replies, four building paths, picks, held/creative/ordinary/legacy inventory events, tracking, packet edits, connections, models and normal restart",
+    "tests": {
+      "clippy": "Inventory, core, binary and native fixture; experimental v0.2; all targets; warnings denied",
+      "go": "build, vet and gofmt; independent protocol client",
+      "format": "Rust fmt, Python compilation and diff checks",
+      "typos": "v1.52.2; changed files",
+      "server": 803,
+      "inventory": 46
+    },
+    "log_sha256": {
+      "before_native": "1139c1d2732031238876b006134c9faeb3160bd3ac85c9f303a1629bc2a9ac97",
+      "before_native_events": "b01f966efbda16f084217dfe859d0b1d35f9bcca4c9293531b308e4a9a1f2430",
+      "before_java": "583482d57e47f371a54c7c3143a91ae1e20b37ad54e97a9a1473dac10cab7740",
+      "before_java_events": "3606fbfd2db9e33630b38d8e04b378b8443c92e98220f83b7743e64af8c57c63",
+      "focused": "fffa5714e14621a53e3c8f1632ad1e3a6d9c5b67727e1afb3a2a095eb1e8dcf7",
+      "focused_events": "270eddb34d2c97dd03f372149206fb592ea0178b5306fb8337847ef65fcb92a6",
+      "full": "0a31f5b888c46e73f2a7e678088384b32079a8dea5f34d21f895308d2b30a9aa",
+      "full_events": "17aa807200a0fd29fc8f3e22f8fad3d4b206f3fcc9f3879130c4e0ef606cf898",
+      "full_restart_events": "c97f28516c6aaf276fdf86f5da53c053f14a24d35948799b562b3afa894fd855",
+      "clippy": "20d256cfc6e369cc4d60e02057861c293845451056dafecda1631b04b7da0d27",
+      "build": "4631fc506d7cb99a7e6b16116dffd28f454d88e4d8ef9aa97708061655b93b6c",
+      "core_and_inventory": "425b4c8539edb1d3043f14f0ce0c63d5e431c1fca135458525848e95abb260b4"
+    },
+    "limits": [
+      "Native click-air and Java use-item handlers; native block and entity interaction paths remain separate",
+      "Main-hand helmet and golden-apple controls only; no new exhaustive offhand, weapon or component-policy parity claim",
+      "No new Windows GDK, rendering, official server-policy parity or load/performance claim"
+    ]
   }
 }

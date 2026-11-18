@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::entity::player::ItemUseSnapshot;
 use pumpkin_util::version::JavaMinecraftVersion;
 
 impl JavaClient {
@@ -9,7 +10,6 @@ impl JavaClient {
         }
         player.update_last_action_time();
 
-        let inventory = player.inventory();
         let Ok(hand) = Hand::from_packet_id(use_item.hand.0) else {
             self.try_kick(&TextComponent::text("InvalidHand"));
             return;
@@ -22,7 +22,8 @@ impl JavaClient {
         }
         self.update_sequence(use_item.sequence.0);
 
-        let mut item_in_hand = inventory.get_stack_in_hand(hand);
+        let snapshot = ItemUseSnapshot::new(player, hand);
+        let mut item_in_hand = snapshot.stack.clone();
 
         let mut consume_event =
             crate::plugin::api::events::player::player_item_consume::PlayerItemConsumeEvent::new(
@@ -32,12 +33,12 @@ impl JavaClient {
         server
             .plugin_manager
             .fire_blocking(server, &mut consume_event);
-        if consume_event.cancelled {
+        if consume_event.cancelled || !snapshot.unchanged(player) {
+            snapshot.correct(player);
             return;
         }
 
-        let (item_id, _item) = (item_in_hand.item.id, item_in_hand.item);
-        player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
+        let item_id = item_in_hand.item.id;
 
         let hit = player.world().clip(&pumpkin_world::clip::ClipContext::new(
             player.eye_position(),
@@ -49,7 +50,7 @@ impl JavaClient {
             pumpkin_world::clip::ClipFluid::None,
         ));
 
-        let event = if hit.is_miss {
+        let mut event = if hit.is_miss {
             PlayerInteractEvent::new(player, InteractAction::RightClickAir, &Block::AIR, None)
         } else {
             let hit_pos = hit.block_pos;
@@ -66,21 +67,23 @@ impl JavaClient {
         } else {
             player.rotation()
         };
-        Self::prepare_hand_item_for_use(player, hand, &mut item_in_hand);
-
-        if !Self::should_continue_use_after_fish_event(server, player, hand, item_for_use) {
+        if !Self::should_continue_use_after_fish_event(server, player, hand, item_for_use)
+            || !snapshot.unchanged(player)
+        {
+            snapshot.correct(player);
             return;
         }
 
-        send_cancellable_blocking! {{
-            server;
-            event;
-            'after: {
-                server
-                    .item_registry
-                    .on_use_with_rotation(&stack_for_use, player, use_yaw, use_pitch, hand);
-            }
-        }}
+        server.plugin_manager.fire_blocking(server, &mut event);
+        if event.cancelled || !snapshot.unchanged(player) {
+            snapshot.correct(player);
+            return;
+        }
+        player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
+        Self::prepare_hand_item_for_use(player, hand, &mut item_in_hand);
+        server
+            .item_registry
+            .on_use_with_rotation(&stack_for_use, player, use_yaw, use_pitch, hand);
     }
 
     fn prepare_hand_item_for_use(player: &Arc<Player>, hand: Hand, held: &mut ItemStack) {

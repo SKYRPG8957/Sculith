@@ -109,6 +109,18 @@ Slot numbers use the player's canonical inventory layout; the cursor uses `-1`.
 An empty result reports air with count zero. A veto leaves preceding moves and
 destruction unapplied; callback changes survive stale-plan rejection.
 
+## Item use events
+
+Both editions dispatch `PlayerInteractEvent` before preparing timed item use or
+swapping equipment. Cancellation skips those effects and the item-use callback.
+The handler also rechecks the used stack, selected slot, game mode and world
+after callbacks; a changed snapshot rejects the old action and corrects the
+owner from current inventory and health. It does not clear use state written by
+a callback. Java retains its consume and fishing callbacks before interaction.
+
+These checks cover native click-air and Java use-item handlers. Native block and
+entity interaction handlers retain their separate paths.
+
 ## Legacy inventory transactions
 
 Legacy slot groups request synchronization. The server returns the actual slots

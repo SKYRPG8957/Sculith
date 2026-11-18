@@ -3,11 +3,13 @@ pub mod client_move;
 pub mod client_push;
 mod creative;
 pub mod forms;
+mod item_use;
 mod picking;
 mod shoulders;
 pub mod statistics;
 
 pub use client_move::{ClientMove, ClientMoveOutcome};
+pub(crate) use item_use::ItemUseSnapshot;
 
 use core::f32;
 use std::collections::{HashMap, VecDeque};
