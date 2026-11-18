@@ -21,6 +21,7 @@ use pumpkin_core::{
     plugin::{
         BoxFuture, Context, EventHandler, EventPriority, Plugin, PluginFuture, PluginMetadata,
     },
+    resource_pack::PackEdit,
     server::Server,
 };
 use pumpkin_data::{
@@ -28,11 +29,12 @@ use pumpkin_data::{
 };
 use pumpkin_inventory::screen_handler::ScreenHandler;
 use pumpkin_protocol::{
-    ConnectionState,
+    ConnectionState, ServerPacket,
     bedrock::server::{login::SLogin, request_network_settings::SRequestNetworkSettings},
     codec::var_long::VarLong,
     codec::var_ulong::VarULong,
     java::client::status::CStatusResponse,
+    java::server::login::SLoginStart,
     packet::{MultiVersionJavaPacket, Packet},
     serial::PacketRead,
 };
@@ -556,7 +558,7 @@ impl EventHandler<BedrockConnectionPacketSentEvent> for Observer {
 impl EventHandler<JavaConnectionPacketReceivedEvent> for Observer {
     fn handle_blocking<'a>(
         &'a self,
-        _server: &'a Arc<Server>,
+        server: &'a Arc<Server>,
         event: &'a mut JavaConnectionPacketReceivedEvent,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
@@ -565,9 +567,64 @@ impl EventHandler<JavaConnectionPacketReceivedEvent> for Observer {
                     "PROBE_JAVA_CONNECTION_RX connection={} state={:?} id={}",
                     event.connection_id, event.state, event.packet_id
                 ));
+                if event.state == ConnectionState::Login
+                    && event.packet_id == SLoginStart::to_id(event.version)
+                    && SLoginStart::read(&mut &event.payload[..], &event.version)
+                        .is_ok_and(|packet| packet.name.as_ref() == "PackEditor")
+                {
+                    match edit_geometry(server).await {
+                        Ok(()) => context.log(
+                            "PROBE_PACK_EDIT old revision survived validation; geometry updated",
+                        ),
+                        Err(error) => context.log(format!("PROBE_PACK_EDIT failed: {error}")),
+                    }
+                }
             }
         })
     }
+}
+
+async fn edit_geometry(server: &Server) -> Result<(), String> {
+    const GEOMETRY: &str = "models/entity/sculith_statue.geo.json";
+    let packs = server
+        .shared_resources
+        .as_ref()
+        .ok_or("Missing shared resource pack")?;
+    let original = packs.snapshot();
+    let result = server
+        .edit_shared_resources(vec![
+            PackEdit::Put {
+                path: "rejected.txt".into(),
+                bytes: b"rejected".to_vec(),
+            },
+            PackEdit::Remove {
+                path: GEOMETRY.into(),
+            },
+        ])
+        .await;
+    if result.is_ok() || !Arc::ptr_eq(&original, &packs.snapshot()) {
+        return Err("An incomplete model changed the active pack".into());
+    }
+
+    let mut geometry: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../crates/sculith-packs/tests/fixtures/pack/models/entity/sculith_statue.geo.json"
+    ))
+    .map_err(|error| error.to_string())?;
+    geometry["minecraft:geometry"][0]["bones"][1]["cubes"][0]["origin"][2] = (-2).into();
+    let bytes = serde_json::to_vec(&geometry).map_err(|error| error.to_string())?;
+    let revision = server
+        .edit_shared_resources(vec![PackEdit::Put {
+            path: GEOMETRY.into(),
+            bytes,
+        }])
+        .await
+        .map_err(|error| error.to_string())?;
+    if revision.bundle.bedrock_id == original.bundle.bedrock_id
+        || revision.bundle.java_id == original.bundle.java_id
+    {
+        return Err("Geometry edit did not change both pack IDs".into());
+    }
+    Ok(())
 }
 
 impl EventHandler<JavaConnectionPacketSentEvent> for Observer {

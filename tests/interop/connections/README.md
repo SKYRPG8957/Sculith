@@ -95,3 +95,8 @@ withdrawal. `StoreMutNative` replaces the clicked chest stack with grass. The
 client checks corrections, reopens the chest to read its contents and checks
 that no item was dropped. The harness waits for the storage chunk to unload
 before the second viewer joins.
+
+`--resource-edits` holds a pack offer open on each edition. A `PackEditor`
+login invokes the native pack API. An edit that removes the mapped geometry must
+fail, then a valid edit changes the model. The held offers complete with their
+original archives and later joins receive the revised Bedrock and Java files.

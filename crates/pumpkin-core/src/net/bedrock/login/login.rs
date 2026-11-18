@@ -117,22 +117,25 @@ impl BedrockClient {
         self.enqueue_client_packet(&CPlayStatus::LoginSuccess).await;
         let br_config = &server.advanced_config.resource_pack.bedrock;
 
-        let mut entries = Vec::new();
-        if br_config.enabled {
-            for pack in &br_config.packs {
-                entries.push(PackInfoData {
-                    pack_id_version: PackIdVersion::new(pack.uuid, pack.version.clone()),
-                    pack_size: pack.size,
-                    cdn_url: pack.download_url.clone(),
-                    content_key: pack.content_key.clone(),
-                    subpack_name: pack.sub_pack_name.clone(),
-                    content_identity: pack.content_id.clone(),
-                    has_scripts: pack.has_scripts,
-                    is_addon_pack: pack.addon_pack,
-                    is_ray_tracing_capable: pack.rtx_enabled,
-                });
-            }
-        }
+        let shared = server
+            .shared_resources
+            .as_ref()
+            .map(|packs| packs.snapshot());
+        let entries = Self::offered_packs(server, shared.as_deref())
+            .iter()
+            .map(|pack| PackInfoData {
+                pack_id_version: PackIdVersion::new(pack.uuid, pack.version.clone()),
+                pack_size: pack.size,
+                cdn_url: pack.download_url.clone(),
+                content_key: pack.content_key.clone(),
+                subpack_name: pack.sub_pack_name.clone(),
+                content_identity: pack.content_id.clone(),
+                has_scripts: pack.has_scripts,
+                is_addon_pack: pack.addon_pack,
+                is_ray_tracing_capable: pack.rtx_enabled,
+            })
+            .collect();
+        self.shared_pack.store(shared);
 
         let packs_info = CResourcePacksInfo {
             resource_pack_required: br_config.force,

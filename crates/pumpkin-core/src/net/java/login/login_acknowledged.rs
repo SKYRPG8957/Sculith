@@ -86,8 +86,9 @@ impl PendingConnection {
 
         let resource_config = &server.advanced_config.resource_pack.java;
         if resource_config.enabled {
-            let (uuid, url) = if let Some(shared) = &server.shared_resources {
-                let url = match shared.java_url(&self.server_address, self.server_port) {
+            let (uuid, url, sha1) = if let Some(shared) = &server.shared_resources {
+                let pack = shared.snapshot();
+                let url = match pack.java_url(&self.server_address, self.server_port) {
                     Ok(url) => url,
                     Err(error) => {
                         tracing::warn!("Cannot construct shared resource URL: {error}");
@@ -98,17 +99,20 @@ impl PendingConnection {
                         return None;
                     }
                 };
-                (shared.bundle.java_id, url)
+                let result = (pack.bundle.java_id, url, pack.bundle.java.sha1.clone());
+                self.shared_pack = Some(pack);
+                result
             } else {
                 (
                     Uuid::new_v3(&uuid::Uuid::NAMESPACE_DNS, resource_config.url.as_bytes()),
                     resource_config.url.clone(),
+                    resource_config.sha1.clone(),
                 )
             };
             let resource_pack = CConfigAddResourcePack::new(
                 &uuid,
                 &url,
-                &resource_config.sha1,
+                &sha1,
                 resource_config.force,
                 if resource_config.prompt_message.is_empty() {
                     None

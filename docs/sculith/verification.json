@@ -729,5 +729,35 @@
       "before_unload": "1079089887f3505b259130f741e14b4886ca4b3b72f6326657e1fc3dab798c75",
       "unload_and_reload": "84424f462498eca7c86eaa6656fc40d6859aac73f36a9c6a76abe49efa875587"
     }
+  },
+  "resource_revisions": {
+    "protocols": [
+      "Java 26.3",
+      "Bedrock 2225"
+    ],
+    "native_plugin_abi": 12,
+    "stable_wasm_abi": "v0.1",
+    "checks": [
+      "Rollback of a native Rust edit that removes mapped geometry",
+      "Both held pack offers keep the original IDs and ZIP data across a successful edit",
+      "Later connections receive the new Bedrock geometry and converted Java model, leaving the authored files intact",
+      "Full interop matrix with native and stable Wasm fixtures, plus normal model restart"
+    ],
+    "scope": "Independent protocol clients with offline local sessions. Rendering, audio output, online authentication, Windows GDK and load performance were not measured.",
+    "server_sha256": "751451967aef1cfc8bbfcec47414153fb7a23f53ebd3c514356bf32eb0f70c21",
+    "native_fixture_sha256": "cf165539f6d543883ce0360d28a67423c7bbabbe37052385353c37b50539980a",
+    "log_sha256": {
+      "focused": "0251adc13bac5d0ae62c09bbdd1111902d5a06e5cd683d8384b9200fc64e5048",
+      "full": "179f7fae304b150cc01132f93cd2c4a006bb0abbd2eba9c83b85b5db8bc05b55",
+      "server": "c32a4537fbb559b4730f94cead2a7e033f65d07c63fa7cc29df6789f49141ca8",
+      "world_format_guard": "00319ddd7fbbf5430910767a6df60e8fcaf271c9603503f669da0f911ac42fc0",
+      "unit": "423f2d13bf62026ec36ec2aeeea6333ddf5c4b78de11f168c5fb13f20162583a",
+      "clippy": "95557b21def749e51d2efeace6e395e8eaaf32590f56305d77deea5a5da5c97b"
+    },
+    "tests": {
+      "unit_passed": 1192,
+      "clippy": "All targets for affected crates and native fixture, with experimental v0.2 enabled and warnings denied",
+      "client_probe": "Go build, vet and format checks"
+    }
   }
 }

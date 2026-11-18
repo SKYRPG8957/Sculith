@@ -14,8 +14,8 @@ required = true
 
 Paths are relative to the server's working directory. Disable edition-specific
 pack settings when using `shared`. Source validation finishes before worlds are
-opened. Restart the server after editing resources; existing sessions never read
-partly changed source files.
+opened. The server reads changes to the source directory at startup. Native
+plugins can also edit the active source in memory.
 
 The mapping names the resources to expose to vanilla Java. For example:
 
@@ -63,8 +63,37 @@ of directories and 16 MiB per file. Symlinks, dependencies and subpack selection
 are rejected. Files under `crates/sculith-packs/tests/fixtures` are test inputs;
 they are never loaded by the default server.
 
-Rebuild native plugins against ABI 11 on `main`. The Wasm v0.1 additions preserve existing
-component imports.
+Rebuild native plugins against ABI 12 on `main`. Rust Wasm plugins can use
+the shared forms, sounds and models through the stable v0.1 interface.
+
+## Editing a pack from Rust
+
+Pass a batch of Bedrock file replacements or removals to the native API. The
+server checks pack limits and mapped assets, then compiles both packs before
+offering the new revision. A missing mapped asset rejects the entire batch.
+
+```rust
+use pumpkin_core::{plugin::Context, resource_pack::PackEdit};
+
+async fn replace_statue(context: &Context, geometry_json: Vec<u8>) -> Result<(), String> {
+    context.server.edit_shared_resources(vec![PackEdit::Put {
+        path: "models/entity/statue.geo.json".into(),
+        bytes: geometry_json,
+    }]).await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+```
+
+Edits use paths relative to the Bedrock pack root and apply to the in-memory
+source for this server process. Keep authored files or the plugin that produces
+them to reproduce changes after restart. Resource identifiers follow the mapping
+loaded at startup.
+
+Players reconnect to receive updated assets. A connection already negotiating
+its pack finishes with the revision it was offered. The server keeps at most
+four revisions in memory for delivery. If active downloads occupy that limit,
+retry the edit after one finishes. Use the form, sound and model APIs below for
+changes during play with the assets the client has loaded.
 
 ## Shared models
 

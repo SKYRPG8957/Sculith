@@ -59,7 +59,7 @@ pub struct BedrockResourcePackConfig {
 }
 
 /// Bedrock resource pack manifest configuration entry.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct BedrockPack {
     /// Unique identifier for the Bedrock pack.
     pub uuid: Uuid,

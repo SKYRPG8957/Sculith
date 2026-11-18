@@ -32,16 +32,71 @@ pub struct Bundle {
     pub report: ConversionReport,
 }
 
-impl Bundle {
-    /// Freeze both the source and the mapping before conversion. No session ever
-    /// reads the mutable operator directory or rebuilds an archive on demand.
-    pub fn prepare(input: &Path, mapping: &Path) -> Result<Self> {
+/// A change to a member of the authored Bedrock pack.
+pub enum PackEdit {
+    Put { path: String, bytes: Vec<u8> },
+    Remove { path: String },
+}
+
+/// Frozen Bedrock files and their Java bindings.
+#[derive(Clone)]
+pub struct PackSource {
+    files: BTreeMap<String, Arc<[u8]>>,
+    mapping: Arc<[u8]>,
+}
+
+impl PackSource {
+    pub fn read(input: &Path, mapping: &Path) -> Result<Self> {
         let root = input
             .canonicalize()
             .context("missing Bedrock pack source")?;
         ensure!(root.is_dir(), "Bedrock pack source must be a directory");
-        let files = snapshot(&root)?;
-        let manifest_bytes = files
+        Ok(Self {
+            files: snapshot(&root)?,
+            mapping: crate::read_bounded(mapping, 1_048_576)?.into(),
+        })
+    }
+
+    /// Apply edits to a copy. Compile it before using it for delivery.
+    pub fn with_edits(&self, edits: Vec<PackEdit>) -> Result<Self> {
+        ensure!(edits.len() <= MAX_FILES, "too many pack edits");
+        let mut candidate = self.clone();
+        for edit in edits {
+            let path = match &edit {
+                PackEdit::Put { path, .. } | PackEdit::Remove { path } => path,
+            };
+            validate_member_path(path)?;
+            match edit {
+                PackEdit::Put { path, bytes } => {
+                    ensure!(
+                        bytes.len() as u64 <= MAX_FILE_BYTES,
+                        "pack member is too large: {path}"
+                    );
+                    candidate.files.insert(path, bytes.into());
+                }
+                PackEdit::Remove { path } => {
+                    ensure!(
+                        candidate.files.remove(&path).is_some(),
+                        "missing pack member: {path}"
+                    );
+                }
+            }
+        }
+        ensure!(
+            candidate.files.len() <= MAX_FILES,
+            "pack exceeds {MAX_FILES} files"
+        );
+        let size = candidate
+            .files
+            .values()
+            .fold(0usize, |size, bytes| size.saturating_add(bytes.len()));
+        ensure!(size <= MAX_PACK_BYTES, "pack exceeds 32 MiB");
+        Ok(candidate)
+    }
+
+    pub fn compile(&self) -> Result<Bundle> {
+        let manifest_bytes = self
+            .files
             .get("manifest.json")
             .context("missing manifest.json")?;
         ensure!(manifest_bytes.len() <= 1_048_576, "manifest exceeds 1 MiB");
@@ -56,7 +111,7 @@ impl Bundle {
             .version
             .map(|part| part.to_string())
             .join(".");
-        let source_hash = snapshot_hash(&files);
+        let source_hash = snapshot_hash(&self.files);
         let bedrock_id = content_uuid(original, &source_hash);
 
         let stage = tempfile::tempdir()?;
@@ -75,20 +130,32 @@ impl Bundle {
                 .is_none_or(|value| value.as_array().is_some_and(Vec::is_empty)),
             "subpack selection is not supported"
         );
-        let mut native = files;
-        normalized["header"]["uuid"] = Value::String(bedrock_id.to_string());
-        let modules = normalized["modules"]
-            .as_array_mut()
+        let mut native = self.files.clone();
+        normalized
+            .get_mut("header")
+            .and_then(Value::as_object_mut)
+            .context("missing pack header")?
+            .insert("uuid".into(), Value::String(bedrock_id.to_string()));
+        let modules = normalized
+            .get_mut("modules")
+            .and_then(Value::as_array_mut)
             .context("missing pack modules")?;
         for (index, module) in modules.iter_mut().enumerate() {
             // Generated module IDs belong to this immutable generated pack;
             // authored manifests on disk are never rewritten.
-            module["uuid"] =
-                Value::String(content_uuid(bedrock_id, &(index as u64).to_be_bytes()).to_string());
+            module
+                .as_object_mut()
+                .context("invalid pack module")?
+                .insert(
+                    "uuid".into(),
+                    Value::String(
+                        content_uuid(bedrock_id, &(index as u64).to_be_bytes()).to_string(),
+                    ),
+                );
         }
         native.insert(
             "manifest.json".into(),
-            serde_json::to_vec_pretty(&normalized)?,
+            serde_json::to_vec_pretty(&normalized)?.into(),
         );
         for (name, bytes) in &native {
             let path = frozen.join(name);
@@ -96,13 +163,13 @@ impl Bundle {
             fs::write(path, bytes)?;
         }
         let frozen_mapping = stage.path().join("mapping.json");
-        fs::write(&frozen_mapping, crate::read_bounded(mapping, 1_048_576)?)?;
+        fs::write(&frozen_mapping, &self.mapping)?;
         let java_root = stage.path().join("java");
         let report = crate::convert(&frozen, &frozen_mapping, &java_root, 97, 1)?;
         let bedrock = archive(&native)?;
         let java = archive(&snapshot(&java_root)?)?;
         let java_id = content_uuid(original, &java.sha256);
-        Ok(Self {
+        Ok(Bundle {
             bedrock_id,
             bedrock_version: version,
             java_id,
@@ -110,6 +177,13 @@ impl Bundle {
             java,
             report,
         })
+    }
+}
+
+impl Bundle {
+    /// Freeze the disk source and compile both editions from that snapshot.
+    pub fn prepare(input: &Path, mapping: &Path) -> Result<Self> {
+        PackSource::read(input, mapping)?.compile()
     }
 
     /// Export inspectable artifacts into a new directory without changing source.
@@ -140,12 +214,27 @@ impl Bundle {
     }
 }
 
-fn snapshot(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+fn validate_member_path(path: &str) -> Result<()> {
+    ensure!(
+        path.len() <= 240
+            && path.split('/').enumerate().all(|(depth, part)| {
+                depth <= MAX_DEPTH
+                    && !matches!(part, "" | "." | "..")
+                    && part
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+            }),
+        "pack paths require portable ASCII names, at most 240 bytes"
+    );
+    Ok(())
+}
+
+fn snapshot(root: &Path) -> Result<BTreeMap<String, Arc<[u8]>>> {
     fn visit(
         root: &Path,
         dir: &Path,
         depth: usize,
-        files: &mut BTreeMap<String, Vec<u8>>,
+        files: &mut BTreeMap<String, Arc<[u8]>>,
         total: &mut usize,
         entries: &mut usize,
     ) -> Result<()> {
@@ -161,28 +250,12 @@ fn snapshot(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
             let kind = entry.file_type()?;
             ensure!(!kind.is_symlink(), "pack source cannot contain symlinks");
             let relative_path = path.strip_prefix(root)?;
-            for part in relative_path.components() {
-                let part = part
-                    .as_os_str()
-                    .to_str()
-                    .context("pack path is not UTF-8")?;
-                ensure!(
-                    part.bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b)),
-                    "pack path components require portable ASCII names"
-                );
-            }
             let relative = relative_path
-                .to_str()
-                .context("pack path is not UTF-8")?
-                .replace('\\', "/");
-            ensure!(
-                relative.len() <= 240
-                    && relative
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"/_.-".contains(&b)),
-                "pack paths require portable ASCII names, at most 240 bytes"
-            );
+                .components()
+                .map(|part| part.as_os_str().to_str().context("pack path is not UTF-8"))
+                .collect::<Result<Vec<_>>>()?
+                .join("/");
+            validate_member_path(&relative)?;
             if kind.is_dir() {
                 visit(root, &path, depth + 1, files, total, entries)?;
             } else {
@@ -192,7 +265,7 @@ fn snapshot(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
                 *total += data.len();
                 ensure!(*total <= MAX_PACK_BYTES, "pack exceeds 32 MiB");
                 ensure!(
-                    files.insert(relative, data).is_none(),
+                    files.insert(relative, data.into()).is_none(),
                     "duplicate pack path"
                 );
             }
@@ -204,7 +277,7 @@ fn snapshot(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
     Ok(files)
 }
 
-fn snapshot_hash(files: &BTreeMap<String, Vec<u8>>) -> [u8; 32] {
+fn snapshot_hash(files: &BTreeMap<String, Arc<[u8]>>) -> [u8; 32] {
     let mut digest = Sha256::new();
     digest.update(b"sculith-pack-snapshot-v1\0");
     for (name, data) in files {
@@ -242,7 +315,7 @@ fn hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn archive(files: &BTreeMap<String, Vec<u8>>) -> Result<Archive> {
+fn archive(files: &BTreeMap<String, Arc<[u8]>>) -> Result<Archive> {
     let mut out = Vec::new();
     let mut central = Vec::new();
     for (name, data) in files {

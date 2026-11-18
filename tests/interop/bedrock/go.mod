@@ -5,6 +5,7 @@ go 1.27.4
 require (
 	github.com/df-mc/dragonfly v0.11.7-0.20261107232451-0f9a3a573626
 	github.com/df-mc/go-nethernet v1.0.27-0.20261104184408-4c06b550759d
+	github.com/google/uuid v1.6.0
 	github.com/pion/webrtc/v4 v4.2.26
 	github.com/sandertv/gophertunnel v1.63.1-0.20261112122229-e2251a60f71d
 )
@@ -21,7 +22,6 @@ require (
 	github.com/go-gl/mathgl v1.2.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/pion/datachannel v1.6.3 // indirect
 	github.com/pion/dtls/v3 v3.1.15 // indirect

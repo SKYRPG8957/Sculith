@@ -1,12 +1,22 @@
-//! One immutable Bedrock source and its vanilla Java representation.
+//! Delivery of immutable editions compiled from the authored Bedrock source.
 
-use std::{collections::HashSet, io, net::IpAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    io,
+    net::IpAddr,
+    sync::{Arc, Mutex, RwLock, TryLockError, Weak},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use pumpkin_config::{AdvancedConfiguration, resource_pack::BedrockPack};
 use pumpkin_nbt::{Nbt, NbtCompound, deserializer::NbtReadHelperBedrock, tag::NbtTag};
 use pumpkin_protocol::bedrock::client::VANILLA_ACTOR_IDENTIFIERS;
-use sculith_packs::bundle::Bundle;
+pub use sculith_packs::bundle::PackEdit;
+use sculith_packs::{
+    ModelMapping, SoundMapping,
+    bundle::{Bundle, PackSource},
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -14,15 +24,33 @@ use tokio::{
     time::timeout,
 };
 
+use crate::server::Server;
+
 const MAX_HTTP_HEADERS: usize = 16 * 1024;
 const HTTP_CONNECTIONS: usize = 32;
 const HEADER_TIMEOUT: Duration = Duration::from_secs(5);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(300);
+const MAX_LIVE_REVISIONS: usize = 4;
+
+pub struct SharedPack {
+    pub bundle: Bundle,
+    pub(crate) bedrock: BedrockPack,
+    java_path: String,
+}
+
+struct Revisions {
+    source: PackSource,
+    active: Arc<SharedPack>,
+    retired: Vec<Weak<SharedPack>>,
+}
 
 pub struct SharedResources {
-    pub bundle: Bundle,
+    revisions: RwLock<Revisions>,
+    editing: Mutex<()>,
+    // The authored files can change. Bindings stay stable for clients with older packs.
+    models: Vec<ModelMapping>,
+    sounds: Vec<SoundMapping>,
     pub actor_identifiers: Bytes,
-    java_path: String,
     http_slots: Semaphore,
 }
 
@@ -50,44 +78,46 @@ pub async fn prepare(
         ));
     }
     let required = shared.required;
-    let bundle =
-        tokio::task::spawn_blocking(move || Bundle::prepare(&shared.source, &shared.mapping))
-            .await
-            .map_err(io::Error::other)?
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+    let (source, bundle) = tokio::task::spawn_blocking(move || {
+        let source = PackSource::read(&shared.source, &shared.mapping)?;
+        source.compile().map(|bundle| (source, bundle))
+    })
+    .await
+    .map_err(io::Error::other)?
+    .map_err(invalid_pack)?;
+    let pack = Arc::new(SharedPack::new(bundle));
     let java = &mut config.resource_pack.java;
     java.enabled = true;
     java.force = required;
-    java.sha1.clone_from(&bundle.java.sha1);
+    java.sha1.clone_from(&pack.bundle.java.sha1);
     let bedrock = &mut config.resource_pack.bedrock;
     bedrock.enabled = true;
     bedrock.force = required;
-    bedrock.packs = vec![BedrockPack {
-        uuid: bundle.bedrock_id,
-        version: bundle.bedrock_version.clone(),
-        size: bundle.bedrock.bytes.len() as u64,
-        download_url: String::new(),
-        path: None,
-        content_key: String::new(),
-        sub_pack_name: String::new(),
-        content_id: String::new(),
-        has_scripts: false,
-        addon_pack: false,
-        rtx_enabled: false,
-    }];
+    bedrock.packs = vec![pack.bedrock.clone()];
+    let report = &pack.bundle.report;
     tracing::info!(
-        textures = bundle.report.converted_textures,
-        sounds = bundle.report.converted_sounds.len(),
-        models = bundle.report.converted_models.len(),
+        textures = report.converted_textures,
+        sounds = report.converted_sounds.len(),
+        models = report.converted_models.len(),
         "Loaded shared resource pack"
     );
-    let actor_identifiers = actor_identifiers(&bundle.report.converted_models)?;
+    let actor_identifiers = actor_identifiers(&report.converted_models)?;
     Ok(Some(Arc::new(SharedResources {
-        java_path: format!("/sculith/packs/{}/{}.zip", bundle.java_id, bundle.java.sha1),
-        bundle,
+        models: report.converted_models.clone(),
+        sounds: report.converted_sounds.clone(),
+        revisions: RwLock::new(Revisions {
+            source,
+            active: pack,
+            retired: Vec::new(),
+        }),
+        editing: Mutex::new(()),
         actor_identifiers,
         http_slots: Semaphore::new(HTTP_CONNECTIONS),
     })))
+}
+
+fn invalid_pack(error: impl std::fmt::Display) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
 }
 
 fn actor_identifiers(models: &[sculith_packs::ModelMapping]) -> io::Result<Bytes> {
@@ -134,22 +164,114 @@ fn actor_identifiers(models: &[sculith_packs::ModelMapping]) -> io::Result<Bytes
 }
 
 impl SharedResources {
-    pub fn model(&self, name: &str) -> Option<&sculith_packs::ModelMapping> {
-        self.bundle
-            .report
-            .converted_models
-            .iter()
-            .find(|mapping| mapping.java == name)
+    pub fn snapshot(&self) -> Arc<SharedPack> {
+        self.revisions
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .active
+            .clone()
+    }
+
+    fn apply_edits(&self, edits: Vec<PackEdit>) -> io::Result<Arc<SharedPack>> {
+        let _editing = match self.editing.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(TryLockError::WouldBlock) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "pack edit in progress",
+                ));
+            }
+        };
+        let source = self
+            .revisions
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .source
+            .with_edits(edits)
+            .map_err(invalid_pack)?;
+        let bundle = source.compile().map_err(invalid_pack)?;
+        let mut revisions = self
+            .revisions
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if bundle.bedrock_id == revisions.active.bundle.bedrock_id
+            && bundle.java_id == revisions.active.bundle.java_id
+        {
+            return Ok(revisions.active.clone());
+        }
+        revisions.retired.retain(|pack| pack.strong_count() > 0);
+        if Arc::strong_count(&revisions.active) > 1 {
+            if revisions.retired.len() >= MAX_LIVE_REVISIONS - 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "too many pack revisions in use",
+                ));
+            }
+            let retired = Arc::downgrade(&revisions.active);
+            revisions.retired.push(retired);
+        }
+        let pack = Arc::new(SharedPack::new(bundle));
+        revisions.active = pack.clone();
+        revisions.source = source;
+        Ok(pack)
+    }
+
+    pub fn model(&self, name: &str) -> Option<&ModelMapping> {
+        self.models.iter().find(|mapping| mapping.java == name)
     }
 
     /// Resolve a shared Java sound identifier to its authored Bedrock event name.
     pub fn bedrock_sound_name<'a>(&'a self, sound_name: &'a str) -> &'a str {
-        self.bundle
-            .report
-            .converted_sounds
+        self.sounds
             .iter()
             .find(|mapping| mapping.java == sound_name)
             .map_or(sound_name, |mapping| mapping.bedrock.as_str())
+    }
+}
+
+impl Server {
+    /// Compile a batch of Bedrock file edits for future joins.
+    ///
+    /// Edits are in memory and retain the configured Java bindings. Connections
+    /// already negotiating finish with their original revision.
+    ///
+    /// # Errors
+    /// Rejects a missing shared pack, invalid edits, or too many revisions in use.
+    pub async fn edit_shared_resources(&self, edits: Vec<PackEdit>) -> io::Result<Arc<SharedPack>> {
+        let resources = self.shared_resources.clone().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "shared resource pack is not configured",
+            )
+        })?;
+        // Native plugins can be linked to a separate copy of Tokio.
+        self.runtime
+            .spawn_blocking(move || resources.apply_edits(edits))
+            .await
+            .map_err(io::Error::other)?
+    }
+}
+
+impl SharedPack {
+    fn new(bundle: Bundle) -> Self {
+        Self {
+            bedrock: BedrockPack {
+                uuid: bundle.bedrock_id,
+                version: bundle.bedrock_version.clone(),
+                size: bundle.bedrock.bytes.len() as u64,
+                download_url: String::new(),
+                path: None,
+                content_key: String::new(),
+                sub_pack_name: String::new(),
+                content_id: String::new(),
+                has_scripts: false,
+                addon_pack: false,
+                rtx_enabled: false,
+            },
+            java_path: format!("/sculith/packs/{}/{}.zip", bundle.java_id, bundle.java.sha1),
+            bundle,
+        }
     }
 
     /// Derive the download address from the address used to join this server.
@@ -181,6 +303,23 @@ impl SharedResources {
             ));
         }
         Ok(url.to_string())
+    }
+}
+
+impl SharedResources {
+    fn pack_for_path(&self, path: &str) -> Option<Arc<SharedPack>> {
+        let revisions = self
+            .revisions
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if path == revisions.active.java_path {
+            return Some(revisions.active.clone());
+        }
+        revisions
+            .retired
+            .iter()
+            .filter_map(Weak::upgrade)
+            .find(|pack| path == pack.java_path)
     }
 
     /// Serve pack HTTP on the Java port, or return the consumed Minecraft prefix.
@@ -237,10 +376,10 @@ impl SharedResources {
         if !matches!(method, "GET" | "HEAD") || !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
             return Self::empty_response(stream, "400 Bad Request").await;
         }
-        if path != self.java_path {
+        let Some(pack) = self.pack_for_path(path) else {
             return Self::empty_response(stream, "404 Not Found").await;
-        }
-        let archive = &self.bundle.java;
+        };
+        let archive = &pack.bundle.java;
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/zip\r\nContent-Length: {}\r\nETag: \"{}\"\r\nCache-Control: public, max-age=31536000, immutable\r\nConnection: close\r\n\r\n",
             archive.bytes.len(),
@@ -280,15 +419,16 @@ mod tests {
                 required: true,
             });
         let prepared = prepare(&mut config).await.unwrap().unwrap();
+        let pack = prepared.snapshot();
         assert!(config.resource_pack.java.force);
-        assert_eq!(config.resource_pack.java.sha1, prepared.bundle.java.sha1);
+        assert_eq!(config.resource_pack.java.sha1, pack.bundle.java.sha1);
         assert_eq!(
             config.resource_pack.bedrock.packs[0].uuid,
-            prepared.bundle.bedrock_id
+            pack.bundle.bedrock_id
         );
         assert_eq!(
             config.resource_pack.bedrock.packs[0].size,
-            prepared.bundle.bedrock.bytes.len() as u64
+            pack.bundle.bedrock.bytes.len() as u64
         );
         prepared
     }
@@ -314,7 +454,8 @@ mod tests {
     #[tokio::test]
     async fn same_port_get_head_and_unknown_paths_serve_only_the_frozen_archive() {
         let resources = resources().await;
-        let path = &resources.java_path;
+        let pack = resources.snapshot();
+        let path = &pack.java_path;
         let response = request(
             resources.clone(),
             format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n").as_bytes(),
@@ -323,14 +464,8 @@ mod tests {
         let boundary = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
         let header = std::str::from_utf8(&response[..boundary]).unwrap();
         assert!(header.starts_with("HTTP/1.1 200 OK"));
-        assert!(header.contains(&format!(
-            "Content-Length: {}",
-            resources.bundle.java.bytes.len()
-        )));
-        assert_eq!(
-            &response[boundary + 4..],
-            resources.bundle.java.bytes.as_ref()
-        );
+        assert!(header.contains(&format!("Content-Length: {}", pack.bundle.java.bytes.len())));
+        assert_eq!(&response[boundary + 4..], pack.bundle.java.bytes.as_ref());
         let head = request(
             resources.clone(),
             format!("HEAD {path} HTTP/1.1\r\nHost: localhost\r\n\r\n").as_bytes(),
@@ -374,7 +509,7 @@ mod tests {
 
     #[tokio::test]
     async fn urls_use_the_join_host_and_port_without_accepting_forwarded_or_injected_hosts() {
-        let resources = resources().await;
+        let resources = resources().await.snapshot();
         assert!(
             resources
                 .java_url("example.org", 25566)

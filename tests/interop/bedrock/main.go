@@ -7,6 +7,7 @@ import (
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/go-nethernet"
 	"github.com/go-gl/mathgl/mgl32"
+	"github.com/google/uuid"
 	"github.com/pion/webrtc/v4"
 	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
@@ -27,6 +28,23 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	d := minecraft.Dialer{}
+	if len(os.Args) == 5 && os.Args[2] == "--pack-output" {
+		d.DownloadResourcePack = func(id uuid.UUID, version string, _, _ int) bool {
+			fmt.Printf("PACK OFFER id=%s version=%s\n", id, version)
+			ticker := time.NewTicker(20 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				if _, err := os.Stat(os.Args[4]); err == nil {
+					return true
+				}
+				select {
+				case <-ticker.C:
+				case <-ctx.Done():
+					return false
+				}
+			}
+		}
+	}
 	var actors modelRegistry
 	var pickActors actorPickRegistry
 	var creativeItems creativeRegistry
@@ -240,7 +258,7 @@ func run() error {
 		return nil
 	}
 
-	if len(os.Args) == 4 && os.Args[2] == "--pack-output" {
+	if len(os.Args) >= 4 && os.Args[2] == "--pack-output" {
 		packs := c.ResourcePacks()
 		if len(packs) != 1 {
 			return fmt.Errorf("expected one shared pack, received %d", len(packs))

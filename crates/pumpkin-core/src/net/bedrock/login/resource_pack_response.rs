@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::resource_pack::SharedPack;
 use pumpkin_config::resource_pack::BedrockPack;
 
 const BEDROCK_PACK_CHUNK_SIZE: u32 = 1024 * 1024;
@@ -23,12 +24,26 @@ fn resolve_pack_path(pack: &BedrockPack) -> Option<std::path::PathBuf> {
 }
 
 impl BedrockClient {
+    pub(super) fn offered_packs<'a>(
+        server: &'a Server,
+        shared: Option<&'a SharedPack>,
+    ) -> &'a [BedrockPack] {
+        if let Some(shared) = shared {
+            return std::slice::from_ref(&shared.bedrock);
+        }
+        let config = &server.advanced_config.resource_pack.bedrock;
+        if config.enabled { &config.packs } else { &[] }
+    }
+
     pub async fn handle_resource_pack_response(
         &self,
         packet: SResourcePackClientResponse,
         server: &Arc<Server>,
     ) {
-        // TODO: warn & ignore if the player is already spawned in
+        let shared = self.shared_pack.load_full();
+        if server.shared_resources.is_some() && shared.is_none() {
+            return;
+        }
 
         match packet.response {
             SResourcePackClientResponse::STATUS_REFUSED => {
@@ -45,26 +60,20 @@ impl BedrockClient {
                     packet.pack_ids.len(),
                     packet.pack_ids
                 );
-                self.handle_status_send_packs(&packet.pack_ids, server)
+                self.handle_status_send_packs(&packet.pack_ids, server, shared.as_deref())
                     .await;
             }
             SResourcePackClientResponse::STATUS_HAVE_ALL_PACKS => {
                 debug!("Bedrock: SResourcePackResponse::STATUS_HAVE_ALL_PACKS");
                 let br_config = &server.advanced_config.resource_pack.bedrock;
-                // Convert your config packs into protocol stack entries
-                let resource_packs = if br_config.enabled {
-                    br_config
-                        .packs
-                        .iter()
-                        .map(|pack| PackInstanceId {
-                            pack_id: pack.uuid.to_string(),
-                            version: pack.version.clone(),
-                            sub_pack_name: String::new(),
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
+                let resource_packs = Self::offered_packs(server, shared.as_deref())
+                    .iter()
+                    .map(|pack| PackInstanceId {
+                        pack_id: pack.uuid.to_string(),
+                        version: pack.version.clone(),
+                        sub_pack_name: String::new(),
+                    })
+                    .collect();
 
                 self.enqueue_client_packet(&CResourcePackStackPacket {
                     texture_pack_required: br_config.force,
@@ -82,6 +91,15 @@ impl BedrockClient {
                 debug!("Bedrock: SResourcePackResponse::STATUS_COMPLETED");
                 let player = self.player.load_full();
                 if let Some(player) = player.as_ref() {
+                    if shared.is_some() {
+                        if self.shared_pack.swap(None).is_none() {
+                            return;
+                        }
+                        self.streaming_packs
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .clear();
+                    }
                     player
                         .world()
                         .spawn_bedrock_player(&server.basic_config, player.clone(), server)
@@ -102,7 +120,12 @@ impl BedrockClient {
         }
     }
 
-    async fn handle_status_send_packs(&self, pack_ids: &[String], server: &Arc<Server>) {
+    async fn handle_status_send_packs(
+        &self,
+        pack_ids: &[String],
+        server: &Arc<Server>,
+        shared: Option<&SharedPack>,
+    ) {
         let br_config = &server.advanced_config.resource_pack.bedrock;
         if !br_config.enabled {
             tracing::warn!(
@@ -112,7 +135,7 @@ impl BedrockClient {
         }
 
         for requested_id in pack_ids {
-            let matching_pack = br_config.packs.iter().find(|p| {
+            let matching_pack = Self::offered_packs(server, shared).iter().find(|p| {
                 p.uuid.to_string().eq_ignore_ascii_case(requested_id)
                     || format!("{}_{}", p.uuid, p.version).eq_ignore_ascii_case(requested_id)
             });
@@ -134,7 +157,7 @@ impl BedrockClient {
             };
 
             if !self
-                .stage_and_send_pack_info(requested_id, pack, br_config.force, server)
+                .stage_and_send_pack_info(requested_id, pack, br_config.force, shared)
                 .await
             {
                 return;
@@ -147,51 +170,48 @@ impl BedrockClient {
         requested_id: &str,
         pack: &BedrockPack,
         force: bool,
-        server: &Server,
+        shared: Option<&SharedPack>,
     ) -> bool {
-        let data: Arc<[u8]> = if let Some(shared) = server
-            .shared_resources
-            .as_ref()
-            .filter(|shared| shared.bundle.bedrock_id == pack.uuid)
-        {
-            shared.bundle.bedrock.bytes.clone()
-        } else {
-            let Some(resolved_path) = resolve_pack_path(pack) else {
-                tracing::warn!(
-                    "Bedrock: Pack file for {requested_id} (UUID {}) not found on disk",
-                    pack.uuid
-                );
-                if force {
-                    self.kick(
-                        DisconnectReason::ResourcePackProblem,
-                        "Required resource pack not found on server.".into(),
-                    )
-                    .await;
-                    return false;
-                }
-                return true;
-            };
-
-            let bytes = match tokio::fs::read(&resolved_path).await {
-                Ok(bytes) => bytes,
-                Err(err) => {
-                    tracing::error!(
-                        "Bedrock: Failed to read resource pack {}: {err}",
-                        resolved_path.display()
+        let data: Arc<[u8]> =
+            if let Some(shared) = shared.filter(|shared| shared.bundle.bedrock_id == pack.uuid) {
+                shared.bundle.bedrock.bytes.clone()
+            } else {
+                let Some(resolved_path) = resolve_pack_path(pack) else {
+                    tracing::warn!(
+                        "Bedrock: Pack file for {requested_id} (UUID {}) not found on disk",
+                        pack.uuid
                     );
                     if force {
                         self.kick(
                             DisconnectReason::ResourcePackProblem,
-                            "Failed to read resource pack on server.".into(),
+                            "Required resource pack not found on server.".into(),
                         )
                         .await;
                         return false;
                     }
                     return true;
-                }
+                };
+
+                let bytes = match tokio::fs::read(&resolved_path).await {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        tracing::error!(
+                            "Bedrock: Failed to read resource pack {}: {err}",
+                            resolved_path.display()
+                        );
+                        if force {
+                            self.kick(
+                                DisconnectReason::ResourcePackProblem,
+                                "Failed to read resource pack on server.".into(),
+                            )
+                            .await;
+                            return false;
+                        }
+                        return true;
+                    }
+                };
+                bytes.into()
             };
-            bytes.into()
-        };
 
         let file_hash = Sha256::digest(&data).to_vec();
         let total_size = data.len() as u64;

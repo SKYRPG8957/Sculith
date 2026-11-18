@@ -157,7 +157,7 @@ class Java:
     def send(self, id_, payload=b""):
         self.socket.sendall(self.frame(id_, payload))
 
-    def join_with_resources(self, port, output, delayed):
+    def join_with_resources(self, port, output, delayed, *, before_download=None):
         archive = None
         pack_id = None
         heartbeat_count = 0
@@ -171,6 +171,8 @@ class Java:
                 assert fields.take(1) == bytes([1]), "pack must be required"
                 assert fields.take(1) == bytes([0]), "unexpected prompt component"
                 assert url.startswith(f"http://127.0.0.1:{port}/sculith/packs/")
+                if before_download is not None:
+                    before_download()
                 with urlopen(url, timeout=10) as response:
                     archive = response.read(LIMIT)
                 assert hashlib.sha1(archive).hexdigest() == sha1
@@ -365,6 +367,7 @@ def main():
     parser.add_argument("--item-use-events", action="store_true", help="check interaction vetoes before equipment and timed item use on both editions")
     parser.add_argument("--close-events", action="store_true", help="check cursor restitution and actual inventory correction after close callbacks")
     parser.add_argument("--storage-inventory", action="store_true", help="check native storage transfers and whole-request rejection in a real chest")
+    parser.add_argument("--resource-edits", action="store_true", help="edit the authored pack while both editions are joining")
     parser.add_argument("--tracking-events", action="store_true", help="remove a tracked mob from its outgoing spawn callback")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
@@ -373,7 +376,7 @@ def main():
     parser.add_argument("--packet-edits", action="store_true", help="exercise outgoing packet edits and cancellation through Rust callbacks")
     parser.add_argument("--connections-plugin", type=Path, help="compiled native tests/interop/connections fixture")
     args = parser.parse_args()
-    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events or args.click_events or args.item_use_events or args.close_events) and not args.connections_plugin:
+    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.resource_edits) and not args.connections_plugin:
         parser.error("event checks require --connections-plugin")
     if (args.dialog_replies or args.forms or args.models or args.packet_edits) and not args.plugin:
         parser.error("--dialog-replies, --forms, --models and --packet-edits require the Rust --plugin fixture")
@@ -507,6 +510,9 @@ def main():
             assert "pack.mcmeta" in archive.namelist()
             assert archive.read("assets/sculith/sounds/demo_tone.ogg") == original["sounds/sculith_demo.ogg"]
             assert "assets/sculith/models/sculith/demo_statue.json" in archive.namelist()
+        if args.resource_edits:
+            from resource_edits import check
+            report["resource_edits"] = check(java, bedrock, root, args.bedrock_probe.resolve(), report["sha1"])
         if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.storage_inventory:
             server.stdin.write("kill @e[type=!minecraft:player]\n")
             server.stdin.flush()

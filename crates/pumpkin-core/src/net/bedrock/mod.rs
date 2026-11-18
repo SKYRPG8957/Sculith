@@ -84,7 +84,7 @@ use crate::{
     },
     server::Server,
 };
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use pumpkin_protocol::{bedrock::server::login::ClientData, codec::var_uint::VarUInt};
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::version::BedrockMinecraftVersion;
@@ -198,6 +198,7 @@ pub struct BedrockClient {
     last_food_rejection_tick: AtomicCell<Option<i32>>,
     pub client_cache_supported: AtomicBool,
     pub blob_cache: std::sync::Mutex<blob_cache::BlobCache>,
+    shared_pack: ArcSwapOption<crate::resource_pack::SharedPack>,
     pub streaming_packs: std::sync::Mutex<HashMap<String, BedrockStreamingPack>>,
     /// An notifier that is triggered when this client is closed.
     close_token: CancellationToken,
@@ -262,6 +263,7 @@ impl BedrockClient {
             last_food_rejection_tick: AtomicCell::new(None),
             client_cache_supported: AtomicBool::new(false),
             blob_cache: std::sync::Mutex::new(blob_cache::BlobCache::new()),
+            shared_pack: ArcSwapOption::empty(),
             streaming_packs: std::sync::Mutex::new(HashMap::new()),
             close_token: CancellationToken::new(),
             last_seen: Arc::new(AtomicCell::new(std::time::Instant::now())),
