@@ -40,6 +40,12 @@ distribution, cancels it, or edits a destination. The probe checks the actual
 slot and cursor results in each case. It also places items after a stop and
 after closing and reopening the player inventory to check drag cleanup.
 
+`--craft-events` uses the advertised recipes to produce oak planks in a 2x2
+grid and a chest in a 3x3 grid. Native callbacks read the original recipe input
+and destination. The fixture allows a craft, vetoes it in either craft event,
+or edits the destination. The probe reads the actual ingredient and result
+slots after each request.
+
 `--tracking-events` also removes a nearby pig from its outgoing spawn callback,
 then removes another pig from its velocity callback. Both packets are cancelled.
 The client checks the despawn and a subsequent latency reply; the fixture logs

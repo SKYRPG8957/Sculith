@@ -367,6 +367,7 @@ def main():
     parser.add_argument("--item-use-events", action="store_true", help="check interaction vetoes before equipment and timed item use on both editions")
     parser.add_argument("--close-events", action="store_true", help="check cursor restitution and actual inventory correction after close callbacks")
     parser.add_argument("--drag-events", action="store_true", help="check native cursor drag distribution, Rust vetoes and close reset")
+    parser.add_argument("--craft-events", action="store_true", help="check manual Bedrock crafting and Rust craft vetoes")
     parser.add_argument("--storage-inventory", action="store_true", help="check native storage transfers and whole-request rejection in a real chest")
     parser.add_argument("--storage-contention", nargs="?", const="running", choices=["running", "frozen"], help="check simultaneous Java and Bedrock withdrawals")
     parser.add_argument("--resource-edits", action="store_true", help="edit the authored pack while both editions are joining")
@@ -378,7 +379,7 @@ def main():
     parser.add_argument("--packet-edits", action="store_true", help="exercise outgoing packet edits and cancellation through Rust callbacks")
     parser.add_argument("--connections-plugin", type=Path, help="compiled native tests/interop/connections fixture")
     args = parser.parse_args()
-    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.drag_events or args.resource_edits or args.storage_contention) and not args.connections_plugin:
+    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.drag_events or args.craft_events or args.resource_edits or args.storage_contention) and not args.connections_plugin:
         parser.error("event checks require --connections-plugin")
     if (args.dialog_replies or args.forms or args.models or args.packet_edits) and not args.plugin:
         parser.error("--dialog-replies, --forms, --models and --packet-edits require the Rust --plugin fixture")
@@ -434,7 +435,8 @@ def main():
     server = subprocess.Popen([str(server_path)], cwd=root, env=env, stdin=subprocess.PIPE, stdout=log, stderr=log, text=True)
     client = None
     try:
-        deadline = time.monotonic() + 30
+        # Cold Wasm compilation can take more than 30 seconds on a small runner.
+        deadline = time.monotonic() + 60
         while "Server is now running" not in (root / "server.log").read_text():
             assert server.poll() is None, (root / "server.log").read_text()
             assert time.monotonic() < deadline, "server startup timed out"
@@ -515,7 +517,7 @@ def main():
         if args.resource_edits:
             from resource_edits import check
             report["resource_edits"] = check(java, bedrock, root, args.bedrock_probe.resolve(), report["sha1"])
-        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.drag_events or args.storage_inventory or args.storage_contention:
+        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.drag_events or args.craft_events or args.storage_inventory or args.storage_contention:
             server.stdin.write("kill @e[type=!minecraft:player]\n")
             server.stdin.flush()
             time.sleep(.5)
@@ -566,6 +568,9 @@ def main():
         if args.drag_events:
             from cursor_drag import check
             report["drag_events"] = check(server, bedrock, root, args.bedrock_probe.resolve())
+        if args.craft_events:
+            from manual_craft import check
+            report["craft_events"] = check(server, bedrock, root, args.bedrock_probe.resolve())
         if args.storage_inventory:
             from storage_inventory import check
             client.socket.close()

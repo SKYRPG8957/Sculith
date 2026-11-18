@@ -8,9 +8,11 @@ use std::sync::{
 };
 
 use pumpkin_core::{
+    plugin::inventory::craft_item::CraftItemEvent,
     plugin::inventory::inventory_creative::InventoryCreativeEvent,
     plugin::inventory::inventory_drag::InventoryDragEvent,
     plugin::inventory::inventory_interact::InventoryInteractEvent,
+    plugin::inventory::prepare_item_craft::PrepareItemCraftEvent,
     plugin::player::inventory_close::InventoryCloseEvent,
     plugin::player::inventory_interact::InventoryClickEvent,
     plugin::player::item_held::PlayerItemHeldEvent,
@@ -130,6 +132,16 @@ impl Plugin for Connections {
                 EventPriority::Lowest,
                 true,
             );
+            context.register_event::<CraftItemEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
+            context.register_event::<PrepareItemCraftEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
             context.register_event::<PlayerInteractEvent, _>(
                 observer.clone(),
                 EventPriority::Lowest,
@@ -144,6 +156,76 @@ impl Plugin for Connections {
 }
 
 static CLOSE_MUTATED: AtomicBool = AtomicBool::new(false);
+
+impl EventHandler<CraftItemEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut CraftItemEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = event.player.gameprofile.name.as_str();
+            if !matches!(
+                name,
+                "CraftReference" | "CraftVeto" | "CraftPrepVeto" | "CraftEdit"
+            ) {
+                return;
+            }
+            let screen = event
+                .player
+                .current_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            let input = screen
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_behaviour()
+                .slots[1]
+                .get_cloned_stack()
+                .item_count;
+            let target = event.player.inventory.get_slot(1).item_count;
+            if name == "CraftEdit" {
+                event
+                    .player
+                    .inventory
+                    .set_slot(1, ItemStack::new(7, &Item::GRASS_BLOCK));
+            }
+            event.cancelled = name == "CraftVeto";
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!(
+                    "PROBE_CRAFT player={name} id={} input={input} target={target} cancelled={}",
+                    event.recipe_id, event.cancelled
+                ));
+            }
+        })
+    }
+}
+
+impl EventHandler<PrepareItemCraftEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut PrepareItemCraftEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = event.player.gameprofile.name.as_str();
+            if !matches!(
+                name,
+                "CraftReference" | "CraftVeto" | "CraftPrepVeto" | "CraftEdit"
+            ) {
+                return;
+            }
+            event.cancelled = name == "CraftPrepVeto";
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!(
+                    "PROBE_CRAFT_PREPARE player={name} id={} cancelled={}",
+                    event.recipe_id, event.cancelled
+                ));
+            }
+        })
+    }
+}
 
 impl EventHandler<InventoryDragEvent> for Observer {
     fn handle_blocking<'a>(

@@ -122,6 +122,19 @@ planned stack invalidates that plan and survives the rejection.
 Native plugins use ABI 13 for the client layout change. Wasm plugins retain the
 existing `InventoryDragEvent` record.
 
+## Manual crafting
+
+Manual Bedrock requests for recipes that consume their ingredients in the
+player or crafting-table grid use a single inventory plan. The shared recipe
+matcher supplies the output. The request must consume the planned input counts
+and distribute the result before the plan can commit.
+
+After click and interaction callbacks, the server fires `CraftItemEvent` and
+`PrepareItemCraftEvent`. Both receive the output item identifier, matching the
+existing Java event payload. Each callback can veto the craft. The server
+rechecks the grid, destination and active screen before applying the changes.
+It sends the actual grid, main inventory and cursor after either result.
+
 ## Storage requests
 
 Ordinary stack requests in a generic storage screen use the same plan. The

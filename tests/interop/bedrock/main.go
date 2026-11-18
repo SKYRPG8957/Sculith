@@ -62,6 +62,7 @@ func run() error {
 			"--eat-deny": "EatDenyNative", "--eat-allow": "EatAllowNative",
 			"--close-inventory": "CloseNative", "--close-mutate": "CloseMutNative",
 			"--drag-allow": "DragNativeAllow", "--drag-veto": "DragNativeVeto", "--drag-edit": "DragNativeEdit",
+			"--craft-allow": "CraftReference", "--craft-veto": "CraftVeto", "--craft-prep-veto": "CraftPrepVeto", "--craft-edit": "CraftEdit", "--craft-table": "CraftTable",
 			"--storage-inventory":  "StoreNative",
 			"--storage-click-deny": "StoreClickDeny", "--storage-mutate": "StoreMutNative", "--storage-drop-deny": "StoreDropDeny",
 			"--storage-race": "RaceChestBed",
@@ -146,6 +147,8 @@ func run() error {
 			return checkStorageInventory(c, os.Args[2])
 		case "--drag-allow", "--drag-veto", "--drag-edit":
 			return checkCursorDrag(c, os.Args[2])
+		case "--craft-allow", "--craft-veto", "--craft-prep-veto", "--craft-edit", "--craft-table":
+			return checkManualCraft(c, os.Args[2])
 		}
 	}
 	if len(os.Args) == 3 && (os.Args[2] == "--close-inventory" || os.Args[2] == "--close-mutate") {

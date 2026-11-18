@@ -15,7 +15,7 @@ use pumpkin_protocol::bedrock::{
         CItemStackResponse, ItemStackResponseContainerInfo, ItemStackResponseInfo,
         ItemStackResponseSlotInfo,
     },
-    server::item_stack_request::{ItemStackRequestSlotInfo, SItemStackRequest},
+    server::item_stack_request::{ItemStackRequest, ItemStackRequestSlotInfo, SItemStackRequest},
 };
 
 impl BedrockClient {
@@ -30,12 +30,25 @@ impl BedrockClient {
                         matches!(action, ItemStackRequestAction::CraftCreative { .. })
                     })
             };
-        if !packet.requests.iter().any(planned) {
+        let manual_craft = |request: &ItemStackRequest| {
+            matches!(
+                request.actions.first(),
+                Some(ItemStackRequestAction::CraftRecipe { .. })
+            )
+        };
+        if !packet
+            .requests
+            .iter()
+            .any(|request| planned(request) || manual_craft(request))
+        {
             self.handle_regular_stack_requests(player, packet);
             return;
         }
         // Preserve request order when planned and specialized operations share a batch.
         for request in packet.requests {
+            if manual_craft(&request) && self.handle_manual_craft(player, &request) {
+                continue;
+            }
             if planned(&request) {
                 self.handle_inventory_request(player, &request, storage.as_ref());
             } else {

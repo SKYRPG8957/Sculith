@@ -1,12 +1,16 @@
 use std::sync::{Arc, Mutex};
 
-use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::{item_stack::ItemStack, statistic::StatisticCategory};
 use pumpkin_inventory::{
     container_click::SLOT_INDEX_OUTSIDE,
+    crafting::{
+        crafting_inventory::CraftingInventory,
+        crafting_screen_handler::{CraftingTableScreenHandler, match_crafting_recipe},
+    },
     generic_container_screen_handler::GenericContainerScreenHandler,
     inventory::Inventory,
-    player::player_inventory::PlayerInventory,
-    screen_handler::{ClickType, ScreenHandler},
+    player::{player_inventory::PlayerInventory, player_screen_handler::PlayerScreenHandler},
+    screen_handler::{ClickType, InventoryPlayer, ScreenHandler},
     slot::Slot,
 };
 use pumpkin_protocol::{
@@ -35,8 +39,10 @@ use crate::{
     entity::player::Player,
     net::bedrock::{BedrockClient, CursorDrag},
     plugin::{
-        inventory::inventory_drag::InventoryDragEvent,
-        inventory::inventory_interact::InventoryInteractEvent,
+        inventory::{
+            craft_item::CraftItemEvent, inventory_drag::InventoryDragEvent,
+            inventory_interact::InventoryInteractEvent, prepare_item_craft::PrepareItemCraftEvent,
+        },
         player::inventory_interact::InventoryClickEvent,
         player::player_drop_item::PlayerDropItemEvent,
     },
@@ -78,10 +84,97 @@ impl StorageContext {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CraftGrid {
+    width: u8,
+    first_slot: u8,
+}
+
+impl CraftGrid {
+    fn current(handler: &dyn ScreenHandler) -> Option<Self> {
+        if handler.as_any().is::<PlayerScreenHandler>() {
+            Some(Self {
+                width: 2,
+                first_slot: 28,
+            })
+        } else if handler.as_any().is::<CraftingTableScreenHandler>() {
+            Some(Self {
+                width: 3,
+                first_slot: 32,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn len(self) -> usize {
+        usize::from(self.width) * usize::from(self.width)
+    }
+}
+
+struct ManualCraft {
+    grid: CraftGrid,
+    output: ItemStack,
+    remaining_inputs: [u8; 9],
+}
+
+impl ManualCraft {
+    fn prepare(
+        world: &World,
+        grid: CraftGrid,
+        slots: &[ItemStack],
+        repetitions: u8,
+    ) -> Result<Option<Self>, ()> {
+        let inputs = slots.get(1..=grid.len()).ok_or(())?;
+        let inventory = CraftingInventory {
+            width: grid.width,
+            height: grid.width,
+            items: std::sync::RwLock::new(inputs.to_vec()),
+        };
+        let server = world.server.upgrade().ok_or(())?;
+        let recipe =
+            match_crafting_recipe(&inventory, Some(server.recipe_manager.as_ref())).ok_or(())?;
+        let mut output = recipe.to_item_stack();
+        if output.is_empty() || repetitions == 0 {
+            return Err(());
+        }
+        let mut remaining_inputs = [0; 9];
+        for (index, stack) in inputs.iter().enumerate().filter(|(_, s)| !s.is_empty()) {
+            // Recipes with remainder placement still use the existing handler.
+            if recipe.remaining_item_for_slot(index, stack).is_some() {
+                return Ok(None);
+            }
+            if stack.item_count < repetitions {
+                return Err(());
+            }
+            remaining_inputs[index] = repetitions;
+        }
+        output.item_count = output.item_count.checked_mul(repetitions).ok_or(())?;
+        Ok(Some(Self {
+            grid,
+            output,
+            remaining_inputs,
+        }))
+    }
+
+    fn input(&self, handler: &dyn ScreenHandler, info: &SlotInfo) -> Option<usize> {
+        if info.container_name.dynamic_id.is_some()
+            || info.container_name.container_name != ContainerName::CraftingInput
+        {
+            return None;
+        }
+        let index =
+            map_bedrock_container_slot(handler, ContainerName::CraftingInput, info.slot_id)?
+                .checked_sub(1)?;
+        (index < self.grid.len()).then_some(index)
+    }
+}
+
 struct InventoryPlan {
     world: Arc<World>,
     mode: GameMode,
     creative: bool,
+    craft: Option<ManualCraft>,
     cursor_placement: bool,
     clicked_slot: Option<usize>,
     click: Option<InventoryClickEvent>,
@@ -175,15 +268,13 @@ impl InventoryPlan {
         player: &Arc<Player>,
         request: &ItemStackRequest,
         storage: Option<&StorageContext>,
-    ) -> Result<Self, ()> {
+        manual_craft: bool,
+    ) -> Result<Option<Self>, ()> {
         let mode = player.gamemode.load();
         let creative = request
             .actions
             .iter()
             .any(|action| matches!(action, Action::CraftCreative { .. }));
-        if mode == GameMode::Spectator || (creative && mode != GameMode::Creative) {
-            return Err(());
-        }
         let screen = player
             .current_screen_handler
             .lock()
@@ -197,6 +288,17 @@ impl InventoryPlan {
         let handler = screen
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let grid = if manual_craft {
+            let Some(grid) = CraftGrid::current(&*handler) else {
+                return Ok(None);
+            };
+            Some(grid)
+        } else {
+            None
+        };
+        if mode == GameMode::Spectator || (creative && mode != GameMode::Creative) {
+            return Err(());
+        }
         if !handler.can_use(player.as_ref()) {
             return Err(());
         }
@@ -207,12 +309,33 @@ impl InventoryPlan {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
+        let world = player.world();
+        let (craft, actions) = if let Some(grid) = grid {
+            let [Action::CraftRecipe { repetitions, .. }, actions @ ..] =
+                request.actions.as_slice()
+            else {
+                return Err(());
+            };
+            if creative {
+                return Err(());
+            }
+            let Some(craft) = ManualCraft::prepare(&world, grid, &before, *repetitions)? else {
+                return Ok(None);
+            };
+            (Some(craft), actions)
+        } else {
+            (None, request.actions.as_slice())
+        };
         let mut plan = Self {
-            world: player.world(),
+            world,
             mode,
             creative,
+            clicked_slot: craft.as_ref().map(|_| 0),
+            created: craft
+                .as_ref()
+                .map_or_else(|| ItemStack::EMPTY.clone(), |c| c.output.clone()),
+            craft,
             cursor_placement: false,
-            clicked_slot: None,
             click: None,
             screen: screen.clone(),
             slots,
@@ -221,43 +344,54 @@ impl InventoryPlan {
             cursor,
             cursor_after: cursor_before.clone(),
             cursor_before,
-            created: ItemStack::EMPTY.clone(),
             updates: Vec::new(),
             drops: Vec::new(),
             destroyed: Vec::new(),
         };
-        plan.apply(player, &*handler, request)?;
-        if !creative && !request.actions.is_empty() {
-            let (slot, clicked) = if let Some(index) = plan.clicked_slot {
-                (
-                    i16::try_from(index).map_err(|_| ())?,
-                    Some(plan.before[index].clone()),
-                )
-            } else {
-                (SLOT_INDEX_OUTSIDE, None)
-            };
-            plan.click = Some(InventoryClickEvent::new(
-                player,
-                handler.window_type(),
-                ClickType::Unknown,
-                slot,
-                slot,
-                clicked,
-                Some(plan.cursor_before.clone()),
-                -1,
-            ));
+        plan.apply(player, &*handler, actions)?;
+        if let Some(craft) = &plan.craft
+            && (!plan.created.is_empty() || craft.remaining_inputs.iter().any(|&count| count != 0))
+        {
+            return Err(());
         }
-        Ok(plan)
+        if !creative && !request.actions.is_empty() {
+            plan.click = Some(plan.click_event(player, &*handler)?);
+        }
+        Ok(Some(plan))
+    }
+
+    fn click_event(
+        &self,
+        player: &Arc<Player>,
+        handler: &dyn ScreenHandler,
+    ) -> Result<InventoryClickEvent, ()> {
+        let (slot, clicked) = match self.clicked_slot {
+            Some(index) => (
+                i16::try_from(index).map_err(|_| ())?,
+                Some(self.before[index].clone()),
+            ),
+            None => (SLOT_INDEX_OUTSIDE, None),
+        };
+        Ok(InventoryClickEvent::new(
+            player,
+            handler.window_type(),
+            ClickType::Unknown,
+            slot,
+            slot,
+            clicked,
+            Some(self.cursor_before.clone()),
+            -1,
+        ))
     }
 
     fn apply(
         &mut self,
         player: &Player,
         handler: &dyn ScreenHandler,
-        request: &ItemStackRequest,
+        actions: &[Action],
     ) -> Result<(), ()> {
         let mut created = false;
-        for action in &request.actions {
+        for action in actions {
             match action {
                 Action::CraftCreative {
                     creative_item_id, ..
@@ -295,6 +429,18 @@ impl InventoryPlan {
                     self.put(a, second, slot1);
                     self.put(b, first, slot2);
                 }
+                Action::Consume { count, source } if self.craft.is_some() => {
+                    let craft = self.craft.as_mut().ok_or(())?;
+                    let index = craft.input(handler, source).ok_or(())?;
+                    if *count == 0 || *count > craft.remaining_inputs[index] {
+                        return Err(());
+                    }
+                    craft.remaining_inputs[index] -= *count;
+                    let target = Target::Slot(index + 1);
+                    let mut stack = self.get(target);
+                    stack.decrement(*count);
+                    self.put(target, stack, source);
+                }
                 Action::Destroy { count, source }
                 | Action::Consume { count, source }
                 | Action::Drop { count, source, .. } => {
@@ -318,7 +464,8 @@ impl InventoryPlan {
                         self.destroyed.push(from);
                     }
                 }
-                Action::CraftResultsDeprecated { .. } | Action::Create { .. } if self.creative => {}
+                Action::CraftResultsDeprecated { .. } if self.creative || self.craft.is_some() => {}
+                Action::Create { .. } if self.creative => {}
                 _ => return Err(()),
             }
         }
@@ -376,7 +523,9 @@ impl InventoryPlan {
         }
         let name = info.container_name.container_name;
         match name {
-            ContainerName::CreatedOutput if self.creative => return Ok(Target::Created),
+            ContainerName::CreatedOutput if self.creative || self.craft.is_some() => {
+                return Ok(Target::Created);
+            }
             ContainerName::Cursor if info.slot_id == 0 => return Ok(Target::Cursor),
             ContainerName::HotBar if info.slot_id >= 9 => return Err(()),
             ContainerName::Inventory
@@ -489,6 +638,16 @@ impl InventoryPlan {
                     return false;
                 }
             }
+            if let Some(craft) = &self.craft {
+                let identifier = craft.output.item.registry_key.to_string();
+                let mut event = CraftItemEvent::new(player.clone(), identifier.clone());
+                let mut prepare = PrepareItemCraftEvent::new(player.clone(), identifier);
+                server.plugin_manager.fire_blocking(&server, &mut event);
+                server.plugin_manager.fire_blocking(&server, &mut prepare);
+                if event.cancelled || prepare.cancelled {
+                    return false;
+                }
+            }
             // Destroy has no CraftCreative action, but still sets a creative slot.
             for target in &self.destroyed {
                 let slot = match *target {
@@ -541,7 +700,11 @@ impl InventoryPlan {
             return false;
         }
         for (index, before) in self.before.iter().enumerate() {
-            if !same_stack(before, &self.after[index])
+            let recipe_input = self
+                .craft
+                .as_ref()
+                .is_some_and(|c| (1..=c.grid.len()).contains(&index));
+            if (recipe_input || !same_stack(before, &self.after[index]))
                 && (!Arc::ptr_eq(&self.slots[index], &handler.get_behaviour().slots[index])
                     || !same_stack(before, &self.slots[index].get_cloned_stack()))
             {
@@ -586,6 +749,14 @@ impl InventoryPlan {
         }
         if !accepted {
             return None;
+        }
+        if let Some(craft) = &self.craft {
+            player.increment_stat(
+                StatisticCategory::Crafted,
+                i32::from(craft.output.item.id),
+                i32::from(craft.output.item_count),
+            );
+            player.on_recipe_crafted(&craft.output);
         }
         for stack in self.drops {
             player.drop_item(stack);
@@ -634,8 +805,9 @@ impl BedrockClient {
         request: &ItemStackRequest,
         storage: Option<&StorageContext>,
     ) {
-        let (result, updates) = InventoryPlan::prepare(player, request, storage)
+        let (result, updates) = InventoryPlan::prepare(player, request, storage, false)
             .ok()
+            .flatten()
             .and_then(|plan| {
                 let dragging = plan.cursor_placement
                     && !plan.creative
@@ -655,6 +827,53 @@ impl BedrockClient {
             responses: vec![build_stack_response(request.request_id, result, updates)],
         });
         self.resend_player_inventory(player);
+    }
+
+    pub(super) fn handle_manual_craft(
+        &self,
+        player: &Arc<Player>,
+        request: &ItemStackRequest,
+    ) -> bool {
+        let result = match InventoryPlan::prepare(player, request, None, true) {
+            Ok(Some(plan)) => plan.execute(player, false),
+            Ok(None) => return false,
+            Err(()) => None,
+        };
+        let (status, updates) = result.map_or_else(|| (1, Vec::new()), |updates| (0, updates));
+        self.try_enqueue_client_packet(&CItemStackResponse {
+            responses: vec![build_stack_response(request.request_id, status, updates)],
+        });
+        self.resend_player_inventory(player);
+        let screen = player
+            .current_screen_handler
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let handler = screen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(grid) = CraftGrid::current(&*handler) {
+            for (index, slot) in handler
+                .get_behaviour()
+                .slots
+                .iter()
+                .skip(1)
+                .take(grid.len())
+                .enumerate()
+            {
+                self.try_enqueue_client_packet(&CInventorySlot {
+                    container_id: VarUInt(124),
+                    slot: VarUInt(u32::from(grid.first_slot) + index as u32),
+                    full_container_name: Some(FullContainerName {
+                        container_name: ContainerName::CraftingInput,
+                        dynamic_id: None,
+                    }),
+                    storage_item: None,
+                    item: NetworkItemStackDescriptor::from(&slot.get_cloned_stack()),
+                });
+            }
+        }
+        true
     }
 
     pub(super) fn apply_legacy_inventory_drop(
@@ -698,7 +917,7 @@ impl BedrockClient {
             filter_strings: Vec::new(),
             filter_cause: 0,
         };
-        let mut plan = InventoryPlan::prepare(player, &request, None).ok()?;
+        let mut plan = InventoryPlan::prepare(player, &request, None, false).ok()??;
         // Legacy hotbar drops do not carry an inventory click gesture.
         plan.click = None;
         let screen_slot = if slot < 9 {

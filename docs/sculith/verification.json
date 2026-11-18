@@ -849,5 +849,25 @@
       "regressions": "3195928a8507e6314a3ff24d18474484c516dd9cf09f90f7367a176289e2ef42",
       "clippy": "21a66e85e3f2b62e51f58ab9c65258559a6e10fbf3ded1d46c6634a247318084"
     }
+  },
+  "manual_crafting": {
+    "protocol": 2225,
+    "native_plugin_abi": 13,
+    "reference": "Bedrock Dedicated Server 1.26.63.1 accepted the advertised 2x2 oak plank recipe with one log and returned four planks",
+    "checks": [
+      "Independent client crafted four planks in the 2x2 grid and one chest in the 3x3 crafting table",
+      "The craft observer read the original stacks, and either Rust craft event could veto before consumption",
+      "An edited destination survived plan rejection; the client received the actual ingredient, main inventory and cursor state",
+      "Full Java and Bedrock interop suite with native and Wasm fixtures, shared resources and normal model restart"
+    ],
+    "scope": "Manual recipes whose ingredients leave no remainder, exercised with local protocol clients. Recipe-book auto-crafting, remainder placement and Windows GDK UI behavior were outside these checks.",
+    "server_sha256": "b7a20df6aad98487a86c939be20531b582e4d9cd7c551b89b7ee87dbe701f0ac",
+    "native_fixture_sha256": "c838f708a7027b3cea813c992689ab2340008902d87389ffcf8f00814fe72cde",
+    "log_sha256": {
+      "official_reference": "02be9229c70ced5da7f050533c75c192283e7430097da47649ce7a76e337b55c",
+      "previous_grid_correction_timeout": "5ee14b5a3deb7535b14d3965165696fa512d5df23f2382978b0ffa127b4a2d84",
+      "regressions": "8c91d4469c6e281f7ce197a9c0c807006c609c547c8df3d7e71884ad9cd71e2f",
+      "clippy": "80f59e10a2f8ac671308ef9d3d98e888ec9d5305e703496442f5be8d53588c23"
+    }
   }
 }
