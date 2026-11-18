@@ -1,4 +1,4 @@
-//! Deserialization from Java Edition, unnamed network, and Bedrock NBT.
+//! Deserialization from Java Edition and Bedrock disk and network NBT.
 
 use std::borrow::Cow;
 use std::io::{Cursor, Seek, SeekFrom};
@@ -317,6 +317,11 @@ pub trait NbtReadHelper<'a> {
     /// Returns the underlying byte source.
     fn reader(&mut self) -> &mut Self::Reader;
 
+    /// Whether end-of-input may stand in for an end tag in a compound.
+    fn allow_implicit_compound_end(&self) -> bool {
+        true
+    }
+
     /// Advances by `count` bytes.
     fn skip_bytes(&mut self, count: i64) -> Result<()> {
         self.reader().seek_relative(count)
@@ -388,13 +393,19 @@ pub trait NbtReadHelper<'a> {
     fn get_byte_array(&mut self, len: usize) -> Result<Cow<'a, [i8]>>;
 }
 
-/// Reads Java Edition NBT primitives using big-endian numeric encoding.
-pub struct NbtReadHelperJava<D> {
+/// Reads fixed-width NBT primitives in the specified byte order.
+pub struct NbtReadHelperDisk<D, const LITTLE_ENDIAN: bool> {
     reader: D,
 }
 
-impl<D> NbtReadHelperJava<D> {
-    /// Creates a Java Edition reader over `r`.
+/// Reads big-endian Java NBT.
+pub type NbtReadHelperJava<D> = NbtReadHelperDisk<D, false>;
+
+/// Reads little-endian Bedrock disk NBT, including fixed-width lengths.
+pub type NbtReadHelperBedrockDisk<D> = NbtReadHelperDisk<D, true>;
+
+impl<D, const LITTLE_ENDIAN: bool> NbtReadHelperDisk<D, LITTLE_ENDIAN> {
+    /// Creates a reader over `r`.
     pub const fn new(r: D) -> Self {
         Self { reader: r }
     }
@@ -412,19 +423,29 @@ impl<D> NbtReadHelperBedrock<D> {
     }
 }
 
-impl<'a, D: NbtDataSource<'a>> NbtReadHelperJava<D> {
+impl<'a, D: NbtDataSource<'a>, const LITTLE_ENDIAN: bool> NbtReadHelperDisk<D, LITTLE_ENDIAN> {
     fn get_string_len(&mut self) -> Result<u16> {
         let mut buf = [0u8; 2];
         self.reader.read_bytes(&mut buf)?;
-        Ok(u16::from_be_bytes(buf))
+        Ok(if LITTLE_ENDIAN {
+            u16::from_le_bytes(buf)
+        } else {
+            u16::from_be_bytes(buf)
+        })
     }
 }
 
-impl<'a, D: NbtDataSource<'a>> NbtReadHelper<'a> for NbtReadHelperJava<D> {
+impl<'a, D: NbtDataSource<'a>, const LITTLE_ENDIAN: bool> NbtReadHelper<'a>
+    for NbtReadHelperDisk<D, LITTLE_ENDIAN>
+{
     type Reader = D;
 
     fn reader(&mut self) -> &mut D {
         &mut self.reader
+    }
+
+    fn allow_implicit_compound_end(&self) -> bool {
+        !LITTLE_ENDIAN
     }
 
     fn skip_string(&mut self) -> Result<()> {
@@ -441,17 +462,29 @@ impl<'a, D: NbtDataSource<'a>> NbtReadHelper<'a> for NbtReadHelperJava<D> {
     fn get_i16(&mut self) -> Result<i16> {
         let mut buf = [0u8; 2];
         self.reader.read_bytes(&mut buf)?;
-        Ok(i16::from_be_bytes(buf))
+        Ok(if LITTLE_ENDIAN {
+            i16::from_le_bytes(buf)
+        } else {
+            i16::from_be_bytes(buf)
+        })
     }
     fn get_i32(&mut self) -> Result<i32> {
         let mut buf = [0u8; 4];
         self.reader.read_bytes(&mut buf)?;
-        Ok(i32::from_be_bytes(buf))
+        Ok(if LITTLE_ENDIAN {
+            i32::from_le_bytes(buf)
+        } else {
+            i32::from_be_bytes(buf)
+        })
     }
     fn get_i64(&mut self) -> Result<i64> {
         let mut buf = [0u8; 8];
         self.reader.read_bytes(&mut buf)?;
-        Ok(i64::from_be_bytes(buf))
+        Ok(if LITTLE_ENDIAN {
+            i64::from_le_bytes(buf)
+        } else {
+            i64::from_be_bytes(buf)
+        })
     }
     fn get_i32_array(&mut self, len: usize) -> Result<Vec<i32>> {
         let byte_len = len
@@ -467,7 +500,11 @@ impl<'a, D: NbtDataSource<'a>> NbtReadHelper<'a> for NbtReadHelperJava<D> {
         // and every bit pattern is a valid `i32`.
         unsafe { values.set_len(len) };
         for value in &mut values {
-            *value = value.to_be();
+            *value = if LITTLE_ENDIAN {
+                value.to_le()
+            } else {
+                value.to_be()
+            };
         }
         Ok(values)
     }
@@ -485,23 +522,30 @@ impl<'a, D: NbtDataSource<'a>> NbtReadHelper<'a> for NbtReadHelperJava<D> {
         // and every bit pattern is a valid `i64`.
         unsafe { values.set_len(len) };
         for value in &mut values {
-            *value = value.to_be();
+            *value = if LITTLE_ENDIAN {
+                value.to_le()
+            } else {
+                value.to_be()
+            };
         }
         Ok(values)
     }
     fn get_f32(&mut self) -> Result<f32> {
-        let mut buf = [0u8; 4];
-        self.reader.read_bytes(&mut buf)?;
-        Ok(f32::from_be_bytes(buf))
+        Ok(f32::from_bits(self.get_i32()?.cast_unsigned()))
     }
     fn get_f64(&mut self) -> Result<f64> {
-        let mut buf = [0u8; 8];
-        self.reader.read_bytes(&mut buf)?;
-        Ok(f64::from_be_bytes(buf))
+        Ok(f64::from_bits(self.get_i64()?.cast_unsigned()))
     }
 
     fn get_string(&mut self) -> Result<Cow<'a, str>> {
         let len = self.get_string_len()? as usize;
+        if LITTLE_ENDIAN {
+            let mut bytes = vec![0; len];
+            self.reader.read_bytes(&mut bytes)?;
+            return String::from_utf8(bytes)
+                .map(Cow::Owned)
+                .map_err(|_| Error::Utf8DecodingError);
+        }
         self.reader.read_string(len)
     }
 

@@ -2020,6 +2020,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "integer-encoding"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14c00403deb17c3221a1fe4fb571b9ed0370b3dcd116553c77fa294a3d918699"
+
+[[package]]
 name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2156,6 +2162,18 @@ name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
+
+[[package]]
+name = "leveldb"
+version = "4.0.1"
+source = "git+https://github.com/bedrock-crustaceans/leveldb.git?rev=d55e7aa10e74a7e81340812f63608dd2066aef45#d55e7aa10e74a7e81340812f63608dd2066aef45"
+dependencies = [
+ "crc32c",
+ "integer-encoding",
+ "parking_lot",
+ "rand 0.10.3",
+ "snap",
+]
 
 [[package]]
 name = "libc"
@@ -3412,8 +3430,10 @@ dependencies = [
  "dashmap",
  "flate2",
  "futures",
+ "leveldb",
  "lz4-java-wrc",
  "md5",
+ "miniz_oxide 0.9.1",
  "pumpkin-config",
  "pumpkin-data",
  "pumpkin-nbt",
@@ -4480,6 +4500,12 @@ checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "snap"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "199905e6153d6405f9728fe44daace35f8f837bbf830bb6e85fbd5828709a886"
 
 [[package]]
 name = "socket2"

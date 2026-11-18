@@ -7,11 +7,15 @@
 compile_error!("Compiling for WASI targets is not supported!");
 
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
+use pumpkin_world::{
+    CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION,
+    chunk::io::bedrock_import::import_terrain,
+};
 use std::{
     backtrace::{Backtrace, BacktraceStatus},
     io::{self},
     panic::PanicHookInfo,
+    path::Path,
     process::exit,
     sync::{OnceLock, atomic::Ordering},
     thread::{self, ThreadId},
@@ -52,6 +56,13 @@ static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 async fn main() {
     let _ = MAIN_THREAD.set(thread::current().id());
 
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--import-bedrock-terrain")
+    {
+        exit(import_bedrock_command(std::env::args_os().skip(2)));
+    }
+
     // reqwest is built with `rustls-no-provider`, so pick the ring provider (the one
     // wasmtime-wasi-http/rtc already force) before any client can be constructed.
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -83,7 +94,7 @@ async fn main() {
     let world_dir = exec_dir.join(config.basic.get_world_path());
     if world_dir.join("db/CURRENT").is_file() {
         tracing::error!(
-            "Bedrock LevelDB world import is not implemented. Copy or convert this world before starting Sculith: {}",
+            "This is a Bedrock LevelDB world. Use --import-bedrock-terrain SOURCE DESTINATION before opening it in Sculith: {}",
             world_dir.display()
         );
         exit(1);
@@ -381,6 +392,39 @@ async fn setup_sighandler() -> io::Result<()> {
 
 fn has_init_settings_arg(mut args: impl Iterator<Item = String>) -> bool {
     args.any(|arg| arg == "--init-settings" || arg == "--initSettings")
+}
+
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "the import command runs before server logging is initialized"
+)]
+fn import_bedrock_command(mut args: impl Iterator<Item = std::ffi::OsString>) -> i32 {
+    let (Some(source), Some(destination), None) = (args.next(), args.next(), args.next()) else {
+        eprintln!("Usage: sculith --import-bedrock-terrain SOURCE DESTINATION");
+        return 2;
+    };
+    match import_terrain(Path::new(&source), Path::new(&destination)) {
+        Ok(stats) => {
+            println!(
+                "Imported {} Overworld chunks in {} regions to {}.",
+                stats.chunks,
+                stats.regions,
+                Path::new(&destination).display()
+            );
+            println!(
+                "Excluded {} block-entity records, {} entity records and {} other LevelDB records.",
+                stats.block_entity_records_excluded,
+                stats.entity_records_excluded,
+                stats.other_records_excluded
+            );
+            0
+        }
+        Err(error) => {
+            eprintln!("Bedrock terrain import failed: {error}");
+            1
+        }
+    }
 }
 
 fn parse_convert_world_arg(mut args: impl Iterator<Item = String>) -> Option<String> {

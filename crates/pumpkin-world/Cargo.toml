@@ -28,6 +28,7 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 crossbeam.workspace = true
+tempfile.workspace = true
 
 sha2.workspace = true
 md5.workspace = true
@@ -38,6 +39,8 @@ dashmap.workspace = true
 
 # Compression
 flate2.workspace = true
+leveldb = { git = "https://github.com/bedrock-crustaceans/leveldb.git", rev = "d55e7aa10e74a7e81340812f63608dd2066aef45" }
+miniz_oxide = "0.9"
 lz4-java-wrc.workspace = true
 ruzstd.workspace = true
 xxhash-rust.workspace = true
@@ -52,7 +55,6 @@ rustc-hash.workspace = true
 slotmap.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 criterion = { workspace = true, features = ["html_reports", "async_tokio"] }
 
 [[bench]]

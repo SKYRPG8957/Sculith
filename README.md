@@ -33,10 +33,20 @@ Protocol plugins can use the [packet events](docs/sculith/packets.md).
 
 ## Worlds
 
-Pumpkin's Anvil, Linear and Pump storage backends are retained. Back up a world
-before opening it. The Java 26.3 Anvil import test and remaining gaps are recorded
-in [the fork notes](docs/sculith/fork.md). Bedrock LevelDB worlds are not supported
-yet. Joining from Bedrock does not add LevelDB world support.
+Sculith supports Anvil, Linear and Pump storage. To bring in saved Bedrock
+1.26.63 Overworld terrain, stop the source server and choose a new destination.
+Run the import from the Sculith server directory.
+
+```sh
+sculith --import-bedrock-terrain "/path/to/bedrock-world" world
+```
+
+Start Sculith normally to open the imported `world` from Java and Bedrock. The
+import writes a separate Anvil world with mapped blocks and biomes, the world
+seed and spawn. Block-entity data, entities, player records and other Bedrock
+metadata stay in the source. To use a different destination, set
+`default_level_name` in `pumpkin.toml` to that world folder.
+See [the fork notes](docs/sculith/fork.md) for format limits.
 
 ## License
 

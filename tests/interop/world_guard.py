@@ -22,12 +22,23 @@ with tempfile.TemporaryDirectory(prefix="sculith-world-guard-") as directory:
         }
 
     before = snapshot()
+    imported = root / "imported"
+    result = subprocess.run(
+        [str(server), "--import-bedrock-terrain", str(world), str(imported)], cwd=root,
+        capture_output=True, text=True, timeout=20,
+    )
+    assert result.returncode == 1, (result.returncode, result.stdout, result.stderr)
+    assert "Bedrock terrain import failed" in result.stderr
+    assert not imported.exists()
+    assert not (root / "pumpkin.toml").exists()
+    assert snapshot() == before, "source world was modified"
+
     result = subprocess.run(
         [str(server)], cwd=root, env=dict(os.environ, RUST_LOG="error"),
         capture_output=True, text=True, timeout=20,
     )
     output = result.stdout + result.stderr
     assert result.returncode == 1, (result.returncode, output)
-    assert "Bedrock LevelDB world import is not implemented" in output, output
+    assert "This is a Bedrock LevelDB world" in output, output
     assert snapshot() == before, "source world was modified"
-print("PASS: unsupported Bedrock world exits before changing source files")
+print("PASS: direct Bedrock open and rejected terrain import preserve source files")

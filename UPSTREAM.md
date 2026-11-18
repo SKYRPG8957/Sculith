@@ -13,3 +13,8 @@ upstream snapshot.
 
 This branch is independently maintained. Report Sculith issues to
 https://github.com/SKYRPG8957/Sculith/issues.
+
+Bedrock terrain import uses the MIT-licensed pure Rust LevelDB implementation
+from bedrock-crustaceans, also used by bedrock-rs.
+[Pinned source](https://github.com/bedrock-crustaceans/leveldb/tree/d55e7aa10e74a7e81340812f63608dd2066aef45),
+[license](crates/pumpkin-world/LICENSE-LEVELDB).

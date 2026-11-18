@@ -49,7 +49,7 @@ The modified fork passed these Linux checks on Rust 1.100.0:
 | Negative predicted held-stack ID and input-carried slot journal | Passed |
 | Saved marker read after a normal stop and restart | Passed |
 | Official Java 26.3 reads the fork's saved map | Marker found; no ERROR log entries |
-| Unsupported Bedrock source guard | Exit 1; source-file hashes unchanged |
+| Direct Bedrock source guard | Exit 1, source-file hashes unchanged |
 
 The map test also exposed upstream storage errors: block palettes were written
 with pre-26.3 `Name`/`Properties` keys, and saved game rules, clocks and generation
@@ -158,11 +158,30 @@ status cancellation plus an extra packet, and a synthetic Bedrock proposal
 rewrite before admission. Both checks fail on the earlier server. See the
 [packet event guide](packets.md) for API versions and remaining protocol limits.
 
+## Bedrock terrain import
+
+`sculith --import-bedrock-terrain SOURCE DESTINATION` reads a stopped Bedrock
+world through a temporary LevelDB copy. The command accepts storage version 10,
+chunk version 42 and subchunk version 9 in the Overworld. It writes a new Anvil
+world after all imported columns have converted. Unknown block and biome
+palettes, unsupported generators and other dimensions fail the import.
+
+Biome storage is sampled at the origin of each four-block Java biome cell.
+The import carries the seed and spawn into Sculith. New chunks use Sculith's
+generator, with supported Bedrock flat layers mapped to a flat preset.
+The command reports excluded block-entity, entity and other database records.
+The source retains those records.
+
+The official Bedrock 1.26.63.1 server fixtures covered a flat column and 27
+ordinary terrain columns. Java and Bedrock protocol clients read the same
+imported block, and Java received the original flat strata in a newly generated
+column. An unmodified Java 26.3 client joined the imported flat world.
+Source file hashes matched after import and after a rejected conversion.
+
 ## Remaining work
 
-Bedrock LevelDB world import/export is not implemented. Java Anvil support does
-not provide it. Existing worlds must be copied before testing, and unknown
-blocks, entities and data must not be silently discarded.
+Bedrock world export and conversion of entities, player data and block-entity
+contents remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack

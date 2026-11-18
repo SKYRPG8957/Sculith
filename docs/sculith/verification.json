@@ -62,7 +62,7 @@
     "Flat-map marker test only",
     "No Windows GDK client validation",
     "No load or performance claim",
-    "Bedrock LevelDB import/export remains unsupported"
+    "Bedrock LevelDB import covers modern Overworld terrain. Export and non-terrain migration remain open."
   ],
   "shared_resources": {
     "protocol_tests": 173,
@@ -811,6 +811,22 @@
       "running_and_regressions": "1e9d3245324920aa063dc24780aa3c6d44bf5a9f47d9d8b3774af2900fa9f3ff",
       "frozen": "84ac636591053562425ac10dcd5860b6bac2143323db21d8a73840e778ae99cf",
       "paired_load": "dceb7f000cbafb8765bb1a6f4c3871c4443a7cbaa7e32725fba603265f1e656f"
+    }
+  },
+  "bedrock_terrain_import": {
+    "source": "Bedrock Dedicated Server 1.26.63.1, storage version 10 and chunk version 42",
+    "database": "bedrock-crustaceans/leveldb d55e7aa10e74a7e81340812f63608dd2066aef45 (MIT)",
+    "server_sha256": "58b844809b959dc6cec791d6e1b5a94e0fd336ba1d43f4003856b7a9a50e5d30",
+    "flat": "1 saved column, imported marker read by Java 26.3 and Bedrock 2225 protocol clients, new adjacent column follows the imported flat strata",
+    "stock_java": "Unmodified Java 26.3 joined the imported flat world",
+    "ordinary": "27 saved columns from compressed LevelDB tables",
+    "source_preservation": "File hashes compared before and after conversion and rejection",
+    "windows": "pumpkin-world passes x86_64-pc-windows-msvc cargo check",
+    "log_sha256": {
+      "flat_interop": "82d292708ebaacb32bb3a54e9010b4111e31d2adb1d4d14a19244f43ef7b9a8a",
+      "stock_java": "5902af469a73c59592e9c06ef0e7617704e2d1fcf6715d97d2b80fe130510de2",
+      "ordinary_import": "52a623c7ab6670bdb1f94476e8357377ae351f9e325757cfacc40060d04a2649",
+      "invalid_source_guard": "ed41960cd284facc32ee73dd744b9b63a4022428668a87ebc7c585d8f38d95aa"
     }
   }
 }

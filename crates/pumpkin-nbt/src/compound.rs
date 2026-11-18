@@ -66,7 +66,12 @@ impl NbtCompound {
         loop {
             let tag_id = match reader.get_u8() {
                 Ok(id) => id,
-                Err(Error::Incomplete(e)) if e.kind() == ErrorKind::UnexpectedEof => break,
+                Err(Error::Incomplete(e))
+                    if e.kind() == ErrorKind::UnexpectedEof
+                        && reader.allow_implicit_compound_end() =>
+                {
+                    break;
+                }
                 Err(e) => return Err(e),
             };
 
@@ -102,7 +107,12 @@ impl NbtCompound {
         loop {
             let tag_id = match reader.get_u8() {
                 Ok(id) => id,
-                Err(Error::Incomplete(e)) if e.kind() == ErrorKind::UnexpectedEof => break,
+                Err(Error::Incomplete(e))
+                    if e.kind() == ErrorKind::UnexpectedEof
+                        && reader.allow_implicit_compound_end() =>
+                {
+                    break;
+                }
                 Err(e) => return Err(e),
             };
 
