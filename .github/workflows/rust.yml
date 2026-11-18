@@ -33,6 +33,5 @@ jobs:
       - run: cargo test --locked -p pumpkin-protocol --test bedrock_controls
       - run: cargo test --locked -p pumpkin-wasm-host-v0_2 -p pumpkin-plugin-runtime --lib
       - run: cargo build --locked --release --target wasm32-wasip2 --manifest-path tests/interop/plugin/Cargo.toml
-      - run: cargo build --locked -p pumpkin --bin sculith
-      - run: cargo build --locked -p sculith-interop-connections
+      - run: cargo build --locked -p pumpkin -p sculith-interop-connections
       - run: python3 tests/interop/world_guard.py target/debug/sculith

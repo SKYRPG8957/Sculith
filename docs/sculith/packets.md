@@ -121,6 +121,14 @@ a callback. Java retains its consume and fishing callbacks before interaction.
 These checks cover native click-air and Java use-item handlers. Native block and
 entity interaction handlers retain their separate paths.
 
+## Inventory close
+
+Closing returns the cursor stack through the shared screen handler. The native
+close reply then uses the same owner inventory synchronization as stack requests,
+including the actual cursor in UI window `124`. It captures inventory, cursor
+and equipment after close callbacks, so callback-written stacks are not replaced
+with an assumed empty cursor.
+
 ## Legacy inventory transactions
 
 Legacy slot groups request synchronization. The server returns the actual slots

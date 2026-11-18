@@ -82,3 +82,9 @@ check the original clicked item and cursor, screen indices and gesture metadata.
 provides the normal behavior control. Logs capture the original hand and screen
 counts, empty head slot and inactive use timer. Callbacks must run before helmet
 equipment or food consumption starts, without retaining inventory locks.
+
+`--close-events` reads inventory, screen and cursor from `InventoryCloseEvent`.
+`CloseNative` and `CloseJava` observe the returned cursor stack. On its first
+close, `CloseMutNative` writes seven grass blocks into inventory and three onto
+the cursor; both changes must reach the owner. Later disconnect callbacks do not
+repeat that mutation.

@@ -4206,6 +4206,7 @@ version = "0.0.0"
 dependencies = [
  "pumpkin-core",
  "pumpkin-data",
+ "pumpkin-inventory",
  "pumpkin-protocol",
  "pumpkin-world",
 ]

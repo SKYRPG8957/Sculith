@@ -1,10 +1,14 @@
 //! Native connection-event fixture, installed only into the interop scratch server.
 
-use std::sync::{Arc, LazyLock, Weak, atomic::Ordering};
+use std::sync::{
+    Arc, LazyLock, Weak,
+    atomic::{AtomicBool, Ordering},
+};
 
 use pumpkin_core::{
     plugin::inventory::inventory_creative::InventoryCreativeEvent,
     plugin::inventory::inventory_interact::InventoryInteractEvent,
+    plugin::player::inventory_close::InventoryCloseEvent,
     plugin::player::inventory_interact::InventoryClickEvent,
     plugin::player::item_held::PlayerItemHeldEvent,
     plugin::player::player_drop_item::PlayerDropItemEvent,
@@ -22,6 +26,7 @@ use pumpkin_core::{
 use pumpkin_data::{
     data_component_impl::EquipmentSlot, entity::EntityType, item::Item, item_stack::ItemStack,
 };
+use pumpkin_inventory::screen_handler::ScreenHandler;
 use pumpkin_protocol::{
     ConnectionState,
     bedrock::server::{login::SLogin, request_network_settings::SRequestNetworkSettings},
@@ -115,9 +120,61 @@ impl Plugin for Connections {
                 EventPriority::Lowest,
                 true,
             );
-            context.register_event::<PlayerInteractEvent, _>(observer, EventPriority::Lowest, true);
+            context.register_event::<PlayerInteractEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
+            context.register_event::<InventoryCloseEvent, _>(observer, EventPriority::Lowest, true);
             context.log("PROBE_CONNECTIONS_LOADED");
             Ok(())
+        })
+    }
+}
+
+static CLOSE_MUTATED: AtomicBool = AtomicBool::new(false);
+
+impl EventHandler<InventoryCloseEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut InventoryCloseEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = &event.player.gameprofile.name;
+            if !name.starts_with("Close") {
+                return;
+            }
+            let before = event.player.inventory.get_slot(0).item_count;
+            let (screen, cursor) = {
+                let handler = event
+                    .player
+                    .player_screen_handler
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                (
+                    handler.get_slot(36).get_cloned_stack().item_count,
+                    handler.get_behaviour().cursor_stack.clone(),
+                )
+            };
+            let count = cursor
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .item_count;
+            let mutate = name == "CloseMutNative" && !CLOSE_MUTATED.swap(true, Ordering::Relaxed);
+            if mutate {
+                event
+                    .player
+                    .inventory
+                    .set_slot(0, ItemStack::new(7, &Item::GRASS_BLOCK));
+                *cursor
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    ItemStack::new(3, &Item::GRASS_BLOCK);
+            }
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!("PROBE_INVENTORY_CLOSE player={name} window={:?} before={before} screen={screen} cursor={count} mutated={mutate}", event.window_type));
+            }
         })
     }
 }

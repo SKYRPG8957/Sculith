@@ -665,5 +665,52 @@
       "Main-hand helmet and golden-apple controls only; no new exhaustive offhand, weapon or component-policy parity claim",
       "No new Windows GDK, rendering, official server-policy parity or load/performance claim"
     ]
+  },
+  "inventory_close_events": {
+    "baseline": "940e6643ab385f0e0cbb19c7e4ecd94784db8e67",
+    "server_sha256": "121e9f479f4dde054e350153a81c15c8e4397c108e613fee8038e0d21784bd32",
+    "native_fixture_sha256": "84f7c880657003340d77619a870e0d601412121b9ffa11c70ed289b5f77355d6",
+    "build": "Linux debug, default server features; Rust 1.100.0",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "api": "Existing InventoryCloseEvent and owner inventory synchronization; no public layout, vtable or WIT changes. The test fixture adds a direct inventory dependency for ScreenHandler access",
+    "reference": "gophertunnel e2251a60f71d WindowIDUI=124; Dragonfly 0f9a3a573626 ContainerCloseHandler.MoveItemsToInventory and uiInventoryFunc",
+    "before": "A Survival client opens its inventory, moves one item onto the cursor and closes. The correction uses window59 instead of the independent protocol UI window124",
+    "behavior": "Keep shared close restitution and the close echo, then reuse the existing owner synchronization to snapshot actual inventory, cursor and equipment after callbacks. Remove the separate forced-empty cursor and duplicate main-inventory encoding",
+    "wire_checks": [
+      "Native and Java: closing returns cursor items into available inventory space; the Rust close callback reads the restored inventory and player screen with an empty cursor",
+      "Native: after the close echo, all 36 main slots and the actual cursor are corrected through UI window124",
+      "A first-close callback writes seven grass blocks into inventory and three onto the cursor; both changes reach the native owner, which then places the cursor back to obtain ten items without a world drop",
+      "A delayed latency barrier also observes deferred tracking; closing with available space spawns no item actor"
+    ],
+    "ci": "Build the default server and native fixture together in one Cargo invocation, matching the locally verified feature set",
+    "build_recovery": "The link step exhausted temporary disk space. Only the previous engine debug build cache was removed; source, worlds and evidence logs were preserved. The resumed build and runtime checks passed",
+    "regressions": "Full Java/Bedrock matrix with native and stable Wasm fixtures: resources, sounds, forms, dialog replies, four building paths, picks, held/creative/ordinary/legacy inventory events, item use, tracking, packet edits, connections, models and normal restart",
+    "tests": {
+      "clippy": "Inventory, core, binary and native fixture; experimental v0.2; all targets; warnings denied",
+      "go": "build, vet and gofmt; independent protocol client",
+      "format": "Rust fmt, Python compilation and diff checks",
+      "typos": "v1.52.2; changed files",
+      "server": 803,
+      "inventory": 46
+    },
+    "log_sha256": {
+      "before": "082ccd119487f7f7e42f92fd1df2cced1e4df09745a3147d3b572ead3ef52f66",
+      "before_events": "fd123f8bb934c8a4eb589646c68bc89aea900fba4529c8202f0a96c2be140edf",
+      "focused": "6a24a906201f9ad368b83dcac387852a340f8ab11d677f8a075b1a95d0ccc2e8",
+      "focused_events": "c285680ece1155afe9660642c891c1fb9706785bdc3fa1f99e2f1c3fd04844ac",
+      "full": "df4760a59d199828969fd55e7250d93e1779294a6f5aa3b743d8970a354517d1",
+      "full_events": "eb8250dad8f71898918bd2e1da66370b5e1d465994a948aada8f627a4e63328a",
+      "full_restart_events": "645997f914b02dacac9e04a3ebb1e336e42a4239296bbdd001389a6317878d03",
+      "clippy": "cc6850352697ad1abca89a99415f2c69a31ede57da57cbfcc900fd05185960f9",
+      "build_after_cache_cleanup": "90d06891791c9fb260ae28f36d8b605c03e2e4842358cc37ec17e5bfa7e4a46d",
+      "runtime_build": "31726edcfafe7c0daa17297399d4e638605dee6b7d600f0aaffe5505b5523400",
+      "core_and_inventory": "bd9c4b6ca5b0811a740a74a9ef46f6e29645b15dc09f9f6543f7973bb1f6539c"
+    },
+    "limits": [
+      "Own player inventory close with available space; specialized container IDs, full-inventory drop behavior and reentrant screen replacement remain separate work",
+      "The native handler changes owner synchronization only; Java close behavior is a control",
+      "No new Windows GDK, rendering, official server-policy parity or load/performance claim"
+    ]
   }
 }

@@ -14,34 +14,6 @@ impl BedrockClient {
             server_initiated_close: false,
         });
 
-        // Sync the cursor (make it empty) to Bedrock client
-        self.try_enqueue_client_packet(&CInventoryContent {
-            container_id: VarUInt(59), // Cursor container ID
-            slots: vec![NetworkItemStackDescriptor::default()],
-            full_container_name: FullContainerName {
-                container_name: ContainerName::Cursor,
-                dynamic_id: None,
-            },
-            storage_item: NetworkItemStackDescriptor::default(),
-        });
-
-        // Sync the inventory content to Bedrock client
-        let slots = player
-            .inventory()
-            .main_inventory
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .map(NetworkItemStackDescriptor::from)
-            .collect();
-        self.try_enqueue_client_packet(&CInventoryContent {
-            container_id: VarUInt(0), // player inventory
-            slots,
-            full_container_name: FullContainerName {
-                container_name: ContainerName::Inventory,
-                dynamic_id: None,
-            },
-            storage_item: NetworkItemStackDescriptor::default(),
-        });
+        self.resend_player_inventory(player);
     }
 }

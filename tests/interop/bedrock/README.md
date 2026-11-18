@@ -87,6 +87,12 @@ queries and delayed drop checks. Java checks require an explicit correction
 after veto or mutation. Callbacks read the inventory, screen, head equipment
 and active-use timer before any default effects.
 
+`--close-events` opens the player inventory, moves one item onto the cursor and
+closes it. Both editions must return held items without losing them. Native
+correction must use the UI window and preserve a callback-written inventory and
+cursor stack, which the client then moves back into inventory. A delayed latency
+barrier checks that returning items with available space creates no world drop.
+
 `--tracking-events` on the harness uses the native fixture to delete a nearby
 mob inside outgoing spawn and motion callbacks. It runs `--tracking-events`
 and `--tracking-data-events` in the client, checks packet cancellation and
