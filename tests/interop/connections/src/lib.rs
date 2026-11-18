@@ -5,6 +5,7 @@ use std::sync::{Arc, LazyLock, Weak, atomic::Ordering};
 use pumpkin_core::{
     plugin::inventory::inventory_creative::InventoryCreativeEvent,
     plugin::inventory::inventory_interact::InventoryInteractEvent,
+    plugin::player::inventory_interact::InventoryClickEvent,
     plugin::player::item_held::PlayerItemHeldEvent,
     plugin::player::player_drop_item::PlayerDropItemEvent,
     plugin::server::packet::{
@@ -101,9 +102,55 @@ impl Plugin for Connections {
                 EventPriority::Lowest,
                 true,
             );
-            context.register_event::<PlayerDropItemEvent, _>(observer, EventPriority::Lowest, true);
+            context.register_event::<PlayerDropItemEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
+            context.register_event::<InventoryClickEvent, _>(observer, EventPriority::Lowest, true);
             context.log("PROBE_CONNECTIONS_LOADED");
             Ok(())
+        })
+    }
+}
+
+impl EventHandler<InventoryClickEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut InventoryClickEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = &event.player.gameprofile.name;
+            if !name.starts_with("Click") && name != "LegacyTxnNative" {
+                return;
+            }
+            let before = event.player.inventory.get_slot(0).item_count;
+            let screen = event
+                .player
+                .player_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_slot(36)
+                .get_cloned_stack()
+                .item_count;
+            let clicked = event
+                .clicked_item
+                .as_ref()
+                .map_or(0, |stack| stack.item_count);
+            let cursor = event.cursor.as_ref().map_or(0, |stack| stack.item_count);
+            let mutate = name == "ClickMutNative";
+            if mutate {
+                event
+                    .player
+                    .inventory
+                    .set_slot(0, ItemStack::new(7, &Item::GRASS_BLOCK));
+            }
+            event.cancelled = name.starts_with("ClickDeny")
+                || (name == "ClickCurNative" && event.raw_slot == -999);
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!("PROBE_INVENTORY_CLICK player={name} slot={} raw={} type={:?} button={} window={:?} clicked={clicked} cursor={cursor} before={before} screen_before={screen} cancelled={} mutated={mutate}", event.slot, event.raw_slot, event.click_type, event.hotbar_button, event.window_type, event.cancelled));
+            }
         })
     }
 }
@@ -120,6 +167,7 @@ impl EventHandler<InventoryInteractEvent> for Observer {
                 && !name.starts_with("InvMut")
                 && name != "DropDenyNative"
                 && name != "LegacyDropDeny"
+                && !name.starts_with("Click")
             {
                 return;
             }

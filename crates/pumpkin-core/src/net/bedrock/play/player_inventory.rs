@@ -1,7 +1,12 @@
 use std::sync::{Arc, Mutex};
 
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_inventory::{inventory::Inventory, screen_handler::ScreenHandler, slot::Slot};
+use pumpkin_inventory::{
+    container_click::SLOT_INDEX_OUTSIDE,
+    inventory::Inventory,
+    screen_handler::{ClickType, ScreenHandler},
+    slot::Slot,
+};
 use pumpkin_protocol::{
     bedrock::{
         client::{
@@ -28,6 +33,7 @@ use crate::{
     net::bedrock::BedrockClient,
     plugin::{
         inventory::inventory_interact::InventoryInteractEvent,
+        player::inventory_interact::InventoryClickEvent,
         player::player_drop_item::PlayerDropItemEvent,
     },
     world::World,
@@ -48,6 +54,8 @@ struct PlayerInventoryPlan {
     world: Arc<World>,
     mode: GameMode,
     creative: bool,
+    clicked_slot: Option<usize>,
+    click: Option<InventoryClickEvent>,
     screen: Arc<Mutex<dyn ScreenHandler>>,
     slots: Vec<Arc<dyn Slot>>,
     before: Vec<ItemStack>,
@@ -164,6 +172,8 @@ impl PlayerInventoryPlan {
             world: player.world(),
             mode,
             creative,
+            clicked_slot: None,
+            click: None,
             screen: screen.clone(),
             slots,
             after: before.clone(),
@@ -176,6 +186,26 @@ impl PlayerInventoryPlan {
             drops: Vec::new(),
         };
         plan.apply(player, &*handler, request)?;
+        if !creative && !request.actions.is_empty() {
+            let (slot, clicked) = if let Some(index) = plan.clicked_slot {
+                (
+                    i16::try_from(index).map_err(|_| ())?,
+                    Some(plan.before[index].clone()),
+                )
+            } else {
+                (SLOT_INDEX_OUTSIDE, None)
+            };
+            plan.click = Some(InventoryClickEvent::new(
+                player,
+                handler.window_type(),
+                ClickType::Unknown,
+                slot,
+                slot,
+                clicked,
+                Some(plan.cursor_before.clone()),
+                -1,
+            ));
+        }
         Ok(plan)
     }
 
@@ -269,6 +299,9 @@ impl PlayerInventoryPlan {
             return Err(());
         }
         if from == to {
+            if let Target::Slot(index) = from {
+                self.clicked_slot.get_or_insert(index);
+            }
             return Ok(());
         }
         let mut dest = self.get(to);
@@ -346,6 +379,9 @@ impl PlayerInventoryPlan {
     }
 
     fn put(&mut self, target: Target, stack: ItemStack, info: &SlotInfo) {
+        if let Target::Slot(index) = target {
+            self.clicked_slot.get_or_insert(index);
+        }
         let stack = if stack.is_empty() {
             ItemStack::EMPTY.clone()
         } else {
@@ -368,6 +404,13 @@ impl PlayerInventoryPlan {
         let Some(server) = self.world.server.upgrade() else {
             return false;
         };
+        if let Some(event) = &self.click {
+            let mut event = event.clone();
+            server.plugin_manager.fire_blocking(&server, &mut event);
+            if event.cancelled {
+                return false;
+            }
+        }
         if self.creative {
             for (index, stack) in self.after.iter().enumerate() {
                 if !same_stack(stack, &self.before[index]) {
@@ -536,7 +579,9 @@ impl BedrockClient {
             filter_strings: Vec::new(),
             filter_cause: 0,
         };
-        let plan = PlayerInventoryPlan::prepare(player, &request).ok()?;
+        let mut plan = PlayerInventoryPlan::prepare(player, &request).ok()?;
+        // Legacy hotbar drops do not carry an inventory click gesture.
+        plan.click = None;
         let screen_slot = if slot < 9 {
             usize::from(slot) + 36
         } else {

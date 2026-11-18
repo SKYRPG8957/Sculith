@@ -37,6 +37,8 @@ func run() error {
 			"--inventory-requests": "InvSurvival", "--inventory-creative": "InvCreative", "--inventory-spectator": "InvSpectator",
 			"--inventory-events": "InvDenyNative", "--inventory-mutate": "InvMutNative", "--inventory-drop-event": "DropDenyNative",
 			"--legacy-inventory": "LegacyTxnNative", "--legacy-drop-veto": "LegacyDropDeny", "--legacy-held-veto": "LegacyHeldNative",
+			"--click-events": "ClickDenyNative", "--click-mutation": "ClickMutNative",
+			"--click-cursor": "ClickCurNative",
 		} {
 			if os.Args[2] == option {
 				d.IdentityData.DisplayName = name
@@ -112,6 +114,12 @@ func run() error {
 	}
 	g := c.GameData()
 	fmt.Printf("SPAWN id=%d position=%v hashed=%v\n", g.EntityRuntimeID, g.PlayerPosition, g.UseBlockNetworkIDHashes)
+	if len(os.Args) == 3 && os.Args[2] == "--click-cursor" {
+		return checkClickCursor(c)
+	}
+	if len(os.Args) == 3 && (os.Args[2] == "--click-events" || os.Args[2] == "--click-mutation") {
+		return checkInventoryEvents(c, os.Args[2] == "--click-mutation", false)
+	}
 	if len(os.Args) == 3 && (os.Args[2] == "--legacy-inventory" || os.Args[2] == "--legacy-drop-veto" || os.Args[2] == "--legacy-held-veto") {
 		return checkLegacyInventory(c, os.Args[2] == "--legacy-drop-veto", os.Args[2] == "--legacy-held-veto")
 	}

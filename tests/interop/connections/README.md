@@ -60,3 +60,10 @@ interaction veto and correction. These callbacks only affect the named clients.
 implicit hotbar change for `LegacyHeldNative`. The inventory and player screen
 remain readable in the drop callback. `LegacyTxnNative` logs its allowed hotbar
 changes while running the ordinary legacy transaction checks.
+
+`--click-events` reads inventory and screen state in `InventoryClickEvent`.
+`ClickDenyNative` and `ClickDenyJava` cancel before the general interaction event;
+`ClickMutNative` replaces an inventory stack with grass. `ClickCurNative` permits
+moving onto the cursor, cancels its outside drop and permits returning it. Logs
+check the original clicked item and cursor, screen indices and gesture metadata.
+`LegacyTxnNative` observes no click while making its non-UI transactions.

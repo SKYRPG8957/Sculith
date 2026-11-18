@@ -93,6 +93,16 @@ Actual inventory, cursor and equipment follow both successful and rejected
 requests. Recipe/container operations remain separate paths; these checks do
 not establish general transaction atomicity.
 
+Planned ordinary UI requests first fire `InventoryClickEvent`, then the general
+interaction event. A click veto skips the interaction event and leaves the plan
+unapplied. The click carries the original cursor and the first physical slot
+touched by the request, using current screen indices. Cursor-only operations use
+the outside slot `-999` and no clicked item. Bedrock requests do not identify a
+mouse button, so their click type is `Unknown` and hotbar button is `-1`.
+Legacy hotbar drops have no UI click event; creative creation retains its
+`InventoryCreativeEvent` path. Specialized container clicks and drag gestures
+remain separate work.
+
 ## Legacy inventory transactions
 
 Legacy slot groups request synchronization. The server returns the actual slots

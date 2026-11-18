@@ -519,5 +519,53 @@
       "General specialized-container atomicity, modern stack-network-ID prediction journals and complete item-component conversion remain incomplete",
       "No Windows GDK, official inventory-policy parity or performance/load-test claim"
     ]
+  },
+  "inventory_click_events": {
+    "baseline": "5dba00eb66bf658d6c8ad4eaccdefd481f03e372",
+    "server_sha256": "811b1caddffb600b27a7400885d6b55acab056852e8ac25a6ba2538b1481a59f",
+    "native_fixture_sha256": "3be9458b4f862232e699517ae76f5e5bfc9ca534b9da08bd4c9db72aefa80198",
+    "build": "Linux debug, default server features; Rust 1.100.0",
+    "native_plugin_abi": 10,
+    "stable_wasm_abi": "v0.1 unchanged",
+    "api": "Existing readonly SLOT_INDEX_OUTSIDE constant made public; no struct, vtable or WIT changes",
+    "reference": "Existing Java InventoryClickEvent contract and shared planned player-inventory request path",
+    "before": "The native swap succeeds with status 0 despite the registered click-veto listener; no native click event reaches the fixture",
+    "snapshot": "After validating the whole plan, capture the original cursor, window type and first physical slot touched, using screen indices. A cursor-only request uses slot/raw_slot -999 and no clicked item. Native requests report ClickType::Unknown and hotbar_button -1 because the wire supplies no mouse gesture",
+    "order": "Fire the click without screen or inventory guards, before InventoryInteractEvent. A click veto skips interaction and all planned effects; stale-plan checks preserve callback changes",
+    "exclusions": "Creative catalogue creation retains InventoryCreativeEvent. Canonical legacy hotbar drops explicitly omit UI clicks",
+    "wire_checks": [
+      "Both editions: a click listener reads the original inventory and player screen, vetoes a swap, and receives correction without a later interaction event; native Unknown/-1 and Java NumberKey(8)/8 metadata retain their respective meanings",
+      "Native callback writes seven grass blocks; the following interaction sees that change and commit rejects the stale swap without overwriting it",
+      "Native cursor take succeeds; an outside-drop veto retains the cursor and spawns no item actor through a delayed latency barrier; placing it back captures the destination and original cursor and restores the full stack",
+      "Legacy slot/query/drop tests do not emit the observed UI click event"
+    ],
+    "regressions": "Full Java/Bedrock matrix with native and stable Wasm fixtures: resources, sounds, forms, dialog replies, four building paths, picks, held/creative/ordinary/legacy inventory events, tracking, packet edits, connections, models and normal restart",
+    "tests": {
+      "clippy": "Inventory, core, binary and native fixture; experimental v0.2; all targets; warnings denied",
+      "go": "build, vet and gofmt; independent protocol client",
+      "format": "Rust fmt, Python compilation and diff checks",
+      "server": 803,
+      "inventory": 46
+    },
+    "log_sha256": {
+      "before": "77853d2d18ae60981d978558ace065776dd1fe3e90c3eaac27c4a972551ed872",
+      "before_events": "6b9623e9679d292da8fd219ed4f1e155a97e66827e1d2c16bd0a0e1f5a5327d3",
+      "focused": "641caf4bbcb164abbcb20997ea176e95677b0b5c47d5b76d5ed34993e2a97e02",
+      "focused_events": "08a7cdb59960e2714d7954c85d4351b99a394c47beca6657505d0c0c6eda96e3",
+      "full": "030a4f280ee5c6360450c667a8b07e71d5620a72ede88b8f9625efa544177dc7",
+      "full_events": "9af7200ccf1f9cead8e2e6b0dc62e5ed7f87a101d2d62a9318367b984a997549",
+      "full_restart_events": "db268d9556b20f83ea73594e8f896af2c573d49630222bfc48fd366cb5229ff5",
+      "clippy": "274fd2063f58cc0e6d2eca96a05deabd491ed52679181041f445b9e8c978fb30",
+      "clippy_final": "906c462496ae6276cd8ceb007456f542cf3f096fe29395c42766af6bd7080b66",
+      "build": "9206a69f330c02580c342c1e6a6b79a032589571dcbfeb57d3fcc3066969264f",
+      "build_final": "8bf8f350e737143e0138a75e7a30f73547434a236e94af6007b97ca17fb7ab58",
+      "core_and_inventory": "7183198df2a4708bf555fc51280a2c20250aa73580683d0f43b774d3784739d3"
+    },
+    "limits": [
+      "Planned ordinary player-owned requests only; specialized container clicks and full drag parity remain incomplete",
+      "Native requests contain no mouse/button or drag-gesture information; no invented gesture is reported",
+      "Modern stack-network-ID prediction journaling, general specialized-container atomicity and complete item-component conversion remain incomplete",
+      "No new Windows GDK, rendering, official inventory-policy parity or load/performance claim"
+    ]
   }
 }

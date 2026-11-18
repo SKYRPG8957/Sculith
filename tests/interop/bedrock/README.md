@@ -60,6 +60,14 @@ consume exactly one item on both paths, checked against Dragonfly's block regist
 `--legacy-events` requires the native fixture and checks that legacy drops and
 implicit hotbar selection honor the existing Rust cancellation callbacks.
 
+`--click-events` checks the existing click event on both editions: original
+slot/cursor snapshots, click veto before the interaction event, and a native
+callback mutation retained when the plan becomes stale. Native requests report
+an unknown gesture; the Java number-key swap retains its button value. A cursor
+drop is vetoed as an outside click, then returned to its destination without
+losing items. The legacy probe also checks that hotbar drops do not invent a
+UI click. The native fixture is required.
+
 `--inventory-events` uses the native fixture to veto ordinary interaction or
 item dropping and mutate a destination during a callback. It checks the whole
 request is rejected while preserving callback-made changes. The Java check

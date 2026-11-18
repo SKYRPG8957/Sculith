@@ -265,3 +265,33 @@ func checkInventoryEvents(c *minecraft.Conn, mutate, drop bool) error {
 	fmt.Println("PASS: ordinary inventory callbacks reject the whole plan and retain callback state")
 	return nil
 }
+
+func checkClickCursor(c *minecraft.Conn) error {
+	p := inventoryProbe{c: c}
+	if err := p.seed(); err != nil {
+		return err
+	}
+	counts := map[int]uint16{0: 63, 1: 64, 2: 64}
+	cursor := protocol.StackRequestSlotInfo{Container: protocol.FullContainerName{ContainerID: protocol.ContainerCursor}}
+	take := &protocol.TakeStackRequestAction{}
+	take.Count, take.Source, take.Destination = 1, p.slot(0), cursor
+	if err := p.run([]protocol.StackRequestAction{take}, true, counts, 1, false); err != nil {
+		return err
+	}
+	cursor.StackNetworkID = p.cursorID
+	if err := p.run([]protocol.StackRequestAction{&protocol.DropStackRequestAction{Count: 1, Source: cursor}}, false, counts, 1, false); err != nil {
+		return err
+	}
+	if err := p.noDrop(); err != nil {
+		return err
+	}
+	place := &protocol.PlaceStackRequestAction{}
+	cursor.StackNetworkID = p.cursorID
+	place.Count, place.Source, place.Destination = 1, cursor, p.slot(0)
+	counts[0] = 64
+	if err := p.run([]protocol.StackRequestAction{place}, true, counts, 0, false); err != nil {
+		return err
+	}
+	fmt.Println("PASS: outside click veto retains cursor; destination click returns the item without a world drop")
+	return nil
+}

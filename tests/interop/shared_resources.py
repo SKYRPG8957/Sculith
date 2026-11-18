@@ -361,6 +361,7 @@ def main():
     parser.add_argument("--inventory-events", action="store_true", help="check native inventory/drop callbacks and Java inventory cancellation")
     parser.add_argument("--legacy-inventory", action="store_true", help="check legacy slot queries, journals, held items and verified drops")
     parser.add_argument("--legacy-events", action="store_true", help="check legacy drop and held-slot cancellation through Rust callbacks")
+    parser.add_argument("--click-events", action="store_true", help="check shared inventory click callbacks, vetoes and native snapshot payloads")
     parser.add_argument("--tracking-events", action="store_true", help="remove a tracked mob from its outgoing spawn callback")
     parser.add_argument("--plugin", type=Path, help="compiled tests/interop/plugin Wasm fixture")
     parser.add_argument("--dialog-replies", action="store_true", help="deliver official Java reply fixtures to the Rust plugin")
@@ -369,7 +370,7 @@ def main():
     parser.add_argument("--packet-edits", action="store_true", help="exercise outgoing packet edits and cancellation through Rust callbacks")
     parser.add_argument("--connections-plugin", type=Path, help="compiled native tests/interop/connections fixture")
     args = parser.parse_args()
-    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events) and not args.connections_plugin:
+    if (args.pick_events or args.tracking_events or args.creative_events or args.inventory_events or args.legacy_events or args.click_events) and not args.connections_plugin:
         parser.error("event checks require --connections-plugin")
     if (args.dialog_replies or args.forms or args.models or args.packet_edits) and not args.plugin:
         parser.error("--dialog-replies, --forms, --models and --packet-edits require the Rust --plugin fixture")
@@ -503,7 +504,7 @@ def main():
             assert "pack.mcmeta" in archive.namelist()
             assert archive.read("assets/sculith/sounds/demo_tone.ogg") == original["sounds/sculith_demo.ogg"]
             assert "assets/sculith/models/sculith/demo_statue.json" in archive.namelist()
-        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events:
+        if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events:
             server.stdin.write("kill @e[type=!minecraft:player]\n")
             server.stdin.flush()
             time.sleep(.5)
@@ -542,6 +543,9 @@ def main():
         if args.inventory_events:
             from inventory_requests import events
             report["inventory_events"] = events(server, java, bedrock, root, args.bedrock_probe.resolve())
+        if args.click_events:
+            from inventory_requests import clicks
+            report["click_events"] = clicks(server, java, bedrock, root, args.bedrock_probe.resolve())
         if args.legacy_inventory or args.legacy_events:
             from inventory_requests import legacy
             report["legacy_inventory"] = legacy(server, bedrock, root, args.bedrock_probe.resolve(), args.legacy_inventory, args.legacy_events)

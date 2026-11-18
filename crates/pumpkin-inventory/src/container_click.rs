@@ -41,7 +41,7 @@ const KEY_CLICK_HOTBAR_START: i8 = 0;
 const KEY_CLICK_HOTBAR_END: i8 = 9;
 
 /// Slot index indicating a click outside the inventory.
-const SLOT_INDEX_OUTSIDE: i16 = -999;
+pub const SLOT_INDEX_OUTSIDE: i16 = -999;
 
 impl Click {
     /// Parses a slot action into a click event.
