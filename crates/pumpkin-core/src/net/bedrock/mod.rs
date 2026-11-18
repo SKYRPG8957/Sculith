@@ -410,11 +410,18 @@ impl BedrockClient {
     }
 
     pub async fn set_compression(&self, compression: CompressionInfo) {
+        self.set_inbound_compression(compression.threshold).await;
+        self.set_outbound_compression(compression).await;
+    }
+
+    async fn set_inbound_compression(&self, threshold: u32) {
         self.network_reader
             .lock()
             .await
-            .set_compression(compression.threshold as usize);
+            .set_compression(threshold as usize);
+    }
 
+    async fn set_outbound_compression(&self, compression: CompressionInfo) {
         self.network_writer
             .write()
             .await

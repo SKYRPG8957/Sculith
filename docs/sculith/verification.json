@@ -901,5 +901,35 @@
       "mixed_runs": "e4d6966cf3c8abc090820c4c0982faee3e94d2c8102a0a92b5a20af985853d21",
       "warmed_plugin_split": "0dd526599be485e7c9418aa07c74b14649247bd25d07134e9244d04b3ceead30"
     }
+  },
+  "bedrock_login_compression": {
+    "protocol": 2225,
+    "before": "With the NetworkSettings send completion held pending, the previous decoder read the Deflate method byte as a zero-length game packet",
+    "after": "The same schedule decoded Login. The first settings frame used the initial framing, and the encoder compressed the following login status after send completion.",
+    "core_tests": 804,
+    "server_sha256": "4739cc89b687919d3b693dfcb9922eba40ca0d96059a208ae0c09c892c9bf4d7",
+    "loopback_joins": [
+      {"plugins": "none", "simultaneous_clients": 2, "attempts": 24, "entered": 24},
+      {"plugins": "native and Wasm", "simultaneous_clients": 2, "attempts": 24, "entered": 24},
+      {"plugins": "native and Wasm", "simultaneous_clients": 4, "attempts": 4, "entered": 4},
+      {"plugins": "native and Wasm", "simultaneous_clients": 4, "attempts": 24, "entered": 24}
+    ],
+    "interop": "Bedrock connection observers received NetworkSettings and Login, including a native plugin protocol rewrite. Selected Java and Bedrock game, resource, form, packet and model restart checks passed with native and Wasm fixtures.",
+    "stock_java": "Unmodified Java 26.3 joined and rendered the destination marker after a console teleport",
+    "stock_java_screenshot_sha256": "01debd4787e6687dd747aef2d2350f51e162477641784a865cfa121641977723",
+    "scope": "Separate loopback NetherNet client processes with offline identities on fresh copies of the same flat Anvil world. The previous build also passed the 24-attempt cases with two concurrent clients. One four-client wave on the previous build stalled after Login with both fixtures loaded. Separate four-client control runs with neither, native only and Wasm only passed. The cause of that stall remains unconfirmed.",
+    "log_sha256": {
+      "before": "be4aba41c0f24c8f4a00d295e84c9ce92f5f81309c59e65cd6a2821888622148",
+      "after": "8321ba2cfc7cd204b49ef426f51cfcf045d0d5a2f767895cbaad740899b0a8f3",
+      "core": "58a5d354dd53f43ed70b54d364c383036fd9bb1b9b5163ff3cb705e39d3371d3",
+      "joins": "6f359fc826f98f67dd392dd1b36e5ae366ba21f038f9c9614a36edb3d90c1617",
+      "joins_with_plugins": "3bfe22c57ec9667acab4b2cff93d5cb6ee694f8ce715d8d3ccb49471f0620fff",
+      "four_with_plugins": "2c51b4a9119b32ba62befe96a9b65ac6e5f76dff41eeb3471f9e774d08bba43b",
+      "four_with_plugins_repeat": "c877ef7070685382258308f2b1d829a15027bf325c1403aa8bd13f2adea8d0b6",
+      "previous_concurrent_stall": "5397cdbcbaf76a3be72391d3f3968e390b96ac7da249b4e5fe52f5a23138a8e0",
+      "previous_plugin_controls": "03eea6f1bf1967edd97d00cf70ba4634c74e84c9b3287828950abab189d4bb8b",
+      "interop": "60f81e765d52c05b7d497f8ea2687536cd6ce939755be80defff5e3a23384bd7",
+      "stock_java": "6079579859caeabd36919468b878c43b76e13eebb5f70a306a8096343b3c858b"
+    }
   }
 }

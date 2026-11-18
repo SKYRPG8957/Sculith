@@ -92,6 +92,25 @@ impl NetherNetSession {
         }
     }
 
+    #[cfg(test)]
+    pub(in crate::net::bedrock) async fn test_session(address: SocketAddr) -> Arc<Self> {
+        use webrtc::peer_connection::{PeerConnectionBuilder, PeerConnectionEventHandler};
+
+        struct NoopHandler;
+        impl PeerConnectionEventHandler for NoopHandler {}
+
+        let peer = Box::pin(
+            PeerConnectionBuilder::new()
+                .with_handler(Arc::new(NoopHandler))
+                .with_udp_addrs(vec![address])
+                .build(),
+        )
+        .await
+        .expect("create a loopback peer");
+        let (incoming, _) = mpsc::channel(1);
+        Arc::new(Self::new(Arc::new(peer), None, address, incoming))
+    }
+
     pub(super) fn set_ice_route(&self, route: Registration) {
         if !self.closed.is_cancelled() {
             *self
