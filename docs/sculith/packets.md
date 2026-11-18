@@ -99,14 +99,28 @@ touched by the request, using current screen indices. Cursor-only operations use
 the outside slot `-999` and no clicked item. Bedrock requests do not identify a
 mouse button, so their click type is `Unknown` and hotbar button is `-1`.
 Legacy hotbar drops have no UI click event; creative creation retains its
-`InventoryCreativeEvent` path. Specialized container clicks and drag gestures
-remain separate work.
+`InventoryCreativeEvent` path. Specialized container clicks use their
+screen-specific handlers.
 
 Creative destruction also fires `InventoryCreativeEvent` after the click and
 interaction callbacks, once per affected target with its final planned stack.
 Slot numbers use the player's canonical inventory layout; the cursor uses `-1`.
 An empty result reports air with count zero. A veto leaves preceding moves and
 destruction unapplied; callback changes survive stale-plan rejection.
+
+## Cursor drags
+
+Bedrock's `ServerboundCursorItemDrag` packet marks the current world and screen
+until the client sends stop or the screen changes. A validated request
+distributing cursor items to slots in the player inventory or a generic storage
+window fires `InventoryDragEvent` after click and interaction callbacks.
+
+Cancellation rejects the whole stack request and resends the actual slots and
+cursor. Callbacks can read or edit the inventory before commit. An edit to a
+planned stack invalidates that plan and survives the rejection.
+
+Native plugins use ABI 13 for the client layout change. Wasm plugins retain the
+existing `InventoryDragEvent` record.
 
 ## Storage requests
 

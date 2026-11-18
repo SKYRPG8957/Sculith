@@ -9,11 +9,8 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
 
-func checkInventoryClose(c *minecraft.Conn, mutate bool) error {
-	p := inventoryProbe{c: c}
-	if err := p.seed(); err != nil {
-		return err
-	}
+func (p *inventoryProbe) openPlayerInventory() error {
+	c := p.c
 	if err := c.WritePacket(&packet.Interact{ActionType: packet.InteractActionOpenInventory}); err != nil {
 		return err
 	}
@@ -34,6 +31,17 @@ func checkInventoryClose(c *minecraft.Conn, mutate bool) error {
 	}
 	if !opened {
 		return fmt.Errorf("missing player inventory open response")
+	}
+	return nil
+}
+
+func checkInventoryClose(c *minecraft.Conn, mutate bool) error {
+	p := inventoryProbe{c: c}
+	if err := p.seed(); err != nil {
+		return err
+	}
+	if err := p.openPlayerInventory(); err != nil {
+		return err
 	}
 	counts := map[int]uint16{0: 63, 1: 64, 2: 64}
 	cursor := protocol.StackRequestSlotInfo{Container: protocol.FullContainerName{ContainerID: protocol.ContainerCursor}}

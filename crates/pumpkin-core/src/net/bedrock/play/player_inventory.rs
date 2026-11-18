@@ -19,6 +19,7 @@ use pumpkin_protocol::{
             ContainerName, FullContainerName, NetworkItemDescriptor, NetworkItemStackDescriptor,
         },
         server::{
+            cursor_item_drag::{CURSOR_ITEM_DRAG_START, CURSOR_ITEM_DRAG_STOP, SCursorItemDrag},
             inventory_transaction::{InventoryAction, InventoryActionSource, WINDOW_ID_INVENTORY},
             item_stack_request::{
                 ItemStackRequest, ItemStackRequestAction as Action,
@@ -32,8 +33,9 @@ use pumpkin_util::GameMode;
 
 use crate::{
     entity::player::Player,
-    net::bedrock::BedrockClient,
+    net::bedrock::{BedrockClient, CursorDrag},
     plugin::{
+        inventory::inventory_drag::InventoryDragEvent,
         inventory::inventory_interact::InventoryInteractEvent,
         player::inventory_interact::InventoryClickEvent,
         player::player_drop_item::PlayerDropItemEvent,
@@ -80,6 +82,7 @@ struct InventoryPlan {
     world: Arc<World>,
     mode: GameMode,
     creative: bool,
+    cursor_placement: bool,
     clicked_slot: Option<usize>,
     click: Option<InventoryClickEvent>,
     screen: Arc<Mutex<dyn ScreenHandler>>,
@@ -208,6 +211,7 @@ impl InventoryPlan {
             world: player.world(),
             mode,
             creative,
+            cursor_placement: false,
             clicked_slot: None,
             click: None,
             screen: screen.clone(),
@@ -354,6 +358,7 @@ impl InventoryPlan {
         }
         self.can_put(to, &dest)?;
         self.can_take(player, from)?;
+        self.cursor_placement |= from == Target::Cursor && matches!(to, Target::Slot(_));
         source_stack.decrement(count);
         self.put(from, source_stack, source);
         self.put(to, dest, destination);
@@ -444,7 +449,7 @@ impl InventoryPlan {
         );
     }
 
-    fn authorize(&self, player: &Arc<Player>) -> bool {
+    fn authorize(&self, player: &Arc<Player>, dragging: bool) -> bool {
         let Some(server) = self.world.server.upgrade() else {
             return false;
         };
@@ -476,6 +481,13 @@ impl InventoryPlan {
             server.plugin_manager.fire_blocking(&server, &mut event);
             if event.cancelled {
                 return false;
+            }
+            if dragging {
+                let mut event = InventoryDragEvent::new(player.clone());
+                server.plugin_manager.fire_blocking(&server, &mut event);
+                if event.cancelled {
+                    return false;
+                }
             }
             // Destroy has no CraftCreative action, but still sets a creative slot.
             for target in &self.destroyed {
@@ -562,8 +574,8 @@ impl InventoryPlan {
         true
     }
 
-    fn execute(self, player: &Arc<Player>) -> Option<Vec<SlotUpdate>> {
-        let accepted = self.authorize(player) && self.commit(player);
+    fn execute(self, player: &Arc<Player>, dragging: bool) -> Option<Vec<SlotUpdate>> {
+        let accepted = self.authorize(player, dragging) && self.commit(player);
         for (index, before) in self.before.iter().enumerate() {
             let current = self.slots[index].get_cloned_stack();
             if !before.are_equal(&current)
@@ -583,6 +595,39 @@ impl InventoryPlan {
 }
 
 impl BedrockClient {
+    pub(in crate::net::bedrock) fn handle_cursor_drag(
+        &self,
+        player: &Player,
+        packet: &SCursorItemDrag,
+    ) {
+        match packet.state {
+            CURSOR_ITEM_DRAG_START => {
+                let screen = player
+                    .current_screen_handler
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                let world = player.world();
+                *self
+                    .cursor_drag
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(CursorDrag {
+                    screen: Arc::downgrade(&screen),
+                    world: Arc::downgrade(&world),
+                });
+            }
+            CURSOR_ITEM_DRAG_STOP => self.clear_cursor_drag(),
+            _ => {}
+        }
+    }
+
+    pub(crate) fn clear_cursor_drag(&self) {
+        *self
+            .cursor_drag
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    }
+
     pub(super) fn handle_inventory_request(
         &self,
         player: &Arc<Player>,
@@ -591,7 +636,20 @@ impl BedrockClient {
     ) {
         let (result, updates) = InventoryPlan::prepare(player, request, storage)
             .ok()
-            .and_then(|plan| plan.execute(player))
+            .and_then(|plan| {
+                let dragging = plan.cursor_placement
+                    && !plan.creative
+                    && self
+                        .cursor_drag
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .as_ref()
+                        .is_some_and(|drag| {
+                            std::ptr::addr_eq(drag.screen.as_ptr(), Arc::as_ptr(&plan.screen))
+                                && std::ptr::addr_eq(drag.world.as_ptr(), Arc::as_ptr(&plan.world))
+                        });
+                plan.execute(player, dragging)
+            })
             .map_or_else(|| (1, Vec::new()), |updates| (0, updates));
         self.try_enqueue_client_packet(&CItemStackResponse {
             responses: vec![build_stack_response(request.request_id, result, updates)],
@@ -660,7 +718,7 @@ impl BedrockClient {
         {
             return None;
         }
-        plan.execute(player)
+        plan.execute(player, false)
     }
 
     pub(super) fn resend_player_inventory(&self, player: &Player) {

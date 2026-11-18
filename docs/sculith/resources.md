@@ -63,7 +63,7 @@ of directories and 16 MiB per file. Symlinks, dependencies and subpack selection
 are rejected. Files under `crates/sculith-packs/tests/fixtures` are test inputs;
 they are never loaded by the default server.
 
-Rebuild native plugins against ABI 12 on `main`. Rust Wasm plugins can use
+Rebuild native plugins against ABI 13 on `main`. Rust Wasm plugins can use
 the shared forms, sounds and models through the stable v0.1 interface.
 
 ## Editing a pack from Rust

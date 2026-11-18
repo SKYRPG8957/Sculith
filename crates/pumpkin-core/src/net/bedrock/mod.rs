@@ -7,7 +7,7 @@ use std::{
     io::{Cursor, Error, Write},
     net::SocketAddr,
     sync::{
-        Arc,
+        Arc, Weak,
         atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     },
     time::Instant,
@@ -17,6 +17,7 @@ use tracing::{debug, error, warn};
 
 use bytes::Bytes;
 use pumpkin_config::networking::compression::CompressionInfo;
+use pumpkin_inventory::screen_handler::ScreenHandler;
 use pumpkin_protocol::{
     BClientPacket, PacketDecodeError, RawPacket,
     bedrock::{
@@ -145,6 +146,11 @@ pub fn split_raw_packet(packet_data: &Bytes) -> Option<(u16, Bytes)> {
     Some((packet_id, payload))
 }
 
+struct CursorDrag {
+    screen: Weak<std::sync::Mutex<dyn ScreenHandler>>,
+    world: Weak<crate::world::World>,
+}
+
 pub struct BedrockClient {
     pub id: u64,
     session: Arc<NetherNetSession>,
@@ -176,6 +182,7 @@ pub struct BedrockClient {
     /// The next form ID to use for custom forms.
     pub next_form_id: AtomicU32,
     pub inventory_opened: AtomicBool,
+    cursor_drag: std::sync::Mutex<Option<CursorDrag>>,
     /// Last processed `PlayerAuthInput` tick. Motion for the own player must carry it.
     pub input_tick: AtomicU64,
     /// Client predicted velocity from the last `PlayerAuthInput`. Pushes build on it.
@@ -250,6 +257,7 @@ impl BedrockClient {
             pending_bytes: Arc::new(AtomicUsize::new(0)),
             next_form_id: AtomicU32::new(0),
             inventory_opened: AtomicBool::new(false),
+            cursor_drag: std::sync::Mutex::new(None),
             input_tick: AtomicU64::new(0),
             client_delta: AtomicCell::new(pumpkin_util::math::vector3::Vector3::default()),
             own_motion_age: AtomicCell::new(i64::MIN),
@@ -1207,8 +1215,7 @@ impl BedrockClient {
                 // Ignore for now
             }
             SCursorItemDrag::PACKET_ID => {
-                let _ = SCursorItemDrag::read(reader)?;
-                // Ignore for now
+                self.handle_cursor_drag(player, &SCursorItemDrag::read(reader)?);
             }
             SStonecutterSetRecipe::PACKET_ID => {
                 let packet = SStonecutterSetRecipe::read(reader)?;

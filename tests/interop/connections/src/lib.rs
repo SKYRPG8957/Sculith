@@ -9,6 +9,7 @@ use std::sync::{
 
 use pumpkin_core::{
     plugin::inventory::inventory_creative::InventoryCreativeEvent,
+    plugin::inventory::inventory_drag::InventoryDragEvent,
     plugin::inventory::inventory_interact::InventoryInteractEvent,
     plugin::player::inventory_close::InventoryCloseEvent,
     plugin::player::inventory_interact::InventoryClickEvent,
@@ -124,6 +125,11 @@ impl Plugin for Connections {
                 EventPriority::Lowest,
                 true,
             );
+            context.register_event::<InventoryDragEvent, _>(
+                observer.clone(),
+                EventPriority::Lowest,
+                true,
+            );
             context.register_event::<PlayerInteractEvent, _>(
                 observer.clone(),
                 EventPriority::Lowest,
@@ -138,6 +144,51 @@ impl Plugin for Connections {
 }
 
 static CLOSE_MUTATED: AtomicBool = AtomicBool::new(false);
+
+impl EventHandler<InventoryDragEvent> for Observer {
+    fn handle_blocking<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a mut InventoryDragEvent,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let name = event.player.gameprofile.name.as_str();
+            let (cancel, edit) = match name {
+                "DragNativeAllow" => (false, false),
+                "DragNativeVeto" => (true, false),
+                "DragNativeEdit" => (false, true),
+                _ => return,
+            };
+            let screen = event
+                .player
+                .current_screen_handler
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            let cursor_stack = screen
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_behaviour()
+                .cursor_stack
+                .clone();
+            let cursor = cursor_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .item_count;
+            let target = event.player.inventory.get_slot(4).item_count;
+            if edit {
+                event
+                    .player
+                    .inventory
+                    .set_slot(4, ItemStack::new(7, &Item::GRASS_BLOCK));
+            }
+            event.cancelled = cancel;
+            if let Some(context) = self.0.upgrade() {
+                context.log(format!("PROBE_CURSOR_DRAG player={name} cursor={cursor} target={target} cancelled={cancel} edited={edit}"));
+            }
+        })
+    }
+}
 
 impl EventHandler<InventoryCloseEvent> for Observer {
     fn handle_blocking<'a>(

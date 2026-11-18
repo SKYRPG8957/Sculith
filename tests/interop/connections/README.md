@@ -34,6 +34,12 @@ the server must preserve that change and reject the stale pick plan. The fixture
 reads the inventory during callbacks to catch locks held across event dispatch.
 These callbacks apply only to the named test clients.
 
+`--drag-events` tests a Bedrock cursor drag with one stack request for two
+slots. The fixture reads the active screen and cursor, then allows the
+distribution, cancels it, or edits a destination. The probe checks the actual
+slot and cursor results in each case. It also places items after a stop and
+after closing and reopening the player inventory to check drag cleanup.
+
 `--tracking-events` also removes a nearby pig from its outgoing spawn callback,
 then removes another pig from its velocity callback. Both packets are cancelled.
 The client checks the despawn and a subsequent latency reply; the fixture logs

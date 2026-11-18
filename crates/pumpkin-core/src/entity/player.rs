@@ -6836,6 +6836,9 @@ impl Player {
     }
 
     pub fn on_handled_screen_closed(&self) {
+        if let Some(client) = self.client.bedrock() {
+            client.clear_cursor_drag();
+        }
         let current_screen_handler: Arc<std::sync::Mutex<dyn ScreenHandler>> = self
             .current_screen_handler
             .lock()
@@ -6887,6 +6890,9 @@ impl Player {
         &self,
         screen_handler: &std::sync::Mutex<T>,
     ) {
+        if let Some(client) = self.client.bedrock() {
+            client.clear_cursor_drag();
+        }
         let mut screen_handler = screen_handler
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);

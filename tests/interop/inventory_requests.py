@@ -7,12 +7,16 @@ import time
 
 def native(server, port, root, probe, option, name, seed=None, *, setup=()):
     path = root / f"{name}.log"
+    server_log = root / "server.log"
     with path.open("w") as log:
         process = subprocess.Popen([str(probe), f"http://127.0.0.1:{port}", option],
                                    stdout=log, stderr=log)
         try:
             deadline = time.monotonic() + 20
-            while "SPAWN " not in path.read_text():
+            # The client spawn acknowledgement can arrive before the server's
+            # join callbacks and initial inventory synchronization finish.
+            while ("SPAWN " not in path.read_text()
+                   or f"{name} joined the game" not in server_log.read_text()):
                 assert process.poll() is None and time.monotonic() < deadline, path.read_text()
                 time.sleep(.05)
             stacks = seed if seed is not None else [("diamond_block", 128), ("grass_block", 64)]

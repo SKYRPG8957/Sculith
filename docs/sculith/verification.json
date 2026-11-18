@@ -828,5 +828,26 @@
       "ordinary_import": "52a623c7ab6670bdb1f94476e8357377ae351f9e325757cfacc40060d04a2649",
       "invalid_source_guard": "ed41960cd284facc32ee73dd744b9b63a4022428668a87ebc7c585d8f38d95aa"
     }
+  },
+  "cursor_drag": {
+    "protocol": 2225,
+    "native_plugin_abi": 13,
+    "reference": "Bedrock Dedicated Server 1.26.63.1 accepted a cursor distribution of two and three items in one request",
+    "reference_capture": "ev_247065113a3fca669dfcaff848a9ba9f37b2ecb8d5a43546aa2c1c8d2cd675a7",
+    "checks": [
+      "One native Rust event per planned cursor distribution with the original stacks available to callbacks",
+      "Approval splits the cursor stack, a veto preserves it, and a callback edit survives rejection of the stale plan",
+      "Stop and inventory close clear the drag before subsequent placements",
+      "Full Java and Bedrock connection, gameplay and shared resource regression suite"
+    ],
+    "scope": "Independent protocol clients using local offline sessions. Drag was exercised in the player inventory. Windows GDK UI behavior was not measured.",
+    "server_sha256": "e1894031a8447173980ee58414d145a07fbeac670445585ad46eec9f11785042",
+    "native_fixture_sha256": "ad1bbdeca56b0539a7d23cf60637e142e3a2c491a825ce773d431cdc47974f57",
+    "log_sha256": {
+      "reference": "c4aa68bb07aeac8597126388c4216c9f618223a933889b1de8c8a746d8bd989f",
+      "focused": "cf3309f0544b08a82a89daa26e2478ee21f15bd402bbe61de4f0e2d4f63ff023",
+      "regressions": "3195928a8507e6314a3ff24d18474484c516dd9cf09f90f7367a176289e2ef42",
+      "clippy": "21a66e85e3f2b62e51f58ab9c65258559a6e10fbf3ded1d46c6634a247318084"
+    }
   }
 }
