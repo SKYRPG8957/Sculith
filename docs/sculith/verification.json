@@ -869,5 +869,37 @@
       "regressions": "8c91d4469c6e281f7ce197a9c0c807006c609c547c8df3d7e71884ad9cd71e2f",
       "clippy": "80f59e10a2f8ac671308ef9d3d98e888ec9d5305e703496442f5be8d53588c23"
     }
+  },
+  "teleport_chunk_streaming": {
+    "before": "Java 26.3 confirmed the server teleport but received zero destination columns in 10 seconds",
+    "after": "The same client received the destination center and all nine columns without sending a movement packet",
+    "stock_java": "Unmodified Java 26.3 rendered the emerald marker in the destination area after a console teleport",
+    "stock_java_screenshot_sha256": "9b0e90360d0c1e886c4713274da5823a7a87af7564d4dd4efec66275b7747a8f",
+    "interop": "Building, manual crafting, drag, resource edits, forms, packet callbacks and model restart passed. The first run stopped during a Bedrock login batch at compression negotiation. The same suite passed on retry.",
+    "server_sha256": "7315c276438a5f2279e1939746b701d6dbfdf3440fa572bc08706eeef63f0f02",
+    "workload": "Linux debug, four Java TCP and four Bedrock NetherNet clients, local offline sessions, fresh copies of the same flat Anvil world, view and simulation distances two. Eight console teleports to separate new areas once all clients joined.",
+    "mixed_runs": [
+      {"plugins": "none", "all_clients_done_ms": 2066, "tick_p95_ms": 19.88, "cpu_seconds": 4.8, "peak_rss_mib": 212.1},
+      {"plugins": "native and Wasm", "all_clients_done_ms": 2338, "tick_p95_ms": 82.21, "cpu_seconds": 6.28, "peak_rss_mib": 373.3},
+      {"plugins": "native and Wasm", "all_clients_done_ms": 2116, "tick_p95_ms": 111.29, "cpu_seconds": 5.82, "peak_rss_mib": 376.0},
+      {"plugins": "none", "all_clients_done_ms": 2317, "tick_p95_ms": 28.97, "cpu_seconds": 5.59, "peak_rss_mib": 210.9}
+    ],
+    "warmed_plugin_split": [
+      {"plugins": "none", "all_clients_done_ms": 1806, "tick_p95_ms": 8.07, "cpu_seconds": 4.25, "peak_rss_mib": 210.2},
+      {"plugins": "native", "all_clients_done_ms": 2016, "tick_p95_ms": 15.79, "cpu_seconds": 4.72, "peak_rss_mib": 260.7},
+      {"plugins": "Wasm", "all_clients_done_ms": 1911, "tick_p95_ms": 62.57, "cpu_seconds": 5.29, "peak_rss_mib": 328.0},
+      {"plugins": "native and Wasm", "all_clients_done_ms": 3050, "tick_p95_ms": 107.29, "cpu_seconds": 8.33, "peak_rss_mib": 365.9}
+    ],
+    "chunk_payload_bytes_per_run": {"java_uncompressed": 1885248, "bedrock_level_chunk_raw_payload": 39528},
+    "scope": "Each client received nine destination columns in all eight runs. Tick percentiles report the last 100 ticks. The plugin split adds an eight-second wait after join. The Rust fixtures register blocking packet hooks. These measurements cover a local debug workload and do not establish production capacity or Windows GDK behavior.",
+    "log_sha256": {
+      "before": "d5636a37d9188daeca86508d416cb0a36e65ebb739c44a2cbdb86ed94df21fa0",
+      "after": "ca31dfc3a61b20fe21049d417af06f6c4bf46f6514674aaa15dd1c99440dea65",
+      "interop_first_attempt": "910a59f6f331ee24d0a35e391f36faee073ef4d1028bc0e1e161fa2ecd0155eb",
+      "interop_retry": "7db740ec92ccd0083fe836ae83586b0bacd0e40c19398df8592f363dc7f7e52f",
+      "stock_java": "b02a916c499a9cfd63a9b81af74f43b4f0b996ef8ee6a9039f55b9f252b86e3b",
+      "mixed_runs": "e4d6966cf3c8abc090820c4c0982faee3e94d2c8102a0a92b5a20af985853d21",
+      "warmed_plugin_split": "0dd526599be485e7c9418aa07c74b14649247bd25d07134e9244d04b3ceead30"
+    }
   }
 }

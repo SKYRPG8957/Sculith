@@ -354,6 +354,7 @@ def main():
     parser.add_argument("--world", type=Path, required=True, help="stopped Java flat world copied for testing")
     parser.add_argument("--delayed", action="store_true", help="hold a partial packet across two keepalives")
     parser.add_argument("--building", action="store_true", help="also exercise native building in the copied flat world")
+    parser.add_argument("--teleport-chunks", action="store_true", help="verify the view follows a server teleport before additional movement")
     parser.add_argument("--picking", action="store_true", help="check native pick-block hotbar selection and inventory preservation")
     parser.add_argument("--actor-picking", action="store_true", help="check native mob picking, reach and entity ID bounds")
     parser.add_argument("--pick-events", action="store_true", help="check native plugin cancellation and callback inventory changes on both editions")
@@ -517,6 +518,9 @@ def main():
         if args.resource_edits:
             from resource_edits import check
             report["resource_edits"] = check(java, bedrock, root, args.bedrock_probe.resolve(), report["sha1"])
+        if args.teleport_chunks:
+            from teleport_chunks import check
+            report["teleport_chunks"] = check(server, java, root)
         if args.building or args.picking or args.actor_picking or args.pick_events or args.tracking_events or args.creative_events or args.inventory_requests or args.inventory_events or args.legacy_inventory or args.legacy_events or args.click_events or args.item_use_events or args.close_events or args.drag_events or args.craft_events or args.storage_inventory or args.storage_contention:
             server.stdin.write("kill @e[type=!minecraft:player]\n")
             server.stdin.flush()

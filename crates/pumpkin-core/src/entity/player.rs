@@ -8175,12 +8175,20 @@ impl EntityBase for Player {
     ) {
         if Arc::ptr_eq(&world, &self.world()) {
             // Same world
-            let yaw = yaw.unwrap_or_else(|| self.living_entity.entity.yaw.load());
-            let pitch = pitch.unwrap_or_else(|| self.living_entity.entity.pitch.load());
-            self.request_teleport(position, yaw, pitch);
             let entity = self.get_entity();
+            let previous_chunk = entity.chunk_pos.load();
+            let yaw = yaw.unwrap_or_else(|| entity.yaw.load());
+            let pitch = pitch.unwrap_or_else(|| entity.pitch.load());
+            self.request_teleport(position, yaw, pitch);
             let chunk_pos = entity.chunk_pos.load();
-            entity.world.load().broadcast_to_chunk_except(
+            let world = entity.world.load();
+            // The server moved the player. A stationary client may only confirm the teleport.
+            if previous_chunk != chunk_pos
+                && let Some(player) = world.get_player_by_uuid(self.gameprofile.id)
+            {
+                crate::world::chunker::update_position(&player);
+            }
+            world.broadcast_to_chunk_except(
                 chunk_pos,
                 &[self.living_entity.entity.entity_uuid],
                 &CEntityPositionSync::new(
