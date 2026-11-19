@@ -139,10 +139,13 @@ impl AsyncUdpSocket for DirectSocket {
     }
     fn max_gso_segments(&self) -> usize {
         // A transmit may still need the relay socket, which must accept the same batch.
+        // WebRTC uses this limit in its minimum run for batching. Four datagrams fit common
+        // NetherNet terrain messages, whose application fragments are at most 10,000 bytes.
         self.router
             .public
             .max_gso_segments()
             .min(self.socket.max_gso_segments())
+            .min(4)
     }
     fn max_gro_segments(&self) -> usize {
         self.socket.max_gro_segments()
