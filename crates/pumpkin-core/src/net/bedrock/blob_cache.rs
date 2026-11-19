@@ -1,10 +1,115 @@
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    hash::Hasher,
+    io::Error,
+    sync::{LazyLock, Mutex},
+};
 
 use bytes::Bytes;
-use rustc_hash::FxHashMap;
+use pumpkin_protocol::bedrock::client::client_cache_miss_response::{
+    CClientCacheMissResponse, MissingBlobData,
+};
+use rustc_hash::{FxHashMap, FxHasher};
 
 /// Blob bytes kept per client before the oldest are evicted.
 const MAX_BLOB_CACHE_BYTES: usize = 16 * 1024 * 1024;
+
+const SHARED_REPLY_SHARDS: usize = 64;
+const SHARED_REPLY_BYTES_PER_SHARD: usize = 128 * 1024;
+const SHARED_REPLIES_PER_SHARD: usize = 4;
+const MIN_SHARED_REPLY_PAYLOAD: usize = 8 * 1024;
+
+struct SharedReply {
+    fingerprint: u64,
+    blobs: Vec<MissingBlobData>,
+    frame: Bytes,
+    retained_bytes: usize,
+}
+
+static SHARED_REPLIES: LazyLock<[Mutex<VecDeque<SharedReply>>; SHARED_REPLY_SHARDS]> =
+    LazyLock::new(|| std::array::from_fn(|_| Mutex::default()));
+
+/// Reuses raw responses before per-viewer packet events and compression.
+pub(super) fn share_blob_reply(packet: CClientCacheMissResponse) -> Result<Bytes, Error> {
+    let encode = || {
+        let mut frame = Vec::new();
+        super::BedrockClient::write_raw_packet(&packet, &mut frame)?;
+        Ok(Bytes::from(frame.into_boxed_slice()))
+    };
+    let payload_bytes = packet
+        .missing_blobs
+        .iter()
+        .map(|blob| blob.blob_data.len())
+        .sum::<usize>();
+    if !(MIN_SHARED_REPLY_PAYLOAD..=SHARED_REPLY_BYTES_PER_SHARD / 2).contains(&payload_bytes) {
+        return encode();
+    }
+    let mut hasher = FxHasher::default();
+    for blob in &packet.missing_blobs {
+        hasher.write_u64(blob.blob_id);
+    }
+    let fingerprint = hasher.finish();
+    let shard = &SHARED_REPLIES[fingerprint as usize % SHARED_REPLY_SHARDS];
+    let find = |replies: &VecDeque<SharedReply>| {
+        replies
+            .iter()
+            .find(|reply| {
+                reply.fingerprint == fingerprint
+                    && reply.blobs.len() == packet.missing_blobs.len()
+                    && reply
+                        .blobs
+                        .iter()
+                        .zip(&packet.missing_blobs)
+                        .all(|(prior, current)| {
+                            prior.blob_id == current.blob_id
+                                && prior.blob_data.len() == current.blob_data.len()
+                                && (prior.blob_data.as_ptr() == current.blob_data.as_ptr()
+                                    || prior.blob_data == current.blob_data)
+                        })
+            })
+            .map(|reply| reply.frame.clone())
+    };
+    {
+        let replies = shard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(frame) = find(&replies) {
+            return Ok(frame);
+        }
+    }
+
+    let frame = encode()?;
+    let retained_bytes = payload_bytes
+        + frame.len()
+        + packet.missing_blobs.capacity() * size_of::<MissingBlobData>();
+    if retained_bytes > SHARED_REPLY_BYTES_PER_SHARD {
+        return Ok(frame);
+    }
+    let mut replies = shard
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(frame) = find(&replies) {
+        return Ok(frame);
+    }
+    let mut size = retained_bytes
+        + replies
+            .iter()
+            .map(|reply| reply.retained_bytes)
+            .sum::<usize>();
+    while size > SHARED_REPLY_BYTES_PER_SHARD || replies.len() >= SHARED_REPLIES_PER_SHARD {
+        let Some(previous) = replies.pop_front() else {
+            break;
+        };
+        size -= previous.retained_bytes;
+    }
+    replies.push_back(SharedReply {
+        fingerprint,
+        blobs: packet.missing_blobs,
+        frame: frame.clone(),
+        retained_bytes,
+    });
+    Ok(frame)
+}
 
 struct Entry {
     blob: Bytes,
@@ -141,6 +246,23 @@ mod tests {
 
     fn blob(size: usize) -> Bytes {
         Bytes::from(vec![0; size])
+    }
+
+    #[test]
+    fn blob_response_reuse_checks_the_actual_payload() {
+        let frame = |byte| {
+            let packet = CClientCacheMissResponse {
+                missing_blobs: vec![MissingBlobData {
+                    blob_id: 12_345,
+                    blob_data: Bytes::from(vec![byte; MIN_SHARED_REPLY_PAYLOAD]),
+                }],
+            };
+            share_blob_reply(packet).unwrap()
+        };
+        let first = frame(7);
+        assert_eq!(first.as_ptr(), frame(7).as_ptr());
+        assert_ne!(first, frame(8));
+        assert_eq!(first.as_ptr(), frame(7).as_ptr());
     }
 
     #[test]

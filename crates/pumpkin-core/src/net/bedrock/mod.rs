@@ -1570,7 +1570,11 @@ impl BedrockClient {
             missing_blobs
         };
         if !missing_blobs.is_empty() {
-            self.try_enqueue_client_packet(&CClientCacheMissResponse { missing_blobs });
+            let packet = CClientCacheMissResponse { missing_blobs };
+            match blob_cache::share_blob_reply(packet) {
+                Ok(frame) => self.try_enqueue_packet(frame),
+                Err(error) => error!("Failed to serialize Bedrock packet: {error}"),
+            }
         }
     }
 
