@@ -189,11 +189,13 @@ impl BedrockBatchEncoder {
             entries.push_back(chunk);
             Some(encoded)
         };
-        if let Some(encoded) = cached_frame(
-            &mut shard
+        let existing = {
+            let mut entries = shard
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        ) {
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cached_frame(&mut entries)
+        };
+        if let Some(encoded) = existing {
             return Ok(Some(encoded));
         }
 
