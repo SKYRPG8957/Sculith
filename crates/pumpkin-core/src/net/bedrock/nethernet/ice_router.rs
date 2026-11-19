@@ -2,12 +2,13 @@ use std::{
     collections::HashMap,
     io::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Weak,
+    sync::{Arc, Weak},
 };
 
+use super::direct_udp::DirectUdp;
 use tokio::net::UdpSocket;
-use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::trace;
 
 use super::discovery::{
@@ -20,7 +21,8 @@ enum Command {
     Register {
         ufrag: String,
         internal: SocketAddr,
-        candidates: Vec<SocketAddr>,
+        candidate: Option<SocketAddr>,
+        ready: oneshot::Sender<()>,
     },
     Remove {
         ufrag: String,
@@ -31,14 +33,15 @@ enum Command {
 struct Route {
     ufrag: String,
     remote: Option<SocketAddr>,
-    candidates: Vec<SocketAddr>,
 }
 
-/// Routes every direct-IP peer through Pumpkin's one public Bedrock UDP socket.
+/// Routes every direct-IP peer through Sculith's one public Bedrock UDP socket.
 pub(super) struct IceRouter {
     internal_addr: SocketAddr,
     public_addr: SocketAddr,
     commands: mpsc::UnboundedSender<Command>,
+    pub(super) direct_udp: Arc<DirectUdp>,
+    _stop: DropGuard,
 }
 
 pub(super) struct Registration {
@@ -64,14 +67,41 @@ impl IceRouter {
         stop: CancellationToken,
     ) -> Result<Self, Error> {
         let public_addr = public.local_addr()?;
-        let internal = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let internal = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?);
         let internal_addr = internal.local_addr()?;
         let (commands, receiver) = mpsc::unbounded_channel();
-        tokio::spawn(run(public, internal, receiver, server, server_guid, stop));
+        let stop = stop.child_token();
+        let guard = stop.clone().drop_guard();
+        let direct_udp = Arc::new(DirectUdp::new(public.clone(), internal_addr));
+        let ingress = direct_udp.clone();
+        let runtime = tokio::runtime::Handle::current();
+        tokio::spawn(send_outbound(
+            public.clone(),
+            internal.clone(),
+            direct_udp.clone(),
+            stop.clone(),
+        ));
+        // One ingress thread per listener keeps a full gameplay executor from
+        // leaving a simultaneous arrival burst in the kernel's receive queue.
+        std::thread::Builder::new()
+            .name("sculith-bedrock-udp".into())
+            .spawn(move || {
+                runtime.block_on(run(
+                    public,
+                    internal,
+                    receiver,
+                    server,
+                    server_guid,
+                    stop,
+                    ingress,
+                ));
+            })?;
         Ok(Self {
             internal_addr,
             public_addr,
             commands,
+            direct_udp,
+            _stop: guard,
         })
     }
 
@@ -83,110 +113,141 @@ impl IceRouter {
         self.public_addr
     }
 
-    pub(super) fn register(
+    pub(super) async fn register(
         &self,
         ufrag: String,
         internal: SocketAddr,
         candidates: Vec<SocketAddr>,
-    ) -> Registration {
-        let _ = self.commands.send(Command::Register {
-            ufrag: ufrag.clone(),
-            internal,
-            candidates,
-        });
-        Registration {
+    ) -> Result<Registration, String> {
+        let (ready, registered) = oneshot::channel();
+        self.commands
+            .send(Command::Register {
+                ufrag: ufrag.clone(),
+                internal,
+                candidate: candidates.first().copied(),
+                ready,
+            })
+            .map_err(|_| "ICE listener closed".to_owned())?;
+        registered
+            .await
+            .map_err(|_| "ICE listener closed".to_owned())?;
+        Ok(Registration {
             ufrag,
             internal,
             commands: self.commands.clone(),
+        })
+    }
+}
+
+async fn send_outbound(
+    public: IceSocket,
+    socket: Arc<UdpSocket>,
+    direct: Arc<DirectUdp>,
+    stop: CancellationToken,
+) {
+    let mut buffer = vec![0; usize::from(u16::MAX)];
+    loop {
+        let result = tokio::select! {
+            biased;
+            () = stop.cancelled() => return,
+            result = socket.recv_from(&mut buffer) => result,
+        };
+        let Ok((len, internal)) = result else {
+            continue;
+        };
+        if let Some(remote) = direct.target(internal)
+            && let Err(error) = public.send_to(&buffer[..len], remote).await
+        {
+            trace!(%internal, %remote, %error, "Outbound ICE relay failed");
         }
     }
 }
 
 async fn run(
     public: IceSocket,
-    internal_socket: UdpSocket,
+    internal: Arc<UdpSocket>,
     mut commands: mpsc::UnboundedReceiver<Command>,
     server: Weak<Server>,
     server_guid: u64,
     stop: CancellationToken,
+    direct: Arc<DirectUdp>,
 ) {
-    let advertisement_id: u64 = rand::random();
+    let advertisement_id = rand::random();
     let mut routes = HashMap::<SocketAddr, Route>::new();
     let mut by_ufrag = HashMap::<String, SocketAddr>::new();
     let mut by_remote = HashMap::<SocketAddr, SocketAddr>::new();
-    let mut public_buffer = vec![0; u16::MAX as usize];
-    let mut internal_buffer = vec![0; u16::MAX as usize];
-
+    let mut buffer = vec![0; usize::from(u16::MAX)];
     loop {
-        tokio::select! {
-            () = stop.cancelled() => break,
-            Some(command) = commands.recv() => match command {
-                Command::Register { ufrag, internal, candidates } => {
-                    if let Some(old) = routes.insert(internal, Route {
-                        ufrag: ufrag.clone(),
-                        remote: None,
-                        candidates,
-                    }) {
-                        by_ufrag.remove(&old.ufrag);
-                        by_remote.retain(|_, route| *route != internal);
-                    }
-                    by_ufrag.insert(ufrag, internal);
-                }
-                Command::Remove { ufrag, internal } => {
-                    if routes.get(&internal).is_some_and(|route| route.ufrag == ufrag) {
-                        routes.remove(&internal);
-                        by_ufrag.remove(&ufrag);
-                        by_remote.retain(|_, route| *route != internal);
-                    }
-                }
-            },
-            result = public.recv_from(&mut public_buffer) => match result {
-                Ok((length, remote)) => {
-                    let packet = &public_buffer[..length];
-                    let route = stun_username(packet)
-                        .and_then(|username| {
-                            username
-                                .split(':')
-                                .find_map(|ufrag| by_ufrag.get(ufrag).copied())
-                        })
-                        .or_else(|| by_remote.get(&remote).copied());
-                    if let Some(internal) = route {
-                        if let Some(route) = routes.get_mut(&internal) {
-                            route.remote = Some(remote);
+        let first = tokio::select! {
+            biased;
+            () = stop.cancelled() => return,
+            command = commands.recv() => {
+                match command {
+                    Some(Command::Register { ufrag, internal, candidate, ready }) => {
+                        if let Some(old) = routes.insert(internal, Route {ufrag: ufrag.clone(), remote: None}) {
+                            by_ufrag.remove(&old.ufrag);
+                            by_remote.retain(|_, route| *route != internal);
                         }
-                        by_remote.insert(remote, internal);
-                        if let Err(error) = internal_socket.send_to(packet, internal).await {
-                            trace!(%remote, %internal, %error, "Failed to route inbound NetherNet ICE packet");
-                        }
-                    } else {
-                        handle_unroutable(
-                            packet,
-                            remote,
-                            &public,
-                            &server,
-                            server_guid,
-                            advertisement_id,
-                        )
-                        .await;
+                        direct.set_target(internal, candidate);
+                        by_ufrag.insert(ufrag, internal);
+                        let _ = ready.send(());
                     }
-                }
-                Err(error) => trace!(%error, "Failed to receive NetherNet ICE packet"),
-            },
-            result = internal_socket.recv_from(&mut internal_buffer) => match result {
-                Ok((length, internal)) => {
-                    let target = routes.get(&internal).and_then(|route| {
-                        route.remote.or_else(|| route.candidates.first().copied())
-                    });
-                    if let Some(target) = target {
-                        if let Err(error) = public.send_to(&internal_buffer[..length], target).await {
-                            trace!(%target, %internal, %error, "Failed to route outbound NetherNet ICE packet");
+                    Some(Command::Remove { ufrag, internal }) => {
+                        if routes.get(&internal).is_some_and(|route| route.ufrag == ufrag) {
+                            routes.remove(&internal);
+                            by_ufrag.remove(&ufrag);
+                            by_remote.retain(|_, route| *route != internal);
+                            direct.set_target(internal, None);
                         }
-                    } else {
-                        trace!(%internal, length, "Dropped NetherNet ICE packet without a remote route");
                     }
+                    None => return,
                 }
-                Err(error) => trace!(%error, "Failed to receive internal NetherNet ICE packet"),
-            },
+                continue;
+            }
+            result = public.recv_from(&mut buffer) => result,
+        };
+        let mut result = first;
+        for index in 0..16 {
+            let Ok((len, remote)) = result else { break };
+            let packet = &buffer[..len];
+            let destination = stun_username(packet)
+                .and_then(|username| {
+                    username
+                        .split(':')
+                        .find_map(|frag| by_ufrag.get(frag).copied())
+                })
+                .or_else(|| by_remote.get(&remote).copied());
+            if let Some(destination) = destination {
+                if let Some(route) = routes.get_mut(&destination)
+                    && route.remote != Some(remote)
+                {
+                    if let Some(previous) = route.remote.replace(remote)
+                        && by_remote.get(&previous) == Some(&destination)
+                    {
+                        by_remote.remove(&previous);
+                    }
+                    direct.set_target(destination, Some(remote));
+                    by_remote.insert(remote, destination);
+                }
+                if !direct.deliver(destination, packet)
+                    && let Err(error) = internal.send_to(packet, destination).await
+                {
+                    trace!(%remote, %destination, %error, "Inbound ICE relay failed");
+                }
+            } else {
+                handle_unroutable(
+                    packet,
+                    remote,
+                    &public,
+                    &server,
+                    server_guid,
+                    advertisement_id,
+                )
+                .await;
+            }
+            if index < 15 {
+                result = public.try_recv_from(&mut buffer);
+            }
         }
     }
 }
@@ -337,6 +398,38 @@ fn candidate_address(fields: &[String]) -> Option<SocketAddr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn dropping_listener_releases_ports_with_a_live_registration() {
+        let public = IceSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .unwrap();
+        let router = IceRouter::bind(public, Weak::new(), 1, CancellationToken::new())
+            .await
+            .unwrap();
+        let public = router.public_addr();
+        let internal = router.internal_addr();
+        let _registration = router
+            .register(
+                "peer".into(),
+                SocketAddr::from(([127, 0, 0, 1], 1)),
+                Vec::new(),
+            )
+            .await
+            .unwrap();
+        drop(router);
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                if UdpSocket::bind(public).await.is_ok() && UdpSocket::bind(internal).await.is_ok()
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
 
     #[test]
     fn reads_stun_username() {

@@ -41,6 +41,12 @@ pub fn build() -> TokenStream {
                 int_bounds_arms.extend(quote! {
                     Self::#pascal_case => Some((#min, #max)),
                 });
+                // Bedrock has no Java entity-cramming damage. Explicit saved limits still apply.
+                let default = if raw_name == "max_entity_cramming" {
+                    0
+                } else {
+                    *default
+                };
                 (quote! { Int }, quote! { i64 }, quote! { #default })
             }
         };

@@ -46,7 +46,7 @@ impl Default for JavaConfig {
         let view_distance = NonZero::new(16).unwrap_or(NonZero::<u8>::MIN);
         let simulation_distance = NonZero::new(10).unwrap_or(NonZero::<u8>::MIN);
         Self {
-            enabled: true,
+            enabled: false,
             address,
             encryption: true,
             online_mode: true,

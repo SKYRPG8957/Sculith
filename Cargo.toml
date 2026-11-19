@@ -2,7 +2,7 @@
 resolver = "3"
 members = [
     "crates/sculith-packs",
-    "crates/pumpkin",
+    "crates/sculith",
     "crates/pumpkin-core",
     "crates/pumpkin-api-macros",
     "crates/pumpkin-auth",
@@ -169,6 +169,7 @@ strip = false
 debug = false
 
 [workspace.dependencies]
+socket2 = "0.6.5"
 tokio = { version = "1.54", default-features = false }
 syn = { version = "3.0", default-features = false, features = ["full", "parsing", "printing", "proc-macro", "clone-impls", "derive"] }
 
@@ -280,3 +281,7 @@ webpki-root-certs = { version = "1.0.11", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 zip = { version = "9.5", default-features = false, features = ["deflate-flate2"] }
 
+
+[patch.crates-io]
+# Fix IPv4 UDP initialization on Windows in the transport used by NetherNet.
+quinn-udp = { git = "https://github.com/quinn-rs/quinn.git", rev = "17596ddefb09dae895129520824055d0ac8da5d5" }

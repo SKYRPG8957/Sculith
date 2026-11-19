@@ -6,6 +6,7 @@ use std::{
 use tokio::net::UdpSocket;
 
 /// Public UDP socket used by Bedrock's `NetherNet` ICE agent.
+#[derive(Clone, Debug)]
 pub struct IceSocket {
     socket: Arc<UdpSocket>,
 }
@@ -17,6 +18,10 @@ impl IceSocket {
             IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
         };
         let socket = Arc::new(UdpSocket::bind((ip, address.port())).await?);
+        // Bursts from all players arrive on this one shared listener.
+        let options = socket2::SockRef::from(socket.as_ref());
+        let _ = options.set_recv_buffer_size(4 * 1024 * 1024);
+        let _ = options.set_send_buffer_size(4 * 1024 * 1024);
         Ok(Self { socket })
     }
 
@@ -26,6 +31,14 @@ impl IceSocket {
 
     pub async fn recv_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
         self.socket.recv_from(buffer).await
+    }
+
+    pub(super) fn try_recv_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
+        self.socket.try_recv_from(buffer)
+    }
+
+    pub(super) fn try_send_to(&self, buffer: &[u8], target: SocketAddr) -> Result<usize, Error> {
+        self.socket.try_send_to(buffer, target)
     }
 
     pub async fn send_to(&self, buffer: &[u8], target: SocketAddr) -> Result<usize, Error> {

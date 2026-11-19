@@ -2959,23 +2959,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pumpkin"
-version = "0.2.2+26.3-26.63"
-dependencies = [
- "console-subscriber",
- "pumpkin-config",
- "pumpkin-core",
- "pumpkin-data",
- "pumpkin-util",
- "pumpkin-wasm-host",
- "pumpkin-world",
- "rayon",
- "rustls",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "pumpkin-api-macros"
 version = "0.2.2+26.3-26.63"
 dependencies = [
@@ -3111,6 +3094,7 @@ dependencies = [
  "serde_repr",
  "sha1 0.11.0",
  "sha2 0.11.1",
+ "socket2",
  "subtle",
  "sysinfo",
  "tempfile",
@@ -3458,14 +3442,13 @@ dependencies = [
 [[package]]
 name = "quinn-udp"
 version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47091c86514c2e11452cb228dee77037334b99d92a23e4c69aa5982261f39247"
+source = "git+https://github.com/quinn-rs/quinn.git?rev=17596ddefb09dae895129520824055d0ac8da5d5#17596ddefb09dae895129520824055d0ac8da5d5"
 dependencies = [
  "cfg_aliases",
  "libc",
  "log",
  "socket2",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4219,6 +4202,23 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sculith"
+version = "0.2.2+26.3-26.63"
+dependencies = [
+ "console-subscriber",
+ "pumpkin-config",
+ "pumpkin-core",
+ "pumpkin-data",
+ "pumpkin-util",
+ "pumpkin-wasm-host",
+ "pumpkin-world",
+ "rayon",
+ "rustls",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "sculith-interop-connections"

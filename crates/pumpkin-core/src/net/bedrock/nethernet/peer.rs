@@ -157,7 +157,8 @@ async fn negotiate_inner(
             session.set_ice_route(
                 state
                     .ice_router
-                    .register(ufrag, internal, remote_candidates),
+                    .register(ufrag, internal, remote_candidates)
+                    .await?,
             );
             answer
         } else {
@@ -215,9 +216,13 @@ async fn build_peer(
             .with_nat_1to1_ips(vec![external_ip.to_string()], RTCIceCandidateType::Host);
     }
     let setting_engine = setting_engine_builder.build();
+    let mut builder = PeerConnectionBuilder::new();
+    if direct_ip {
+        builder = builder.with_runtime(state.ice_router.direct_udp.clone());
+    }
     Ok(Arc::new(
         Box::pin(
-            PeerConnectionBuilder::new()
+            builder
                 .with_configuration(configuration)
                 .with_setting_engine(setting_engine)
                 .with_handler(handler)

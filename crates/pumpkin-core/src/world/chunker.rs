@@ -28,6 +28,16 @@ pub fn get_view_distance(player: &Player) -> NonZero<u8> {
         .clamp(fallback, max_view_distance)
 }
 
+pub(super) fn simulation_distance(
+    player: &Player,
+    config: &pumpkin_config::AdvancedConfiguration,
+) -> u8 {
+    match player.client.as_ref() {
+        ClientPlatform::Java(_) => config.networking.java.simulation_distance.get(),
+        ClientPlatform::Bedrock(_) => config.networking.bedrock.simulation_distance.get(),
+    }
+}
+
 // Checks if the target chunk is within Chebyshev distance (L_infinity) of the center chunk.
 #[must_use]
 #[inline]
@@ -102,9 +112,10 @@ pub fn update_position(player: &Arc<Player>) {
     });
 
     let new_sim_level = (!is_spectator || spectators_generate_chunks).then(|| {
-        let sim_dist = world.server.upgrade().map_or(10, |s| {
-            s.advanced_config.networking.java.simulation_distance.get()
-        });
+        let sim_dist = world
+            .server
+            .upgrade()
+            .map_or(10, |s| simulation_distance(player, &s.advanced_config));
         pumpkin_world::chunk_system::ChunkLoading::get_level_from_simulation_distance(sim_dist)
     });
 

@@ -67,8 +67,7 @@ impl BedrockClient {
                 .networking
                 .bedrock
                 .compression
-                .info
-                .clone(),
+                .bedrock_settings(),
         )
         .await;
         true
@@ -94,13 +93,7 @@ impl BedrockClient {
         self.set_prefixed_compression(protocol >= PREFIXED_COMPRESSION_MIN_PROTOCOL)
             .await;
 
-        let compression = server
-            .advanced_config
-            .networking
-            .bedrock
-            .compression
-            .info
-            .clone();
+        let compression = server.advanced_config.networking.bedrock.compression.bedrock_settings();
         self.send_network_settings(compression).await;
         true
     }

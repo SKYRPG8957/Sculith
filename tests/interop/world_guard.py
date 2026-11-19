@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-world-guard-") as directory:
     assert result.returncode == 1, (result.returncode, result.stdout, result.stderr)
     assert "Bedrock terrain import failed" in result.stderr
     assert not imported.exists()
-    assert not (root / "pumpkin.toml").exists()
+    assert not (root / "sculith.toml").exists()
     assert snapshot() == before, "source world was modified"
 
     result = subprocess.run(

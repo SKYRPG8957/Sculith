@@ -53,7 +53,6 @@ mod playsound;
 mod plugin;
 mod plugins;
 mod posteffect;
-mod pumpkin;
 mod raid;
 mod random;
 mod recipe;
@@ -67,6 +66,7 @@ mod saveon;
 mod say;
 mod schedule;
 mod scoreboard;
+mod sculith;
 mod seed;
 mod setblock;
 mod setidletimeout;
@@ -157,7 +157,7 @@ pub fn default_dispatcher(
     playsound::register(&mut dispatcher, registry);
     fill::register(&mut dispatcher, registry);
     clear::register(&mut dispatcher, registry);
-    pumpkin::register(&mut dispatcher, registry);
+    sculith::register(&mut dispatcher, registry);
     me::register(&mut dispatcher, registry);
     msg::register(&mut dispatcher, registry);
     tps::register(&mut dispatcher, registry);
@@ -283,11 +283,15 @@ fn apply_command_overrides(
 ///
 /// Follows the `<namespace>:command.<name>` convention by probing the registry.
 fn resolve_permission_node(
-    _dispatcher: &CommandDispatcher,
+    dispatcher: &CommandDispatcher,
     registry: &PermissionRegistry,
     name: &str,
 ) -> Option<String> {
-    for namespace in ["minecraft", "pumpkin"] {
+    let name = dispatcher.primary_command_name(name);
+    if name == "sculith" {
+        return Some(sculith::PERMISSION.to_owned());
+    }
+    for namespace in ["minecraft", "sculith", "pumpkin"] {
         let candidate = format!("{namespace}:command.{name}");
         if registry.get_permission(&candidate).is_some() {
             return Some(candidate);
@@ -463,12 +467,12 @@ mod override_tests {
     }
 
     #[test]
-    fn version_is_an_alias_of_pumpkin() {
+    fn version_is_an_alias_of_sculith() {
         let manager = PermissionManager::new();
         let dispatcher = default_dispatcher(&manager, &CommandsConfig::default());
 
         assert!(dispatcher.has_command("version"));
-        assert_eq!(dispatcher.primary_command_name("version"), "pumpkin");
+        assert_eq!(dispatcher.primary_command_name("version"), "sculith");
         assert!(!dispatcher.has_command("ver"));
     }
 }

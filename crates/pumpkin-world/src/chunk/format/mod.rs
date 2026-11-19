@@ -383,10 +383,10 @@ impl ChunkData {
             ChunkSections::build_random_tick_sections_cache(&block_palettes);
         let section = ChunkSections {
             count: block_palettes.len(),
-            block_sections: RwLock::new(block_palettes.into_boxed_slice()),
+            block_sections: crate::chunk::SectionPalettes::new(block_palettes.into_boxed_slice()),
             random_tick_sections: RwLock::new(random_tick_sections),
             randomly_ticking_mask: std::sync::atomic::AtomicU32::new(randomly_ticking_mask),
-            biome_sections: RwLock::new(biome_palettes.into_boxed_slice()),
+            biome_sections: crate::chunk::SectionPalettes::new(biome_palettes.into_boxed_slice()),
             min_y,
         };
 
@@ -996,10 +996,10 @@ impl ChunkData {
             ChunkSections::build_random_tick_sections_cache(&block_palettes);
         let section = ChunkSections {
             count: block_palettes.len(),
-            block_sections: RwLock::new(block_palettes.into_boxed_slice()),
+            block_sections: crate::chunk::SectionPalettes::new(block_palettes.into_boxed_slice()),
             random_tick_sections: RwLock::new(random_tick_sections),
             randomly_ticking_mask: std::sync::atomic::AtomicU32::new(randomly_ticking_mask),
-            biome_sections: RwLock::new(biome_palettes.into_boxed_slice()),
+            biome_sections: crate::chunk::SectionPalettes::new(biome_palettes.into_boxed_slice()),
             min_y,
         };
         let light_engine = ChunkLight {

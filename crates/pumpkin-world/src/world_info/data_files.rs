@@ -722,6 +722,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn crowding_defaults_to_bedrock_and_honors_saved_limits() {
+        let defaults = GameRuleRegistry::default();
+        assert_eq!(defaults.max_entity_cramming, 0);
+        let mut rules = defaults;
+        rules.max_entity_cramming = 24;
+        let saved = game_rules_to_nbt(&rules, 1);
+        assert_eq!(game_rules_from_nbt(&saved).max_entity_cramming, 24);
+    }
+    #[test]
     fn saved_data_keeps_java_26_3_version_outside_the_payload() {
         let dir = tempfile::TempDir::new().unwrap();
         let reference = read_gzip_compound_tag(std::io::Cursor::new(

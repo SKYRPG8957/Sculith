@@ -412,6 +412,7 @@ def main():
     changes = {
         ("", "allow_nether"): "false", ("", "allow_end"): "false",
         ("", "default_gamemode"): '"Creative"', ("", "force_gamemode"): "true",
+        ("networking.java", "enabled"): "true",
         ("networking.java", "address"): json.dumps(f"127.0.0.1:{java}"),
         ("networking.java", "online_mode"): "false", ("networking.java", "encryption"): "false",
         ("networking.java.authentication", "enabled"): "false",
@@ -425,8 +426,8 @@ def main():
     for edition in ["java", "bedrock"]:
         for key in ["view_distance", "simulation_distance"]:
             changes[(f"networking.{edition}", key)] = "2"
-    configure(root / "pumpkin.toml", changes)
-    with (root / "pumpkin.toml").open("a") as config:
+    configure(root / "sculith.toml", changes)
+    with (root / "sculith.toml").open("a") as config:
         config.write('[resource_pack.shared]\nsource="source"\nmapping="mapping.json"\nrequired=true\n')
         if args.plugin:
             config.write('[plugins.overrides.sculith-wasm-audio-probe]\nallow_unsigned=true\n')

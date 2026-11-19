@@ -57,7 +57,7 @@ use pumpkin_protocol::{
     serial::{PacketRead, PacketReadSlice, PacketWrite},
 };
 use tokio::{
-    sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender, error::TryRecvError},
+    sync::mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender},
     sync::{Mutex, RwLock, oneshot},
     task::JoinHandle,
 };
@@ -111,6 +111,37 @@ impl OutgoingPacket {
             completion: Some(completion),
         }
     }
+}
+
+// Network settings, teleports and game actions must not wait for the motion timer.
+fn ordinary_pose(packet: &OutgoingPacket) -> bool {
+    use pumpkin_data::bedrock_packet::{MOVE_ACTOR_DELTA, MOVE_PLAYER};
+    use pumpkin_protocol::codec::var_ulong::VarULong;
+    if packet.completion.is_some() {
+        return false;
+    }
+    let Some((&id, mut data)) = packet.data.split_first() else {
+        return false;
+    };
+    match i32::from(id) {
+        MOVE_PLAYER => {
+            VarULong::read(&mut data).is_ok() && matches!(data.get(24..), Some([0, 0..=1, 0, 0, 0]))
+        }
+        MOVE_ACTOR_DELTA => matches!(data.last_chunk::<5>(), Some([0..=1, 0, 0, 0, 1])),
+        _ => false,
+    }
+}
+
+fn outgoing_frame_len(packets: &[OutgoingPacket]) -> usize {
+    let mut size = 0;
+    for (index, packet) in packets.iter().enumerate() {
+        let len = packet.data.len() + VarUInt::MAX_SIZE.get();
+        if packet.completion.is_some() || len > 8192 - size {
+            return index.max(1);
+        }
+        size += len;
+    }
+    packets.len()
 }
 
 /// Active resource pack staged for chunk streaming to this client.
@@ -291,94 +322,96 @@ impl BedrockClient {
     }
 
     pub fn start_outgoing_packet_task(self: &Arc<Self>) {
-        const MAX_BATCH_SIZE: usize = 64;
-
         let client = self.clone();
         self.spawn_task(async move {
-            let Some(mut packet_receiver) = client.outgoing_packet_queue_recv.lock().await.take()
-            else {
-                return;
-            };
+            let Some(mut receiver) = client.outgoing_packet_queue_recv.lock().await.take() else { return; };
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
-
+            let mut packets = Vec::with_capacity(64);
+            let mut frames = Vec::with_capacity(64);
             loop {
-                let recv_result = tokio::select! {
-                    biased;
-                    res = packet_receiver.recv() => res,
-                    _ = interval.tick() => {
-                        if !client.tick_connection().await {
-                            break;
-                        }
-                        continue;
-                    }
+                let first = tokio::select! {
+                    Some(packet) = receiver.recv() => packet,
                     () = client.close_token.cancelled() => {
-                        packet_receiver.try_recv().ok()
+                        let Ok(packet) = receiver.try_recv() else { break };
+                        packet
+                    }
+                    _ = interval.tick() => {
+                        if !client.tick_connection().await || receiver.is_closed() && receiver.is_empty() { break; }
+                        continue;
                     }
                 };
-
-                let Some(packet) = recv_result else {
-                    break;
-                };
-
-                let mut packet_batch = Vec::with_capacity(MAX_BATCH_SIZE);
-                packet_batch.push(packet);
-
-                while packet_batch.len() < MAX_BATCH_SIZE {
-                    match packet_receiver.try_recv() {
-                        Ok(packet) => packet_batch.push(packet),
-                        Err(TryRecvError::Disconnected | TryRecvError::Empty) => break,
+                packets.push(first);
+                while packets.len() < 64 {
+                    let Ok(next) = receiver.try_recv() else { break };
+                    packets.push(next);
+                }
+                if packets.len() < 64 && packets.iter().all(ordinary_pose) {
+                    let deadline = tokio::time::sleep(std::time::Duration::from_millis(5));
+                    tokio::pin!(deadline);
+                    while packets.len() < 64 {
+                        tokio::select! {
+                            biased;
+                            () = &mut deadline => break,
+                            next = receiver.recv() => {
+                                let Some(next) = next else { break };
+                                let pose = ordinary_pose(&next);
+                                packets.push(next);
+                                if !pose { break; }
+                            }
+                        }
                     }
                 }
-
-                let mut wire_buf = Vec::new();
-                for packet in packet_batch {
-                    let packet_len = packet.data.len();
-                    let Some((packet_id, payload)) = split_raw_packet(&packet.data) else {
-                        warn!(
-                            "Dropping malformed outgoing Bedrock packet for {}",
-                            client.address
-                        );
-                        decrement_pending_bytes(&client.pending_bytes, packet_len);
-                        continue;
-                    };
-                    wire_buf.clear();
-                    let encode_res = client.network_writer.read().await.write_game_packet(
-                        packet_id,
-                        SubClient::Main,
-                        SubClient::Main,
-                        &payload,
-                        &mut wire_buf,
-                    );
-                    if let Err(error) = encode_res {
-                        error!(
-                            "Failed to encode Bedrock packet {packet_id} for {}: {error}",
-                            client.address
-                        );
-                        decrement_pending_bytes(&client.pending_bytes, packet_len);
-                        continue;
+                let mut remaining = packets.as_mut_slice();
+                while !remaining.is_empty() {
+                    let (group, rest) = remaining.split_at_mut(outgoing_frame_len(remaining));
+                    let queued = group.iter().map(|p| p.data.len()).sum();
+                    let sent = client.send_batch(group, &mut frames).await;
+                    decrement_pending_bytes(&client.pending_bytes, queued);
+                    match sent {
+                        Ok(true) => for packet in group {
+                            if let Some(done) = packet.completion.take() { let _ = done.send(()); }
+                        },
+                        Ok(false) => {}
+                        Err(error) => {
+                            decrement_pending_bytes(&client.pending_bytes, rest.iter().map(|p| p.data.len()).sum());
+                            warn!("Failed to send Bedrock batch to {}: {error}", client.address);
+                            client.close().await;
+                            return;
+                        }
                     }
-                    let Some(data) = wire_buf.strip_prefix(&[BEDROCK_GAME_PACKET]) else {
-                        decrement_pending_bytes(&client.pending_bytes, packet_len);
-                        continue;
-                    };
-                    if let Err(error) = client.session.send(Bytes::copy_from_slice(data)).await {
-                        warn!(
-                            "Failed to send NetherNet packet to {}: {error}",
-                            client.address
-                        );
-                        decrement_pending_bytes(&client.pending_bytes, packet_len);
-                        client.close().await;
-                        return;
-                    }
-
-                    decrement_pending_bytes(&client.pending_bytes, packet_len);
-
-                    if let Some(completion) = packet.completion {
-                        let _ = completion.send(());
-                    }
+                    remaining = rest;
                 }
+                packets.clear();
             }
         });
+    }
+
+    async fn send_batch(
+        &self,
+        group: &[OutgoingPacket],
+        frames: &mut Vec<(u16, Bytes)>,
+    ) -> Result<bool, String> {
+        frames.clear();
+        for packet in group {
+            if let Some(frame) = split_raw_packet(&packet.data) {
+                frames.push(frame);
+            } else {
+                warn!(
+                    "Dropping malformed outgoing Bedrock packet for {}",
+                    self.address
+                );
+            }
+        }
+        if frames.is_empty() {
+            return Ok(false);
+        }
+        let writer = *self.network_writer.read().await;
+        let mut encoded = Vec::new();
+        writer
+            .write_game_packets(frames, SubClient::Main, SubClient::Main, &mut encoded)
+            .map_err(|e| e.to_string())?;
+        self.session.send(Bytes::from(encoded).slice(1..)).await?;
+        Ok(true)
     }
 
     async fn tick_connection(&self) -> bool {

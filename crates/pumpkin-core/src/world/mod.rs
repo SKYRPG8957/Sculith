@@ -459,9 +459,7 @@ impl World {
     }
 
     pub fn update_active_chunks(&self) {
-        let sim_dist = self.server.upgrade().map_or(10, |s| {
-            s.advanced_config.networking.java.simulation_distance.get()
-        }) as i32;
+        let server = self.server.upgrade();
         let players = self.players.load();
         let forced_chunks = self
             .forced_chunks
@@ -493,7 +491,9 @@ impl World {
                 id,
                 ActivePlayerArea {
                     center: player.get_entity().chunk_pos.load(),
-                    simulation_distance: sim_dist,
+                    simulation_distance: server.as_ref().map_or(10, |s| {
+                        i32::from(chunker::simulation_distance(player, &s.advanced_config))
+                    }),
                 },
                 Arc::make_mut(&mut active_chunks),
                 &mut newly_active,
@@ -1073,16 +1073,19 @@ impl World {
         packet: &P,
         recipients: impl Iterator<Item = &'a Arc<BedrockClient>>,
     ) {
-        for recipient in recipients {
-            match recipient.serialize_packet(packet) {
-                Ok(packet_data) => recipient.try_enqueue_packet(packet_data),
-                Err(err) => {
-                    error!(
-                        "Failed to serialize bedrock packet {}: {}",
-                        std::any::type_name::<P>(),
-                        err
-                    );
+        let mut recipients = recipients.peekable();
+        let Some(first) = recipients.peek() else {
+            return;
+        };
+        match first.serialize_packet(packet) {
+            Ok(bytes) => {
+                // Translation and packet events still run separately for each recipient.
+                for recipient in recipients {
+                    recipient.try_enqueue_packet(bytes.clone());
                 }
+            }
+            Err(error) => {
+                error!(%error, packet = std::any::type_name::<P>(), "Could not serialize Bedrock broadcast")
             }
         }
     }

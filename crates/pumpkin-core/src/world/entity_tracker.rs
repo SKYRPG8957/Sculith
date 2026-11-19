@@ -75,13 +75,44 @@ struct PlayerViewSnapshot<'a> {
     view_distance: i32,
 }
 
+#[derive(Default)]
+struct Viewers {
+    players: FxHashMap<Uuid, Arc<Player>>,
+    snapshot: std::sync::OnceLock<Arc<[Arc<Player>]>>,
+}
+
+impl Viewers {
+    fn insert(&mut self, id: Uuid, player: Arc<Player>) -> bool {
+        if let std::collections::hash_map::Entry::Vacant(slot) = self.players.entry(id) {
+            slot.insert(player);
+            self.snapshot.take();
+            return true;
+        }
+        false
+    }
+
+    fn remove(&mut self, id: &Uuid) -> bool {
+        if self.players.remove(id).is_some() {
+            self.snapshot.take();
+            return true;
+        }
+        false
+    }
+
+    fn snapshot(&self) -> Arc<[Arc<Player>]> {
+        self.snapshot
+            .get_or_init(|| self.players.values().cloned().collect())
+            .clone()
+    }
+}
+
 pub struct TrackedEntity {
     pub entity: Arc<dyn EntityBase>,
     pub entity_id: i32,
     pub tracking_range: u32,
     pub update_interval: u32,
     pub track_deltas: bool,
-    seen_by: RwLock<FxHashMap<Uuid, Arc<Player>>>,
+    seen_by: RwLock<Viewers>,
     /// Bedrock players in `seen_by`.
     bedrock_watchers: AtomicU32,
     pub last_section_pos: AtomicCell<Vector3<i32>>,
@@ -150,6 +181,7 @@ impl TrackedEntity {
             .seen_by
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .players
             .is_empty()
     }
 
@@ -158,6 +190,7 @@ impl TrackedEntity {
         self.seen_by
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .players
             .contains_key(uuid)
     }
 
@@ -483,6 +516,7 @@ impl TrackedEntity {
                     .seen_by
                     .read()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .players
                     .contains_key(&player.gameprofile.id)
             {
                 return;
@@ -499,6 +533,7 @@ impl TrackedEntity {
                         .seen_by
                         .read()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .players
                         .contains_key(&player.gameprofile.id)
                 {
                     return;
@@ -507,8 +542,7 @@ impl TrackedEntity {
                     .seen_by
                     .write()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(player.gameprofile.id, player.clone())
-                    .is_none();
+                    .insert(player.gameprofile.id, player.clone());
                 if inserted {
                     if matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
                         self.bedrock_watchers.fetch_add(1, Relaxed);
@@ -939,7 +973,7 @@ impl TrackedEntity {
                 .seen_by
                 .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::take(&mut *guard)
+            std::mem::take(&mut *guard).players
         };
         if seen_by.is_empty() {
             return;
@@ -965,6 +999,7 @@ impl TrackedEntity {
             .seen_by
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .players
             .contains_key(&player.gameprofile.id)
         {
             return;
@@ -973,8 +1008,7 @@ impl TrackedEntity {
             .seen_by
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&player.gameprofile.id)
-            .is_some();
+            .remove(&player.gameprofile.id);
         if removed {
             if matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
                 self.bedrock_watchers.fetch_sub(1, Relaxed);
@@ -989,6 +1023,7 @@ impl TrackedEntity {
             .seen_by
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .players
             .contains_key(&player.gameprofile.id)
         {
             return;
@@ -997,20 +1032,17 @@ impl TrackedEntity {
             .seen_by
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&player.gameprofile.id)
-            .is_some();
+            .remove(&player.gameprofile.id);
         if removed && matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
             self.bedrock_watchers.fetch_sub(1, Relaxed);
         }
     }
 
-    fn viewers(&self) -> Vec<Arc<Player>> {
+    fn viewers(&self) -> Arc<[Arc<Player>]> {
         self.seen_by
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .values()
-            .cloned()
-            .collect()
+            .snapshot()
     }
 
     pub fn send_to_tracking_players<P: ClientPacket + Sync>(&self, packet: &P, _world: &World) {

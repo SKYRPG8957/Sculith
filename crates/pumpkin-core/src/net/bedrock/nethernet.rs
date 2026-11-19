@@ -1,3 +1,4 @@
+mod direct_udp;
 pub mod discovery;
 mod endpoint;
 mod ice_router;

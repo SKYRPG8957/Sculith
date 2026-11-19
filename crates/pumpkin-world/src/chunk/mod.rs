@@ -97,6 +97,44 @@ pub struct ChunkEntityData {
     pub dirty: AtomicBool,
 }
 
+pub type BedrockSectionBlobs = std::sync::Arc<[(u64, bytes::Bytes)]>;
+
+/// Palettes of a live chunk plus their last Bedrock wire representation.
+/// Taking a palette write lock changes its generation before the lock is released.
+pub struct SectionPalettes<P> {
+    palettes: RwLock<Box<[P]>>,
+    revision: AtomicU64,
+    wire: std::sync::Mutex<Option<(u64, BedrockSectionBlobs)>>,
+}
+
+impl<P> SectionPalettes<P> {
+    pub fn new(palettes: Box<[P]>) -> Self {
+        Self { palettes: RwLock::new(palettes), revision: AtomicU64::new(0), wire: Default::default() }
+    }
+
+    pub fn read(&self) -> std::sync::LockResult<std::sync::RwLockReadGuard<'_, Box<[P]>>> {
+        self.palettes.read()
+    }
+
+    pub fn write(&self) -> std::sync::LockResult<std::sync::RwLockWriteGuard<'_, Box<[P]>>> {
+        let guard = self.palettes.write();
+        self.revision.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        guard
+    }
+
+    pub fn bedrock_blobs(&self, encode: impl FnOnce(&[P]) -> std::io::Result<Vec<(u64, bytes::Bytes)>>) -> std::io::Result<BedrockSectionBlobs> {
+        let palettes = self.read().map_err(|_| std::io::Error::other("palette lock poisoned"))?;
+        let revision = self.revision.load(std::sync::atomic::Ordering::Relaxed);
+        let mut cache = self.wire.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((saved, bytes)) = cache.as_ref() && *saved == revision {
+            return Ok(bytes.clone());
+        }
+        let bytes: BedrockSectionBlobs = encode(&palettes)?.into();
+        *cache = Some((revision, bytes.clone()));
+        Ok(bytes)
+    }
+}
+
 /// Represents pure block data for a chunk.
 /// Subchunks are vertical portions of a chunk. They are 16 blocks tall.
 /// There are currently 24 subchunks per chunk.
@@ -105,10 +143,10 @@ pub struct ChunkEntityData {
 /// - Subchunks: 24 separate subchunks are stored.
 pub struct ChunkSections {
     pub count: usize,
-    pub block_sections: RwLock<Box<[BlockPalette]>>,
+    pub block_sections: SectionPalettes<BlockPalette>,
     pub random_tick_sections: RwLock<Option<Box<[RandomTickSectionCache]>>>,
     pub randomly_ticking_mask: std::sync::atomic::AtomicU32,
-    pub biome_sections: RwLock<Box<[BiomePalette]>>,
+    pub biome_sections: SectionPalettes<BiomePalette>,
     pub min_y: i32,
 }
 
@@ -345,10 +383,10 @@ impl ChunkSections {
 
         Self {
             count: num_sections,
-            block_sections: RwLock::new(block_sections),
+            block_sections: SectionPalettes::new(block_sections),
             random_tick_sections: RwLock::new(random_tick_sections),
             randomly_ticking_mask: std::sync::atomic::AtomicU32::new(randomly_ticking_mask),
-            biome_sections: RwLock::new(biome_sections),
+            biome_sections: SectionPalettes::new(biome_sections),
             min_y,
         }
     }
@@ -370,10 +408,10 @@ impl ChunkSections {
 
         Self {
             count,
-            block_sections: RwLock::new(block_sections),
+            block_sections: SectionPalettes::new(block_sections),
             random_tick_sections: RwLock::new(random_tick_sections),
             randomly_ticking_mask: std::sync::atomic::AtomicU32::new(randomly_ticking_mask),
-            biome_sections: RwLock::new(biome_sections),
+            biome_sections: SectionPalettes::new(biome_sections),
             min_y,
         }
     }

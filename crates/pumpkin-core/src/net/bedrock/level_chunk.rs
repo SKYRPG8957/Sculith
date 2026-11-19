@@ -57,6 +57,10 @@ impl pumpkin_protocol::packet::Packet for CLevelChunk<'_> {
 pub type ChunkBlob = (u64, Bytes);
 pub type EncodedChunk = (Vec<u8>, Vec<ChunkBlob>);
 
+fn blob(data: Vec<u8>) -> ChunkBlob {
+    (xxh64(&data, 0), Bytes::from(data.into_boxed_slice()))
+}
+
 fn encode_block_actors(block_actors: &[NbtCompound]) -> Result<Vec<u8>, Error> {
     let mut encoded = Vec::new();
     for block_actor in block_actors {
@@ -78,26 +82,10 @@ impl CLevelChunk<'_> {
         VarInt(chunk.z).write(&mut writer)?;
 
         VarInt(dimension).write(&mut writer)?;
-        let block_sections = chunk
-            .section
-            .block_sections
-            .read()
-            .map_err(|_| Error::other("block_sections read lock poisoned"))?;
-        // all-air sub-chunks above the highest non-air one are not sent.
-        let sub_chunk_count = block_sections
-            .iter()
-            .rposition(|section| !section.has_only_air())
-            .map_or(0, |index| index + 1);
-        VarUInt(sub_chunk_count as u32).write(&mut writer)?;
-        // Optional sub-chunk request limit. Pumpkin sends complete chunks otherwise.
-        false.write(&mut writer)?;
-        cache_enabled.write(&mut writer)?;
-
-        let mut blobs = Vec::new();
-        let min_y_section = (chunk.section.min_y >> 4) as i8;
-
-        let mut subchunk_bytes_list = Vec::with_capacity(sub_chunk_count);
-
+        let block_blobs = chunk.section.block_sections.bedrock_blobs(|block_sections| {
+            let sub_chunk_count = block_sections.iter().rposition(|section| !section.has_only_air()).map_or(0, |i| i+1);
+            let mut blobs = Vec::with_capacity(sub_chunk_count);
+            let min_y_section = (chunk.section.min_y >> 4) as i8;
         for (i, block_palette) in block_sections.iter().take(sub_chunk_count).enumerate() {
             let mut subchunk_buf = Vec::new();
             // Version 9: [version:byte][num_storages:byte][sub_chunk_index:byte]
@@ -111,15 +99,11 @@ impl CLevelChunk<'_> {
                 write_block_storage(&mut subchunk_buf, water_layer)?;
             }
 
-            subchunk_bytes_list.push(subchunk_buf);
-        }
-
-        let biome_sections = chunk
-            .section
-            .biome_sections
-            .read()
-            .map_err(|_| Error::other("biome_sections read lock poisoned"))?;
-
+            blobs.push(blob(subchunk_buf));
+            }
+            Ok(blobs)
+        })?;
+        let biome_blobs = chunk.section.biome_sections.bedrock_blobs(|biome_sections| {
         let mut biome_buf = Vec::new();
         for biome_palette in biome_sections.iter() {
             let network_repr = biome_palette.convert_be_network();
@@ -144,49 +128,29 @@ impl CLevelChunk<'_> {
             }
         }
 
-        let block_actor_bytes = encode_block_actors(block_actors)?;
+            Ok(vec![blob(biome_buf)])
+        })?;
+        VarUInt(block_blobs.len() as u32).write(&mut writer)?;
+        false.write(&mut writer)?;
+        cache_enabled.write(&mut writer)?;
 
+        // Block entities can change independently of either palette.
+        let actors = encode_block_actors(block_actors)?;
+        let all_blobs = block_blobs.iter().chain(biome_blobs.iter());
+        let mut blobs = Vec::new();
         if cache_enabled {
-            // `Bytes::from` keeps the whole allocation, so drop the growth slack first.
-            for mut subchunk_buf in subchunk_bytes_list {
-                subchunk_buf.shrink_to_fit();
-                let hash = xxh64(&subchunk_buf, 0);
-                blobs.push((hash, Bytes::from(subchunk_buf)));
-            }
-            biome_buf.shrink_to_fit();
-            let biome_hash = xxh64(&biome_buf, 0);
-            blobs.push((biome_hash, Bytes::from(biome_buf)));
-
+            blobs.extend(all_blobs.cloned());
             VarUInt(blobs.len() as u32).write(&mut writer)?;
-            for (hash, _) in &blobs {
-                writer.write_all(&hash.to_le_bytes())?;
-            }
-
-            // Palette data is cached, but the per-chunk border and block actor data is not.
-            VarUInt(u32::try_from(1 + block_actor_bytes.len()).map_err(|_| {
-                Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Bedrock block actor payload exceeds the packet size limit",
-                )
-            })?)
-            .write(&mut writer)?;
-            writer.write_all(&[0])?;
-            writer.write_all(&block_actor_bytes)?;
+            for (hash, _) in &blobs { writer.write_all(&hash.to_le_bytes())?; }
+            VarUInt(u32::try_from(actors.len()+1).map_err(|_| Error::other("oversized block actors"))?).write(&mut writer)?;
         } else {
             VarUInt(0).write(&mut writer)?;
-
-            let mut chunk_data = Vec::new();
-            for subchunk_buf in subchunk_bytes_list {
-                chunk_data.write_all(&subchunk_buf)?;
-            }
-            chunk_data.write_all(&biome_buf)?;
-            chunk_data.write_all(&[0])?;
-            chunk_data.write_all(&block_actor_bytes)?;
-
-            VarUInt(chunk_data.len() as u32).write(&mut writer)?;
-            writer.write_all(&chunk_data)?;
+            let size = all_blobs.clone().map(|(_, bytes)| bytes.len()).sum::<usize>() + 1 + actors.len();
+            VarUInt(u32::try_from(size).map_err(|_| Error::other("oversized Bedrock chunk"))?).write(&mut writer)?;
+            for (_, bytes) in all_blobs { writer.write_all(bytes)?; }
         }
-
+        writer.write_all(&[0])?;
+        writer.write_all(&actors)?;
         // client_biome_update: false
         false.write(&mut writer)?;
 

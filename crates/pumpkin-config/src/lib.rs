@@ -91,7 +91,7 @@ pub struct PumpkinConfig {
 
 impl LoadConfiguration for PumpkinConfig {
     fn get_path() -> &'static Path {
-        Path::new("pumpkin.toml")
+        Path::new("sculith.toml")
     }
 
     fn validate(&self) {
@@ -296,13 +296,19 @@ pub trait LoadConfiguration {
 
         let path = config_dir.join(Self::get_path());
 
-        let config = if path.exists() {
-            let file_content = match fs::read_to_string(&path) {
+        let legacy = config_dir.join("pumpkin.toml");
+        let input = if path.exists() || !legacy.is_file() {
+            &path
+        } else {
+            &legacy
+        };
+        let config = if input.is_file() {
+            let file_content = match fs::read_to_string(input) {
                 Ok(content) => content,
                 Err(err) => {
                     error!(
                         "Couldn't read configuration file at {}: {err}",
-                        path.display()
+                        input.display()
                     );
                     return Self::default();
                 }
@@ -313,7 +319,7 @@ pub trait LoadConfiguration {
                 Err(err) => {
                     error!(
                         "Couldn't parse TOML at {}. Reason: {err}. Using default config.",
-                        path.display()
+                        input.display()
                     );
                     return Self::default();
                 }
@@ -321,7 +327,7 @@ pub trait LoadConfiguration {
 
             let (merged_config, changed) = Self::merge_with_default_toml(parsed_toml_value);
 
-            if changed {
+            if changed || input != &path {
                 let file_name = path.file_name().map_or_else(
                     || path.display().to_string(),
                     |f| f.to_string_lossy().into_owned(),

@@ -688,7 +688,7 @@ impl Default for GameRuleRegistry {
             max_block_modifications: 32768i64,
             max_command_forks: 65536i64,
             max_command_sequence_length: 65536i64,
-            max_entity_cramming: 24i64,
+            max_entity_cramming: 0i64,
             max_minecart_speed: 8i64,
             max_snow_accumulation_height: 1i64,
             mob_drops: true,

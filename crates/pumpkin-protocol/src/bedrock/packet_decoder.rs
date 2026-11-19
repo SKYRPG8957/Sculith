@@ -62,7 +62,8 @@ impl BedrockBatchDecoder {
         let full_packet_payload = &full_packet[1..];
 
         // If compression is NOT enabled yet, the payload starts at index 0 of full_packet_payload
-        if self.compression.is_none() {
+        if self.compression.is_none() || (!self.prefixed_compression && self.compression == Some(0))
+        {
             let payload = full_packet_payload;
             if payload.len() > MAX_PACKET_DATA_SIZE {
                 return Err(PacketDecodeError::TooLong);

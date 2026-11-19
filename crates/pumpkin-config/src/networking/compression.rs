@@ -13,6 +13,20 @@ pub struct CompressionConfig {
     pub info: CompressionInfo,
 }
 
+impl CompressionConfig {
+    /// Bedrock advertises an unsigned 16-bit threshold; zero disables compression.
+    pub fn bedrock_settings(&self) -> CompressionInfo {
+        CompressionInfo {
+            threshold: if self.enabled {
+                self.info.threshold.min(u32::from(u16::MAX))
+            } else {
+                0
+            },
+            level: self.info.level,
+        }
+    }
+}
+
 impl Default for CompressionConfig {
     fn default() -> Self {
         Self {
@@ -42,5 +56,18 @@ impl Default for CompressionInfo {
             threshold: 256,
             level: 4,
         }
+    }
+}
+
+#[cfg(test)]
+mod bedrock_tests {
+    use super::*;
+    #[test]
+    fn wire_threshold_and_encoder_setting_agree() {
+        let mut config = CompressionConfig::default();
+        config.info.threshold = 65_536;
+        assert_eq!(config.bedrock_settings().threshold, 65_535);
+        config.enabled = false;
+        assert_eq!(config.bedrock_settings().threshold, 0);
     }
 }

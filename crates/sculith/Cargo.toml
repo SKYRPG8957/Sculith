@@ -1,5 +1,5 @@
 [package]
-name = "pumpkin"
+name = "sculith"
 autobins = false
 version.workspace = true
 description = "Empowering everyone to host fast and efficient Minecraft servers."
