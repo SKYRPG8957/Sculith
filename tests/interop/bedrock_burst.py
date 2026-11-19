@@ -305,6 +305,8 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             report["compression_level"] = args.compression_level
             cpu_max=Path("/sys/fs/cgroup/cpu.max")
             if os.name == "posix" and cpu_max.is_file(): report["cohost_cpu_max"]=cpu_max.read_text().strip()
+            if hasattr(os, "sched_getaffinity"):
+                report["cohost_cpu_affinity"] = sorted(os.sched_getaffinity(0))
             report["clients_and_server_on_same_host"]=True
             report["world_preparation"]="World copy with one preparation client disconnected before the simultaneous start."
             report["arena_centre"] = [cx, cy, cz]
