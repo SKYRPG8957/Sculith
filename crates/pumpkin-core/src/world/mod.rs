@@ -293,6 +293,7 @@ pub struct World {
     pub custom_data: std::sync::Mutex<NbtCompound>,
     /// Persistent custom data for block entities at specific positions
     pub custom_block_entity_data: DashMap<BlockPos, NbtCompound>,
+    pub(crate) bedrock_chunk_frames: crate::net::bedrock::level_chunk::InlineChunkCache,
     pub(crate) encoded_chunk_cache: DashMap<Vector2<i32>, crate::net::chunk_sender::EncodedChunk>,
     /// Entity tracker responsible for tracking entity visibility and sending delta/status packets to watchers.
     pub entity_tracker: entity_tracker::EntityTracker,
@@ -454,6 +455,7 @@ impl World {
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
             encoded_chunk_cache: DashMap::new(),
+            bedrock_chunk_frames: Default::default(),
             entity_tracker: entity_tracker::EntityTracker::new(),
         }
     }
@@ -7191,6 +7193,18 @@ impl World {
     ) -> Option<NbtCompound> {
         self.get_block_entity(&position)?
             .bedrock_block_actor_data(state_id)
+    }
+
+    /// Block actor tags can change without advancing either terrain palette generation.
+    pub(crate) fn chunk_has_block_entities(&self, chunk: &ChunkData) -> bool {
+        self.block_entities
+            .get(&Vector2::new(chunk.x, chunk.z))
+            .is_some_and(|entries| !entries.is_empty())
+            || !chunk
+                .pending_block_entities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_empty()
     }
 
     /// Builds Bedrock block actor tags that are not represented by Java block states alone.

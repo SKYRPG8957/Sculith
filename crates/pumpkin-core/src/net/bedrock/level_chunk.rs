@@ -1,5 +1,9 @@
 use bytes::Bytes;
-use std::io::{Error, Write};
+use std::{
+    hash::BuildHasher,
+    io::{Error, Write},
+    sync::{Arc, Mutex, OnceLock, Weak},
+};
 use xxhash_rust::xxh64::xxh64;
 
 use pumpkin_nbt::{Nbt, compound::NbtCompound};
@@ -56,6 +60,63 @@ impl pumpkin_protocol::packet::Packet for CLevelChunk<'_> {
 
 pub type ChunkBlob = (u64, Bytes);
 pub type EncodedChunk = (Vec<u8>, Vec<ChunkBlob>);
+
+/// A world keeps at most 8 MiB of small inline packets. Slots never pin loaded chunks.
+#[derive(Default)]
+pub(crate) struct InlineChunkCache {
+    slots: OnceLock<Box<[Mutex<Option<InlineFrame>>]>>,
+}
+
+struct InlineFrame {
+    chunk: Weak<ChunkData>,
+    dimension: i32,
+    revision: (u64, u64),
+    bytes: Bytes,
+}
+
+impl InlineChunkCache {
+    const SLOTS: usize = 512;
+    const MAX_FRAME: usize = 16 * 1024;
+
+    fn index(chunk: &ChunkData) -> usize {
+        rustc_hash::FxBuildHasher.hash_one((chunk.x, chunk.z)) as usize % Self::SLOTS
+    }
+
+    pub(super) fn get(&self, chunk: &Arc<ChunkData>, dimension: i32) -> Option<Bytes> {
+        let slot = self.slots.get()?[Self::index(chunk)]
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let frame = slot.as_ref()?;
+        (frame.chunk.as_ptr() == Arc::as_ptr(chunk)
+            && frame.dimension == dimension
+            && frame.revision == chunk.section.terrain_revision())
+        .then(|| frame.bytes.clone())
+    }
+
+    pub(super) fn insert(
+        &self,
+        chunk: &Arc<ChunkData>,
+        dimension: i32,
+        revision: (u64, u64),
+        bytes: &Bytes,
+    ) {
+        if bytes.len() > Self::MAX_FRAME || chunk.section.terrain_revision() != revision {
+            return;
+        }
+        let slots = self
+            .slots
+            .get_or_init(|| (0..Self::SLOTS).map(|_| Mutex::default()).collect());
+        let mut slot = slots[Self::index(chunk)]
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *slot = Some(InlineFrame {
+            chunk: Arc::downgrade(chunk),
+            dimension,
+            revision,
+            bytes: bytes.clone(),
+        });
+    }
+}
 
 fn blob(data: Vec<u8>) -> ChunkBlob {
     (xxh64(&data, 0), Bytes::from(data.into_boxed_slice()))
@@ -241,6 +302,43 @@ mod tests {
 
     fn empty_chunk() -> ChunkData {
         ChunkData::empty(0, 0)
+    }
+
+    #[test]
+    fn inline_frame_tracks_both_palettes_and_the_loaded_chunk() {
+        use crate::net::bedrock::frame_raw_packet;
+        use pumpkin_protocol::packet::Packet;
+        use std::sync::Arc;
+
+        let cache = super::InlineChunkCache::default();
+        let chunk = Arc::new(empty_chunk());
+        let make_frame = || {
+            let (bytes, _) = CLevelChunk::encode_chunk(&chunk, 0, false, &[]).unwrap();
+            frame_raw_packet(CLevelChunk::PACKET_ID, &bytes).unwrap()
+        };
+        let frame = make_frame();
+        let revision = chunk.section.terrain_revision();
+        cache.insert(&chunk, 0, revision, &frame);
+        assert_eq!(cache.get(&chunk, 0).unwrap().as_ptr(), frame.as_ptr());
+        assert!(cache.get(&chunk, 1).is_none());
+        assert!(cache.get(&Arc::new(empty_chunk()), 0).is_none());
+
+        chunk.section.set_block_absolute_y(
+            1,
+            chunk.section.min_y,
+            1,
+            Block::STONE.default_state.id,
+        );
+        assert!(cache.get(&chunk, 0).is_none());
+        cache.insert(&chunk, 0, revision, &frame);
+        assert!(cache.get(&chunk, 0).is_none());
+
+        let revised = make_frame();
+        assert_ne!(revised, frame);
+        cache.insert(&chunk, 0, chunk.section.terrain_revision(), &revised);
+        chunk.section.biome_sections.write().unwrap()[0].set(0, 0, 0, 9);
+        assert!(cache.get(&chunk, 0).is_none());
+        assert_ne!(make_frame(), revised);
     }
 
     #[test]

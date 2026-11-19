@@ -600,63 +600,76 @@ impl BedrockClient {
             return outcome;
         };
 
-        let valid_chunks = ChunkSend::filter(&server, &player.world(), chunks).await;
-        outcome.record_cancelled(chunks, &valid_chunks);
+        let world = player.world();
+        let valid_chunks = if server.plugin_manager.has_handlers::<ChunkSend>() {
+            let valid = ChunkSend::filter(&server, &world, chunks).await;
+            outcome.record_cancelled(chunks, &valid);
+            std::borrow::Cow::Owned(valid)
+        } else {
+            std::borrow::Cow::Borrowed(chunks)
+        };
         if valid_chunks.is_empty() {
             return outcome;
         }
-        let valid_positions: Vec<_> = valid_chunks
-            .iter()
-            .map(|chunk| Vector2::new(chunk.x, chunk.z))
-            .collect();
-
-        let bedrock_dimension =
-            if player.world().dimension == pumpkin_data::dimension::Dimension::THE_NETHER {
-                1
-            } else if player.world().dimension == pumpkin_data::dimension::Dimension::THE_END {
-                2
-            } else {
-                0
-            };
-
+        let bedrock_dimension = if world.dimension == pumpkin_data::dimension::Dimension::THE_NETHER
+        {
+            1
+        } else if world.dimension == pumpkin_data::dimension::Dimension::THE_END {
+            2
+        } else {
+            0
+        };
         let cache_enabled = server.advanced_config.networking.bedrock.chunk_caching
             && self.client_cache_supported.load(Ordering::Relaxed);
 
-        let world = player.world();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        server.compute_pool.spawn(move || {
-            let mut encoded_payloads = Vec::with_capacity(valid_chunks.len());
-            let mut new_blobs = Vec::new();
-            for chunk in valid_chunks {
-                let block_actors = world.bedrock_chunk_block_actors(&chunk);
-                match CLevelChunk::encode_chunk(
-                    &chunk,
-                    bedrock_dimension,
-                    cache_enabled,
-                    &block_actors,
-                ) {
-                    Ok((payload, blobs)) => {
-                        encoded_payloads.push((Vector2::new(chunk.x, chunk.z), Some(payload)));
-                        new_blobs.extend(blobs);
-                    }
-                    Err(e) => {
-                        error!("Failed to serialize Bedrock chunk: {:?}", e);
-                        encoded_payloads.push((Vector2::new(chunk.x, chunk.z), None));
+        let mut encoded_payloads = Vec::with_capacity(valid_chunks.len());
+        let mut misses = Vec::new();
+        for chunk in valid_chunks.iter() {
+            let framed = if cache_enabled {
+                None
+            } else {
+                world
+                    .bedrock_chunk_frames
+                    .get(chunk, bedrock_dimension)
+                    .filter(|_| !world.chunk_has_block_entities(chunk))
+            };
+            if framed.is_none() {
+                misses.push((encoded_payloads.len(), chunk.clone()));
+            }
+            encoded_payloads.push((Vector2::new(chunk.x, chunk.z), framed));
+        }
+
+        let mut new_blobs = Vec::new();
+        if !misses.is_empty() {
+            let (tx, rx) = oneshot::channel();
+            server.compute_pool.spawn(move || {
+                let mut results = Vec::with_capacity(misses.len());
+                let mut blobs = Vec::new();
+                for (index, chunk) in misses {
+                    let revision = chunk.section.terrain_revision();
+                    let actors = world.bedrock_chunk_block_actors(&chunk);
+                    match CLevelChunk::encode_chunk(&chunk, bedrock_dimension, cache_enabled, &actors) {
+                        Ok((payload, chunk_blobs)) => {
+                            if let Some(frame) = frame_raw_packet(CLevelChunk::PACKET_ID, &payload) {
+                                if !cache_enabled && actors.is_empty() {
+                                    world.bedrock_chunk_frames.insert(&chunk, bedrock_dimension, revision, &frame);
+                                }
+                                results.push((index, frame));
+                                blobs.extend(chunk_blobs);
+                            }
+                        }
+                        Err(error) => error!(%error, x=chunk.x, z=chunk.z, "Failed to serialize Bedrock chunk"),
                     }
                 }
+                let _ = tx.send((results, blobs));
+            });
+            if let Ok((results, blobs)) = rx.await {
+                for (index, frame) in results {
+                    encoded_payloads[index].1 = Some(frame);
+                }
+                new_blobs = blobs;
             }
-            let _ = tx.send((encoded_payloads, new_blobs));
-        });
-
-        let Ok((encoded_payloads, new_blobs)) = rx.await else {
-            // Encoding task died -> counts as an encode failure for every chunk
-            outcome.failed.extend(
-                valid_positions
-                    .into_iter()
-                    .map(|pos| (pos, DeliveryFailure::Unencodable)),
-            );
-            return outcome;
-        };
+        }
 
         let translated_chunks = self.translate_chunk_payloads(encoded_payloads).await;
 
@@ -670,9 +683,9 @@ impl BedrockClient {
         });
         if epoch.is_some_and(|epoch| player.chunk_send_epoch.load(Ordering::Relaxed) != epoch) {
             outcome.failed.extend(
-                valid_positions
+                translated_chunks
                     .into_iter()
-                    .map(|pos| (pos, DeliveryFailure::Deferred)),
+                    .map(|(pos, _)| (pos, DeliveryFailure::Deferred)),
             );
             return outcome;
         }
@@ -693,12 +706,11 @@ impl BedrockClient {
 
     async fn translate_chunk_payloads(
         &self,
-        encoded_payloads: Vec<(Vector2<i32>, Option<Vec<u8>>)>,
+        encoded_payloads: Vec<(Vector2<i32>, Option<Bytes>)>,
     ) -> Vec<(Vector2<i32>, Option<TranslatedPacket>)> {
         let mut translated_chunks = Vec::with_capacity(encoded_payloads.len());
         for (pos, payload) in encoded_payloads {
-            let Some(framed) = payload.and_then(|p| frame_raw_packet(CLevelChunk::PACKET_ID, &p))
-            else {
+            let Some(framed) = payload else {
                 translated_chunks.push((pos, None));
                 continue;
             };

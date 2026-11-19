@@ -124,7 +124,7 @@ impl<P> SectionPalettes<P> {
     pub fn write(&self) -> std::sync::LockResult<std::sync::RwLockWriteGuard<'_, Box<[P]>>> {
         let guard = self.palettes.write();
         self.revision
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
         guard
     }
 
@@ -180,6 +180,16 @@ impl RandomTickSectionCache {
 }
 
 impl ChunkSections {
+    /// Generations of the two palettes that contribute to a Bedrock terrain packet.
+    #[must_use]
+    pub fn terrain_revision(&self) -> (u64, u64) {
+        use std::sync::atomic::Ordering::Acquire;
+        (
+            self.block_sections.revision.load(Acquire),
+            self.biome_sections.revision.load(Acquire),
+        )
+    }
+
     #[cfg(test)]
     #[must_use]
     pub fn dump_blocks(&self) -> Vec<BlockStateId> {
