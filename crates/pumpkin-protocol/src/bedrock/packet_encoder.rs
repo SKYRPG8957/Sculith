@@ -88,7 +88,7 @@ impl BedrockBatchEncoder {
             for (id, data) in packets {
                 let head = header(*id);
                 let bytes = data.as_ref();
-                let mut field = [0_u8; 10];
+                let mut field = [0u8; 10];
                 let mut dst = &mut field[..];
                 let len = VarUInt((head.written_size() + bytes.len()) as u32);
                 dst.write_var_uint(&len).map_err(Error::other)?;

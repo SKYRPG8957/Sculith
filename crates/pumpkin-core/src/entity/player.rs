@@ -3378,7 +3378,7 @@ impl Player {
             // same near-first chunks out to their full requested radius.
             let max_chunks = match self.client.as_ref() {
                 ClientPlatform::Bedrock(_) => {
-                    256_usize.div_ceil(world.players.load().len().max(1)).max(1)
+                    256usize.div_ceil(world.players.load().len().max(1)).max(1)
                 }
                 ClientPlatform::Java(_) => usize::MAX,
             };
