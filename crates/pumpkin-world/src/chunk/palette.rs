@@ -694,6 +694,16 @@ impl BiomePalette {
                     .enumerate()
                     .map(|(index, key)| (*key, index))
                     .collect();
+                // Biomes use four cells per axis. Resolve the palette lookup once
+                // per biome cell before expanding each cell to the block grid.
+                let indices: [[[u32; 4]; 4]; 4] = std::array::from_fn(|x| {
+                    std::array::from_fn(|y| {
+                        std::array::from_fn(|z| {
+                            let key = data.get(x, z, y);
+                            key_to_index_map.get(&key).copied().unwrap_or(0) as u32
+                        })
+                    })
+                });
 
                 let biomes_per_word = 32 / bits_per_entry;
                 let volume: usize = 4096;
@@ -706,12 +716,11 @@ impl BiomePalette {
                 for x in 0..16 {
                     for y in 0..16 {
                         for z in 0..16 {
-                            let key = self.get(x / 4, z / 4, y / 4);
-                            let key_index = key_to_index_map.get(&key).unwrap_or(&0);
-                            debug_assert!((1 << bits_per_entry) > *key_index);
+                            let key_index = indices[x / 4][y / 4][z / 4];
+                            debug_assert!((1 << bits_per_entry) > key_index);
 
-                            current_word |= (*key_index as u32)
-                                << (bits_per_entry as u32 * current_index_in_word);
+                            current_word |=
+                                key_index << (bits_per_entry as u32 * current_index_in_word);
                             current_index_in_word += 1;
 
                             if current_index_in_word == biomes_per_word as u32 {
@@ -800,18 +809,24 @@ impl BlockPalette {
                     return None;
                 }
 
-                let key_to_index = data
-                    .palette
-                    .iter()
-                    .enumerate()
-                    .map(|(index, &id)| (id, index))
-                    .collect::<HashMap<_, _>>();
+                let key_to_index = match &data.storage {
+                    PaletteStorage::Indexed(_) => HashMap::new(),
+                    PaletteStorage::Dense(_) => data
+                        .palette
+                        .iter()
+                        .enumerate()
+                        .map(|(index, &id)| (id, index))
+                        .collect(),
+                };
                 let mut packed_data = vec![0u32; Self::VOLUME / u32::BITS as usize];
                 let mut output_index = 0;
                 for x in 0..Self::SIZE {
                     for y in 0..Self::SIZE {
                         for z in 0..Self::SIZE {
-                            let palette_index = key_to_index[&data.get(x, z, y)];
+                            let palette_index = match &data.storage {
+                                PaletteStorage::Indexed(indices) => indices[z][y][x] as usize,
+                                PaletteStorage::Dense(cube) => key_to_index[&cube[z][y][x]],
+                            };
                             if water_states[palette_index] {
                                 packed_data[output_index / u32::BITS as usize] |=
                                     1 << (output_index % u32::BITS as usize);
@@ -903,6 +918,16 @@ impl BlockPalette {
                     .enumerate()
                     .map(|(index, key)| (*key, index))
                     .collect();
+                // Loaded palettes can repeat values. Preserve the existing last
+                // matching index when translating their stored indices.
+                let remapped_indices = match &data.storage {
+                    PaletteStorage::Indexed(_) => data
+                        .palette
+                        .iter()
+                        .map(|key| key_to_index_map[key])
+                        .collect::<Vec<_>>(),
+                    PaletteStorage::Dense(_) => Vec::new(),
+                };
 
                 let blocks_per_word = 32 / bits_per_entry;
                 let expected_word_count = Self::VOLUME.div_ceil(blocks_per_word as usize);
@@ -914,13 +939,18 @@ impl BlockPalette {
                 for x in 0..16 {
                     for y in 0..16 {
                         for z in 0..16 {
-                            // Java has it in y, z, x order, so we need to convert it back to x, y, z
-                            // Please test your code on bedrock before merging
-                            let key = data.get(x, z, y);
-                            let key_index = key_to_index_map.get(&key).unwrap_or(&0);
-                            debug_assert!((1 << bits_per_entry) > *key_index);
+                            // Preserve the Bedrock axis order for both storage layouts.
+                            let key_index = match &data.storage {
+                                PaletteStorage::Indexed(indices) => {
+                                    remapped_indices[indices[z][y][x] as usize]
+                                }
+                                PaletteStorage::Dense(cube) => {
+                                    key_to_index_map.get(&cube[z][y][x]).copied().unwrap_or(0)
+                                }
+                            };
+                            debug_assert!((1 << bits_per_entry) > key_index);
 
-                            current_word |= (*key_index as u32)
+                            current_word |= (key_index as u32)
                                 << (bits_per_entry as u32 * current_index_in_word);
                             current_index_in_word += 1;
 
@@ -1450,6 +1480,20 @@ mod tests {
         assert_eq!(network.bits_per_entry, 8);
         assert_eq!(network.packed_data.len(), 1024);
         assert!(matches!(network.palette, NetworkPalette::Indirect(values) if values.len() == 65));
+    }
+
+    #[test]
+    fn bedrock_indexed_palette_keeps_last_matching_duplicate() {
+        let air = Block::AIR.default_state.id;
+        let stone = Block::STONE.default_state.id;
+        let palette = BlockPalette::from_palette_and_packed_data(&[air, stone, air], &[], 2);
+        let network = palette.convert_be_network();
+
+        assert_eq!(network.bits_per_entry, 2);
+        assert_eq!(
+            &*network.packed_data,
+            &[0xaaaa_aaaa; BlockPalette::VOLUME / 16]
+        );
     }
 
     #[test]
