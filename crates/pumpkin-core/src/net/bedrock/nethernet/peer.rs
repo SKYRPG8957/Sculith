@@ -218,7 +218,13 @@ async fn build_peer(
     let setting_engine = setting_engine_builder.build();
     let mut builder = PeerConnectionBuilder::new();
     if direct_ip {
-        builder = builder.with_runtime(state.ice_router.direct_udp.clone());
+        // WebRTC shares these reactor threads across connections. Keep ICE,
+        // DTLS and SCTP timers moving while world generation occupies game workers.
+        let reactors =
+            std::thread::available_parallelism().map_or(1, |n| n.get().div_ceil(2).min(4));
+        builder = builder
+            .with_runtime(state.ice_router.direct_udp.clone())
+            .with_dedicated_reactor_pool_size(reactors);
     }
     Ok(Arc::new(
         Box::pin(

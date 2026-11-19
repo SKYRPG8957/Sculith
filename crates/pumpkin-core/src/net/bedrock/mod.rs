@@ -204,6 +204,7 @@ pub struct BedrockClient {
 
     /// Tracks total buffered payload bytes in the outgoing queues.
     pub pending_bytes: Arc<AtomicUsize>,
+    listed_players: std::sync::Mutex<HashMap<uuid::Uuid, Bytes>>,
 
     /// The packet encoder for outgoing packets.
     network_writer: Arc<RwLock<BedrockBatchEncoder>>,
@@ -286,6 +287,7 @@ impl BedrockClient {
             outgoing_packet_queue_send: send,
             outgoing_packet_queue_recv: Mutex::new(Some(recv)),
             pending_bytes: Arc::new(AtomicUsize::new(0)),
+            listed_players: std::sync::Mutex::default(),
             next_form_id: AtomicU32::new(0),
             inventory_opened: AtomicBool::new(false),
             cursor_drag: std::sync::Mutex::new(None),
@@ -848,6 +850,53 @@ impl BedrockClient {
         true
     }
 
+    pub(crate) fn observes_play_packets(&self) -> bool {
+        self.server
+            .upgrade()
+            .is_none_or(|server| server.plugin_manager.has_handlers::<PacketSentEvent>())
+    }
+
+    /// The skin entry must reach the same ordered channel before AddPlayer. A
+    /// changed skin or a reconnected player produces a fresh shared Bytes allocation.
+    pub(crate) fn ensure_listed(&self, subject: &Player) -> bool {
+        let Ok(bytes) = subject.bedrock_roster_bytes() else {
+            return false;
+        };
+        let id = subject.gameprofile.id;
+        if self.is_closed() {
+            return false;
+        }
+        if !self.is_current_protocol()
+            || self.player.load().is_none()
+            || self.observes_play_packets()
+        {
+            self.forget_listed(id);
+            return self.try_enqueue_packet_data(bytes);
+        }
+        let mut known = self
+            .listed_players
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if known
+            .get(&id)
+            .is_some_and(|prior| prior.as_ptr() == bytes.as_ptr())
+        {
+            return true;
+        }
+        if self.queue_translated_packet(bytes.clone(), Vec::new()) {
+            known.insert(id, bytes);
+            return true;
+        }
+        false
+    }
+
+    pub(crate) fn forget_listed(&self, id: uuid::Uuid) {
+        self.listed_players
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&id);
+    }
+
     pub async fn enqueue_packet(&self, packet_data: Bytes) {
         self.enqueue_packet_data(packet_data).await;
     }
@@ -894,6 +943,9 @@ impl BedrockClient {
     fn try_enqueue_packet_data_inner(&self, packet_data: Bytes, observe: bool) -> bool {
         if self.is_closed() {
             return false;
+        }
+        if !observe && self.is_current_protocol() && self.player.load().is_some() {
+            return self.queue_translated_packet(packet_data, Vec::new());
         }
         let (packet_data, extras) = self.translate_outgoing(packet_data, observe);
         match packet_data {

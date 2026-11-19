@@ -59,6 +59,8 @@ func (t *trace) stamp(p mgl32.Vec3) (time.Time, bool) {
 }
 
 type playerResult struct {
+	OrderedPeer          bool
+	RosterAdds           int
 	HealMS               float64
 	SpawnMS              float64
 	RuntimeID            uint64
@@ -166,9 +168,16 @@ func (r *run) client(i int) {
 	incoming := make(chan sample, 1)
 	go func() {
 		var s sample
+		known := make(map[uuid.UUID]bool)
+		actors := make(map[uint64]bool)
+		rosterAdds := 0
 		var prev time.Time
 		seen := [3]bool{}
-		defer func() { incoming <- s }()
+		defer func() {
+			result.OrderedPeer = actors[r.ids[(i+1)%r.count].Load()]
+			result.RosterAdds = rosterAdds
+			incoming <- s
+		}()
 		for {
 			pk, e := c.ReadPacket()
 			now := time.Now()
@@ -194,6 +203,17 @@ func (r *run) client(i int) {
 						prev = now
 					}
 				}
+			case *packet.PlayerList:
+				for _, entry := range v.Entries {
+					if entry.ActionType == protocol.PlayerListActionAdd {
+						known[entry.UUID] = true
+						rosterAdds++
+					} else {
+						delete(known, entry.UUID)
+					}
+				}
+			case *packet.AddPlayer:
+				actors[v.EntityRuntimeID] = known[v.UUID]
 			case *packet.AddActor:
 				if v.EntityType == "minecraft:pig" || v.EntityType == "pig" {
 					s.pigs++
@@ -502,9 +522,13 @@ func main() {
 	}()
 	all.Wait()
 	var spawns, motion, echo, blocks, gaps, viewerP95, inputCoverage, heals []float64
-	var admitted, alive, peers, responded, allBlocks, sawMobs, sent int
+	var admitted, alive, peers, responded, allBlocks, sawMobs, sent, ordered, adds int
 	errors := map[string]string{}
 	for i, p := range r.results {
+		if p.OrderedPeer {
+			ordered++
+		}
+		adds += p.RosterAdds
 		if p.HealMS > 0 {
 			heals = append(heals, p.HealMS)
 		}
@@ -546,6 +570,8 @@ func main() {
 	report := map[string]interface{}{"players": r.count, "spawned": admitted, "survived": alive, "duration_s": r.play.Seconds(), "inputs_sent": sent, "viewers_with_matched_peer": peers, "rpg_replies": responded, "viewers_receiving_three_markers": allBlocks, "viewers_receiving_pigs": sawMobs, "spawn": stats(spawns), "peer_input_to_visible_motion": stats(motion), "echo_round_trip": stats(echo), "world_block_to_visible_update": stats(blocks), "per_viewer_max_motion_gap": stats(gaps), "client_errors": errors}
 	report["per_viewer_motion_p95"] = stats(viewerP95)
 	report["rpg_heal_feedback"] = stats(heals)
+	report["known_peer_before_actor_spawn"] = ordered
+	report["roster_add_entries_seen"] = adds
 	if len(inputCoverage) > 0 {
 		sort.Float64s(inputCoverage)
 		report["minimum_matched_peer_inputs_percent"] = inputCoverage[0]

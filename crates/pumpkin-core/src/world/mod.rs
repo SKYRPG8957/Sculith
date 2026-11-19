@@ -1077,11 +1077,16 @@ impl World {
         let Some(first) = recipients.peek() else {
             return;
         };
+        let observe = first.observes_play_packets();
         match first.serialize_packet(packet) {
             Ok(bytes) => {
                 // Translation and packet events still run separately for each recipient.
                 for recipient in recipients {
-                    recipient.try_enqueue_packet(bytes.clone());
+                    if observe {
+                        recipient.try_enqueue_packet(bytes.clone());
+                    } else {
+                        recipient.try_enqueue_packet_data_unobserved(bytes.clone());
+                    }
                 }
             }
             Err(error) => {
@@ -1099,6 +1104,16 @@ impl World {
     pub fn broadcast_packet_all<P: ClientPacket>(&self, packet: &P) {
         let players = self.players.load();
         Self::broadcast_java_players(packet, players.iter());
+    }
+
+    fn send_bedrock_roster(&self, subject: &Player, exclude: Option<uuid::Uuid>) {
+        for viewer in self.players.load().iter() {
+            if Some(viewer.gameprofile.id) != exclude
+                && let ClientPlatform::Bedrock(client) = viewer.client.as_ref()
+            {
+                client.ensure_listed(subject);
+            }
+        }
     }
 
     pub fn broadcast_bedrock_all<P: BClientPacket>(&self, packet: &P) {
@@ -3586,25 +3601,8 @@ impl World {
         let gameprofile = &player.gameprofile;
 
         // 1. Broadcast the new Bedrock player to everyone else (Java + Bedrock)
-        let bedrock_player_list = CPlayerList {
-            action: CPlayerList::ACTION_ADD,
-            entries: vec![PlayerListEntry {
-                uuid: gameprofile.id,
-                entity_unique_id: VarLong(runtime_id as i64),
-                username: gameprofile.name.clone(),
-                xuid: String::new(),
-                platform_chat_id: String::new(),
-                build_platform: BuildPlatform::Unknown,
-                skin: (**player.bedrock_skin.load()).clone(),
-                is_teacher: false,
-                is_host: false,
-                is_sub_client: false,
-                player_color: [0, 0, 0, 0],
-            }],
-        };
-
         let gamemode = player.gamemode.load();
-        self.broadcast_packet_except_editioned(
+        self.broadcast_packet_except(
             &[gameprofile.id],
             &CPlayerInfoUpdate::new(
                 (PlayerInfoFlags::ADD_PLAYER
@@ -3629,8 +3627,8 @@ impl World {
                     ],
                 }],
             ),
-            &bedrock_player_list,
         );
+        self.send_bedrock_roster(&player, Some(gameprofile.id));
 
         // Vanilla `level.addNewPlayer`: in-range viewers get the spawn from the tracker.
         self.entity_tracker
@@ -3658,9 +3656,7 @@ impl World {
             .iter()
             .filter(|p| p.gameprofile.id != gameprofile.id)
         {
-            client
-                .send_packet(&existing_player.bedrock_player_list())
-                .await;
+            client.ensure_listed(existing_player);
         }
         // Actors come from the tracker, in range only.
         self.pair_new_player_with_tracked_entities(&player);
@@ -3769,23 +3765,6 @@ impl World {
         // Java drops a player spawn whose info entry is missing and never retries,
         // so this must precede entity tracking and the first chunks.
         let gameprofile = &player.gameprofile;
-        let bedrock_player_list = CPlayerList {
-            action: CPlayerList::ACTION_ADD,
-            entries: vec![PlayerListEntry {
-                uuid: gameprofile.id,
-                entity_unique_id: VarLong(entity_id as i64),
-                username: gameprofile.name.clone(),
-                xuid: String::new(),
-                platform_chat_id: String::new(),
-                build_platform: BuildPlatform::Unknown,
-                skin: (**player.bedrock_skin.load()).clone(),
-                is_teacher: false,
-                is_host: false,
-                is_sub_client: false,
-                player_color: [0, 0, 0, 0],
-            }],
-        };
-
         let player_actions = [
             PlayerAction::AddPlayer {
                 name: &gameprofile.name,
@@ -3803,7 +3782,8 @@ impl World {
         }];
         let player_info_update = CPlayerInfoUpdate::new(Self::TAB_LIST_ADD_FLAGS, &java_player);
 
-        self.broadcast_editioned(&player_info_update, &bedrock_player_list);
+        self.broadcast_packet_all(&player_info_update);
+        self.send_bedrock_roster(&player, None);
 
         // If the player has a custom tab_list_name, send an update for it
         if let Some(tab_list_name) = player.get_tab_list_name() {
@@ -5357,6 +5337,11 @@ impl World {
                 }],
             };
 
+            for viewer in self.players.load().iter() {
+                if let ClientPlatform::Bedrock(client) = viewer.client.as_ref() {
+                    client.forget_listed(uuid);
+                }
+            }
             self.broadcast_editioned(&CRemovePlayerInfo::new(&[uuid]), &bedrock_remove_player);
 
             self.broadcast_editioned(

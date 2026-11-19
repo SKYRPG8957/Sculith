@@ -743,6 +743,7 @@ pub struct Player {
     pub fall_fly_ticks: AtomicI32,
     pub fishing_bobber: AtomicI32,
     pub bedrock_skin: arc_swap::ArcSwap<pumpkin_protocol::bedrock::client::Skin>,
+    bedrock_roster: std::sync::Mutex<Option<(Arc<pumpkin_protocol::bedrock::client::Skin>, Bytes)>>,
     pub seen_credits: AtomicBool,
     pub warden_spawn_tracker: std::sync::Mutex<WardenSpawnTracker>,
     pub score: AtomicI32,
@@ -1086,6 +1087,7 @@ impl Player {
             hidden_players: Mutex::new(std::collections::HashSet::new()),
             fishing_bobber: AtomicI32::new(-1),
             bedrock_skin: ArcSwap::new(Arc::new(bedrock_skin)),
+            bedrock_roster: std::sync::Mutex::default(),
             seen_credits: AtomicBool::new(false),
             warden_spawn_tracker: std::sync::Mutex::new(WardenSpawnTracker::default()),
             score: AtomicI32::new(0),
@@ -1341,6 +1343,13 @@ impl Player {
     /// Bedrock tab-list entry -> carries the skin, so it must precede `AddPlayer`.
     #[must_use]
     pub fn bedrock_player_list(&self) -> CPlayerList {
+        self.bedrock_player_list_for(&self.bedrock_skin.load_full())
+    }
+
+    fn bedrock_player_list_for(
+        &self,
+        skin: &pumpkin_protocol::bedrock::client::Skin,
+    ) -> CPlayerList {
         CPlayerList {
             action: CPlayerList::ACTION_ADD,
             entries: vec![PlayerListEntry {
@@ -1350,7 +1359,7 @@ impl Player {
                 xuid: String::new(),
                 platform_chat_id: String::new(),
                 build_platform: BuildPlatform::Unknown,
-                skin: (**self.bedrock_skin.load()).clone(),
+                skin: skin.clone(),
                 is_teacher: false,
                 is_host: false,
                 is_sub_client: false,
@@ -1359,9 +1368,34 @@ impl Player {
         }
     }
 
+    pub(crate) fn bedrock_roster_bytes(&self) -> std::io::Result<Bytes> {
+        let mut cached = self
+            .bedrock_roster
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let skin = self.bedrock_skin.load_full();
+        if let Some((previous, bytes)) = cached.as_ref()
+            && Arc::ptr_eq(previous, &skin)
+        {
+            return Ok(bytes.clone());
+        }
+        let mut frame = Vec::new();
+        crate::net::bedrock::BedrockClient::write_raw_packet(
+            &self.bedrock_player_list_for(&skin),
+            &mut frame,
+        )?;
+        let bytes = Bytes::from(frame);
+        *cached = Some((skin, bytes.clone()));
+        Ok(bytes)
+    }
+
     /// Bedrock remote-player spawn -> the `PlayerList` entry must precede `AddPlayer`.
     #[must_use]
     pub fn bedrock_spawn_packets(&self) -> (CPlayerList, CAddPlayer) {
+        (self.bedrock_player_list(), self.bedrock_add_player())
+    }
+
+    fn bedrock_add_player(&self) -> CAddPlayer {
         let entity = self.get_entity();
         let entity_id = i64::from(self.entity_id());
         let profile = &self.gameprofile;
@@ -1371,7 +1405,7 @@ impl Player {
             pumpkin_protocol::bedrock::client::set_actor_data::entity_data_key::ALWAYS_SHOW_NAME_TAG,
             pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Byte(1),
         );
-        let add_player = CAddPlayer {
+        CAddPlayer {
             uuid: profile.id,
             player_name: profile.name.clone(),
             target_runtime_id: VarULong(entity_id as u64),
@@ -1401,8 +1435,7 @@ impl Player {
             passenger_of_block: None,
             device_id: String::new(),
             build_platform: BuildPlatform::Unknown,
-        };
-        (self.bedrock_player_list(), add_player)
+        }
     }
 
     pub const fn inventory(&self) -> &Arc<PlayerInventory> {
@@ -3343,10 +3376,19 @@ impl Player {
             // Share terrain work during a join surge. Every player still gets the
             // same near-first chunks out to their full requested radius.
             let max_chunks = match self.client.as_ref() {
-                ClientPlatform::Bedrock(_) => 256_usize.div_ceil(world.players.load().len().max(1)).max(1),
+                ClientPlatform::Bedrock(_) => {
+                    256_usize.div_ceil(world.players.load().len().max(1)).max(1)
+                }
                 ClientPlatform::Java(_) => usize::MAX,
             };
-            sender.prepare_batch(&world.level, player_chunk, view_distance, epoch, version, max_chunks)
+            sender.prepare_batch(
+                &world.level,
+                player_chunk,
+                view_distance,
+                epoch,
+                version,
+                max_chunks,
+            )
         });
 
         if let Some(batch) = prepared_batch {
@@ -8232,7 +8274,8 @@ impl EntityBase for Player {
     }
 
     fn send_bedrock_spawn_packet(&self, client: &crate::net::bedrock::BedrockClient) {
-        let (player_list, add_player) = self.bedrock_spawn_packets();
+        client.ensure_listed(self);
+        let add_player = self.bedrock_add_player();
         let main_hand = pumpkin_protocol::bedrock::client::CMobEquipment {
             target_runtime_id: (self.entity_id() as u64).into(),
             item: (&self.inventory.held_item()).into(),
@@ -8249,7 +8292,6 @@ impl EntityBase for Player {
         };
         let armor = self.living_entity.bedrock_armor_packet(&[]);
         for data in [
-            client.serialize_packet(&player_list),
             client.serialize_packet(&add_player),
             client.serialize_packet(&main_hand),
             client.serialize_packet(&off_hand),
