@@ -52,7 +52,7 @@ use pumpkin_protocol::bedrock::client::{
 };
 use pumpkin_protocol::bedrock::server::{
     respawn::{RespawnState, SRespawn as SBedrockRespawn},
-    text::SText,
+    text::{SText, TextPacketType},
 };
 use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use pumpkin_util::translation::Locale;
@@ -6179,6 +6179,27 @@ impl Player {
         sender_name: &TextComponent,
         target_name: Option<&TextComponent>,
     ) {
+        if let ClientPlatform::Bedrock(client) = self.client.as_ref() {
+            let packet = match chat_type {
+                pumpkin_data::world::MSG_COMMAND_INCOMING => SText {
+                    r#type: TextPacketType::Whisper,
+                    ..SText::new(
+                        message.0.to_bedrock_string(),
+                        sender_name.0.to_bedrock_string(),
+                    )
+                },
+                pumpkin_data::world::MSG_COMMAND_OUTGOING => {
+                    let Some(target) = target_name else { return };
+                    SText::translation(
+                        translation::bedrock::COMMANDS_MESSAGE_DISPLAY_OUTGOING.to_owned(),
+                        vec![target.0.to_bedrock_string(), message.0.to_bedrock_string()],
+                    )
+                }
+                _ => return,
+            };
+            client.try_enqueue_client_packet(&packet);
+            return;
+        }
         self.try_send_client_packet(&CDisguisedChatMessage::new(
             message,
             (chat_type + 1).into(),
