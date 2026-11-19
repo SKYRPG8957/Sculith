@@ -3378,7 +3378,16 @@ impl Player {
             // same near-first chunks out to their full requested radius.
             let max_chunks = match self.client.as_ref() {
                 ClientPlatform::Bedrock(_) if sender.has_pending_bedrock_delivery() => 0,
-                ClientPlatform::Bedrock(_) => (256usize / world.players.load().len().max(1)).max(1),
+                ClientPlatform::Bedrock(_) => {
+                    // Leave room for the next simulation tick when recent ticks are busy.
+                    let target = server.tick_rate_manager.nanoseconds_per_tick();
+                    let budget = if server.get_average_tick_time_nanos() > target * 3 / 4 {
+                        128
+                    } else {
+                        256
+                    };
+                    (budget / world.players.load().len().max(1)).max(1)
+                }
                 ClientPlatform::Java(_) => usize::MAX,
             };
             sender.prepare_batch(
