@@ -470,7 +470,7 @@ mod batch_tests {
             enc.set_compression((1, level));
             for size in [257, 16 * 1024 - 1, 16 * 1024, 16 * 1024 + 1, 1] {
                 let mut wire = Vec::new();
-                enc.write_batch(size, |out| out.write_all(&noise[..size]), &mut wire)
+                enc.write_batch(size, false, |out| out.write_all(&noise[..size]), &mut wire)
                     .unwrap();
                 assert_eq!(&wire[..2], &[BEDROCK_GAME_PACKET, 0]);
                 let mut decoded = Vec::new();
