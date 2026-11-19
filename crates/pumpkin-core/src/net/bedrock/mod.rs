@@ -407,36 +407,47 @@ impl BedrockClient {
         frames: &mut Vec<(u16, Bytes)>,
     ) -> Result<bool, String> {
         frames.clear();
-        for packet in group {
-            if let Some(frame) = split_raw_packet(&packet.data) {
-                frames.push(frame);
-            } else {
-                warn!(
-                    "Dropping malformed outgoing Bedrock packet for {}",
-                    self.address
-                );
-            }
-        }
-        if frames.is_empty() {
-            return Ok(false);
-        }
         let writer = *self.network_writer.read().await;
-        if let [(id, body)] = frames.as_slice()
-            && i32::from(*id) == pumpkin_data::bedrock_packet::RESOURCE_PACK_CHUNK_DATA
-            && body.len() <= crate::resource_pack::BEDROCK_PACK_CHUNK_SIZE as usize + 512
-            && let Some(pack) = self.shared_pack.load_full()
-        {
-            let encoded = pack
-                .chunk_frame(writer, body)
-                .await
-                .map_err(|e| e.to_string())?;
-            self.session.send(encoded).await?;
-            return Ok(true);
-        }
         let mut encoded = Vec::new();
-        writer
-            .write_game_packets(frames, SubClient::Main, SubClient::Main, &mut encoded)
-            .map_err(|e| e.to_string())?;
+        // Broadcasts already share the complete header and payload across viewers.
+        // A single pack chunk can reuse its separately cached compressed frame below.
+        if group.len() < 2
+            || !writer
+                .try_write_framed_game_packets(
+                    group.iter().map(|packet| packet.data.as_ref()),
+                    &mut encoded,
+                )
+                .map_err(|e| e.to_string())?
+        {
+            for packet in group {
+                if let Some(frame) = split_raw_packet(&packet.data) {
+                    frames.push(frame);
+                } else {
+                    warn!(
+                        "Dropping malformed outgoing Bedrock packet for {}",
+                        self.address
+                    );
+                }
+            }
+            if frames.is_empty() {
+                return Ok(false);
+            }
+            if let [(id, body)] = frames.as_slice()
+                && i32::from(*id) == pumpkin_data::bedrock_packet::RESOURCE_PACK_CHUNK_DATA
+                && body.len() <= crate::resource_pack::BEDROCK_PACK_CHUNK_SIZE as usize + 512
+                && let Some(pack) = self.shared_pack.load_full()
+            {
+                let encoded = pack
+                    .chunk_frame(writer, body)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                self.session.send(encoded).await?;
+                return Ok(true);
+            }
+            writer
+                .write_game_packets(frames, SubClient::Main, SubClient::Main, &mut encoded)
+                .map_err(|e| e.to_string())?;
+        }
         self.session.send(Bytes::from(encoded).slice(1..)).await?;
         Ok(true)
     }

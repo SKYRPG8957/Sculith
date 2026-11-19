@@ -72,7 +72,7 @@ impl BedrockBatchEncoder {
         packets: &[(u16, P)],
         sender: SubClient,
         target: SubClient,
-        mut writer: impl Write,
+        writer: impl Write,
     ) -> Result<(), Error> {
         let sub_clients = ((sender as u32) << 10) | ((target as u32) << 12);
         let header = |id: u16| VarUInt((u32::from(id) | sub_clients) & 0x3fff);
@@ -98,6 +98,53 @@ impl BedrockBatchEncoder {
             }
             Ok(())
         };
+        self.write_batch(size, write_frames, writer)
+    }
+
+    /// Writes length prefixes around packets that already contain a canonical Bedrock
+    /// header. Returns false without writing if a header needs decoding and normalizing.
+    pub fn try_write_framed_game_packets<'a>(
+        &self,
+        packets: impl Iterator<Item = &'a [u8]> + Clone,
+        writer: impl Write,
+    ) -> Result<bool, Error> {
+        let mut size = 0;
+        for packet in packets.clone() {
+            // A canonical 14-bit header occupies one byte, or two with a nonzero high part.
+            if !matches!(packet, [0..=0x7f, ..] | [0x80..=0xff, 1..=0x7f, ..]) {
+                return Ok(false);
+            }
+            let len = u32::try_from(packet.len()).map_err(|_| {
+                Error::new(ErrorKind::InvalidInput, "Bedrock game packet is too long")
+            })?;
+            size += packet.len() + VarUInt(len).written_size();
+        }
+        self.write_batch(
+            size,
+            |out| {
+                let mut prefix = [0; 5];
+                for packet in packets {
+                    let len = VarUInt(packet.len() as u32);
+                    prefix
+                        .as_mut_slice()
+                        .write_var_uint(&len)
+                        .map_err(Error::other)?;
+                    out.write_all(&prefix[..len.written_size()])?;
+                    out.write_all(packet)?;
+                }
+                Ok(())
+            },
+            writer,
+        )?;
+        Ok(true)
+    }
+
+    fn write_batch(
+        &self,
+        size: usize,
+        write_frames: impl FnOnce(&mut dyn Write) -> Result<(), Error>,
+        mut writer: impl Write,
+    ) -> Result<(), Error> {
         writer.write_all(&[BEDROCK_GAME_PACKET])?;
         let Some((threshold, level)) = self.compression else {
             return write_frames(&mut writer);
@@ -261,6 +308,66 @@ mod batch_tests {
     use super::*;
     use flate2::read::DeflateDecoder;
     use std::io::Read;
+
+    #[test]
+    fn shared_frames_match_regular_batches_at_compression_boundaries() {
+        let first = [0x7f, 0xaa];
+        let second = [0x80, 1, 0xbb];
+        let mut known = Vec::new();
+        let plain = BedrockBatchEncoder::new();
+        assert!(
+            plain
+                .try_write_framed_game_packets([&first[..], &second].into_iter(), &mut known)
+                .unwrap()
+        );
+        assert_eq!(known, [0xfe, 2, 0x7f, 0xaa, 3, 0x80, 1, 0xbb]);
+
+        for payload_len in [0, 125, 126, 127, 128, 17 * 1024] {
+            let body: Vec<u8> = (0..payload_len).map(|index| index as u8).collect();
+            let mut shared = vec![0xff, 0x7f];
+            shared.extend_from_slice(&body);
+            let frames = [&first[..], &shared];
+            let packets = [(127, &first[1..]), (0x3fff, &body)];
+            let size = 3 + shared.len() + VarUInt(shared.len() as u32).written_size();
+            for prefixed in [false, true] {
+                for threshold in [0, 1, size, size + 1] {
+                    let mut encoder = BedrockBatchEncoder::new();
+                    encoder.set_prefixed_compression(prefixed);
+                    encoder.set_compression((threshold, 4));
+                    let mut expected = Vec::new();
+                    encoder
+                        .write_game_packets(
+                            &packets,
+                            SubClient::Main,
+                            SubClient::Main,
+                            &mut expected,
+                        )
+                        .unwrap();
+                    let mut actual = Vec::new();
+                    assert!(
+                        encoder
+                            .try_write_framed_game_packets(frames.into_iter(), &mut actual)
+                            .unwrap()
+                    );
+                    assert_eq!(actual, expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_frames_request_fallback_before_writing_any_bytes() {
+        for invalid_header in [&[][..], &[0x80], &[0x81, 0], &[0x80, 0x80, 1]] {
+            let mut output = vec![0xaa];
+            let frames = [&[0x13, 0x42][..], invalid_header];
+            assert!(
+                !BedrockBatchEncoder::new()
+                    .try_write_framed_game_packets(frames.into_iter(), &mut output)
+                    .unwrap()
+            );
+            assert_eq!(output, [0xaa]);
+        }
+    }
 
     #[test]
     fn threshold_covers_all_packets_including_their_headers() {
