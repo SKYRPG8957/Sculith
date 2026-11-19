@@ -17,7 +17,7 @@ from shared_resources import configure, stop_server
 def host_counters(server_pid, client_pid):
     """Read cumulative Linux counters without instrumenting either packet path."""
     values = {"time": time.monotonic()}
-    if not Path("/proc/self/stat").exists():
+    if os.name != "posix" or not Path("/proc/self/stat").is_file():
         return values
     for role, pid in (("server", server_pid), ("client", client_pid)):
         try:
@@ -245,7 +245,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             report["advertised_compression_threshold"] = advertised_threshold
             report["compression_level"] = args.compression_level
             cpu_max=Path("/sys/fs/cgroup/cpu.max")
-            if cpu_max.exists(): report["cohost_cpu_max"]=cpu_max.read_text().strip()
+            if os.name == "posix" and cpu_max.is_file(): report["cohost_cpu_max"]=cpu_max.read_text().strip()
             report["clients_and_server_on_same_host"]=True
             report["world_preparation"]="Copied flat world; one preparation client disconnected before the simultaneous start."
             report["input_hz"]=20
