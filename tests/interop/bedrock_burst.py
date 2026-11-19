@@ -66,12 +66,15 @@ parser.add_argument("--port", type=int, default=19132)
 parser.add_argument("--rpg-smoke", action="store_true")
 parser.add_argument("--terrain-smoke", action="store_true")
 parser.add_argument("--required-pack", action="store_true", help="require an uncached Bedrock model, sound and texture pack with 2.3 MB of incompressible transfer data")
+parser.add_argument("--distant-terrain", action="store_true", help="include the distant terrain models and require each player to see a tile")
 parser.add_argument("--require-budgets", action="store_true", help="exit with status 2 if any measured latency or delivery budget is missed")
 parser.add_argument("--encounter", action="store_true", help="grant XP, damage every player and verify a synchronized heal")
 parser.add_argument("--threshold", type=int, default=256)
 parser.add_argument("--compression-level", type=int, choices=range(10), default=4)
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
+if args.distant_terrain and not args.required_pack:
+    parser.error("--distant-terrain needs --required-pack")
 if not 2 <= args.players <= 250 or args.play < 4 or not 0 <= args.pigs <= 256:
     parser.error("players 2–250, play at least four seconds, pigs 0–256")
 out = args.output.resolve()
@@ -103,6 +106,17 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
         fixture = Path(__file__).resolve().parents[2] / "crates/sculith-packs/tests/fixtures"
         shutil.copytree(fixture / "pack", root / "source")
         shutil.copy2(fixture / "textures.json", root / "mapping.json")
+        if args.distant_terrain:
+            assets = Path(__file__).resolve().parents[2] / "examples/distant-terrain"
+            for src in (assets / "pack").rglob("*"):
+                if src.is_file() and src.name != "manifest.json":
+                    dest = root / "source" / src.relative_to(assets / "pack")
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(src, dest)
+            mapping_path = root / "mapping.json"
+            mapping = json.loads(mapping_path.read_text())
+            mapping["models"].extend(json.loads((assets / "mapping.json").read_text())["models"])
+            mapping_path.write_text(json.dumps(mapping))
         (root / "source/credits.bin").write_bytes(hashlib.shake_256(b"Sculith pack burst").digest(pack_test_bytes))
         with cfg.open("a") as config:
             config.write('\n[resource_pack.shared]\nsource="source"\nmapping="mapping.json"\nrequired=true\n')
@@ -208,6 +222,22 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 finally:
                     if check.poll() is None: check.kill();check.wait()
             time.sleep(1)
+            if args.distant_terrain:
+                # Let the ordinary chunk system generate a 2x2 landmark outside view 16.
+                # Keep normal viewing/simulation radii for all 100 clients.
+                loaded.clear()
+                command("forceload add 368 0 399 31")
+                deadline = time.monotonic() + 50
+                while not loaded.is_set() and time.monotonic() < deadline:
+                    command("execute if loaded 368 -60 0 if loaded 399 -60 31 run time query daytime")
+                    loaded.wait(0.3)
+                if not loaded.is_set():
+                    raise RuntimeError("Distant terrain landmark did not generate")
+                command("save-all flush")
+                command("forceload remove 368 0 399 31")
+                built.clear()
+                command("list")
+                wait(built, 90)
             def tick_samples():
                 while not fin.wait(1):
                     command("sculith performance")
@@ -291,6 +321,9 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                     list(report["resource_pack_copies_by_sha256"].values()) == [args.players]
                     and report["resource_pack_bytes_received"] >= args.players * pack_test_bytes
                 )
+            if args.distant_terrain:
+                report["checks"]["every_viewer_received_distant_terrain"] = report.get("viewers_receiving_lod_tiles", 0) == args.players
+                report["checks"]["lod_actor_order_and_budget"] = report.get("lod_invalid_sequences", -1) == 0 and 0 < report.get("lod_peak_per_viewer", 0) <= 32
             report["all_budgets_met"]=all(report["checks"].values())
             out.write_text(json.dumps(report,indent=2)+"\n")
             print(json.dumps({k:v for k,v in report.items() if k not in ("tick_windows","client_errors")},ensure_ascii=False), flush=True)

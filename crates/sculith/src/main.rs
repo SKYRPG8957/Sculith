@@ -241,7 +241,16 @@ async fn main() {
         }
     );
 
+    let distant_terrain =
+        pumpkin_core::net::bedrock::distant_terrain::DistantTerrain::start(&pumpkin_server.server)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "Could not start distant terrain");
+                None
+            });
     pumpkin_server.start().await;
+    if let Some(worker) = distant_terrain {
+        worker.stop();
+    }
 
     info!(
         "{}",

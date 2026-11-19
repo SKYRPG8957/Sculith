@@ -455,7 +455,7 @@ impl World {
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
             encoded_chunk_cache: DashMap::new(),
-            bedrock_chunk_frames: Default::default(),
+            bedrock_chunk_frames: crate::net::bedrock::level_chunk::InlineChunkCache::default(),
             entity_tracker: entity_tracker::EntityTracker::new(),
         }
     }

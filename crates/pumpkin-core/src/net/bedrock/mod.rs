@@ -66,6 +66,7 @@ use tokio_util::task::TaskTracker;
 
 pub mod blob_cache;
 mod close_signal;
+pub mod distant_terrain;
 pub mod level_chunk;
 pub mod login;
 pub mod versions;
@@ -622,9 +623,60 @@ impl BedrockClient {
         let cache_enabled = server.advanced_config.networking.bedrock.chunk_caching
             && self.client_cache_supported.load(Ordering::Relaxed);
 
+        let (encoded_payloads, new_blobs) = Self::prepare_chunk_payloads(
+            &server,
+            world,
+            &valid_chunks,
+            bedrock_dimension,
+            cache_enabled,
+        )
+        .await;
+        let translated_chunks = self.translate_chunk_payloads(encoded_payloads).await;
+
+        // Checked and queued under the sender lock: a world change resets the sender under it
+        // before queueing `CChangeDimension`, so no old-world chunk can land behind that packet
+        let _sender = epoch.map(|_| {
+            player
+                .chunk_sender
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        });
+        if epoch.is_some_and(|epoch| player.chunk_send_epoch.load(Ordering::Relaxed) != epoch) {
+            outcome.failed.extend(
+                translated_chunks
+                    .into_iter()
+                    .map(|(pos, _)| (pos, DeliveryFailure::Deferred)),
+            );
+            return outcome;
+        }
+
+        if !new_blobs.is_empty() {
+            let mut cache = self
+                .blob_cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for (hash, blob) in new_blobs {
+                cache.insert(hash, blob);
+            }
+        }
+
+        self.queue_translated_chunks(translated_chunks, &mut outcome);
+        outcome
+    }
+
+    async fn prepare_chunk_payloads(
+        server: &Server,
+        world: Arc<crate::world::World>,
+        valid_chunks: &[SyncChunk],
+        bedrock_dimension: i32,
+        cache_enabled: bool,
+    ) -> (
+        Vec<(Vector2<i32>, Option<Bytes>)>,
+        Vec<level_chunk::ChunkBlob>,
+    ) {
         let mut encoded_payloads = Vec::with_capacity(valid_chunks.len());
         let mut misses = Vec::new();
-        for chunk in valid_chunks.iter() {
+        for chunk in valid_chunks {
             let framed = if cache_enabled {
                 None
             } else {
@@ -670,38 +722,7 @@ impl BedrockClient {
                 new_blobs = blobs;
             }
         }
-
-        let translated_chunks = self.translate_chunk_payloads(encoded_payloads).await;
-
-        // Checked and queued under the sender lock: a world change resets the sender under it
-        // before queueing `CChangeDimension`, so no old-world chunk can land behind that packet
-        let _sender = epoch.map(|_| {
-            player
-                .chunk_sender
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-        });
-        if epoch.is_some_and(|epoch| player.chunk_send_epoch.load(Ordering::Relaxed) != epoch) {
-            outcome.failed.extend(
-                translated_chunks
-                    .into_iter()
-                    .map(|(pos, _)| (pos, DeliveryFailure::Deferred)),
-            );
-            return outcome;
-        }
-
-        if !new_blobs.is_empty() {
-            let mut cache = self
-                .blob_cache
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (hash, blob) in new_blobs {
-                cache.insert(hash, blob);
-            }
-        }
-
-        self.queue_translated_chunks(translated_chunks, &mut outcome);
-        outcome
+        (encoded_payloads, new_blobs)
     }
 
     async fn translate_chunk_payloads(

@@ -1,0 +1,52 @@
+{
+  "models": [
+    {
+      "bedrock": "sculith:lod_green",
+      "java": "sculith:lod_green",
+      "entity": "entity/lod_green.entity.json",
+      "geometry": "models/entity/lod.geo.json",
+      "texture": "textures/entity/lod_green.png",
+      "controller": "render_controllers/sculith_static.render_controllers.json"
+    },
+    {
+      "bedrock": "sculith:lod_earth",
+      "java": "sculith:lod_earth",
+      "entity": "entity/lod_earth.entity.json",
+      "geometry": "models/entity/lod.geo.json",
+      "texture": "textures/entity/lod_earth.png",
+      "controller": "render_controllers/sculith_static.render_controllers.json"
+    },
+    {
+      "bedrock": "sculith:lod_snow",
+      "java": "sculith:lod_snow",
+      "entity": "entity/lod_snow.entity.json",
+      "geometry": "models/entity/lod.geo.json",
+      "texture": "textures/entity/lod_snow.png",
+      "controller": "render_controllers/sculith_static.render_controllers.json"
+    },
+    {
+      "bedrock": "sculith:lod_stone",
+      "java": "sculith:lod_stone",
+      "entity": "entity/lod_stone.entity.json",
+      "geometry": "models/entity/lod.geo.json",
+      "texture": "textures/entity/lod_stone.png",
+      "controller": "render_controllers/sculith_static.render_controllers.json"
+    },
+    {
+      "bedrock": "sculith:lod_water",
+      "java": "sculith:lod_water",
+      "entity": "entity/lod_water.entity.json",
+      "geometry": "models/entity/lod.geo.json",
+      "texture": "textures/entity/lod_water.png",
+      "controller": "render_controllers/sculith_static.render_controllers.json"
+    },
+    {
+      "bedrock": "sculith:lod_sand",
+      "java": "sculith:lod_sand",
+      "entity": "entity/lod_sand.entity.json",
+      "geometry": "models/entity/lod.geo.json",
+      "texture": "textures/entity/lod_sand.png",
+      "controller": "render_controllers/sculith_static.render_controllers.json"
+    }
+  ]
+}

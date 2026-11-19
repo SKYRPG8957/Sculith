@@ -60,22 +60,23 @@ func (t *trace) stamp(p mgl32.Vec3) (time.Time, bool) {
 }
 
 type playerResult struct {
-	OrderedPeer          bool
-	RosterAdds           int
-	HealMS               float64
-	SpawnMS              float64
-	RuntimeID            uint64
-	Survived             bool
-	Echo, Motion, Blocks []float64
-	Deaths               int
-	RPG                  string
-	Error                string
-	Pigs, Sent           int
-	Chunks, UniqueChunks int
-	ChunkRadius          int
-	PackBytes            int
-	PackDigest           string
-	WorstGap             motionGap
+	LODAdds, LODPeak, LODInvalid int
+	OrderedPeer                  bool
+	RosterAdds                   int
+	HealMS                       float64
+	SpawnMS                      float64
+	RuntimeID                    uint64
+	Survived                     bool
+	Echo, Motion, Blocks         []float64
+	Deaths                       int
+	RPG                          string
+	Error                        string
+	Pigs, Sent                   int
+	Chunks, UniqueChunks         int
+	ChunkRadius                  int
+	PackBytes                    int
+	PackDigest                   string
+	WorstGap                     motionGap
 }
 
 type motionGap struct {
@@ -189,6 +190,7 @@ func (r *run) client(i int) {
 	type sample struct {
 		echo, motion, blocks               []float64
 		deaths, pigs, chunks, uniqueChunks int
+		lodAdds, lodPeak, lodInvalid       int
 		rpg, err                           string
 		healMS                             float64
 		gap                                motionGap
@@ -200,6 +202,7 @@ func (r *run) client(i int) {
 		actors := make(map[uint64]bool)
 		rosterAdds := 0
 		terrain := make(map[protocol.ChunkPos]struct{})
+		lod := make(map[uint64]struct{})
 		var prev, prevInput time.Time
 		seen := [3]bool{}
 		defer func() {
@@ -253,7 +256,32 @@ func (r *run) client(i int) {
 				}
 			case *packet.AddPlayer:
 				actors[v.EntityRuntimeID] = known[v.UUID]
+			case *packet.RemoveActor:
+				id := uint64(v.EntityUniqueID)
+				if id>>58 == 1 {
+					if _, ok := lod[id]; !ok {
+						s.lodInvalid++
+					}
+					delete(lod, id)
+				}
+			case *packet.MoveActorAbsolute:
+				if v.EntityRuntimeID>>58 == 1 {
+					if _, ok := lod[v.EntityRuntimeID]; !ok {
+						s.lodInvalid++
+					}
+				}
 			case *packet.AddActor:
+				if strings.HasPrefix(v.EntityType, "sculith:lod_") {
+					id := v.EntityRuntimeID
+					width, ok := v.EntityMetadata[protocol.EntityDataKeyScale].(float32)
+					_, dupe := lod[id]
+					if dupe || id != uint64(v.EntityUniqueID) || id>>58 != 1 || !ok || (width != 8 && width != 16 && width != 32) {
+						s.lodInvalid++
+					}
+					lod[id] = struct{}{}
+					s.lodAdds++
+					s.lodPeak = max(s.lodPeak, len(lod))
+				}
 				if v.EntityType == "minecraft:pig" || v.EntityType == "pig" {
 					s.pigs++
 				}
@@ -355,6 +383,7 @@ wait:
 	result.Motion = s.motion
 	result.Blocks = s.blocks
 	result.Pigs = s.pigs
+	result.LODAdds, result.LODPeak, result.LODInvalid = s.lodAdds, s.lodPeak, s.lodInvalid
 	result.Chunks = s.chunks
 	result.UniqueChunks = s.uniqueChunks
 	result.Deaths = s.deaths
@@ -587,6 +616,7 @@ func main() {
 	errors := map[string]string{}
 	packCopies := map[string]int{}
 	var packBytes int64
+	var lodViewers, lodPeak, lodInvalid, lodAdds int
 	var worst motionGap
 	var worstViewer int
 	for i, p := range r.results {
@@ -637,6 +667,12 @@ func main() {
 		if len(p.Blocks) == 3 {
 			allBlocks++
 		}
+		if p.LODAdds > 0 {
+			lodViewers++
+		}
+		lodPeak = max(lodPeak, p.LODPeak)
+		lodInvalid += p.LODInvalid
+		lodAdds += p.LODAdds
 		if p.Pigs > 0 {
 			sawMobs++
 		}
@@ -652,6 +688,10 @@ func main() {
 		blocks = append(blocks, p.Blocks...)
 	}
 	report := map[string]interface{}{"players": r.count, "spawned": admitted, "survived": alive, "duration_s": r.play.Seconds(), "inputs_sent": sent, "viewers_with_matched_peer": peers, "rpg_replies": responded, "viewers_receiving_three_markers": allBlocks, "viewers_receiving_pigs": sawMobs, "spawn": stats(spawns), "peer_input_to_visible_motion": stats(motion), "echo_round_trip": stats(echo), "world_block_to_visible_update": stats(blocks), "per_viewer_max_motion_gap": stats(gaps), "client_errors": errors}
+	report["viewers_receiving_lod_tiles"] = lodViewers
+	report["lod_tile_spawns"] = lodAdds
+	report["lod_peak_per_viewer"] = lodPeak
+	report["lod_invalid_sequences"] = lodInvalid
 	report["per_viewer_motion_p95"] = stats(viewerP95)
 	report["rpg_heal_feedback"] = stats(heals)
 	report["known_peer_before_actor_spawn"] = ordered
