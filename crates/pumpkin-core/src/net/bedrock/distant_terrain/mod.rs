@@ -116,86 +116,9 @@ impl Survey {
         self.regions.retain(|k, _| keep.contains(k));
         self.live
             .retain(|&(x, z), _| keep.contains(&(x.div_euclid(32), z.div_euclid(32))));
-        let kind = match level.chunk_saver.as_ref() {
-            LevelFileIO::Anvil(_) => RegionFormat::Anvil,
-            LevelFileIO::Linear(_) => RegionFormat::Linear,
-            LevelFileIO::Pump(_) => RegionFormat::Pump,
-        };
         if generate {
-            let check_files = self
-                .check_files
-                .is_none_or(|t| t.elapsed() >= Duration::from_secs(2));
-            for &(k, _) in &wanted {
-                match self.regions.entry(k) {
-                    std::collections::btree_map::Entry::Vacant(slot) => slot
-                        .insert(Region::new(&level.level_folder, level.seed.0, kind, k))
-                        .refresh(),
-                    std::collections::btree_map::Entry::Occupied(mut slot) if check_files => {
-                        slot.get_mut().refresh();
-                    }
-                    std::collections::btree_map::Entry::Occupied(_) => {}
-                }
-            }
-            if check_files {
-                self.check_files = Some(Instant::now());
-            }
-            let mut pending: Vec<_> = self.regions.values_mut().filter(|r| r.pending()).collect();
-            let start = Instant::now();
-            for _ in 0..12 {
-                if pending.is_empty() || start.elapsed() >= Duration::from_millis(8) {
-                    break;
-                }
-                let index = self.scan_cursor % pending.len();
-                self.scan_cursor = self.scan_cursor.wrapping_add(1);
-                pending[index].step();
-                if !pending[index].pending() {
-                    pending.swap_remove(index);
-                }
-            }
-
-            // Only sample chunks the game already loaded. Never acquire a ticket for LOD.
-            let mut dirty = Vec::new();
-            for entry in level.loaded_chunks.iter() {
-                let (x, z) = (entry.key().x, entry.key().y);
-                if !keep.contains(&(x.div_euclid(32), z.div_euclid(32))) {
-                    continue;
-                }
-                let chunk = entry.value();
-                let rev = chunk.section.terrain_revision().0;
-                let old = self.live.get(&(x, z));
-                if old.is_none_or(|(c, r, _)| *r != rev || c.as_ptr() != Arc::as_ptr(chunk)) {
-                    let distance = views
-                        .iter()
-                        .map(|v| (x - v.center.0).abs().max((z - v.center.1).abs()))
-                        .min()
-                        .unwrap_or_default();
-                    dirty.push((old.is_none(), distance, (x, z)));
-                }
-            }
-            if dirty.len() > 12 {
-                dirty.select_nth_unstable(12);
-                dirty.truncate(12);
-            }
-            dirty.sort_unstable();
-            let start = Instant::now();
-            for (_, _, coord) in dirty {
-                if start.elapsed() >= Duration::from_millis(6) {
-                    break;
-                }
-                let Some(chunk) = level
-                    .loaded_chunks
-                    .get(&Vector2::new(coord.0, coord.1))
-                    .map(|c| c.clone())
-                else {
-                    continue;
-                };
-                let rev = chunk.section.terrain_revision().0;
-                let summary = summarize(&chunk);
-                if chunk.section.terrain_revision().0 == rev {
-                    self.live
-                        .insert(coord, (Arc::downgrade(&chunk), rev, summary));
-                }
-            }
+            self.read_saved(level, &wanted);
+            self.sample_loaded(level, &keep, views);
         }
         let mut rows = Atlas::new();
         for r in self.regions.values() {
@@ -210,6 +133,90 @@ impl Survey {
         });
         rows.extend(self.live.iter().map(|(&p, (_, _, s))| (p, *s)));
         rows
+    }
+
+    fn read_saved(&mut self, level: &Level, wanted: &[(Grid, i32)]) {
+        let kind = match level.chunk_saver.as_ref() {
+            LevelFileIO::Anvil(_) => RegionFormat::Anvil,
+            LevelFileIO::Linear(_) => RegionFormat::Linear,
+            LevelFileIO::Pump(_) => RegionFormat::Pump,
+        };
+        let check_files = self
+            .check_files
+            .is_none_or(|t| t.elapsed() >= Duration::from_secs(2));
+        for &(k, _) in wanted {
+            match self.regions.entry(k) {
+                std::collections::btree_map::Entry::Vacant(slot) => slot
+                    .insert(Region::new(&level.level_folder, level.seed.0, kind, k))
+                    .refresh(),
+                std::collections::btree_map::Entry::Occupied(mut slot) if check_files => {
+                    slot.get_mut().refresh();
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {}
+            }
+        }
+        if check_files {
+            self.check_files = Some(Instant::now());
+        }
+        let mut pending: Vec<_> = self.regions.values_mut().filter(|r| r.pending()).collect();
+        let start = Instant::now();
+        for _ in 0..12 {
+            if pending.is_empty() || start.elapsed() >= Duration::from_millis(8) {
+                break;
+            }
+            let index = self.scan_cursor % pending.len();
+            self.scan_cursor = self.scan_cursor.wrapping_add(1);
+            pending[index].step();
+            if !pending[index].pending() {
+                pending.swap_remove(index);
+            }
+        }
+    }
+
+    fn sample_loaded(&mut self, level: &Level, keep: &HashSet<Grid>, views: &HashSet<View>) {
+        // Only sample chunks the game already loaded. Never acquire a ticket for LOD.
+        let mut dirty = Vec::new();
+        for entry in level.loaded_chunks.iter() {
+            let (x, z) = (entry.key().x, entry.key().y);
+            if !keep.contains(&(x.div_euclid(32), z.div_euclid(32))) {
+                continue;
+            }
+            let chunk = entry.value();
+            let rev = chunk.section.terrain_revision().0;
+            let old = self.live.get(&(x, z));
+            if old.is_none_or(|(c, r, _)| *r != rev || c.as_ptr() != Arc::as_ptr(chunk)) {
+                let distance = views
+                    .iter()
+                    .map(|v| (x - v.center.0).abs().max((z - v.center.1).abs()))
+                    .min()
+                    .unwrap_or_default();
+                dirty.push((old.is_none(), distance, (x, z)));
+            }
+        }
+        if dirty.len() > 12 {
+            dirty.select_nth_unstable(12);
+            dirty.truncate(12);
+        }
+        dirty.sort_unstable();
+        let start = Instant::now();
+        for (_, _, coord) in dirty {
+            if start.elapsed() >= Duration::from_millis(6) {
+                break;
+            }
+            let Some(chunk) = level
+                .loaded_chunks
+                .get(&Vector2::new(coord.0, coord.1))
+                .map(|c| c.clone())
+            else {
+                continue;
+            };
+            let rev = chunk.section.terrain_revision().0;
+            let summary = summarize(&chunk);
+            if chunk.section.terrain_revision().0 == rev {
+                self.live
+                    .insert(coord, (Arc::downgrade(&chunk), rev, summary));
+            }
+        }
     }
 }
 

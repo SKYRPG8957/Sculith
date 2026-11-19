@@ -1,4 +1,4 @@
-"""Drive a simultaneous Bedrock join and play benchmark in a disposable flat world."""
+"""Drive a simultaneous Bedrock join and play benchmark on a disposable world copy."""
 import argparse
 import hashlib
 import json
@@ -56,7 +56,8 @@ def host_interval(start, end):
 parser = argparse.ArgumentParser()
 parser.add_argument("--server", type=Path, required=True)
 parser.add_argument("--wine", type=Path)
-parser.add_argument("--world", type=Path, required=True, help="stopped flat test world")
+parser.add_argument("--world", type=Path, required=True, help="stopped test world to copy")
+parser.add_argument("--arena", nargs=3, type=int, metavar=("X","Y","Z"), default=(0,-59,0), help="arena centre at player foot height")
 parser.add_argument("--client", type=Path, required=True, help="built cmd/burst executable")
 parser.add_argument("--rpg", type=Path, required=True)
 parser.add_argument("--players", type=int, default=100)
@@ -77,6 +78,11 @@ if args.distant_terrain and not args.required_pack:
     parser.error("--distant-terrain needs --required-pack")
 if not 2 <= args.players <= 250 or args.play < 4 or not 0 <= args.pigs <= 256:
     parser.error("players 2–250, play at least four seconds, pigs 0–256")
+cx, cy, cz = args.arena
+
+def position(x, y, z):
+    return f"{cx+x} {cy+y} {cz+z}"
+
 out = args.output.resolve()
 out.parent.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
@@ -167,26 +173,48 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                         advertised_threshold = int(match[1]) if match else None
                         break
                 else: raise RuntimeError(f"Arena preparation client failed. See {setup_log.name}")
-            command("forceload add -16 -16 16 16")
+            if tuple(args.arena) != (0,-59,0):
+                command(f"tp ArenaBuilder {position(0,4,0)}")
+            command(f"forceload add {cx-16} {cz-16} {cx+16} {cz+16}")
             deadline=time.monotonic()+50
             while not loaded.is_set() and time.monotonic()<deadline:
-                command("execute if loaded -16 -60 -16 if loaded 16 -60 16 run time query daytime")
+                command(f"execute if loaded {position(-16,-1,-16)} if loaded {position(16,-1,16)} run time query daytime")
                 loaded.wait(0.3)
             if not loaded.is_set():
                 raise RuntimeError(f"Test arena chunks did not load. See {log_path}")
             for line in [
                 "gamerule minecraft:spawn_mobs false", "gamerule minecraft:natural_health_regeneration false", "gamerule minecraft:respawn_radius 0",
                 "gamerule minecraft:max_entity_cramming 0", "gamerule minecraft:advance_time false",
-                "fill -16 -60 -16 16 -60 16 minecraft:stone",
-                "fill -16 -59 -16 16 -55 16 minecraft:air", "setworldspawn 0 -59 0",
-                "fill -16 -59 -16 16 -59 -16 minecraft:stone", "fill -16 -59 16 16 -59 16 minecraft:stone",
-                "fill -16 -59 -15 -16 -59 15 minecraft:stone", "fill 16 -59 -15 16 -59 15 minecraft:stone",
+                f"fill {position(-16,-1,-16)} {position(16,-1,16)} minecraft:stone",
+                f"fill {position(-16,0,-16)} {position(16,4,16)} minecraft:air", f"setworldspawn {position(0,0,0)}",
+                f"fill {position(-16,0,-16)} {position(16,0,-16)} minecraft:stone", f"fill {position(-16,0,16)} {position(16,0,16)} minecraft:stone",
+                f"fill {position(-16,0,-15)} {position(-16,0,15)} minecraft:stone", f"fill {position(16,0,-15)} {position(16,0,15)} minecraft:stone",
             ]:
                 command(line)
             for i in range(args.pigs):
-                command(f"summon minecraft:pig {i%8-4} -59 {i//8-4}")
+                command(f"summon minecraft:pig {position(i%8-4,0,i//8-4)}")
             command("list")
             wait(built,90)
+            if args.distant_terrain:
+                # Visit a 2x2 patch in each LOD band before the simultaneous login.
+                # Build all three with ordinary chunks, then let the preparation client leave.
+                command("gamemode creative ArenaBuilder")
+                for offset in (23, 34, 50):
+                    chunk_x = cx // 16 + offset
+                    chunk_z = cz // 16
+                    x, z = chunk_x * 16, chunk_z * 16
+                    loaded.clear()
+                    command(f"tp ArenaBuilder {x+8} {cy+8} {z+8}")
+                    deadline = time.monotonic() + 60
+                    while not loaded.is_set() and time.monotonic() < deadline:
+                        command(f"execute if loaded {x} {cy} {z} if loaded {x+31} {cy} {z+31} run time query daytime")
+                        loaded.wait(0.3)
+                    if not loaded.is_set():
+                        raise RuntimeError(f"Distant terrain at {x}/{z} did not load")
+                command("save-all flush")
+                built.clear()
+                command("list")
+                wait(built, 90)
             builder.stdin.close()
             builder.wait(timeout=15)
             if args.terrain_smoke:
@@ -197,8 +225,8 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                             trace.write(line)
                             trace.flush()
                             if line.startswith("TERRAIN_TELEPORT "):
-                                _, cx, cz = line.split()
-                                command(f"tp TerrainProbe {int(cx)*16+0.5} -59 {int(cz)*16+0.5}")
+                                _, chunk_x, chunk_z = line.split()
+                                command(f"tp TerrainProbe {int(chunk_x)*16+0.5} {cy} {int(chunk_z)*16+0.5}")
                     if travel.wait():
                         raise RuntimeError(f"Bedrock terrain travel failed. See {out.with_suffix('.travel.log')}")
             if args.rpg_smoke:
@@ -222,22 +250,6 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 finally:
                     if check.poll() is None: check.kill();check.wait()
             time.sleep(1)
-            if args.distant_terrain:
-                # Let the ordinary chunk system generate a 2x2 landmark outside view 16.
-                # Keep normal viewing/simulation radii for all 100 clients.
-                loaded.clear()
-                command("forceload add 368 0 399 31")
-                deadline = time.monotonic() + 50
-                while not loaded.is_set() and time.monotonic() < deadline:
-                    command("execute if loaded 368 -60 0 if loaded 399 -60 31 run time query daytime")
-                    loaded.wait(0.3)
-                if not loaded.is_set():
-                    raise RuntimeError("Distant terrain landmark did not generate")
-                command("save-all flush")
-                command("forceload remove 368 0 399 31")
-                built.clear()
-                command("list")
-                wait(built, 90)
             def tick_samples():
                 while not fin.wait(1):
                     command("sculith performance")
@@ -245,6 +257,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             phase="join"
             meter.start()
             client=subprocess.Popen([str(args.client.resolve()),"-address",f"127.0.0.1:{args.port}","-players",str(args.players),
+                "-marker-x",str(cx+3),"-marker-y",str(cy),"-marker-z",str(cz+4),
                 "-output",str(out),"-play",f"{args.play}s"]+(["-encounter"] if args.encounter else []),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
             counters = {}
             try:
@@ -257,7 +270,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                         if line.startswith("PLAY "): phase="play"
                         if line.startswith("MARK "):
                             wave=int(line.split()[1])
-                            command(f"setblock {3+wave} -59 4 minecraft:gold_block")
+                            command(f"setblock {position(3+wave,0,4)} minecraft:gold_block")
                             if args.encounter and wave==1:
                                 command("experience add @a 105 points")
                                 command("execute as @a run damage @s 4")
@@ -277,7 +290,8 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             cpu_max=Path("/sys/fs/cgroup/cpu.max")
             if os.name == "posix" and cpu_max.is_file(): report["cohost_cpu_max"]=cpu_max.read_text().strip()
             report["clients_and_server_on_same_host"]=True
-            report["world_preparation"]="Copied flat world; one preparation client disconnected before the simultaneous start."
+            report["world_preparation"]="World copy with one preparation client disconnected before the simultaneous start."
+            report["arena_centre"] = [cx, cy, cz]
             report["input_hz"]=20
             report["online_authentication"]=False
             report["rpg_encounter_enabled"]=args.encounter
@@ -323,6 +337,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 )
             if args.distant_terrain:
                 report["checks"]["every_viewer_received_distant_terrain"] = report.get("viewers_receiving_lod_tiles", 0) == args.players
+                report["checks"]["each_viewer_received_three_terrain_scales"] = report.get("viewers_receiving_all_lod_scales") == args.players
                 report["checks"]["lod_actor_order_and_budget"] = report.get("lod_invalid_sequences", -1) == 0 and 0 < report.get("lod_peak_per_viewer", 0) <= 32
             report["all_budgets_met"]=all(report["checks"].values())
             out.write_text(json.dumps(report,indent=2)+"\n")

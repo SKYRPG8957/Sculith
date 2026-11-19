@@ -61,6 +61,7 @@ func (t *trace) stamp(p mgl32.Vec3) (time.Time, bool) {
 
 type playerResult struct {
 	LODAdds, LODPeak, LODInvalid int
+	LODScales                    [3]bool
 	OrderedPeer                  bool
 	RosterAdds                   int
 	HealMS                       float64
@@ -99,21 +100,22 @@ func (g *motionGap) record(start, prev, now, prevInput, input time.Time, boundar
 }
 
 type run struct {
-	encounter        bool
-	configured       sync.WaitGroup
-	connect          chan struct{}
-	goldID, goldHash uint32
-	address          string
-	count            int
-	spawn, play      time.Duration
-	start            time.Time
-	ready            sync.WaitGroup
-	playStart        time.Time
-	goPlay           chan struct{}
-	ids              []atomic.Uint64
-	traces           []trace
-	results          []playerResult
-	markers          [3]atomic.Int64
+	markerX, markerY, markerZ int
+	encounter                 bool
+	configured                sync.WaitGroup
+	connect                   chan struct{}
+	goldID, goldHash          uint32
+	address                   string
+	count                     int
+	spawn, play               time.Duration
+	start                     time.Time
+	ready                     sync.WaitGroup
+	playStart                 time.Time
+	goPlay                    chan struct{}
+	ids                       []atomic.Uint64
+	traces                    []trace
+	results                   []playerResult
+	markers                   [3]atomic.Int64
 }
 
 func ms(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
@@ -191,6 +193,7 @@ func (r *run) client(i int) {
 		echo, motion, blocks               []float64
 		deaths, pigs, chunks, uniqueChunks int
 		lodAdds, lodPeak, lodInvalid       int
+		lodScales                          [3]bool
 		rpg, err                           string
 		healMS                             float64
 		gap                                motionGap
@@ -278,6 +281,14 @@ func (r *run) client(i int) {
 					if dupe || id != uint64(v.EntityUniqueID) || id>>58 != 1 || !ok || (width != 8 && width != 16 && width != 32) {
 						s.lodInvalid++
 					}
+					switch width {
+					case 8:
+						s.lodScales[0] = true
+					case 16:
+						s.lodScales[1] = true
+					case 32:
+						s.lodScales[2] = true
+					}
 					lod[id] = struct{}{}
 					s.lodAdds++
 					s.lodPeak = max(s.lodPeak, len(lod))
@@ -304,8 +315,8 @@ func (r *run) client(i int) {
 					s.rpg = v.Message
 				}
 			case *packet.UpdateBlock:
-				w := int(v.Position[0]) - 3
-				if w >= 0 && w < 3 && !seen[w] && v.Position[1] == -59 && v.Position[2] == 4 && v.NewBlockRuntimeID == gold {
+				w := int(v.Position[0]) - r.markerX
+				if w >= 0 && w < 3 && !seen[w] && int(v.Position[1]) == r.markerY && int(v.Position[2]) == r.markerZ && v.NewBlockRuntimeID == gold {
 					if stamp := r.markers[w].Load(); stamp > 0 {
 						seen[w] = true
 						s.blocks = append(s.blocks, ms(now.Sub(time.Unix(0, stamp))))
@@ -383,6 +394,7 @@ wait:
 	result.Motion = s.motion
 	result.Blocks = s.blocks
 	result.Pigs = s.pigs
+	result.LODScales = s.lodScales
 	result.LODAdds, result.LODPeak, result.LODInvalid = s.lodAdds, s.lodPeak, s.lodInvalid
 	result.Chunks = s.chunks
 	result.UniqueChunks = s.uniqueChunks
@@ -535,6 +547,9 @@ func main() {
 	flag.DurationVar(&r.play, "play", 60*time.Second, "time in active play")
 	flag.StringVar(&path, "output", "burst.json", "measurement report")
 
+	flag.IntVar(&r.markerX, "marker-x", 3, "first edited block X")
+	flag.IntVar(&r.markerY, "marker-y", -59, "edited block Y")
+	flag.IntVar(&r.markerZ, "marker-z", 4, "edited block Z")
 	flag.Parse()
 	if r.count < 2 || r.count > 250 {
 		panic("players must be 2–250")
@@ -616,7 +631,8 @@ func main() {
 	errors := map[string]string{}
 	packCopies := map[string]int{}
 	var packBytes int64
-	var lodViewers, lodPeak, lodInvalid, lodAdds int
+	var lodViewers, lodFull, lodPeak, lodInvalid, lodAdds int
+	var scaleViewers [3]int
 	var worst motionGap
 	var worstViewer int
 	for i, p := range r.results {
@@ -670,6 +686,14 @@ func main() {
 		if p.LODAdds > 0 {
 			lodViewers++
 		}
+		for j, seen := range p.LODScales {
+			if seen {
+				scaleViewers[j]++
+			}
+		}
+		if p.LODScales == [3]bool{true, true, true} {
+			lodFull++
+		}
 		lodPeak = max(lodPeak, p.LODPeak)
 		lodInvalid += p.LODInvalid
 		lodAdds += p.LODAdds
@@ -689,6 +713,8 @@ func main() {
 	}
 	report := map[string]interface{}{"players": r.count, "spawned": admitted, "survived": alive, "duration_s": r.play.Seconds(), "inputs_sent": sent, "viewers_with_matched_peer": peers, "rpg_replies": responded, "viewers_receiving_three_markers": allBlocks, "viewers_receiving_pigs": sawMobs, "spawn": stats(spawns), "peer_input_to_visible_motion": stats(motion), "echo_round_trip": stats(echo), "world_block_to_visible_update": stats(blocks), "per_viewer_max_motion_gap": stats(gaps), "client_errors": errors}
 	report["viewers_receiving_lod_tiles"] = lodViewers
+	report["viewers_receiving_all_lod_scales"] = lodFull
+	report["lod_viewers_by_tile_width"] = map[string]int{"8": scaleViewers[0], "16": scaleViewers[1], "32": scaleViewers[2]}
 	report["lod_tile_spawns"] = lodAdds
 	report["lod_peak_per_viewer"] = lodPeak
 	report["lod_invalid_sequences"] = lodInvalid

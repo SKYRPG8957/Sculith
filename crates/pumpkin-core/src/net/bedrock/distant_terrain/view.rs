@@ -103,22 +103,70 @@ impl View {
                 ));
             }
         }
-        if choices.len() > self.budget {
-            choices
-                .select_nth_unstable_by_key(self.budget, |&(distance, tile, _)| (distance, tile));
-            choices.truncate(self.budget);
+        self.limit_tiles(choices)
+    }
+
+    fn limit_tiles(self, mut choices: Vec<(i32, Tile, Surface)>) -> BTreeMap<Tile, Surface> {
+        if choices.len() <= self.budget {
+            return choices.into_iter().map(|(_, tile, s)| (tile, s)).collect();
         }
-        choices
+        // Reserve a visible sample in each quadrant at each available scale.
+        // A continuous near ring must not crowd every distant tile off the client.
+        let mut coverage = [None; 12];
+        for &(distance, tile, surface) in &choices {
+            let tier = tile.width.trailing_zeros() as usize - 3;
+            let east = usize::from(tile.x.div_euclid(16) >= self.center.0);
+            let south = usize::from(tile.z.div_euclid(16) >= self.center.1);
+            let entry = &mut coverage[4 * tier + 2 * east + south];
+            if entry.is_none_or(|(d, t, _)| (distance, tile) < (d, t)) {
+                *entry = Some((distance, tile, surface));
+            }
+        }
+        let mut result: BTreeMap<_, _> = coverage
             .into_iter()
+            .flatten()
             .take(self.budget)
-            .map(|(_, key, s)| (key, s))
-            .collect()
+            .map(|(_, tile, surface)| (tile, surface))
+            .collect();
+        if result.len() < self.budget {
+            let (nearest, _, _) =
+                choices.select_nth_unstable_by_key(self.budget, |&(d, tile, _)| (d, tile));
+            nearest.sort_unstable_by_key(|&(d, tile, _)| (d, tile));
+            for &(.., tile, surface) in nearest.iter() {
+                result.insert(tile, surface);
+                if result.len() == self.budget {
+                    break;
+                }
+            }
+        }
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn continuous_terrain_covers_all_quadrants_and_scales_at_the_lowest_client_budget() {
+        let surface = Some(Surface { y: 64, material: 1 });
+        let rows: Atlas = (-64..=64)
+            .flat_map(|x| (-64..=64).map(move |z| ((x, z), [surface; 5])))
+            .collect();
+        let view = View {
+            center: (0, 0),
+            radius: NonZero::new(16).unwrap(),
+            budget: 12,
+        };
+        let tiles = view.select(&rows);
+        let areas: std::collections::BTreeSet<_> = tiles
+            .keys()
+            .map(|t| (t.width, t.x >= 0, t.z >= 0))
+            .collect();
+        assert_eq!(tiles.len(), 12);
+        assert_eq!(areas.len(), 12);
+        assert_eq!(tiles, view.select(&rows));
+    }
+
     #[test]
     fn same_terrain_selects_one_tier_outside_full_chunks() {
         let surface = Some(Surface { y: 64, material: 1 });
