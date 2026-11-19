@@ -1,11 +1,14 @@
 use std::io::{Cursor, Read};
 
+use bytes::Bytes;
+
 use crate::{
     CompressionThreshold, MAX_PACKET_DATA_SIZE, PacketDecodeError, RawPacket,
     bedrock::BEDROCK_GAME_PACKET, codec::var_uint::VarUInt, ser::ReadingError,
 };
 
 /// Decodes incoming Bedrock game packets and decompresses batched network frames.
+#[derive(Clone, Copy)]
 pub struct BedrockBatchDecoder {
     compression: Option<CompressionThreshold>,
     prefixed_compression: bool,
@@ -46,82 +49,62 @@ impl BedrockBatchDecoder {
         &mut self,
         full_packet: Vec<u8>,
     ) -> Result<Vec<u8>, PacketDecodeError> {
-        if full_packet.is_empty() {
-            return Err(PacketDecodeError::MalformedLength("Empty packet".into()));
-        }
-
-        // NetherNet carries the batch without the Bedrock game-packet marker.
-        // The transport adapter restores it before decoding.
-        if full_packet[0] != BEDROCK_GAME_PACKET {
+        let header = full_packet
+            .first()
+            .copied()
+            .ok_or_else(|| PacketDecodeError::MalformedLength("Empty packet".into()))?;
+        if header != BEDROCK_GAME_PACKET {
             return Err(PacketDecodeError::MalformedLength(format!(
-                "Missing 0xfe header (found 0x{:02x})",
-                full_packet[0]
+                "Missing 0xfe header (found 0x{header:02x})"
             )));
         }
+        self.decode_nethernet_batch(Bytes::from(full_packet).slice(1..))
+            .map(Vec::from)
+    }
 
-        let full_packet_payload = &full_packet[1..];
-
-        // If compression is NOT enabled yet, the payload starts at index 0 of full_packet_payload
-        if self.compression.is_none() || (!self.prefixed_compression && self.compression == Some(0))
-        {
-            let payload = full_packet_payload;
-            if payload.len() > MAX_PACKET_DATA_SIZE {
-                return Err(PacketDecodeError::TooLong);
-            }
-            return Ok(payload.to_vec());
-        }
-
-        if !self.prefixed_compression {
-            let mut decoder = flate2::read::DeflateDecoder::new(full_packet_payload)
-                .take(MAX_PACKET_DATA_SIZE as u64 + 1);
-            let mut decompressed = Vec::new();
-            decoder
-                .read_to_end(&mut decompressed)
-                .map_err(|e| PacketDecodeError::FailedDecompression(e.to_string()))?;
-            if decompressed.len() > MAX_PACKET_DATA_SIZE {
-                return Err(PacketDecodeError::TooLong);
-            }
-            return Ok(decompressed);
-        }
-
-        // If prefixed compression IS enabled, Bedrock expects a compression method byte at index 0 of full_packet_payload.
-        let compression_method = full_packet_payload.first().ok_or_else(|| {
-            PacketDecodeError::MalformedLength("Missing Bedrock compression method".into())
-        })?;
-        let data_start = 1;
-
-        match compression_method {
-            0x00 => {
-                let compressed_payload = &full_packet_payload[data_start..];
-                let mut decoder = flate2::read::DeflateDecoder::new(compressed_payload)
-                    .take(MAX_PACKET_DATA_SIZE as u64 + 1);
-                let mut decompressed = Vec::new();
-                decoder
-                    .read_to_end(&mut decompressed)
-                    .map_err(|e| PacketDecodeError::FailedDecompression(e.to_string()))?;
-                if decompressed.len() > MAX_PACKET_DATA_SIZE {
-                    return Err(PacketDecodeError::TooLong);
+    /// Decodes `NetherNet`'s markerless batch, retaining the original buffer for raw packets.
+    pub fn decode_nethernet_batch(&self, payload: Bytes) -> Result<Bytes, PacketDecodeError> {
+        let plain = match (self.compression, self.prefixed_compression) {
+            (None, _) | (Some(0), false) => payload,
+            (Some(_), false) => return Self::inflate(&payload),
+            (Some(_), true) => match payload.first() {
+                Some(0x00) => return Self::inflate(&payload[1..]),
+                Some(0xff) => payload.slice(1..),
+                Some(method) => {
+                    return Err(PacketDecodeError::FailedDecompression(format!(
+                        "Unsupported compression method: 0x{method:02x}"
+                    )));
                 }
-                Ok(decompressed)
-            }
-            0xff => {
-                // None (Compression enabled but this specific packet is raw)
-                let payload = &full_packet_payload[data_start..];
-                if payload.len() > MAX_PACKET_DATA_SIZE {
-                    return Err(PacketDecodeError::TooLong);
+                None => {
+                    return Err(PacketDecodeError::MalformedLength(
+                        "Missing Bedrock compression method".into(),
+                    ));
                 }
-                Ok(payload.to_vec())
-            }
-            _ => Err(PacketDecodeError::FailedDecompression(format!(
-                "Unsupported compression method: 0x{compression_method:02x}"
-            ))),
+            },
+        };
+        if plain.len() > MAX_PACKET_DATA_SIZE {
+            return Err(PacketDecodeError::TooLong);
         }
+        Ok(plain)
+    }
+
+    fn inflate(payload: &[u8]) -> Result<Bytes, PacketDecodeError> {
+        let mut decoder =
+            flate2::read::DeflateDecoder::new(payload).take(MAX_PACKET_DATA_SIZE as u64 + 1);
+        let mut decompressed = Vec::new();
+        decoder
+            .read_to_end(&mut decompressed)
+            .map_err(|error| PacketDecodeError::FailedDecompression(error.to_string()))?;
+        if decompressed.len() > MAX_PACKET_DATA_SIZE {
+            return Err(PacketDecodeError::TooLong);
+        }
+        Ok(decompressed.into())
     }
 
     /// Reads the next game packet header and payload from a decompressed batch frame reader.
     pub fn get_game_packet(
-        &mut self,
-        decompressed_reader: &mut Cursor<Vec<u8>>,
+        &self,
+        decompressed_reader: &mut Cursor<impl AsRef<[u8]>>,
     ) -> Result<RawPacket, PacketDecodeError> {
         let packet_len = VarUInt::decode(decompressed_reader).map_err(|err| match err {
             ReadingError::CleanEOF(_) => PacketDecodeError::ConnectionClosed,
@@ -151,6 +134,7 @@ impl BedrockBatchDecoder {
         let payload_len = packet_len - header_size;
         let remaining = decompressed_reader
             .get_ref()
+            .as_ref()
             .len()
             .saturating_sub(decompressed_reader.position() as usize);
         if payload_len > remaining {
@@ -180,6 +164,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decodes_nethernet_batches_on_both_sides_of_threshold() {
+        let mut decoder = BedrockBatchDecoder::new();
+        decoder.set_compression(256);
+        let mut encoder = BedrockBatchEncoder::new();
+        encoder.set_compression((256, 4));
+
+        for (size, method) in [(32, 0xff), (300, 0x00)] {
+            let sent = vec![0x2a; size];
+            let mut wire = Vec::new();
+            encoder
+                .write_game_packet(1, SubClient::Main, SubClient::Main, &sent, &mut wire)
+                .expect("encode test frame");
+            assert_eq!(wire[1], method);
+            let transport = Bytes::from(wire).slice(1..);
+            let plain = decoder
+                .decode_nethernet_batch(transport.clone())
+                .expect("decode markerless frame");
+            if method == 0xff {
+                assert_eq!(plain.as_ptr(), transport[1..].as_ptr());
+            }
+            let packet = decoder
+                .get_game_packet(&mut Cursor::new(plain))
+                .expect("read test frame");
+            assert_eq!(packet.id, 1);
+            assert_eq!(packet.payload.as_ref(), sent);
+        }
+    }
+
+    #[test]
     fn decodes_payload_larger_than_two_mib() {
         const PAYLOAD_LEN: usize = 2 * 1024 * 1024 + 1;
         let payload = vec![0x2a; PAYLOAD_LEN];
@@ -196,7 +209,7 @@ mod tests {
             .expect("encode Bedrock game packet");
 
         let mut cursor = Cursor::new(wire_buf[1..].to_vec());
-        let mut decoder = BedrockBatchDecoder::new();
+        let decoder = BedrockBatchDecoder::new();
 
         let packet = decoder
             .get_game_packet(&mut cursor)

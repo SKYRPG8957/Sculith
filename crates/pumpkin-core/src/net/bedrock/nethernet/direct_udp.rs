@@ -137,17 +137,24 @@ impl AsyncUdpSocket for DirectSocket {
     fn local_addr(&self) -> io::Result<SocketAddr> {
         Ok(self.local)
     }
+    fn max_gso_segments(&self) -> usize {
+        // A transmit may still need the relay socket, which must accept the same batch.
+        // WebRTC uses this limit in its minimum run for batching. Four datagrams fit common
+        // NetherNet terrain messages, whose application fragments are at most 10,000 bytes.
+        self.router
+            .public
+            .max_gso_segments()
+            .min(self.socket.max_gso_segments())
+            .min(4)
+    }
     fn max_gro_segments(&self) -> usize {
         self.socket.max_gro_segments()
     }
 
     fn poll_send(&self, cx: &mut Context<'_>, transmit: &Transmit<'_>) -> Poll<io::Result<usize>> {
         if transmit.destination == self.router.relay
-            && transmit
-                .segment_size
-                .is_none_or(|size| size >= transmit.contents.len())
             && let Some(target) = self.router.target(self.local)
-            && let Ok(len) = self.router.public.try_send_to(transmit.contents, target)
+            && let Ok(len) = self.router.public.try_send_transmit(transmit, target)
         {
             return Poll::Ready(Ok(len));
         }

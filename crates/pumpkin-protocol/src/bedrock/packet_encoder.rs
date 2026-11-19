@@ -170,7 +170,7 @@ impl BedrockBatchEncoder {
         Ok(true)
     }
 
-    /// Encodes a complete large terrain frame or blob response for viewers with the same settings.
+    /// Reuses encoded large terrain frames and blob responses for viewers with the same settings.
     /// Small game batches use the regular encoder. A miss follows that same wire path.
     pub fn try_share_large_terrain_frame(&self, frame: &[u8]) -> Result<Option<Bytes>, Error> {
         let Some((threshold, level)) = self.compression else {
@@ -195,34 +195,49 @@ impl BedrockBatchEncoder {
         let chunks = &*LARGE_CHUNKS;
         let index =
             chunks.hasher.hash_one((frame.len(), &frame[..32])) as usize % chunks.slots.len();
-        let mut shard = chunks.slots[index]
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(index) = shard
-            .iter()
-            .position(|chunk| chunk.encoder == *self && chunk.frame.as_ref() == frame)
-            && let Some(chunk) = shard.remove(index)
-        {
+        let shard = &chunks.slots[index];
+        let cached_frame = |entries: &mut VecDeque<SharedChunk>| {
+            let index = entries
+                .iter()
+                .position(|chunk| chunk.encoder == *self && chunk.frame.as_ref() == frame)?;
+            let chunk = entries.remove(index)?;
             let encoded = chunk.encoded.clone();
-            shard.push_back(chunk);
+            entries.push_back(chunk);
+            Some(encoded)
+        };
+        let existing = {
+            let mut entries = shard
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cached_frame(&mut entries)
+        };
+        if let Some(encoded) = existing {
             return Ok(Some(encoded));
         }
+
+        // Encoding can occupy this worker long enough to stall other viewers of the shard.
         let mut encoded = Vec::new();
         self.try_write_framed_game_packets(std::iter::once(frame), &mut encoded)?;
         let encoded = Bytes::from(encoded.into_boxed_slice());
         if encoded.len() <= MAX_SHARED_TERRAIN_FRAME {
-            let mut size =
-                frame.len() + encoded.len() + shard.iter().map(SharedChunk::size).sum::<usize>();
+            let entry = SharedChunk {
+                encoder: *self,
+                frame: frame.into(),
+                encoded: encoded.clone(),
+            };
+            let mut shard = shard
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(encoded) = cached_frame(&mut shard) {
+                return Ok(Some(encoded));
+            }
+            let mut size = entry.size() + shard.iter().map(SharedChunk::size).sum::<usize>();
             while (size > LargeChunks::SHARD_BYTES || shard.len() >= LargeChunks::SHARD_ENTRIES)
                 && let Some(evicted) = shard.pop_front()
             {
                 size -= evicted.size();
             }
-            shard.push_back(SharedChunk {
-                encoder: *self,
-                frame: frame.into(),
-                encoded: encoded.clone(),
-            });
+            shard.push_back(entry);
         }
         Ok(Some(encoded))
     }
@@ -284,7 +299,7 @@ impl BedrockBatchEncoder {
                 cache.set(Some(d));
                 return writer.write_all(&encoded);
             }
-            d.output.resize(compress_bound(size), 0);
+            d.output.resize(d.output.len().max(compress_bound(size)), 0);
             let status = d
                 .encoder
                 .compress(&d.scratch, &mut d.output, DeflateFlush::Finish)
@@ -436,6 +451,37 @@ mod tests {
     use super::*;
     use crate::bedrock::packet_decoder::BedrockBatchDecoder;
     use std::io::Cursor;
+
+    #[test]
+    fn simultaneous_terrain_misses_reuse_the_published_frame() {
+        let mut encoder = BedrockBatchEncoder::new();
+        encoder.set_compression((256, 4));
+        let mut frame: Vec<u8> = (0..53_721).map(|i| (i % 211) as u8).collect();
+        frame[0] = pumpkin_data::bedrock_packet::LEVEL_CHUNK as u8;
+        let barrier = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            let callers: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        encoder
+                            .try_share_large_terrain_frame(&frame)
+                            .unwrap()
+                            .unwrap()
+                    })
+                })
+                .collect();
+            let received: Vec<_> = callers
+                .into_iter()
+                .map(|call| call.join().unwrap())
+                .collect();
+            assert!(
+                received
+                    .iter()
+                    .all(|data| data.as_ptr() == received[0].as_ptr())
+            );
+        });
+    }
 
     #[test]
     fn large_terrain_reuses_only_identical_negotiated_frames() {

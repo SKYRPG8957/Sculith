@@ -21,7 +21,7 @@ use pumpkin_inventory::screen_handler::ScreenHandler;
 use pumpkin_protocol::{
     BClientPacket, PacketDecodeError, RawPacket,
     bedrock::{
-        BEDROCK_GAME_PACKET, SubClient,
+        SubClient,
         client::{
             client_cache_miss_response::{CClientCacheMissResponse, MissingBlobData},
             disconnect::CDisconnect,
@@ -119,6 +119,7 @@ impl OutgoingPacket {
 // A crowded tick can contain both a position and a velocity for each visible actor.
 // The byte limit in outgoing_frame_len still applies to every frame.
 const MAX_BATCH_PACKETS: usize = 256;
+const RETAINED_BATCH_CAPACITY: usize = 16 * 1024;
 
 // Terrain and gameplay share an ordered stream. Leave room for gameplay while
 // there is already a small window of data waiting in the queue or at SCTP.
@@ -351,6 +352,7 @@ impl BedrockClient {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
             let mut packets = Vec::with_capacity(64);
             let mut frames = Vec::with_capacity(64);
+            let mut encoded = Vec::new();
             loop {
                 let count = tokio::select! {
                     count = receiver.recv_many(&mut packets, MAX_BATCH_PACKETS) => count,
@@ -388,7 +390,7 @@ impl BedrockClient {
                 while !remaining.is_empty() {
                     let (group, rest) = remaining.split_at_mut(outgoing_frame_len(remaining));
                     let queued = group.iter().map(|p| p.data.len()).sum();
-                    let sent = client.send_batch(group, &mut frames).await;
+                    let sent = client.send_batch(group, &mut frames, &mut encoded).await;
                     decrement_pending_bytes(&client.pending_bytes, queued);
                     match sent {
                         Ok(true) => for packet in group {
@@ -420,6 +422,7 @@ impl BedrockClient {
         &self,
         group: &[OutgoingPacket],
         frames: &mut Vec<(u16, Bytes)>,
+        encoded: &mut Vec<u8>,
     ) -> Result<bool, String> {
         frames.clear();
         let writer = *self.network_writer.read().await;
@@ -428,10 +431,10 @@ impl BedrockClient {
                 .try_share_large_terrain_frame(&packet.data)
                 .map_err(|e| e.to_string())?
         {
-            self.session.send(encoded.slice(1..)).await?;
+            self.session.send(&encoded[1..]).await?;
             return Ok(true);
         }
-        let mut encoded = Vec::new();
+        encoded.clear();
         // Broadcasts already share the complete header and payload across viewers.
         // A single pack chunk can reuse its separately cached compressed frame below.
         let single_chunk = matches!(group, [packet] if packet.data.first().is_some_and(|&id|
@@ -440,7 +443,7 @@ impl BedrockClient {
             || !writer
                 .try_write_framed_game_packets(
                     group.iter().map(|packet| packet.data.as_ref()),
-                    &mut encoded,
+                    &mut *encoded,
                 )
                 .map_err(|e| e.to_string())?
         {
@@ -466,14 +469,17 @@ impl BedrockClient {
                     .chunk_frame(writer, body)
                     .await
                     .map_err(|e| e.to_string())?;
-                self.session.send(encoded).await?;
+                self.session.send(encoded.as_ref()).await?;
                 return Ok(true);
             }
             writer
-                .write_game_packets(frames, SubClient::Main, SubClient::Main, &mut encoded)
+                .write_game_packets(frames, SubClient::Main, SubClient::Main, &mut *encoded)
                 .map_err(|e| e.to_string())?;
         }
-        self.session.send(Bytes::from(encoded).slice(1..)).await?;
+        self.session.send(&encoded[1..]).await?;
+        if encoded.capacity() > RETAINED_BATCH_CAPACITY {
+            *encoded = Vec::new();
+        }
         Ok(true)
     }
 
@@ -500,10 +506,7 @@ impl BedrockClient {
 
     pub async fn process_nethernet_packet(self: &Arc<Self>, server: &Arc<Server>, packet: Bytes) {
         self.last_seen.store(std::time::Instant::now());
-        let mut batch = Vec::with_capacity(packet.len() + 1);
-        batch.push(BEDROCK_GAME_PACKET);
-        batch.extend_from_slice(&packet);
-        if let Err(error) = self.process_batch(server, batch).await {
+        if let Err(error) = self.process_batch(server, packet).await {
             error!(
                 "Failed to handle NetherNet payload for {}: {error}",
                 self.address
@@ -1217,21 +1220,19 @@ impl BedrockClient {
     async fn process_batch(
         self: &Arc<Self>,
         server: &Arc<Server>,
-        payload: Vec<u8>,
+        payload: Bytes,
     ) -> Result<(), Error> {
-        let decompressed_payload = self
-            .get_packet_payload(payload)
-            .await
-            .ok_or_else(|| Error::other("Failed to decompress game packet batch"))?;
-        let mut cursor = Cursor::new(decompressed_payload);
+        let decoder = *self.network_reader.lock().await;
+        if self.is_closed() {
+            return Ok(());
+        }
+        let body = decoder
+            .decode_nethernet_batch(payload)
+            .map_err(Error::other)?;
+        let mut cursor = Cursor::new(body);
 
         while (cursor.position() as usize) < cursor.get_ref().len() {
-            let game_packet = self
-                .network_reader
-                .lock()
-                .await
-                .get_game_packet(&mut cursor)
-                .map_err(|e| Error::other(e.to_string()))?;
+            let game_packet = decoder.get_game_packet(&mut cursor).map_err(Error::other)?;
 
             if !self.packet_limiter.check_packet() {
                 warn!(
@@ -1569,7 +1570,11 @@ impl BedrockClient {
             missing_blobs
         };
         if !missing_blobs.is_empty() {
-            self.try_enqueue_client_packet(&CClientCacheMissResponse { missing_blobs });
+            let packet = CClientCacheMissResponse { missing_blobs };
+            match blob_cache::share_blob_reply(packet) {
+                Ok(frame) => self.try_enqueue_packet(frame),
+                Err(error) => error!("Failed to serialize Bedrock packet: {error}"),
+            }
         }
     }
 
@@ -1578,7 +1583,7 @@ impl BedrockClient {
     }
 
     pub async fn get_packet_payload(&self, packet: Vec<u8>) -> Option<Vec<u8>> {
-        let mut network_reader = self.network_reader.lock().await;
+        let mut network_reader = *self.network_reader.lock().await;
         tokio::select! {
             () = self.await_close_interrupt() => {
                 debug!("Canceling player packet processing");
