@@ -166,6 +166,26 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             report.update(tick_windows=samples, view_chunks=16,simulation_chunks=4,pigs_requested=args.pigs,
                 compression_threshold=args.threshold,execution="Windows x64 under Wine" if args.wine else "native",
                 motion_budget_ms=150,tick_budget_ms=50)
+            cpu_max=Path("/sys/fs/cgroup/cpu.max")
+            if cpu_max.exists(): report["cohost_cpu_max"]=cpu_max.read_text().strip()
+            report["clients_and_server_on_same_host"]=True
+            report["world_preparation"]="Copied flat world; one preparation client disconnected before the simultaneous start."
+            report["input_hz"]=20
+            report["tick_summary"]={
+                label: max((sample["p95_ms"] for sample in samples if sample["phase"]==label),default=None)
+                for label in ("join","play")
+            }
+            report["checks"]={
+                "everyone_spawned_and_alive": report["spawned"]==args.players==report["survived"],
+                "everyone_saw_a_measured_peer": report["viewers_with_matched_peer"]==args.players,
+                "everyone_saw_three_world_edits": report["viewers_receiving_three_markers"]==args.players,
+                "everyone_saw_a_mob": args.pigs==0 or report["viewers_receiving_pigs"]==args.players,
+                "everyone_received_rpg_reply": report["rpg_replies"]==args.players,
+                "tick_p95_within_50_ms_during_join_and_play": all(v is not None and v<=50 for v in report["tick_summary"].values()),
+                "remote_motion_p95_within_150_ms_for_every_viewer": report["per_viewer_motion_p95"].get("max_ms",float("inf"))<=150,
+                "world_edits_p95_within_150_ms": report["world_block_to_visible_update"].get("p95_ms",float("inf"))<=150,
+            }
+            report["all_budgets_met"]=all(report["checks"].values())
             out.write_text(json.dumps(report,indent=2)+"\n")
             print(json.dumps({k:v for k,v in report.items() if k not in ("tick_windows","client_errors")},ensure_ascii=False), flush=True)
             if result or (args.pigs and report["viewers_receiving_pigs"]!=args.players) or report["rpg_replies"]!=args.players or report["viewers_receiving_three_markers"]!=args.players:

@@ -488,7 +488,7 @@ func main() {
 		}
 	}()
 	all.Wait()
-	var spawns, motion, echo, blocks, gaps []float64
+	var spawns, motion, echo, blocks, gaps, viewerP95, inputCoverage []float64
 	var admitted, alive, peers, responded, allBlocks, sawMobs, sent int
 	errors := map[string]string{}
 	for i, p := range r.results {
@@ -501,6 +501,13 @@ func main() {
 		}
 		if len(p.Motion) > 0 {
 			peers++
+			sorted := append([]float64(nil), p.Motion...)
+			sort.Float64s(sorted)
+			viewerP95 = append(viewerP95, sorted[int(math.Ceil(.95*float64(len(sorted))))-1])
+			peerSent := r.results[(i+1)%r.count].Sent
+			if peerSent > 0 {
+				inputCoverage = append(inputCoverage, 100*float64(len(p.Motion))/float64(peerSent))
+			}
 			gaps = append(gaps, p.MaxMotionGapMS)
 		}
 		if len(p.Blocks) == 3 {
@@ -521,6 +528,11 @@ func main() {
 		blocks = append(blocks, p.Blocks...)
 	}
 	report := map[string]interface{}{"players": r.count, "spawned": admitted, "survived": alive, "duration_s": r.play.Seconds(), "inputs_sent": sent, "viewers_with_matched_peer": peers, "rpg_replies": responded, "viewers_receiving_three_markers": allBlocks, "viewers_receiving_pigs": sawMobs, "spawn": stats(spawns), "peer_input_to_visible_motion": stats(motion), "echo_round_trip": stats(echo), "world_block_to_visible_update": stats(blocks), "per_viewer_max_motion_gap": stats(gaps), "client_errors": errors}
+	report["per_viewer_motion_p95"] = stats(viewerP95)
+	if len(inputCoverage) > 0 {
+		sort.Float64s(inputCoverage)
+		report["minimum_matched_peer_inputs_percent"] = inputCoverage[0]
+	}
 	bytes, _ := json.MarshalIndent(report, "", "  ")
 	if err = os.WriteFile(path, bytes, 0644); err != nil {
 		panic(err)
