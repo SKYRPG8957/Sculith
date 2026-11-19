@@ -1,0 +1,57 @@
+{
+  "companion_forms": true,
+  "textures": [
+    {
+      "bedrock": "textures/ui/guild/accept_hover.png",
+      "java": "sculith:ui/guild/accept_hover"
+    },
+    {
+      "bedrock": "textures/ui/guild/accept_normal.png",
+      "java": "sculith:ui/guild/accept_normal"
+    },
+    {
+      "bedrock": "textures/ui/guild/accept_pressed.png",
+      "java": "sculith:ui/guild/accept_pressed"
+    },
+    {
+      "bedrock": "textures/ui/guild/brief.png",
+      "java": "sculith:ui/guild/brief"
+    },
+    {
+      "bedrock": "textures/ui/guild/close_hover.png",
+      "java": "sculith:ui/guild/close_hover"
+    },
+    {
+      "bedrock": "textures/ui/guild/close_normal.png",
+      "java": "sculith:ui/guild/close_normal"
+    },
+    {
+      "bedrock": "textures/ui/guild/close_pressed.png",
+      "java": "sculith:ui/guild/close_pressed"
+    },
+    {
+      "bedrock": "textures/ui/guild/heading.png",
+      "java": "sculith:ui/guild/heading"
+    },
+    {
+      "bedrock": "textures/ui/guild/list_hover.png",
+      "java": "sculith:ui/guild/list_hover"
+    },
+    {
+      "bedrock": "textures/ui/guild/list_normal.png",
+      "java": "sculith:ui/guild/list_normal"
+    },
+    {
+      "bedrock": "textures/ui/guild/list_pressed.png",
+      "java": "sculith:ui/guild/list_pressed"
+    },
+    {
+      "bedrock": "textures/ui/guild/map.png",
+      "java": "sculith:ui/guild/map"
+    },
+    {
+      "bedrock": "textures/ui/guild/panel.png",
+      "java": "sculith:ui/guild/panel"
+    }
+  ]
+}

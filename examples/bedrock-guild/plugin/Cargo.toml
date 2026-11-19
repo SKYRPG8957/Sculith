@@ -1,0 +1,14 @@
+[package]
+name = "sculith-guild"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pumpkin-plugin-api = { path = "../../../crates/pumpkin-plugin-api" }
+tracing = "0.1"
+
+[workspace]

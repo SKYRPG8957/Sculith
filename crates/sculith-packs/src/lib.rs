@@ -45,6 +45,9 @@ pub struct Module {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TextureMap {
+    /// Carry the authored Bedrock action-form layout for Sculith Companion.
+    #[serde(default)]
+    pub companion_forms: bool,
     #[serde(default)]
     pub textures: Vec<TextureMapping>,
     #[serde(default)]
@@ -90,6 +93,8 @@ pub struct ConversionReport {
     pub bedrock_pack_version: [u32; 3],
     pub java_pack_format: u32,
     pub java_pack_format_minor: u32,
+    #[serde(default)]
+    pub companion_forms: bool,
     pub converted_textures: usize,
     pub converted_sounds: Vec<SoundMapping>,
     pub converted_models: Vec<ModelMapping>,
@@ -158,7 +163,10 @@ pub fn convert(
     );
     let mapping: TextureMap = read_json(mapping)?;
     ensure!(
-        !mapping.textures.is_empty() || !mapping.sounds.is_empty() || !mapping.models.is_empty(),
+        mapping.companion_forms
+            || !mapping.textures.is_empty()
+            || !mapping.sounds.is_empty()
+            || !mapping.models.is_empty(),
         "content mapping is empty"
     );
     ensure!(
@@ -199,6 +207,20 @@ pub fn convert(
         fs::write(file, bytes)?;
     }
 
+    if mapping.companion_forms {
+        let source = confined(&root, "ui/server_form.json")?;
+        let bytes = read_bounded(&source, 128 * 1024)?;
+        let form: serde_json::Value =
+            serde_json::from_slice(&bytes).context("invalid Bedrock server_form.json")?;
+        ensure!(
+            form.get("namespace").and_then(serde_json::Value::as_str) == Some("server_form"),
+            "expected the Bedrock server_form namespace"
+        );
+        let directory = stage.path().join("assets/sculith/bedrock_ui");
+        fs::create_dir_all(&directory)?;
+        fs::write(directory.join("server_form.json"), bytes)?;
+    }
+
     sounds::convert(&root, &mapping.sounds, stage.path(), &mut total_bytes)?;
 
     models::convert(&root, &mapping.models, stage.path(), &mut total_bytes)?;
@@ -207,10 +229,15 @@ pub fn convert(
         bedrock_pack_version: manifest.header.version,
         java_pack_format: pack_format,
         java_pack_format_minor: pack_format_minor,
+        companion_forms: mapping.companion_forms,
         converted_textures: mapping.textures.len(),
         converted_sounds: mapping.sounds,
         converted_models: mapping.models,
-        scope: "explicit PNG overrides, single-clip Vorbis sounds and static cuboid models".into(),
+        scope: if mapping.companion_forms {
+            "mapped textures, sounds, static models and an authored Bedrock form for Sculith Companion"
+        } else {
+            "explicit PNG overrides, single-clip Vorbis sounds and static cuboid models"
+        }.into(),
         limitations: vec![
             "Only explicitly mapped PNG, OGG and static geometry definitions are converted; unmapped assets are not included.".into(),
             "PNG overrides target existing textures; custom sound events and presentation-only item models are registered by the pack.".into(),
@@ -393,6 +420,26 @@ mod tests {
             99,
             0,
         )
+    }
+
+    #[test]
+    fn opted_in_companion_receives_the_native_layout_bytes() {
+        let dir = fixture();
+        let ui = dir.path().join("bedrock/ui");
+        fs::create_dir(&ui).unwrap();
+        let source =
+            br#"{ "namespace": "server_form", "offer": {"type":"panel", "size":[73,24]} }"#;
+        fs::write(ui.join("server_form.json"), source).unwrap();
+        fs::write(dir.path().join("map.json"), br#"{"companion_forms":true}"#).unwrap();
+        assert!(run(&dir).unwrap().companion_forms);
+        assert_eq!(
+            fs::read(
+                dir.path()
+                    .join("java/assets/sculith/bedrock_ui/server_form.json")
+            )
+            .unwrap(),
+            source
+        );
     }
 
     #[test]

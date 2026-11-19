@@ -1,0 +1,29 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Sculith Guild",
+    "description": "스컬리스 탐험 길드 의뢰",
+    "uuid": "f621ec60-9f3b-4557-9603-24454d99bf20",
+    "version": [
+      1,
+      0,
+      1
+    ],
+    "min_engine_version": [
+      1,
+      26,
+      60
+    ]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "75cb24b9-7797-4d6e-945c-9a650298c592",
+      "version": [
+        1,
+        0,
+        1
+      ]
+    }
+  ]
+}

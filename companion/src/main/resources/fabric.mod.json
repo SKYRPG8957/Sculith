@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "sculith_companion",
+  "version": "0.1.0",
+  "name": "Sculith Companion",
+  "description": "Displays Bedrock JSON UI action forms supplied by a Sculith server.",
+  "environment": "client",
+  "entrypoints": {"client": ["dev.sculith.companion.Companion"]},
+  "mixins": ["sculith-companion.mixins.json"],
+  "depends": {"fabricloader": ">=0.20.1", "fabric-screen-api-v1": ">=5.2.4", "minecraft": "26.3", "java": ">=25"},
+  "license": "GPL-3.0-only"
+}

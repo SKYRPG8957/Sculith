@@ -1,0 +1,473 @@
+{
+  "namespace": "server_form",
+  "long_form": {
+    "modifications": [
+      {
+        "array_name": "bindings",
+        "operation": "insert_back",
+        "value": [
+          {
+            "binding_name": "#title_text"
+          },
+          {
+            "binding_type": "view",
+            "source_property_name": "(not (#title_text = '길드 의뢰'))",
+            "target_property_name": "#visible"
+          }
+        ]
+      }
+    ]
+  },
+  "main_screen_content": {
+    "modifications": [
+      {
+        "array_name": "controls",
+        "operation": "insert_back",
+        "value": [
+          {
+            "guild_factory": {
+              "type": "panel",
+              "factory": {
+                "name": "server_form_factory",
+                "control_ids": {
+                  "long_form": "@server_form.guild_panel"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "guild_panel": {
+    "type": "panel",
+    "size": [
+      290,
+      172
+    ],
+    "anchor_from": "center",
+    "anchor_to": "center",
+    "bindings": [
+      {
+        "binding_name": "#title_text"
+      },
+      {
+        "binding_type": "view",
+        "source_property_name": "(#title_text = '길드 의뢰')",
+        "target_property_name": "#visible"
+      }
+    ],
+    "controls": [
+      {
+        "surface": {
+          "type": "image",
+          "anchor_from": "top_left",
+          "anchor_to": "top_left",
+          "offset": [
+            0,
+            0
+          ],
+          "size": [
+            290,
+            172
+          ],
+          "texture": "textures/ui/guild/panel"
+        }
+      },
+      {
+        "heading": {
+          "type": "image",
+          "anchor_from": "top_left",
+          "anchor_to": "top_left",
+          "offset": [
+            16,
+            10
+          ],
+          "size": [
+            258,
+            27
+          ],
+          "texture": "textures/ui/guild/heading"
+        }
+      },
+      {
+        "map": {
+          "type": "image",
+          "anchor_from": "top_left",
+          "anchor_to": "top_left",
+          "offset": [
+            18,
+            49
+          ],
+          "size": [
+            112,
+            68
+          ],
+          "texture": "textures/ui/guild/map"
+        }
+      },
+      {
+        "description": {
+          "type": "image",
+          "anchor_from": "top_left",
+          "anchor_to": "top_left",
+          "offset": [
+            140,
+            49
+          ],
+          "size": [
+            137,
+            68
+          ],
+          "texture": "textures/ui/guild/brief"
+        }
+      },
+      {
+        "actions": {
+          "type": "stack_panel",
+          "orientation": "horizontal",
+          "anchor_from": "top_left",
+          "anchor_to": "top_left",
+          "offset": [
+            14,
+            132
+          ],
+          "size": [
+            264,
+            24
+          ],
+          "collection_name": "form_buttons",
+          "bindings": [
+            {
+              "binding_name": "#form_button_contents",
+              "binding_name_override": "#collection_length"
+            }
+          ],
+          "factory": {
+            "name": "buttons",
+            "control_ids": {
+              "button": "server_form.guild_action"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "guild_action": {
+    "type": "panel",
+    "size": [
+      88,
+      24
+    ],
+    "controls": [
+      {
+        "hit@common.button": {
+          "size": [
+            84,
+            24
+          ],
+          "anchor_from": "top_left",
+          "anchor_to": "top_left",
+          "offset": [
+            2,
+            0
+          ],
+          "$pressed_button_name": "button.form_button_click",
+          "$button_bindings": [
+            {
+              "binding_type": "collection_details",
+              "binding_collection_name": "form_buttons"
+            }
+          ],
+          "controls": [
+            {
+              "default": {
+                "type": "panel",
+                "size": [
+                  84,
+                  24
+                ],
+                "controls": [
+                  {
+                    "accept": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/accept_normal",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '의뢰 수락')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "list": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/list_normal",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '내 의뢰')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "close": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/close_normal",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '닫기')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "hover": {
+                "type": "panel",
+                "size": [
+                  84,
+                  24
+                ],
+                "controls": [
+                  {
+                    "accept": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/accept_hover",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '의뢰 수락')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "list": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/list_hover",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '내 의뢰')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "close": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/close_hover",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '닫기')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "pressed": {
+                "type": "panel",
+                "size": [
+                  84,
+                  24
+                ],
+                "controls": [
+                  {
+                    "accept": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/accept_pressed",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '의뢰 수락')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "list": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/list_pressed",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '내 의뢰')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "close": {
+                      "type": "image",
+                      "anchor_from": "top_left",
+                      "anchor_to": "top_left",
+                      "offset": [
+                        0,
+                        0
+                      ],
+                      "size": [
+                        84,
+                        24
+                      ],
+                      "texture": "textures/ui/guild/close_pressed",
+                      "bindings": [
+                        {
+                          "binding_type": "collection",
+                          "binding_collection_name": "form_buttons",
+                          "binding_name": "#form_button_text"
+                        },
+                        {
+                          "binding_type": "view",
+                          "source_property_name": "(#form_button_text = '닫기')",
+                          "target_property_name": "#visible"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

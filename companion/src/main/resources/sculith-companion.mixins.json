@@ -1,0 +1,6 @@
+{
+  "required": true,
+  "package": "dev.sculith.companion.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": ["DialogAccess"]
+}
