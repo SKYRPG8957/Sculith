@@ -63,13 +63,19 @@ fn bedrock_view(old: Cylindrical, pos: BlockPos, distance: NonZero<u8>) -> Cylin
     }
     let retained_radius = distance.saturating_add(2);
     let center = old.center;
-    if old.view_distance == retained_radius
-        && (i64::from(pos.0.x) - (i64::from(center.x) * 16 + 8)).abs() <= 16
-        && (i64::from(pos.0.z) - (i64::from(center.y) * 16 + 8)).abs() <= 16
-    {
-        return old;
+    let near_center = (i64::from(pos.0.x) - (i64::from(center.x) * 16 + 8)).abs() <= 16
+        && (i64::from(pos.0.z) - (i64::from(center.y) * 16 + 8)).abs() <= 16;
+    if near_center {
+        if old.view_distance == retained_radius {
+            return old;
+        }
+        if old.view_distance == distance && actual != center {
+            // Extend the existing window only when the player first crosses its
+            // center chunk. Nothing already sent is evicted on that crossing.
+            return Cylindrical::new(center, retained_radius);
+        }
     }
-    Cylindrical::new(actual, retained_radius)
+    Cylindrical::new(actual, distance)
 }
 
 fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actual: Vector2<i32>) {
@@ -227,11 +233,16 @@ mod tests {
         for radius in 4..=30 {
             let requested = NonZero::new(radius).unwrap();
             let anchored = bedrock_view(empty, BlockPos::new(0, 70, 0), requested);
+            assert_eq!(anchored.view_distance, requested);
             for x in [-8, 0, 8, 16, 24] {
                 for z in [-8, 0, 8, 16, 24] {
                     let pos = BlockPos::new(x, 70, z);
                     let window = bedrock_view(anchored, pos, requested);
                     assert_eq!(anchored.center, window.center);
+                    if pos.chunk_position() != anchored.center {
+                        assert_eq!(window.view_distance, requested.saturating_add(2));
+                        assert!(bedrock_view(window, BlockPos::new(0, 70, 0), requested) == window);
+                    }
                     let actual = Cylindrical::new(pos.chunk_position(), requested);
                     assert!(
                         actual

@@ -300,12 +300,11 @@ impl SharedPack {
                 .frames
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some(frame) = frames
+            let cached = frames
                 .iter()
                 .find(|f| f.digest == digest && f.encoder == encoder)
-            {
-                frame.bytes.clone()
-            } else {
+                .map(|frame| frame.bytes.clone());
+            cached.unwrap_or_else(|| {
                 // At most 8 MiB of chunk contents per immutable pack revision.
                 if frames.len() == 64 {
                     frames.pop_front();
@@ -317,7 +316,7 @@ impl SharedPack {
                     bytes: bytes.clone(),
                 });
                 bytes
-            }
+            })
         };
         cell.get_or_try_init(|| async {
             let body = body.clone();

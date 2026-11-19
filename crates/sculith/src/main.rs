@@ -145,27 +145,14 @@ async fn main() {
     }
 
     info!(
-        "{}",
-        TextComponent::text(format!(
-            "Starting {} {} Java Minecraft (Protocol {}) | {} Bedrock (Protocol {})",
-            TextComponent::text("Sculith")
-                .color_named(NamedColor::Gold)
-                .to_pretty_console(),
-            TextComponent::text(CARGO_PKG_VERSION.to_string())
-                .color_named(NamedColor::Green)
-                .to_pretty_console(),
-            TextComponent::text(CURRENT_MC_VERSION.protocol_version().to_string())
-                .color_named(NamedColor::DarkBlue)
-                .to_pretty_console(),
-            TextComponent::text(CURRENT_BEDROCK_MC_VERSION)
-                .color_named(NamedColor::Gold)
-                .to_pretty_console(),
-            TextComponent::text(CURRENT_BEDROCK_MC_PROTOCOL.to_string())
-                .color_named(NamedColor::DarkBlue)
-                .to_pretty_console()
-        ))
-        .to_pretty_console(),
+        "Starting Sculith {CARGO_PKG_VERSION} | Bedrock {CURRENT_BEDROCK_MC_VERSION} (protocol {CURRENT_BEDROCK_MC_PROTOCOL})"
     );
+    if config.advanced.networking.java.enabled {
+        info!(
+            "Java compatibility enabled (protocol {})",
+            CURRENT_MC_VERSION.protocol_version()
+        );
+    }
 
     debug!(
         "Build info: FAMILY: \"{}\", OS: \"{}\", ARCH: \"{}\", BUILD: \"{}\"",
