@@ -108,11 +108,12 @@ pub struct SectionPalettes<P> {
 }
 
 impl<P> SectionPalettes<P> {
+    #[must_use]
     pub fn new(palettes: Box<[P]>) -> Self {
         Self {
             palettes: RwLock::new(palettes),
             revision: AtomicU64::new(0),
-            wire: Default::default(),
+            wire: std::sync::Mutex::default(),
         }
     }
 

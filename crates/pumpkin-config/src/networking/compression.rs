@@ -15,6 +15,7 @@ pub struct CompressionConfig {
 
 impl CompressionConfig {
     /// Bedrock advertises an unsigned 16-bit threshold; zero disables compression.
+    #[must_use]
     pub fn bedrock_settings(&self) -> CompressionInfo {
         CompressionInfo {
             threshold: if self.enabled {
