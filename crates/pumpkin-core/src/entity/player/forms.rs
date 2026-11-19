@@ -663,7 +663,16 @@ impl Player {
         {
             return Err(invalid("Shared forms require Java 1.21.6 or later in play"));
         }
-        let native_json = serde_json::to_string(&form).map_err(|error| error.to_string())?;
+        let native_json = if matches!(self.client.as_ref(), ClientPlatform::Bedrock(_)) {
+            let data = serde_json::to_value(&form).map_err(|error| error.to_string())?;
+            let encoded = CModalFormRequest::encode_plugin_form(data);
+            if encoded.len() > MAX_FORM_BYTES {
+                return Err(invalid("Bedrock form payload is too large"));
+            }
+            encoded
+        } else {
+            String::new()
+        };
         let (id, dialog) = self
             .forms
             .lock()

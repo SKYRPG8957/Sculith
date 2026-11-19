@@ -4539,7 +4539,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
             client
                 .send_packet(&CModalFormRequest {
                     form_id: pumpkin_protocol::codec::var_uint::VarUInt(form_id),
-                    form_ui_json: form_json.to_string(),
+                    form_ui_json: CModalFormRequest::encode_plugin_form(form_json),
                 })
                 .await;
 
