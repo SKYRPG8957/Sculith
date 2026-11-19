@@ -342,6 +342,8 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 report["checks"]["every_viewer_received_distant_terrain"] = report.get("viewers_receiving_lod_tiles", 0) == args.players
                 report["checks"]["each_viewer_received_three_terrain_scales"] = report.get("viewers_receiving_all_lod_scales") == args.players
                 report["checks"]["lod_actor_order_and_budget"] = report.get("lod_invalid_sequences", -1) == 0 and 0 < report.get("lod_peak_per_viewer", 0) <= 32
+            if coverage := report.get("initial_terrain_coverage"):
+                report["checks"]["initial_view_delivered_during_workload"] = coverage["viewers_receiving_every_position"] == args.players
             report["all_budgets_met"]=all(report["checks"].values())
             out.write_text(json.dumps(report,indent=2)+"\n")
             print(json.dumps({k:v for k,v in report.items() if k not in ("tick_windows","client_errors")},ensure_ascii=False), flush=True)

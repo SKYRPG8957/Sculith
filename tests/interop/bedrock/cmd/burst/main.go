@@ -74,6 +74,7 @@ type playerResult struct {
 	Error                        string
 	Pigs, Sent                   int
 	Chunks, UniqueChunks         int
+	MissingInitialChunks         int
 	ChunkRadius                  int
 	PackBytes                    int
 	PackDigest                   string
@@ -119,6 +120,25 @@ type run struct {
 }
 
 func ms(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
+
+// Match the 16-chunk send cylinder around the viewer's initial spawn position.
+func missingInitialTerrain(seen map[protocol.ChunkPos]struct{}, spawn protocol.ChunkPos) int {
+	const radius = int32(16)
+	missing := 0
+	for x := -radius - 1; x <= radius+1; x++ {
+		dx := max(x-2, -x-2, 0)
+		for z := -radius - 1; z <= radius+1; z++ {
+			dz := max(z-2, -z-2, 0)
+			if dx*dx+dz*dz < radius*radius {
+				if _, ok := seen[protocol.ChunkPos{spawn[0] + x, spawn[1] + z}]; !ok {
+					missing++
+				}
+			}
+		}
+	}
+	return missing
+}
+
 func (r *run) client(i int) {
 	result := &r.results[i]
 	arrived, configured := false, false
@@ -192,6 +212,7 @@ func (r *run) client(i int) {
 	type sample struct {
 		echo, motion, blocks               []float64
 		deaths, pigs, chunks, uniqueChunks int
+		missingInitialChunks               int
 		lodAdds, lodPeak, lodInvalid       int
 		lodScales                          [3]bool
 		rpg, err                           string
@@ -210,6 +231,11 @@ func (r *run) client(i int) {
 		seen := [3]bool{}
 		defer func() {
 			s.uniqueChunks = len(terrain)
+			spawn := protocol.ChunkPos{
+				int32(math.Floor(float64(g.PlayerPosition[0]))) >> 4,
+				int32(math.Floor(float64(g.PlayerPosition[2]))) >> 4,
+			}
+			s.missingInitialChunks = missingInitialTerrain(terrain, spawn)
 			if active.Load() {
 				if prev.IsZero() {
 					prev = r.playStart
@@ -398,6 +424,7 @@ wait:
 	result.LODAdds, result.LODPeak, result.LODInvalid = s.lodAdds, s.lodPeak, s.lodInvalid
 	result.Chunks = s.chunks
 	result.UniqueChunks = s.uniqueChunks
+	result.MissingInitialChunks = s.missingInitialChunks
 	result.Deaths = s.deaths
 	result.RPG = s.rpg
 	result.HealMS = s.healMS
@@ -653,6 +680,7 @@ func main() {
 	packCopies := map[string]int{}
 	var packBytes int64
 	var lodViewers, lodFull, lodPeak, lodInvalid, lodAdds int
+	var receivedInitialView, worstMissingInitialChunks int
 	var scaleViewers [3]int
 	var worst motionGap
 	var worstViewer int
@@ -672,6 +700,12 @@ func main() {
 		maxChunks = max(maxChunks, p.Chunks)
 		if p.ChunkRadius == 16 {
 			fullView++
+		}
+		if p.Survived && p.ChunkRadius == 16 {
+			worstMissingInitialChunks = max(worstMissingInitialChunks, p.MissingInitialChunks)
+			if p.MissingInitialChunks == 0 {
+				receivedInitialView++
+			}
 		}
 		if p.OrderedPeer {
 			ordered++
@@ -755,6 +789,11 @@ func main() {
 	report["clients_granted_radius_16"] = fullView
 	report["minimum_input_rate_percent"] = 100 * float64(minInputs) / (r.play.Seconds() * 20)
 	report["level_chunk_messages_read"] = map[string]int{"total": chunks, "distinct_positions_summed_across_viewers": uniqueChunks, "repeated_positions": chunks - uniqueChunks, "minimum_per_viewer": minChunks, "maximum_per_viewer": maxChunks}
+	report["initial_terrain_coverage"] = map[string]int{
+		"viewers_receiving_every_position": receivedInitialView,
+		"maximum_missing_positions":        worstMissingInitialChunks,
+		"expected_positions_per_viewer":    missingInitialTerrain(nil, protocol.ChunkPos{}),
+	}
 	if len(inputCoverage) > 0 {
 		sort.Float64s(inputCoverage)
 		report["minimum_matched_peer_inputs_percent"] = inputCoverage[0]
