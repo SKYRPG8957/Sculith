@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn bedrock_terrain_recenters_on_travel_teleport_or_radius_change() {
-        let radius = NonZero::new(16).unwrap();
+        let radius = NonZero::<u8>::new(16).unwrap();
         let old = Cylindrical::new(Vector2::new(0, 0), radius.saturating_add(2));
         let moved = bedrock_view(old, BlockPos::new(25, 70, 8), radius);
         assert_eq!(moved.center, Vector2::new(1, 0));
