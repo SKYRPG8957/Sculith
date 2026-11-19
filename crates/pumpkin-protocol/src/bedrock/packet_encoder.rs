@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Encodes outgoing Bedrock game packets and batches them into compressed frames.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct BedrockBatchEncoder {
     // compression and compression threshold
     compression: Option<(CompressionThreshold, CompressionLevel)>,

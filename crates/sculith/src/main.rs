@@ -63,6 +63,14 @@ async fn main() {
         exit(import_bedrock_command(std::env::args_os().skip(2)));
     }
 
+    let exec_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let offline = std::env::args_os().skip(1).any(|arg| arg == "--offline");
+    let check = std::env::args_os().nth(1).is_some_and(|arg| arg == "check")
+        || std::env::args_os().skip(1).any(|arg| arg == "--check");
+    if check || has_init_settings_arg(std::env::args().skip(1)) {
+        exit(check_settings(&exec_dir, offline));
+    }
+
     // reqwest is built with `rustls-no-provider`, so pick the ring provider (the one
     // wasmtime-wasi-http/rtc already force) before any client can be constructed.
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -79,12 +87,9 @@ async fn main() {
     console_subscriber::init();
     let time = Instant::now();
 
-    let exec_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-
-    let config = PumpkinConfig::load(&exec_dir);
-
-    if has_init_settings_arg(std::env::args().skip(1)) {
-        exit(0);
+    let mut config = PumpkinConfig::load(&exec_dir);
+    if offline {
+        configure_local_session(&mut config);
     }
 
     let vanilla_data = VanillaData::load();
@@ -392,6 +397,51 @@ async fn setup_sighandler() -> io::Result<()> {
 
 fn has_init_settings_arg(mut args: impl Iterator<Item = String>) -> bool {
     args.any(|arg| arg == "--init-settings" || arg == "--initSettings")
+}
+
+fn configure_local_session(config: &mut PumpkinConfig) {
+    let net = &mut config.advanced.networking;
+    let local = std::net::Ipv4Addr::LOCALHOST.into();
+    net.bedrock.nethernet.address.set_ip(local);
+    net.bedrock.nethernet.external_ip = Some(local);
+    net.bedrock.nethernet.stun_servers.clear();
+    net.bedrock.online_mode = false;
+    net.bedrock.authentication.enabled = false;
+    net.java.address.set_ip(local);
+    net.java.online_mode = false;
+    net.java.authentication.enabled = false;
+    net.lan_broadcast.enabled = false;
+    net.management.enabled = false;
+    net.query.enabled = false;
+    net.proxy.enabled = false;
+}
+
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "launcher output before server startup"
+)]
+fn check_settings(dir: &Path, offline: bool) -> i32 {
+    let mut config = match PumpkinConfig::load_for_check(dir) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Sculith settings check failed: {err}");
+            return 1;
+        }
+    };
+    if offline {
+        configure_local_session(&mut config);
+    }
+    let bedrock = &config.advanced.networking.bedrock;
+    println!(
+        "Settings: {}",
+        dir.join(PumpkinConfig::get_path()).display()
+    );
+    println!(
+        "Bedrock enabled={} address={} online_mode={}",
+        bedrock.enabled, bedrock.nethernet.address, bedrock.online_mode
+    );
+    0
 }
 
 #[expect(

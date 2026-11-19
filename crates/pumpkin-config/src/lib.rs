@@ -89,6 +89,30 @@ pub struct PumpkinConfig {
     pub telemetry: TelemetryConfig,
 }
 
+impl PumpkinConfig {
+    /// Check the operator's file before applying the normal first-run defaults.
+    ///
+    /// # Errors
+    /// Returns an error if the file cannot be read, parsed, or created.
+    pub fn load_for_check(dir: &Path) -> std::io::Result<Self> {
+        let path = dir.join(Self::get_path());
+        let legacy = dir.join("pumpkin.toml");
+        let input = if path.try_exists()? { &path } else { &legacy };
+        if input.try_exists()? {
+            let raw = fs::read_to_string(input)?;
+            toml::from_str::<Self>(&raw).map_err(|err| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{}: {err}", input.display()),
+                )
+            })?;
+        }
+        let config = Self::load(dir);
+        fs::metadata(&path)?;
+        Ok(config)
+    }
+}
+
 impl LoadConfiguration for PumpkinConfig {
     fn get_path() -> &'static Path {
         Path::new("sculith.toml")

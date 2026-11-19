@@ -114,7 +114,7 @@ impl CLevelChunk<'_> {
             .biome_sections
             .bedrock_blobs(|biome_sections| {
                 let mut biome_buf = Vec::new();
-                for biome_palette in biome_sections.iter() {
+                for biome_palette in biome_sections {
                     let network_repr = biome_palette.convert_be_network();
 
                     (network_repr.bits_per_entry << 1 | 1).write(&mut biome_buf)?;

@@ -1090,7 +1090,7 @@ impl World {
                 }
             }
             Err(error) => {
-                error!(%error, packet = std::any::type_name::<P>(), "Could not serialize Bedrock broadcast")
+                error!(%error, packet = std::any::type_name::<P>(), "Could not serialize Bedrock broadcast");
             }
         }
     }
@@ -3783,7 +3783,7 @@ impl World {
         let player_info_update = CPlayerInfoUpdate::new(Self::TAB_LIST_ADD_FLAGS, &java_player);
 
         self.broadcast_packet_all(&player_info_update);
-        self.send_bedrock_roster(&player, None);
+        self.send_bedrock_roster(player, None);
 
         // If the player has a custom tab_list_name, send an update for it
         if let Some(tab_list_name) = player.get_tab_list_name() {

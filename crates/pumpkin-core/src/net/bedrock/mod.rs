@@ -408,6 +408,18 @@ impl BedrockClient {
             return Ok(false);
         }
         let writer = *self.network_writer.read().await;
+        if let [(id, body)] = frames.as_slice()
+            && i32::from(*id) == pumpkin_data::bedrock_packet::RESOURCE_PACK_CHUNK_DATA
+            && body.len() <= crate::resource_pack::BEDROCK_PACK_CHUNK_SIZE as usize + 512
+            && let Some(pack) = self.shared_pack.load_full()
+        {
+            let encoded = pack
+                .chunk_frame(writer, body)
+                .await
+                .map_err(|e| e.to_string())?;
+            self.session.send(encoded).await?;
+            return Ok(true);
+        }
         let mut encoded = Vec::new();
         writer
             .write_game_packets(frames, SubClient::Main, SubClient::Main, &mut encoded)
@@ -417,7 +429,19 @@ impl BedrockClient {
     }
 
     async fn tick_connection(&self) -> bool {
-        if self.last_seen.load().elapsed() > std::time::Duration::from_secs(10) {
+        use std::time::Duration;
+        let idle = self.last_seen.load().elapsed();
+        if idle > Duration::from_secs(10) {
+            // A downloading client may stay silent until its full reliable chunk arrives.
+            if idle < Duration::from_secs(60)
+                && !self
+                    .streaming_packs
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .is_empty()
+            {
+                return true;
+            }
             debug!("Bedrock client {} timed out", self.address);
             self.close().await;
             return false;
@@ -856,7 +880,7 @@ impl BedrockClient {
             .is_none_or(|server| server.plugin_manager.has_handlers::<PacketSentEvent>())
     }
 
-    /// The skin entry must reach the same ordered channel before AddPlayer. A
+    /// The skin entry must reach the same ordered channel before `AddPlayer`. A
     /// changed skin or a reconnected player produces a fresh shared Bytes allocation.
     pub(crate) fn ensure_listed(&self, subject: &Player) -> bool {
         let Ok(bytes) = subject.bedrock_roster_bytes() else {

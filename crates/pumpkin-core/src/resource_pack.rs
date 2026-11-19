@@ -1,7 +1,7 @@
 //! Delivery of immutable editions compiled from the authored Bedrock source.
 
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     io,
     net::IpAddr,
     sync::{Arc, Mutex, RwLock, TryLockError, Weak},
@@ -11,16 +11,19 @@ use std::{
 use bytes::Bytes;
 use pumpkin_config::{AdvancedConfiguration, resource_pack::BedrockPack};
 use pumpkin_nbt::{Nbt, NbtCompound, deserializer::NbtReadHelperBedrock, tag::NbtTag};
-use pumpkin_protocol::bedrock::client::VANILLA_ACTOR_IDENTIFIERS;
+use pumpkin_protocol::bedrock::{
+    SubClient, client::VANILLA_ACTOR_IDENTIFIERS, packet_encoder::BedrockBatchEncoder,
+};
 pub use sculith_packs::bundle::PackEdit;
 use sculith_packs::{
     ModelMapping, SoundMapping,
     bundle::{Bundle, PackSource},
 };
+use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    sync::Semaphore,
+    sync::{OnceCell, Semaphore},
     time::timeout,
 };
 
@@ -31,11 +34,20 @@ const HTTP_CONNECTIONS: usize = 32;
 const HEADER_TIMEOUT: Duration = Duration::from_secs(5);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_LIVE_REVISIONS: usize = 4;
+// One cold download advances by a window of at most fourteen NetherNet segments.
+pub(crate) const BEDROCK_PACK_CHUNK_SIZE: u32 = 128 * 1024;
+
+struct PackFrame {
+    digest: [u8; 32],
+    encoder: BedrockBatchEncoder,
+    bytes: Arc<OnceCell<Bytes>>,
+}
 
 pub struct SharedPack {
     pub bundle: Bundle,
     pub(crate) bedrock: BedrockPack,
     java_path: String,
+    frames: Mutex<VecDeque<PackFrame>>,
 }
 
 struct Revisions {
@@ -270,8 +282,61 @@ impl SharedPack {
                 rtx_enabled: false,
             },
             java_path: format!("/sculith/packs/{}/{}.zip", bundle.java_id, bundle.java.sha1),
+            frames: Mutex::default(),
             bundle,
         }
+    }
+
+    /// Share identical, translated pack chunks between simultaneous downloads.
+    /// The key covers the actual packet body and the negotiated wire encoding.
+    pub(crate) async fn chunk_frame(
+        &self,
+        encoder: BedrockBatchEncoder,
+        body: &Bytes,
+    ) -> io::Result<Bytes> {
+        let digest = Sha256::digest(body).into();
+        let cell = {
+            let mut frames = self
+                .frames
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(frame) = frames
+                .iter()
+                .find(|f| f.digest == digest && f.encoder == encoder)
+            {
+                frame.bytes.clone()
+            } else {
+                // At most 8 MiB of chunk contents per immutable pack revision.
+                if frames.len() == 64 {
+                    frames.pop_front();
+                }
+                let bytes = Arc::new(OnceCell::new());
+                frames.push_back(PackFrame {
+                    digest,
+                    encoder,
+                    bytes: bytes.clone(),
+                });
+                bytes
+            }
+        };
+        cell.get_or_try_init(|| async {
+            let body = body.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut data = Vec::new();
+                encoder.write_game_packet(
+                    pumpkin_data::bedrock_packet::RESOURCE_PACK_CHUNK_DATA as u16,
+                    SubClient::Main,
+                    SubClient::Main,
+                    &body,
+                    &mut data,
+                )?;
+                Ok::<_, io::Error>(Bytes::from(data).slice(1..))
+            })
+            .await
+            .map_err(io::Error::other)?
+        })
+        .await
+        .cloned()
     }
 
     /// Derive the download address from the address used to join this server.
@@ -449,6 +514,33 @@ mod tests {
         client.read_to_end(&mut response).await.unwrap();
         server.await.unwrap();
         response
+    }
+
+    #[tokio::test]
+    async fn identical_pack_frames_share_storage_per_wire_encoding() {
+        let pack = resources().await.snapshot();
+        let body = Bytes::from(vec![0x61; 4096]);
+        let mut encoder = BedrockBatchEncoder::new();
+        encoder.set_compression((256, 4));
+        let (first, second) = tokio::join!(
+            pack.chunk_frame(encoder, &body),
+            pack.chunk_frame(encoder, &body)
+        );
+        let first = first.unwrap();
+        assert_eq!(first.as_ptr(), second.unwrap().as_ptr());
+        assert_eq!(first[0], 0);
+        let different = pack
+            .chunk_frame(encoder, &Bytes::from(vec![0x62; 4096]))
+            .await
+            .unwrap();
+        assert_ne!(first, different);
+        encoder.set_compression((0, 4));
+        let plain = pack.chunk_frame(encoder, &body).await.unwrap();
+        assert_eq!(plain[0], 0xff);
+        assert!(plain.ends_with(&body));
+        encoder.set_prefixed_compression(false);
+        let legacy = pack.chunk_frame(encoder, &body).await.unwrap();
+        assert_eq!(legacy, plain.slice(1..));
     }
 
     #[tokio::test]

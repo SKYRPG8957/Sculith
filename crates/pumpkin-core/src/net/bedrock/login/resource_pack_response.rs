@@ -1,9 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use crate::resource_pack::SharedPack;
+use crate::resource_pack::{BEDROCK_PACK_CHUNK_SIZE, SharedPack};
 use pumpkin_config::resource_pack::BedrockPack;
-
-const BEDROCK_PACK_CHUNK_SIZE: u32 = 1024 * 1024;
 
 fn resolve_pack_path(pack: &BedrockPack) -> Option<std::path::PathBuf> {
     pack.path.as_ref().map_or_else(
@@ -91,15 +89,13 @@ impl BedrockClient {
                 debug!("Bedrock: SResourcePackResponse::STATUS_COMPLETED");
                 let player = self.player.load_full();
                 if let Some(player) = player.as_ref() {
-                    if shared.is_some() {
-                        if self.shared_pack.swap(None).is_none() {
-                            return;
-                        }
-                        self.streaming_packs
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .clear();
+                    if shared.is_some() && self.shared_pack.swap(None).is_none() {
+                        return;
                     }
+                    self.streaming_packs
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clear();
                     player
                         .world()
                         .spawn_bedrock_player(&server.basic_config, player.clone(), server)
@@ -172,9 +168,12 @@ impl BedrockClient {
         force: bool,
         shared: Option<&SharedPack>,
     ) -> bool {
-        let data: Arc<[u8]> =
+        let (data, file_hash): (Arc<[u8]>, _) =
             if let Some(shared) = shared.filter(|shared| shared.bundle.bedrock_id == pack.uuid) {
-                shared.bundle.bedrock.bytes.clone()
+                (
+                    shared.bundle.bedrock.bytes.clone(),
+                    shared.bundle.bedrock.sha256.to_vec(),
+                )
             } else {
                 let Some(resolved_path) = resolve_pack_path(pack) else {
                     tracing::warn!(
@@ -210,10 +209,10 @@ impl BedrockClient {
                         return true;
                     }
                 };
-                bytes.into()
+                let file_hash = Sha256::digest(&bytes).to_vec();
+                (bytes.into(), file_hash)
             };
 
-        let file_hash = Sha256::digest(&data).to_vec();
         let total_size = data.len() as u64;
         let chunk_count = if total_size == 0 {
             0
@@ -284,7 +283,7 @@ impl BedrockClient {
         };
 
         let offset = u64::from(packet.chunk_index) * u64::from(pack.chunk_size);
-        if offset >= pack.total_size && pack.total_size > 0 {
+        if packet.chunk_index >= pack.chunk_count {
             tracing::warn!(
                 "Bedrock: Chunk request out of bounds: chunk {} offset {} size {}",
                 packet.chunk_index,
