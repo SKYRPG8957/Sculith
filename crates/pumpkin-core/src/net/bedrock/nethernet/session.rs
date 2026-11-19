@@ -295,6 +295,12 @@ impl NetherNetSession {
         Ok(())
     }
 
+    /// Bytes accepted by the reliable stream that SCTP has not acknowledged yet.
+    pub(in crate::net::bedrock) async fn reliable_outstanding_bytes(&self) -> Option<usize> {
+        let channel = self.reliable.read().await.clone()?;
+        channel.outstanding_bytes().await.ok()
+    }
+
     /// Waits for reliable messages to be acknowledged; [`DataChannel::send`] only queues them,
     /// so closing immediately afterwards could discard the final message.
     pub(in crate::net::bedrock) async fn flush_reliable(

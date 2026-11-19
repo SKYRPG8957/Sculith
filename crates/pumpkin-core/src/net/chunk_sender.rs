@@ -313,6 +313,12 @@ impl ChunkSender {
             .saturating_sub(self.awaiting_delivery.len())
     }
 
+    /// Keep at most one round of terrain work pending for this Bedrock viewer.
+    #[must_use]
+    pub fn has_pending_bedrock_delivery(&self) -> bool {
+        !self.awaiting_delivery.is_empty()
+    }
+
     /// Records a chunk sent outside the batch path as held.
     pub fn mark_sent_out_of_band(&mut self, pos: Vector2<i32>) {
         self.pending_chunks.remove(&pos);
@@ -443,7 +449,9 @@ impl ChunkSender {
         self.batch_tick += 1;
         self.release_parked();
 
-        if version >= JavaMinecraftVersion::V_1_20_2 && self.in_flight_batches >= self.max_in_flight
+        if max_chunks == 0
+            || version >= JavaMinecraftVersion::V_1_20_2
+                && self.in_flight_batches >= self.max_in_flight
         {
             return None;
         }
@@ -776,8 +784,11 @@ mod tests {
         assert!(!second.is_chunk_ready(&position));
 
         let first_dispatch = first.commit_bedrock_batch(&batch, 0);
+        assert!(first.has_pending_bedrock_delivery());
+        assert!(!second.has_pending_bedrock_delivery());
         assert!(!first.is_chunk_ready(&position));
         first.mark_delivered(&[(position, first_dispatch[0].delivery_token)]);
+        assert!(!first.has_pending_bedrock_delivery());
         assert!(first.is_chunk_ready(&position));
         assert!(!second.is_chunk_ready(&position));
 

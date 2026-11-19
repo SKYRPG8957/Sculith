@@ -10,7 +10,7 @@ use std::{
         Arc, Weak,
         atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use tracing::{debug, error, warn};
@@ -119,6 +119,11 @@ impl OutgoingPacket {
 // A crowded tick can contain both a position and a velocity for each visible actor.
 // The byte limit in outgoing_frame_len still applies to every frame.
 const MAX_BATCH_PACKETS: usize = 256;
+
+// Terrain and gameplay share an ordered stream. Leave room for gameplay while
+// there is already a small window of data waiting in the queue or at SCTP.
+const TERRAIN_SEND_WINDOW_BYTES: usize = 24 * 1024;
+const TERRAIN_CREDIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 // Network settings, own impulses, teleports and game actions bypass the motion timer.
 fn ordinary_pose(packet: &OutgoingPacket, own_runtime_id: Option<u64>) -> bool {
@@ -610,6 +615,11 @@ impl BedrockClient {
         let Some(server) = player.world().server.upgrade() else {
             return outcome;
         };
+        if let Some(epoch) = epoch
+            && !self.wait_for_terrain_credit(player, epoch).await
+        {
+            return outcome;
+        }
 
         let world = player.world();
         let valid_chunks = if server.plugin_manager.has_handlers::<ChunkSend>() {
@@ -645,7 +655,7 @@ impl BedrockClient {
 
         // Checked and queued under the sender lock: a world change resets the sender under it
         // before queueing `CChangeDimension`, so no old-world chunk can land behind that packet
-        let _sender = epoch.map(|_| {
+        let sender = epoch.map(|_| {
             player
                 .chunk_sender
                 .lock()
@@ -670,8 +680,33 @@ impl BedrockClient {
             }
         }
 
-        self.queue_translated_chunks(translated_chunks, &mut outcome);
+        let still_watched = translated_chunks.into_iter().filter(|(pos, _)| {
+            sender
+                .as_ref()
+                .is_none_or(|sender| sender.is_chunk_sent(pos))
+        });
+        self.queue_translated_chunks(still_watched, &mut outcome);
         outcome
+    }
+
+    async fn wait_for_terrain_credit(&self, player: &Player, epoch: u32) -> bool {
+        while !self.closing.is_closed() && player.chunk_send_epoch.load(Ordering::Relaxed) == epoch
+        {
+            let queued = self.pending_bytes.load(Ordering::Acquire);
+            if queued < TERRAIN_SEND_WINDOW_BYTES {
+                let Some(outstanding) = self.session.reliable_outstanding_bytes().await else {
+                    return false;
+                };
+                if outstanding < TERRAIN_SEND_WINDOW_BYTES - queued {
+                    return true;
+                }
+            }
+            tokio::select! {
+                () = self.closing.wait() => return false,
+                () = tokio::time::sleep(TERRAIN_CREDIT_POLL_INTERVAL) => {}
+            }
+        }
+        false
     }
 
     async fn prepare_chunk_payloads(
@@ -753,7 +788,7 @@ impl BedrockClient {
 
     fn queue_translated_chunks(
         &self,
-        translated_chunks: Vec<(Vector2<i32>, Option<TranslatedPacket>)>,
+        translated_chunks: impl IntoIterator<Item = (Vector2<i32>, Option<TranslatedPacket>)>,
         outcome: &mut ChunkSendOutcome,
     ) {
         for (pos, translated) in translated_chunks {
