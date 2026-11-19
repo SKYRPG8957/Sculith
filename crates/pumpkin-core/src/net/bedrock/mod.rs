@@ -21,7 +21,7 @@ use pumpkin_inventory::screen_handler::ScreenHandler;
 use pumpkin_protocol::{
     BClientPacket, PacketDecodeError, RawPacket,
     bedrock::{
-        BEDROCK_GAME_PACKET, SubClient,
+        SubClient,
         client::{
             client_cache_miss_response::{CClientCacheMissResponse, MissingBlobData},
             disconnect::CDisconnect,
@@ -506,10 +506,7 @@ impl BedrockClient {
 
     pub async fn process_nethernet_packet(self: &Arc<Self>, server: &Arc<Server>, packet: Bytes) {
         self.last_seen.store(std::time::Instant::now());
-        let mut batch = Vec::with_capacity(packet.len() + 1);
-        batch.push(BEDROCK_GAME_PACKET);
-        batch.extend_from_slice(&packet);
-        if let Err(error) = self.process_batch(server, batch).await {
+        if let Err(error) = self.process_batch(server, packet).await {
             error!(
                 "Failed to handle NetherNet payload for {}: {error}",
                 self.address
@@ -1223,21 +1220,19 @@ impl BedrockClient {
     async fn process_batch(
         self: &Arc<Self>,
         server: &Arc<Server>,
-        payload: Vec<u8>,
+        payload: Bytes,
     ) -> Result<(), Error> {
-        let decompressed_payload = self
-            .get_packet_payload(payload)
-            .await
-            .ok_or_else(|| Error::other("Failed to decompress game packet batch"))?;
-        let mut cursor = Cursor::new(decompressed_payload);
+        let decoder = *self.network_reader.lock().await;
+        if self.is_closed() {
+            return Ok(());
+        }
+        let body = decoder
+            .decode_nethernet_batch(payload)
+            .map_err(Error::other)?;
+        let mut cursor = Cursor::new(body);
 
         while (cursor.position() as usize) < cursor.get_ref().len() {
-            let game_packet = self
-                .network_reader
-                .lock()
-                .await
-                .get_game_packet(&mut cursor)
-                .map_err(|e| Error::other(e.to_string()))?;
+            let game_packet = decoder.get_game_packet(&mut cursor).map_err(Error::other)?;
 
             if !self.packet_limiter.check_packet() {
                 warn!(
@@ -1584,7 +1579,7 @@ impl BedrockClient {
     }
 
     pub async fn get_packet_payload(&self, packet: Vec<u8>) -> Option<Vec<u8>> {
-        let mut network_reader = self.network_reader.lock().await;
+        let mut network_reader = *self.network_reader.lock().await;
         tokio::select! {
             () = self.await_close_interrupt() => {
                 debug!("Canceling player packet processing");
