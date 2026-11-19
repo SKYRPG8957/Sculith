@@ -1,5 +1,6 @@
 use std::{
     cell::Cell,
+    collections::VecDeque,
     hash::{BuildHasher, RandomState},
     io::{Error, ErrorKind, Write},
     sync::{LazyLock, Mutex},
@@ -18,6 +19,7 @@ use crate::{
 
 // Match the history window to the largest batch retained in the thread-local workspace.
 const BATCH_WINDOW_BITS: i32 = 14;
+const MAX_SHARED_TERRAIN_FRAME: usize = 64 * 1024;
 
 /// Encodes outgoing Bedrock game packets and batches them into compressed frames.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -163,7 +165,7 @@ impl BedrockBatchEncoder {
         };
         if threshold == 0
             || level == 0
-            || !(8193..=65536).contains(&frame.len())
+            || !(8193..=MAX_SHARED_TERRAIN_FRAME).contains(&frame.len())
             || i32::from(frame[0]) != pumpkin_data::bedrock_packet::LEVEL_CHUNK
         {
             return Ok(None);
@@ -177,20 +179,30 @@ impl BedrockBatchEncoder {
         let chunks = &*LARGE_CHUNKS;
         let index =
             chunks.hasher.hash_one((frame.len(), &frame[..32])) as usize % chunks.slots.len();
-        let mut slot = chunks.slots[index]
+        let mut shard = chunks.slots[index]
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(chunk) = slot.as_ref()
-            && chunk.encoder == *self
-            && chunk.frame.as_ref() == frame
+        if let Some(index) = shard
+            .iter()
+            .position(|chunk| chunk.encoder == *self && chunk.frame.as_ref() == frame)
+            && let Some(chunk) = shard.remove(index)
         {
-            return Ok(Some(chunk.encoded.clone()));
+            let encoded = chunk.encoded.clone();
+            shard.push_back(chunk);
+            return Ok(Some(encoded));
         }
         let mut encoded = Vec::new();
         self.try_write_framed_game_packets(std::iter::once(frame), &mut encoded)?;
         let encoded = Bytes::from(encoded.into_boxed_slice());
-        if encoded.len() <= 65536 {
-            *slot = Some(SharedChunk {
+        if encoded.len() <= MAX_SHARED_TERRAIN_FRAME {
+            let mut size =
+                frame.len() + encoded.len() + shard.iter().map(SharedChunk::size).sum::<usize>();
+            while (size > LargeChunks::SHARD_BYTES || shard.len() >= LargeChunks::SHARD_ENTRIES)
+                && let Some(evicted) = shard.pop_front()
+            {
+                size -= evicted.size();
+            }
+            shard.push_back(SharedChunk {
                 encoder: *self,
                 frame: frame.into(),
                 encoded: encoded.clone(),
@@ -217,7 +229,8 @@ impl BedrockBatchEncoder {
         if !compress {
             return write_frames(&mut writer);
         }
-        if size > 1 << BATCH_WINDOW_BITS {
+        let wide = size > 1 << BATCH_WINDOW_BITS;
+        if wide && (!share || size > MAX_SHARED_TERRAIN_FRAME + VarUInt::MAX_SIZE.get()) {
             let mut deflater = DeflateEncoder::new(writer, Compression::new(level.min(9)));
             write_frames(&mut deflater)?;
             deflater.finish()?;
@@ -227,17 +240,19 @@ impl BedrockBatchEncoder {
         // compressor workspace and coalesce small writes from a busy crowd.
         thread_local! {
             static DEFLATER: Cell<Option<BatchDeflater>> = const { Cell::new(None) };
+            static TERRAIN_DEFLATER: Cell<Option<BatchDeflater>> = const { Cell::new(None) };
         }
-        DEFLATER.with(|cache| {
+        let workspace = if wide { &TERRAIN_DEFLATER } else { &DEFLATER };
+        workspace.with(|cache| {
             let mut d = cache
                 .take()
                 .filter(|d| d.level == level)
                 .unwrap_or_else(|| BatchDeflater {
                     level,
                     encoder: Deflate::new_with_config(DeflateConfig {
-                        window_bits: -BATCH_WINDOW_BITS,
+                        window_bits: if wide { -15 } else { -BATCH_WINDOW_BITS },
                         level: level.min(9) as i32,
-                        mem_level: 6,
+                        mem_level: if wide { 8 } else { 6 },
                         ..DeflateConfig::default()
                     }),
                     scratch: Vec::new(),
@@ -313,10 +328,21 @@ struct SharedChunk {
     encoded: Bytes,
 }
 
+impl SharedChunk {
+    fn size(&self) -> usize {
+        self.frame.len() + self.encoded.len()
+    }
+}
+
 struct LargeChunks {
     hasher: RandomState,
-    // At most 16 MiB across all runtime worlds. Terrain allocates entries on demand.
-    slots: [Mutex<Option<SharedChunk>>; 128],
+    // Keep several terrain frames per shard within 16 MiB across runtime worlds.
+    slots: [Mutex<VecDeque<SharedChunk>>; 128],
+}
+
+impl LargeChunks {
+    const SHARD_BYTES: usize = 2 * MAX_SHARED_TERRAIN_FRAME;
+    const SHARD_ENTRIES: usize = 4;
 }
 
 static LARGE_CHUNKS: LazyLock<LargeChunks> = LazyLock::new(|| LargeChunks {
@@ -442,6 +468,21 @@ mod tests {
     }
 
     #[test]
+    fn terrain_cache_keeps_two_revisions_in_one_shard() {
+        let mut encoder = BedrockBatchEncoder::new();
+        encoder.set_compression((256, 4));
+        let original = vec![pumpkin_data::bedrock_packet::LEVEL_CHUNK as u8; 24824];
+        let mut revised = original.clone();
+        revised[20000] ^= 1;
+        let encode = |raw: &[u8]| encoder.try_share_large_level_chunk(raw).unwrap().unwrap();
+        let first = encode(&original);
+        let second = encode(&revised);
+        assert_ne!(first, second);
+        assert_eq!(encode(&original).as_ptr(), first.as_ptr());
+        assert_eq!(encode(&revised).as_ptr(), second.as_ptr());
+    }
+
+    #[test]
     fn shared_slot_requires_exact_input_and_level_even_when_reused() {
         let slot = BatchSlot::default();
         slot.store(4, b"first actor", b"first result");
@@ -564,7 +605,7 @@ mod batch_tests {
     #[test]
     fn independent_deflate_streams_round_trip_at_the_batch_window_limit() {
         let mut seed = 37u32;
-        let noise: Vec<u8> = (0..=16 * 1024)
+        let noise: Vec<u8> = (0..=MAX_SHARED_TERRAIN_FRAME + 5)
             .map(|_| {
                 seed ^= seed << 13;
                 seed ^= seed >> 17;
@@ -575,9 +616,17 @@ mod batch_tests {
         let mut enc = BedrockBatchEncoder::new();
         for level in 0..=9 {
             enc.set_compression((1, level));
-            for size in [257, 16 * 1024 - 1, 16 * 1024, 16 * 1024 + 1, 1] {
+            for (size, share) in [
+                (257, false),
+                (16 * 1024 - 1, false),
+                (16 * 1024, false),
+                (16 * 1024 + 1, true),
+                (MAX_SHARED_TERRAIN_FRAME + 5, true),
+                (MAX_SHARED_TERRAIN_FRAME + 6, true),
+                (1, false),
+            ] {
                 let mut wire = Vec::new();
-                enc.write_batch(size, false, |out| out.write_all(&noise[..size]), &mut wire)
+                enc.write_batch(size, share, |out| out.write_all(&noise[..size]), &mut wire)
                     .unwrap();
                 assert_eq!(&wire[..2], &[BEDROCK_GAME_PACKET, 0]);
                 let mut decoded = Vec::new();

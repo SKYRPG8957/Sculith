@@ -745,6 +745,13 @@ impl BedrockClient {
                 for (index, chunk) in misses {
                     let revision = chunk.section.terrain_revision();
                     let actors = world.bedrock_chunk_block_actors(&chunk);
+                    // Other viewers may have encoded this chunk while this job was queued.
+                    if !cache_enabled && actors.is_empty()
+                        && let Some(frame) = world.bedrock_chunk_frames.get(&chunk, bedrock_dimension)
+                    {
+                        results.push((index, frame));
+                        continue;
+                    }
                     match CLevelChunk::encode_chunk(&chunk, bedrock_dimension, cache_enabled, &actors) {
                         Ok((payload, chunk_blobs)) => {
                             if let Some(frame) = frame_raw_packet(CLevelChunk::PACKET_ID, &payload) {
