@@ -176,6 +176,12 @@ func (r *run) client(i int) {
 		var prev time.Time
 		seen := [3]bool{}
 		defer func() {
+			if active.Load() {
+				if prev.IsZero() {
+					prev = r.playStart
+				}
+				s.gap = math.Max(s.gap, ms(r.playStart.Add(r.play).Sub(prev)))
+			}
 			result.OrderedPeer = actors[r.ids[(i+1)%r.count].Load()]
 			result.RosterAdds = rosterAdds
 			incoming <- s
@@ -199,9 +205,10 @@ func (r *run) client(i int) {
 				if active.Load() && v.EntityRuntimeID == r.ids[peer].Load() && v.Mode == packet.MoveModeNormal {
 					if sent, ok := r.traces[peer].stamp(v.Position); ok {
 						s.motion = append(s.motion, ms(now.Sub(sent)))
-						if !prev.IsZero() {
-							s.gap = math.Max(s.gap, ms(now.Sub(prev)))
+						if prev.IsZero() {
+							prev = r.playStart
 						}
+						s.gap = math.Max(s.gap, ms(now.Sub(prev)))
 						prev = now
 					}
 				}
@@ -530,12 +537,15 @@ func main() {
 	fmt.Println("FINISHED")
 	var spawns, motion, echo, blocks, gaps, viewerP95, inputCoverage, heals []float64
 	var admitted, alive, peers, responded, allBlocks, sawMobs, sent, ordered, adds int
-	var chunks, minChunks, maxChunks, fullView int
+	var chunks, minChunks, maxChunks, fullView, minInputs int
 	errors := map[string]string{}
 	for i, p := range r.results {
 		chunks += p.Chunks
 		if i == 0 || p.Chunks < minChunks {
 			minChunks = p.Chunks
+		}
+		if i == 0 || p.Sent < minInputs {
+			minInputs = p.Sent
 		}
 		maxChunks = max(maxChunks, p.Chunks)
 		if p.ChunkRadius == 16 {
@@ -589,6 +599,7 @@ func main() {
 	report["known_peer_before_actor_spawn"] = ordered
 	report["roster_add_entries_seen"] = adds
 	report["clients_granted_radius_16"] = fullView
+	report["minimum_input_rate_percent"] = 100 * float64(minInputs) / (r.play.Seconds() * 20)
 	report["level_chunk_messages_read"] = map[string]int{"total": chunks, "minimum_per_viewer": minChunks, "maximum_per_viewer": maxChunks}
 	if len(inputCoverage) > 0 {
 		sort.Float64s(inputCoverage)
