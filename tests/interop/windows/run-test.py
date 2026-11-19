@@ -1,7 +1,9 @@
 """Measure the packaged Bedrock server on the local Windows PC."""
 import argparse
 from datetime import datetime
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -36,6 +38,26 @@ with (out.parent / "driver.log").open("w", encoding="utf-8") as log:
 if not out.is_file():
     sys.exit(f"시험이 끝나기 전에 구동기나 클라이언트가 종료되었습니다. {out.parent}의 로그를 확인하세요.")
 data = json.loads(out.read_text(encoding="utf-8"))
+if "tick_summary" not in data:
+    sys.exit(f"일부 접속 결과만 기록되었습니다. {out.parent}의 로그를 확인하세요.")
+hardware = {"logical_processors": os.cpu_count(), "cpu": os.environ.get("PROCESSOR_IDENTIFIER")}
+try:
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
+        hardware["cpu"] = winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
+except (ImportError, OSError):
+    pass
+try:
+    import ctypes
+    memory_kib = ctypes.c_ulonglong()
+    if ctypes.windll.kernel32.GetPhysicallyInstalledSystemMemory(ctypes.byref(memory_kib)):
+        hardware["installed_ram_gib"] = round(memory_kib.value / (1024 ** 2), 2)
+except (ImportError, OSError, AttributeError):
+    pass
+with server.open("rb") as executable:
+    data["server_sha256"] = hashlib.file_digest(executable, "sha256").hexdigest()
+data["host"] = hardware
+out.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 print(f"입장 {data['spawned']}/{players}명, 종료 때 접속 {data['survived']}명")
 print(f"플레이 중 틱 P95 최대값 {data['tick_summary']['play']}ms, 움직임 지연 P95 {data['peer_input_to_visible_motion'].get('p95_ms')}ms")
 print("목표 달성" if data["all_budgets_met"] else "목표 미달")
