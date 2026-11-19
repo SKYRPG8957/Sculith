@@ -177,8 +177,9 @@ mod tests {
     #[tokio::test]
     async fn segmented_transmit_preserves_datagrams_and_port() {
         let socket = || {
-            IceSocket::from_std(std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap())
-                .unwrap()
+            let socket = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+            socket.set_nonblocking(true).unwrap();
+            IceSocket::from_std(socket).unwrap()
         };
         let sender = socket();
         if sender.max_gso_segments() <= 1 {
