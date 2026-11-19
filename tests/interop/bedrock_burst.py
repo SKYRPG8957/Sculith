@@ -12,6 +12,46 @@ import time
 
 from shared_resources import configure, stop_server
 
+
+def host_counters(server_pid, client_pid):
+    """Read cumulative Linux counters without instrumenting either packet path."""
+    values = {"time": time.monotonic()}
+    if not Path("/proc/self/stat").exists():
+        return values
+    for role, pid in (("server", server_pid), ("client", client_pid)):
+        try:
+            fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+            values[f"{role}_cpu_s"] = (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK")
+            for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+                if line.startswith("VmHWM:"):
+                    values[f"{role}_peak_rss_mib"] = int(line.split()[1]) / 1024
+        except FileNotFoundError:
+            pass
+    loopback_bytes = Path("/sys/class/net/lo/statistics/tx_bytes")
+    if loopback_bytes.exists():
+        values["loopback_bytes"] = int(loopback_bytes.read_text())
+    snmp = Path("/proc/net/snmp")
+    if snmp.exists():
+        udp = [line.split()[1:] for line in snmp.read_text().splitlines() if line.startswith("Udp:")]
+        if len(udp) == 2:
+            counters = dict(zip(*udp))
+            values["host_udp_rcvbuf_errors"] = int(counters["RcvbufErrors"])
+    return values
+
+
+def host_interval(start, end):
+    elapsed = end["time"] - start["time"]
+    detail = {"wall_s": round(elapsed, 3)}
+    for role in ("server", "client"):
+        key = f"{role}_cpu_s"
+        if key in start and key in end and elapsed > 0:
+            detail[f"{role}_mean_cpu_cores"] = round((end[key] - start[key]) / elapsed, 3)
+    for key in ("loopback_bytes", "host_udp_rcvbuf_errors"):
+        if key in start and key in end:
+            detail[key] = end[key] - start[key]
+    return detail
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--server", type=Path, required=True)
 parser.add_argument("--wine", type=Path)
@@ -147,11 +187,14 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             meter.start()
             client=subprocess.Popen([str(args.client.resolve()),"-address",f"127.0.0.1:{args.port}","-players",str(args.players),
                 "-output",str(out),"-play",f"{args.play}s"]+(["-encounter"] if args.encounter else []),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+            counters = {}
             try:
                 with out.with_suffix(".clients.log").open("w") as client_log:
                     for line in client.stdout:
                         client_log.write(line)
                         client_log.flush()
+                        if line.strip() == "JOIN" or line.startswith("PLAY ") or line.strip() == "FINISHED":
+                            counters[line.split()[0]] = host_counters(server.pid, client.pid)
                         if line.startswith("PLAY "): phase="play"
                         if line.startswith("MARK "):
                             wave=int(line.split()[1])
@@ -177,6 +220,15 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             report["input_hz"]=20
             report["online_authentication"]=False
             report["rpg_encounter_enabled"]=args.encounter
+            report["host_intervals"] = {
+                label: host_interval(counters[start], counters[end])
+                for label, start, end in (("join", "JOIN", "PLAY"), ("play", "PLAY", "FINISHED"))
+                if start in counters and end in counters
+            }
+            report["peak_rss_mib"] = {
+                role: max(values[f"{role}_peak_rss_mib"] for values in counters.values() if f"{role}_peak_rss_mib" in values)
+                for role in ("server", "client") if any(f"{role}_peak_rss_mib" in values for values in counters.values())
+            }
             report["tick_summary"]={
                 label: max((sample["p95_ms"] for sample in samples if sample["phase"]==label),default=None)
                 for label in ("join","play")
@@ -184,6 +236,8 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             report["checks"]={
                 "everyone_spawned_and_alive": report["spawned"]==args.players==report["survived"],
                 "everyone_saw_a_measured_peer": report["viewers_with_matched_peer"]==args.players,
+                "everyone_granted_radius_16": report["clients_granted_radius_16"]==args.players,
+                "everyone_had_peer_skin_before_spawn": report["known_peer_before_actor_spawn"]==args.players,
                 "everyone_saw_three_world_edits": report["viewers_receiving_three_markers"]==args.players,
                 "everyone_saw_a_mob": args.pigs==0 or report["viewers_receiving_pigs"]==args.players,
                 "everyone_received_rpg_reply": report["rpg_replies"]==args.players,

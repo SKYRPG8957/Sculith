@@ -70,6 +70,7 @@ type playerResult struct {
 	RPG                  string
 	Error                string
 	Pigs, Sent           int
+	Chunks, ChunkRadius  int
 	MaxMotionGapMS       float64
 }
 type run struct {
@@ -149,6 +150,7 @@ func (r *run) client(i int) {
 	}
 	result.SpawnMS = ms(time.Since(r.start))
 	g := c.GameData()
+	result.ChunkRadius = c.ChunkRadius()
 	gold := r.goldID
 	if g.UseBlockNetworkIDHashes {
 		gold = r.goldHash
@@ -160,7 +162,7 @@ func (r *run) client(i int) {
 	var healSent atomic.Int64
 	type sample struct {
 		echo, motion, blocks []float64
-		deaths, pigs         int
+		deaths, pigs, chunks int
 		rpg, err             string
 		healMS               float64
 		gap                  float64
@@ -218,6 +220,8 @@ func (r *run) client(i int) {
 				if v.EntityType == "minecraft:pig" || v.EntityType == "pig" {
 					s.pigs++
 				}
+			case *packet.LevelChunk:
+				s.chunks++
 			case *packet.ActorEvent:
 				if v.EntityRuntimeID == g.EntityRuntimeID && (v.EventType == packet.ActorEventDeath || v.EventType == packet.ActorEventInstantDeath) {
 					s.deaths++
@@ -313,6 +317,7 @@ wait:
 	result.Motion = s.motion
 	result.Blocks = s.blocks
 	result.Pigs = s.pigs
+	result.Chunks = s.chunks
 	result.Deaths = s.deaths
 	result.RPG = s.rpg
 	result.HealMS = s.healMS
@@ -505,6 +510,7 @@ func main() {
 	}
 	r.configured.Wait()
 	r.start = time.Now()
+	fmt.Println("JOIN")
 	close(r.connect)
 	r.ready.Wait()
 	r.playStart = time.Now()
@@ -521,10 +527,20 @@ func main() {
 		}
 	}()
 	all.Wait()
+	fmt.Println("FINISHED")
 	var spawns, motion, echo, blocks, gaps, viewerP95, inputCoverage, heals []float64
 	var admitted, alive, peers, responded, allBlocks, sawMobs, sent, ordered, adds int
+	var chunks, minChunks, maxChunks, fullView int
 	errors := map[string]string{}
 	for i, p := range r.results {
+		chunks += p.Chunks
+		if i == 0 || p.Chunks < minChunks {
+			minChunks = p.Chunks
+		}
+		maxChunks = max(maxChunks, p.Chunks)
+		if p.ChunkRadius == 16 {
+			fullView++
+		}
 		if p.OrderedPeer {
 			ordered++
 		}
@@ -572,6 +588,8 @@ func main() {
 	report["rpg_heal_feedback"] = stats(heals)
 	report["known_peer_before_actor_spawn"] = ordered
 	report["roster_add_entries_seen"] = adds
+	report["clients_granted_radius_16"] = fullView
+	report["level_chunk_messages_read"] = map[string]int{"total": chunks, "minimum_per_viewer": minChunks, "maximum_per_viewer": maxChunks}
 	if len(inputCoverage) > 0 {
 		sort.Float64s(inputCoverage)
 		report["minimum_matched_peer_inputs_percent"] = inputCoverage[0]
