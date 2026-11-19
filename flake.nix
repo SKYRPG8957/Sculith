@@ -56,7 +56,7 @@
 
             cargoBuildFlags = [
               "--package"
-              "pumpkin"
+              manifest.name
             ];
 
             CARGO_PROFILE_RELEASE_LTO = "thin";

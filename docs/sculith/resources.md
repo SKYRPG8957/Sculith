@@ -3,7 +3,7 @@
 The fork can compile one authored Bedrock resource pack for both editions at
 startup. No pack or server-specific content is enabled by default.
 
-In `pumpkin.toml`:
+Configure the pack in `sculith.toml`.
 
 ```toml
 [resource_pack.shared]

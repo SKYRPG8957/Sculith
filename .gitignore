@@ -112,6 +112,7 @@ data/*
 /assets/datapack/
 
 # project's configurations
+sculith.toml
 pumpkin.toml
 nethernet-key.der
 .pumpkin-server-id
