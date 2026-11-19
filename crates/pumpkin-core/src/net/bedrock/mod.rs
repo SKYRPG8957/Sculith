@@ -425,7 +425,7 @@ impl BedrockClient {
         let writer = *self.network_writer.read().await;
         if let [packet] = group
             && let Some(encoded) = writer
-                .try_share_large_level_chunk(&packet.data)
+                .try_share_large_terrain_frame(&packet.data)
                 .map_err(|e| e.to_string())?
         {
             self.session.send(encoded.slice(1..)).await?;

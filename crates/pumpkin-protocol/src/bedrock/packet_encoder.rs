@@ -8,6 +8,7 @@ use std::{
 
 use bytes::Bytes;
 use flate2::{Compression, write::DeflateEncoder};
+use pumpkin_data::bedrock_packet::{CLIENT_CACHE_MISS_RESPONSE, LEVEL_CHUNK};
 use zlib_rs::{Deflate, DeflateConfig, DeflateFlush, Status, compress_bound};
 
 use crate::{
@@ -20,6 +21,16 @@ use crate::{
 // Match the history window to the largest batch retained in the thread-local workspace.
 const BATCH_WINDOW_BITS: i32 = 14;
 const MAX_SHARED_TERRAIN_FRAME: usize = 64 * 1024;
+
+fn canonical_frame_header(packet: &[u8]) -> Option<i32> {
+    match packet {
+        [id @ 0..=0x7f, ..] => Some(i32::from(*id)),
+        [first @ 0x80..=0xff, high @ 1..=0x7f, ..] => {
+            Some(i32::from(*first & 0x7f) | (i32::from(*high) << 7))
+        }
+        _ => None,
+    }
+}
 
 /// Encodes outgoing Bedrock game packets and batches them into compressed frames.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -117,19 +128,21 @@ impl BedrockBatchEncoder {
         packets: impl Iterator<Item = &'a [u8]> + Clone,
         writer: impl Write,
     ) -> Result<bool, Error> {
-        use pumpkin_data::bedrock_packet::{
-            LEVEL_CHUNK, MOVE_ACTOR_DELTA, MOVE_PLAYER, SET_ACTOR_MOTION,
-        };
+        use pumpkin_data::bedrock_packet::{MOVE_ACTOR_DELTA, MOVE_PLAYER, SET_ACTOR_MOTION};
         let mut size = 0;
         let mut world_frames = true;
         for packet in packets.clone() {
             // A canonical 14-bit header occupies one byte, or two with a nonzero high part.
-            if !matches!(packet, [0..=0x7f, ..] | [0x80..=0xff, 1..=0x7f, ..]) {
+            let Some(header) = canonical_frame_header(packet) else {
                 return Ok(false);
-            }
+            };
             world_frames &= matches!(
-                i32::from(packet[0]),
-                LEVEL_CHUNK | MOVE_PLAYER | MOVE_ACTOR_DELTA | SET_ACTOR_MOTION
+                header,
+                LEVEL_CHUNK
+                    | CLIENT_CACHE_MISS_RESPONSE
+                    | MOVE_PLAYER
+                    | MOVE_ACTOR_DELTA
+                    | SET_ACTOR_MOTION
             );
             let len = u32::try_from(packet.len()).map_err(|_| {
                 Error::new(ErrorKind::InvalidInput, "Bedrock game packet is too long")
@@ -157,16 +170,19 @@ impl BedrockBatchEncoder {
         Ok(true)
     }
 
-    /// Encodes a complete large terrain frame once for viewers with the same settings.
+    /// Encodes a complete large terrain frame or blob response for viewers with the same settings.
     /// Small game batches use the regular encoder. A miss follows that same wire path.
-    pub fn try_share_large_level_chunk(&self, frame: &[u8]) -> Result<Option<Bytes>, Error> {
+    pub fn try_share_large_terrain_frame(&self, frame: &[u8]) -> Result<Option<Bytes>, Error> {
         let Some((threshold, level)) = self.compression else {
             return Ok(None);
         };
         if threshold == 0
             || level == 0
             || !(8193..=MAX_SHARED_TERRAIN_FRAME).contains(&frame.len())
-            || i32::from(frame[0]) != pumpkin_data::bedrock_packet::LEVEL_CHUNK
+            || !matches!(
+                canonical_frame_header(frame),
+                Some(LEVEL_CHUNK | CLIENT_CACHE_MISS_RESPONSE)
+            )
         {
             return Ok(None);
         }
@@ -174,8 +190,8 @@ impl BedrockBatchEncoder {
         if self.prefixed_compression && batch_len < threshold {
             return Ok(None);
         }
-        // The first bytes contain the chunk coordinates and dimension. Compare the whole
-        // translated frame and encoder before reuse, including across worlds and versions.
+        // Hash the start of the translated frame, which contains a chunk position
+        // or the first blob hash. Reuse requires the complete frame and settings to match.
         let chunks = &*LARGE_CHUNKS;
         let index =
             chunks.hasher.hash_one((frame.len(), &frame[..32])) as usize % chunks.slots.len();
@@ -427,7 +443,7 @@ mod tests {
         let mut chunk = vec![pumpkin_data::bedrock_packet::LEVEL_CHUNK as u8; 24824];
         assert!(
             encoder
-                .try_share_large_level_chunk(&chunk)
+                .try_share_large_terrain_frame(&chunk)
                 .unwrap()
                 .is_none()
         );
@@ -435,7 +451,7 @@ mod tests {
             encoder.set_compression((threshold, level));
             assert!(
                 encoder
-                    .try_share_large_level_chunk(&chunk)
+                    .try_share_large_terrain_frame(&chunk)
                     .unwrap()
                     .is_none()
             );
@@ -449,7 +465,10 @@ mod tests {
                 encoder
                     .try_write_framed_game_packets(std::iter::once(bytes), &mut expected)
                     .unwrap();
-                let actual = encoder.try_share_large_level_chunk(bytes).unwrap().unwrap();
+                let actual = encoder
+                    .try_share_large_terrain_frame(bytes)
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(actual.as_ref(), expected);
                 actual
             };
@@ -461,7 +480,7 @@ mod tests {
         chunk[0] = 9;
         assert!(
             encoder
-                .try_share_large_level_chunk(&chunk)
+                .try_share_large_terrain_frame(&chunk)
                 .unwrap()
                 .is_none()
         );
@@ -474,12 +493,40 @@ mod tests {
         let original = vec![pumpkin_data::bedrock_packet::LEVEL_CHUNK as u8; 24824];
         let mut revised = original.clone();
         revised[20000] ^= 1;
-        let encode = |raw: &[u8]| encoder.try_share_large_level_chunk(raw).unwrap().unwrap();
+        let encode = |raw: &[u8]| encoder.try_share_large_terrain_frame(raw).unwrap().unwrap();
         let first = encode(&original);
         let second = encode(&revised);
         assert_ne!(first, second);
         assert_eq!(encode(&original).as_ptr(), first.as_ptr());
         assert_eq!(encode(&revised).as_ptr(), second.as_ptr());
+    }
+
+    #[test]
+    fn large_blob_response_reuses_complete_frame_with_two_byte_header() {
+        let mut encoder = BedrockBatchEncoder::new();
+        encoder.set_compression((256, 4));
+        let mut frame = Vec::new();
+        frame
+            .write_var_uint(&VarUInt(CLIENT_CACHE_MISS_RESPONSE as u32))
+            .unwrap();
+        assert_eq!(frame.len(), 2);
+        frame.resize(32 * 1024, 73);
+        let mut ordinary = Vec::new();
+        assert!(
+            encoder
+                .try_write_framed_game_packets(std::iter::once(frame.as_slice()), &mut ordinary)
+                .unwrap()
+        );
+        let first = encoder
+            .try_share_large_terrain_frame(&frame)
+            .unwrap()
+            .unwrap();
+        let second = encoder
+            .try_share_large_terrain_frame(&frame)
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.as_ref(), ordinary);
+        assert_eq!(first.as_ptr(), second.as_ptr());
     }
 
     #[test]
