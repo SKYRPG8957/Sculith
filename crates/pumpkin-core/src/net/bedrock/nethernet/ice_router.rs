@@ -67,25 +67,49 @@ impl IceRouter {
         stop: CancellationToken,
     ) -> Result<Self, Error> {
         let public_addr = public.local_addr()?;
-        let internal = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await?);
+        let public = public.into_std()?;
+        let internal = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))?;
+        internal.set_nonblocking(true)?;
         let internal_addr = internal.local_addr()?;
         let (commands, receiver) = mpsc::unbounded_channel();
+        let (started, ready) = oneshot::channel();
         let stop = stop.child_token();
         let guard = stop.clone().drop_guard();
-        let direct_udp = Arc::new(DirectUdp::new(public.clone(), internal_addr));
-        let ingress = direct_udp.clone();
-        let runtime = tokio::runtime::Handle::current();
-        tokio::spawn(send_outbound(
-            public.clone(),
-            internal.clone(),
-            direct_udp.clone(),
-            stop.clone(),
-        ));
-        // One ingress thread per listener keeps a full gameplay executor from
-        // leaving a simultaneous arrival burst in the kernel's receive queue.
+        // Register both sockets on this thread's own reactor. A Handle to the game
+        // runtime would still need a game worker to deliver socket readiness.
         std::thread::Builder::new()
             .name("sculith-bedrock-udp".into())
             .spawn(move || {
+                let bound = (|| -> Result<_, Error> {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_io()
+                        .build()?;
+                    let sockets = {
+                        let _enter = runtime.enter();
+                        (
+                            IceSocket::from_std(public)?,
+                            Arc::new(UdpSocket::from_std(internal)?),
+                        )
+                    };
+                    Ok((runtime, sockets))
+                })();
+                let (runtime, (public, internal)) = match bound {
+                    Ok(bound) => bound,
+                    Err(error) => {
+                        let _ = started.send(Err(error));
+                        return;
+                    }
+                };
+                let direct = Arc::new(DirectUdp::new(public.clone(), internal_addr));
+                if started.send(Ok(direct.clone())).is_err() {
+                    return;
+                }
+                runtime.spawn(send_outbound(
+                    public.clone(),
+                    internal.clone(),
+                    direct.clone(),
+                    stop.clone(),
+                ));
                 runtime.block_on(run(
                     public,
                     internal,
@@ -93,9 +117,10 @@ impl IceRouter {
                     server,
                     server_guid,
                     stop,
-                    ingress,
+                    direct,
                 ));
             })?;
+        let direct_udp = ready.await.map_err(Error::other)??;
         Ok(Self {
             internal_addr,
             public_addr,
@@ -431,8 +456,7 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
-    fn reads_stun_username() {
+    fn binding_request() -> Vec<u8> {
         let username = b"server:client";
         let mut packet = vec![0, 1, 0, 20, 0x21, 0x12, 0xa4, 0x42];
         packet.extend_from_slice(&[0; 12]);
@@ -440,7 +464,52 @@ mod tests {
         packet.extend_from_slice(&(username.len() as u16).to_be_bytes());
         packet.extend_from_slice(username);
         packet.resize(packet.len().next_multiple_of(4), 0);
-        assert_eq!(stun_username(&packet), Some("server:client"));
+        packet
+    }
+
+    #[test]
+    fn reads_stun_username() {
+        assert_eq!(stun_username(&binding_request()), Some("server:client"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn routes_both_directions_while_the_game_executor_is_busy() {
+        use std::{net::UdpSocket as StdUdpSocket, time::Duration};
+        let loopback = SocketAddr::from(([127, 0, 0, 1], 0));
+        let remote = StdUdpSocket::bind(loopback).unwrap();
+        let peer = StdUdpSocket::bind(loopback).unwrap();
+        for socket in [&remote, &peer] {
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+        }
+        let public = IceSocket::bind(loopback).await.unwrap();
+        let router = IceRouter::bind(public, Weak::new(), 1, CancellationToken::new())
+            .await
+            .unwrap();
+        let _registration = router
+            .register(
+                "server".into(),
+                peer.local_addr().unwrap(),
+                vec![remote.local_addr().unwrap()],
+            )
+            .await
+            .unwrap();
+
+        // These synchronous waits occupy the game's only executor thread. The listener
+        // must still forward the binding request, subsequent data, and the peer's reply.
+        let request = binding_request();
+        let mut buffer = [0; 128];
+        for payload in [request.as_slice(), b"movement".as_slice()] {
+            remote.send_to(payload, router.public_addr()).unwrap();
+            let (len, source) = peer.recv_from(&mut buffer).unwrap();
+            assert_eq!(source, router.internal_addr());
+            assert_eq!(&buffer[..len], payload);
+        }
+        peer.send_to(b"reply", router.internal_addr()).unwrap();
+        let (len, source) = remote.recv_from(&mut buffer).unwrap();
+        assert_eq!(source, router.public_addr());
+        assert_eq!(&buffer[..len], b"reply");
     }
 
     #[test]

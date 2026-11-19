@@ -29,6 +29,21 @@ impl IceSocket {
         self.socket.local_addr()
     }
 
+    /// Transfer the bound port to the listener's I/O driver. A caller retaining a
+    /// clone keeps its handle, while the server's usual sole owner needs no duplicate.
+    pub(super) fn into_std(self) -> Result<std::net::UdpSocket, Error> {
+        match Arc::try_unwrap(self.socket) {
+            Ok(socket) => socket.into_std(),
+            Err(shared) => Ok(socket2::SockRef::from(shared.as_ref()).try_clone()?.into()),
+        }
+    }
+
+    pub(super) fn from_std(socket: std::net::UdpSocket) -> Result<Self, Error> {
+        Ok(Self {
+            socket: Arc::new(UdpSocket::from_std(socket)?),
+        })
+    }
+
     pub async fn recv_from(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
         self.socket.recv_from(buffer).await
     }
@@ -49,6 +64,32 @@ impl IceSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn transferring_a_shared_socket_keeps_the_bound_port() {
+        let original = IceSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .unwrap();
+        let transferred = IceSocket::from_std(original.clone().into_std().unwrap()).unwrap();
+        let port = original.local_addr().unwrap();
+        assert_eq!(transferred.local_addr().unwrap(), port);
+        drop(original);
+        let peer = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        transferred
+            .send_to(b"ready", peer.local_addr().unwrap())
+            .await
+            .unwrap();
+        let mut buffer = [0; 5];
+        let (len, sender) = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            peer.recv_from(&mut buffer),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(sender, port);
+        assert_eq!(&buffer[..len], b"ready");
+    }
 
     #[tokio::test]
     async fn ice_socket_sends_and_receives() {
