@@ -458,10 +458,31 @@ func prepareWorld(address string) error {
 	}
 	defer c.Close()
 	fmt.Printf("ARENA_BUILDER_READY %v threshold=%d\n", c.GameData().PlayerPosition, threshold.Load())
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		heartbeat := time.NewTicker(time.Second)
+		defer heartbeat.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case now := <-heartbeat.C:
+				if c.WritePacket(&packet.NetworkStackLatency{Timestamp: now.UnixNano(), NeedsResponse: true}) != nil || c.Flush() != nil {
+					return
+				}
+			}
+		}
+	}()
 	go func() {
 		for {
-			if _, err := c.ReadPacket(); err != nil {
+			p, err := c.ReadPacket()
+			if err != nil {
 				return
+			}
+			if latency, ok := p.(*packet.NetworkStackLatency); ok && latency.NeedsResponse {
+				_ = c.WritePacket(&packet.NetworkStackLatency{Timestamp: latency.Timestamp})
+				_ = c.Flush()
 			}
 		}
 	}()

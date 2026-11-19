@@ -173,6 +173,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                         advertised_threshold = int(match[1]) if match else None
                         break
                 else: raise RuntimeError(f"Arena preparation client failed. See {setup_log.name}")
+            command("gamemode creative ArenaBuilder")
             if tuple(args.arena) != (0,-59,0):
                 command(f"tp ArenaBuilder {position(0,4,0)}")
             command(f"forceload add {cx-16} {cz-16} {cx+16} {cz+16}")
@@ -195,10 +196,12 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 command(f"summon minecraft:pig {position(i%8-4,0,i//8-4)}")
             command("list")
             wait(built,90)
+            loaded.clear()
+            command(f"execute if block {position(0,-1,0)} minecraft:stone if block {position(0,0,0)} minecraft:air if block {position(-16,0,-16)} minecraft:stone if block {position(16,0,16)} minecraft:stone run time query daytime")
+            wait(loaded, 20)
             if args.distant_terrain:
                 # Visit a 2x2 patch in each LOD band before the simultaneous login.
                 # Build all three with ordinary chunks, then let the preparation client leave.
-                command("gamemode creative ArenaBuilder")
                 for offset in (23, 34, 50):
                     chunk_x = cx // 16 + offset
                     chunk_z = cz // 16
