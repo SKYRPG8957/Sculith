@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/pion/ice/v4"
 	"github.com/pion/transport/v5"
 	"github.com/pion/transport/v5/stdnet"
 	"github.com/pion/webrtc/v4"
@@ -41,6 +42,7 @@ func loopbackSettings(ip net.IP) webrtc.SettingEngine {
 	adapter.AddAddress(&net.IPNet{IP: ip.To4(), Mask: net.CIDRMask(8, 32)})
 	var settings webrtc.SettingEngine
 	settings.SetNet(&loopbackNet{adapter: adapter})
+	settings.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
 	settings.SetIncludeLoopbackCandidate(true)
 	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
 	return settings

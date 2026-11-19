@@ -6,6 +6,7 @@ require (
 	github.com/df-mc/dragonfly v0.11.7-0.20261107232451-0f9a3a573626
 	github.com/df-mc/go-nethernet v1.0.27-0.20261104184408-4c06b550759d
 	github.com/google/uuid v1.6.0
+	github.com/pion/ice/v4 v4.4.8
 	github.com/pion/transport/v5 v5.1.4
 	github.com/pion/webrtc/v4 v4.2.26
 	github.com/sandertv/gophertunnel v1.63.1-0.20261112122229-e2251a60f71d
@@ -26,7 +27,6 @@ require (
 	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/pion/datachannel v1.6.3 // indirect
 	github.com/pion/dtls/v3 v3.1.15 // indirect
-	github.com/pion/ice/v4 v4.4.8 // indirect
 	github.com/pion/interceptor v0.1.51 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.2.2 // indirect
