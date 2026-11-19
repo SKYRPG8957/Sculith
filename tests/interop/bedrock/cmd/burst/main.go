@@ -59,6 +59,7 @@ func (t *trace) stamp(p mgl32.Vec3) (time.Time, bool) {
 }
 
 type playerResult struct {
+	HealMS               float64
 	SpawnMS              float64
 	RuntimeID            uint64
 	Survived             bool
@@ -70,6 +71,7 @@ type playerResult struct {
 	MaxMotionGapMS       float64
 }
 type run struct {
+	encounter        bool
 	configured       sync.WaitGroup
 	connect          chan struct{}
 	goldID, goldHash uint32
@@ -153,10 +155,12 @@ func (r *run) client(i int) {
 	r.ids[i].Store(g.EntityRuntimeID)
 	c.SetReadDeadline(time.Time{})
 	var active atomic.Bool
+	var healSent atomic.Int64
 	type sample struct {
 		echo, motion, blocks []float64
 		deaths, pigs         int
 		rpg, err             string
+		healMS               float64
 		gap                  float64
 	}
 	incoming := make(chan sample, 1)
@@ -203,6 +207,9 @@ func (r *run) client(i int) {
 					s.deaths++
 				}
 			case *packet.Text:
+				if stamp := healSent.Load(); stamp > 0 && strings.Contains(v.Message, "남은 회복 0회") && s.healMS == 0 {
+					s.healMS = ms(now.Sub(time.Unix(0, stamp)))
+				}
 				if strings.Contains(v.Message, "RPG Lv.") {
 					s.rpg = v.Message
 				}
@@ -254,6 +261,10 @@ wait:
 			result.Error = s.err
 			end = true
 		case <-steps.C:
+			if r.encounter && time.Since(r.playStart) >= r.play*3/4 && healSent.Load() == 0 {
+				healSent.Store(time.Now().UnixNano())
+				_ = c.WritePacket(&packet.CommandRequest{CommandLine: "/rpg heal", CommandOrigin: protocol.CommandOrigin{Origin: protocol.CommandOriginPlayer, UUID: uuid.New()}})
+			}
 			n := result.Sent + 1
 			t := float64(n)
 			p := g.PlayerPosition
@@ -284,6 +295,7 @@ wait:
 	result.Pigs = s.pigs
 	result.Deaths = s.deaths
 	result.RPG = s.rpg
+	result.HealMS = s.healMS
 	result.MaxMotionGapMS = s.gap
 	if s.deaths > 0 {
 		result.Survived = false
@@ -413,6 +425,7 @@ func rpgSmoke(address string) error {
 func main() {
 	var r run
 	var path string
+	flag.BoolVar(&r.encounter, "encounter", false, "activate the RPG heal after a server-driven XP and damage wave")
 	rpgCheck := flag.Bool("rpg-smoke", false, "check RPG XP, healing and reconnect persistence on a fresh test account")
 	prepare := flag.Bool("prepare", false, "warm the copied arena until standard input closes")
 
@@ -488,10 +501,13 @@ func main() {
 		}
 	}()
 	all.Wait()
-	var spawns, motion, echo, blocks, gaps, viewerP95, inputCoverage []float64
+	var spawns, motion, echo, blocks, gaps, viewerP95, inputCoverage, heals []float64
 	var admitted, alive, peers, responded, allBlocks, sawMobs, sent int
 	errors := map[string]string{}
 	for i, p := range r.results {
+		if p.HealMS > 0 {
+			heals = append(heals, p.HealMS)
+		}
 		if p.SpawnMS > 0 {
 			admitted++
 			spawns = append(spawns, p.SpawnMS)
@@ -529,6 +545,7 @@ func main() {
 	}
 	report := map[string]interface{}{"players": r.count, "spawned": admitted, "survived": alive, "duration_s": r.play.Seconds(), "inputs_sent": sent, "viewers_with_matched_peer": peers, "rpg_replies": responded, "viewers_receiving_three_markers": allBlocks, "viewers_receiving_pigs": sawMobs, "spawn": stats(spawns), "peer_input_to_visible_motion": stats(motion), "echo_round_trip": stats(echo), "world_block_to_visible_update": stats(blocks), "per_viewer_max_motion_gap": stats(gaps), "client_errors": errors}
 	report["per_viewer_motion_p95"] = stats(viewerP95)
+	report["rpg_heal_feedback"] = stats(heals)
 	if len(inputCoverage) > 0 {
 		sort.Float64s(inputCoverage)
 		report["minimum_matched_peer_inputs_percent"] = inputCoverage[0]

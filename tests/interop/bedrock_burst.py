@@ -23,6 +23,7 @@ parser.add_argument("--play", type=int, default=60)
 parser.add_argument("--pigs", type=int, default=64)
 parser.add_argument("--port", type=int, default=19132)
 parser.add_argument("--rpg-smoke", action="store_true")
+parser.add_argument("--encounter", action="store_true", help="grant XP, damage every player and verify a synchronized heal")
 parser.add_argument("--threshold", type=int, default=256)
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
@@ -103,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             if not loaded.is_set():
                 raise RuntimeError(f"Test arena chunks did not load. See {log_path}")
             for line in [
-                "gamerule minecraft:spawn_mobs false", "gamerule minecraft:respawn_radius 0",
+                "gamerule minecraft:spawn_mobs false", "gamerule minecraft:natural_health_regeneration false", "gamerule minecraft:respawn_radius 0",
                 "gamerule minecraft:max_entity_cramming 0", "gamerule minecraft:advance_time false",
                 "fill -16 -60 -16 16 -60 16 minecraft:stone",
                 "fill -16 -59 -16 16 -55 16 minecraft:air", "setworldspawn 0 -59 0",
@@ -145,7 +146,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             phase="join"
             meter.start()
             client=subprocess.Popen([str(args.client.resolve()),"-address",f"127.0.0.1:{args.port}","-players",str(args.players),
-                "-output",str(out),"-play",f"{args.play}s"],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+                "-output",str(out),"-play",f"{args.play}s"]+(["-encounter"] if args.encounter else []),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
             try:
                 with out.with_suffix(".clients.log").open("w") as client_log:
                     for line in client.stdout:
@@ -155,6 +156,9 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                         if line.startswith("MARK "):
                             wave=int(line.split()[1])
                             command(f"setblock {3+wave} -59 4 minecraft:gold_block")
+                            if args.encounter and wave==1:
+                                command("experience add @a 105 points")
+                                command("execute as @a run damage @s 4")
                 result=client.wait(timeout=10)
             finally:
                 if client.poll() is None: client.kill(); client.wait()
@@ -171,6 +175,8 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             report["clients_and_server_on_same_host"]=True
             report["world_preparation"]="Copied flat world; one preparation client disconnected before the simultaneous start."
             report["input_hz"]=20
+            report["online_authentication"]=False
+            report["rpg_encounter_enabled"]=args.encounter
             report["tick_summary"]={
                 label: max((sample["p95_ms"] for sample in samples if sample["phase"]==label),default=None)
                 for label in ("join","play")
@@ -185,6 +191,9 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 "remote_motion_p95_within_150_ms_for_every_viewer": report["per_viewer_motion_p95"].get("max_ms",float("inf"))<=150,
                 "world_edits_p95_within_150_ms": report["world_block_to_visible_update"].get("p95_ms",float("inf"))<=150,
             }
+            if args.encounter:
+                report["checks"]["everyone_healed"]=report["rpg_heal_feedback"]["samples"]==args.players
+                report["checks"]["rpg_heal_p95_within_150_ms"]=report["rpg_heal_feedback"].get("p95_ms",float("inf"))<=150
             report["all_budgets_met"]=all(report["checks"].values())
             out.write_text(json.dumps(report,indent=2)+"\n")
             print(json.dumps({k:v for k,v in report.items() if k not in ("tick_windows","client_errors")},ensure_ascii=False), flush=True)
