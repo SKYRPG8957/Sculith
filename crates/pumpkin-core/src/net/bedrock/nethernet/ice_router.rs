@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::Error,
+    io::{Error, IoSliceMut},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{Arc, Weak},
 };
@@ -10,6 +10,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::{CancellationToken, DropGuard};
 use tracing::trace;
+use webrtc::runtime::RecvMeta;
 
 use super::discovery::{
     Packet as DiscoveryPacket, decode_packet, encode_discovery_response, encode_message,
@@ -201,9 +202,12 @@ async fn run(
     let mut routes = HashMap::<SocketAddr, Route>::new();
     let mut by_ufrag = HashMap::<String, SocketAddr>::new();
     let mut by_remote = HashMap::<SocketAddr, SocketAddr>::new();
-    let mut buffer = vec![0; usize::from(u16::MAX)];
+    const RECEIVE_BATCH: usize = 8;
+    let mut buffers: [_; RECEIVE_BATCH] = std::array::from_fn(|_| vec![0; usize::from(u16::MAX)]);
+    let mut buffers = buffers.each_mut().map(|buffer| IoSliceMut::new(buffer));
+    let mut meta = [RecvMeta::default(); RECEIVE_BATCH];
     loop {
-        let first = tokio::select! {
+        let received = tokio::select! {
             biased;
             () = stop.cancelled() => return,
             command = commands.recv() => {
@@ -229,49 +233,47 @@ async fn run(
                 }
                 continue;
             }
-            result = public.recv_from(&mut buffer) => result,
+            result = public.recv_datagrams(&mut buffers, &mut meta) => result,
         };
-        let mut result = first;
-        for index in 0..16 {
-            let Ok((len, remote)) = result else { break };
-            let packet = &buffer[..len];
-            let destination = stun_username(packet)
-                .and_then(|username| {
-                    username
-                        .split(':')
-                        .find_map(|frag| by_ufrag.get(frag).copied())
-                })
-                .or_else(|| by_remote.get(&remote).copied());
-            if let Some(destination) = destination {
-                if let Some(route) = routes.get_mut(&destination)
-                    && route.remote != Some(remote)
-                {
-                    if let Some(previous) = route.remote.replace(remote)
-                        && by_remote.get(&previous) == Some(&destination)
+        let Ok(received) = received else { continue };
+        for (buffer, info) in buffers.iter().zip(&meta).take(received) {
+            let remote = info.addr;
+            for packet in buffer[..info.len].chunks(info.stride.max(1)) {
+                let destination = stun_username(packet)
+                    .and_then(|username| {
+                        username
+                            .split(':')
+                            .find_map(|frag| by_ufrag.get(frag).copied())
+                    })
+                    .or_else(|| by_remote.get(&remote).copied());
+                if let Some(destination) = destination {
+                    if let Some(route) = routes.get_mut(&destination)
+                        && route.remote != Some(remote)
                     {
-                        by_remote.remove(&previous);
+                        if let Some(previous) = route.remote.replace(remote)
+                            && by_remote.get(&previous) == Some(&destination)
+                        {
+                            by_remote.remove(&previous);
+                        }
+                        direct.set_target(destination, Some(remote));
+                        by_remote.insert(remote, destination);
                     }
-                    direct.set_target(destination, Some(remote));
-                    by_remote.insert(remote, destination);
+                    if !direct.deliver(destination, packet)
+                        && let Err(error) = internal.send_to(packet, destination).await
+                    {
+                        trace!(%remote, %destination, %error, "Inbound ICE relay failed");
+                    }
+                } else {
+                    handle_unroutable(
+                        packet,
+                        remote,
+                        &public,
+                        &server,
+                        server_guid,
+                        advertisement_id,
+                    )
+                    .await;
                 }
-                if !direct.deliver(destination, packet)
-                    && let Err(error) = internal.send_to(packet, destination).await
-                {
-                    trace!(%remote, %destination, %error, "Inbound ICE relay failed");
-                }
-            } else {
-                handle_unroutable(
-                    packet,
-                    remote,
-                    &public,
-                    &server,
-                    server_guid,
-                    advertisement_id,
-                )
-                .await;
-            }
-            if index < 15 {
-                result = public.try_recv_from(&mut buffer);
             }
         }
     }
