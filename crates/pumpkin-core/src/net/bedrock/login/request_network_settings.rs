@@ -171,7 +171,11 @@ mod tests {
             .await
             .take()
             .unwrap();
-        let compression = CompressionInfo::default();
+        // Force the small, valid login fixture across the Deflate threshold.
+        let compression = CompressionInfo {
+            threshold: 1,
+            ..CompressionInfo::default()
+        };
         let deflate = (compression.threshold as usize, compression.level);
         let mut settings = pin!(client.send_network_settings(compression));
         assert!(futures::poll!(settings.as_mut()).is_pending());
