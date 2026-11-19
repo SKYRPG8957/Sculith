@@ -198,11 +198,11 @@ async fn run(
     stop: CancellationToken,
     direct: Arc<DirectUdp>,
 ) {
+    const RECEIVE_BATCH: usize = 8;
     let advertisement_id = rand::random();
     let mut routes = HashMap::<SocketAddr, Route>::new();
     let mut by_ufrag = HashMap::<String, SocketAddr>::new();
     let mut by_remote = HashMap::<SocketAddr, SocketAddr>::new();
-    const RECEIVE_BATCH: usize = 8;
     let mut buffers: [_; RECEIVE_BATCH] = std::array::from_fn(|_| vec![0; usize::from(u16::MAX)]);
     let mut buffers = buffers.each_mut().map(|buffer| IoSliceMut::new(buffer));
     let mut meta = [RecvMeta::default(); RECEIVE_BATCH];
