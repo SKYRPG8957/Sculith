@@ -73,7 +73,7 @@ RUST_CI_IGNORED_FILES = {
     "assets/bedrock/README.md",
     "default.nix",
     "docker-compose.yml",
-    "egg-pumpkin.json",
+    "egg-sculith.json",
     "flake.lock",
     "flake.nix",
     "shell.nix",

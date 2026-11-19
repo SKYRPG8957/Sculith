@@ -28,7 +28,7 @@
           ...
         }:
         let
-          manifest = (lib.importTOML ./crates/pumpkin/Cargo.toml).package;
+          manifest = (lib.importTOML ./crates/sculith/Cargo.toml).package;
           workspace-manifest = (lib.importTOML ./Cargo.toml).workspace.package;
 
           # The vanilla datapack is not in the repository. The pumpkin-data build script

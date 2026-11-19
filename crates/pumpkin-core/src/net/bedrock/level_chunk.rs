@@ -82,54 +82,63 @@ impl CLevelChunk<'_> {
         VarInt(chunk.z).write(&mut writer)?;
 
         VarInt(dimension).write(&mut writer)?;
-        let block_blobs = chunk.section.block_sections.bedrock_blobs(|block_sections| {
-            let sub_chunk_count = block_sections.iter().rposition(|section| !section.has_only_air()).map_or(0, |i| i+1);
-            let mut blobs = Vec::with_capacity(sub_chunk_count);
-            let min_y_section = (chunk.section.min_y >> 4) as i8;
-        for (i, block_palette) in block_sections.iter().take(sub_chunk_count).enumerate() {
-            let mut subchunk_buf = Vec::new();
-            // Version 9: [version:byte][num_storages:byte][sub_chunk_index:byte]
-            let y = (i as i8) + min_y_section;
-            let water_layer = block_palette.convert_be_water_network();
-            let num_storages = if water_layer.is_some() { 2 } else { 1 };
-            subchunk_buf.write_all(&[VERSION, num_storages, y as u8])?;
+        let block_blobs = chunk
+            .section
+            .block_sections
+            .bedrock_blobs(|block_sections| {
+                let sub_chunk_count = block_sections
+                    .iter()
+                    .rposition(|section| !section.has_only_air())
+                    .map_or(0, |i| i + 1);
+                let mut blobs = Vec::with_capacity(sub_chunk_count);
+                let min_y_section = (chunk.section.min_y >> 4) as i8;
+                for (i, block_palette) in block_sections.iter().take(sub_chunk_count).enumerate() {
+                    let mut subchunk_buf = Vec::new();
+                    // Version 9: [version:byte][num_storages:byte][sub_chunk_index:byte]
+                    let y = (i as i8) + min_y_section;
+                    let water_layer = block_palette.convert_be_water_network();
+                    let num_storages = if water_layer.is_some() { 2 } else { 1 };
+                    subchunk_buf.write_all(&[VERSION, num_storages, y as u8])?;
 
-            write_block_storage(&mut subchunk_buf, block_palette.convert_be_network())?;
-            if let Some(water_layer) = water_layer {
-                write_block_storage(&mut subchunk_buf, water_layer)?;
-            }
+                    write_block_storage(&mut subchunk_buf, block_palette.convert_be_network())?;
+                    if let Some(water_layer) = water_layer {
+                        write_block_storage(&mut subchunk_buf, water_layer)?;
+                    }
 
-            blobs.push(blob(subchunk_buf));
-            }
-            Ok(blobs)
-        })?;
-        let biome_blobs = chunk.section.biome_sections.bedrock_blobs(|biome_sections| {
-        let mut biome_buf = Vec::new();
-        for biome_palette in biome_sections.iter() {
-            let network_repr = biome_palette.convert_be_network();
-
-            (network_repr.bits_per_entry << 1 | 1).write(&mut biome_buf)?;
-
-            for data in network_repr.packed_data {
-                data.write(&mut biome_buf)?;
-            }
-
-            match network_repr.palette {
-                NetworkPalette::Single(id) => {
-                    VarInt(i32::from(id)).write(&mut biome_buf)?;
+                    blobs.push(blob(subchunk_buf));
                 }
-                NetworkPalette::Indirect(palette) => {
-                    VarInt(palette.len() as i32).write(&mut biome_buf)?;
-                    for id in palette {
-                        VarInt(i32::from(id)).write(&mut biome_buf)?;
+                Ok(blobs)
+            })?;
+        let biome_blobs = chunk
+            .section
+            .biome_sections
+            .bedrock_blobs(|biome_sections| {
+                let mut biome_buf = Vec::new();
+                for biome_palette in biome_sections.iter() {
+                    let network_repr = biome_palette.convert_be_network();
+
+                    (network_repr.bits_per_entry << 1 | 1).write(&mut biome_buf)?;
+
+                    for data in network_repr.packed_data {
+                        data.write(&mut biome_buf)?;
+                    }
+
+                    match network_repr.palette {
+                        NetworkPalette::Single(id) => {
+                            VarInt(i32::from(id)).write(&mut biome_buf)?;
+                        }
+                        NetworkPalette::Indirect(palette) => {
+                            VarInt(palette.len() as i32).write(&mut biome_buf)?;
+                            for id in palette {
+                                VarInt(i32::from(id)).write(&mut biome_buf)?;
+                            }
+                        }
+                        NetworkPalette::Direct => (),
                     }
                 }
-                NetworkPalette::Direct => (),
-            }
-        }
 
-            Ok(vec![blob(biome_buf)])
-        })?;
+                Ok(vec![blob(biome_buf)])
+            })?;
         VarUInt(block_blobs.len() as u32).write(&mut writer)?;
         false.write(&mut writer)?;
         cache_enabled.write(&mut writer)?;
@@ -141,13 +150,27 @@ impl CLevelChunk<'_> {
         if cache_enabled {
             blobs.extend(all_blobs.cloned());
             VarUInt(blobs.len() as u32).write(&mut writer)?;
-            for (hash, _) in &blobs { writer.write_all(&hash.to_le_bytes())?; }
-            VarUInt(u32::try_from(actors.len()+1).map_err(|_| Error::other("oversized block actors"))?).write(&mut writer)?;
+            for (hash, _) in &blobs {
+                writer.write_all(&hash.to_le_bytes())?;
+            }
+            VarUInt(
+                u32::try_from(actors.len() + 1)
+                    .map_err(|_| Error::other("oversized block actors"))?,
+            )
+            .write(&mut writer)?;
         } else {
             VarUInt(0).write(&mut writer)?;
-            let size = all_blobs.clone().map(|(_, bytes)| bytes.len()).sum::<usize>() + 1 + actors.len();
-            VarUInt(u32::try_from(size).map_err(|_| Error::other("oversized Bedrock chunk"))?).write(&mut writer)?;
-            for (_, bytes) in all_blobs { writer.write_all(bytes)?; }
+            let size = all_blobs
+                .clone()
+                .map(|(_, bytes)| bytes.len())
+                .sum::<usize>()
+                + 1
+                + actors.len();
+            VarUInt(u32::try_from(size).map_err(|_| Error::other("oversized Bedrock chunk"))?)
+                .write(&mut writer)?;
+            for (_, bytes) in all_blobs {
+                writer.write_all(bytes)?;
+            }
         }
         writer.write_all(&[0])?;
         writer.write_all(&actors)?;
@@ -218,6 +241,27 @@ mod tests {
 
     fn empty_chunk() -> ChunkData {
         ChunkData::empty(0, 0)
+    }
+
+    #[test]
+    fn shared_palette_bytes_refresh_after_a_live_edit() {
+        let chunk = ChunkData::empty(0, 0);
+        let encode = |cache| CLevelChunk::encode_chunk(&chunk, 0, cache, &[]).unwrap();
+        let (old_full, _) = encode(false);
+        let (_, initial) = encode(true);
+        let before = initial.last().unwrap().1.clone();
+        chunk.section.set_block_absolute_y(
+            0,
+            chunk.section.min_y,
+            0,
+            Block::STONE.default_state.id,
+        );
+        let (new_full, _) = encode(false);
+        let (_, next) = encode(true);
+        assert_ne!(old_full, new_full);
+        assert_eq!(before.as_ptr(), next.last().unwrap().1.as_ptr());
+        let (_, again) = encode(true);
+        assert_eq!(again[0].1.as_ptr(), next[0].1.as_ptr());
     }
 
     #[test]

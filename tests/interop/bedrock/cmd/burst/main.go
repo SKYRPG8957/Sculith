@@ -132,7 +132,7 @@ func (r *run) client(i int) {
 	d.IdentityData.DisplayName = fmt.Sprintf("Load%03d", i)
 	ctx, cancel := context.WithDeadline(context.Background(), r.start.Add(r.spawn))
 	defer cancel()
-	c, err := d.DialContext(ctx, name, r.address)
+	c, err := d.DialContext(ctx, name, "http://"+r.address)
 	if err != nil {
 		result.Error = err.Error()
 		return
@@ -300,9 +300,46 @@ func stats(data []float64) map[string]interface{} {
 	}
 	return result
 }
+
+// Keep the test area loaded while the driver builds the arena on a copied world.
+func prepareWorld(address string) error {
+	var settings webrtc.SettingEngine
+	settings.SetIncludeLoopbackCandidate(true)
+	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(settings))
+	minecraft.RegisterNetwork("arena", func(log *slog.Logger) minecraft.Network {
+		return minecraft.NetherNet{Log: log, Dialer: nethernet.Dialer{API: api}}
+	})
+	d := minecraft.Dialer{}
+	d.IdentityData.DisplayName = "ArenaBuilder"
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	c, err := d.DialContext(ctx, "arena", "http://"+address)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	c.SetReadDeadline(time.Now().Add(45 * time.Second))
+	if err = c.DoSpawn(); err != nil {
+		return err
+	}
+	c.SetReadDeadline(time.Time{})
+	fmt.Printf("ARENA_BUILDER_READY %v\n", c.GameData().PlayerPosition)
+	go func() {
+		for {
+			if _, err := c.ReadPacket(); err != nil {
+				return
+			}
+		}
+	}()
+	_, err = io.Copy(io.Discard, os.Stdin)
+	return err
+}
+
 func main() {
 	var r run
 	var path string
+	prepare := flag.Bool("prepare", false, "warm the copied arena until standard input closes")
 
 	flag.StringVar(&r.address, "address", "127.0.0.1:19132", "local Sculith endpoint")
 	flag.IntVar(&r.count, "players", 100, "simultaneous local players (2–250)")
@@ -317,6 +354,13 @@ func main() {
 	ip, _, err := net.SplitHostPort(r.address)
 	if err != nil || !net.ParseIP(ip).IsLoopback() {
 		panic("this benchmark requires a loopback server")
+	}
+	if *prepare {
+		if err := prepareWorld(r.address); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 	registry := world.NewBlockRegistry()
 	registry.Finalize()

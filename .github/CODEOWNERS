@@ -76,7 +76,7 @@
 /Dockerfile                                                                 @Snowiiii
 /.dockerignore                                                              @Snowiiii
 /docker-compose.yml                                                         @Snowiiii
-/egg-pumpkin.json                                                           @Snowiiii
+/egg-sculith.json                                                           @Snowiiii
 
 # --- Bedrock (keep below the Networking and Plugins rules it refines) ---
 /assets/bedrock/                                                            @xRookieFight @QuantumSegfault

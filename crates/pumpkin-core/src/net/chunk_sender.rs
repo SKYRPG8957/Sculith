@@ -367,8 +367,9 @@ impl ChunkSender {
         level: &Level,
         center: Vector2<i32>,
         view_distance: NonZero<u8>,
+        max_chunks: usize,
     ) -> Vec<PreparedChunk> {
-        let quota_limit = self.send_quota.floor() as usize;
+        let quota_limit = (self.send_quota.floor() as usize).min(max_chunks);
         let mut ready = Vec::with_capacity(quota_limit);
 
         // If pending_chunks is small, sorting it directly avoids scanning offsets.
@@ -437,6 +438,7 @@ impl ChunkSender {
         view_distance: NonZero<u8>,
         epoch: u32,
         version: JavaMinecraftVersion,
+        max_chunks: usize,
     ) -> Option<PreparedBatch> {
         self.batch_tick += 1;
         self.release_parked();
@@ -453,7 +455,8 @@ impl ChunkSender {
             return None;
         }
 
-        let candidates = self.collect_sorted_candidates(level, player_chunk, view_distance);
+        let candidates =
+            self.collect_sorted_candidates(level, player_chunk, view_distance, max_chunks);
         if candidates.is_empty() {
             return None;
         }

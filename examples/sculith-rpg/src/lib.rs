@@ -37,11 +37,28 @@ fn rank(level: i32) -> &'static str {
 }
 
 struct EarnExperience;
-impl pumpkin_plugin_api::events::EventHandler<pumpkin_plugin_api::events::PlayerExpChangeEvent> for EarnExperience {
-    fn handle(&self, _: Server, event: pumpkin_plugin_api::events::EventData<pumpkin_plugin_api::events::PlayerExpChangeEvent>) -> pumpkin_plugin_api::events::EventData<pumpkin_plugin_api::events::PlayerExpChangeEvent> {
+impl pumpkin_plugin_api::events::EventHandler<pumpkin_plugin_api::events::PlayerExpChangeEvent>
+    for EarnExperience
+{
+    fn handle(
+        &self,
+        _: Server,
+        event: pumpkin_plugin_api::events::EventData<
+            pumpkin_plugin_api::events::PlayerExpChangeEvent,
+        >,
+    ) -> pumpkin_plugin_api::events::EventData<pumpkin_plugin_api::events::PlayerExpChangeEvent>
+    {
         if event.amount > 0 {
-            let current = total_xp(event.player.get_experience_level(), event.player.get_experience_progress());
-            let earned = event.player.get_int(NAMESPACE, "peak-xp").unwrap_or_default().max(current).saturating_add(event.amount);
+            let current = total_xp(
+                event.player.get_experience_level(),
+                event.player.get_experience_progress(),
+            );
+            let earned = event
+                .player
+                .get_int(NAMESPACE, "peak-xp")
+                .unwrap_or_default()
+                .max(current)
+                .saturating_add(event.amount);
             event.player.set_int(NAMESPACE, "peak-xp", earned);
         }
         event
@@ -119,7 +136,11 @@ impl Plugin for Rpg {
         }
     }
     fn on_load(&self, ctx: Context) -> Result<()> {
-        ctx.register_event_handler::<pumpkin_plugin_api::events::PlayerExpChangeEvent, _>(EarnExperience, pumpkin_plugin_api::events::EventPriority::Lowest, false)?;
+        ctx.register_event_handler::<pumpkin_plugin_api::events::PlayerExpChangeEvent, _>(
+            EarnExperience,
+            pumpkin_plugin_api::events::EventPriority::Lowest,
+            false,
+        )?;
         ctx.register_permission(&Permission {
             node: PERMISSION.into(),
             description: "RPG 레벨과 회복".into(),

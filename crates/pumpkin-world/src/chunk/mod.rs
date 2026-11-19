@@ -109,7 +109,11 @@ pub struct SectionPalettes<P> {
 
 impl<P> SectionPalettes<P> {
     pub fn new(palettes: Box<[P]>) -> Self {
-        Self { palettes: RwLock::new(palettes), revision: AtomicU64::new(0), wire: Default::default() }
+        Self {
+            palettes: RwLock::new(palettes),
+            revision: AtomicU64::new(0),
+            wire: Default::default(),
+        }
     }
 
     pub fn read(&self) -> std::sync::LockResult<std::sync::RwLockReadGuard<'_, Box<[P]>>> {
@@ -118,15 +122,26 @@ impl<P> SectionPalettes<P> {
 
     pub fn write(&self) -> std::sync::LockResult<std::sync::RwLockWriteGuard<'_, Box<[P]>>> {
         let guard = self.palettes.write();
-        self.revision.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.revision
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         guard
     }
 
-    pub fn bedrock_blobs(&self, encode: impl FnOnce(&[P]) -> std::io::Result<Vec<(u64, bytes::Bytes)>>) -> std::io::Result<BedrockSectionBlobs> {
-        let palettes = self.read().map_err(|_| std::io::Error::other("palette lock poisoned"))?;
+    pub fn bedrock_blobs(
+        &self,
+        encode: impl FnOnce(&[P]) -> std::io::Result<Vec<(u64, bytes::Bytes)>>,
+    ) -> std::io::Result<BedrockSectionBlobs> {
+        let palettes = self
+            .read()
+            .map_err(|_| std::io::Error::other("palette lock poisoned"))?;
         let revision = self.revision.load(std::sync::atomic::Ordering::Relaxed);
-        let mut cache = self.wire.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((saved, bytes)) = cache.as_ref() && *saved == revision {
+        let mut cache = self
+            .wire
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((saved, bytes)) = cache.as_ref()
+            && *saved == revision
+        {
             return Ok(bytes.clone());
         }
         let bytes: BedrockSectionBlobs = encode(&palettes)?.into();

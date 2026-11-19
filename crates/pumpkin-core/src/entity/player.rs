@@ -3340,7 +3340,13 @@ impl Player {
 
         let view_distance = self.watched_section.load().view_distance;
         let prepared_batch = self.chunk_sender.try_lock().ok().and_then(|mut sender| {
-            sender.prepare_batch(&world.level, player_chunk, view_distance, epoch, version)
+            // Share terrain work during a join surge. Every player still gets the
+            // same near-first chunks out to their full requested radius.
+            let max_chunks = match self.client.as_ref() {
+                ClientPlatform::Bedrock(_) => 256_usize.div_ceil(world.players.load().len().max(1)).max(1),
+                ClientPlatform::Java(_) => usize::MAX,
+            };
+            sender.prepare_batch(&world.level, player_chunk, view_distance, epoch, version, max_chunks)
         });
 
         if let Some(batch) = prepared_batch {

@@ -1,8 +1,6 @@
 # Sculith
 
-**Fast. Light. Safe.**
-
-Rust Minecraft server for Java and Bedrock clients, based on [Pumpkin](https://github.com/Pumpkin-MC/Pumpkin).
+Rust Minecraft server for Bedrock clients with optional Java connectivity. The original foundation is credited in [UPSTREAM.md](UPSTREAM.md).
 
 The target remains one Bedrock-based simulation shared by both editions, region
 ownership and parallel simulation, Rust plugins, and translated resources for
@@ -15,15 +13,13 @@ and Bedrock 1.26.63 (protocol 2225) are the initial targets.
 ## Build
 
 ```sh
-cargo build --release --locked -p pumpkin --bin sculith
+cargo build --release --locked -p sculith
 ```
 
 Run `sculith` (`sculith.exe` on Windows) from the server directory. The first
-start creates `pumpkin.toml`. Existing Pumpkin configuration names and crate
-names are retained to keep upstream updates manageable. Stop with the console
-command `stop`.
+start creates `sculith.toml`. Run `sculith --init-settings` to create it before startup. Existing installations can migrate their settings on first launch. Stop with the console command `stop`.
 
-Java uses TCP 25565. Bedrock uses NetherNet on TCP/UDP 19132. Authentication is
+Bedrock uses NetherNet on TCP/UDP 19132. Enable Java in `[networking.java]` to listen on TCP 25565. Authentication is
 on by default. Plugins use the upstream Rust/Wasm API; Sculith's previous
 prototype plugins need to be ported.
 

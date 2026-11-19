@@ -54,6 +54,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
     samples = []
     started = threading.Event()
     built = threading.Event()
+    loaded = threading.Event()
     phase = "setup"
     with log_path.open("w") as log:
         server = subprocess.Popen(server_cmd, cwd=root, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -64,7 +65,8 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 log.flush()
                 if "Started server" in line:
                     started.set()
-                if "SCULITH_ARENA_READY" in line:
+                if "The time is " in line: loaded.set()
+                if "players online" in line:
                     built.set()
                 m = re.search(r"SCULITH_TICK sample=(\d+) p50=([.\d]+) p95=([.\d]+) p99=([.\d]+) max=([.\d]+)", line)
                 if m and phase in ("join","play"):
@@ -82,12 +84,27 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 if server.poll() is not None or time.monotonic()>end:
                     raise RuntimeError(f"Server stopped or timed out. See {log_path}")
         fin = threading.Event()
+        builder = None
         try:
             wait(started,120)
+            builder = subprocess.Popen([str(args.client.resolve()),"-address",f"127.0.0.1:{args.port}","-prepare"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+            with out.with_suffix(".setup.log").open("w") as setup_log:
+                for line in builder.stdout:
+                    setup_log.write(line)
+                    setup_log.flush()
+                    if line.startswith("ARENA_BUILDER_READY"): break
+                else: raise RuntimeError(f"Arena preparation client failed. See {setup_log.name}")
+            command("forceload add -16 -16 16 16")
+            deadline=time.monotonic()+50
+            while not loaded.is_set() and time.monotonic()<deadline:
+                command("execute if loaded -16 -60 -16 if loaded 16 -60 16 run time query daytime")
+                loaded.wait(0.3)
+            if not loaded.is_set():
+                raise RuntimeError(f"Test arena chunks did not load. See {log_path}")
             for line in [
                 "gamerule minecraft:spawn_mobs false", "gamerule minecraft:respawn_radius 0",
                 "gamerule minecraft:max_entity_cramming 0", "gamerule minecraft:advance_time false",
-                "forceload add -16 -16 16 16", "fill -16 -60 -16 16 -60 16 minecraft:stone",
+                "fill -16 -60 -16 16 -60 16 minecraft:stone",
                 "fill -16 -59 -16 16 -55 16 minecraft:air", "setworldspawn 0 -59 0",
                 "fill -16 -59 -16 16 -59 -16 minecraft:stone", "fill -16 -59 16 16 -59 16 minecraft:stone",
                 "fill -16 -59 -15 -16 -59 15 minecraft:stone", "fill 16 -59 -15 16 -59 15 minecraft:stone",
@@ -95,8 +112,10 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 command(line)
             for i in range(args.pigs):
                 command(f"summon minecraft:pig {i%8-4} -59 {i//8-4}")
-            command("say SCULITH_ARENA_READY")
+            command("list")
             wait(built,90)
+            builder.stdin.close()
+            builder.wait(timeout=15)
             time.sleep(1)
             def tick_samples():
                 while not fin.wait(1):
@@ -132,5 +151,8 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 raise SystemExit(1)
         finally:
             fin.set()
+            if builder is not None and builder.poll() is None:
+                builder.kill()
+                builder.wait()
             stop_server(server)
             reader.join(timeout=10)
