@@ -262,7 +262,8 @@ struct NetherNetEventHandler {
 #[async_trait]
 impl PeerConnectionEventHandler for NetherNetEventHandler {
     async fn on_data_channel(&self, channel: Arc<dyn DataChannel>) {
-        if let Some(session) = self.session.lock().await.as_ref()
+        let session = self.session.lock().await.clone();
+        if let Some(session) = session
             && let Err(error) = session.attach_channel(channel).await
         {
             warn!("Rejected NetherNet data channel: {error}");
@@ -272,14 +273,24 @@ impl PeerConnectionEventHandler for NetherNetEventHandler {
 
     async fn on_connection_state_change(&self, connection_state: RTCPeerConnectionState) {
         trace!(?connection_state, address = %self.address, "NetherNet peer connection state changed");
-        if matches!(
+        // ICE can recover from Disconnected. Removing its UDP route here would
+        // also discard the very connectivity checks that restore the peer.
+        if !matches!(
             connection_state,
-            RTCPeerConnectionState::Failed
-                | RTCPeerConnectionState::Disconnected
-                | RTCPeerConnectionState::Closed
-        ) && let Some(session) = self.session.lock().await.as_ref()
-        {
+            RTCPeerConnectionState::Failed | RTCPeerConnectionState::Closed
+        ) {
+            return;
+        }
+        let Some(session) = self.session.lock().await.take() else {
+            return;
+        };
+        if connection_state == RTCPeerConnectionState::Closed {
             session.mark_closed();
+        } else {
+            // close() can notify this handler again. Finish it outside the callback.
+            tokio::spawn(async move {
+                session.close().await;
+            });
         }
     }
 
@@ -311,6 +322,38 @@ fn remove_component_two_candidates(sdp: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn transient_disconnect_keeps_the_route_until_a_terminal_state() {
+        for terminal in [
+            RTCPeerConnectionState::Failed,
+            RTCPeerConnectionState::Closed,
+        ] {
+            let address = SocketAddr::from(([127, 0, 0, 1], 0));
+            let session = NetherNetSession::test_session(address).await;
+            let handler = NetherNetEventHandler {
+                session: Mutex::new(Some(session.clone())),
+                address,
+                gathering_notify: Arc::new(tokio::sync::Notify::new()),
+            };
+            for state in [
+                RTCPeerConnectionState::Disconnected,
+                RTCPeerConnectionState::Connected,
+            ] {
+                handler.on_connection_state_change(state).await;
+                assert!(!session.is_closed());
+                assert!(handler.session.lock().await.is_some());
+            }
+            handler.on_connection_state_change(terminal).await;
+            assert!(
+                tokio::time::timeout(Duration::from_secs(2), session.recv())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(handler.session.lock().await.is_none());
+        }
+    }
 
     #[test]
     fn data_channel_sdp_only_advertises_component_one() {
