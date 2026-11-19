@@ -155,6 +155,50 @@ impl BedrockBatchEncoder {
         Ok(true)
     }
 
+    /// Encodes a complete large terrain frame once for viewers with the same settings.
+    /// Small game batches use the regular encoder. A miss follows that same wire path.
+    pub fn try_share_large_level_chunk(&self, frame: &[u8]) -> Result<Option<Bytes>, Error> {
+        let Some((threshold, level)) = self.compression else {
+            return Ok(None);
+        };
+        if threshold == 0
+            || level == 0
+            || !(8193..=65536).contains(&frame.len())
+            || i32::from(frame[0]) != pumpkin_data::bedrock_packet::LEVEL_CHUNK
+        {
+            return Ok(None);
+        }
+        let batch_len = frame.len() + VarUInt(frame.len() as u32).written_size();
+        if self.prefixed_compression && batch_len < threshold {
+            return Ok(None);
+        }
+        // The first bytes contain the chunk coordinates and dimension. Compare the whole
+        // translated frame and encoder before reuse, including across worlds and versions.
+        let chunks = &*LARGE_CHUNKS;
+        let index =
+            chunks.hasher.hash_one((frame.len(), &frame[..32])) as usize % chunks.slots.len();
+        let mut slot = chunks.slots[index]
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(chunk) = slot.as_ref()
+            && chunk.encoder == *self
+            && chunk.frame.as_ref() == frame
+        {
+            return Ok(Some(chunk.encoded.clone()));
+        }
+        let mut encoded = Vec::new();
+        self.try_write_framed_game_packets(std::iter::once(frame), &mut encoded)?;
+        let encoded = Bytes::from(encoded.into_boxed_slice());
+        if encoded.len() <= 65536 {
+            *slot = Some(SharedChunk {
+                encoder: *self,
+                frame: frame.into(),
+                encoded: encoded.clone(),
+            });
+        }
+        Ok(Some(encoded))
+    }
+
     fn write_batch(
         &self,
         size: usize,
@@ -263,6 +307,23 @@ struct BatchDeflater {
     output: Vec<u8>,
 }
 
+struct SharedChunk {
+    encoder: BedrockBatchEncoder,
+    frame: Box<[u8]>,
+    encoded: Bytes,
+}
+
+struct LargeChunks {
+    hasher: RandomState,
+    // At most 16 MiB across all runtime worlds. Terrain allocates entries on demand.
+    slots: [Mutex<Option<SharedChunk>>; 128],
+}
+
+static LARGE_CHUNKS: LazyLock<LargeChunks> = LazyLock::new(|| LargeChunks {
+    hasher: RandomState::new(),
+    slots: std::array::from_fn(|_| Mutex::default()),
+});
+
 struct SharedBatch {
     level: CompressionLevel,
     plain: Box<[u8]>,
@@ -333,6 +394,52 @@ mod tests {
     use super::*;
     use crate::bedrock::packet_decoder::BedrockBatchDecoder;
     use std::io::Cursor;
+
+    #[test]
+    fn large_terrain_reuses_only_identical_negotiated_frames() {
+        let mut encoder = BedrockBatchEncoder::new();
+        let mut chunk = vec![pumpkin_data::bedrock_packet::LEVEL_CHUNK as u8; 24824];
+        assert!(
+            encoder
+                .try_share_large_level_chunk(&chunk)
+                .unwrap()
+                .is_none()
+        );
+        for (threshold, level) in [(0, 4), (65536, 4), (1, 0)] {
+            encoder.set_compression((threshold, level));
+            assert!(
+                encoder
+                    .try_share_large_level_chunk(&chunk)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        for (size, level, prefixed) in [(9000, 1, true), (24824, 4, false), (65536, 9, true)] {
+            chunk.resize(size, 43);
+            encoder.set_compression((256, level));
+            encoder.set_prefixed_compression(prefixed);
+            let encode = |bytes: &[u8]| {
+                let mut expected = Vec::new();
+                encoder
+                    .try_write_framed_game_packets(std::iter::once(bytes), &mut expected)
+                    .unwrap();
+                let actual = encoder.try_share_large_level_chunk(bytes).unwrap().unwrap();
+                assert_eq!(actual.as_ref(), expected);
+                actual
+            };
+            let original = encode(&chunk);
+            assert_eq!(encode(&chunk).as_ptr(), original.as_ptr());
+            *chunk.last_mut().unwrap() ^= 1;
+            assert_ne!(encode(&chunk), original);
+        }
+        chunk[0] = 9;
+        assert!(
+            encoder
+                .try_share_large_level_chunk(&chunk)
+                .unwrap()
+                .is_none()
+        );
+    }
 
     #[test]
     fn shared_slot_requires_exact_input_and_level_even_when_reused() {

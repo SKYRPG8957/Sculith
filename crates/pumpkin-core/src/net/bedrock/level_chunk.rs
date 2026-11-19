@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use std::{
+    collections::VecDeque,
     hash::BuildHasher,
     io::{Error, Write},
     sync::{Arc, Mutex, OnceLock, Weak},
@@ -61,10 +62,10 @@ impl pumpkin_protocol::packet::Packet for CLevelChunk<'_> {
 pub type ChunkBlob = (u64, Bytes);
 pub type EncodedChunk = (Vec<u8>, Vec<ChunkBlob>);
 
-/// A world keeps at most 8 MiB of small inline packets. Slots never pin loaded chunks.
+/// A world retains at most 8 MiB of inline terrain. Entries never pin loaded chunks.
 #[derive(Default)]
 pub(crate) struct InlineChunkCache {
-    slots: OnceLock<Box<[Mutex<Option<InlineFrame>>]>>,
+    shards: OnceLock<Box<[Mutex<VecDeque<InlineFrame>>]>>,
 }
 
 struct InlineFrame {
@@ -75,22 +76,27 @@ struct InlineFrame {
 }
 
 impl InlineChunkCache {
-    const SLOTS: usize = 512;
-    const MAX_FRAME: usize = 16 * 1024;
+    const SHARDS: usize = 128;
+    const ENTRIES_PER_SHARD: usize = 4;
+    const BYTES_PER_SHARD: usize = 64 * 1024;
 
     fn index(chunk: &ChunkData) -> usize {
-        rustc_hash::FxBuildHasher.hash_one((chunk.x, chunk.z)) as usize % Self::SLOTS
+        rustc_hash::FxBuildHasher.hash_one((chunk.x, chunk.z)) as usize % Self::SHARDS
     }
 
     pub(super) fn get(&self, chunk: &Arc<ChunkData>, dimension: i32) -> Option<Bytes> {
-        let slot = self.slots.get()?[Self::index(chunk)]
+        let shard = self.shards.get()?[Self::index(chunk)]
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let frame = slot.as_ref()?;
-        (frame.chunk.as_ptr() == Arc::as_ptr(chunk)
-            && frame.dimension == dimension
-            && frame.revision == chunk.section.terrain_revision())
-        .then(|| frame.bytes.clone())
+        let revision = chunk.section.terrain_revision();
+        shard
+            .iter()
+            .find(|frame| {
+                frame.chunk.as_ptr() == Arc::as_ptr(chunk)
+                    && frame.dimension == dimension
+                    && frame.revision == revision
+            })
+            .map(|frame| frame.bytes.clone())
     }
 
     pub(super) fn insert(
@@ -100,16 +106,24 @@ impl InlineChunkCache {
         revision: (u64, u64),
         bytes: &Bytes,
     ) {
-        if bytes.len() > Self::MAX_FRAME || chunk.section.terrain_revision() != revision {
+        if bytes.len() > Self::BYTES_PER_SHARD || chunk.section.terrain_revision() != revision {
             return;
         }
-        let slots = self
-            .slots
-            .get_or_init(|| (0..Self::SLOTS).map(|_| Mutex::default()).collect());
-        let mut slot = slots[Self::index(chunk)]
+        let shards = self
+            .shards
+            .get_or_init(|| (0..Self::SHARDS).map(|_| Mutex::default()).collect());
+        let mut shard = shards[Self::index(chunk)]
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *slot = Some(InlineFrame {
+        shard.retain(|frame| frame.chunk.as_ptr() != Arc::as_ptr(chunk));
+        let mut size = bytes.len() + shard.iter().map(|frame| frame.bytes.len()).sum::<usize>();
+        while size > Self::BYTES_PER_SHARD || shard.len() >= Self::ENTRIES_PER_SHARD {
+            let Some(oldest) = shard.pop_front() else {
+                break;
+            };
+            size -= oldest.bytes.len();
+        }
+        shard.push_back(InlineFrame {
             chunk: Arc::downgrade(chunk),
             dimension,
             revision,
@@ -302,6 +316,43 @@ mod tests {
 
     fn empty_chunk() -> ChunkData {
         ChunkData::empty(0, 0)
+    }
+
+    #[test]
+    fn inline_terrain_shares_natural_frames_within_the_world_byte_budget() {
+        let cache = super::InlineChunkCache::default();
+        // Distinct loaded chunk identities exercise a single shard.
+        let chunks = (0..6)
+            .map(|_| std::sync::Arc::new(empty_chunk()))
+            .collect::<Vec<_>>();
+        let put = |i: usize, len: usize| {
+            let chunk = &chunks[i];
+            cache.insert(
+                chunk,
+                0,
+                chunk.section.terrain_revision(),
+                &bytes::Bytes::from(vec![0; len]),
+            );
+        };
+        for i in 0..4 {
+            put(i, 8192);
+        }
+        for chunk in &chunks[..4] {
+            assert!(cache.get(chunk, 0).is_some());
+        }
+        put(4, 40 * 1024);
+        assert!(cache.get(&chunks[0], 0).is_none());
+        assert!(cache.get(&chunks[1], 0).is_some());
+        assert_eq!(cache.get(&chunks[4], 0).unwrap().len(), 40 * 1024);
+        put(5, 65537);
+        assert!(cache.get(&chunks[5], 0).is_none());
+        put(5, 65536);
+        assert!(
+            chunks[..5]
+                .iter()
+                .all(|chunk| cache.get(chunk, 0).is_none())
+        );
+        assert_eq!(cache.get(&chunks[5], 0).unwrap().len(), 65536);
     }
 
     #[test]

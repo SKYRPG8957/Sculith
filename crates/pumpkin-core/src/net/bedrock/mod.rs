@@ -418,6 +418,14 @@ impl BedrockClient {
     ) -> Result<bool, String> {
         frames.clear();
         let writer = *self.network_writer.read().await;
+        if let [packet] = group
+            && let Some(encoded) = writer
+                .try_share_large_level_chunk(&packet.data)
+                .map_err(|e| e.to_string())?
+        {
+            self.session.send(encoded.slice(1..)).await?;
+            return Ok(true);
+        }
         let mut encoded = Vec::new();
         // Broadcasts already share the complete header and payload across viewers.
         // A single pack chunk can reuse its separately cached compressed frame below.
