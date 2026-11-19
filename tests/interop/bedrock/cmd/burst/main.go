@@ -118,9 +118,7 @@ func (r *run) client(i int) {
 	_ = udp.SetWriteBuffer(1 << 20)
 	mux := ice.NewUDPMuxDefault(ice.UDPMuxParams{UDPConn: udp})
 	defer mux.Close()
-	var settings webrtc.SettingEngine
-	settings.SetIncludeLoopbackCandidate(true)
-	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	settings := loopbackSettings(ip)
 	settings.SetICEUDPMux(mux)
 	settings.SetIPFilter(func(addr net.IP) bool { return addr.IsLoopback() })
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settings))
@@ -358,9 +356,7 @@ func stats(data []float64) map[string]interface{} {
 }
 
 func dialSingle(address, name string, threshold *atomic.Int32) (*minecraft.Conn, error) {
-	var settings webrtc.SettingEngine
-	settings.SetIncludeLoopbackCandidate(true)
-	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	settings := loopbackSettings(net.IPv4(127, 0, 0, 1))
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settings))
 	minecraft.RegisterNetwork("arena", func(log *slog.Logger) minecraft.Network {
 		return minecraft.NetherNet{Log: log, Dialer: nethernet.Dialer{API: api}}
