@@ -104,6 +104,111 @@ fn snapshot(source: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
         .collect()
 }
 
+fn string_tag(nbt: &mut Vec<u8>, key: &str, value: &str) {
+    let mut bytes = u16::try_from(value.len()).unwrap().to_le_bytes().to_vec();
+    bytes.extend_from_slice(value.as_bytes());
+    named_tag(nbt, pumpkin_nbt::STRING_ID, key, &bytes);
+}
+
+fn container(nbt: &mut Vec<u8>, kind: &str, x: i32, items: &[(u8, &str, u8)]) {
+    nbt.extend_from_slice(&[pumpkin_nbt::COMPOUND_ID, 0, 0]);
+    string_tag(nbt, "id", kind);
+    for (name, value) in [("x", x), ("y", -60), ("z", 0)] {
+        named_tag(nbt, pumpkin_nbt::INT_ID, name, &value.to_le_bytes());
+    }
+    let mut list = vec![pumpkin_nbt::COMPOUND_ID];
+    list.extend_from_slice(&i32::try_from(items.len()).unwrap().to_le_bytes());
+    for &(slot, item, count) in items {
+        string_tag(&mut list, "Name", item);
+        named_tag(&mut list, pumpkin_nbt::BYTE_ID, "Slot", &[slot]);
+        named_tag(&mut list, pumpkin_nbt::BYTE_ID, "Count", &[count]);
+        list.push(0);
+    }
+    named_tag(nbt, pumpkin_nbt::LIST_ID, "Items", &list);
+    nbt.push(0);
+}
+
+#[test]
+fn preserves_valid_slots_without_importing_partial_containers() {
+    let mut chunk = ChunkData::empty(-1, 0);
+    chunk
+        .section
+        .set_block_absolute_y(15, -60, 0, Block::CHEST.default_state.id);
+    chunk
+        .section
+        .set_block_absolute_y(14, -60, 0, Block::BARREL.default_state.id);
+    chunk
+        .section
+        .set_block_absolute_y(13, -60, 0, Block::CHEST.default_state.id);
+    let mut record = Vec::new();
+    container(
+        &mut record,
+        "Chest",
+        -1,
+        &[
+            (0, "minecraft:iron_ingot", 19),
+            (26, "minecraft:diamond", 1),
+        ],
+    );
+    container(
+        &mut record,
+        "Barrel",
+        -2,
+        &[(8, "minecraft:apple", 5), (8, "minecraft:apple", 2)],
+    );
+    container(
+        &mut record,
+        "Chest",
+        -3,
+        &[(0, "minecraft:apple", 3), (1, "minecraft:potion", 1)],
+    );
+    let mut stats = ImportStats::default();
+    assert!(
+        !storage::import_record(
+            &record,
+            &mut chunk,
+            &terrain::TerrainRegistry::load().unwrap(),
+            &storage::item_registry(),
+            &mut stats
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        (stats.containers_imported, stats.block_entities_skipped),
+        (1, 2)
+    );
+    let skipped = &stats.skipped_block_entity_examples[0];
+    assert_eq!(skipped.position, Some(BlockPos::new(-2, -60, 0)));
+    assert_eq!(skipped.reason, "duplicate slot 8");
+    let potion = &stats.skipped_block_entity_examples[1];
+    assert_eq!(potion.position, Some(BlockPos::new(-3, -60, 0)));
+    assert!(potion.reason.contains("requires potion data conversion"));
+    let entities = chunk.pending_block_entities.get_mut().unwrap();
+    assert_eq!(entities.len(), 1);
+    let chest = &entities[&BlockPos::new(-1, -60, 0)];
+    assert_eq!(chest.get_string("id"), Some("minecraft:chest"));
+    let actual: Vec<_> = chest
+        .get_list("Items")
+        .unwrap()
+        .iter()
+        .map(|item| {
+            let item = item.extract_compound().unwrap();
+            (
+                item.get_byte("Slot").unwrap(),
+                item.get_string("id").unwrap(),
+                item.get_int("count").unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        actual,
+        [
+            (0, "minecraft:iron_ingot", 19),
+            (26, "minecraft:diamond", 1)
+        ]
+    );
+}
+
 #[test]
 fn converts_a_saved_column_without_writing_to_the_source() {
     let directory = tempfile::tempdir().unwrap();
@@ -162,6 +267,25 @@ fn converts_a_saved_column_without_writing_to_the_source() {
     );
     let error = import_terrain(&source, &destination).unwrap_err();
     assert!(error.to_string().contains("destination already exists"));
+}
+
+#[test]
+fn malformed_block_entities_leave_no_destination() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("bedrock");
+    let destination = directory.path().join("java");
+    write_world(&source, false);
+    let db = DB::open(source.join("db"), Options::default()).unwrap();
+    let mut key = (-1i32).to_le_bytes().to_vec();
+    key.extend_from_slice(&0i32.to_le_bytes());
+    key.push(BLOCK_ENTITY);
+    db.put(&key, &[pumpkin_nbt::COMPOUND_ID, 0]).unwrap();
+    db.close().unwrap();
+    let before = snapshot(&source);
+    let error = import_terrain(&source, &destination).unwrap_err();
+    assert!(error.to_string().contains("Bedrock NBT"));
+    assert!(!destination.exists());
+    assert_eq!(snapshot(&source), before);
 }
 
 #[test]

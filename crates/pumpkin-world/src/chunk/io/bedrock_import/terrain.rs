@@ -143,7 +143,7 @@ impl TerrainRegistry {
             .ok_or_else(|| invalid(format!("Bedrock biome {id} has no mapping")))
     }
 
-    fn block(&self, entry: &NbtCompound) -> Result<BlockStateId, Error> {
+    pub(super) fn block(&self, entry: &NbtCompound) -> Result<BlockStateId, Error> {
         let key = BlockKey::read(entry)?;
         self.blocks
             .get(&key)

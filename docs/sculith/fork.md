@@ -158,7 +158,7 @@ status cancellation plus an extra packet, and a synthetic Bedrock proposal
 rewrite before admission. Both checks fail on the earlier server. See the
 [packet event guide](packets.md) for API versions and remaining protocol limits.
 
-## Bedrock terrain import
+## Bedrock world import
 
 `sculith --import-bedrock-terrain SOURCE DESTINATION` reads a stopped Bedrock
 world through a temporary LevelDB copy. The command accepts storage version 10,
@@ -169,8 +169,12 @@ palettes, unsupported generators and other dimensions fail the import.
 Biome storage is sampled at the origin of each four-block Java biome cell.
 The import carries the seed and spawn into Sculith. New chunks use Sculith's
 generator, with supported Bedrock flat layers mapped to a flat preset.
-The command reports excluded block-entity, entity and other database records.
-The source retains those records.
+Ordinary single chests and barrels preserve the slots and counts of plain
+items with a shared item mapping. This includes supported block items in their
+default state. The command skips the entire contents of paired chests,
+containers with unsupported metadata and containers with unsupported stacks
+such as potions. It reports excluded database records and shows the first 16
+skipped block entities with their coordinates and reasons.
 
 The official Bedrock 1.26.63.1 server fixtures covered a flat column and 27
 ordinary terrain columns. Java and Bedrock protocol clients read the same
@@ -180,8 +184,8 @@ Source file hashes matched after import and after a rejected conversion.
 
 ## Remaining work
 
-Bedrock world export and conversion of entities, player data and block-entity
-contents remain open.
+Bedrock world export and conversion of entities, player data and other
+block-entity contents remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack

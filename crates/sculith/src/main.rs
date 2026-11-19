@@ -458,12 +458,28 @@ fn import_bedrock_command(mut args: impl Iterator<Item = std::ffi::OsString>) ->
                 stats.regions,
                 Path::new(&destination).display()
             );
+            println!("Imported {} storage containers.", stats.containers_imported);
             println!(
-                "Excluded {} block-entity records, {} entity records and {} other LevelDB records.",
+                "Excluded data in {} block-entity records, {} entity records and {} other LevelDB records.",
                 stats.block_entity_records_excluded,
                 stats.entity_records_excluded,
                 stats.other_records_excluded
             );
+            for skipped in &stats.skipped_block_entity_examples {
+                let location = skipped
+                    .position
+                    .map_or_else(|| "unknown position".to_owned(), |pos| pos.to_string());
+                println!(
+                    "Skipped Bedrock {:?} at {location} ({}).",
+                    skipped.kind, skipped.reason
+                );
+            }
+            if stats.block_entities_skipped > stats.skipped_block_entity_examples.len() {
+                println!(
+                    "{} further block entities skipped.",
+                    stats.block_entities_skipped - stats.skipped_block_entity_examples.len()
+                );
+            }
             0
         }
         Err(error) => {

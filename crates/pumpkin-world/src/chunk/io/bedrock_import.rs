@@ -1,4 +1,4 @@
-//! Imports saved Bedrock terrain into a new Anvil world.
+//! Imports saved Bedrock terrain and supported storage into a new Anvil world.
 
 use std::{
     collections::BTreeMap,
@@ -16,7 +16,10 @@ use pumpkin_nbt::{
     Nbt,
     deserializer::{NbtReadHelper, NbtReadHelperBedrockDisk},
 };
-use pumpkin_util::{math::vector2::Vector2, world_seed::Seed};
+use pumpkin_util::{
+    math::{position::BlockPos, vector2::Vector2},
+    world_seed::Seed,
+};
 
 use crate::{
     chunk::{
@@ -31,6 +34,7 @@ use crate::{
 
 use super::{RegionFile, region_chunk_index, region_of};
 
+mod storage;
 mod terrain;
 #[cfg(test)]
 mod tests;
@@ -84,17 +88,41 @@ fn invalid(message: impl Into<String>) -> Error {
 pub struct ImportStats {
     pub regions: usize,
     pub chunks: usize,
+    pub containers_imported: usize,
     pub block_entity_records_excluded: usize,
+    pub block_entities_skipped: usize,
+    pub skipped_block_entity_examples: Vec<SkippedBlockEntity>,
     pub entity_records_excluded: usize,
     pub other_records_excluded: usize,
 }
 
-/// Imports saved Overworld terrain into a new directory.
+#[derive(Debug)]
+pub struct SkippedBlockEntity {
+    pub kind: String,
+    pub position: Option<BlockPos>,
+    pub reason: String,
+}
+
+impl ImportStats {
+    fn skip_block_entity(&mut self, kind: &str, position: Option<BlockPos>, reason: String) {
+        self.block_entities_skipped += 1;
+        if self.skipped_block_entity_examples.len() < 16 {
+            self.skipped_block_entity_examples.push(SkippedBlockEntity {
+                kind: kind.to_owned(),
+                position,
+                reason,
+            });
+        }
+    }
+}
+
+/// Imports saved Overworld terrain and supported storage into a new directory.
 /// The completed world is moved into place after conversion succeeds.
 pub fn import_terrain(source: &Path, destination: &Path) -> Result<ImportStats, Error> {
     let source = source.canonicalize()?;
     let destination = new_destination(destination, &source)?;
     let registry = terrain::TerrainRegistry::load()?;
+    let items = storage::item_registry();
     let mut info = read_level(&source, &registry)?;
 
     // Opening LevelDB may replay its journal and update files, even for reads.
@@ -123,12 +151,13 @@ pub fn import_terrain(source: &Path, destination: &Path) -> Result<ImportStats, 
         let path = region_folder.join(AnvilRegion::file_name(region_pos));
         let mut region = AnvilRegion::open(&path, region_pos)?;
         for ((x, z), sections) in columns {
-            let chunk =
-                read_chunk(&db, x, z, sections, &registry).map_err(|error| Error::Chunk {
+            let chunk = read_chunk(&db, x, z, sections, &registry, &items, &mut stats).map_err(
+                |error| Error::Chunk {
                     x,
                     z,
                     error: Box::new(error),
-                })?;
+                },
+            )?;
             update_spawn_height(&mut info, &chunk);
             let encoded = AnvilRegion::encode_chunk(chunk.internal_to_bytes(), &config)?;
             region.stage_chunk(region_chunk_index(Vector2::new(x, z)), encoded);
@@ -378,6 +407,8 @@ fn read_chunk(
     z: i32,
     sections: u32,
     registry: &terrain::TerrainRegistry,
+    items: &storage::StorageItemRegistry,
+    stats: &mut ImportStats,
 ) -> Result<ChunkData, Error> {
     let mut key = [0; 10];
     key[..4].copy_from_slice(&x.to_le_bytes());
@@ -407,6 +438,12 @@ fn read_chunk(
     let mut chunk = ChunkData::empty(x, z);
     chunk.section = ChunkSections::from_palettes(blocks, biomes, OVERWORLD.min_y);
     chunk.heightmap = std::sync::Mutex::new(chunk.calculate_heightmap());
+    key[8] = BLOCK_ENTITY;
+    if let Some(record) = db.try_get(&key[..9])?
+        && storage::import_record(&record, &mut chunk, registry, items, stats)?
+    {
+        stats.block_entity_records_excluded -= 1;
+    }
     Ok(chunk)
 }
 
