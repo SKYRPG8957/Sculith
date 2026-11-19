@@ -4,6 +4,7 @@ use std::{
 };
 
 use flate2::{Compression, write::DeflateEncoder};
+use zlib_rs::{Deflate, DeflateConfig, DeflateFlush, Status, compress_bound};
 
 use crate::{
     CompressionLevel, CompressionThreshold,
@@ -11,6 +12,9 @@ use crate::{
     codec::var_uint::VarUInt,
     ser::NetworkWriteExt,
 };
+
+// Match the history window to the largest batch retained in the thread-local workspace.
+const BATCH_WINDOW_BITS: i32 = 14;
 
 /// Encodes outgoing Bedrock game packets and batches them into compressed frames.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -156,7 +160,7 @@ impl BedrockBatchEncoder {
         if !compress {
             return write_frames(&mut writer);
         }
-        if size > 16 * 1024 {
+        if size > 1 << BATCH_WINDOW_BITS {
             let mut deflater = DeflateEncoder::new(writer, Compression::new(level.min(9)));
             write_frames(&mut deflater)?;
             deflater.finish()?;
@@ -173,16 +177,27 @@ impl BedrockBatchEncoder {
                 .filter(|d| d.level == level)
                 .unwrap_or_else(|| BatchDeflater {
                     level,
-                    encoder: DeflateEncoder::new(Vec::new(), Compression::new(level.min(9))),
+                    encoder: Deflate::new_with_config(DeflateConfig {
+                        window_bits: -BATCH_WINDOW_BITS,
+                        level: level.min(9) as i32,
+                        mem_level: 6,
+                        ..DeflateConfig::default()
+                    }),
                     scratch: Vec::new(),
+                    output: Vec::new(),
                 });
             d.scratch.clear();
             write_frames(&mut d.scratch)?;
-            d.encoder.write_all(&d.scratch)?;
-            let mut completed = d.encoder.reset(Vec::new())?;
-            let result = writer.write_all(&completed);
-            completed.clear();
-            *d.encoder.get_mut() = completed;
+            d.output.resize(compress_bound(size), 0);
+            let status = d
+                .encoder
+                .compress(&d.scratch, &mut d.output, DeflateFlush::Finish)
+                .map_err(|e| Error::other(format!("Bedrock DEFLATE failed: {e:?}")))?;
+            if status != Status::StreamEnd {
+                return Err(Error::other("incomplete Bedrock DEFLATE frame"));
+            }
+            let result = writer.write_all(&d.output[..d.encoder.total_out() as usize]);
+            d.encoder.reset();
             cache.set(Some(d));
             result
         })
@@ -218,8 +233,9 @@ impl BedrockBatchEncoder {
 
 struct BatchDeflater {
     level: CompressionLevel,
-    encoder: DeflateEncoder<Vec<u8>>,
+    encoder: Deflate,
     scratch: Vec<u8>,
+    output: Vec<u8>,
 }
 
 /// Encodes a typed Bedrock clientbound packet with default encoder settings.
@@ -308,6 +324,34 @@ mod batch_tests {
     use super::*;
     use flate2::read::DeflateDecoder;
     use std::io::Read;
+
+    #[test]
+    fn independent_deflate_streams_round_trip_at_the_batch_window_limit() {
+        let mut seed = 37u32;
+        let noise: Vec<u8> = (0..=16 * 1024)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as u8
+            })
+            .collect();
+        let mut enc = BedrockBatchEncoder::new();
+        for level in 0..=9 {
+            enc.set_compression((1, level));
+            for size in [257, 16 * 1024 - 1, 16 * 1024, 16 * 1024 + 1, 1] {
+                let mut wire = Vec::new();
+                enc.write_batch(size, |out| out.write_all(&noise[..size]), &mut wire)
+                    .unwrap();
+                assert_eq!(&wire[..2], &[BEDROCK_GAME_PACKET, 0]);
+                let mut decoded = Vec::new();
+                DeflateDecoder::new(&wire[2..])
+                    .read_to_end(&mut decoded)
+                    .unwrap();
+                assert_eq!(decoded, &noise[..size]);
+            }
+        }
+    }
 
     #[test]
     fn shared_frames_match_regular_batches_at_compression_boundaries() {

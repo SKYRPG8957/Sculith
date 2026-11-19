@@ -62,12 +62,14 @@ use tokio::{
     task::JoinHandle,
 };
 
-use tokio_util::{sync::CancellationToken, task::TaskTracker};
+use tokio_util::task::TaskTracker;
 
 pub mod blob_cache;
+mod close_signal;
 pub mod level_chunk;
 pub mod login;
 pub mod versions;
+use self::close_signal::CloseSignal;
 use self::level_chunk::CLevelChunk;
 use self::nethernet::NetherNetSession;
 use crate::{
@@ -252,8 +254,8 @@ pub struct BedrockClient {
     pub blob_cache: std::sync::Mutex<blob_cache::BlobCache>,
     shared_pack: ArcSwapOption<crate::resource_pack::SharedPack>,
     pub streaming_packs: std::sync::Mutex<HashMap<String, BedrockStreamingPack>>,
-    /// An notifier that is triggered when this client is closed.
-    close_token: CancellationToken,
+    /// Stops producers and wakes the writer to drain its FIFO.
+    closing: CloseSignal,
     last_seen: Arc<AtomicCell<std::time::Instant>>,
     incoming_game_packet_send: Sender<RawPacket>,
     incoming_game_packet_recv: Mutex<Option<Receiver<RawPacket>>>,
@@ -319,7 +321,7 @@ impl BedrockClient {
             blob_cache: std::sync::Mutex::new(blob_cache::BlobCache::new()),
             shared_pack: ArcSwapOption::empty(),
             streaming_packs: std::sync::Mutex::new(HashMap::new()),
-            close_token: CancellationToken::new(),
+            closing: CloseSignal::default(),
             last_seen: Arc::new(AtomicCell::new(std::time::Instant::now())),
             incoming_game_packet_send: incoming_send,
             incoming_game_packet_recv: Mutex::new(Some(incoming_recv)),
@@ -346,7 +348,7 @@ impl BedrockClient {
             loop {
                 let count = tokio::select! {
                     count = receiver.recv_many(&mut packets, MAX_BATCH_PACKETS) => count,
-                    () = client.close_token.cancelled(), if !receiver.is_closed() => {
+                    () = client.closing.wait(), if !receiver.is_closed() => {
                         receiver.close();
                         continue;
                     }
@@ -390,7 +392,8 @@ impl BedrockClient {
                         Err(error) => {
                             decrement_pending_bytes(&client.pending_bytes, rest.iter().map(|p| p.data.len()).sum());
                             warn!("Failed to send Bedrock batch to {}: {error}", client.address);
-                            client.close().await;
+                            client.closing.close();
+                            client.finish_close().await;
                             return;
                         }
                     }
@@ -398,6 +401,12 @@ impl BedrockClient {
                 }
                 packets.clear();
             }
+            // Synchronous kicks queue the final disconnect, then request a drain.
+            if client.closing.is_closed() && !client.session.is_closed() {
+                let _ = client.session.flush_reliable(std::time::Duration::from_secs(1)).await;
+            }
+            client.closing.close();
+            client.finish_close().await;
         });
     }
 
@@ -533,13 +542,9 @@ impl BedrockClient {
         {
             let packet_len = data.len();
             let _ = self.pending_bytes.fetch_add(packet_len, Ordering::AcqRel);
-            let _ = self
-                .outgoing_packet_queue_send
-                .send(OutgoingPacket::normal(data));
+            self.queue_outgoing(OutgoingPacket::normal(data), packet_len);
         }
-        if !self.close_token.is_cancelled() {
-            self.close_token.cancel();
-        }
+        self.closing.close();
     }
 
     pub async fn kick(&self, reason: DisconnectReason, message: String) {
@@ -857,7 +862,7 @@ impl BedrockClient {
                     "Bedrock client {} outbound packet buffer overflow ({} bytes > {} bytes). Closing connection.",
                     self.address, new_bytes, MAX_PENDING_BYTES
                 );
-                self.close_token.cancel();
+                self.closing.close();
             }
             return None;
         }
@@ -894,7 +899,9 @@ impl BedrockClient {
         if !self.queue_outgoing(OutgoingPacket::normal(packet_data), packet_len) {
             return false;
         }
-        self.queue_extra_packets(extras);
+        if !extras.is_empty() {
+            self.queue_extra_packets(extras);
+        }
         true
     }
 
@@ -989,11 +996,11 @@ impl BedrockClient {
     }
 
     fn try_enqueue_packet_data_inner(&self, packet_data: Bytes, observe: bool) -> bool {
-        if self.is_closed() {
-            return false;
-        }
         if !observe && self.is_current_protocol() && self.player.load().is_some() {
             return self.queue_translated_packet(packet_data, Vec::new());
+        }
+        if self.is_closed() {
+            return false;
         }
         let (packet_data, extras) = self.translate_outgoing(packet_data, observe);
         match packet_data {
@@ -1093,12 +1100,20 @@ impl BedrockClient {
     }
 
     pub async fn close(&self) {
-        if self.close_token.is_cancelled() {
-            return;
+        if self.closing.close() {
+            self.finish_close().await;
         }
-        self.close_token.cancel();
+    }
+
+    async fn finish_close(&self) {
         self.session.close().await;
-        self.be_clients.lock().await.remove(&self.address);
+        let mut clients = self.be_clients.lock().await;
+        if clients
+            .get(&self.address)
+            .is_some_and(|c| std::ptr::eq(c.as_ref(), self))
+        {
+            clients.remove(&self.address);
+        }
     }
 
     pub async fn await_tasks(&self) {
@@ -1107,7 +1122,7 @@ impl BedrockClient {
     }
 
     pub fn is_closed(&self) -> bool {
-        self.close_token.is_cancelled() || self.session.is_closed()
+        self.closing.is_closed() || self.session.is_closed()
     }
 
     pub fn enqueue_spawn_packet(&self, entity: &dyn crate::entity::EntityBase) {
@@ -1474,7 +1489,7 @@ impl BedrockClient {
     }
 
     pub async fn await_close_interrupt(&self) {
-        self.close_token.cancelled().await;
+        self.closing.wait().await;
     }
 
     pub async fn get_packet_payload(&self, packet: Vec<u8>) -> Option<Vec<u8>> {
@@ -1505,7 +1520,7 @@ impl BedrockClient {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        if self.close_token.is_cancelled() {
+        if self.closing.is_closed() {
             None
         } else {
             Some(self.tasks.spawn_on(task, &self.rt_handle))
@@ -1517,6 +1532,37 @@ impl BedrockClient {
 mod tests {
     use super::*;
     use pumpkin_protocol::bedrock::client::biome_definition_list::CBiomeDefinitionList;
+
+    #[tokio::test]
+    async fn draining_a_kick_releases_the_peer_and_preserves_a_replacement() {
+        let address = "127.0.0.1:0".parse().unwrap();
+        let clients = Arc::new(Mutex::new(HashMap::new()));
+        let make_client = |id, session| {
+            Arc::new(BedrockClient::new(
+                id,
+                session,
+                address,
+                clients.clone(),
+                PacketRateLimiter::new(false, 0.0, 0.0),
+                Weak::new(),
+            ))
+        };
+        let old = make_client(1, NetherNetSession::test_session(address).await);
+        let new = make_client(2, NetherNetSession::test_session(address).await);
+        clients.lock().await.insert(address, old.clone());
+        old.start_outgoing_packet_task();
+        old.try_kick(DisconnectReason::Kicked, "leaving".into());
+        // On this current-thread runtime the old writer has yet to handle the queued kick.
+        clients.lock().await.insert(address, new.clone());
+        tokio::time::timeout(std::time::Duration::from_secs(3), old.await_tasks())
+            .await
+            .unwrap();
+        assert!(old.session.is_closed());
+        assert!(Arc::ptr_eq(&clients.lock().await[&address], &new));
+        assert!(!new.is_closed());
+        new.close().await;
+        assert!(clients.lock().await.is_empty());
+    }
 
     #[test]
     fn watcher_velocity_waits_only_for_a_remote_untimed_actor() {

@@ -75,8 +75,28 @@ type playerResult struct {
 	ChunkRadius          int
 	PackBytes            int
 	PackDigest           string
-	MaxMotionGapMS       float64
+	WorstGap             motionGap
 }
+
+type motionGap struct {
+	DurationMS     float64  `json:"duration_ms"`
+	EndAfterPlayMS float64  `json:"end_after_play_start_ms"`
+	Boundary       string   `json:"boundary"`
+	InputGapMS     *float64 `json:"matched_input_spacing_ms,omitempty"`
+}
+
+func (g *motionGap) record(start, prev, now, prevInput, input time.Time, boundary string) {
+	duration := ms(now.Sub(prev))
+	if duration <= g.DurationMS {
+		return
+	}
+	*g = motionGap{DurationMS: duration, EndAfterPlayMS: ms(now.Sub(start)), Boundary: boundary}
+	if !prevInput.IsZero() && !input.IsZero() {
+		inputGap := ms(input.Sub(prevInput))
+		g.InputGapMS = &inputGap
+	}
+}
+
 type run struct {
 	encounter        bool
 	configured       sync.WaitGroup
@@ -171,7 +191,7 @@ func (r *run) client(i int) {
 		deaths, pigs, chunks, uniqueChunks int
 		rpg, err                           string
 		healMS                             float64
-		gap                                float64
+		gap                                motionGap
 	}
 	incoming := make(chan sample, 1)
 	go func() {
@@ -180,7 +200,7 @@ func (r *run) client(i int) {
 		actors := make(map[uint64]bool)
 		rosterAdds := 0
 		terrain := make(map[protocol.ChunkPos]struct{})
-		var prev time.Time
+		var prev, prevInput time.Time
 		seen := [3]bool{}
 		defer func() {
 			s.uniqueChunks = len(terrain)
@@ -188,7 +208,7 @@ func (r *run) client(i int) {
 				if prev.IsZero() {
 					prev = r.playStart
 				}
-				s.gap = math.Max(s.gap, ms(r.playStart.Add(r.play).Sub(prev)))
+				s.gap.record(r.playStart, prev, r.playStart.Add(r.play), prevInput, time.Time{}, "play_end")
 			}
 			result.OrderedPeer = actors[r.ids[(i+1)%r.count].Load()]
 			result.RosterAdds = rosterAdds
@@ -213,11 +233,13 @@ func (r *run) client(i int) {
 				if active.Load() && v.EntityRuntimeID == r.ids[peer].Load() && v.Mode == packet.MoveModeNormal {
 					if sent, ok := r.traces[peer].stamp(v.Position); ok {
 						s.motion = append(s.motion, ms(now.Sub(sent)))
+						boundary := "between_updates"
 						if prev.IsZero() {
 							prev = r.playStart
+							boundary = "play_start"
 						}
-						s.gap = math.Max(s.gap, ms(now.Sub(prev)))
-						prev = now
+						s.gap.record(r.playStart, prev, now, prevInput, sent, boundary)
+						prev, prevInput = now, sent
 					}
 				}
 			case *packet.PlayerList:
@@ -338,7 +360,7 @@ wait:
 	result.Deaths = s.deaths
 	result.RPG = s.rpg
 	result.HealMS = s.healMS
-	result.MaxMotionGapMS = s.gap
+	result.WorstGap = s.gap
 	if s.deaths > 0 {
 		result.Survived = false
 	}
@@ -565,6 +587,8 @@ func main() {
 	errors := map[string]string{}
 	packCopies := map[string]int{}
 	var packBytes int64
+	var worst motionGap
+	var worstViewer int
 	for i, p := range r.results {
 		if p.PackDigest != "" {
 			packCopies[p.PackDigest]++
@@ -605,7 +629,10 @@ func main() {
 			if peerSent > 0 {
 				inputCoverage = append(inputCoverage, 100*float64(len(p.Motion))/float64(peerSent))
 			}
-			gaps = append(gaps, p.MaxMotionGapMS)
+			gaps = append(gaps, p.WorstGap.DurationMS)
+			if p.WorstGap.DurationMS > worst.DurationMS {
+				worst, worstViewer = p.WorstGap, i
+			}
 		}
 		if len(p.Blocks) == 3 {
 			allBlocks++
@@ -629,6 +656,13 @@ func main() {
 	report["rpg_heal_feedback"] = stats(heals)
 	report["known_peer_before_actor_spawn"] = ordered
 	report["roster_add_entries_seen"] = adds
+	if worst.DurationMS > 0 {
+		report["worst_motion_gap"] = struct {
+			motionGap
+			Viewer int `json:"viewer"`
+			Peer   int `json:"peer"`
+		}{worst, worstViewer, (worstViewer + 1) % r.count}
+	}
 	report["resource_pack_copies_by_sha256"] = packCopies
 	report["resource_pack_bytes_received"] = packBytes
 	report["clients_granted_radius_16"] = fullView

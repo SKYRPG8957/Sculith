@@ -11,13 +11,13 @@ use std::{
 use bytes::{BufMut, Bytes, BytesMut};
 use pumpkin_auth::p384::PublicKey;
 use tokio::sync::{Mutex, RwLock, mpsc};
-use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 use webrtc::{
     data_channel::{DataChannel, DataChannelEvent},
     peer_connection::PeerConnection,
 };
 
+use super::super::CloseSignal;
 use super::ice_router::Registration;
 
 const RELIABLE_CHANNEL: &str = "ReliableDataChannel";
@@ -60,7 +60,7 @@ pub struct NetherNetSession {
     packet_sender: mpsc::Sender<Bytes>,
     open_channels: AtomicU8,
     accepted: AtomicBool,
-    closed: CancellationToken,
+    closed: CloseSignal,
     client_public_key: Option<PublicKey>,
     address: SocketAddr,
     incoming: mpsc::Sender<IncomingSession>,
@@ -84,7 +84,7 @@ impl NetherNetSession {
             packet_sender,
             open_channels: AtomicU8::new(0),
             accepted: AtomicBool::new(false),
-            closed: CancellationToken::new(),
+            closed: CloseSignal::default(),
             client_public_key,
             address,
             incoming,
@@ -112,11 +112,12 @@ impl NetherNetSession {
     }
 
     pub(super) fn set_ice_route(&self, route: Registration) {
-        if !self.closed.is_cancelled() {
-            *self
-                .ice_route
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(route);
+        let mut slot = self
+            .ice_route
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !self.is_closed() {
+            *slot = Some(route);
         }
     }
 
@@ -240,7 +241,7 @@ impl NetherNetSession {
     pub async fn recv(&self) -> Option<Bytes> {
         let mut packets = self.packets.lock().await;
         tokio::select! {
-            () = self.closed.cancelled() => None,
+            () = self.closed.wait() => None,
             packet = packets.recv() => packet,
         }
     }
@@ -324,12 +325,11 @@ impl NetherNetSession {
     }
 
     pub fn is_closed(&self) -> bool {
-        self.closed.is_cancelled()
+        self.closed.is_closed()
     }
 
     pub(super) fn mark_closed(&self) {
-        if !self.closed.is_cancelled() {
-            self.closed.cancel();
+        if self.closed.close() {
             self.ice_route
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -338,10 +338,9 @@ impl NetherNetSession {
     }
 
     pub async fn close(&self) {
-        if self.closed.is_cancelled() {
+        if !self.closed.close() {
             return;
         }
-        self.closed.cancel();
         self.ice_route
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
