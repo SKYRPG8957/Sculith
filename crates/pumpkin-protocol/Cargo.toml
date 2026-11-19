@@ -31,7 +31,7 @@ hybrid-array = "0.4"
 
 # compression
 flate2.workspace = true
-libdeflater.workspace = true
+zlib-rs.workspace = true
 
 bitflags.workspace = true
 base64.workspace = true
