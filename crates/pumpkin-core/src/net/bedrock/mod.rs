@@ -421,7 +421,9 @@ impl BedrockClient {
         let mut encoded = Vec::new();
         // Broadcasts already share the complete header and payload across viewers.
         // A single pack chunk can reuse its separately cached compressed frame below.
-        if group.len() < 2
+        let single_chunk = matches!(group, [packet] if packet.data.first().is_some_and(|&id|
+            i32::from(id) == pumpkin_data::bedrock_packet::LEVEL_CHUNK));
+        if (group.len() < 2 && !single_chunk)
             || !writer
                 .try_write_framed_game_packets(
                     group.iter().map(|packet| packet.data.as_ref()),

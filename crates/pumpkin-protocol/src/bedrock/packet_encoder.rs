@@ -1,8 +1,11 @@
 use std::{
     cell::Cell,
+    hash::{BuildHasher, RandomState},
     io::{Error, ErrorKind, Write},
+    sync::{LazyLock, Mutex},
 };
 
+use bytes::Bytes;
 use flate2::{Compression, write::DeflateEncoder};
 use zlib_rs::{Deflate, DeflateConfig, DeflateFlush, Status, compress_bound};
 
@@ -102,7 +105,7 @@ impl BedrockBatchEncoder {
             }
             Ok(())
         };
-        self.write_batch(size, write_frames, writer)
+        self.write_batch(size, false, write_frames, writer)
     }
 
     /// Writes length prefixes around packets that already contain a canonical Bedrock
@@ -112,12 +115,20 @@ impl BedrockBatchEncoder {
         packets: impl Iterator<Item = &'a [u8]> + Clone,
         writer: impl Write,
     ) -> Result<bool, Error> {
+        use pumpkin_data::bedrock_packet::{
+            LEVEL_CHUNK, MOVE_ACTOR_DELTA, MOVE_PLAYER, SET_ACTOR_MOTION,
+        };
         let mut size = 0;
+        let mut world_frames = true;
         for packet in packets.clone() {
             // A canonical 14-bit header occupies one byte, or two with a nonzero high part.
             if !matches!(packet, [0..=0x7f, ..] | [0x80..=0xff, 1..=0x7f, ..]) {
                 return Ok(false);
             }
+            world_frames &= matches!(
+                i32::from(packet[0]),
+                LEVEL_CHUNK | MOVE_PLAYER | MOVE_ACTOR_DELTA | SET_ACTOR_MOTION
+            );
             let len = u32::try_from(packet.len()).map_err(|_| {
                 Error::new(ErrorKind::InvalidInput, "Bedrock game packet is too long")
             })?;
@@ -125,6 +136,7 @@ impl BedrockBatchEncoder {
         }
         self.write_batch(
             size,
+            world_frames,
             |out| {
                 let mut prefix = [0; 5];
                 for packet in packets {
@@ -146,6 +158,7 @@ impl BedrockBatchEncoder {
     fn write_batch(
         &self,
         size: usize,
+        share: bool,
         write_frames: impl FnOnce(&mut dyn Write) -> Result<(), Error>,
         mut writer: impl Write,
     ) -> Result<(), Error> {
@@ -188,6 +201,14 @@ impl BedrockBatchEncoder {
                 });
             d.scratch.clear();
             write_frames(&mut d.scratch)?;
+            // The negotiated prefix and threshold were applied above. The raw
+            // DEFLATE suffix depends only on these bytes and the chosen level.
+            let slot = (share && level > 0 && (256..=8192).contains(&size))
+                .then(|| SHARED_BATCHES.slot(level, &d.scratch));
+            if let Some(encoded) = slot.and_then(|s| s.get(level, &d.scratch)) {
+                cache.set(Some(d));
+                return writer.write_all(&encoded);
+            }
             d.output.resize(compress_bound(size), 0);
             let status = d
                 .encoder
@@ -196,7 +217,11 @@ impl BedrockBatchEncoder {
             if status != Status::StreamEnd {
                 return Err(Error::other("incomplete Bedrock DEFLATE frame"));
             }
-            let result = writer.write_all(&d.output[..d.encoder.total_out() as usize]);
+            let encoded = &d.output[..d.encoder.total_out() as usize];
+            if let Some(s) = slot {
+                s.store(level, &d.scratch, encoded);
+            }
+            let result = writer.write_all(encoded);
             d.encoder.reset();
             cache.set(Some(d));
             result
@@ -238,6 +263,56 @@ struct BatchDeflater {
     output: Vec<u8>,
 }
 
+struct SharedBatch {
+    level: CompressionLevel,
+    plain: Box<[u8]>,
+    deflated: Bytes,
+}
+
+#[derive(Default)]
+struct BatchSlot(Mutex<Option<SharedBatch>>);
+
+impl BatchSlot {
+    fn get(&self, level: CompressionLevel, plain: &[u8]) -> Option<Bytes> {
+        let guard = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let batch = guard.as_ref()?;
+        (batch.level == level && batch.plain.as_ref() == plain).then(|| batch.deflated.clone())
+    }
+
+    fn store(&self, level: CompressionLevel, plain: &[u8], encoded: &[u8]) {
+        let batch = SharedBatch {
+            level,
+            plain: plain.into(),
+            deflated: Bytes::copy_from_slice(encoded),
+        };
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(batch);
+    }
+}
+
+struct SharedBatches {
+    hasher: RandomState,
+    // At most 256 world batches of 8 KiB and their compressed bytes.
+    slots: [BatchSlot; 256],
+}
+
+impl SharedBatches {
+    fn slot(&self, level: CompressionLevel, plain: &[u8]) -> &BatchSlot {
+        let index = self.hasher.hash_one((level, plain)) as usize % self.slots.len();
+        &self.slots[index]
+    }
+}
+
+static SHARED_BATCHES: LazyLock<SharedBatches> = LazyLock::new(|| SharedBatches {
+    hasher: RandomState::new(),
+    slots: std::array::from_fn(|_| BatchSlot::default()),
+});
+
 /// Encodes a typed Bedrock clientbound packet with default encoder settings.
 pub fn write_packet<P: crate::BClientPacket + ?Sized>(
     packet: &P,
@@ -258,6 +333,60 @@ mod tests {
     use super::*;
     use crate::bedrock::packet_decoder::BedrockBatchDecoder;
     use std::io::Cursor;
+
+    #[test]
+    fn shared_slot_requires_exact_input_and_level_even_when_reused() {
+        let slot = BatchSlot::default();
+        slot.store(4, b"first actor", b"first result");
+        let in_flight = slot.get(4, b"first actor").unwrap();
+        assert!(slot.get(4, b"other actor").is_none());
+        assert!(slot.get(5, b"first actor").is_none());
+        slot.store(4, b"other actor", b"second result");
+        assert_eq!(in_flight.as_ref(), b"first result");
+        assert!(slot.get(4, b"first actor").is_none());
+        assert_eq!(
+            slot.get(4, b"other actor").unwrap().as_ref(),
+            b"second result"
+        );
+    }
+
+    #[test]
+    fn reused_terrain_stream_matches_fresh_output_across_negotiated_thresholds() {
+        let id = pumpkin_data::bedrock_packet::LEVEL_CHUNK as u16;
+        let mut raw = vec![id as u8];
+        raw.extend((0..768).map(|i| (i % 113) as u8));
+        for level in [1, 4, 9] {
+            for prefixed in [false, true] {
+                for threshold in [0, 1, 256, 1024] {
+                    let mut encoder = BedrockBatchEncoder::new();
+                    encoder.set_compression((threshold, level));
+                    encoder.set_prefixed_compression(prefixed);
+                    let mut fresh = Vec::new();
+                    encoder
+                        .write_game_packet(
+                            id,
+                            SubClient::Main,
+                            SubClient::Main,
+                            &raw[1..],
+                            &mut fresh,
+                        )
+                        .unwrap();
+                    for _ in 0..2 {
+                        let mut shared = Vec::new();
+                        assert!(
+                            encoder
+                                .try_write_framed_game_packets(
+                                    std::iter::once(raw.as_slice()),
+                                    &mut shared
+                                )
+                                .unwrap()
+                        );
+                        assert_eq!(shared, fresh);
+                    }
+                }
+            }
+        }
+    }
 
     #[tokio::test]
     async fn bedrock_compression_cycle() -> Result<(), Box<dyn std::error::Error>> {
