@@ -63,6 +63,7 @@ parser.add_argument("--play", type=int, default=60)
 parser.add_argument("--pigs", type=int, default=64)
 parser.add_argument("--port", type=int, default=19132)
 parser.add_argument("--rpg-smoke", action="store_true")
+parser.add_argument("--terrain-smoke", action="store_true")
 parser.add_argument("--encounter", action="store_true", help="grant XP, damage every player and verify a synchronized heal")
 parser.add_argument("--threshold", type=int, default=256)
 parser.add_argument("--compression-level", type=int, choices=range(10), default=4)
@@ -163,6 +164,18 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             wait(built,90)
             builder.stdin.close()
             builder.wait(timeout=15)
+            if args.terrain_smoke:
+                with subprocess.Popen([str(args.client.resolve()), "-address", f"127.0.0.1:{args.port}", "-terrain-smoke"],
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as travel:
+                    with out.with_suffix(".travel.log").open("w") as trace:
+                        for line in travel.stdout:
+                            trace.write(line)
+                            trace.flush()
+                            if line.startswith("TERRAIN_TELEPORT "):
+                                _, cx, cz = line.split()
+                                command(f"tp TerrainProbe {int(cx)*16+0.5} -59 {int(cz)*16+0.5}")
+                    if travel.wait():
+                        raise RuntimeError(f"Bedrock terrain travel failed. See {out.with_suffix('.travel.log')}")
             if args.rpg_smoke:
                 check = subprocess.Popen([str(args.client.resolve()),"-address",f"127.0.0.1:{args.port}","-rpg-smoke"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
                 try:

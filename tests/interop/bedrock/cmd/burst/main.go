@@ -473,6 +473,7 @@ func main() {
 	var path string
 	flag.BoolVar(&r.encounter, "encounter", false, "activate the RPG heal after a server-driven XP and damage wave")
 	rpgCheck := flag.Bool("rpg-smoke", false, "check RPG XP, healing and reconnect persistence on a fresh test account")
+	terrainCheck := flag.Bool("terrain-smoke", false, "check the chunk publisher and terrain after a round-trip teleport")
 	prepare := flag.Bool("prepare", false, "warm the copied arena until standard input closes")
 
 	flag.StringVar(&r.address, "address", "127.0.0.1:19132", "local Sculith endpoint")
@@ -491,6 +492,13 @@ func main() {
 	}
 	if *rpgCheck {
 		if err := rpgSmoke(r.address); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *terrainCheck {
+		if err := checkTerrainTravel(r.address); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
