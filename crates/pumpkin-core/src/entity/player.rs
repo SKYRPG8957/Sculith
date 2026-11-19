@@ -592,8 +592,12 @@ pub enum SpamType {
     Command,
 }
 
-/// Center chunk and levels of the view and simulation tickets a player holds.
-pub type HeldChunkTickets = (Vector2<i32>, Option<i8>, Option<i8>);
+/// Terrain can stay anchored while simulation follows the player's actual chunk.
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct HeldChunkTickets {
+    pub(crate) view: Option<(Vector2<i32>, i8)>,
+    pub(crate) simulation: Option<(Vector2<i32>, i8)>,
+}
 
 #[repr(C)]
 pub struct Player {
@@ -712,7 +716,7 @@ pub struct Player {
     pub experience_pick_up_delay: Mutex<u32>,
     pub chunk_sender: Mutex<crate::net::ChunkSender>,
     pub chunk_listener: Mutex<Receiver<(Vector2<i32>, Weak<ChunkData>)>>,
-    pub held_chunk_tickets: Mutex<Option<HeldChunkTickets>>,
+    pub held_chunk_tickets: Mutex<HeldChunkTickets>,
     pub chunk_send_epoch: AtomicU32,
     pub has_played_before: AtomicBool,
     root_vehicle_uuid: AtomicCell<Option<Uuid>>,
@@ -1055,7 +1059,7 @@ impl Player {
             item_cooldowns: std::sync::Mutex::new(HashMap::new()),
             chunk_sender: Mutex::new(crate::net::ChunkSender::new()),
             chunk_listener: Mutex::new(world.level.chunk_listener.add_global_chunk_listener()),
-            held_chunk_tickets: Mutex::new(None),
+            held_chunk_tickets: Mutex::default(),
             chunk_send_epoch: AtomicU32::new(0),
             last_sent_xp: AtomicI32::new(-1),
             last_sent_health: AtomicI32::new(-1),
@@ -1552,22 +1556,19 @@ impl Player {
     }
 
     pub fn clean_up_chunk_tickets(&self, level: &Arc<pumpkin_world::level::Level>) {
+        let mut held = self
+            .held_chunk_tickets
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut lock = level
             .chunk_loading
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let held = self
-            .held_chunk_tickets
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some((center, view_level, sim_level)) = held {
-            if let Some(view) = view_level {
-                lock.remove_ticket(center, view);
-            }
-            if let Some(sim) = sim_level {
-                lock.remove_ticket(center, sim);
-            }
+        for (pos, ticket_level) in [held.view.take(), held.simulation.take()]
+            .into_iter()
+            .flatten()
+        {
+            lock.remove_ticket(pos, ticket_level);
         }
         lock.send_change();
         level.should_unload.store(true, Ordering::Relaxed);

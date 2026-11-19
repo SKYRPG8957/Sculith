@@ -65,6 +65,7 @@ parser.add_argument("--port", type=int, default=19132)
 parser.add_argument("--rpg-smoke", action="store_true")
 parser.add_argument("--encounter", action="store_true", help="grant XP, damage every player and verify a synchronized heal")
 parser.add_argument("--threshold", type=int, default=256)
+parser.add_argument("--compression-level", type=int, choices=range(10), default=4)
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
 if not 2 <= args.players <= 250 or args.play < 4 or not 0 <= args.pigs <= 256:
@@ -90,6 +91,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
         ("networking.bedrock.nethernet", "address"): f'"127.0.0.1:{args.port}"', ("networking.bedrock.nethernet","external_ip"): '"127.0.0.1"',
         ("networking.bedrock","view_distance"): "16", ("networking.bedrock","simulation_distance"): "4",
         ("networking.bedrock.compression","threshold"): str(args.threshold),
+        ("networking.bedrock.compression","level"): str(args.compression_level),
         ("networking.lan_broadcast","enabled"): "false", ("networking.rcon","enabled"): "false",
     })
     log_path = out.with_suffix(".server.log")
@@ -217,6 +219,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 compression_threshold=args.threshold,execution="Windows x64 under Wine" if args.wine else "native",
                 motion_budget_ms=150,tick_budget_ms=50)
             report["advertised_compression_threshold"] = advertised_threshold
+            report["compression_level"] = args.compression_level
             cpu_max=Path("/sys/fs/cgroup/cpu.max")
             if cpu_max.exists(): report["cohost_cpu_max"]=cpu_max.read_text().strip()
             report["clients_and_server_on_same_host"]=True

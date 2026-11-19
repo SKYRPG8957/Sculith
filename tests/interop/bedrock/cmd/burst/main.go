@@ -71,7 +71,8 @@ type playerResult struct {
 	RPG                  string
 	Error                string
 	Pigs, Sent           int
-	Chunks, ChunkRadius  int
+	Chunks, UniqueChunks int
+	ChunkRadius          int
 	MaxMotionGapMS       float64
 }
 type run struct {
@@ -162,11 +163,11 @@ func (r *run) client(i int) {
 	var active atomic.Bool
 	var healSent atomic.Int64
 	type sample struct {
-		echo, motion, blocks []float64
-		deaths, pigs, chunks int
-		rpg, err             string
-		healMS               float64
-		gap                  float64
+		echo, motion, blocks               []float64
+		deaths, pigs, chunks, uniqueChunks int
+		rpg, err                           string
+		healMS                             float64
+		gap                                float64
 	}
 	incoming := make(chan sample, 1)
 	go func() {
@@ -174,9 +175,11 @@ func (r *run) client(i int) {
 		known := make(map[uuid.UUID]bool)
 		actors := make(map[uint64]bool)
 		rosterAdds := 0
+		terrain := make(map[protocol.ChunkPos]struct{})
 		var prev time.Time
 		seen := [3]bool{}
 		defer func() {
+			s.uniqueChunks = len(terrain)
 			if active.Load() {
 				if prev.IsZero() {
 					prev = r.playStart
@@ -230,6 +233,7 @@ func (r *run) client(i int) {
 				}
 			case *packet.LevelChunk:
 				s.chunks++
+				terrain[v.Position] = struct{}{}
 			case *packet.ActorEvent:
 				if v.EntityRuntimeID == g.EntityRuntimeID && (v.EventType == packet.ActorEventDeath || v.EventType == packet.ActorEventInstantDeath) {
 					s.deaths++
@@ -326,6 +330,7 @@ wait:
 	result.Blocks = s.blocks
 	result.Pigs = s.pigs
 	result.Chunks = s.chunks
+	result.UniqueChunks = s.uniqueChunks
 	result.Deaths = s.deaths
 	result.RPG = s.rpg
 	result.HealMS = s.healMS
@@ -546,10 +551,11 @@ func main() {
 	fmt.Println("FINISHED")
 	var spawns, motion, echo, blocks, gaps, viewerP95, inputCoverage, heals []float64
 	var admitted, alive, peers, responded, allBlocks, sawMobs, sent, ordered, adds int
-	var chunks, minChunks, maxChunks, fullView, minInputs int
+	var chunks, uniqueChunks, minChunks, maxChunks, fullView, minInputs int
 	errors := map[string]string{}
 	for i, p := range r.results {
 		chunks += p.Chunks
+		uniqueChunks += p.UniqueChunks
 		if i == 0 || p.Chunks < minChunks {
 			minChunks = p.Chunks
 		}
@@ -609,7 +615,7 @@ func main() {
 	report["roster_add_entries_seen"] = adds
 	report["clients_granted_radius_16"] = fullView
 	report["minimum_input_rate_percent"] = 100 * float64(minInputs) / (r.play.Seconds() * 20)
-	report["level_chunk_messages_read"] = map[string]int{"total": chunks, "minimum_per_viewer": minChunks, "maximum_per_viewer": maxChunks}
+	report["level_chunk_messages_read"] = map[string]int{"total": chunks, "distinct_positions_summed_across_viewers": uniqueChunks, "repeated_positions": chunks - uniqueChunks, "minimum_per_viewer": minChunks, "maximum_per_viewer": maxChunks}
 	if len(inputCoverage) > 0 {
 		sort.Float64s(inputCoverage)
 		report["minimum_matched_peer_inputs_percent"] = inputCoverage[0]
