@@ -268,7 +268,7 @@ impl BedrockBatchEncoder {
                 cache.set(Some(d));
                 return writer.write_all(&encoded);
             }
-            d.output.resize(d.output.len().max(compress_bound(size)), 0);
+            d.output.resize(compress_bound(size), 0);
             let status = d
                 .encoder
                 .compress(&d.scratch, &mut d.output, DeflateFlush::Finish)

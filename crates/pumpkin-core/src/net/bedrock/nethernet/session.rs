@@ -214,13 +214,12 @@ impl NetherNetSession {
         if payload.is_empty() {
             return Err("empty NetherNet packet segment".to_string());
         }
-        let payload = data.slice(1..);
         if channel == 2 {
             if remaining != 0 {
                 return Err("fragmented unreliable message".to_string());
             }
             self.packet_sender
-                .send(payload)
+                .send(Bytes::copy_from_slice(payload))
                 .await
                 .map_err(|_| "connection is closed".to_string())?;
             return Ok(());
@@ -247,11 +246,10 @@ impl NetherNetSession {
         }
     }
 
-    pub async fn send(&self, data: impl AsRef<[u8]>) -> Result<(), String> {
+    pub async fn send(&self, data: Bytes) -> Result<(), String> {
         if self.is_closed() {
             return Err("connection is closed".to_string());
         }
-        let data = data.as_ref();
         let channel = self
             .reliable
             .read()
@@ -364,10 +362,10 @@ struct FragmentBuffer {
 }
 
 impl FragmentBuffer {
-    fn push(&mut self, remaining: u8, payload: Bytes) -> Result<Option<Bytes>, String> {
+    fn push(&mut self, remaining: u8, payload: &[u8]) -> Result<Option<Bytes>, String> {
         match self.next_remaining {
             None if remaining > 0 => self.next_remaining = Some(remaining - 1),
-            None => return Ok(Some(payload)),
+            None => return Ok(Some(Bytes::copy_from_slice(payload))),
             Some(expected) if expected == remaining => {
                 self.next_remaining = remaining.checked_sub(1);
             }
@@ -379,7 +377,7 @@ impl FragmentBuffer {
                 ));
             }
         }
-        self.data.extend_from_slice(&payload);
+        self.data.extend_from_slice(payload);
         if remaining == 0 {
             self.next_remaining = None;
             return Ok(Some(Bytes::from(std::mem::take(&mut self.data))));
@@ -422,43 +420,16 @@ mod tests {
     #[test]
     fn fragments_round_trip() {
         let mut fragments = FragmentBuffer::default();
-        assert!(
-            fragments
-                .push(2, Bytes::from_static(b"one"))
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            fragments
-                .push(1, Bytes::from_static(b"two"))
-                .unwrap()
-                .is_none()
-        );
-        assert_eq!(
-            fragments
-                .push(0, Bytes::from_static(b"three"))
-                .unwrap()
-                .unwrap(),
-            "onetwothree"
-        );
+        assert!(fragments.push(2, b"one").unwrap().is_none());
+        assert!(fragments.push(1, b"two").unwrap().is_none());
+        assert_eq!(fragments.push(0, b"three").unwrap().unwrap(), "onetwothree");
     }
 
     #[test]
     fn rejects_out_of_order_fragments_and_recovers() {
         let mut fragments = FragmentBuffer::default();
-        assert!(
-            fragments
-                .push(2, Bytes::from_static(b"one"))
-                .unwrap()
-                .is_none()
-        );
-        assert!(fragments.push(0, Bytes::from_static(b"three")).is_err());
-        assert_eq!(
-            fragments
-                .push(0, Bytes::from_static(b"complete"))
-                .unwrap()
-                .unwrap(),
-            "complete"
-        );
+        assert!(fragments.push(2, b"one").unwrap().is_none());
+        assert!(fragments.push(0, b"three").is_err());
+        assert_eq!(fragments.push(0, b"complete").unwrap().unwrap(), "complete");
     }
 }
