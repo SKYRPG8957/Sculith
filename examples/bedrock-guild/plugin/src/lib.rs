@@ -1,3 +1,5 @@
+#[cfg(not(feature = "companion"))]
+use pumpkin_plugin_api::events::DialogClickActionEvent;
 use pumpkin_plugin_api::events::{EventData, EventHandler, EventPriority, PlayerLeaveEvent};
 use pumpkin_plugin_api::forms::{FormResponseEvent, SimpleFormBuilder};
 use pumpkin_plugin_api::persistent_data::PersistentDataHolder;
@@ -12,11 +14,11 @@ impl pumpkin_plugin_api::commands::CommandHandler for GuildMenu {
     fn handle(
         &self,
         sender: pumpkin_plugin_api::command::CommandSender,
-        _: Server,
+        server: Server,
         _: pumpkin_plugin_api::command::ConsumedArgs,
     ) -> Result<i32, pumpkin_plugin_api::command::CommandError> {
         if let Some(player) = sender.as_player() {
-            menu(&player);
+            menu(&server, &player);
             return Ok(1);
         }
         sender.send_message(TextComponent::text("게임에서 /guild 를 입력하세요."));
@@ -49,7 +51,7 @@ impl EventHandler<PlayerLeaveEvent> for Left {
     }
 }
 
-fn selection(player: &Player, choice: &str) {
+fn selection(server: &Server, player: &Player, choice: &str) {
     let accepted = player
         .get_int("sculith-guild", "ridge-survey")
         .unwrap_or_default()
@@ -65,10 +67,41 @@ fn selection(player: &Player, choice: &str) {
         _ => return,
     };
     player.send_system_message(TextComponent::text(message), false);
-    menu(player);
+    menu(server, player);
 }
 
-fn menu(player: &Player) {
+fn menu(_server: &Server, player: &Player) {
+    #[cfg(not(feature = "companion"))]
+    if player.as_java().is_some() {
+        use pumpkin_plugin_api::wit::pumpkin::plugin::server::CommandSender;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static NEXT: AtomicU32 = AtomicU32::new(1);
+        // Native shared form IDs occupy the upper half. Never reuse a Java action ID.
+        let Ok(id) = NEXT.try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            (value < 0x8000_0000).then(|| value + 1)
+        }) else {
+            tracing::error!("Guild action IDs exhausted");
+            return;
+        };
+        let username = player.get_name();
+        if username.is_empty()
+            || username.len() > 16
+            || !username
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        {
+            tracing::error!("Invalid Java profile name");
+            return;
+        }
+        ACTIVE.lock().unwrap().insert(identity(player), id);
+        let body = include_str!("dialog-template.json").replace("REQUEST", &id.to_string());
+        _server.execute_command(
+            &format!("dialog show @a[name={username},limit=1] {body}"),
+            CommandSender::Console,
+        );
+        tracing::info!(name=%player.get_name(),id,"SCULITH_UI_OPEN");
+        return;
+    }
     let label = TextComponent::text;
     let form = SimpleFormBuilder::new(label("길드 의뢰"), label("산등성이 조사"))
         .button(label("의뢰 수락"), None)
@@ -87,10 +120,10 @@ fn menu(player: &Player) {
 impl EventHandler<FormResponseEvent> for Selected {
     fn handle(
         &self,
-        _: Server,
+        server: Server,
         event: EventData<FormResponseEvent>,
     ) -> EventData<FormResponseEvent> {
-        if !consume(identity(&event.player), event.form_id) {
+        if event.form_id < 0x8000_0000 || !consume(identity(&event.player), event.form_id) {
             return event;
         }
         let choice = match event.response_data.as_deref().map(str::trim) {
@@ -100,7 +133,40 @@ impl EventHandler<FormResponseEvent> for Selected {
             _ => "unknown",
         };
         tracing::info!(name=%event.player.get_name(), id=event.form_id, choice, "SCULITH_UI_CHOICE");
-        selection(&event.player, choice);
+        selection(&server, &event.player, choice);
+        event
+    }
+}
+#[cfg(not(feature = "companion"))]
+struct Clicked;
+#[cfg(not(feature = "companion"))]
+impl EventHandler<DialogClickActionEvent> for Clicked {
+    fn handle(
+        &self,
+        server: Server,
+        event: EventData<DialogClickActionEvent>,
+    ) -> EventData<DialogClickActionEvent> {
+        let Some((num, idx)) = event
+            .id
+            .strip_prefix("sculith:guild/")
+            .and_then(|s| s.split_once('/'))
+        else {
+            return event;
+        };
+        let Ok(id) = num.parse::<u32>() else {
+            return event;
+        };
+        let choice = match idx {
+            "0" => "accept",
+            "1" => "list",
+            "2" => "close",
+            _ => return event,
+        };
+        if !consume(identity(&event.player), id) {
+            return event;
+        }
+        tracing::info!(name=%event.player.get_name(),id,choice,"SCULITH_UI_CHOICE");
+        selection(&server, &event.player, choice);
         event
     }
 }
@@ -111,7 +177,7 @@ impl Plugin for Expedition {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             name: "sculith-guild".into(),
-            version: "0.1.0".into(),
+            version: "0.2.0".into(),
             authors: vec![],
             description: "스컬리스 길드 의뢰".into(),
             permissions: vec![],
@@ -132,6 +198,12 @@ impl Plugin for Expedition {
         })?;
         let command = Command::new(&["guild".to_string()], "길드 의뢰를 엽니다").execute(GuildMenu);
         ctx.register_command(command, permission);
+        #[cfg(not(feature = "companion"))]
+        ctx.register_event_handler::<DialogClickActionEvent, _>(
+            Clicked,
+            EventPriority::Normal,
+            true,
+        )?;
         ctx.register_event_handler::<PlayerLeaveEvent, _>(Left, EventPriority::Normal, true)?;
         ctx.register_event_handler::<FormResponseEvent, _>(Selected, EventPriority::Normal, true)?;
         Ok(())

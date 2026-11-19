@@ -48,6 +48,9 @@ pub struct TextureMap {
     /// Carry the authored Bedrock action-form layout for Sculith Companion.
     #[serde(default)]
     pub companion_forms: bool,
+    /// Bitmap fonts compiled from an authored form. Each name selects sculith/fonts/<name>.json.
+    #[serde(default)]
+    pub form_fonts: Vec<String>,
     #[serde(default)]
     pub textures: Vec<TextureMapping>,
     #[serde(default)]
@@ -95,6 +98,8 @@ pub struct ConversionReport {
     pub java_pack_format_minor: u32,
     #[serde(default)]
     pub companion_forms: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form_fonts: Vec<String>,
     pub converted_textures: usize,
     pub converted_sounds: Vec<SoundMapping>,
     pub converted_models: Vec<ModelMapping>,
@@ -164,6 +169,7 @@ pub fn convert(
     let mapping: TextureMap = read_json(mapping)?;
     ensure!(
         mapping.companion_forms
+            || !mapping.form_fonts.is_empty()
             || !mapping.textures.is_empty()
             || !mapping.sounds.is_empty()
             || !mapping.models.is_empty(),
@@ -221,6 +227,10 @@ pub fn convert(
         fs::write(directory.join("server_form.json"), bytes)?;
     }
 
+    ensure!(mapping.form_fonts.len() <= 32, "too many form fonts");
+    for name in &mapping.form_fonts {
+        install_form_font(&root, stage.path(), name, &mut targets)?;
+    }
     sounds::convert(&root, &mapping.sounds, stage.path(), &mut total_bytes)?;
 
     models::convert(&root, &mapping.models, stage.path(), &mut total_bytes)?;
@@ -233,15 +243,18 @@ pub fn convert(
         converted_textures: mapping.textures.len(),
         converted_sounds: mapping.sounds,
         converted_models: mapping.models,
-        scope: if mapping.companion_forms {
+        scope: if !mapping.form_fonts.is_empty() {
+            "mapped textures, bitmap form fonts, sounds and static models for stock Java"
+        } else if mapping.companion_forms {
             "mapped textures, sounds, static models and an authored Bedrock form for Sculith Companion"
         } else {
             "explicit PNG overrides, single-clip Vorbis sounds and static cuboid models"
         }.into(),
+        form_fonts: mapping.form_fonts,
         limitations: vec![
             "Only explicitly mapped PNG, OGG and static geometry definitions are converted; unmapped assets are not included.".into(),
             "PNG overrides target existing textures; custom sound events and presentation-only item models are registered by the pack.".into(),
-            "Only static unrotated cuboids with explicit per-face UVs are converted; animations, arbitrary UI, fonts, custom materials, behavior/script packs and weighted/streaming sounds are unsupported.".into(),
+            "Form fonts support bitmap and spacing providers. Arbitrary UI, animated geometry, custom materials, behavior packs and weighted or streaming sounds are unsupported.".into(),
             "Asset conversion does not register new gameplay blocks/items; archive delivery is configured separately.".into(),
         ],
     };
@@ -315,8 +328,10 @@ fn java_texture_path(id: &str) -> Result<String> {
         "invalid Java namespace"
     );
     ensure!(
-        texture.starts_with("block/") || texture.starts_with("item/"),
-        "only Java block/ and item/ textures are supported"
+        texture.starts_with("block/")
+            || texture.starts_with("item/")
+            || (namespace == "sculith" && texture.starts_with("ui/")),
+        "expected a block/, item/ or sculith:ui/ texture"
     );
     ensure!(
         !Path::new(texture)
@@ -337,6 +352,56 @@ fn java_texture_path(id: &str) -> Result<String> {
         bail!("invalid Java texture path");
     }
     Ok(format!("assets/{namespace}/textures/{texture}.png"))
+}
+
+fn install_form_font(
+    root: &Path,
+    stage: &Path,
+    name: &str,
+    targets: &mut HashSet<String>,
+) -> Result<()> {
+    ensure!(
+        !name.is_empty()
+            && name.len() <= 64
+            && name
+                .bytes()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == b'_'),
+        "invalid form font name"
+    );
+    let target = format!("assets/sculith/font/{name}.json");
+    ensure!(
+        targets.insert(target.clone()),
+        "duplicate form font: {name}"
+    );
+    let source = confined(root, &format!("sculith/fonts/{name}.json"))?;
+    let bytes = read_bounded(&source, 128 * 1024)?;
+    let font: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let providers = font["providers"]
+        .as_array()
+        .context("form font needs providers")?;
+    ensure!(
+        !providers.is_empty() && providers.len() <= 128,
+        "invalid font provider count"
+    );
+    for provider in providers {
+        match provider["type"].as_str() {
+            Some("bitmap") => {
+                let file = provider["file"]
+                    .as_str()
+                    .and_then(|id| id.strip_suffix(".png"))
+                    .context("bitmap font provider needs a PNG")?;
+                ensure!(
+                    file.starts_with("sculith:ui/") && targets.contains(&java_texture_path(file)?),
+                    "form font references an unmapped UI texture: {file}"
+                );
+            }
+            Some("space") => {}
+            _ => bail!("unsupported form font provider"),
+        }
+    }
+    fs::create_dir_all(stage.join("assets/sculith/font"))?;
+    fs::write(stage.join(target), bytes)?;
+    Ok(())
 }
 
 fn validate_png(bytes: &[u8]) -> Result<()> {
@@ -460,6 +525,28 @@ mod tests {
         assert_eq!(meta["pack"]["pack_format"], 99);
         assert!(report.limitations.len() >= 4);
         assert!(run(&dir).is_err(), "existing packs must not be overwritten");
+    }
+
+    #[test]
+    fn serves_the_mapped_form_font_and_requires_its_atlas() {
+        let dir = fixture();
+        let root = dir.path().join("bedrock");
+        fs::create_dir_all(root.join("sculith/fonts")).unwrap();
+        let font = br#"{"providers":[{"type":"bitmap","file":"sculith:ui/row.png","ascent":1,"chars":["x"]}]}"#;
+        fs::write(root.join("sculith/fonts/guild.json"), font).unwrap();
+        let mapping = dir.path().join("map.json");
+        let mut data = serde_json::json!({"form_fonts":["guild"],"textures":[
+            {"bedrock":"textures/blocks/stone.png","java":"sculith:ui/other"}]});
+        fs::write(&mapping, data.to_string()).unwrap();
+        assert!(run(&dir).is_err());
+        assert!(!dir.path().join("java").exists());
+        data["textures"][0]["java"] = serde_json::json!("sculith:ui/row");
+        fs::write(mapping, data.to_string()).unwrap();
+        assert_eq!(run(&dir).unwrap().form_fonts, ["guild"]);
+        assert_eq!(
+            fs::read(dir.path().join("java/assets/sculith/font/guild.json")).unwrap(),
+            font
+        );
     }
 
     #[test]
