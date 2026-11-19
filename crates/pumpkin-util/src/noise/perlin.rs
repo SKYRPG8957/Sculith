@@ -338,6 +338,22 @@ impl Noise for PerlinNoise {
             }
             return;
         }
+        // Horizontal columns use the same vertical sample positions and blend weights.
+        let sample_y = |index_y| {
+            let y = wrap(f64::from(volume.block_y(index_y)) * y_scale) + self.offset_y;
+            let floor_y = y.floor() as i32;
+            let relative_y = (y - f64::from(floor_y)) as f32;
+            (floor_y, smoothstep(relative_y), relative_y)
+        };
+        let single;
+        let samples;
+        let y_samples = if volume.size_y == 1 {
+            single = [sample_y(0)];
+            single.as_slice()
+        } else {
+            samples = (0..volume.size_y).map(sample_y).collect::<Vec<_>>();
+            samples.as_slice()
+        };
         let mut index = 0;
         for index_z in 0..volume.size_z {
             let z = wrap(f64::from(volume.block_z(index_z)) * xz_scale) + self.offset_z;
@@ -352,11 +368,8 @@ impl Noise for PerlinNoise {
                 let x1 = self.permute(floor_x + 1);
                 let alpha_x = smoothstep(relative_x);
                 let mut last_floor_y = i32::MIN;
-                for index_y in 0..volume.size_y {
-                    let y = wrap(f64::from(volume.block_y(index_y)) * y_scale) + self.offset_y;
-                    let floor_y = y.floor() as i32;
-                    let relative_y = (y - f64::from(floor_y)) as f32;
-                    let alpha_y = smoothstep(relative_y);
+                let column = &mut buffer[index..index + volume.size_y];
+                for (out, &(floor_y, alpha_y, sampled_y)) in column.iter_mut().zip(y_samples) {
                     if last_floor_y != floor_y {
                         self.corners(
                             x0,
@@ -369,10 +382,9 @@ impl Noise for PerlinNoise {
                         );
                         last_floor_y = floor_y;
                     }
-                    buffer[index] +=
-                        amplitude * corners.lerp(alpha_x, alpha_y, alpha_z, relative_y);
-                    index += 1;
+                    *out += amplitude * corners.lerp(alpha_x, alpha_y, alpha_z, sampled_y);
                 }
+                index += volume.size_y;
             }
         }
     }
@@ -435,6 +447,24 @@ impl Noise for SmearedPerlinNoise {
         amplitude: f32,
     ) {
         let mut corners = Corners::zero();
+        // Horizontal columns use the same vertical sample positions and blend weights.
+        let sample_y = |index_y| {
+            let original_y = f64::from(volume.block_y(index_y)) * y_scale;
+            let y = wrap(original_y) + self.noise.offset_y;
+            let floor_y = y.floor() as i32;
+            let relative_y = y - f64::from(floor_y);
+            let fudged = (relative_y - self.compute_fudge_y(original_y, relative_y)) as f32;
+            (floor_y, smoothstep(relative_y as f32), fudged)
+        };
+        let single;
+        let samples;
+        let y_samples = if volume.size_y == 1 {
+            single = [sample_y(0)];
+            single.as_slice()
+        } else {
+            samples = (0..volume.size_y).map(sample_y).collect::<Vec<_>>();
+            samples.as_slice()
+        };
         let mut index = 0;
         for index_z in 0..volume.size_z {
             let z = wrap(f64::from(volume.block_z(index_z)) * xz_scale) + self.noise.offset_z;
@@ -449,12 +479,8 @@ impl Noise for SmearedPerlinNoise {
                 let x1 = self.noise.permute(floor_x + 1);
                 let alpha_x = smoothstep(relative_x);
                 let mut last_floor_y = i32::MIN;
-                for index_y in 0..volume.size_y {
-                    let original_y = f64::from(volume.block_y(index_y)) * y_scale;
-                    let y = wrap(original_y) + self.noise.offset_y;
-                    let floor_y = y.floor() as i32;
-                    let relative_y = y - f64::from(floor_y);
-                    let alpha_y = smoothstep(relative_y as f32);
+                let column = &mut buffer[index..index + volume.size_y];
+                for (out, &(floor_y, alpha_y, sampled_y)) in column.iter_mut().zip(y_samples) {
                     if last_floor_y != floor_y {
                         self.noise.corners(
                             x0,
@@ -467,12 +493,9 @@ impl Noise for SmearedPerlinNoise {
                         );
                         last_floor_y = floor_y;
                     }
-                    let fudged_relative_y =
-                        (relative_y - self.compute_fudge_y(original_y, relative_y)) as f32;
-                    buffer[index] +=
-                        amplitude * corners.lerp(alpha_x, alpha_y, alpha_z, fudged_relative_y);
-                    index += 1;
+                    *out += amplitude * corners.lerp(alpha_x, alpha_y, alpha_z, sampled_y);
                 }
+                index += volume.size_y;
             }
         }
     }
