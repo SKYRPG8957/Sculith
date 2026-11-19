@@ -113,9 +113,13 @@ impl OutgoingPacket {
     }
 }
 
-// Network settings, teleports and game actions must not wait for the motion timer.
-fn ordinary_pose(packet: &OutgoingPacket) -> bool {
-    use pumpkin_data::bedrock_packet::{MOVE_ACTOR_DELTA, MOVE_PLAYER};
+// A crowded tick can contain both a position and a velocity for each visible actor.
+// The byte limit in outgoing_frame_len still applies to every frame.
+const MAX_BATCH_PACKETS: usize = 256;
+
+// Network settings, own impulses, teleports and game actions bypass the motion timer.
+fn ordinary_pose(packet: &OutgoingPacket, own_runtime_id: Option<u64>) -> bool {
+    use pumpkin_data::bedrock_packet::{MOVE_ACTOR_DELTA, MOVE_PLAYER, SET_ACTOR_MOTION};
     use pumpkin_protocol::codec::var_ulong::VarULong;
     if packet.completion.is_some() {
         return false;
@@ -128,6 +132,15 @@ fn ordinary_pose(packet: &OutgoingPacket) -> bool {
             VarULong::read(&mut data).is_ok() && matches!(data.get(24..), Some([0, 0..=1, 0, 0, 0]))
         }
         MOVE_ACTOR_DELTA => matches!(data.last_chunk::<5>(), Some([0..=1, 0, 0, 0, 1])),
+        SET_ACTOR_MOTION => {
+            // Watcher velocities have three floats and tick zero. Own knockback and
+            // prediction corrections can use this same packet ID, including at tick zero.
+            own_runtime_id.is_some_and(|own| {
+                VarULong::read(&mut data).is_ok_and(|target| target.0 != own)
+                    && data.len() == 13
+                    && data[12] == 0
+            })
+        }
         _ => false,
     }
 }
@@ -331,34 +344,34 @@ impl BedrockClient {
             let mut packets = Vec::with_capacity(64);
             let mut frames = Vec::with_capacity(64);
             loop {
-                let first = tokio::select! {
-                    Some(packet) = receiver.recv() => packet,
-                    () = client.close_token.cancelled() => {
-                        let Ok(packet) = receiver.try_recv() else { break };
-                        packet
+                let count = tokio::select! {
+                    count = receiver.recv_many(&mut packets, MAX_BATCH_PACKETS) => count,
+                    () = client.close_token.cancelled(), if !receiver.is_closed() => {
+                        receiver.close();
+                        continue;
                     }
                     _ = interval.tick() => {
                         if !client.tick_connection().await || receiver.is_closed() && receiver.is_empty() { break; }
                         continue;
                     }
                 };
-                packets.push(first);
-                while packets.len() < 64 {
-                    let Ok(next) = receiver.try_recv() else { break };
-                    packets.push(next);
+                if count == 0 {
+                    break;
                 }
-                if packets.len() < 64 && packets.iter().all(ordinary_pose) {
+                let own_id = client.player.load().as_deref()
+                    .filter(|_| client.is_current_protocol())
+                    .map(|p| p.entity_id() as u64);
+                let can_wait = |packet: &OutgoingPacket| ordinary_pose(packet, own_id);
+                if count < MAX_BATCH_PACKETS && packets.iter().all(can_wait) {
                     let deadline = tokio::time::sleep(std::time::Duration::from_millis(5));
                     tokio::pin!(deadline);
-                    while packets.len() < 64 {
+                    while packets.len() < MAX_BATCH_PACKETS {
+                        let start = packets.len();
                         tokio::select! {
                             biased;
                             () = &mut deadline => break,
-                            next = receiver.recv() => {
-                                let Some(next) = next else { break };
-                                let pose = ordinary_pose(&next);
-                                packets.push(next);
-                                if !pose { break; }
+                            count = receiver.recv_many(&mut packets, MAX_BATCH_PACKETS - start) => {
+                                if count == 0 || !packets[start..].iter().all(can_wait) { break; }
                             }
                         }
                     }
@@ -1493,6 +1506,56 @@ impl BedrockClient {
 mod tests {
     use super::*;
     use pumpkin_protocol::bedrock::client::biome_definition_list::CBiomeDefinitionList;
+
+    #[test]
+    fn watcher_velocity_waits_only_for_a_remote_untimed_actor() {
+        use pumpkin_protocol::{
+            bedrock::client::set_actor_motion::CSetActorMotion, codec::var_ulong::VarULong,
+        };
+        use pumpkin_util::math::vector3::Vector3;
+
+        let mut motion = CSetActorMotion {
+            target_runtime_id: VarULong(300),
+            motion: Vector3::new(1.0, 2.0, -3.0),
+            tick: VarULong(0),
+        };
+        let mut raw = Vec::new();
+        BedrockClient::write_raw_packet(&motion, &mut raw).unwrap();
+        let packet = OutgoingPacket::normal(raw.clone().into());
+        assert!(ordinary_pose(&packet, Some(12)));
+        assert!(!ordinary_pose(&packet, Some(300)));
+        assert!(!ordinary_pose(&packet, None));
+        assert!(!ordinary_pose(
+            &OutgoingPacket::priority(packet.data, oneshot::channel().0),
+            Some(12)
+        ));
+        raw.pop();
+        assert!(!ordinary_pose(
+            &OutgoingPacket::normal(raw.into()),
+            Some(12)
+        ));
+
+        motion.tick = VarULong(128);
+        let mut timed = Vec::new();
+        BedrockClient::write_raw_packet(&motion, &mut timed).unwrap();
+        assert!(!ordinary_pose(
+            &OutgoingPacket::normal(timed.into()),
+            Some(12)
+        ));
+    }
+
+    #[test]
+    fn draining_a_crowded_tick_keeps_frame_size_and_completion_boundaries() {
+        let mut packets: Vec<_> = (0..MAX_BATCH_PACKETS)
+            .map(|_| OutgoingPacket::normal(Bytes::from_static(&[0; 32])))
+            .collect();
+        let first = outgoing_frame_len(&packets);
+        assert!(first > 64 && first < MAX_BATCH_PACKETS);
+        assert_eq!(outgoing_frame_len(&packets[first..]), packets.len() - first);
+        packets[3].completion = Some(oneshot::channel().0);
+        assert_eq!(outgoing_frame_len(&packets), 3);
+        assert_eq!(outgoing_frame_len(&packets[3..]), 1);
+    }
 
     #[test]
     fn raw_packet_framing_roundtrips_high_and_0xfe_packet_ids() {
