@@ -8,7 +8,7 @@ use std::{
 
 use bytes::Bytes;
 use flate2::{Compression, write::DeflateEncoder};
-use zlib_rs::{Deflate, DeflateConfig, DeflateFlush, Status, compress_bound};
+use libdeflater::{CompressionLvl, Compressor};
 
 use crate::{
     CompressionLevel, CompressionThreshold,
@@ -17,8 +17,7 @@ use crate::{
     ser::NetworkWriteExt,
 };
 
-// Match the history window to the largest batch retained in the thread-local workspace.
-const BATCH_WINDOW_BITS: i32 = 14;
+const GENERAL_BATCH_BUFFER_LIMIT: usize = 16 * 1024;
 const MAX_SHARED_TERRAIN_FRAME: usize = 64 * 1024;
 
 /// Encodes outgoing Bedrock game packets and batches them into compressed frames.
@@ -229,32 +228,29 @@ impl BedrockBatchEncoder {
         if !compress {
             return write_frames(&mut writer);
         }
-        let wide = size > 1 << BATCH_WINDOW_BITS;
-        if wide && (!share || size > MAX_SHARED_TERRAIN_FRAME + VarUInt::MAX_SIZE.get()) {
+        if size > GENERAL_BATCH_BUFFER_LIMIT
+            && (!share || size > MAX_SHARED_TERRAIN_FRAME + VarUInt::MAX_SIZE.get())
+        {
             let mut deflater = DeflateEncoder::new(writer, Compression::new(level.min(9)));
             write_frames(&mut deflater)?;
             deflater.finish()?;
             return Ok(());
         }
-        // Raw DEFLATE streams must restart for every game batch. Reuse the
-        // compressor workspace and coalesce small writes from a busy crowd.
+        // Encode each bounded game batch as its own raw DEFLATE stream.
+        // Reuse the compressor and its buffers on the same worker.
         thread_local! {
             static DEFLATER: Cell<Option<BatchDeflater>> = const { Cell::new(None) };
-            static TERRAIN_DEFLATER: Cell<Option<BatchDeflater>> = const { Cell::new(None) };
         }
-        let workspace = if wide { &TERRAIN_DEFLATER } else { &DEFLATER };
-        workspace.with(|cache| {
+        DEFLATER.with(|cache| {
             let mut d = cache
                 .take()
                 .filter(|d| d.level == level)
                 .unwrap_or_else(|| BatchDeflater {
                     level,
-                    encoder: Deflate::new_with_config(DeflateConfig {
-                        window_bits: if wide { -15 } else { -BATCH_WINDOW_BITS },
-                        level: level.min(9) as i32,
-                        mem_level: if wide { 8 } else { 6 },
-                        ..DeflateConfig::default()
-                    }),
+                    encoder: Compressor::new(
+                        CompressionLvl::new(level.min(9) as i32)
+                            .expect("Bedrock compression level is between zero and nine"),
+                    ),
                     scratch: Vec::new(),
                     output: Vec::new(),
                 });
@@ -268,20 +264,17 @@ impl BedrockBatchEncoder {
                 cache.set(Some(d));
                 return writer.write_all(&encoded);
             }
-            d.output.resize(d.output.len().max(compress_bound(size)), 0);
-            let status = d
+            let bound = d.encoder.deflate_compress_bound(d.scratch.len());
+            d.output.resize(d.output.len().max(bound), 0);
+            let written = d
                 .encoder
-                .compress(&d.scratch, &mut d.output, DeflateFlush::Finish)
-                .map_err(|e| Error::other(format!("Bedrock DEFLATE failed: {e:?}")))?;
-            if status != Status::StreamEnd {
-                return Err(Error::other("incomplete Bedrock DEFLATE frame"));
-            }
-            let encoded = &d.output[..d.encoder.total_out() as usize];
+                .deflate_compress(&d.scratch, &mut d.output)
+                .map_err(Error::other)?;
+            let encoded = &d.output[..written];
             if let Some(s) = slot {
                 s.store(level, &d.scratch, encoded);
             }
             let result = writer.write_all(encoded);
-            d.encoder.reset();
             cache.set(Some(d));
             result
         })
@@ -317,7 +310,7 @@ impl BedrockBatchEncoder {
 
 struct BatchDeflater {
     level: CompressionLevel,
-    encoder: Deflate,
+    encoder: Compressor,
     scratch: Vec<u8>,
     output: Vec<u8>,
 }
@@ -603,7 +596,7 @@ mod batch_tests {
     use std::io::Read;
 
     #[test]
-    fn independent_deflate_streams_round_trip_at_the_batch_window_limit() {
+    fn independent_deflate_streams_round_trip_at_batch_buffer_limits() {
         let mut seed = 37u32;
         let noise: Vec<u8> = (0..=MAX_SHARED_TERRAIN_FRAME + 5)
             .map(|_| {
