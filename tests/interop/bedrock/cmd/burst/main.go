@@ -302,7 +302,7 @@ func stats(data []float64) map[string]interface{} {
 }
 
 // Keep the test area loaded while the driver builds the arena on a copied world.
-func prepareWorld(address string) error {
+func dialSingle(address, name string) (*minecraft.Conn, error) {
 	var settings webrtc.SettingEngine
 	settings.SetIncludeLoopbackCandidate(true)
 	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
@@ -311,19 +311,29 @@ func prepareWorld(address string) error {
 		return minecraft.NetherNet{Log: log, Dialer: nethernet.Dialer{API: api}}
 	})
 	d := minecraft.Dialer{}
-	d.IdentityData.DisplayName = "ArenaBuilder"
+	d.IdentityData.DisplayName = name
+	d.IdentityData.Identity = uuid.NewSHA1(uuid.NameSpaceDNS, []byte(name)).String()
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	c, err := d.DialContext(ctx, "arena", "http://"+address)
 	if err != nil {
+		return nil, err
+	}
+	c.SetReadDeadline(time.Now().Add(45 * time.Second))
+	if err = c.DoSpawn(); err != nil {
+		c.Close()
+		return nil, err
+	}
+	c.SetReadDeadline(time.Time{})
+	return c, nil
+}
+
+func prepareWorld(address string) error {
+	c, err := dialSingle(address, "ArenaBuilder")
+	if err != nil {
 		return err
 	}
 	defer c.Close()
-	c.SetReadDeadline(time.Now().Add(45 * time.Second))
-	if err = c.DoSpawn(); err != nil {
-		return err
-	}
-	c.SetReadDeadline(time.Time{})
 	fmt.Printf("ARENA_BUILDER_READY %v\n", c.GameData().PlayerPosition)
 	go func() {
 		for {
@@ -336,9 +346,74 @@ func prepareWorld(address string) error {
 	return err
 }
 
+func rpgSmoke(address string) error {
+	player, err := dialSingle(address, "RpgProbe")
+	if err != nil {
+		return err
+	}
+	defer player.Close()
+	query := func(c *minecraft.Conn, cmd, expect string) error {
+		err := c.WritePacket(&packet.CommandRequest{CommandLine: cmd, CommandOrigin: protocol.CommandOrigin{Origin: protocol.CommandOriginPlayer, UUID: uuid.New()}})
+		if err != nil {
+			return err
+		}
+		if err = c.Flush(); err != nil {
+			return err
+		}
+		c.SetReadDeadline(time.Now().Add(8 * time.Second))
+		for {
+			pk, err := c.ReadPacket()
+			if err != nil {
+				return fmt.Errorf("%s waiting for %q: %w", cmd, expect, err)
+			}
+			switch m := pk.(type) {
+			case *packet.Text:
+				if strings.Contains(m.Message, expect) {
+					fmt.Println(m.Message)
+					return nil
+				}
+			case *packet.NetworkStackLatency:
+				if m.NeedsResponse {
+					_ = c.WritePacket(&packet.NetworkStackLatency{Timestamp: m.Timestamp})
+					_ = c.Flush()
+				}
+			}
+		}
+	}
+	if err = query(player, "/rpg", "RPG Lv.1"); err != nil {
+		return err
+	}
+	fmt.Println("RPG_AWARD")
+	var acknowledged string
+	if _, err = fmt.Fscanln(os.Stdin, &acknowledged); err != nil {
+		return err
+	}
+	if err = query(player, "/rpg", "RPG Lv.2"); err != nil {
+		return err
+	}
+	if err = query(player, "/rpg heal", "남은 회복 0회"); err != nil {
+		return err
+	}
+	if err = query(player, "/rpg heal", "회복 횟수가 없습니다"); err != nil {
+		return err
+	}
+	player.Close()
+	time.Sleep(500 * time.Millisecond)
+	next, err := dialSingle(address, "RpgProbe")
+	if err != nil {
+		return err
+	}
+	defer next.Close()
+	if err = query(next, "/rpg", "회복 0회"); err != nil {
+		return err
+	}
+	return query(next, "/rpg heal", "회복 횟수가 없습니다")
+}
+
 func main() {
 	var r run
 	var path string
+	rpgCheck := flag.Bool("rpg-smoke", false, "check RPG XP, healing and reconnect persistence on a fresh test account")
 	prepare := flag.Bool("prepare", false, "warm the copied arena until standard input closes")
 
 	flag.StringVar(&r.address, "address", "127.0.0.1:19132", "local Sculith endpoint")
@@ -354,6 +429,13 @@ func main() {
 	ip, _, err := net.SplitHostPort(r.address)
 	if err != nil || !net.ParseIP(ip).IsLoopback() {
 		panic("this benchmark requires a loopback server")
+	}
+	if *rpgCheck {
+		if err := rpgSmoke(r.address); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 	if *prepare {
 		if err := prepareWorld(r.address); err != nil {

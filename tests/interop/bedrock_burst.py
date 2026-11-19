@@ -22,6 +22,7 @@ parser.add_argument("--players", type=int, default=100)
 parser.add_argument("--play", type=int, default=60)
 parser.add_argument("--pigs", type=int, default=64)
 parser.add_argument("--port", type=int, default=19132)
+parser.add_argument("--rpg-smoke", action="store_true")
 parser.add_argument("--threshold", type=int, default=256)
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
@@ -116,6 +117,26 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             wait(built,90)
             builder.stdin.close()
             builder.wait(timeout=15)
+            if args.rpg_smoke:
+                check = subprocess.Popen([str(args.client.resolve()),"-address",f"127.0.0.1:{args.port}","-rpg-smoke"],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+                try:
+                    with out.with_suffix(".rpg.log").open("w") as check_log:
+                        for line in check.stdout:
+                            check_log.write(line)
+                            check_log.flush()
+                            if line.startswith("RPG_AWARD"):
+                                command("gamerule minecraft:natural_health_regeneration false")
+                                command("experience add RpgProbe 105 points")
+                                command("damage RpgProbe 6")
+                                built.clear()
+                                command("list")
+                                wait(built,5)
+                                check.stdin.write("applied\n")
+                                check.stdin.flush()
+                    if check.wait(timeout=10):
+                        raise RuntimeError(f"RPG check failed. See {out.with_suffix('.rpg.log')}")
+                finally:
+                    if check.poll() is None: check.kill();check.wait()
             time.sleep(1)
             def tick_samples():
                 while not fin.wait(1):
