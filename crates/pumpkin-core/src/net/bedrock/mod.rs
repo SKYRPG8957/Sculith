@@ -122,7 +122,7 @@ const MAX_BATCH_PACKETS: usize = 256;
 
 // Terrain and gameplay share an ordered stream. Leave room for gameplay while
 // there is already a small window of data waiting in the queue or at SCTP.
-const TERRAIN_SEND_WINDOW_BYTES: usize = 24 * 1024;
+const TERRAIN_SEND_WINDOW_BYTES: usize = 8 * 1024;
 const TERRAIN_CREDIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 // Network settings, own impulses, teleports and game actions bypass the motion timer.
