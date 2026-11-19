@@ -73,6 +73,8 @@ type playerResult struct {
 	Pigs, Sent           int
 	Chunks, UniqueChunks int
 	ChunkRadius          int
+	PackBytes            int
+	PackDigest           string
 	MaxMotionGapMS       float64
 }
 type run struct {
@@ -153,6 +155,10 @@ func (r *run) client(i int) {
 	result.SpawnMS = ms(time.Since(r.start))
 	g := c.GameData()
 	result.ChunkRadius = c.ChunkRadius()
+	if packs := c.ResourcePacks(); len(packs) == 1 {
+		result.PackBytes = packs[0].Len()
+		result.PackDigest = fmt.Sprintf("%x", packs[0].Checksum())
+	}
 	gold := r.goldID
 	if g.UseBlockNetworkIDHashes {
 		gold = r.goldHash
@@ -561,7 +567,13 @@ func main() {
 	var admitted, alive, peers, responded, allBlocks, sawMobs, sent, ordered, adds int
 	var chunks, uniqueChunks, minChunks, maxChunks, fullView, minInputs int
 	errors := map[string]string{}
+	packCopies := map[string]int{}
+	var packBytes int64
 	for i, p := range r.results {
+		if p.PackDigest != "" {
+			packCopies[p.PackDigest]++
+			packBytes += int64(p.PackBytes)
+		}
 		chunks += p.Chunks
 		uniqueChunks += p.UniqueChunks
 		if i == 0 || p.Chunks < minChunks {
@@ -621,6 +633,8 @@ func main() {
 	report["rpg_heal_feedback"] = stats(heals)
 	report["known_peer_before_actor_spawn"] = ordered
 	report["roster_add_entries_seen"] = adds
+	report["resource_pack_copies_by_sha256"] = packCopies
+	report["resource_pack_bytes_received"] = packBytes
 	report["clients_granted_radius_16"] = fullView
 	report["minimum_input_rate_percent"] = 100 * float64(minInputs) / (r.play.Seconds() * 20)
 	report["level_chunk_messages_read"] = map[string]int{"total": chunks, "distinct_positions_summed_across_viewers": uniqueChunks, "repeated_positions": chunks - uniqueChunks, "minimum_per_viewer": minChunks, "maximum_per_viewer": maxChunks}

@@ -1,5 +1,6 @@
 """Drive a simultaneous Bedrock join and play benchmark in a disposable flat world."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -64,6 +65,8 @@ parser.add_argument("--pigs", type=int, default=64)
 parser.add_argument("--port", type=int, default=19132)
 parser.add_argument("--rpg-smoke", action="store_true")
 parser.add_argument("--terrain-smoke", action="store_true")
+parser.add_argument("--required-pack", action="store_true", help="require an uncached Bedrock model, sound and texture pack with 2.3 MB of incompressible transfer data")
+parser.add_argument("--require-budgets", action="store_true", help="exit with status 2 if any measured latency or delivery budget is missed")
 parser.add_argument("--encounter", action="store_true", help="grant XP, damage every player and verify a synchronized heal")
 parser.add_argument("--threshold", type=int, default=256)
 parser.add_argument("--compression-level", type=int, choices=range(10), default=4)
@@ -95,6 +98,14 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
         ("networking.bedrock.compression","level"): str(args.compression_level),
         ("networking.lan_broadcast","enabled"): "false", ("networking.rcon","enabled"): "false",
     })
+    pack_test_bytes = 2_304_000
+    if args.required_pack:
+        fixture = Path(__file__).resolve().parents[2] / "crates/sculith-packs/tests/fixtures"
+        shutil.copytree(fixture / "pack", root / "source")
+        shutil.copy2(fixture / "textures.json", root / "mapping.json")
+        (root / "source/credits.bin").write_bytes(hashlib.shake_256(b"Sculith pack burst").digest(pack_test_bytes))
+        with cfg.open("a") as config:
+            config.write('\n[resource_pack.shared]\nsource="source"\nmapping="mapping.json"\nrequired=true\n')
     log_path = out.with_suffix(".server.log")
     samples = []
     started = threading.Event()
@@ -240,6 +251,9 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             report["input_hz"]=20
             report["online_authentication"]=False
             report["rpg_encounter_enabled"]=args.encounter
+            report["resource_pack_required"] = args.required_pack
+            if args.required_pack:
+                report["incompressible_pack_test_bytes"] = pack_test_bytes
             report["host_intervals"] = {
                 label: host_interval(counters[start], counters[end])
                 for label, start, end in (("join", "JOIN", "PLAY"), ("play", "PLAY", "FINISHED"))
@@ -272,11 +286,20 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             if args.encounter:
                 report["checks"]["everyone_healed"]=report["rpg_heal_feedback"]["samples"]==args.players
                 report["checks"]["rpg_heal_p95_within_150_ms"]=report["rpg_heal_feedback"].get("p95_ms",float("inf"))<=150
+            if args.required_pack:
+                report["checks"]["everyone_received_the_same_full_pack"] = (
+                    list(report["resource_pack_copies_by_sha256"].values()) == [args.players]
+                    and report["resource_pack_bytes_received"] >= args.players * pack_test_bytes
+                )
             report["all_budgets_met"]=all(report["checks"].values())
             out.write_text(json.dumps(report,indent=2)+"\n")
             print(json.dumps({k:v for k,v in report.items() if k not in ("tick_windows","client_errors")},ensure_ascii=False), flush=True)
-            if result or (args.pigs and report["viewers_receiving_pigs"]!=args.players) or report["rpg_replies"]!=args.players or report["viewers_receiving_three_markers"]!=args.players:
+            functional_checks = [value for key, value in report["checks"].items()
+                                 if key.startswith("everyone_") or key == "compression_threshold_negotiated"]
+            if result or not all(functional_checks):
                 raise SystemExit(1)
+            if args.require_budgets and not report["all_budgets_met"]:
+                raise SystemExit(2)
         finally:
             fin.set()
             if builder is not None and builder.poll() is None:
