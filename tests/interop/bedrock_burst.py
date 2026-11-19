@@ -134,7 +134,10 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 for line in builder.stdout:
                     setup_log.write(line)
                     setup_log.flush()
-                    if line.startswith("ARENA_BUILDER_READY"): break
+                    if line.startswith("ARENA_BUILDER_READY"):
+                        match = re.search(r"threshold=(-?\d+)", line)
+                        advertised_threshold = int(match[1]) if match else None
+                        break
                 else: raise RuntimeError(f"Arena preparation client failed. See {setup_log.name}")
             command("forceload add -16 -16 16 16")
             deadline=time.monotonic()+50
@@ -213,6 +216,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
             report.update(tick_windows=samples, view_chunks=16,simulation_chunks=4,pigs_requested=args.pigs,
                 compression_threshold=args.threshold,execution="Windows x64 under Wine" if args.wine else "native",
                 motion_budget_ms=150,tick_budget_ms=50)
+            report["advertised_compression_threshold"] = advertised_threshold
             cpu_max=Path("/sys/fs/cgroup/cpu.max")
             if cpu_max.exists(): report["cohost_cpu_max"]=cpu_max.read_text().strip()
             report["clients_and_server_on_same_host"]=True
@@ -234,6 +238,7 @@ with tempfile.TemporaryDirectory(prefix="sculith-burst-") as tmp:
                 for label in ("join","play")
             }
             report["checks"]={
+                "compression_threshold_negotiated": advertised_threshold == min(args.threshold, 65535),
                 "everyone_spawned_and_alive": report["spawned"]==args.players==report["survived"],
                 "everyone_saw_a_measured_peer": report["viewers_with_matched_peer"]==args.players,
                 "everyone_granted_radius_16": report["clients_granted_radius_16"]==args.players,

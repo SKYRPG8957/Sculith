@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -345,8 +346,7 @@ func stats(data []float64) map[string]interface{} {
 	return result
 }
 
-// Keep the test area loaded while the driver builds the arena on a copied world.
-func dialSingle(address, name string) (*minecraft.Conn, error) {
+func dialSingle(address, name string, threshold *atomic.Int32) (*minecraft.Conn, error) {
 	var settings webrtc.SettingEngine
 	settings.SetIncludeLoopbackCandidate(true)
 	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
@@ -355,6 +355,13 @@ func dialSingle(address, name string) (*minecraft.Conn, error) {
 		return minecraft.NetherNet{Log: log, Dialer: nethernet.Dialer{API: api}}
 	})
 	d := minecraft.Dialer{}
+	if threshold != nil {
+		d.PacketFunc = func(h packet.Header, payload []byte, _, _ net.Addr) {
+			if h.PacketID == packet.IDNetworkSettings && len(payload) >= 2 {
+				threshold.Store(int32(binary.LittleEndian.Uint16(payload)))
+			}
+		}
+	}
 	d.IdentityData.DisplayName = name
 	d.IdentityData.Identity = uuid.NewSHA1(uuid.NameSpaceDNS, []byte(name)).String()
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -373,12 +380,14 @@ func dialSingle(address, name string) (*minecraft.Conn, error) {
 }
 
 func prepareWorld(address string) error {
-	c, err := dialSingle(address, "ArenaBuilder")
+	var threshold atomic.Int32
+	threshold.Store(-1)
+	c, err := dialSingle(address, "ArenaBuilder", &threshold)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	fmt.Printf("ARENA_BUILDER_READY %v\n", c.GameData().PlayerPosition)
+	fmt.Printf("ARENA_BUILDER_READY %v threshold=%d\n", c.GameData().PlayerPosition, threshold.Load())
 	go func() {
 		for {
 			if _, err := c.ReadPacket(); err != nil {
@@ -391,7 +400,7 @@ func prepareWorld(address string) error {
 }
 
 func rpgSmoke(address string) error {
-	player, err := dialSingle(address, "RpgProbe")
+	player, err := dialSingle(address, "RpgProbe", nil)
 	if err != nil {
 		return err
 	}
@@ -443,7 +452,7 @@ func rpgSmoke(address string) error {
 	}
 	player.Close()
 	time.Sleep(500 * time.Millisecond)
-	next, err := dialSingle(address, "RpgProbe")
+	next, err := dialSingle(address, "RpgProbe", nil)
 	if err != nil {
 		return err
 	}
