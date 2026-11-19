@@ -14,6 +14,13 @@ import time
 from shared_resources import configure, stop_server
 
 
+CPU_QUOTA_COUNTERS = {
+    "nr_periods": "host_cpu_quota_periods",
+    "nr_throttled": "host_cpu_throttled_periods",
+    "throttled_usec": "host_cpu_throttled_usec",
+}
+
+
 def host_counters(server_pid, client_pid):
     """Read cumulative Linux counters without instrumenting either packet path."""
     values = {"time": time.monotonic()}
@@ -37,6 +44,12 @@ def host_counters(server_pid, client_pid):
         if len(udp) == 2:
             counters = dict(zip(*udp))
             values["host_udp_rcvbuf_errors"] = int(counters["RcvbufErrors"])
+    cpu_stat = Path("/sys/fs/cgroup/cpu.stat")
+    if cpu_stat.is_file():
+        quota = dict(line.split() for line in cpu_stat.read_text().splitlines())
+        for name, label in CPU_QUOTA_COUNTERS.items():
+            if name in quota:
+                values[label] = int(quota[name])
     return values
 
 
@@ -47,7 +60,7 @@ def host_interval(start, end):
         key = f"{role}_cpu_s"
         if key in start and key in end and elapsed > 0:
             detail[f"{role}_mean_cpu_cores"] = round((end[key] - start[key]) / elapsed, 3)
-    for key in ("loopback_bytes", "host_udp_rcvbuf_errors"):
+    for key in ("loopback_bytes", "host_udp_rcvbuf_errors", *CPU_QUOTA_COUNTERS.values()):
         if key in start and key in end:
             detail[key] = end[key] - start[key]
     return detail
