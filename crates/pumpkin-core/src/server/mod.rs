@@ -77,7 +77,7 @@ enum WorldStep {
     RegionalDeadlines,
 }
 
-pub(crate) use block_edits::BlockEdit;
+pub(crate) use block_edits::BlockEdits;
 pub use block_edits::{BlockEditReceipt, BlockEditStatus};
 pub use recipe::RecipeManager;
 pub(crate) use transfer_checkpoint::StorageTransferError;

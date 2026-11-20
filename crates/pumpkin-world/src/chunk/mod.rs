@@ -275,6 +275,24 @@ impl ChunkHeightmapType {
     }
 }
 
+fn retains_block_bookkeeping(old: BlockStateId, new: BlockStateId) -> bool {
+    let old_state = old.to_state();
+    let new_state = new.to_state();
+    has_random_ticks(old) == has_random_ticks(new)
+        && has_random_ticking_fluid(old) == has_random_ticking_fluid(new)
+        && old_state.collision_shapes == new_state.collision_shapes
+        && old_state.block_entity_type == new_state.block_entity_type
+        && pumpkin_data::poi_type::PoiType::from_state_id(old.as_u16())
+            == pumpkin_data::poi_type::PoiType::from_state_id(new.as_u16())
+        && [
+            ChunkHeightmapType::WorldSurface,
+            ChunkHeightmapType::MotionBlocking,
+            ChunkHeightmapType::MotionBlockingNoLeaves,
+        ]
+        .iter()
+        .all(|kind| kind.is_opaque(old_state) == kind.is_opaque(new_state))
+}
+
 #[derive(Debug, Clone)]
 pub struct ChunkHeightmaps {
     pub world_surface: Option<Box<[i64]>>,
@@ -813,6 +831,57 @@ impl ChunkData {
         Some(old)
     }
 
+    pub(crate) fn try_apply_block_edit(
+        &self,
+        position: BlockPos,
+        expected: BlockStateId,
+        replacement: BlockStateId,
+        read_neighbor: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        can_commit: &dyn Fn() -> bool,
+        validate: &impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<bool> {
+        let mut sections = self.section.block_sections.try_write_unmarked()?;
+        let read = |pos: BlockPos| {
+            let (chunk, relative) = pos.chunk_and_chunk_relative_position();
+            if (chunk.x, chunk.y) == (self.x, self.z) {
+                self.section.read_block_from_palettes(&sections, relative)
+            } else {
+                read_neighbor(pos)
+            }
+        };
+        let old = read(position)?;
+        if old != expected {
+            return can_commit().then_some(false);
+        }
+        if old == replacement {
+            return can_commit().then_some(true);
+        }
+        if !retains_block_bookkeeping(old, replacement) || !validate(&read) || !can_commit() {
+            return None;
+        }
+        self.section.block_sections.mark_changed();
+        self.write_regional_block(&mut sections, position, replacement);
+        self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        Some(true)
+    }
+
+    // The decision already read these coordinates from the locked palettes.
+    fn write_regional_block(
+        &self,
+        sections: &mut [BlockPalette],
+        position: BlockPos,
+        state: BlockStateId,
+    ) {
+        let relative = position.chunk_relative_position();
+        let y = (relative.y - self.section.min_y) as usize;
+        sections[y / BlockPalette::SIZE].set(
+            relative.x as usize,
+            y % BlockPalette::SIZE,
+            relative.z as usize,
+            state,
+        );
+    }
+
     /// Commits a ready batch of isolated block property changes. Each decision reads
     /// the same chunk snapshot. A rejected decision leaves the entire batch ready.
     pub fn apply_ready_block_properties(
@@ -890,22 +959,7 @@ impl ChunkData {
                 if old == new {
                     continue;
                 }
-                let old_state = old.to_state();
-                let new_state = new.to_state();
-                if Block::from_state_id(new) != block
-                    || has_random_ticks(old) != has_random_ticks(new)
-                    || has_random_ticking_fluid(old) != has_random_ticking_fluid(new)
-                    || old_state.collision_shapes != new_state.collision_shapes
-                    || old_state.block_entity_type != new_state.block_entity_type
-                    || pumpkin_data::poi_type::PoiType::from_state_id(old.as_u16())
-                        != pumpkin_data::poi_type::PoiType::from_state_id(new.as_u16())
-                    || [
-                        ChunkHeightmapType::WorldSurface,
-                        ChunkHeightmapType::MotionBlocking,
-                    ]
-                    .iter()
-                    .any(|kind| kind.is_opaque(old_state) != kind.is_opaque(new_state))
-                {
+                if Block::from_state_id(new) != block || !retains_block_bookkeeping(old, new) {
                     return None;
                 }
                 changes.push((position, old, new));
@@ -917,15 +971,7 @@ impl ChunkData {
                 self.section.block_sections.mark_changed();
             }
             for &(position, _, new) in &changes {
-                // The earlier read validated these coordinates.
-                let (_, relative) = position.chunk_and_chunk_relative_position();
-                let y = (relative.y - self.section.min_y) as usize;
-                sections[y / BlockPalette::SIZE].set(
-                    relative.x as usize,
-                    y % BlockPalette::SIZE,
-                    relative.z as usize,
-                    new,
-                );
+                self.write_regional_block(sections, position, new);
             }
             self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
             Some(changes)
@@ -1211,9 +1257,31 @@ pub enum ChunkSerializingError {
 
 #[cfg(test)]
 mod tests {
-    use super::ChunkSections;
+    use super::{ChunkData, ChunkSections};
     use crate::chunk::palette::BlockPalette;
     use pumpkin_data::{Block, block_properties::has_random_ticks};
+    use pumpkin_util::math::position::BlockPos;
+
+    #[test]
+    fn regional_edit_checks_the_expected_state_and_current_owner() {
+        let chunk = ChunkData::empty(0, 0);
+        let pos = BlockPos::new(3, 64, 3);
+        let stone = Block::STONE.default_state.id;
+        let gold = Block::GOLD_BLOCK.default_state.id;
+        let air = Block::AIR.default_state.id;
+        chunk.set_block_absolute_y(3, 64, 3, stone);
+        let apply = |expected, replacement, owns| {
+            chunk.try_apply_block_edit(pos, expected, replacement, &|_| None, &|| owns, &|_| true)
+        };
+
+        assert_eq!(apply(stone, gold, false), None);
+        assert_eq!(apply(air, gold, true), Some(false));
+        assert_eq!(apply(stone, air, true), None);
+        assert_eq!(chunk.section.get_block_absolute_y(3, 64, 3), Some(stone));
+        assert_eq!(apply(stone, gold, true), Some(true));
+        assert_eq!(apply(stone, gold, true), Some(false));
+        assert_eq!(chunk.section.get_block_absolute_y(3, 64, 3), Some(gold));
+    }
 
     #[test]
     fn random_tick_cache_initializes_from_palette_contents() {

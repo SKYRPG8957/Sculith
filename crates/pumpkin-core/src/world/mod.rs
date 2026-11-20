@@ -299,8 +299,7 @@ pub struct World {
     pub(crate) player_admission: std::sync::Mutex<bool>,
     /// Serializes the world tick with moves into or out of this world and with unload.
     pub(crate) simulation: Arc<tokio::sync::Mutex<()>>,
-    pub(crate) block_edits:
-        std::sync::OnceLock<crossbeam::queue::ArrayQueue<crate::server::BlockEdit>>,
+    pub(crate) block_edits: std::sync::OnceLock<std::sync::Mutex<crate::server::BlockEdits>>,
     /// World departures and edits that must finish before shutdown can unload the world.
     pub(crate) pending_operations: std::sync::atomic::AtomicUsize,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
@@ -2407,6 +2406,16 @@ impl World {
             .chunks(owner)
             .is_some_and(|current| Arc::ptr_eq(current, chunks));
         let inhabited = owner != RegionLayout::INACTIVE;
+        let owns = |pos| {
+            let layout = self.region_layout.load();
+            layout
+                .chunks(owner)
+                .is_some_and(|extent| Arc::ptr_eq(extent, chunks))
+                && layout.owner(pos) == Some(owner)
+        };
+        if inhabited && same_extent {
+            self.apply_regional_block_edits(&owns);
+        }
         for &pos in chunks.iter() {
             if !same_extent && current.owner(pos) != Some(owner) {
                 continue;
@@ -2436,13 +2445,6 @@ impl World {
                 // The operation pins its own map entries. A neighboring chunk
                 // can hash to the same shard, so release the write guard first.
                 drop(chunk);
-                let owns = |pos| {
-                    let layout = self.region_layout.load();
-                    layout
-                        .chunks(owner)
-                        .is_some_and(|extent| Arc::ptr_eq(extent, chunks))
-                        && layout.owner(pos) == Some(owner)
-                };
                 let applied = if regional_block {
                     apply_regional_block_properties(
                         &self.level.loaded_chunks,

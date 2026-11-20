@@ -73,8 +73,8 @@ simulation job. The existing simulation pool executes world jobs and their
 parallel work. A busy world skips expired deadlines while other ready worlds
 can process packets, run simulation and synchronize their own clocks.
 
-Conditional plugin block edits run at the target world's boundary. Transfers
-reserve the source and destination before changing a player's membership.
+Conditional plugin block edits compare the expected block in its loaded chunk.
+Transfers reserve the source and destination before changing a player's membership.
 Automatic inventory checkpoints capture the worlds that contributed to the
 batch. Shutdown drains world jobs before kicking players and saving.
 
@@ -123,6 +123,16 @@ ready ticks see earlier decisions in that batch. The same ownership guard
 applies to the neighboring reads. Horizontal flow, other fluid interactions
 and observable flow or physics events use the world callbacks.
 
+On a regional deadline the owner can also apply queued Rust plugin block
+edits. The owner checks the expected state and its current extent under the
+palette lock. Edits can notify clients when their geometry, light and other
+chunk bookkeeping stay compatible and the adjacent shape checks have no
+callbacks to run. Requests stay ordered within a region. A deferred edit or
+an edit claimed by the world holds that region's subsequent requests while
+other regions can process theirs. The world applies remaining requests and
+runs edits during coordinated ticks and freezes. Wasm receipts use the same
+API and report success, staleness or unavailable worlds as before.
+
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
 use the region tick numbers at the world boundary and advance each chunk
@@ -139,7 +149,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 23.
+Native plugins use ABI 24.
 
 ## Shared resource delivery
 

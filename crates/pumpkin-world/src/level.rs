@@ -1305,6 +1305,30 @@ impl Level {
             .unwrap_or_else(|| self.schedule_tick_counts.fetch_add(1, Ordering::Relaxed))
     }
 
+    /// Conditionally writes one block within the caller's current region extent.
+    /// `None` defers the edit, while `Some(false)` reports a missing or changed block.
+    pub fn try_apply_regional_block_edit(
+        &self,
+        position: BlockPos,
+        expected: BlockStateId,
+        replacement: BlockStateId,
+        owns: impl Fn(Vector2<i32>) -> bool,
+        validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<bool> {
+        let pos = position.chunk_position();
+        if !owns(pos) {
+            return None;
+        }
+        let chunk = match self.loaded_chunks.try_get(&pos) {
+            TryResult::Present(chunk) => chunk.value().clone(),
+            TryResult::Absent => return Some(false),
+            TryResult::Locked => return None,
+        };
+        apply_regional_chunk_tick(&self.loaded_chunks, &chunk, owns, |chunk, read, commit| {
+            chunk.try_apply_block_edit(position, expected, replacement, read, commit, &validate)
+        })
+    }
+
     /// Commits scheduled water movement and its follow-up timers in a loaded chunk.
     ///
     /// `owns` must be backed by the same region permit as for block properties.
