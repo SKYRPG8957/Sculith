@@ -71,7 +71,7 @@ impl PacketRead for NetworkItemDescriptor {
         buf.read_exact(&mut user_data)?;
 
         let (nbt_data, place_on_blocks, destroy_blocks, shield_blocking_tick) =
-            read_user_data(user_data, id.0 == i32::from(BedrockItem::SHIELD.id))?;
+            read_user_data(&user_data, id.0 == i32::from(BedrockItem::SHIELD.id))?;
 
         Ok(Self {
             id,
@@ -129,7 +129,7 @@ impl NetworkItemDescriptor {
         let mut user_data = vec![0; len];
         reader.read_exact(&mut user_data)?;
         let (nbt_data, place_on_blocks, destroy_blocks, shield_blocking_tick) =
-            read_user_data(user_data, id.0 == i32::from(BedrockItem::SHIELD.id))?;
+            read_user_data(&user_data, id.0 == i32::from(BedrockItem::SHIELD.id))?;
         Ok(Self {
             id,
             stack_size,
@@ -265,7 +265,7 @@ impl PacketRead for ItemStackWrapper {
         buf.read_exact(&mut user_data)?;
 
         let (nbt_data, place_on_blocks, destroy_blocks, shield_blocking_tick) =
-            read_user_data(user_data, id == BedrockItem::SHIELD.id)?;
+            read_user_data(&user_data, id == BedrockItem::SHIELD.id)?;
 
         Ok(Self {
             id,
@@ -676,12 +676,12 @@ fn read_user_data_strings<R: Read>(reader: &mut R, legacy: bool) -> Result<Vec<S
 
 type ItemUserData = (Nbt, Vec<String>, Vec<String>, i64);
 
-fn read_user_data(user_data: Vec<u8>, is_shield: bool) -> Result<ItemUserData, Error> {
+fn read_user_data(user_data: &[u8], is_shield: bool) -> Result<ItemUserData, Error> {
     if user_data.is_empty() {
         return Ok((Nbt::default(), Vec::new(), Vec::new(), 0));
     }
 
-    let mut cursor = std::io::Cursor::new(user_data.as_slice());
+    let mut cursor = std::io::Cursor::new(user_data);
     let nbt_length = i16::read(&mut cursor)?;
     if nbt_length < -1 || (nbt_length == -1 && u8::read(&mut cursor)? != 1) {
         return Err(Error::new(
@@ -703,15 +703,15 @@ fn read_item_attributes(
     is_shield: bool,
     legacy: bool,
 ) -> Result<ItemUserData, Error> {
-    let nbt_data = if !has_nbt {
-        Nbt::default()
-    } else {
+    let nbt_data = if has_nbt {
         let result = if legacy {
             Nbt::read(&mut NbtReadHelperBedrock::new(&mut *cursor))
         } else {
             Nbt::read(&mut NbtReadHelperBedrockDisk::new(&mut *cursor))
         };
         result.map_err(|error| Error::new(ErrorKind::InvalidData, error))?
+    } else {
+        Nbt::default()
     };
     let place_on_blocks = read_user_data_strings(cursor, legacy)?;
     let destroy_blocks = read_user_data_strings(cursor, legacy)?;
@@ -759,7 +759,7 @@ mod tests {
         legacy.extend_from_slice(&[1, 0, 0, 0, 0, 5]);
         legacy.extend_from_slice(b"stone");
         legacy.extend_from_slice(&[0, 0, 0, 0]);
-        let (tags, place_on, destroy, blocking) = read_user_data(legacy, false).unwrap();
+        let (tags, place_on, destroy, blocking) = read_user_data(&legacy, false).unwrap();
         assert_eq!(tags.get_int("rank"), Some(20));
         assert_eq!(place_on, ["stone"]);
         assert!(destroy.is_empty());
