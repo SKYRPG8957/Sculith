@@ -729,9 +729,8 @@ impl InventoryPlan {
         {
             return false;
         }
-        let transfer = if !cursor_changed
-            && self.drops.is_empty()
-            && self.crosses_storage_boundaries(&*handler)
+        let transfer = if self.drops.is_empty()
+            && self.crosses_storage_boundaries(&*handler, cursor_changed)
             && let Some(server) = self.world.server.upgrade()
         {
             match server.prepare_storage_transfer(player, &*handler) {
@@ -764,7 +763,11 @@ impl InventoryPlan {
         true
     }
 
-    fn crosses_storage_boundaries(&self, handler: &dyn ScreenHandler) -> bool {
+    fn crosses_storage_boundaries(
+        &self,
+        handler: &dyn ScreenHandler,
+        cursor_changed: bool,
+    ) -> bool {
         let Some(storage) = handler
             .as_any()
             .downcast_ref::<GenericContainerScreenHandler>()
@@ -781,7 +784,7 @@ impl InventoryPlan {
                 .zip(&self.after[range])
                 .any(|(before, after)| !same_stack(before, after))
         };
-        if changed(0..count) && changed(count..self.before.len()) {
+        if changed(0..count) && (cursor_changed || changed(count..self.before.len())) {
             return true;
         }
         storage
@@ -1064,16 +1067,7 @@ impl BedrockClient {
                 storage_item: NetworkItemStackDescriptor::default(),
             });
         }
-        self.try_enqueue_client_packet(&CInventorySlot {
-            container_id: VarUInt(124),
-            slot: VarUInt(0),
-            full_container_name: Some(FullContainerName {
-                container_name: ContainerName::Cursor,
-                dynamic_id: None,
-            }),
-            storage_item: None,
-            item: NetworkItemStackDescriptor::from(&cursor),
-        });
+        super::send_bedrock_cursor_stack(self, &cursor);
         for (target, stack) in equipment {
             super::send_bedrock_inventory_slot(self, target, &stack);
         }

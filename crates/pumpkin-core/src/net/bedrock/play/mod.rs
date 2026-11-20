@@ -196,6 +196,10 @@ pub(crate) fn send_bedrock_inventory_slot(
     });
 }
 
+pub(crate) fn send_bedrock_cursor_stack(bedrock: &BedrockClient, stack: &ItemStack) {
+    send_bedrock_inventory_slot(bedrock, (124, ContainerName::Cursor, 0), stack);
+}
+
 pub mod actor_event;
 pub mod animate;
 pub mod block_actor_data;

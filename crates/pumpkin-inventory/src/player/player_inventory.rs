@@ -470,24 +470,35 @@ impl PlayerInventory {
     /// - `player` - The player to give the stack to
     pub fn offer(&self, stack: ItemStack, notify_client: bool, player: &dyn InventoryPlayer) {
         let mut stack = stack;
+        self.offer_to_slots(&mut stack, |slot| {
+            if notify_client {
+                player.enqueue_slot_set_packet(&CSetPlayerInventory::new(
+                    i32::from(slot).into(),
+                    &self.get_stack(slot as usize).into(),
+                ));
+            }
+        });
+        if !stack.is_empty() {
+            player.drop_item(stack, false);
+        }
+    }
+
+    /// Inserts as much as fits and reports each slot that changed.
+    pub(crate) fn offer_to_slots(&self, stack: &mut ItemStack, mut changed: impl FnMut(i16)) {
         while !stack.is_empty() {
-            let mut room_for_stack = self.get_occupied_slot_with_room_for_stack(&stack);
+            let mut room_for_stack = self.get_occupied_slot_with_room_for_stack(stack);
             if room_for_stack == -1 {
                 room_for_stack = self.get_empty_slot();
             }
 
             if room_for_stack == -1 {
-                player.drop_item(stack, false);
                 break;
             }
 
             let items_fit =
                 stack.get_max_stack_size() - self.get_stack(room_for_stack as usize).item_count;
-            if self.insert_stack(room_for_stack, &mut stack.split(items_fit)) && notify_client {
-                player.enqueue_slot_set_packet(&CSetPlayerInventory::new(
-                    i32::from(room_for_stack).into(),
-                    &self.get_stack(room_for_stack as usize).into(),
-                ));
+            if self.insert_stack(room_for_stack, &mut stack.split(items_fit)) {
+                changed(room_for_stack);
             }
         }
     }

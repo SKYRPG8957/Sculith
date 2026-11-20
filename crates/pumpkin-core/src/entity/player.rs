@@ -244,7 +244,8 @@ impl BedrockPlayer<'_> {
     }
 }
 use crate::net::bedrock::play::{
-    bedrock_inventory_slot, bedrock_player_inventory_slot, send_bedrock_inventory_slot,
+    bedrock_inventory_slot, bedrock_player_inventory_slot, send_bedrock_cursor_stack,
+    send_bedrock_inventory_slot,
 };
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::block_properties::HorizontalFacing;
@@ -271,6 +272,7 @@ use pumpkin_inventory::screen_handler::{
     ClickType, InventoryPlayer, ScreenHandler, ScreenHandlerBehaviour, ScreenHandlerFactory,
     ScreenHandlerListener, SharedScreenHandler,
 };
+use pumpkin_inventory::slot::Slot;
 use pumpkin_inventory::sync_handler::SyncHandler;
 use pumpkin_macros::send_cancellable;
 use pumpkin_nbt::compound::NbtCompound;
@@ -572,24 +574,69 @@ fn bedrock_container_type(window_type: Option<WindowType>, block: Option<&'stati
     }
 }
 
-fn is_direct_storage_click(handler: &dyn ScreenHandler, packet: &SClickSlot) -> bool {
-    let Some(storage) = handler
+enum StorageClickTarget {
+    Slot(Arc<dyn Slot>),
+    Cursor(Arc<Mutex<ItemStack>>),
+}
+
+impl StorageClickTarget {
+    fn stack(&self) -> ItemStack {
+        match self {
+            Self::Slot(slot) => slot.get_cloned_stack(),
+            Self::Cursor(cursor) => cursor
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone(),
+        }
+    }
+}
+
+fn storage_click_target(
+    handler: &dyn ScreenHandler,
+    packet: &SClickSlot,
+) -> Option<StorageClickTarget> {
+    let storage = handler
         .as_any()
-        .downcast_ref::<GenericContainerScreenHandler>()
-    else {
-        return false;
-    };
-    let Ok(slot) = usize::try_from(packet.slot) else {
-        return false;
-    };
+        .downcast_ref::<GenericContainerScreenHandler>()?;
+    let behaviour = handler.get_behaviour();
+    let storage_size = storage.inventory.size();
+    let slot = usize::try_from(packet.slot).ok();
     match packet.mode {
-        SlotActionType::QuickMove => handler
-            .get_behaviour()
+        SlotActionType::QuickMove => behaviour
             .slots
-            .get(slot)
-            .is_some_and(|slot| !slot.get_cloned_stack().is_empty()),
-        SlotActionType::Swap => slot < storage.inventory.size(),
-        _ => false,
+            .get(slot?)
+            .filter(|slot| !slot.get_cloned_stack().is_empty())
+            .cloned()
+            .map(StorageClickTarget::Slot),
+        SlotActionType::Pickup | SlotActionType::Swap => slot
+            .filter(|&index| index < storage_size)
+            .and_then(|index| behaviour.slots.get(index))
+            .cloned()
+            .map(StorageClickTarget::Slot),
+        SlotActionType::PickupAll if packet.button == 0 => {
+            let cursor = behaviour
+                .cursor_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let storage_slots = behaviour.slots.get(..storage_size)?;
+            (!cursor.is_empty()
+                && cursor.item_count < cursor.get_max_stack_size()
+                && storage_slots.iter().any(|slot| {
+                    slot.get_cloned_stack()
+                        .are_items_and_components_equal(&cursor)
+                }))
+            .then(|| StorageClickTarget::Cursor(behaviour.cursor_stack.clone()))
+        }
+        SlotActionType::QuickCraft
+            if (packet.button & 3) == 2
+                && behaviour
+                    .drag_slots
+                    .iter()
+                    .any(|&index| (index as usize) < storage_size) =>
+        {
+            Some(StorageClickTarget::Cursor(behaviour.cursor_stack.clone()))
+        }
+        _ => None,
     }
 }
 
@@ -746,6 +793,8 @@ pub struct Player {
     pub signature_cache: Mutex<MessageCache>,
     pub player_screen_handler: Arc<std::sync::Mutex<PlayerScreenHandler>>,
     pub current_screen_handler: std::sync::Mutex<Arc<std::sync::Mutex<dyn ScreenHandler>>>,
+    /// One carried stack follows the player through every inventory screen.
+    inventory_cursor: Arc<Mutex<ItemStack>>,
     pub screen_handler_sync_id: AtomicU8,
     pub screen_handler_listener: Arc<dyn ScreenHandlerListener>,
     pub inventory_changed: Arc<AtomicBool>,
@@ -965,12 +1014,10 @@ impl Player {
 
         let ender_chest_inventory = Arc::new(EnderChestInventory::new());
 
-        let player_screen_handler = Arc::new(std::sync::Mutex::new(PlayerScreenHandler::new(
-            &inventory,
-            None,
-            0,
-            Some(server.recipe_manager.clone()),
-        )));
+        let player_screen_handler =
+            PlayerScreenHandler::new(&inventory, None, 0, Some(server.recipe_manager.clone()));
+        let inventory_cursor = player_screen_handler.get_behaviour().cursor_stack.clone();
+        let player_screen_handler = Arc::new(Mutex::new(player_screen_handler));
 
         // Initialize abilities based on gamemode (like vanilla's GameMode.setAbilities())
         let mut abilities = Abilities::default();
@@ -1094,6 +1141,7 @@ impl Player {
             signature_cache: Mutex::new(MessageCache::default()),
             player_screen_handler: player_screen_handler.clone(),
             current_screen_handler: std::sync::Mutex::new(player_screen_handler),
+            inventory_cursor,
             screen_handler_sync_id: AtomicU8::new(0),
             screen_handler_listener: Arc::new(ScreenListener(inventory_changed.clone())),
             inventory_changed,
@@ -6988,6 +7036,7 @@ impl Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
+        screen_handler.get_behaviour_mut().cursor_stack = self.inventory_cursor.clone();
         screen_handler.add_listener(self.screen_handler_listener.clone());
         screen_handler.update_sync_handler(self.screen_handler_sync_handler.clone());
     }
@@ -7610,7 +7659,7 @@ impl Player {
                 .revision
                 .load(Ordering::Relaxed) as i32);
 
-        let transfer = if is_direct_storage_click(&*screen_handler, &packet) {
+        let transfer = if let Some(target) = storage_click_target(&*screen_handler, &packet) {
             if i32::from(screen_handler.sync_id()) != packet.sync_id.0
                 || !screen_handler.can_use(self.as_ref())
             {
@@ -7620,6 +7669,9 @@ impl Player {
             let transfer = match server.prepare_storage_transfer(self, &*screen_handler) {
                 Ok(transfer) => transfer,
                 Err(StorageTransferError::Busy) => {
+                    if packet.mode == SlotActionType::QuickCraft {
+                        screen_handler.get_behaviour_mut().drag_slots.clear();
+                    }
                     screen_handler.sync_state();
                     return;
                 }
@@ -7629,12 +7681,9 @@ impl Player {
                     return;
                 }
             };
-            transfer.and_then(|transfer| {
-                screen_handler
-                    .get_behaviour()
-                    .slots
-                    .get(slot as usize)
-                    .map(|slot| (transfer, slot.clone(), slot.get_cloned_stack()))
+            transfer.map(|transfer| {
+                let before = target.stack();
+                (transfer, target, before)
             })
         } else {
             None
@@ -7647,8 +7696,8 @@ impl Player {
             packet.mode.clone(),
             self.as_ref(),
         );
-        if let Some((transfer, slot, before)) = transfer
-            && !before.are_equal(&slot.get_cloned_stack())
+        if let Some((transfer, target, before)) = transfer
+            && !before.are_equal(&target.stack())
         {
             transfer.record();
         }
@@ -8453,7 +8502,19 @@ impl EntityBase for Player {
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         self.write_shoulders(nbt);
         nbt.put_int("DataVersion", DATA_VERSION);
-        self.inventory.write_nbt(nbt);
+        {
+            // Cursor moves and close restitution take this lock before changing inventory slots.
+            let cursor = self
+                .inventory_cursor
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.inventory.write_nbt(nbt);
+            if !cursor.is_empty() {
+                let mut item = NbtCompound::new();
+                cursor.write_item_stack(&mut item);
+                nbt.put_compound("SculithCursor", item);
+            }
+        }
         self.ender_chest_inventory.write_nbt(nbt);
 
         self.abilities
@@ -8573,6 +8634,16 @@ impl EntityBase for Player {
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
         self.read_shoulders(nbt);
         self.inventory.read_nbt_non_mut(nbt);
+        if let Some(mut cursor) = nbt
+            .get_compound("SculithCursor")
+            .and_then(ItemStack::read_item_stack)
+        {
+            self.inventory.insert_stack_anywhere(&mut cursor);
+            *self
+                .inventory_cursor
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = cursor;
+        }
         self.ender_chest_inventory.read_nbt_non_mut(nbt);
         self.living_entity
             .apply_current_equipment_attribute_modifiers();
@@ -9176,6 +9247,15 @@ impl InventoryPlayer for Player {
         self.gamemode.load() == GameMode::Spectator
     }
 
+    fn retain_cursor_on_close(&self) -> bool {
+        self.client.closed()
+            && self
+                .world()
+                .server
+                .upgrade()
+                .is_some_and(|server| server.player_data_storage.is_save_enabled())
+    }
+
     fn experience_level(&self) -> i32 {
         self.experience_level
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -9369,6 +9449,7 @@ impl InventoryPlayer for Player {
                         }
                     }
                 }
+                send_bedrock_cursor_stack(bedrock, &packet.carried_item.0);
             }
         }
     }
@@ -9459,25 +9540,7 @@ impl InventoryPlayer for Player {
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
-                use pumpkin_protocol::bedrock::{
-                    client::inventory_content::CInventoryContent,
-                    network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
-                };
-                use pumpkin_protocol::codec::var_uint::VarUInt;
-
-                let item_desc = NetworkItemStackDescriptor::from(&*packet.stack.0);
-                let bedrock_packet = CInventoryContent {
-                    container_id: VarUInt(59),
-                    slots: vec![item_desc],
-                    full_container_name: FullContainerName {
-                        container_name: ContainerName::Cursor,
-                        dynamic_id: None,
-                    },
-                    storage_item: NetworkItemStackDescriptor::default(),
-                };
-                if let Ok(data) = bedrock.serialize_packet(&bedrock_packet) {
-                    bedrock.try_enqueue_packet(data);
-                }
+                send_bedrock_cursor_stack(bedrock, &packet.stack.0);
             }
         }
     }

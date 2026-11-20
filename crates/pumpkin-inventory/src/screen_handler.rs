@@ -156,6 +156,11 @@ pub trait InventoryPlayer: Send + Sync {
         false
     }
 
+    /// Keep any cursor remainder attached to a departing player's saved data.
+    fn retain_cursor_on_close(&self) -> bool {
+        false
+    }
+
     /// Gets the player's experience level.
     fn experience_level(&self) -> i32;
 
@@ -401,12 +406,12 @@ pub trait ScreenHandler: Send + Sync {
 
     /// Called when the container is closed by the player.
     ///
-    /// Default implementation drops the cursor item.
+    /// Default implementation returns the cursor item to the player.
     fn on_closed(&mut self, player: &dyn InventoryPlayer) {
         self.default_on_closed(player);
     }
 
-    /// Default close behavior - drops the cursor item.
+    /// Returns the cursor item to the player and handles any remainder.
     fn default_on_closed(&mut self, player: &dyn InventoryPlayer) {
         let behaviour = self.get_behaviour_mut();
 
@@ -415,9 +420,28 @@ pub trait ScreenHandler: Send + Sync {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        if !cursor_stack_lock.is_empty() {
-            offer_or_drop_stack(player, cursor_stack_lock.clone());
-            *cursor_stack_lock = ItemStack::EMPTY.clone();
+        if cursor_stack_lock.is_empty() {
+            return;
+        }
+        let inventory = player.get_inventory();
+        if player.retain_cursor_on_close() {
+            inventory.offer_to_slots(&mut cursor_stack_lock, |_| {});
+            return;
+        }
+
+        let mut slots = Vec::new();
+        inventory.offer_to_slots(&mut cursor_stack_lock, |slot| slots.push(slot));
+        let remainder = std::mem::replace(&mut *cursor_stack_lock, ItemStack::EMPTY.clone());
+        // Slot notifications can synchronize another screen that shares this cursor.
+        drop(cursor_stack_lock);
+        for slot in slots {
+            player.enqueue_slot_set_packet(&CSetPlayerInventory::new(
+                i32::from(slot).into(),
+                &inventory.get_stack(slot as usize).into(),
+            ));
+        }
+        if !remainder.is_empty() {
+            player.drop_item(remainder, false);
         }
     }
 

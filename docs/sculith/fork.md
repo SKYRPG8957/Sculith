@@ -254,6 +254,14 @@ between the halves. A transfer across storage boundaries requires the open
 double chest's backing inventories to match the live pair. A replaced or
 disconnected half closes the stale screen when the player attempts the transfer.
 
+Java cursor pickup, placement, double-click collection, and drag completion
+enter the same checkpoint when they change a storage container. Bedrock stack
+requests can include the cursor in the player and container snapshot. Manual
+saves capture the carried stack as well. Rejoining first returns the saved stack
+to available inventory slots. Any remainder stays on the player's cursor and
+follows them between inventory screens. A disconnected player keeps an overflow
+stack in the saved cursor.
+
 The server captures touched players and terrain chunks at the end of the tick.
 One group can hold 256 distinct player and chunk targets, counting halves in the
 same chunk once. Clients get the resulting slots in memory, and the checkpoint
@@ -270,8 +278,7 @@ replays a published group before admitting players.
 Standalone Bedrock world export and conversion of entities, player data and
 other block-entity contents remain open.
 
-Automatic checkpoints for cursor gestures and automated container
-transfers remain open.
+Automatic checkpoints for item drops and automated container transfers remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack
