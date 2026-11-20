@@ -45,12 +45,6 @@ mod tests {
         assert_eq!(packet.missing_blobs[0].blob_id, u64::MAX);
         assert_eq!(packet.missing_blobs[0].blob_data.as_ref(), b"terrain");
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::serial::PacketWrite;
 
     #[test]
     fn blobs_are_written_as_id_then_length_prefixed_data() {
