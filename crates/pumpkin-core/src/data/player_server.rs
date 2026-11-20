@@ -11,7 +11,13 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
+use tokio::{
+    runtime::Handle,
+    sync::{Mutex, OwnedMutexGuard},
+    task::JoinHandle,
+};
 use tracing::{debug, error};
+use uuid::Uuid;
 
 /// Helper for managing player data in the server context.
 ///
@@ -19,6 +25,8 @@ use tracing::{debug, error};
 /// convenience methods for player handling.
 pub struct ServerPlayerData {
     storage: Arc<PlayerDataStorage>,
+    /// Orders capture and persistence together, including blocking writes whose callers leave.
+    save_order: Arc<Mutex<()>>,
     save_interval: Duration,
     last_save: AtomicCell<Instant>,
 }
@@ -28,6 +36,7 @@ impl ServerPlayerData {
     pub fn new(data_path: impl Into<PathBuf>, save_interval: Duration, enabled: bool) -> Self {
         Self {
             storage: Arc::new(PlayerDataStorage::new(data_path, enabled)),
+            save_order: Arc::new(Mutex::new(())),
             save_interval,
             last_save: AtomicCell::new(Instant::now()),
         }
@@ -44,7 +53,7 @@ impl ServerPlayerData {
     /// # Returns
     ///
     /// A Result indicating success or the error that occurred.
-    pub fn handle_player_leave(&self, player: &Arc<Player>) -> Result<(), PlayerDataError> {
+    pub async fn handle_player_leave(&self, player: &Arc<Player>) -> Result<(), PlayerDataError> {
         player
             .player_screen_handler
             .lock()
@@ -52,11 +61,7 @@ impl ServerPlayerData {
             .on_closed(player.as_ref());
         player.on_handled_screen_closed();
 
-        let mut nbt = NbtCompound::new();
-        player.write_nbt(&mut nbt);
-
-        self.storage.save_player_data(&player.gameprofile.id, nbt)?;
-        Ok(())
+        self.extract_data_and_save_player(player).await
     }
 
     /// Performs periodic maintenance tasks.
@@ -66,57 +71,36 @@ impl ServerPlayerData {
     pub fn tick(&self, server: &Server) {
         let now = Instant::now();
 
-        // Only save players periodically based on save_interval
-        let last_save = self.last_save.load();
-        let should_save = now.duration_since(last_save) >= self.save_interval;
-
-        if should_save && self.storage.is_save_enabled() {
-            self.last_save.store(now);
-            // Snapshot all online players periodically across all worlds
-            let mut snapshots = Vec::new();
-            for world in server.worlds.load().iter() {
-                for player in world.players.load().iter() {
-                    let mut nbt = NbtCompound::new();
-                    player.write_nbt(&mut nbt);
-                    snapshots.push((player.gameprofile.id, nbt));
-                }
-            }
-
-            if snapshots.is_empty() {
-                return;
-            }
-
-            let storage = self.storage.clone();
-            // The tick runs on a simulation thread with no Tokio context, so use the
-            // server's runtime handle instead of `tokio::task::spawn_blocking`.
-            server.runtime.spawn_blocking(move || {
-                for (uuid, nbt) in snapshots {
-                    if let Err(e) = storage.save_player_data(&uuid, nbt) {
-                        error!("Failed to save player data for {uuid}: {e}");
-                    }
-                }
-                debug!("Periodic player data save completed");
-            });
+        if !self.storage.is_save_enabled()
+            || now.duration_since(self.last_save.load()) < self.save_interval
+        {
+            return;
         }
+        // Leave at most one captured batch in flight. Retry the next tick if a save is busy.
+        let Ok(order) = self.save_order.clone().try_lock_owned() else {
+            return;
+        };
+        self.last_save.store(now);
+        let write = self.write_batch(&server.runtime, order, Self::capture_online(server));
+        server.spawn_task(async move {
+            match Self::finish_write(write).await {
+                Ok(()) => debug!("Periodic player data save completed"),
+                Err(err) => error!("Failed to save periodic player data: {err}"),
+            }
+        });
     }
 
     /// Saves all players' data immediately.
     ///
     /// This function immediately saves all online players' data to disk.
     /// Useful for server shutdown or backup operations.
-    pub fn save_all_players(&self, server: &Server) -> Result<(), PlayerDataError> {
-        let mut total_players = 0;
-
-        // Save players from all worlds
-        for world in server.worlds.load().iter() {
-            for player in world.players.load().iter() {
-                self.extract_data_and_save_player(player)?;
-                total_players += 1;
-            }
+    pub async fn save_all_players(&self, server: &Server) -> Result<(), PlayerDataError> {
+        if !self.storage.is_save_enabled() {
+            return Ok(());
         }
-
-        debug!("Saved data for {total_players} online players");
-        Ok(())
+        let order = self.save_order.clone().lock_owned().await;
+        let snapshots = Self::capture_online(server);
+        Self::finish_write(self.write_batch(&server.runtime, order, snapshots)).await
     }
 
     /// Loads player data and applies it to a player.
@@ -131,29 +115,14 @@ impl ServerPlayerData {
     /// # Returns
     ///
     /// A Result indicating success or the error that occurred.
-    pub fn load_data(&self, uuid: &uuid::Uuid) -> Result<Option<NbtCompound>, PlayerDataError> {
-        let result = self.storage.load_player_data(uuid);
+    pub fn load_data(&self, uuid: &Uuid) -> Result<Option<NbtCompound>, PlayerDataError> {
+        let (found, data) = self.storage.load_player_data(uuid)?;
+        Ok(found.then_some(data))
+    }
 
-        match result {
-            Ok((should_load, data)) => {
-                if !should_load {
-                    // No data to load, continue with default data
-                    return Ok(None);
-                }
-                Ok(Some(data))
-            }
-            Err(e) => {
-                if self.storage.is_save_enabled() {
-                    // Only log as error if player data saving is enabled
-                    error!("Error loading player data for {uuid}: {e}");
-                } else {
-                    // Otherwise just log as info since it's expected
-                    debug!("Not loading player data for {uuid} (saving disabled)");
-                }
-                // Continue with default data even if there's an error
-                Ok(None)
-            }
-        }
+    /// Finishes the previous process's committed batch before a player can join.
+    pub fn recover(&self) -> Result<(), PlayerDataError> {
+        self.storage.recover()
     }
 
     /// Extracts and saves data from a player.
@@ -167,17 +136,48 @@ impl ServerPlayerData {
     /// # Returns
     ///
     /// A Result indicating success or the error that occurred.
-    pub fn extract_data_and_save_player(&self, player: &Player) -> Result<(), PlayerDataError> {
+    pub async fn extract_data_and_save_player(
+        &self,
+        player: &Player,
+    ) -> Result<(), PlayerDataError> {
         if !self.storage.is_save_enabled() {
             return Ok(());
         }
 
-        let uuid = player.gameprofile.id;
+        let order = self.save_order.clone().lock_owned().await;
+        let snapshots = vec![Self::capture(player)];
+        Self::finish_write(self.write_batch(&Handle::current(), order, snapshots)).await
+    }
+
+    fn capture_online(server: &Server) -> Vec<(Uuid, NbtCompound)> {
+        let mut snapshots = Vec::new();
+        server.for_each_player(|player| snapshots.push(Self::capture(player)));
+        snapshots
+    }
+
+    fn capture(player: &Player) -> (Uuid, NbtCompound) {
         let mut nbt = NbtCompound::new();
         player.write_nbt(&mut nbt);
+        (player.gameprofile.id, nbt)
+    }
 
-        self.storage.save_player_data(&uuid, nbt)?;
-        Ok(())
+    fn write_batch(
+        &self,
+        runtime: &Handle,
+        order: OwnedMutexGuard<()>,
+        snapshots: Vec<(Uuid, NbtCompound)>,
+    ) -> JoinHandle<Result<(), PlayerDataError>> {
+        let storage = self.storage.clone();
+        runtime.spawn_blocking(move || {
+            let _order = order;
+            storage.save_batch(snapshots)
+        })
+    }
+
+    async fn finish_write(
+        write: JoinHandle<Result<(), PlayerDataError>>,
+    ) -> Result<(), PlayerDataError> {
+        write.await.map_err(std::io::Error::other)?
     }
 }
 

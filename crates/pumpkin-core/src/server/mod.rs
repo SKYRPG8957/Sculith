@@ -248,6 +248,19 @@ impl Server {
             }
         };
 
+        let players_dir = world_path.join("players");
+        let player_data_storage = ServerPlayerData::new(
+            players_dir.join("data"),
+            Duration::from_secs(advanced_config.player_data.save_player_cron_interval),
+            advanced_config.player_data.save_player_data,
+        );
+        player_data_storage.recover().map_err(|err| {
+            WorldInfoError::IoError(std::io::Error::other(format!(
+                "Failed to recover player data in {}: {err}",
+                players_dir.display()
+            )))
+        })?;
+
         let mut level_info = level_info;
         if basic_config.hardcore {
             level_info.difficulty = Difficulty::Hard;
@@ -268,12 +281,6 @@ impl Server {
         let defaultgamemode = std::sync::Mutex::new(DefaultGamemode {
             gamemode: basic_config.default_gamemode,
         });
-        let players_dir = world_path.join("players");
-        let player_data_storage = ServerPlayerData::new(
-            players_dir.join("data"),
-            Duration::from_secs(advanced_config.player_data.save_player_cron_interval),
-            advanced_config.player_data.save_player_data,
-        );
         let advancement_manager = Arc::new(AdvancementManager::new(
             players_dir.clone(),
             advanced_config.advancement.enabled,
@@ -648,7 +655,7 @@ impl Server {
             return Err(format!("Failed to save world info: {err}"));
         }
 
-        if let Err(err) = self.player_data_storage.save_all_players(self) {
+        if let Err(err) = self.player_data_storage.save_all_players(self).await {
             error!("Failed to save player data: {err}");
             return Err(format!("Failed to save player data: {err}"));
         }
@@ -715,10 +722,10 @@ impl Server {
     /// You still have to spawn the `Player` in a `World` to let them join and make them visible.
     fn load_player_world(
         &self,
-        id: &uuid::Uuid,
+        data: Option<pumpkin_nbt::compound::NbtCompound>,
     ) -> Option<(Arc<World>, Option<pumpkin_nbt::compound::NbtCompound>)> {
         let first_world = self.worlds.load().first().cloned()?;
-        let Ok(Some(data)) = self.player_data_storage.load_data(id) else {
+        let Some(data) = data else {
             return Some((first_world, None));
         };
         let Some(dimension_key) = data.get_string("Dimension") else {
@@ -743,7 +750,18 @@ impl Server {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .gamemode;
 
-        let (world, nbt) = self.load_player_world(&profile.id)?;
+        let data = match self.player_data_storage.load_data(&profile.id) {
+            Ok(data) => data,
+            Err(err) => {
+                error!("Failed to load player data for {}: {err}", profile.id);
+                client.try_kick(
+                    DisconnectReason::Unknown,
+                    &TextComponent::text("Your player data could not be loaded"),
+                );
+                return None;
+            }
+        };
+        let (world, nbt) = self.load_player_world(data)?;
 
         let mut player = Player::new(
             client,

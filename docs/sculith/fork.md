@@ -222,10 +222,24 @@ Synchronous region flushes sync the payloads before publishing the journal and
 sync the region header before removing it. The recovery unit is one region
 header. Read-only Anvil tools can use the recovered header in memory.
 
+## Player save batches
+
+`[player_data].save_player_cron_interval` in `sculith.toml` sets the interval between
+periodic player snapshots. A manual save and a normal shutdown also capture
+online players as one batch. On disconnect, the same writer saves the departing
+player's inventory and other player NBT.
+
+The writer syncs and publishes `.sculith-player-save` inside `world/players/data`
+before replacing the affected `.dat` files. The server replays a published batch on
+startup before admitting players. A damaged journal or failed replay prevents the
+server from opening the world and leaves the journal available for inspection.
+
 ## Remaining work
 
 Standalone Bedrock world export and conversion of entities, player data and
 other block-entity contents remain open.
+
+Atomic item transfers across player data and a separate world container remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack
