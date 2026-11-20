@@ -4898,6 +4898,9 @@ impl Player {
                 let pitch = event.pitch;
                 let new_world = event.new_world;
 
+                if !self.teleport_destination_allowed(&server, position).await {
+                    return;
+                }
                 let destination = world_transfer::WorldPosition {
                     world: new_world.clone(),
                     position,
@@ -4965,7 +4968,7 @@ impl Player {
                 new_world.send_world_info(self);
                 new_world.send_center_chunk(self).await;
 
-                self.request_teleport(position, yaw, pitch);
+                self.send_committed_world_position(position, yaw, pitch);
 
                 drop(change);
                 let mut changed_world_event = crate::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent {
@@ -4998,35 +5001,51 @@ impl Player {
         }
     }
 
+    async fn teleport_destination_allowed(
+        self: &Arc<Self>,
+        server: &Arc<Server>,
+        position: Vector3<f64>,
+    ) -> bool {
+        let mut event =
+            PlayerTeleportEvent::new(self.clone(), self.get_entity().pos.load(), position);
+        server.plugin_manager.fire(server, &mut event).await;
+        !event.cancelled
+    }
+
     /// `yaw` and `pitch` are in degrees.
     /// Rarly used, for example when waking up the player from a bed or their first time spawn. Otherwise, the `teleport` method should be used.
     /// The player should respond with the `SConfirmTeleport` packet.
     pub fn request_teleport(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
-        // This is the ultra special magic code used to create the teleport id
-        // This returns the old value
-        // This operation wraps around on overflow.
         let Some(server) = self.world().server.upgrade() else {
             return;
         };
         if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id) {
-            let mut event = PlayerTeleportEvent {
-                player: player_arc,
-                from: self.living_entity.entity.pos.load(),
-                to: position,
-                cancelled: false,
-            };
+            let mut event =
+                PlayerTeleportEvent::new(player_arc, self.get_entity().pos.load(), position);
             server.plugin_manager.fire_blocking(&server, &mut event);
             if event.cancelled {
                 return;
             }
         }
 
-        let i = self.teleport_id_count.fetch_add(1, Ordering::Relaxed);
         self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
-        let teleport_id = i + 1;
-        self.living_entity.entity.set_pos(position);
-        let entity = &self.living_entity.entity;
+        let entity = self.get_entity();
+        entity.set_pos(position);
         entity.set_rotation(yaw, pitch);
+        self.send_teleport_position(position, yaw, pitch);
+    }
+
+    /// Synchronizes a position already applied at the simulation boundary.
+    fn send_committed_world_position(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
+        self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
+        self.send_teleport_position(position, yaw, pitch);
+    }
+
+    fn send_teleport_position(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
+        let teleport_id = self
+            .teleport_id_count
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1);
         // Moves are ignored until the client confirms (teleport confirmation was added in 1.9).
         if !matches!(
             self.client.as_ref(),

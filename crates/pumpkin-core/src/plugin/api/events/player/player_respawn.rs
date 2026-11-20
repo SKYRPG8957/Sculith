@@ -15,11 +15,9 @@ use super::PlayerEvent;
 /// [`PlayerChangeWorldEvent`](super::player_change_world::PlayerChangeWorldEvent)
 /// fires first, before the world transfer; this event fires after the transfer
 /// and reflects the world the player actually ended up in — including
-/// `PlayerChangeWorldEvent` redirects and a fallback to the previous world's
-/// spawn when that event is cancelled or the destination becomes unavailable.
-/// See that event's docs for
-/// the mutation-vs-cancellation semantics; in particular, edits made by a
-/// cancelled `PlayerChangeWorldEvent` do not carry over here.
+/// `PlayerChangeWorldEvent` redirects. Cancelling the world change or the
+/// [`PlayerTeleportEvent`](super::player_teleport::PlayerTeleportEvent), or losing
+/// the target before it commits, sends the player to the previous world's spawn.
 #[derive(Event, Clone)]
 pub struct PlayerRespawnEvent {
     /// The player who respawned.

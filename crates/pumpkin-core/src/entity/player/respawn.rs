@@ -111,7 +111,7 @@ impl SavedRespawn {
             let above = world.get_block_state_if_loaded(&pos.up())?;
             return ((state.is_air() || !state.is_solid())
                 && (above.is_air() || !above.is_solid()))
-            .then(|| (pos.to_f64() + Vector3::new(0.5, 0.1, 0.5), None));
+            .then(|| (pos.to_f64() + Vector3::new(0.0, 0.1, 0.0), None));
         }
         let block = Block::from_state_id(state.id);
         if block.has_tag(&tag::Block::MINECRAFT_BEDS) {
@@ -347,6 +347,13 @@ impl Player {
                 };
             }
         }
+        if !self
+            .teleport_destination_allowed(server, destination.position)
+            .await
+        {
+            destination = world_spawn(source).await;
+            saved = None;
+        }
 
         let mut notify_invalid = invalid.is_some();
         let respawn = RespawnCommit {
@@ -481,7 +488,7 @@ impl Player {
         }
         world.send_world_info(self);
         world.send_center_chunk(self).await;
-        self.request_teleport(position, yaw, pitch);
+        self.send_committed_world_position(position, yaw, pitch);
         world.refresh_java_player_for_bedrock(self).await;
 
         if matches!(request, RespawnRequest::Death) && self.client.java().is_some() {

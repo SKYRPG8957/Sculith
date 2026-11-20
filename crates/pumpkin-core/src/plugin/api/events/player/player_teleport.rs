@@ -8,7 +8,9 @@ use super::PlayerEvent;
 
 /// An event that occurs when a player teleports.
 ///
-/// If the event is cancelled, the teleportation will not happen.
+/// The handler sees the source position before a world transfer is committed.
+/// Cancelling a teleport keeps the player at the source. Cancelling the proposed
+/// destination during respawn lets the player respawn at the source world's spawn.
 ///
 /// This event contains information about the player, the position from which the player teleported, and the position to which the player teleported.
 #[cancellable]
