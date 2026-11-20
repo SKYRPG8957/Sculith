@@ -86,7 +86,7 @@ mod tests {
         encoded[0] = 0xc0;
         encoded[9] = 0x82;
         encoded.push(0x10);
-        [1.0_f32; 12].write(&mut encoded).unwrap();
+        [1.0f32; 12].write(&mut encoded).unwrap();
         VarLong(-42).write(&mut encoded).unwrap();
         true.write(&mut encoded).unwrap();
 
