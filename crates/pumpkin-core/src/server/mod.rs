@@ -60,6 +60,7 @@ pub(crate) mod debug_profiler;
 pub mod enchantment;
 mod key_store;
 pub mod recipe;
+mod region_scheduler;
 pub mod scheduler;
 pub mod seasonal_events;
 pub mod server_test_manager;
@@ -68,6 +69,13 @@ pub mod tick_rate_manager;
 pub mod ticker;
 mod transfer_checkpoint;
 mod world_scheduler;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WorldStep {
+    NetworkOnly,
+    Coordinated,
+    RegionalDeadlines,
+}
 
 pub(crate) use block_edits::BlockEdit;
 pub use block_edits::{BlockEditReceipt, BlockEditStatus};
@@ -1416,7 +1424,7 @@ impl Server {
     pub fn tick_players_and_network(self: &Arc<Self>) {
         for world in self.worlds.load().iter() {
             if let Some(ownership) = world.try_simulation() {
-                self.tick_owned_world(world, ownership, false, false);
+                self.tick_owned_world(world, ownership, WorldStep::NetworkOnly, false);
             }
         }
     }
@@ -1437,7 +1445,7 @@ impl Server {
         let worlds = self.worlds.load();
         worlds.par_iter().for_each(|world| {
             if let Some(ownership) = world.try_simulation() {
-                self.tick_owned_world(world, ownership, true, false);
+                self.tick_owned_world(world, ownership, WorldStep::Coordinated, false);
             }
         });
         self.player_data_storage.tick(self);
@@ -1447,7 +1455,7 @@ impl Server {
         self: &Arc<Self>,
         world: &Arc<World>,
         _ownership: tokio::sync::OwnedMutexGuard<()>,
-        simulate: bool,
+        mode: WorldStep,
         sync_time: bool,
     ) {
         if self.stop_token.is_cancelled() || !world.is_open() {
@@ -1458,17 +1466,19 @@ impl Server {
             world.synchronize_local_time();
         }
         world.apply_block_edits();
-        if simulate {
-            world.tick(self);
-        } else {
-            world.flush_block_updates();
-            world.flush_synced_block_events();
-            let players = world.players.load();
-            world.process_player_packets(&players);
-            players
-                .par_iter()
-                .filter(|player| player.can_tick_in(world))
-                .for_each(|player| player.tick(self));
+        match mode {
+            WorldStep::Coordinated => world.tick(self),
+            WorldStep::RegionalDeadlines => world.tick_with_region_deadlines(self),
+            WorldStep::NetworkOnly => {
+                world.flush_block_updates();
+                world.flush_synced_block_events();
+                let players = world.players.load();
+                world.process_player_packets(&players);
+                players
+                    .par_iter()
+                    .filter(|player| player.can_tick_in(world))
+                    .for_each(|player| player.tick(self));
+            }
         }
         world.apply_entity_chunk_changes();
         world.flush_block_updates();

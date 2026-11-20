@@ -13,30 +13,30 @@ use std::{
 use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
-use super::Server;
+use super::{
+    Server, WorldStep,
+    region_scheduler::{RegionSchedule, next_deadline},
+};
 
 struct WorldClock {
     next_tick: Instant,
     ticks_until_sync: u8,
     last_seen: u64,
+    regions: RegionSchedule,
 }
 
 impl WorldClock {
-    const fn new(now: Instant) -> Self {
+    fn new(now: Instant) -> Self {
         Self {
             next_tick: now,
             ticks_until_sync: 20,
             last_seen: 0,
+            regions: RegionSchedule::default(),
         }
     }
 
     fn advance(&mut self, now: Instant, period: Duration) -> bool {
-        // Catch up one late tick without queueing every missed deadline.
-        self.next_tick = if now.duration_since(self.next_tick) >= period {
-            now + period
-        } else {
-            self.next_tick + period
-        };
+        self.next_tick = next_deadline(self.next_tick, now, period);
         self.ticks_until_sync -= 1;
         if self.ticks_until_sync == 0 {
             self.ticks_until_sync = 20;
@@ -118,17 +118,22 @@ impl WorldScheduler {
 
     pub(super) fn dispatch_transfers(&self, server: &Arc<Server>) {
         server.for_each_ready_transfer(|transfer, reservation| {
-            self.spawn(server, move |server| transfer.apply(server, reservation));
+            self.jobs
+                .spawn(server, move |server| transfer.apply(server, reservation));
         });
     }
 
-    /// Returns the earliest future deadline. A busy overdue world relies on its completion
-    /// waking this ticker. It never prevents another ready world from being dispatched.
+    /// Returns the earliest future deadline. A busy owner wakes this ticker when its
+    /// work finishes. Ready regions and worlds can be dispatched in the meantime.
     pub(super) fn poll(&mut self, server: &Arc<Server>, period: Duration) -> Option<Duration> {
         let now = Instant::now();
         let worlds = server.worlds.load();
         self.poll_number = self.poll_number.wrapping_add(1);
-        let simulate = !server.tick_rate_manager.is_frozen();
+        let mode = if server.tick_rate_manager.is_frozen() {
+            WorldStep::NetworkOnly
+        } else {
+            WorldStep::RegionalDeadlines
+        };
         let mut next = None;
         for world in worlds.iter() {
             let clock = self
@@ -136,30 +141,57 @@ impl WorldScheduler {
                 .entry(world.uuid)
                 .or_insert_with(|| WorldClock::new(now));
             clock.last_seen = self.poll_number;
-            let deadline = if clock.next_tick <= now {
+            if mode == WorldStep::RegionalDeadlines {
+                let region_deadline = clock.regions.poll(
+                    world.region_layout.load_full(),
+                    now,
+                    period,
+                    |owner, chunks, permit| {
+                        let Ok(activity) = world.region_activity.clone().try_read_owned() else {
+                            return false;
+                        };
+                        let world = world.clone();
+                        self.jobs.spawn(server, move |server| {
+                            let _activity = activity;
+                            let _permit = permit;
+                            if !server.stop_token.is_cancelled() {
+                                world.advance_region_inhabitation(owner, &chunks);
+                                tracing::trace!(world = %world.uuid, region = owner, "Regional chunk time step finished");
+                            }
+                        });
+                        true
+                    },
+                );
+                next = next.into_iter().chain(region_deadline).min();
+            }
+            if clock.next_tick <= now {
                 let Some(ownership) = world.try_simulation() else {
                     continue;
                 };
                 let sync_time = clock.advance(now, period);
-                let deadline = clock.next_tick;
                 let world = world.clone();
-                self.spawn(server, move |server| {
-                    server.tick_owned_world(&world, ownership, simulate, sync_time);
+                self.jobs.spawn(server, move |server| {
+                    server.tick_owned_world(&world, ownership, mode, sync_time);
                 });
-                deadline
-            } else {
-                clock.next_tick
-            };
-            next = Some(next.map_or(deadline, |earliest: Instant| earliest.min(deadline)));
+            }
+            next = Some(next.map_or(clock.next_tick, |earliest: Instant| {
+                earliest.min(clock.next_tick)
+            }));
         }
         self.clocks
             .retain(|_, clock| clock.last_seen == self.poll_number);
         next.map(|deadline| deadline.saturating_duration_since(Instant::now()))
     }
+}
 
-    fn spawn(&self, server: &Arc<Server>, run: impl FnOnce(&Arc<Server>) + Send + 'static) {
-        self.jobs.pending.fetch_add(1, Ordering::Relaxed);
-        let job = Job(self.jobs.clone());
+impl RunningJobs {
+    fn spawn(
+        self: &Arc<Self>,
+        server: &Arc<Server>,
+        run: impl FnOnce(&Arc<Server>) + Send + 'static,
+    ) {
+        self.pending.fetch_add(1, Ordering::Relaxed);
+        let job = Job(self.clone());
         let owner = server.clone();
         server.simulation_pool.spawn_fifo(move || {
             let started = Instant::now();

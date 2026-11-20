@@ -1,29 +1,43 @@
-use std::{cmp::Reverse, collections::hash_map::Entry};
+use std::{cmp::Reverse, collections::hash_map::Entry, sync::Arc};
 
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::level::ScheduledTickGroup;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-/// Chunk ownership for collecting pending block and fluid ticks.
+pub type RegionId = usize;
+pub type RegionChunks = Arc<[Vector2<i32>]>;
+
+/// Published after membership changes. A dispatched job retains its original extent.
+#[derive(Default)]
+pub struct RegionLayout {
+    pub(crate) owners: FxHashMap<Vector2<i32>, RegionId>,
+    pub(crate) regions: FxHashMap<RegionId, RegionChunks>,
+}
+
 #[derive(Default)]
 pub(super) struct TickRegions {
-    owners: FxHashMap<Vector2<i32>, usize>,
-    next_ticks: FxHashMap<usize, u64>,
-    next_owner: usize,
+    layout: Arc<RegionLayout>,
+    next_ticks: FxHashMap<RegionId, u64>,
+    next_owner: RegionId,
     needs_rebuild: bool,
 }
 
 #[derive(Default)]
 struct Component {
     anchor: (i32, i32),
-    overlaps: FxHashMap<usize, usize>,
+    overlaps: FxHashMap<RegionId, usize>,
     next_tick: u64,
-    owner: Option<usize>,
+    owner: Option<RegionId>,
+    chunks: Vec<Vector2<i32>>,
 }
 
 impl TickRegions {
     pub(super) const fn active_chunks_changed(&mut self) {
         self.needs_rebuild = true;
+    }
+
+    pub(super) const fn layout(&self) -> &Arc<RegionLayout> {
+        &self.layout
     }
 
     pub(super) fn step_scheduled(
@@ -38,7 +52,7 @@ impl TickRegions {
         let mut groups: FxHashMap<Option<usize>, Vec<_>> = FxHashMap::default();
         for chunk in scheduled {
             // Loaded chunks without an active owner still have advancing timers.
-            let owner = self.owners.get(&chunk).copied();
+            let owner = self.layout.owners.get(&chunk).copied();
             groups.entry(owner).or_default().push(chunk);
         }
         let plan = groups
@@ -73,7 +87,8 @@ impl TickRegions {
             visit.push(start);
             while let Some(chunk) = visit.pop() {
                 component.anchor = component.anchor.min((chunk.x, chunk.y));
-                if let Some(&owner) = self.owners.get(&chunk) {
+                component.chunks.push(chunk);
+                if let Some(&owner) = self.layout.owners.get(&chunk) {
                     *component.overlaps.entry(owner).or_default() += 1;
                     component.next_tick = component.next_tick.max(self.next_ticks[&owner]);
                 }
@@ -110,6 +125,7 @@ impl TickRegions {
         }
 
         self.next_ticks.clear();
+        let mut region_chunks = FxHashMap::default();
         let component_owners: Vec<_> = components
             .into_iter()
             .map(|component| {
@@ -119,13 +135,17 @@ impl TickRegions {
                     owner
                 });
                 self.next_ticks.insert(owner, component.next_tick);
+                region_chunks.insert(owner, component.chunks.into());
                 owner
             })
             .collect();
         for owner in owners.values_mut() {
             *owner = component_owners[*owner];
         }
-        self.owners = owners;
+        self.layout = Arc::new(RegionLayout {
+            owners,
+            regions: region_chunks,
+        });
         let regions = self.next_ticks.len();
         if previous != regions {
             tracing::trace!(
@@ -153,20 +173,21 @@ mod tests {
         let mut regions = TickRegions::default();
         regions.active_chunks_changed();
         regions.step_scheduled(&active, Vec::new());
-        let original_owner = regions.owners[&east];
+        let original_owner = regions.layout.owners[&east];
 
         active.remove(&bridge);
         regions.active_chunks_changed();
         regions.step_scheduled(&active, Vec::new());
-        assert_eq!(regions.owners[&west], original_owner);
-        assert_eq!(regions.owners[&west_edge], original_owner);
-        assert_ne!(regions.owners[&east], original_owner);
+        assert_eq!(regions.layout.owners[&west], original_owner);
+        assert_eq!(regions.layout.owners[&west_edge], original_owner);
+        assert_ne!(regions.layout.owners[&east], original_owner);
 
         active.insert(bridge);
         regions.active_chunks_changed();
         regions.step_scheduled(&active, Vec::new());
         assert!(
             regions
+                .layout
                 .owners
                 .values()
                 .all(|&owner| owner == original_owner)

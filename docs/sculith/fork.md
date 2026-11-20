@@ -100,6 +100,17 @@ When a chunk changes owners, its pending timers use the new clock with
 the same remaining delay. Saved chunks store that delay and rebuild their
 timers on activation.
 
+On ordinary ticks, the server schedules each active region's chunk inhabited
+time on its own deadline. This time contributes to local difficulty and uses
+the existing chunk save fields. After a merge or split, new jobs inherit the
+latest relevant deadline and wait only for jobs whose chunk extents overlap.
+A late owner drops missed starts and cannot accumulate a queue of catch-up
+ticks. Freeze pauses this clock. Coordinated steps and sprints advance chunk
+time once per requested world tick.
+
+Scheduled block and fluid callbacks, entity AI, player packets and entity
+chunk residency still use world phases.
+
 Player movement registers the new view before entity chunk readers run.
 Readers share one disk request for a chunk and return its position to the
 world. At the end of the owned world step, the world checks current watchers,
@@ -107,7 +118,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 19.
+Native plugins use ABI 20.
 
 ## Shared resource delivery
 

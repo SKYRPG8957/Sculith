@@ -42,6 +42,7 @@ pub mod raid;
 pub mod random_sequences;
 pub mod stopwatches;
 mod tick_regions;
+pub(crate) use tick_regions::{RegionChunks, RegionId, RegionLayout};
 pub mod time;
 pub mod village_siege;
 pub mod wandering_trader_spawner;
@@ -281,6 +282,9 @@ pub struct World {
     /// Entities spawned by ticking entities, with their sequential order.
     tick_spawns: std::sync::Mutex<Vec<(u64, i32)>>,
     active_chunk_tracker: std::sync::Mutex<ActiveChunkTracker>,
+    pub(crate) region_layout: ArcSwap<RegionLayout>,
+    /// Allows independent region work while keeping level shutdown exclusive.
+    pub(crate) region_activity: Arc<tokio::sync::RwLock<()>>,
     entity_chunk_changes: entity_chunks::EntityChunkChanges,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
     /// Block entities indexed by chunk, so ticking only visits the currently
@@ -455,6 +459,8 @@ impl World {
             navigation_change_sequence: std::sync::atomic::AtomicU64::new(0),
             tick_spawns: std::sync::Mutex::new(Vec::new()),
             active_chunk_tracker: std::sync::Mutex::new(ActiveChunkTracker::default()),
+            region_layout: ArcSwap::from_pointee(RegionLayout::default()),
+            region_activity: Arc::default(),
             entity_chunk_changes: entity_chunks::EntityChunkChanges::default(),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
             server,
@@ -669,6 +675,8 @@ impl World {
     }
 
     pub async fn shutdown(&self) {
+        let _region_shutdown = self.region_activity.write().await;
+        self.region_layout.store(Arc::default());
         let entities = self.entities.load_full();
         self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
             .await;
@@ -1686,8 +1694,16 @@ impl World {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    #[expect(clippy::too_many_lines)]
     pub fn tick(self: &Arc<Self>, server: &Arc<Server>) {
+        self.tick_simulation(server, true);
+    }
+
+    pub(crate) fn tick_with_region_deadlines(self: &Arc<Self>, server: &Arc<Server>) {
+        self.tick_simulation(server, false);
+    }
+
+    #[expect(clippy::too_many_lines)]
+    fn tick_simulation(self: &Arc<Self>, server: &Arc<Server>, advance_inhabitation: bool) {
         let start = std::time::Instant::now();
 
         self.flush_block_updates();
@@ -1716,7 +1732,7 @@ impl World {
         };
 
         let t_chunks = std::time::Instant::now();
-        self.tick_chunks();
+        self.tick_chunks_inner(advance_inhabitation);
         let chunk_elapsed = t_chunks.elapsed();
 
         let players = self.players.load();
@@ -2209,10 +2225,13 @@ impl World {
         }
     }
 
-    #[expect(clippy::too_many_lines)]
     pub fn tick_chunks(self: &Arc<Self>) {
+        self.tick_chunks_inner(true);
+    }
+
+    #[expect(clippy::too_many_lines)]
+    fn tick_chunks_inner(self: &Arc<Self>, advance_inhabitation: bool) {
         const BATCH_SIZE: usize = 32;
-        const INHABITED_TIME_BATCH_SIZE: usize = 1024;
         let random_tick_speed = self.level_info.load().game_rules.random_tick_speed;
 
         let active_chunks = self
@@ -2232,7 +2251,12 @@ impl World {
                         .active_chunks
                         .read()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    tracker.tick_regions.step_scheduled(&active, scheduled)
+                    let plan = tracker.tick_regions.step_scheduled(&active, scheduled);
+                    let layout = tracker.tick_regions.layout();
+                    if !Arc::ptr_eq(&self.region_layout.load(), layout) {
+                        self.region_layout.store(layout.clone());
+                    }
+                    plan
                 });
 
         // 1. Parallel Block Ticks via Rayon
@@ -2352,18 +2376,34 @@ impl World {
             self.wandering_trader_spawner.tick(self);
         }
 
-        // Batch these cheap lookups and atomic increments to avoid waking Rayon
-        // workers for tiny tasks every tick, while retaining parallelism for large sets.
-        let loaded_chunks = self.level.loaded_chunks.clone();
-        let active_chunks_vec: Vec<_> = active_chunks.iter().copied().collect();
-        active_chunks_vec
-            .par_iter()
-            .with_min_len(INHABITED_TIME_BATCH_SIZE)
-            .for_each(|pos| {
-                if let Some(chunk) = loaded_chunks.get(pos) {
-                    chunk.inhabited_time.fetch_add(1, Relaxed);
-                }
-            });
+        if advance_inhabitation {
+            const INHABITED_TIME_BATCH_SIZE: usize = 1024;
+            let positions: Vec<_> = active_chunks.iter().copied().collect();
+            positions
+                .into_par_iter()
+                .with_min_len(INHABITED_TIME_BATCH_SIZE)
+                .for_each(|pos| self.advance_chunk_inhabitation(pos));
+        }
+    }
+
+    pub(crate) fn advance_region_inhabitation(&self, owner: RegionId, chunks: &RegionChunks) {
+        let current = self.region_layout.load();
+        let same_extent = current
+            .regions
+            .get(&owner)
+            .is_some_and(|current| Arc::ptr_eq(current, chunks));
+        for &pos in chunks.iter() {
+            if same_extent || current.owners.get(&pos) == Some(&owner) {
+                self.advance_chunk_inhabitation(pos);
+            }
+        }
+    }
+
+    fn advance_chunk_inhabitation(&self, pos: Vector2<i32>) {
+        self.level.read_chunk_sync(&pos, |chunk| {
+            chunk.inhabited_time.fetch_add(1, Relaxed);
+            chunk.mark_dirty(true);
+        });
     }
 
     pub fn contains_any_liquid(&self, bounding_box: BoundingBox) -> bool {
