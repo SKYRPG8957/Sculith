@@ -1,6 +1,7 @@
 use crate::block::blocks::composter::ComposterBlock;
 use crate::block::entities::BlockEntity;
 use crate::entity::EntityBase;
+use crate::server::StorageTransferError;
 use crate::world::World;
 use crate::world::loot::{LootContextParameters, fill_chest_inventory_handle};
 use pumpkin_data::block_properties::{FacingHopper, HopperLikeProperties};
@@ -65,6 +66,11 @@ struct Extraction {
     one_item: ItemStack,
     snapshot: ItemStack,
     remainder: ItemStack,
+}
+
+struct ContainerTarget {
+    inventory: Arc<dyn Inventory>,
+    block_entity_pos: Option<BlockPos>,
 }
 
 impl BlockEntity for HopperBlockEntity {
@@ -264,13 +270,7 @@ impl HopperBlockEntity {
 
     #[must_use]
     pub fn get_container_at(world: &Arc<World>, pos: &BlockPos) -> Option<Arc<dyn Inventory>> {
-        Self::get_container_at_coords(
-            world,
-            pos,
-            f64::from(pos.0.x) + 0.5,
-            f64::from(pos.0.y) + 0.5,
-            f64::from(pos.0.z) + 0.5,
-        )
+        Self::find_container(world, pos, pos.to_centered_f64()).map(|target| target.inventory)
     }
 
     #[must_use]
@@ -281,45 +281,101 @@ impl HopperBlockEntity {
         y: f64,
         z: f64,
     ) -> Option<Arc<dyn Inventory>> {
-        Self::get_block_container(world, pos).or_else(|| Self::get_entity_container(world, x, y, z))
+        Self::find_container(world, pos, Vector3::new(x, y, z)).map(|target| target.inventory)
     }
 
-    fn get_block_container(world: &Arc<World>, pos: &BlockPos) -> Option<Arc<dyn Inventory>> {
+    fn find_container(
+        world: &Arc<World>,
+        pos: &BlockPos,
+        center: Vector3<f64>,
+    ) -> Option<ContainerTarget> {
+        Self::get_block_container(world, pos).or_else(|| {
+            let inventory = Self::get_entity_container(world, center.x, center.y, center.z)?;
+            Some(ContainerTarget {
+                inventory,
+                block_entity_pos: None,
+            })
+        })
+    }
+
+    fn get_block_container(world: &Arc<World>, pos: &BlockPos) -> Option<ContainerTarget> {
         let (block, state) = world.get_block_and_state(pos);
         if block == &Block::COMPOSTER {
-            return Some(ComposterBlock::get_container(state.id, world, pos));
+            return Some(ContainerTarget {
+                inventory: ComposterBlock::get_container(state.id, world, pos),
+                block_entity_pos: None,
+            });
         }
-        if block.has_tag(&tag::Block::C_CHESTS_WOODEN)
+        let inventory = if block.has_tag(&tag::Block::C_CHESTS_WOODEN)
             || block.has_tag(&tag::Block::MINECRAFT_COPPER_CHESTS)
         {
-            return crate::block::blocks::chests::get_chest_inventory(
+            crate::block::blocks::chests::get_chest_inventory(
                 world,
                 Some(world),
                 pos,
                 state.id,
                 true,
-            );
+            )?
+        } else {
+            let entity = world.get_block_entity(pos)?;
+            entity.set_world(Arc::downgrade(world));
+            let loot = entity.take_loot_table();
+            let inventory = entity.get_inventory()?;
+            if let Some((loot_key, seed)) = loot
+                && let Some(table) = get_loot_table(&loot_key)
+            {
+                fill_chest_inventory_handle(
+                    &inventory,
+                    &crate::world::loot::LootTableHandle::Static(table),
+                    seed,
+                    &LootContextParameters {
+                        world: Some(world),
+                        position: Some(pos.to_f64()),
+                        ..Default::default()
+                    },
+                );
+                inventory.mark_dirty();
+            }
+            inventory
+        };
+        Some(ContainerTarget {
+            inventory,
+            block_entity_pos: Some(*pos),
+        })
+    }
+
+    fn commit_container_move(
+        &self,
+        world: &Arc<World>,
+        target: &ContainerTarget,
+        move_item: impl FnOnce(&dyn Inventory) -> bool,
+    ) -> Result<bool, StorageTransferError> {
+        let Some(pos) = &target.block_entity_pos else {
+            return Ok(move_item(target.inventory.as_ref()));
+        };
+        let _moves = world
+            .hopper_moves
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let checkpoint = if let Some(server) = world.server.upgrade() {
+            let hopper = world
+                .get_block_entity(&self.position)
+                .filter(|entity| {
+                    entity
+                        .as_any()
+                        .downcast_ref::<Self>()
+                        .is_some_and(|live| std::ptr::eq(live, self))
+                })
+                .ok_or(StorageTransferError::StaleContainer)?;
+            server.prepare_hopper_storage_transfer(world, hopper, pos, &target.inventory)?
+        } else {
+            None
+        };
+        let moved = move_item(target.inventory.as_ref());
+        if moved && let Some(checkpoint) = checkpoint {
+            checkpoint.record();
         }
-        let entity = world.get_block_entity(pos)?;
-        entity.set_world(Arc::downgrade(world));
-        if let Some((loot_key, seed)) = entity.take_loot_table()
-            && let Some(table) = get_loot_table(&loot_key)
-            && let Some(inv) = entity.clone().get_inventory()
-        {
-            fill_chest_inventory_handle(
-                &inv,
-                &crate::world::loot::LootTableHandle::Static(table),
-                seed,
-                &LootContextParameters {
-                    world: Some(world),
-                    position: Some(pos.to_f64()),
-                    ..Default::default()
-                },
-            );
-            inv.mark_dirty();
-            return Some(inv);
-        }
-        entity.get_inventory()
+        Ok(moved)
     }
 
     fn get_entity_container(
@@ -515,8 +571,15 @@ impl HopperBlockEntity {
             return false;
         }
 
-        if let Some(container) = Self::get_container_at(world, pos_up) {
-            return Self::try_take_from_source(self, container.as_ref());
+        if let Some(container) = Self::find_container(world, pos_up, pos_up.to_centered_f64()) {
+            if container.inventory.is_empty() {
+                return false;
+            }
+            return self
+                .commit_container_move(world, &container, |source| {
+                    Self::try_take_from_source(self, source)
+                })
+                .unwrap_or(false);
         }
 
         let (block, state) = world.get_block_and_state(pos_up);
@@ -620,8 +683,10 @@ impl HopperBlockEntity {
         let opposite_dir = direction.opposite();
         let target_pos = self.position.offset(direction.to_offset());
 
-        if let Some(container) = Self::get_container_at(world, &target_pos) {
-            if Self::is_full_container(container.as_ref(), opposite_dir) {
+        if let Some(container) =
+            Self::find_container(world, &target_pos, target_pos.to_centered_f64())
+        {
+            if Self::is_full_container(container.inventory.as_ref(), opposite_dir) {
                 return false;
             }
             for slot in 0..Self::INVENTORY_SIZE {
@@ -647,21 +712,30 @@ impl HopperBlockEntity {
                 // hopper before offering it to the target, restoring it on failure. Reading a
                 // clone and never writing back left the source stack untouched, duplicating
                 // the item into the target while the hopper kept its full stack.
-                let Some(extraction) = self.take_one(slot) else {
-                    // Emptied while the event was firing.
-                    continue;
-                };
-                if Self::add_item(
-                    Some(self),
-                    container.as_ref(),
-                    extraction.one_item.clone(),
-                    Some(opposite_dir),
-                )
-                .is_empty()
-                {
-                    return true;
+                let mut leftover = None;
+                let moved = self.commit_container_move(world, &container, |destination| {
+                    let Some(extraction) = self.take_one(slot) else {
+                        return false;
+                    };
+                    if Self::add_item(
+                        Some(self),
+                        destination,
+                        extraction.one_item.clone(),
+                        Some(opposite_dir),
+                    )
+                    .is_empty()
+                    {
+                        return true;
+                    }
+                    leftover = self.put_back(slot, extraction);
+                    false
+                });
+                match moved {
+                    Ok(true) => return true,
+                    Ok(false) => {}
+                    Err(_) => return false,
                 }
-                if let Some(leftover) = self.put_back(slot, extraction) {
+                if let Some(leftover) = leftover {
                     // Slot is someone else's now and full -> dropping beats overwriting or voiding.
                     let pos = self.position.to_centered_f64();
                     world.scatter_stack(pos.x, pos.y, pos.z, leftover);

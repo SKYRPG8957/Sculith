@@ -193,6 +193,9 @@ impl SaveCheckpoint {
     }
 
     pub fn save_players(&self, storage: &PlayerDataStorage) -> Result<(), String> {
+        if self.players.is_empty() {
+            return Ok(());
+        }
         storage
             .write_committed_batch(self.players.iter().cloned())
             .map_err(|err| err.to_string())

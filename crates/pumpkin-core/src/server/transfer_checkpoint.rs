@@ -1,4 +1,4 @@
-//! Batches direct transfers at the simulation boundary under the shared storage fence.
+//! Batches inventory transfers at the simulation boundary under the shared storage fence.
 
 use std::{
     path::{Path, PathBuf},
@@ -7,9 +7,10 @@ use std::{
 };
 
 use pumpkin_inventory::{
-    double::DoubleInventory, generic_container_screen_handler::GenericContainerScreenHandler,
-    screen_handler::ScreenHandler,
+    Inventory, double::DoubleInventory,
+    generic_container_screen_handler::GenericContainerScreenHandler, screen_handler::ScreenHandler,
 };
+use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::{
     data::checkpoint::{CheckpointFence, SaveCheckpoint},
@@ -63,12 +64,16 @@ impl TerrainTarget {
 pub struct StorageTransfer {
     world: Arc<World>,
     primary: TerrainTarget,
-    paired: Option<TerrainTarget>,
+    related: [Option<TerrainTarget>; 2],
 }
 
 impl StorageTransfer {
+    fn targets(&self) -> impl Iterator<Item = &TerrainTarget> + Clone {
+        std::iter::once(&self.primary).chain(self.related.iter().flatten())
+    }
+
     pub(crate) fn record(self) {
-        for target in std::iter::once(&self.primary).chain(self.paired.as_ref()) {
+        for target in self.targets() {
             self.world
                 .record_storage_transfer(&target.chunk, target.entity.as_ref());
         }
@@ -76,6 +81,40 @@ impl StorageTransfer {
             server.storage_checkpoint.transfers.mark_changed();
         }
     }
+}
+
+struct BlockInventoryMembers {
+    entity: Arc<dyn BlockEntity>,
+    paired: Option<Arc<dyn BlockEntity>>,
+}
+
+/// Resolve a block inventory back to the live entities that own its slots.
+fn live_block_inventory(
+    world: &World,
+    pos: &BlockPos,
+    inventory: &Arc<dyn Inventory>,
+) -> Option<BlockInventoryMembers> {
+    let primary = world.get_block_entity(pos)?;
+    let paired = if let Some(double) = inventory.as_any().downcast_ref::<DoubleInventory>() {
+        Some(paired_chest_for_inventory(world, pos, &primary, double)?)
+    } else {
+        let backing = primary.clone().get_inventory()?;
+        if !Arc::ptr_eq(&backing, inventory) {
+            return None;
+        }
+        None
+    };
+    Some(BlockInventoryMembers {
+        entity: primary,
+        paired,
+    })
+}
+
+fn is_checkpoint_container(entity: &dyn BlockEntity) -> bool {
+    matches!(
+        entity.resource_location(),
+        "minecraft:chest" | "minecraft:trapped_chest" | "minecraft:barrel" | "minecraft:hopper"
+    )
 }
 
 impl Server {
@@ -99,27 +138,56 @@ impl Server {
         let Some(pos) = player.open_container_pos.load() else {
             return Ok(None);
         };
-        let primary = world.get_block_entity(&pos);
-        let (primary, paired) =
-            if let Some(inventory) = storage.inventory.as_any().downcast_ref::<DoubleInventory>() {
-                let primary = primary.ok_or(StorageTransferError::StaleContainer)?;
-                let paired = paired_chest_for_inventory(&world, &pos, &primary, inventory)
-                    .ok_or(StorageTransferError::StaleContainer)?;
-                (primary, Some(paired))
+        let Some(members) = live_block_inventory(&world, &pos, &storage.inventory) else {
+            return if storage.inventory.as_any().is::<DoubleInventory>() {
+                Err(StorageTransferError::StaleContainer)
             } else {
-                let Some(primary) = primary.filter(|entity| {
-                    matches!(
-                        entity.resource_location(),
-                        "minecraft:chest" | "minecraft:trapped_chest" | "minecraft:barrel"
-                    ) && entity
-                        .clone()
-                        .get_inventory()
-                        .is_some_and(|inventory| Arc::ptr_eq(&inventory, &storage.inventory))
-                }) else {
-                    return Ok(None);
-                };
-                (primary, None)
+                Ok(None)
             };
+        };
+        if !is_checkpoint_container(members.entity.as_ref()) {
+            return Ok(None);
+        }
+        self.prepare_inventory_checkpoint(
+            &world,
+            Some(player),
+            members.entity,
+            [members.paired, None],
+        )
+        .map(Some)
+    }
+
+    pub(crate) fn prepare_hopper_storage_transfer(
+        &self,
+        world: &Arc<World>,
+        hopper: Arc<dyn BlockEntity>,
+        other_pos: &BlockPos,
+        other_inventory: &Arc<dyn Inventory>,
+    ) -> Result<Option<StorageTransfer>, StorageTransferError> {
+        if !world.level.save_enabled.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let members = live_block_inventory(world, other_pos, other_inventory)
+            .ok_or(StorageTransferError::StaleContainer)?;
+        if !is_checkpoint_container(members.entity.as_ref()) {
+            return Ok(None);
+        }
+        self.prepare_inventory_checkpoint(
+            world,
+            None,
+            hopper,
+            [Some(members.entity), members.paired],
+        )
+        .map(Some)
+    }
+
+    fn prepare_inventory_checkpoint(
+        &self,
+        world: &Arc<World>,
+        player: Option<&Arc<Player>>,
+        primary: Arc<dyn BlockEntity>,
+        [second, third]: [Option<Arc<dyn BlockEntity>>; 2],
+    ) -> Result<StorageTransfer, StorageTransferError> {
         let root = self.basic_config.get_world_path();
         let relative = world
             .level
@@ -129,11 +197,16 @@ impl Server {
             .map_err(|_| StorageTransferError::Busy)?
             .to_path_buf();
         let transfer = StorageTransfer {
-            primary: TerrainTarget::loaded(&world, primary)?,
-            paired: paired
-                .map(|entity| TerrainTarget::loaded(&world, entity))
-                .transpose()?,
-            world,
+            primary: TerrainTarget::loaded(world, primary)?,
+            related: [
+                second
+                    .map(|entity| TerrainTarget::loaded(world, entity))
+                    .transpose()?,
+                third
+                    .map(|entity| TerrainTarget::loaded(world, entity))
+                    .transpose()?,
+            ],
+            world: world.clone(),
         };
         if !self.storage_checkpoint.transfers.admit(
             &self.player_data_storage.checkpoint,
@@ -144,7 +217,7 @@ impl Server {
         ) {
             return Err(StorageTransferError::Busy);
         }
-        Ok(Some(transfer))
+        Ok(transfer)
     }
 }
 
@@ -183,7 +256,7 @@ impl TransferCheckpoints {
         &self,
         fence: &CheckpointFence,
         start_allowed: bool,
-        player: &Arc<Player>,
+        player: Option<&Arc<Player>>,
         relative: &Path,
         transfer: &StorageTransfer,
     ) -> bool {
@@ -203,15 +276,21 @@ impl TransferCheckpoints {
         let Phase::Collecting(batch) = &mut state.phase else {
             return false;
         };
-        let id = player.gameprofile.id;
-        let neighbor_chunk = transfer
-            .paired
-            .as_ref()
-            .filter(|paired| paired.position() != transfer.primary.position());
-        let chunks = std::iter::once(&transfer.primary)
-            .chain(neighbor_chunk)
-            .map(|target| ((relative.to_path_buf(), target.position()), &target.chunk));
-        let new_targets = usize::from(!batch.players.contains_key(&id))
+        let targets = transfer.targets();
+        let chunks = targets
+            .clone()
+            .enumerate()
+            .filter_map(move |(index, target)| {
+                let position = target.position();
+                let already_counted = targets
+                    .clone()
+                    .take(index)
+                    .any(|prior| prior.position() == position);
+                (!already_counted).then(|| ((relative.to_path_buf(), position), &target.chunk))
+            });
+        let new_player =
+            player.is_some_and(|player| !batch.players.contains_key(&player.gameprofile.id));
+        let new_targets = usize::from(new_player)
             + chunks
                 .clone()
                 .filter(|(key, _)| !batch.terrain.contains_key(key))
@@ -219,7 +298,12 @@ impl TransferCheckpoints {
         if batch.players.len() + batch.terrain.len() + new_targets > MAX_TARGETS {
             return false;
         }
-        batch.players.entry(id).or_insert_with(|| player.clone());
+        if let Some(player) = player {
+            batch
+                .players
+                .entry(player.gameprofile.id)
+                .or_insert_with(|| player.clone());
+        }
         for (key, chunk) in chunks {
             batch
                 .terrain
