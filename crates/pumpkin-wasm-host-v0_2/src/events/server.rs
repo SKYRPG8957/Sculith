@@ -2,13 +2,13 @@ use crate::{
     events::{ToFromWasmEvent, cleanup_event, consume_text_component},
     generated_packets,
     pumpkin::plugin::event::{
-        BedrockConnectionPacketReceivedEventData, BedrockConnectionPacketSentEventData,
-        ClientboundPacket, Event, JavaConnectionPacketReceivedEventData,
-        JavaConnectionPacketSentEventData, JavaConnectionState, MapInitializeEventData,
-        PacketReceivedEventData, PacketSentEventData, RawPacket, ServerBroadcastEventData,
-        ServerCommandEventData, ServerListPingAddress, ServerListPingEventData,
-        ServerLoadEventData, ServerLoadType, ServerTickEndEventData, ServerTickStartEventData,
-        ServerboundPacket,
+        BedrockClientboundPacket, BedrockConnectionPacketReceivedEventData,
+        BedrockConnectionPacketSentEventData, BedrockServerboundPacket, ClientboundPacket, Event,
+        JavaConnectionPacketReceivedEventData, JavaConnectionPacketSentEventData,
+        JavaConnectionState, MapInitializeEventData, PacketReceivedEventData, PacketSentEventData,
+        RawPacket, ServerBroadcastEventData, ServerCommandEventData, ServerListPingAddress,
+        ServerListPingEventData, ServerLoadEventData, ServerLoadType, ServerTickEndEventData,
+        ServerTickStartEventData, ServerboundPacket,
     },
 };
 use pumpkin_core::net::ClientPlatform;
@@ -28,6 +28,32 @@ use pumpkin_core::plugin::server::{
 };
 use pumpkin_protocol::ConnectionState as ProtoConnectionState;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
+use std::sync::atomic::Ordering;
+
+fn read_bedrock_received(
+    protocol_version: u32,
+    packet_id: i32,
+    payload: &[u8],
+) -> Option<BedrockServerboundPacket> {
+    if matches!(protocol_version, 0 | CURRENT_BEDROCK_MC_PROTOCOL) {
+        generated_packets::deserialize_bedrock_serverbound_packet(packet_id, payload)
+    } else {
+        None
+    }
+}
+
+fn read_bedrock_sent(
+    protocol_version: u32,
+    packet_id: i32,
+    payload: &[u8],
+) -> Option<BedrockClientboundPacket> {
+    if matches!(protocol_version, 0 | CURRENT_BEDROCK_MC_PROTOCOL) {
+        generated_packets::deserialize_bedrock_clientbound_packet(packet_id, payload)
+    } else {
+        None
+    }
+}
 
 impl ToFromWasmEvent for PacketReceivedEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
@@ -45,13 +71,12 @@ impl ToFromWasmEvent for PacketReceivedEvent {
                 pumpkin_data::packet::CURRENT_MC_VERSION,
             )
             .map_or(ServerboundPacket::Unknown, ServerboundPacket::Java),
-            ClientPlatform::Bedrock(_) => {
-                generated_packets::deserialize_bedrock_serverbound_packet(
-                    self.packet_id,
-                    &self.payload,
-                )
-                .map_or(ServerboundPacket::Unknown, ServerboundPacket::Bedrock)
-            }
+            ClientPlatform::Bedrock(client) => read_bedrock_received(
+                client.protocol_version.load(Ordering::Relaxed),
+                self.packet_id,
+                &self.payload,
+            )
+            .map_or(ServerboundPacket::Unknown, ServerboundPacket::Bedrock),
         };
 
         Event::PacketReceivedEvent(PacketReceivedEventData {
@@ -96,10 +121,13 @@ impl ToFromWasmEvent for PacketSentEvent {
                 generated_packets::clientbound_java_any_to_wit(self.packet.as_ref())
                     .map_or(ClientboundPacket::Unknown, ClientboundPacket::Java)
             }
-            ClientPlatform::Bedrock(_) => {
-                generated_packets::clientbound_bedrock_any_to_wit(self.packet.as_ref())
-                    .map_or(ClientboundPacket::Unknown, ClientboundPacket::Bedrock)
-            }
+            ClientPlatform::Bedrock(client) => read_bedrock_sent(
+                client.protocol_version.load(Ordering::Relaxed),
+                self.packet_id,
+                &self.payload,
+            )
+            .or_else(|| generated_packets::clientbound_bedrock_any_to_wit(self.packet.as_ref()))
+            .map_or(ClientboundPacket::Unknown, ClientboundPacket::Bedrock),
         };
 
         Event::PacketSentEvent(PacketSentEventData {
@@ -237,6 +265,8 @@ impl ToFromWasmEvent for BedrockConnectionPacketReceivedEvent {
             connection_id: self.connection_id,
             protocol_version: self.protocol_version,
             version: crate::player::to_wasm_bedrock_version(self.version),
+            packet: read_bedrock_received(self.protocol_version, self.packet_id, &self.payload)
+                .unwrap_or(BedrockServerboundPacket::Unknown),
             packet_id: self.packet_id,
             raw_payload: self.payload.to_vec(),
             cancelled: self.cancelled,
@@ -270,6 +300,8 @@ impl ToFromWasmEvent for BedrockConnectionPacketSentEvent {
             connection_id: self.connection_id,
             protocol_version: self.protocol_version,
             version: crate::player::to_wasm_bedrock_version(self.version),
+            packet: read_bedrock_sent(self.protocol_version, self.packet_id, &self.payload)
+                .unwrap_or(BedrockClientboundPacket::Unknown),
             packet_id: self.packet_id,
             raw_payload: self.payload.to_vec(),
             extra_packets: self
@@ -486,6 +518,89 @@ mod tests {
     use pumpkin_protocol::packet::MultiVersionJavaPacket;
     use pumpkin_util::text::TextComponent;
     use wasmtime::component::Resource;
+
+    #[test]
+    fn decodes_current_bedrock_form_packets_and_checks_the_entire_body() {
+        use pumpkin_protocol::bedrock::client::CModalFormRequest;
+        use pumpkin_protocol::bedrock::server::SModalFormResponse;
+        use pumpkin_protocol::codec::var_uint::VarUInt;
+        use pumpkin_protocol::{Packet, serial::PacketWrite};
+
+        let mut outbound = Vec::new();
+        CModalFormRequest {
+            form_id: VarUInt(300),
+            form_ui_json: "{}".into(),
+        }
+        .write(&mut outbound)
+        .unwrap();
+        let Some(BedrockClientboundPacket::CModalFormRequest(request)) = read_bedrock_sent(
+            CURRENT_BEDROCK_MC_PROTOCOL,
+            CModalFormRequest::PACKET_ID,
+            &outbound,
+        ) else {
+            panic!("expected a typed form request");
+        };
+        assert_eq!(
+            (request.form_id, request.form_ui_json.as_str()),
+            (300, "{}")
+        );
+
+        let mut inbound = vec![0xAC, 0x02, 1, 1, b'0', 0];
+        let Some(BedrockServerboundPacket::SModalFormResponse(response)) = read_bedrock_received(
+            CURRENT_BEDROCK_MC_PROTOCOL,
+            SModalFormResponse::PACKET_ID,
+            &inbound,
+        ) else {
+            panic!("expected a typed form response");
+        };
+        assert_eq!(response.form_id, 300);
+        assert_eq!(response.json_response.as_deref(), Some("0"));
+        assert!(response.form_cancel_reason.is_none());
+        assert!(read_bedrock_received(671, SModalFormResponse::PACKET_ID, &inbound).is_none());
+        inbound.push(1);
+        assert!(
+            read_bedrock_received(
+                CURRENT_BEDROCK_MC_PROTOCOL,
+                SModalFormResponse::PACKET_ID,
+                &inbound
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn projects_resource_pack_chunk_fields_during_connection() {
+        use pumpkin_protocol::bedrock::client::CResourcePackChunkData;
+        use pumpkin_protocol::{Packet, serial::PacketWrite};
+
+        let mut payload = Vec::new();
+        CResourcePackChunkData {
+            pack_id: "test-pack-uuid".into(),
+            chunk_index: 2,
+            data_offset: 8,
+            data: vec![1, 2, 3, 4],
+        }
+        .write(&mut payload)
+        .unwrap();
+        let event = BedrockConnectionPacketSentEvent::new(
+            1,
+            CURRENT_BEDROCK_MC_PROTOCOL,
+            pumpkin_util::version::BedrockMinecraftVersion::V_1_26_60,
+            CResourcePackChunkData::PACKET_ID,
+            payload.clone().into(),
+        );
+        let mut state = PluginHostState::new();
+        let Event::BedrockConnectionPacketSentEvent(data) = event.to_wasm_event(&mut state) else {
+            panic!("expected a Bedrock connection event");
+        };
+        let BedrockClientboundPacket::CResourcePackChunkData(chunk) = data.packet else {
+            panic!("expected typed resource pack chunk fields");
+        };
+        assert_eq!(chunk.pack_id, "test-pack-uuid");
+        assert_eq!((chunk.chunk_index, chunk.data_offset), (2, 8));
+        assert_eq!(chunk.data, [1, 2, 3, 4]);
+        assert_eq!(data.raw_payload, payload);
+    }
 
     #[test]
     fn server_list_ping_applies_and_consumes_returned_resources() {
@@ -763,6 +878,7 @@ mod tests {
                 crate::pumpkin::plugin::player::BedrockMinecraftVersion::V121
             );
             assert_eq!(data.packet_id, 1);
+            assert!(matches!(data.packet, BedrockServerboundPacket::Unknown));
             assert_eq!(data.raw_payload, vec![0xAA, 0xBB]);
             assert!(!data.cancelled);
         } else {
@@ -774,6 +890,7 @@ mod tests {
                 connection_id: 77,
                 protocol_version: 671,
                 version: crate::pumpkin::plugin::player::BedrockMinecraftVersion::V121,
+                packet: BedrockServerboundPacket::Unknown,
                 packet_id: 1,
                 raw_payload: vec![0xCC, 0xDD, 0xEE],
                 cancelled: false,
@@ -804,6 +921,7 @@ mod tests {
                 crate::pumpkin::plugin::player::BedrockMinecraftVersion::V12651
             );
             assert_eq!(data.packet_id, 143);
+            assert!(matches!(data.packet, BedrockClientboundPacket::Unknown));
             assert!(data.extra_packets.is_empty());
         } else {
             panic!("Expected BedrockConnectionPacketSentEvent");
@@ -814,6 +932,7 @@ mod tests {
                 connection_id: 88,
                 protocol_version: 2193,
                 version: crate::pumpkin::plugin::player::BedrockMinecraftVersion::V12651,
+                packet: BedrockClientboundPacket::Unknown,
                 packet_id: 143,
                 raw_payload: vec![2, 0],
                 extra_packets: vec![RawPacket {

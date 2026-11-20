@@ -1,11 +1,14 @@
 // Action form payload verified against Bedrock Dedicated Server 1.26.63.1 (protocol 2225).
 
-use crate::{codec::var_uint::VarUInt, serial::PacketWrite};
+use crate::{
+    codec::var_uint::VarUInt,
+    serial::{PacketRead, PacketWrite},
+};
 use pumpkin_macros::packet;
 
 /// Requests the client to open a server-defined UI form (modal dialog, list menu, or custom form).
 #[packet(pumpkin_data::bedrock_packet::MODAL_FORM_REQUEST)]
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct CModalFormRequest {
     /// Unique identifier assigned by the server to distinguish responses when the form is submitted.
     pub form_id: VarUInt,
@@ -37,7 +40,27 @@ impl CModalFormRequest {
 #[cfg(test)]
 mod tests {
     use super::CModalFormRequest;
+    use crate::{
+        codec::var_uint::VarUInt,
+        serial::{PacketRead, PacketWrite},
+    };
     use serde_json::{Value, json};
+
+    #[test]
+    fn reads_bedrock_form_id_and_json_from_the_wire() {
+        let json = r#"{"type":"form","title":"길드"}"#;
+        let mut wire = vec![0xac, 0x02, u8::try_from(json.len()).unwrap()];
+        wire.extend_from_slice(json.as_bytes());
+        let mut body = wire.as_slice();
+        let decoded = CModalFormRequest::read(&mut body).unwrap();
+        assert_eq!(decoded.form_id, VarUInt(300));
+        assert_eq!(decoded.form_ui_json, json);
+        assert!(body.is_empty());
+
+        let mut encoded = Vec::new();
+        decoded.write(&mut encoded).unwrap();
+        assert_eq!(encoded, wire);
+    }
 
     #[test]
     fn action_buttons_match_the_dedicated_server_payload() {

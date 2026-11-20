@@ -65,6 +65,18 @@ pub fn main() {
 
     let mapping_path = Path::new(MAPPING_OUT_DIR).join("generated_packets.rs");
     fs::write(&mapping_path, mapping).expect("Failed to write packet mapping");
+
+    let legacy_wit = fs::read_to_string("../../crates/pumpkin-plugin-wit/v0.1/bedrock-packets.wit")
+        .expect("Failed to read the stable Bedrock packet API");
+    let current_wit = fs::read_to_string(Path::new(WIT_OUT_DIR).join("bedrock-packets.wit"))
+        .expect("Failed to read the generated Bedrock packet API");
+    let mapping = packet_mapping::build_legacy_bedrock_readers(&legacy_wit, &current_wit);
+    let mapping = format_code(&mapping).unwrap_or(mapping);
+    fs::write(
+        "../../crates/pumpkin-wasm-host-v0_1/src/bedrock_packet_readers.rs",
+        mapping,
+    )
+    .expect("Failed to write stable Bedrock packet readers");
 }
 
 fn write_generated_wit(new_code: &str, out_file: &str) {

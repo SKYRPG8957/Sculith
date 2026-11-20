@@ -1,4 +1,5 @@
 use crate::{
+    bedrock_packet_readers,
     events::{ToFromWasmEvent, cleanup_event, consume_text_component},
     generated_packets,
     pumpkin::plugin::event::{
@@ -21,6 +22,15 @@ use pumpkin_core::plugin::server::{
 };
 use pumpkin_protocol::ConnectionState;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
+use std::sync::atomic::Ordering;
+
+fn has_current_bedrock_packet_layout(client: &pumpkin_core::net::bedrock::BedrockClient) -> bool {
+    matches!(
+        client.protocol_version.load(Ordering::Relaxed),
+        0 | CURRENT_BEDROCK_MC_PROTOCOL
+    )
+}
 
 impl ToFromWasmEvent for PacketReceivedEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
@@ -38,13 +48,14 @@ impl ToFromWasmEvent for PacketReceivedEvent {
                 pumpkin_data::packet::CURRENT_MC_VERSION,
             )
             .map_or(ServerboundPacket::Unknown, ServerboundPacket::Java),
-            ClientPlatform::Bedrock(_) => {
-                generated_packets::deserialize_bedrock_serverbound_packet(
+            ClientPlatform::Bedrock(client) if has_current_bedrock_packet_layout(client) => {
+                bedrock_packet_readers::deserialize_bedrock_serverbound_packet(
                     self.packet_id,
                     &self.payload,
                 )
                 .map_or(ServerboundPacket::Unknown, ServerboundPacket::Bedrock)
             }
+            ClientPlatform::Bedrock(_) => ServerboundPacket::Unknown,
         };
 
         Event::PacketReceivedEvent(PacketReceivedEventData {
@@ -89,10 +100,16 @@ impl ToFromWasmEvent for PacketSentEvent {
                 generated_packets::clientbound_java_any_to_wit(self.packet.as_ref())
                     .map_or(ClientboundPacket::Unknown, ClientboundPacket::Java)
             }
-            ClientPlatform::Bedrock(_) => {
-                generated_packets::clientbound_bedrock_any_to_wit(self.packet.as_ref())
-                    .map_or(ClientboundPacket::Unknown, ClientboundPacket::Bedrock)
-            }
+            ClientPlatform::Bedrock(client) => has_current_bedrock_packet_layout(client)
+                .then(|| {
+                    bedrock_packet_readers::deserialize_bedrock_clientbound_packet(
+                        self.packet_id,
+                        &self.payload,
+                    )
+                })
+                .flatten()
+                .or_else(|| generated_packets::clientbound_bedrock_any_to_wit(self.packet.as_ref()))
+                .map_or(ClientboundPacket::Unknown, ClientboundPacket::Bedrock),
         };
 
         Event::PacketSentEvent(PacketSentEventData {

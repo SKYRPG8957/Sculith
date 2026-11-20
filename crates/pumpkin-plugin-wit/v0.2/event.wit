@@ -413,6 +413,8 @@ interface event {
         connection-id: u64,
         protocol-version: u32,
         version: bedrock-minecraft-version,
+        /// Decoded view of the current payload for supported packets.
+        packet: bedrock-serverbound-packet,
         packet-id: s32,
         raw-payload: list<u8>,
         cancelled: bool
@@ -422,6 +424,8 @@ interface event {
         connection-id: u64,
         protocol-version: u32,
         version: bedrock-minecraft-version,
+        /// Decoded view of the current payload for supported packets.
+        packet: bedrock-clientbound-packet,
         packet-id: s32,
         raw-payload: list<u8>,
         extra-packets: list<raw-packet>,

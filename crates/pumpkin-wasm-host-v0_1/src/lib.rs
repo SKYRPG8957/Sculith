@@ -14,6 +14,7 @@ use wasmtime::{Engine, Store};
 mod bindings;
 
 pub mod advancement;
+mod bedrock_packet_readers;
 pub mod block_entity;
 pub mod boss_bar;
 pub mod commands;
