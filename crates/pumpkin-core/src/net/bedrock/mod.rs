@@ -825,7 +825,7 @@ impl BedrockClient {
         self.player.store(Arc::new(None));
     }
 
-    fn is_current_protocol(&self) -> bool {
+    pub(crate) fn is_current_protocol(&self) -> bool {
         let protocol = self.protocol_version.load(Ordering::Relaxed);
         protocol == 0 || protocol == CURRENT_BEDROCK_MC_PROTOCOL
     }

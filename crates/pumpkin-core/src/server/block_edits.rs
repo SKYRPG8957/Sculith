@@ -116,7 +116,7 @@ impl BlockEdit {
             return Some(BlockEditStatus::Stale);
         }
         if self.expected != self.replacement && self.flags.contains(BlockFlags::NOTIFY_LISTENERS) {
-            world.register_block_change(self.position, self.replacement);
+            world.queue_regional_block_updates([(self.position, self.replacement)]);
         }
         Some(BlockEditStatus::Applied)
     }

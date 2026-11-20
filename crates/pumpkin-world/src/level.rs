@@ -1235,6 +1235,17 @@ impl Level {
         self.loaded_chunks.get(coordinates).map(|x| f(x.value()))
     }
 
+    /// Reads a block without waiting for a loaded chunk or palette lock.
+    pub fn try_read_block_state(&self, position: BlockPos) -> Option<BlockStateId> {
+        let (pos, relative) = position.chunk_and_chunk_relative_position();
+        let TryResult::Present(chunk) = self.loaded_chunks.try_get(&pos) else {
+            return None;
+        };
+        let sections = &chunk.section;
+        let palettes = sections.block_sections.try_read()?;
+        sections.read_block_from_palettes(&palettes, relative)
+    }
+
     pub fn read_entity_chunk_sync<R, F: Fn(&SyncEntityChunk) -> R>(
         &self,
         coordinates: &Vector2<i32>,

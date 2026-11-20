@@ -22,6 +22,8 @@ use std::{collections::HashMap, sync::atomic::Ordering};
 use tracing::{debug, error, info};
 
 mod active_chunks;
+mod block_updates;
+use block_updates::{BlockUpdates, group_by_section};
 pub mod brightness;
 pub mod chunker;
 mod entity_chunks;
@@ -158,7 +160,7 @@ use pumpkin_util::{
     math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3},
 };
 use pumpkin_util::{
-    math::{position::chunk_section_from_pos, vector2::Vector2},
+    math::vector2::Vector2,
     random::{RandomImpl, get_seed, xoroshiro128::Xoroshiro},
 };
 use pumpkin_world::world::{GetBlockError, WorldPortalExt};
@@ -265,8 +267,7 @@ pub struct World {
     pub block_registry: Arc<BlockRegistry>,
     pub server: Weak<Server>,
     synced_block_event_queue: std::sync::Mutex<Vec<BlockEvent>>,
-    /// A map of unsent block changes, keyed by block position.
-    unsent_block_changes: std::sync::Mutex<HashMap<BlockPos, BlockStateId>>,
+    block_updates: BlockUpdates,
     /// Persisted vanilla POI storage for portal and villager lookups.
     pub portal_poi: std::sync::Mutex<portal::PortalPoiStorage>,
     poi_chunk_receiver: std::sync::Mutex<Receiver<(ChunkPos, Weak<ChunkData>)>>,
@@ -447,7 +448,7 @@ impl World {
             sea_level: generation_settings.sea_level,
             min_y: i32::from(generation_settings.shape.min_y),
             synced_block_event_queue: std::sync::Mutex::new(Vec::new()),
-            unsent_block_changes: std::sync::Mutex::new(HashMap::new()),
+            block_updates: BlockUpdates::default(),
             portal_poi: std::sync::Mutex::new(portal_poi),
             poi_chunk_receiver: std::sync::Mutex::new(poi_chunk_receiver),
             wandering_trader_spawner: wandering_trader_spawner::WanderingTraderSpawner::default(),
@@ -1982,49 +1983,30 @@ impl World {
     }
 
     pub fn register_block_change(&self, position: BlockPos, block_state_id: BlockStateId) {
-        self.unsent_block_changes
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(position, block_state_id);
+        self.block_updates.queue_world([(position, block_state_id)]);
     }
 
     /// Queues block state changes for broadcast to nearby players.
     ///
     /// Call [`flush_block_updates`](Self::flush_block_updates) afterward to send the packets.
     pub fn queue_block_updates(&self, changes: &[(BlockPos, BlockStateId)]) {
-        let mut guard = self
-            .unsent_block_changes
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (pos, state_id) in changes {
-            guard.insert(*pos, *state_id);
-        }
+        self.block_updates.queue_world(changes.iter().copied());
     }
 
     #[expect(clippy::too_many_lines)]
     pub fn flush_block_updates(&self) {
-        let mut block_state_updates_by_chunk_section: HashMap<
-            Vector3<i32>,
-            Vec<(BlockPos, BlockStateId)>,
-        > = HashMap::new();
-        let changes = {
-            let mut guard = self
-                .unsent_block_changes
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::take(&mut *guard)
+        let Some(_publishing) = self.block_updates.try_publish() else {
+            return;
         };
-        for (position, block_state_id) in changes {
-            // Another simulation owner may have changed this position since it was queued.
-            let block_state_id = self
-                .get_block_state_id_if_loaded(&position)
-                .unwrap_or(block_state_id);
-            let chunk_section = chunk_section_from_pos(&position);
-            block_state_updates_by_chunk_section
-                .entry(chunk_section)
-                .or_default()
-                .push((position, block_state_id));
-        }
+        let changes = self.block_updates.take_world();
+        let block_state_updates_by_chunk_section =
+            group_by_section(changes.into_iter().map(|(position, block_state_id)| {
+                // Another simulation owner may have changed this position since it was queued.
+                let block_state_id = self
+                    .get_block_state_id_if_loaded(&position)
+                    .unwrap_or(block_state_id);
+                (position, block_state_id)
+            }));
 
         // TODO: only send packet to players who have the chunks loaded
         // TODO: Send light updates to update the wire directly next to a broken block
@@ -2469,14 +2451,11 @@ impl World {
                     continue;
                 };
                 if !changes.is_empty() {
-                    self.unsent_block_changes
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .extend(
-                            changes
-                                .iter()
-                                .map(|&(position, _, state)| (position, state)),
-                        );
+                    self.queue_regional_block_updates(
+                        changes
+                            .iter()
+                            .map(|&(position, _, state)| (position, state)),
+                    );
                 }
                 for (position, old, new) in changes {
                     if pumpkin_world::lighting::LightEngine::has_different_light_properties(
@@ -2491,6 +2470,9 @@ impl World {
             } else if inhabited {
                 self.advance_chunk_inhabitation(pos);
             }
+        }
+        if inhabited && same_extent {
+            self.flush_regional_block_updates(&owns);
         }
     }
 
