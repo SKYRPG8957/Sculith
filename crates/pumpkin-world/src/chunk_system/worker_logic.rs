@@ -118,7 +118,10 @@ pub async fn io_read_work(
                 {
                     break;
                 }
-                notified.await;
+                tokio::select! {
+                    () = notified => {}
+                    () = level.cancel_token.cancelled() => return,
+                }
             }
         }
 
@@ -128,6 +131,9 @@ pub async fn io_read_work(
         let level_clone = level.clone();
 
         let fetch_task = tokio::spawn(async move {
+            let Some(_access) = level_clone.checkpoint_access().await else {
+                return;
+            };
             level_clone
                 .chunk_saver
                 .fetch_chunks(&level_clone.level_folder, &batch, t_send)
@@ -195,6 +201,9 @@ pub(crate) async fn io_write_work(
     loop {
         // Don't check cancel_token here (keep saving chunks)
         let received = tokio::time::timeout(REGION_FLUSH_INTERVAL, recv.recv()).await;
+        let Some(_access) = level.checkpoint_access().await else {
+            break;
+        };
         if last_flush.elapsed() >= REGION_FLUSH_INTERVAL {
             level.flush_due_regions().await;
             last_flush = Instant::now();

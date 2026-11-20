@@ -234,12 +234,22 @@ before replacing the affected `.dat` files. The server replays a published batch
 startup before admitting players. A damaged journal or failed replay prevents the
 server from opening the world and leaves the journal available for inspection.
 
+## Manual world checkpoints
+
+`/save-all`, `/save-all flush`, and the management save request capture online
+players and loaded block-entity chunks at a server tick boundary. When both
+groups have records, the server syncs one `.sculith-world-checkpoint` in the
+world root before saving either group. Startup replays the checkpoint before
+opening region caches or admitting players. A retry can finish an interrupted
+checkpoint while the server is running. Offline conversion and storage export
+require the checkpoint to be fully applied.
+
 ## Remaining work
 
 Standalone Bedrock world export and conversion of entities, player data and
 other block-entity contents remain open.
 
-Atomic item transfers across player data and a separate world container remain open.
+Persisting every player-to-container transfer between manual checkpoints remains open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack

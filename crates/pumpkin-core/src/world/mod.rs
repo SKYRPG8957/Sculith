@@ -7939,6 +7939,13 @@ impl World {
     }
 
     pub async fn save(&self) -> Result<(), String> {
+        self.save_after_checkpoint(FxHashSet::default()).await
+    }
+
+    pub(crate) async fn save_after_checkpoint(
+        &self,
+        checkpoint_chunks: FxHashSet<Vector2<i32>>,
+    ) -> Result<(), String> {
         let entities = self.entities.load_full();
         self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
             .await;
@@ -7947,6 +7954,7 @@ impl World {
             .block_entities
             .iter()
             .map(|chunk_block_entities| *chunk_block_entities.key())
+            .filter(|pos| !checkpoint_chunks.contains(pos))
             .collect();
         for chunk_pos in chunks {
             self.save_block_entities(chunk_pos);
@@ -7978,7 +7986,7 @@ impl World {
             }
         };
 
-        let regions_result = self.level.save_regions().await;
+        let regions_result = self.level.save_regions(checkpoint_chunks).await;
         portal_result.and(custom_data_result).and(regions_result)?;
 
         let mut save_event = crate::plugin::api::events::world::world_save::WorldSaveEvent::new(
@@ -7988,6 +7996,23 @@ impl World {
             server.plugin_manager.fire(&server, &mut save_event).await;
         }
         Ok(())
+    }
+
+    /// Called at the tick boundary while the region writer is paused.
+    pub(crate) fn capture_storage_chunks(&self) -> Vec<(Vector2<i32>, bytes::Bytes)> {
+        let positions: Vec<_> = self
+            .block_entities
+            .iter()
+            .map(|entry| *entry.key())
+            .collect();
+        positions
+            .into_iter()
+            .filter_map(|pos| {
+                let chunk = self.level.loaded_chunks.get(&pos)?.value().clone();
+                self.save_block_entities(pos);
+                Some((pos, chunk.internal_to_pump_bytes()))
+            })
+            .collect()
     }
 
     pub fn set_custom_data(&self, namespace: &str, key: &str, value: pumpkin_nbt::tag::NbtTag) {

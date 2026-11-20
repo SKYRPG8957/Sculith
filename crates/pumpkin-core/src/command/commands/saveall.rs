@@ -30,7 +30,7 @@ impl CommandExecutor for SaveAllExecutor {
         let server_clone = server_arc.clone();
         let source = context.source.clone();
         server_arc.spawn_task(async move {
-            if let Err(err) = server_clone.save_all().await {
+            if let Err(err) = server_clone.save_with_checkpoint().await {
                 error!("Failed to save server data: {err}");
                 source.send_error(TextComponent::translate_cross(
                     translation::java::COMMANDS_SAVE_FAILED,

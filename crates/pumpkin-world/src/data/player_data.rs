@@ -118,7 +118,13 @@ impl PlayerDataStorage {
         if !self.is_save_enabled() {
             return Ok(());
         }
+        self.write_committed_batch(players)
+    }
 
+    pub(crate) fn write_committed_batch(
+        &self,
+        players: impl IntoIterator<Item = (Uuid, NbtCompound)>,
+    ) -> Result<(), PlayerDataError> {
         let _access = self
             .access
             .lock()

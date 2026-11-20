@@ -4,12 +4,10 @@ use crate::lighting::DynamicLightEngine;
 use crate::{
     chunk::{
         ChunkData, ChunkEntityData, ChunkReadingError,
-        io::{
-            Dirtiable, FileIO, LoadedData,
-            file_manager::{ChunkFileManager, LevelFileIO},
-        },
+        io::{Dirtiable, FileIO, LoadedData, file_manager::LevelFileIO},
         palette::has_random_ticking_fluid,
     },
+    data::checkpoint::CheckpointFence,
     generation::get_world_gen_with_all_settings,
     tick::{OrderedTick, ScheduledTick, TickPriority, order},
     world::WorldPortalExt,
@@ -17,7 +15,7 @@ use crate::{
 use arc_swap::ArcSwap;
 use crossbeam::queue::SegQueue;
 use dashmap::{DashMap, Entry};
-use pumpkin_config::{chunk::ChunkConfig, lighting::LightingEngineConfig, world::LevelConfig};
+use pumpkin_config::{lighting::LightingEngineConfig, world::LevelConfig};
 use pumpkin_data::biome::Biome;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::{Block, BlockStateId, block_properties::has_random_ticks, fluid::Fluid};
@@ -60,6 +58,11 @@ pub type EntitySaver = LevelFileIO<ChunkEntityData>;
 
 pub(crate) type SaveCompletion = oneshot::Sender<Result<(), String>>;
 
+pub(crate) struct SaveRequest {
+    pub completion: SaveCompletion,
+    pub checkpoint_chunks: FxHashSet<Vector2<i32>>,
+}
+
 /// The `Level` module provides functionality for working with chunks within or outside a Minecraft world.
 ///
 /// Key features include:
@@ -90,6 +93,7 @@ pub struct Level {
     chunk_watchers: Arc<DashMap<Vector2<i32>, usize>>,
 
     pub chunk_saver: Arc<ChunkSaver>,
+    checkpoint_fence: Arc<CheckpointFence>,
     entity_saver: Arc<EntitySaver>,
 
     pub world_gen: ArcSwap<WorldGenerator>,
@@ -106,7 +110,7 @@ pub struct Level {
 
     pub shut_down_chunk_system: AtomicBool,
     pub should_save: AtomicBool,
-    manual_saves: mpsc::UnboundedSender<SaveCompletion>,
+    manual_saves: mpsc::UnboundedSender<SaveRequest>,
     pub should_unload: AtomicBool,
     /// Whether periodic autosaving is enabled. Toggled by `/save-off` and `/save-on`;
     /// a manual `/save-all` still saves while this is `false`.
@@ -142,14 +146,38 @@ pub struct LevelFolder {
     pub poi_folder: PathBuf,
 }
 
+impl LevelFolder {
+    #[must_use]
+    pub fn new(root_folder: PathBuf, dim_folder: PathBuf) -> Self {
+        Self {
+            region_folder: dim_folder.join("region"),
+            entities_folder: dim_folder.join("entities"),
+            poi_folder: dim_folder.join("poi"),
+            root_folder,
+            dim_folder,
+        }
+    }
+}
+
 impl Level {
     #[must_use]
-    #[expect(clippy::too_many_lines)]
     pub fn from_root_folder(
         level_config: &LevelConfig,
         root_folder: PathBuf,
         seed: i64,
         dimension: Dimension,
+    ) -> Arc<Self> {
+        Self::with_checkpoint_fence(level_config, root_folder, seed, dimension, Arc::default())
+    }
+
+    #[must_use]
+    #[expect(clippy::too_many_lines)]
+    pub fn with_checkpoint_fence(
+        level_config: &LevelConfig,
+        root_folder: PathBuf,
+        seed: i64,
+        dimension: Dimension,
+        checkpoint_fence: Arc<CheckpointFence>,
     ) -> Arc<Self> {
         let (namespace, name) = match dimension.minecraft_name.split_once(':') {
             Some((ns, n)) => (ns, n),
@@ -178,21 +206,10 @@ impl Level {
             canonical_dim_folder
         };
 
-        let region_folder = dim_folder.join("region");
-        let entities_folder = dim_folder.join("entities");
-        let poi_folder = dim_folder.join("poi");
-
-        let _ = std::fs::create_dir_all(&region_folder);
-        let _ = std::fs::create_dir_all(&entities_folder);
-        let _ = std::fs::create_dir_all(&poi_folder);
-
-        let level_folder = Arc::new(LevelFolder {
-            root_folder,
-            dim_folder,
-            region_folder,
-            entities_folder,
-            poi_folder,
-        });
+        let level_folder = Arc::new(LevelFolder::new(root_folder, dim_folder));
+        let _ = std::fs::create_dir_all(&level_folder.region_folder);
+        let _ = std::fs::create_dir_all(&level_folder.entities_folder);
+        let _ = std::fs::create_dir_all(&level_folder.poi_folder);
 
         let main_folder = &level_folder.root_folder;
 
@@ -272,20 +289,8 @@ impl Level {
             }
         }
 
-        let chunk_saver = match &level_config.chunk {
-            ChunkConfig::Linear => Arc::new(ChunkSaver::Linear(ChunkFileManager::new(()))),
-            ChunkConfig::Anvil(config) => {
-                Arc::new(ChunkSaver::Anvil(ChunkFileManager::new(config.clone())))
-            }
-            ChunkConfig::Pump => Arc::new(ChunkSaver::Pump(ChunkFileManager::new(()))),
-        };
-        let entity_saver = match &level_config.chunk {
-            ChunkConfig::Linear => Arc::new(EntitySaver::Linear(ChunkFileManager::new(()))),
-            ChunkConfig::Anvil(config) => {
-                Arc::new(EntitySaver::Anvil(ChunkFileManager::new(config.clone())))
-            }
-            ChunkConfig::Pump => Arc::new(EntitySaver::Pump(ChunkFileManager::new(()))),
-        };
+        let chunk_saver = Arc::new(ChunkSaver::from_config(&level_config.chunk));
+        let entity_saver = Arc::new(EntitySaver::from_config(&level_config.chunk));
 
         let pending_entity_generations = Arc::new(DashMap::new());
         let (send_saves, receive_saves) = mpsc::unbounded_channel();
@@ -305,6 +310,7 @@ impl Level {
             lighting_config: level_config.lighting,
             light_engine: DynamicLightEngine::new(dim_min_y, dim_min_y + dim_height),
             chunk_saver,
+            checkpoint_fence,
             entity_saver,
             schedule_tick_counts: AtomicU64::new(0),
             loaded_chunks: Arc::default(),
@@ -454,7 +460,9 @@ impl Level {
         self.write_entity_chunks(chunks_to_write).await;
 
         info!("Flushing chunk data to disk for {}...", world_id);
-        if let Err(err) = self.chunk_saver.flush_all().await {
+        if let Some(_access) = self.checkpoint_access().await
+            && let Err(err) = self.chunk_saver.flush_all().await
+        {
             error!("Failed to flush chunk data for {world_id}: {err}");
         }
         info!("Flushing entity data to disk for {}...", world_id);
@@ -463,11 +471,21 @@ impl Level {
         }
     }
 
+    pub(crate) async fn checkpoint_access(&self) -> Option<tokio::sync::OwnedRwLockReadGuard<()>> {
+        self.checkpoint_fence.read(&self.cancel_token).await
+    }
+
     /// Queues a save behind the scheduler's previous terrain writes and waits for the writer.
-    pub async fn save_regions(&self) -> Result<(), String> {
+    pub async fn save_regions(
+        &self,
+        checkpoint_chunks: FxHashSet<Vector2<i32>>,
+    ) -> Result<(), String> {
         let (send, receive) = oneshot::channel();
         self.manual_saves
-            .send(send)
+            .send(SaveRequest {
+                completion: send,
+                checkpoint_chunks,
+            })
             .map_err(|_| "Region scheduler stopped".to_string())?;
         self.should_save.store(true, Ordering::Release);
         self.level_channel.notify();
@@ -475,6 +493,7 @@ impl Level {
         select! {
             biased;
             received = receive => received.map_err(|_| "Region writer stopped".to_string())?,
+            () = self.checkpoint_fence.pending() => Err("A world checkpoint is awaiting recovery".to_string()),
             () = self.cancel_token.cancelled() => Err("Level is shutting down".to_string()),
         }
     }
@@ -756,6 +775,9 @@ impl Level {
     /// Deletes an unloaded chunk (and its entity chunk) from disk storage.
     /// Returns `false` if the chunk is currently loaded or did not exist on disk.
     pub async fn delete_chunk(&self, pos: Vector2<i32>) -> bool {
+        let Some(_access) = self.checkpoint_access().await else {
+            return false;
+        };
         if self.is_chunk_loaded(&pos) {
             return false;
         }
@@ -958,6 +980,9 @@ impl Level {
         if chunks_to_write.is_empty() {
             return;
         }
+        let Some(_access) = self.checkpoint_access().await else {
+            return;
+        };
 
         let chunk_saver = self.chunk_saver.clone();
         let level_folder = self.level_folder.clone();

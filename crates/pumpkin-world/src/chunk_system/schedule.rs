@@ -9,7 +9,7 @@ use super::{
     LevelChannel,
 };
 use crate::chunk::io::Dirtiable;
-use crate::level::{Level, LoadedChunkChange, SaveCompletion, SyncChunk};
+use crate::level::{Level, LoadedChunkChange, SaveCompletion, SaveRequest, SyncChunk};
 use dashmap::DashMap;
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_util::math::vector2::Vector2;
@@ -82,7 +82,7 @@ pub struct GenerationSchedule {
     recv_chunk: crossbeam::channel::Receiver<(ChunkPos, RecvChunk)>,
     io_read: tokio::sync::mpsc::Sender<Vec<ChunkPos>>,
     io_write: tokio::sync::mpsc::Sender<ChunkWriteBatch>,
-    manual_saves: tokio::sync::mpsc::UnboundedReceiver<SaveCompletion>,
+    manual_saves: tokio::sync::mpsc::UnboundedReceiver<SaveRequest>,
     send_chunk: crossbeam::channel::Sender<(ChunkPos, RecvChunk)>,
     listener: Arc<ChunkListener>,
     lighting_config: LightingEngineConfig,
@@ -114,7 +114,7 @@ impl GenerationSchedule {
         level: Arc<Level>,
         level_channel: Arc<LevelChannel>,
         listener: Arc<ChunkListener>,
-        manual_saves: tokio::sync::mpsc::UnboundedReceiver<SaveCompletion>,
+        manual_saves: tokio::sync::mpsc::UnboundedReceiver<SaveRequest>,
         thread_tracker: &mut Vec<thread::JoinHandle<()>>,
     ) {
         let (send_chunk, recv_chunk) = crossbeam::channel::unbounded();
@@ -975,10 +975,17 @@ impl GenerationSchedule {
         self.queue_chunk_writes(chunks, Vec::new());
     }
 
-    fn save_all_chunk(&mut self, save_proto_chunk: bool, completions: Vec<SaveCompletion>) {
+    fn save_all_chunk(&mut self, save_proto_chunk: bool, requests: Vec<SaveRequest>) {
         let mut chunks = Vec::with_capacity(self.chunk_map.len());
 
         for (pos, holder) in &mut self.chunk_map {
+            if !requests.is_empty()
+                && requests
+                    .iter()
+                    .all(|request| request.checkpoint_chunks.contains(pos))
+            {
+                continue;
+            }
             if let Some(chunk) = &holder.chunk {
                 let should_save = match chunk {
                     Chunk::Level(sync_chunk) => sync_chunk.is_dirty(),
@@ -1010,7 +1017,13 @@ impl GenerationSchedule {
             );
         }
 
-        self.queue_chunk_writes(chunks, completions);
+        self.queue_chunk_writes(
+            chunks,
+            requests
+                .into_iter()
+                .map(|request| request.completion)
+                .collect(),
+        );
     }
 
     fn queue_chunk_writes(&self, chunks: Vec<(ChunkPos, Chunk)>, completions: Vec<SaveCompletion>) {

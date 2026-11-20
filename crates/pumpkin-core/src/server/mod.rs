@@ -25,8 +25,8 @@ use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig}
 use pumpkin_data::dimension::Dimension;
 use pumpkin_util::permission::PermissionManager;
 use pumpkin_util::text::color::NamedColor;
-use pumpkin_world::dimension::into_level;
 use pumpkin_world::generation::generator::GeneratorInit;
+use pumpkin_world::level::Level;
 use pumpkin_world::world::WorldPortalExt;
 use tracing::{debug, error, info, warn};
 
@@ -61,6 +61,7 @@ pub mod recipe;
 pub mod scheduler;
 pub mod seasonal_events;
 pub mod server_test_manager;
+mod storage_checkpoint;
 pub mod tick_rate_manager;
 pub mod ticker;
 
@@ -159,6 +160,7 @@ pub struct Server {
     pub compute_pool: Arc<rayon::ThreadPool>,
     pub management_hub: Arc<crate::net::management::hub::ManagementHub>,
     save_metadata_lock: tokio::sync::Mutex<()>,
+    storage_checkpoint: storage_checkpoint::StorageCheckpoint,
     /// Cancelled when this server should stop. A child of [`crate::STOP_INTERRUPT`], so a
     /// process-wide stop reaches it, while an integrated server can stop without ending the
     /// process.
@@ -258,6 +260,17 @@ impl Server {
             WorldInfoError::IoError(std::io::Error::other(format!(
                 "Failed to recover player data in {}: {err}",
                 players_dir.display()
+            )))
+        })?;
+        storage_checkpoint::recover(
+            &world_path,
+            &advanced_config.world.chunk,
+            player_data_storage.checkpoint_storage(),
+        )
+        .await
+        .map_err(|err| {
+            WorldInfoError::IoError(std::io::Error::other(format!(
+                "Failed to recover world checkpoint: {err}"
             )))
         })?;
 
@@ -387,6 +400,7 @@ impl Server {
             level_info,
             management_hub,
             save_metadata_lock: tokio::sync::Mutex::new(()),
+            storage_checkpoint: storage_checkpoint::StorageCheckpoint::default(),
             available_update: std::sync::OnceLock::new(),
         };
         let server = Arc::new(server);
@@ -459,7 +473,13 @@ impl Server {
                     .to_pretty_console()
             );
             let config = Arc::new(server.advanced_config.world.clone());
-            let level = into_level(dim.clone(), &config, world_path.clone(), seed);
+            let level = Level::with_checkpoint_fence(
+                &config,
+                world_path.clone(),
+                seed,
+                dim.clone(),
+                server.player_data_storage.checkpoint.clone(),
+            );
             let world = Arc::new(World::load(
                 level.clone(),
                 server.level_info.clone(),
@@ -547,8 +567,13 @@ impl Server {
         let config = Arc::new(self.advanced_config.world.clone());
         let seed = self.level_info.load().world_gen_settings.seed;
 
-        let level =
-            pumpkin_world::dimension::into_level(dimension.clone(), &config, world_path, seed);
+        let level = Level::with_checkpoint_fence(
+            &config,
+            world_path,
+            seed,
+            dimension.clone(),
+            self.player_data_storage.checkpoint.clone(),
+        );
         let world: World = World::load(level.clone(), l_info, dimension, registry, weak);
         let world = Arc::new(world);
         let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(world.clone()));
@@ -648,14 +673,14 @@ impl Server {
         self.datapack_manager.is_feature_enabled(self, feature)
     }
 
-    async fn save_metadata(&self) -> Result<(), String> {
+    async fn save_metadata(&self, save_players: bool) -> Result<(), String> {
         let _save = self.save_metadata_lock.lock().await;
         if let Err(err) = self.save_world_info() {
             error!("Failed to save world info: {err}");
             return Err(format!("Failed to save world info: {err}"));
         }
 
-        if let Err(err) = self.player_data_storage.save_all_players(self).await {
+        if save_players && let Err(err) = self.player_data_storage.save_all_players(self).await {
             error!("Failed to save player data: {err}");
             return Err(format!("Failed to save player data: {err}"));
         }
@@ -673,10 +698,34 @@ impl Server {
 
     pub async fn save_all(&self) -> Result<(), String> {
         self.management_hub.broadcast_server_saving();
-        self.save_metadata().await?;
+        self.finish_save(None).await
+    }
+
+    pub(crate) async fn save_with_checkpoint(self: &Arc<Self>) -> Result<(), String> {
+        let server = self.clone();
+        // A disconnected command sender must leave the writer running until recovery is safe.
+        self.spawn_task(async move {
+            let _save = server.storage_checkpoint.saves.lock().await;
+            server.management_hub.broadcast_server_saving();
+            let covered = server.storage_checkpoint.save(&server).await?;
+            server.finish_save(covered).await
+        })
+        .await
+        .map_err(|err| format!("World checkpoint task failed: {err}"))?
+    }
+
+    async fn finish_save(
+        &self,
+        mut covered: Option<storage_checkpoint::SavedChunks>,
+    ) -> Result<(), String> {
+        self.save_metadata(covered.is_none()).await?;
         let mut failure = None;
         for world in self.worlds.load_full().iter() {
-            if let Err(err) = world.save().await {
+            let checkpoint_chunks = covered
+                .as_mut()
+                .and_then(|paths| paths.remove(&world.level.level_folder.dim_folder))
+                .unwrap_or_default();
+            if let Err(err) = world.save_after_checkpoint(checkpoint_chunks).await {
                 let error = format!(
                     "Failed to save {} ({:?}): {err}",
                     world.get_world_name(),
@@ -720,10 +769,31 @@ impl Server {
     /// # Note
     ///
     /// You still have to spawn the `Player` in a `World` to let them join and make them visible.
-    fn load_player_world(
+    async fn load_player_world(
         &self,
-        data: Option<pumpkin_nbt::compound::NbtCompound>,
+        client: &ClientPlatform,
+        id: &uuid::Uuid,
     ) -> Option<(Arc<World>, Option<pumpkin_nbt::compound::NbtCompound>)> {
+        let Some(access) = self.player_data_storage.checkpoint.read_ready().await else {
+            client.try_kick(
+                DisconnectReason::Unknown,
+                &TextComponent::text("World storage recovery is pending"),
+            );
+            return None;
+        };
+        let data = self.player_data_storage.load_data(id);
+        drop(access);
+        let data = match data {
+            Ok(data) => data,
+            Err(err) => {
+                error!("Failed to load player data for {id}: {err}");
+                client.try_kick(
+                    DisconnectReason::Unknown,
+                    &TextComponent::text("Your player data could not be loaded"),
+                );
+                return None;
+            }
+        };
         let first_world = self.worlds.load().first().cloned()?;
         let Some(data) = data else {
             return Some((first_world, None));
@@ -738,7 +808,7 @@ impl Server {
         Some((self.get_world_from_dimension(dimension), Some(data)))
     }
 
-    pub fn add_player(
+    pub async fn add_player(
         self: &Arc<Self>,
         client: Arc<ClientPlatform>,
         profile: GameProfile,
@@ -750,18 +820,7 @@ impl Server {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .gamemode;
 
-        let data = match self.player_data_storage.load_data(&profile.id) {
-            Ok(data) => data,
-            Err(err) => {
-                error!("Failed to load player data for {}: {err}", profile.id);
-                client.try_kick(
-                    DisconnectReason::Unknown,
-                    &TextComponent::text("Your player data could not be loaded"),
-                );
-                return None;
-            }
-        };
-        let (world, nbt) = self.load_player_world(data)?;
+        let (world, nbt) = self.load_player_world(client.as_ref(), &profile.id).await?;
 
         let mut player = Player::new(
             client,
@@ -1305,6 +1364,7 @@ impl Server {
             self.flush_pending_block_updates();
             Self::resume_player_flushes(&suspended);
         });
+        self.storage_checkpoint.capture_at_tick_boundary(self);
     }
 
     fn flush_pending_block_updates(&self) {

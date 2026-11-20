@@ -5,7 +5,10 @@ use crate::{
 use crossbeam::atomic::AtomicCell;
 use pumpkin_inventory::screen_handler::ScreenHandler;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::data::player_data::{PlayerDataError, PlayerDataStorage};
+use pumpkin_world::data::{
+    checkpoint::CheckpointFence,
+    player_data::{PlayerDataError, PlayerDataStorage},
+};
 use std::sync::Arc;
 use std::{
     path::PathBuf,
@@ -13,7 +16,7 @@ use std::{
 };
 use tokio::{
     runtime::Handle,
-    sync::{Mutex, OwnedMutexGuard},
+    sync::{Mutex, OwnedMutexGuard, OwnedRwLockReadGuard},
     task::JoinHandle,
 };
 use tracing::{debug, error};
@@ -25,6 +28,7 @@ use uuid::Uuid;
 /// convenience methods for player handling.
 pub struct ServerPlayerData {
     storage: Arc<PlayerDataStorage>,
+    pub(crate) checkpoint: Arc<CheckpointFence>,
     /// Orders capture and persistence together, including blocking writes whose callers leave.
     save_order: Arc<Mutex<()>>,
     save_interval: Duration,
@@ -36,6 +40,7 @@ impl ServerPlayerData {
     pub fn new(data_path: impl Into<PathBuf>, save_interval: Duration, enabled: bool) -> Self {
         Self {
             storage: Arc::new(PlayerDataStorage::new(data_path, enabled)),
+            checkpoint: Arc::default(),
             save_order: Arc::new(Mutex::new(())),
             save_interval,
             last_save: AtomicCell::new(Instant::now()),
@@ -80,8 +85,11 @@ impl ServerPlayerData {
         let Ok(order) = self.save_order.clone().try_lock_owned() else {
             return;
         };
+        let Some(access) = self.checkpoint.try_read() else {
+            return;
+        };
         self.last_save.store(now);
-        let write = self.write_batch(&server.runtime, order, Self::capture_online(server));
+        let write = self.write_batch(&server.runtime, order, access, Self::capture_online(server));
         server.spawn_task(async move {
             match Self::finish_write(write).await {
                 Ok(()) => debug!("Periodic player data save completed"),
@@ -99,8 +107,13 @@ impl ServerPlayerData {
             return Ok(());
         }
         let order = self.save_order.clone().lock_owned().await;
+        let access = self
+            .checkpoint
+            .read_ready()
+            .await
+            .ok_or_else(unresolved_checkpoint)?;
         let snapshots = Self::capture_online(server);
-        Self::finish_write(self.write_batch(&server.runtime, order, snapshots)).await
+        Self::finish_write(self.write_batch(&server.runtime, order, access, snapshots)).await
     }
 
     /// Loads player data and applies it to a player.
@@ -125,6 +138,10 @@ impl ServerPlayerData {
         self.storage.recover()
     }
 
+    pub(crate) fn checkpoint_storage(&self) -> Arc<PlayerDataStorage> {
+        self.storage.clone()
+    }
+
     /// Extracts and saves data from a player.
     ///
     /// This function extracts NBT data from a player and saves it to disk.
@@ -145,11 +162,16 @@ impl ServerPlayerData {
         }
 
         let order = self.save_order.clone().lock_owned().await;
+        let access = self
+            .checkpoint
+            .read_ready()
+            .await
+            .ok_or_else(unresolved_checkpoint)?;
         let snapshots = vec![Self::capture(player)];
-        Self::finish_write(self.write_batch(&Handle::current(), order, snapshots)).await
+        Self::finish_write(self.write_batch(&Handle::current(), order, access, snapshots)).await
     }
 
-    fn capture_online(server: &Server) -> Vec<(Uuid, NbtCompound)> {
+    pub(crate) fn capture_online(server: &Server) -> Vec<(Uuid, NbtCompound)> {
         let mut snapshots = Vec::new();
         server.for_each_player(|player| snapshots.push(Self::capture(player)));
         snapshots
@@ -165,11 +187,13 @@ impl ServerPlayerData {
         &self,
         runtime: &Handle,
         order: OwnedMutexGuard<()>,
+        access: OwnedRwLockReadGuard<()>,
         snapshots: Vec<(Uuid, NbtCompound)>,
     ) -> JoinHandle<Result<(), PlayerDataError>> {
         let storage = self.storage.clone();
         runtime.spawn_blocking(move || {
             let _order = order;
+            let _access = access;
             storage.save_batch(snapshots)
         })
     }
@@ -179,6 +203,10 @@ impl ServerPlayerData {
     ) -> Result<(), PlayerDataError> {
         write.await.map_err(std::io::Error::other)?
     }
+}
+
+fn unresolved_checkpoint() -> PlayerDataError {
+    std::io::Error::other("a world checkpoint is awaiting recovery").into()
 }
 
 #[cfg(test)]

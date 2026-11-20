@@ -38,6 +38,7 @@ pub fn export_storage(
 ) -> Result<StorageExportStats, Error> {
     let template = bedrock_source.canonicalize()?;
     let sculith = sculith_source.canonicalize()?;
+    crate::data::checkpoint::SaveCheckpoint::require_materialized(&sculith)?;
     let destination = new_destination(destination, &template)?;
     if destination.starts_with(&sculith) {
         return Err(invalid("destination must be outside the Sculith world"));

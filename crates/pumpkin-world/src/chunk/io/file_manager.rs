@@ -706,6 +706,19 @@ pub enum LevelFileIO<D> {
 }
 
 impl<D> LevelFileIO<D> {
+    #[must_use]
+    pub fn from_config(config: &pumpkin_config::chunk::ChunkConfig) -> Self
+    where
+        D: SingleChunkDataSerializer,
+    {
+        use pumpkin_config::chunk::ChunkConfig;
+        match config {
+            ChunkConfig::Linear => Self::Linear(ChunkFileManager::new(())),
+            ChunkConfig::Anvil(config) => Self::Anvil(ChunkFileManager::new(config.clone())),
+            ChunkConfig::Pump => Self::Pump(ChunkFileManager::new(())),
+        }
+    }
+
     pub(crate) fn queue_saves(
         &self,
         folder: &LevelFolder,

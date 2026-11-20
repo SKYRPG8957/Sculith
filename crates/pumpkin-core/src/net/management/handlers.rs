@@ -803,7 +803,7 @@ async fn execute_method(
         "minecraft:server/save" => {
             let _flush: bool = parse_param(params, "flush")?;
             server
-                .save_all()
+                .save_with_checkpoint()
                 .await
                 .map_err(|err| RpcError::internal_error(Some(err)))?;
             Ok(json!(true))

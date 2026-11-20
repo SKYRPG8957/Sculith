@@ -338,6 +338,7 @@ pub fn convert_world(
     target: &ChunkConfig,
     remove_source: bool,
 ) -> Result<ConversionStats, ChunkConversionError> {
+    crate::data::checkpoint::SaveCheckpoint::require_materialized(root_folder)?;
     let mut dim_folders = vec![
         root_folder.to_path_buf(),
         root_folder.join("DIM-1"),
