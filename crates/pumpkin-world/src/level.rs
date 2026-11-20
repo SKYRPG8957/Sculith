@@ -133,6 +133,11 @@ pub struct TickData {
     pub random_ticks: Vec<RandomTickSample>,
 }
 
+pub struct ScheduledTickGroup {
+    pub chunks: Vec<Vector2<i32>>,
+    pub region_tick: Option<u64>,
+}
+
 #[derive(Clone, Copy)]
 pub struct RandomTickSample {
     pub position: BlockPos,
@@ -632,7 +637,12 @@ impl Level {
         active_chunks: &FxHashSet<Vector2<i32>>,
         random_tick_speed: i64,
     ) -> TickData {
-        self.get_tick_data_with_regions(active_chunks, random_tick_speed, |chunks| vec![chunks])
+        self.get_tick_data_with_regions(active_chunks, random_tick_speed, |chunks| {
+            vec![ScheduledTickGroup {
+                chunks,
+                region_tick: None,
+            }]
+        })
     }
 
     /// Collects due ticks using the world's current ownership of scheduled chunks.
@@ -641,7 +651,7 @@ impl Level {
         &self,
         active_chunks: &FxHashSet<Vector2<i32>>,
         random_tick_speed: i64,
-        partition: impl FnOnce(Vec<Vector2<i32>>) -> Vec<Vec<Vector2<i32>>>,
+        partition: impl FnOnce(Vec<Vector2<i32>>) -> Vec<ScheduledTickGroup>,
     ) -> TickData {
         let samples_per_section = random_tick_speed.max(0);
 
@@ -701,16 +711,12 @@ impl Level {
         }
 
         // Drop the index's shard guards before accessing the loaded chunks.
-        let scheduled: Vec<_> = self
+        let scheduled = self
             .chunks_with_scheduled_ticks
             .iter()
             .map(|p| *p)
             .collect();
-        if scheduled.len() < 2 {
-            self.step_scheduled_chunks(scheduled, &mut ticks);
-        } else {
-            self.step_scheduled_chunk_groups(partition(scheduled), &mut ticks);
-        }
+        self.step_scheduled_chunk_groups(partition(scheduled), &mut ticks);
 
         // World callbacks can reach across regions and still use the global priority order.
         ticks.block_ticks.sort_unstable();
@@ -720,19 +726,19 @@ impl Level {
 
     fn step_scheduled_chunk_groups(
         &self,
-        mut groups: Vec<Vec<Vector2<i32>>>,
+        mut groups: Vec<ScheduledTickGroup>,
         ticks: &mut TickData,
     ) {
         if groups.len() < 2 {
-            if let Some(positions) = groups.pop() {
-                self.step_scheduled_chunks(positions, ticks);
+            if let Some(group) = groups.pop() {
+                self.step_scheduled_chunks(group, ticks);
             }
         } else {
             let partials: Vec<_> = groups
                 .into_par_iter()
-                .map(|positions| {
+                .map(|group| {
                     let mut data = TickData::default();
-                    self.step_scheduled_chunks(positions, &mut data);
+                    self.step_scheduled_chunks(group, &mut data);
                     data
                 })
                 .collect();
@@ -743,11 +749,11 @@ impl Level {
         }
     }
 
-    fn step_scheduled_chunks(&self, positions: Vec<Vector2<i32>>, ticks: &mut TickData) {
-        for pos in positions {
+    fn step_scheduled_chunks(&self, group: ScheduledTickGroup, ticks: &mut TickData) {
+        for pos in group.chunks {
             if let Some(chunk) = self.loaded_chunks.get(&pos) {
-                let mut blocks = chunk.block_ticks.step_tick();
-                let mut fluids = chunk.fluid_ticks.step_tick();
+                let mut blocks = chunk.block_ticks.step_tick_at(group.region_tick);
+                let mut fluids = chunk.fluid_ticks.step_tick_at(group.region_tick);
                 let pending = chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks();
                 if pending || !blocks.is_empty() || !fluids.is_empty() {
                     chunk.mark_dirty(true);

@@ -20,17 +20,30 @@ struct ChunkTickSchedulerInner<T> {
 
 impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
     pub fn step_tick(&self) -> Vec<OrderedTick<&'a T>> {
+        self.step_tick_at(None)
+    }
+
+    /// Advances one simulation tick at the owning region's local time.
+    pub fn step_tick_at(&self, region_tick: Option<u64>) -> Vec<OrderedTick<&'a T>> {
         let mut inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let current_offset = self.offset.load(Ordering::Relaxed);
+        let previous_offset = self.offset.load(Ordering::Relaxed);
+        let current_offset = region_tick.map_or(previous_offset, |tick| {
+            (tick % MAX_TICK_DELAY as u64) as usize
+        });
         let next_offset = (current_offset + 1) % MAX_TICK_DELAY;
         self.offset.store(next_offset, Ordering::Relaxed);
         let Some(inner) = inner_guard.as_mut() else {
             return Vec::new();
         };
 
+        // Rebase queued delays when a chunk inherits a different region clock.
+        let shift = (current_offset + MAX_TICK_DELAY - previous_offset) % MAX_TICK_DELAY;
+        if shift != 0 {
+            inner.tick_queue.rotate_right(shift);
+        }
         let res = std::mem::take(&mut inner.tick_queue[current_offset]);
 
         if !res.is_empty() {
@@ -179,5 +192,52 @@ impl<T> Default for ChunkTickScheduler<T> {
             inner: Mutex::new(None),
             offset: AtomicUsize::new(0),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tick::TickPriority;
+
+    #[test]
+    fn region_clock_changes_carry_pending_delays_and_priority() {
+        let mut scheduler = ChunkTickScheduler::default();
+        let position = BlockPos::new(12, 64, -3);
+        for (value, delay, priority, order) in [
+            (&1, 2, TickPriority::High, 4),
+            (&2, 2, TickPriority::Normal, 5),
+            (&3, 4, TickPriority::Low, 6),
+        ] {
+            scheduler.schedule_tick(
+                &ScheduledTick {
+                    delay,
+                    priority,
+                    position,
+                    value,
+                },
+                order,
+            );
+        }
+
+        assert!(scheduler.step_tick_at(Some(250)).is_empty());
+        assert!(scheduler.step_tick_at(Some(11)).is_empty());
+        let mut due = scheduler.step_tick_at(Some(12));
+        due.sort_unstable();
+        let result: Vec<_> = due
+            .iter()
+            .map(|tick| (*tick.value, tick.sub_tick_order))
+            .collect();
+        assert_eq!(result, [(1, 4), (2, 5)]);
+
+        let saved = scheduler.to_vec();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].delay, 1);
+        scheduler = saved.into_iter().collect();
+        assert!(scheduler.step_tick_at(Some(255)).is_empty());
+        let due = scheduler.step_tick_at(Some(256));
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].value, &3);
+        assert!(!scheduler.has_ticks());
     }
 }

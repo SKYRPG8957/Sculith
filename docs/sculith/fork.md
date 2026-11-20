@@ -90,9 +90,15 @@ simulation pool. Work already queued in loaded chunks outside the active
 regions is also collected. The world then dispatches callbacks in the
 existing block and fluid phases, sorting the collected work by priority.
 
-Chunk activation restores pending timers from saved data. The remaining
-delay is stored with the chunk, so changes in region membership and saves
-carry the same pending work forward. Native plugins use ABI 17.
+Each connected region owns a local tick number for its chunk timers.
+Overlapping regions reuse owner IDs, with the largest overlaps taking
+priority. Merging inherits the highest tick number and splitting passes
+that number to each successor. The world drives these clocks at its
+simulation boundary.
+
+When a chunk changes owners, its pending timers use the new clock with
+the same remaining delay. Saved chunks store that delay and rebuild their
+timers on activation. Native plugins use ABI 18.
 
 ## Shared resource delivery
 

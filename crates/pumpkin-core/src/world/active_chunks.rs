@@ -216,32 +216,70 @@ mod tests {
         let east = Vector2::new(1, 1);
         let bridge = Vector2::new(0, 0);
         let inactive = Vector2::new(4, 4);
-        let mut forced = FxHashSet::from_iter([west, east]);
+        let mut forced = FxHashSet::from_iter([west]);
         let scheduled = vec![west, east, inactive];
 
         tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
+        for _ in 0..3 {
+            tracker.tick_regions.step_scheduled(&active, Vec::new());
+        }
+        forced.insert(east);
+        tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
         let groups = tracker
             .tick_regions
-            .group_scheduled(&active, scheduled.clone());
+            .step_scheduled(&active, scheduled.clone());
         assert_eq!(groups.len(), 3);
-        assert!(scheduled.iter().all(|chunk| groups.contains(&vec![*chunk])));
+        assert!(
+            groups
+                .iter()
+                .any(|group| group.chunks == [west] && group.region_tick == Some(3))
+        );
+        assert!(
+            groups
+                .iter()
+                .any(|group| group.chunks == [east] && group.region_tick == Some(0))
+        );
+        assert!(
+            groups
+                .iter()
+                .any(|group| group.chunks == [inactive] && group.region_tick.is_none())
+        );
 
         forced.insert(bridge);
         tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
-        // All work can use the same collection job with a single active region.
-        assert_eq!(
-            tracker
-                .tick_regions
-                .group_scheduled(&active, scheduled.clone()),
-            vec![scheduled.clone()]
+        let merged = tracker
+            .tick_regions
+            .step_scheduled(&active, scheduled.clone());
+        assert_eq!(merged.len(), 2);
+        assert!(
+            merged
+                .iter()
+                .any(|group| group.chunks == [west, east] && group.region_tick == Some(4))
+        );
+        assert!(
+            merged
+                .iter()
+                .any(|group| group.chunks == [inactive] && group.region_tick.is_none())
         );
 
         forced.remove(&bridge);
         tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
-        let split = tracker
-            .tick_regions
-            .group_scheduled(&active, scheduled.clone());
+        let split = tracker.tick_regions.step_scheduled(&active, scheduled);
         assert_eq!(split.len(), 3);
-        assert!(scheduled.iter().all(|chunk| split.contains(&vec![*chunk])));
+        assert!(
+            split
+                .iter()
+                .any(|group| group.chunks == [west] && group.region_tick == Some(5))
+        );
+        assert!(
+            split
+                .iter()
+                .any(|group| group.chunks == [east] && group.region_tick == Some(5))
+        );
+        assert!(
+            split
+                .iter()
+                .any(|group| group.chunks == [inactive] && group.region_tick.is_none())
+        );
     }
 }

@@ -2257,7 +2257,7 @@ impl World {
                         .active_chunks
                         .read()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    tracker.tick_regions.group_scheduled(&active, scheduled)
+                    tracker.tick_regions.step_scheduled(&active, scheduled)
                 });
 
         // 1. Parallel Block Ticks via Rayon
