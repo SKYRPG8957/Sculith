@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::Read,
+    io::{self, Read},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -18,8 +18,10 @@ use xxhash_rust::xxh64::xxh64;
 use crate::chunk::{
     ChunkReadingError, ChunkSerializingError, ChunkWritingError,
     format::anvil::{CHUNK_COUNT, SectorBitmap, SingleChunkDataSerializer},
-    io::{RegionFile, read_exact_at, write_all_at},
+    io::{RegionFile, read_exact_at, write_all_at, write_file_atomically},
 };
+
+use super::header_journal as journal;
 
 /// Magic signature and format version (`"PUMP"` + version 1).
 const SIGNATURE: [u8; 8] = *b"PUMP\x00\x00\x00\x01";
@@ -48,10 +50,8 @@ const fn sector_count(byte_len: u32) -> u32 {
 
 /// A `.pump` region file.
 ///
-/// Only the 8 KiB offset/length table and sector bitmap live in memory. Staged chunks are
-/// zstd-compressed in parallel on Rayon and written into free 256-byte sectors before the header
-/// is updated at offset 0, so a crash at any point leaves every chunk readable in either its old
-/// or its new version.
+/// Staged chunks are compressed and written into free sectors before the header is published.
+/// Opening the region replays a header publication interrupted by a process crash.
 pub struct PumpFile {
     path: PathBuf,
     region: Vector2<i32>,
@@ -62,14 +62,86 @@ pub struct PumpFile {
     used_sectors: SectorBitmap,
     staged: FxHashMap<usize, Bytes>,
     unsynced: bool,
+    recovery_needed: bool,
 }
 
 impl PumpFile {
+    fn load_header(&mut self, header: &[u8], file_len: u64) -> Result<(), ChunkReadingError> {
+        if file_len != 0
+            && (file_len < HEADER_BYTES as u64 || header[..SIGNATURE.len()] != SIGNATURE)
+        {
+            return Err(ChunkReadingError::InvalidHeader);
+        }
+        self.offsets.fill(0);
+        self.lengths.fill(0);
+        self.used_sectors = SectorBitmap::default();
+        self.used_sectors.set(0, HEADER_SECTORS, true);
+        self.file_len = file_len;
+        let mut table = &header[SECTOR_BYTES..];
+        for index in 0..CHUNK_COUNT {
+            let offset = table.get_u32();
+            let len = table.get_u32();
+            if offset == 0 && len == 0 {
+                continue;
+            }
+            let count = sector_count(len);
+            let end_byte = u64::from(offset) * SECTOR_BYTES as u64 + u64::from(len);
+            if offset < HEADER_SECTORS || len == 0 || end_byte > file_len {
+                warn!(
+                    "Pump region {} has an invalid entry at index {index}: offset {offset}, len {len}",
+                    self.path.display()
+                );
+                continue;
+            }
+            self.offsets[index] = offset;
+            self.lengths[index] = len;
+            self.used_sectors.set(offset, count, true);
+        }
+        Ok(())
+    }
+
+    fn recover_before_write(&mut self) -> io::Result<()> {
+        if self.recovery_needed {
+            let file = self
+                .file
+                .as_ref()
+                .ok_or_else(|| io::Error::other("region file is not open"))?;
+            let (header, file_len) =
+                journal::read(&self.path, self.region, file, HEADER_BYTES, true)?;
+            self.load_header(&header, file_len)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            self.recovery_needed = false;
+        }
+        Ok(())
+    }
+
+    fn publish_header(
+        &mut self,
+        header: &[u8],
+        sync: bool,
+        sync_file: impl Fn(&File) -> io::Result<()>,
+    ) -> io::Result<()> {
+        let file = self
+            .file
+            .as_ref()
+            .ok_or_else(|| io::Error::other("region file is not open"))?;
+        journal::publish(
+            &self.path,
+            self.region,
+            file,
+            header,
+            sync,
+            sync_file,
+            &mut self.recovery_needed,
+        )
+    }
+
     fn flush_with_sync(
         &mut self,
         sync: bool,
         sync_file: impl Fn(&File) -> std::io::Result<()>,
     ) -> std::io::Result<()> {
+        self.recover_before_write()?;
         if self.staged.is_empty() {
             if sync
                 && self.unsynced
@@ -137,25 +209,16 @@ impl PumpFile {
             write_all_at(file, &run, run_start)?;
         }
 
-        let old_offsets = std::mem::replace(&mut self.offsets, offsets);
-        let old_lengths = std::mem::replace(&mut self.lengths, lengths);
-        let header = self.header_bytes();
-        let file = self.file()?;
-        if let Err(err) = write_all_at(file, &header, 0) {
-            self.offsets = old_offsets;
-            self.lengths = old_lengths;
-            return Err(err);
-        }
+        let header = self.header_bytes(&offsets, &lengths);
+        self.publish_header(&header, sync, sync_file)?;
+        self.offsets = offsets;
+        self.lengths = lengths;
         for (offset, count) in freed {
             used_sectors.set(offset, count, false);
         }
         self.file_len = self.file_len.max(file_end).max(HEADER_BYTES as u64);
         self.used_sectors = used_sectors;
-        self.unsynced = true;
-        if sync && let Some(file) = &self.file {
-            sync_file(file)?;
-            self.unsynced = false;
-        }
+        self.unsynced = !sync;
         self.truncate_unused_tail();
         self.staged.clear();
         Ok(())
@@ -175,30 +238,27 @@ impl PumpFile {
         }
     }
 
-    fn header_bytes(&self) -> Vec<u8> {
+    fn header_bytes(&self, offsets: &[u32], lengths: &[u32]) -> Vec<u8> {
         let mut header = Vec::with_capacity(HEADER_BYTES);
         header.put_slice(&SIGNATURE);
         header.put_i32(self.region.x);
         header.put_i32(self.region.y);
         header.resize(SECTOR_BYTES, 0);
-        for index in 0..CHUNK_COUNT {
-            header.put_u32(self.offsets[index]);
-            header.put_u32(self.lengths[index]);
+        for (offset, length) in offsets.iter().zip(lengths) {
+            header.put_u32(*offset);
+            header.put_u32(*length);
         }
         header
     }
 
     fn file(&mut self) -> std::io::Result<&File> {
-        if self.file.is_none() {
-            if let Some(parent) = self.path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let file = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false)
-                .open(&self.path)?;
+        if self.file.is_none() || self.file_len == 0 {
+            // A first save can be interrupted while writing its payloads. Publish an empty
+            // header before those writes so the region can reopen even without a journal.
+            self.file = None;
+            let header = self.header_bytes(&self.offsets, &self.lengths);
+            write_file_atomically(&self.path, &header, false)?;
+            let file = OpenOptions::new().read(true).write(true).open(&self.path)?;
             self.file_len = file.metadata()?.len();
             self.file = Some(file);
         }
@@ -232,52 +292,17 @@ impl RegionFile for PumpFile {
             used_sectors: SectorBitmap::default(),
             staged: FxHashMap::default(),
             unsynced: false,
+            recovery_needed: false,
         };
         this.used_sectors.set(0, HEADER_SECTORS, true);
 
-        let file = match OpenOptions::new().read(true).write(true).open(path) {
-            Ok(file) => file,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(this),
-            Err(err) => return Err(ChunkReadingError::IoError(err)),
-        };
-        let file_len = file.metadata().map_err(ChunkReadingError::IoError)?.len();
-        if file_len == 0 {
-            this.file = Some(file);
+        let Some(file) = journal::open_file(path, true).map_err(ChunkReadingError::IoError)? else {
             return Ok(this);
-        }
-        if file_len < HEADER_BYTES as u64 {
-            return Err(ChunkReadingError::InvalidHeader);
-        }
-
-        let mut header = vec![0; HEADER_BYTES];
-        read_exact_at(&file, &mut header, 0).map_err(ChunkReadingError::IoError)?;
-        if header[..SIGNATURE.len()] != SIGNATURE {
-            return Err(ChunkReadingError::InvalidHeader);
-        }
-
-        let mut table = &header[SECTOR_BYTES..];
-        for index in 0..CHUNK_COUNT {
-            let offset = table.get_u32();
-            let len = table.get_u32();
-            if offset == 0 && len == 0 {
-                continue;
-            }
-            let count = sector_count(len);
-            let end_byte = u64::from(offset) * SECTOR_BYTES as u64 + u64::from(len);
-            if offset < HEADER_SECTORS || len == 0 || end_byte > file_len {
-                warn!(
-                    "Pump region {} has an invalid entry at index {index}: offset {offset}, len {len}",
-                    path.display()
-                );
-                continue;
-            }
-            this.offsets[index] = offset;
-            this.lengths[index] = len;
-            this.used_sectors.set(offset, count, true);
-        }
-
+        };
+        let (header, file_len) = journal::read(path, region, &file, HEADER_BYTES, true)
+            .map_err(ChunkReadingError::IoError)?;
+        this.load_header(&header, file_len)?;
         this.file = Some(file);
-        this.file_len = file_len;
         Ok(this)
     }
 
@@ -286,31 +311,26 @@ impl RegionFile for PumpFile {
     }
 
     fn delete_chunk(&mut self, index: usize) -> std::io::Result<bool> {
-        let was_staged = self.staged.remove(&index).is_some();
+        self.recover_before_write()?;
         let offset = self.offsets[index];
         let len = self.lengths[index];
         if offset == 0 || len == 0 {
-            return Ok(was_staged);
+            return Ok(self.staged.remove(&index).is_some());
         }
-
+        if self.file.is_some() {
+            let mut offsets = self.offsets.clone();
+            let mut lengths = self.lengths.clone();
+            offsets[index] = 0;
+            lengths[index] = 0;
+            let header = self.header_bytes(&offsets, &lengths);
+            self.publish_header(&header, false, File::sync_data)?;
+            self.unsynced = true;
+        }
+        self.staged.remove(&index);
         self.offsets[index] = 0;
         self.lengths[index] = 0;
-
-        if self.file.is_some() {
-            let header = self.header_bytes();
-            let file = self.file()?;
-            if let Err(err) = write_all_at(file, &header, 0) {
-                self.offsets[index] = offset;
-                self.lengths[index] = len;
-                return Err(err);
-            }
-            self.used_sectors.set(offset, sector_count(len), false);
-            self.truncate_unused_tail();
-            self.unsynced = true;
-        } else {
-            self.used_sectors.set(offset, sector_count(len), false);
-        }
-
+        self.used_sectors.set(offset, sector_count(len), false);
+        self.truncate_unused_tail();
         Ok(true)
     }
 
@@ -391,7 +411,7 @@ impl RegionFile for PumpFile {
     }
 
     fn has_staged(&self) -> bool {
-        !self.staged.is_empty()
+        !self.staged.is_empty() || self.recovery_needed
     }
 
     fn flush(&mut self, sync: bool) -> std::io::Result<()> {
@@ -486,13 +506,23 @@ mod tests {
         let expected = Bytes::from(vec![2; 64]);
         region.stage_chunk(0, PumpFile::encode_chunk(expected.clone(), &()).unwrap());
 
+        let syncs = std::cell::Cell::new(0);
         assert!(
             region
-                .flush_with_sync(true, |_| Err(std::io::Error::other("sync failed")))
+                .flush_with_sync(true, |file| {
+                    syncs.set(syncs.get() + 1);
+                    if syncs.get() == 2 {
+                        Err(std::io::Error::other("header sync failed"))
+                    } else {
+                        file.sync_data()
+                    }
+                })
                 .is_err()
         );
         assert!(region.has_staged());
+        assert!(super::journal::path(&path).is_file());
         region.flush(false).unwrap();
+        assert!(!super::journal::path(&path).exists());
         region.stage_chunk(
             1,
             PumpFile::encode_chunk(Bytes::from(vec![3; 64]), &()).unwrap(),
@@ -505,6 +535,27 @@ mod tests {
             expected
         );
         assert_no_overlap(&reopened);
+    }
+
+    #[test]
+    fn an_interrupted_first_payload_leaves_a_readable_empty_header() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("r.0.0.pump");
+        let pos = Vector2::new(0, 0);
+        let mut region = PumpFile::open(&path, pos).unwrap();
+        let file = region.file().unwrap();
+        crate::chunk::io::write_all_at(file, b"unpublished payload", HEADER_BYTES as u64).unwrap();
+        drop(region);
+
+        let mut recovered = PumpFile::open(&path, pos).unwrap();
+        assert!(recovered.read_chunk(0).unwrap().is_none());
+        let expected = Bytes::from_static(b"committed payload");
+        recovered.stage_chunk(0, PumpFile::encode_chunk(expected.clone(), &()).unwrap());
+        recovered.flush(true).unwrap();
+        assert_eq!(
+            PumpFile::decode_chunk(recovered.read_chunk(0).unwrap().unwrap()).unwrap(),
+            expected,
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::FxHashMap;
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -17,6 +17,8 @@ use crate::chunk::{
     CompressionError,
     io::{Dirtiable, RegionFile, read_exact_at, write_all_at, write_file_atomically},
 };
+
+use super::header_journal as journal;
 
 /// The side size of a region in chunks (one region is 32x32 chunks)
 pub const REGION_SIZE: usize = 32;
@@ -414,9 +416,8 @@ fn epoch_seconds() -> u32 {
 
 /// An Anvil (`.mca`) region file.
 ///
-/// Only the header is kept in memory. A flush writes each staged chunk into free sectors, then
-/// the header, and frees the old sectors last, so a crash at any point leaves every chunk
-/// readable in either its old or its new version.
+/// A flush writes staged chunks into free sectors, records the intended header, then publishes
+/// the header and frees the old sectors. Opening the region replays an interrupted header write.
 pub struct AnvilRegion {
     path: PathBuf,
     region: Vector2<i32>,
@@ -428,6 +429,7 @@ pub struct AnvilRegion {
     staged: FxHashMap<usize, AnvilChunkData>,
     pending_external_deletes: Vec<PathBuf>,
     unsynced: bool,
+    recovery_needed: bool,
 }
 
 impl AnvilRegion {
@@ -454,25 +456,32 @@ impl AnvilRegion {
             staged: FxHashMap::default(),
             pending_external_deletes: Vec::new(),
             unsynced: false,
+            recovery_needed: false,
         };
         this.used_sectors.set(0, 2, true);
 
-        let file = match OpenOptions::new().read(true).write(writable).open(path) {
-            Ok(file) => file,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(this),
-            Err(err) => return Err(ChunkReadingError::IoError(err)),
+        let Some(file) = journal::open_file(path, writable).map_err(ChunkReadingError::IoError)?
+        else {
+            return Ok(this);
         };
-        let file_len = file.metadata().map_err(ChunkReadingError::IoError)?.len();
-        let mut header = vec![0; HEADER_BYTES];
-        let header_len = HEADER_BYTES.min(file_len as usize);
-        if header_len < HEADER_BYTES && header_len > 0 {
+        let (header, file_len) = journal::read(path, region, &file, HEADER_BYTES, writable)
+            .map_err(ChunkReadingError::IoError)?;
+        this.load_header(&header, file_len);
+        this.file = Some(file);
+        Ok(this)
+    }
+
+    fn load_header(&mut self, header: &[u8], file_len: u64) {
+        self.locations.fill(0);
+        self.timestamps.fill(0);
+        self.used_sectors = SectorBitmap::default();
+        self.used_sectors.set(0, 2, true);
+        if (1..HEADER_BYTES as u64).contains(&file_len) {
             warn!(
-                "Region file {} has a truncated header: {header_len} bytes",
-                path.display()
+                "Region file {} has a truncated header: {file_len} bytes",
+                self.path.display()
             );
         }
-        read_exact_at(&file, &mut header[..header_len], 0).map_err(ChunkReadingError::IoError)?;
-
         let (mut location_bytes, mut timestamp_bytes) = header.split_at(SECTOR_BYTES);
         for index in 0..CHUNK_COUNT {
             let location = location_bytes.get_u32();
@@ -486,18 +495,50 @@ impl AnvilRegion {
             if offset < 2 || count == 0 || u64::from(offset) * SECTOR_BYTES as u64 > file_len {
                 warn!(
                     "Region file {} has an invalid sector at index {index}: offset {offset}, count {count}",
-                    path.display()
+                    self.path.display()
                 );
                 continue;
             }
-            this.locations[index] = location;
-            this.timestamps[index] = timestamp;
-            this.used_sectors.set(offset, count, true);
+            self.locations[index] = location;
+            self.timestamps[index] = timestamp;
+            self.used_sectors.set(offset, count, true);
         }
+        self.file_len = file_len;
+    }
 
-        this.file = Some(file);
-        this.file_len = file_len;
-        Ok(this)
+    fn recover_before_write(&mut self) -> io::Result<()> {
+        if self.recovery_needed {
+            let file = self
+                .file
+                .as_ref()
+                .ok_or_else(|| io::Error::other("region file is not open"))?;
+            let (header, file_len) =
+                journal::read(&self.path, self.region, file, HEADER_BYTES, true)?;
+            self.load_header(&header, file_len);
+            self.recovery_needed = false;
+        }
+        Ok(())
+    }
+
+    fn publish_header(
+        &mut self,
+        header: &[u8],
+        sync: bool,
+        sync_file: impl Fn(&File) -> io::Result<()>,
+    ) -> io::Result<()> {
+        let file = self
+            .file
+            .as_ref()
+            .ok_or_else(|| io::Error::other("region file is not open"))?;
+        journal::publish(
+            &self.path,
+            self.region,
+            file,
+            header,
+            sync,
+            sync_file,
+            &mut self.recovery_needed,
+        )
     }
 
     fn flush_with_sync(
@@ -505,6 +546,7 @@ impl AnvilRegion {
         sync: bool,
         sync_file: impl Fn(&File) -> std::io::Result<()>,
     ) -> std::io::Result<()> {
+        self.recover_before_write()?;
         if self.staged.is_empty() {
             if sync
                 && self.unsynced
@@ -582,26 +624,17 @@ impl AnvilRegion {
             write_all_at(file, &run, run_start)?;
         }
 
-        let old_locations = std::mem::replace(&mut self.locations, locations);
-        let old_timestamps = std::mem::replace(&mut self.timestamps, timestamps);
-        let header = self.header_bytes();
-        let file = self.file()?;
-        if let Err(err) = write_all_at(file, &header, 0) {
-            self.locations = old_locations;
-            self.timestamps = old_timestamps;
-            return Err(err);
-        }
+        let header = Self::header_bytes(&locations, &timestamps);
+        self.publish_header(&header, sync, sync_file)?;
+        self.locations = locations;
+        self.timestamps = timestamps;
         for location in freed {
             used_sectors.set(sector_offset(location), sector_count(location), false);
         }
         self.file_len = self.file_len.max(file_end).max(HEADER_BYTES as u64);
         self.used_sectors = used_sectors;
         self.pending_external_deletes = stale_external;
-        self.unsynced = true;
-        if sync && let Some(file) = &self.file {
-            sync_file(file)?;
-            self.unsynced = false;
-        }
+        self.unsynced = !sync;
         for path in self.pending_external_deletes.drain(..) {
             if let Err(err) = std::fs::remove_file(&path)
                 && err.kind() != std::io::ErrorKind::NotFound
@@ -661,12 +694,12 @@ impl AnvilRegion {
         }
     }
 
-    fn header_bytes(&self) -> Vec<u8> {
+    fn header_bytes(locations: &[u32], timestamps: &[u32]) -> Vec<u8> {
         let mut header = Vec::with_capacity(HEADER_BYTES);
-        for location in &self.locations {
+        for location in locations {
             header.put_u32(*location);
         }
-        for timestamp in &self.timestamps {
+        for timestamp in timestamps {
             header.put_u32(*timestamp);
         }
         header
@@ -714,42 +747,36 @@ impl RegionFile for AnvilRegion {
     }
 
     fn delete_chunk(&mut self, index: usize) -> std::io::Result<bool> {
-        let was_staged = self.staged.remove(&index).is_some();
+        self.recover_before_write()?;
         let location = self.locations[index];
         if location == 0 {
-            return Ok(was_staged);
+            return Ok(self.staged.remove(&index).is_some());
         }
 
         let is_external = self.is_external_stub(location)?;
-        let old_location = self.locations[index];
-        let old_timestamp = self.timestamps[index];
+        if self.file.is_some() {
+            let mut locations = self.locations.clone();
+            let mut timestamps = self.timestamps.clone();
+            locations[index] = 0;
+            timestamps[index] = 0;
+            let header = Self::header_bytes(&locations, &timestamps);
+            self.publish_header(&header, false, File::sync_data)?;
+            self.unsynced = true;
+        }
+        self.staged.remove(&index);
         self.locations[index] = 0;
         self.timestamps[index] = 0;
-
-        if self.file.is_some() {
-            let header = self.header_bytes();
-            let file = self.file()?;
-            if let Err(err) = write_all_at(file, &header, 0) {
-                self.locations[index] = old_location;
-                self.timestamps[index] = old_timestamp;
-                return Err(err);
+        self.used_sectors
+            .set(sector_offset(location), sector_count(location), false);
+        if is_external {
+            let ext_path = self.external_path(index);
+            if let Err(err) = std::fs::remove_file(&ext_path)
+                && err.kind() != io::ErrorKind::NotFound
+            {
+                warn!("Failed to remove {}: {err}", ext_path.display());
             }
-            self.used_sectors
-                .set(sector_offset(location), sector_count(location), false);
-            if is_external {
-                let ext_path = self.external_path(index);
-                if let Err(err) = std::fs::remove_file(&ext_path)
-                    && err.kind() != std::io::ErrorKind::NotFound
-                {
-                    warn!("Failed to remove {}: {err}", ext_path.display());
-                }
-            }
-            self.truncate_unused_tail();
-            self.unsynced = true;
-        } else {
-            self.used_sectors
-                .set(sector_offset(location), sector_count(location), false);
         }
+        self.truncate_unused_tail();
 
         Ok(true)
     }
@@ -819,7 +846,7 @@ impl RegionFile for AnvilRegion {
     }
 
     fn has_staged(&self) -> bool {
-        !self.staged.is_empty()
+        !self.staged.is_empty() || self.recovery_needed
     }
 
     fn flush(&mut self, sync: bool) -> std::io::Result<()> {
@@ -839,13 +866,14 @@ pub trait SingleChunkDataSerializer: Send + Sync + Sized + Dirtiable + 'static {
 #[cfg(test)]
 mod tests {
     use super::{
-        AnvilChunkData, AnvilRegion, CHUNK_COUNT, Compression, CompressionError, SECTOR_BYTES,
-        SectorBitmap, sector_count, sector_offset,
+        AnvilChunkData, AnvilRegion, CHUNK_COUNT, Compression, CompressionError, HEADER_BYTES,
+        SECTOR_BYTES, SectorBitmap, journal, sector_count, sector_offset,
     };
     use crate::chunk::io::RegionFile;
     use bytes::{BufMut, Bytes, BytesMut};
     use pumpkin_config::chunk::AnvilChunkConfig;
     use pumpkin_util::math::vector2::Vector2;
+    use std::io;
     use tempfile::TempDir;
 
     /// A region file whose first location entry is `location`, whose other
@@ -964,13 +992,23 @@ mod tests {
             AnvilRegion::encode_chunk(expected.clone(), &config).unwrap(),
         );
 
+        let syncs = std::cell::Cell::new(0);
         assert!(
             region
-                .flush_with_sync(true, |_| Err(std::io::Error::other("sync failed")))
+                .flush_with_sync(true, |file| {
+                    syncs.set(syncs.get() + 1);
+                    if syncs.get() == 2 {
+                        Err(std::io::Error::other("header sync failed"))
+                    } else {
+                        file.sync_data()
+                    }
+                })
                 .is_err()
         );
         assert!(region.has_staged());
+        assert!(journal::path(&path).is_file());
         region.flush(false).unwrap();
+        assert!(!journal::path(&path).exists());
         region.stage_chunk(
             1,
             AnvilRegion::encode_chunk(Bytes::from(vec![3; 64]), &config).unwrap(),
@@ -983,6 +1021,72 @@ mod tests {
             expected
         );
         assert_no_overlap(&reopened);
+    }
+
+    #[test]
+    fn reopening_replays_both_chunks_after_an_interrupted_header_write() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("r.0.0.mca");
+        let pos = Vector2::new(0, 0);
+        let config = AnvilChunkConfig::default();
+        let mut region = AnvilRegion::open(&path, pos).unwrap();
+        for (index, bytes) in [b"old west", b"old east"].into_iter().enumerate() {
+            region.stage_chunk(
+                index,
+                AnvilRegion::encode_chunk(Bytes::from_static(bytes), &config).unwrap(),
+            );
+        }
+        region.flush(true).unwrap();
+        let old = std::fs::read(&path).unwrap()[..HEADER_BYTES].to_vec();
+
+        let next = [b"new west", b"new east"];
+        for (index, bytes) in next.into_iter().enumerate() {
+            region.stage_chunk(
+                index,
+                AnvilRegion::encode_chunk(Bytes::from_static(bytes), &config).unwrap(),
+            );
+        }
+        let syncs = std::cell::Cell::new(0);
+        region
+            .flush_with_sync(true, |file| {
+                syncs.set(syncs.get() + 1);
+                if syncs.get() == 2 {
+                    Err(io::Error::other("interrupted header sync"))
+                } else {
+                    file.sync_data()
+                }
+            })
+            .unwrap_err();
+        drop(region);
+        let journal_path = journal::path(&path);
+        let mut interrupted = std::fs::read(&path).unwrap();
+        interrupted[4..HEADER_BYTES].copy_from_slice(&old[4..]);
+        std::fs::write(&path, &interrupted).unwrap();
+
+        let intact_journal = std::fs::read(&journal_path).unwrap();
+        let mut corrupt_journal = intact_journal.clone();
+        corrupt_journal[0] ^= 1;
+        std::fs::write(&journal_path, corrupt_journal).unwrap();
+        assert!(AnvilRegion::open(&path, pos).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), interrupted);
+        std::fs::write(&journal_path, intact_journal).unwrap();
+
+        let read_only = AnvilRegion::open_read_only(&path, pos).unwrap();
+        for (index, bytes) in next.into_iter().enumerate() {
+            let read = read_only.read_chunk(index).unwrap().unwrap();
+            assert_eq!(AnvilRegion::decode_chunk(read).unwrap(), bytes.as_slice());
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), interrupted);
+        assert!(journal_path.is_file());
+        drop(read_only);
+
+        let recovered = AnvilRegion::open(&path, pos).unwrap();
+        assert!(!journal_path.exists());
+        for (index, bytes) in next.into_iter().enumerate() {
+            let read = recovered.read_chunk(index).unwrap().unwrap();
+            assert_eq!(AnvilRegion::decode_chunk(read).unwrap(), bytes.as_slice());
+        }
+        assert_no_overlap(&recovered);
     }
 
     #[test]

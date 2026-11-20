@@ -31,6 +31,7 @@ use super::{
     palette::{BiomePalette, BlockPalette},
 };
 pub mod anvil;
+mod header_journal;
 pub mod linear;
 pub mod pump;
 

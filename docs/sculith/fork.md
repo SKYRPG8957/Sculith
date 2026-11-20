@@ -208,6 +208,20 @@ containers. The command keeps unsupported template records and reports why it
 preserved them. A missing or incompatible Sculith container blocks the export
 before the destination is published.
 
+## Region header recovery
+
+Anvil and Pump write new inline chunk payloads into free sectors before
+publishing the region header. A temporary `.sculith-journal` beside the region
+records the old and new headers during publication. After an interrupted
+process write, Sculith checks the journal against the region and restores the
+complete new header on opening it. The journal is removed after recovery. A
+damaged or mismatched journal produces a region read error and remains
+available for inspection.
+
+Synchronous region flushes sync the payloads before publishing the journal and
+sync the region header before removing it. The recovery unit is one region
+header. Read-only Anvil tools can use the recovered header in memory.
+
 ## Remaining work
 
 Standalone Bedrock world export and conversion of entities, player data and
