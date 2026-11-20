@@ -1,6 +1,9 @@
-use crate::{codec::var_ulong::VarULong, serial::PacketWrite};
+use crate::{
+    codec::var_ulong::VarULong,
+    serial::{PacketRead, PacketWrite},
+};
 use pumpkin_macros::packet;
-use std::io::{Error, Write};
+use std::io::{Error, Read, Write};
 
 /// Flag indicating the X delta field is present.
 pub const MOVE_ACTOR_DELTA_FLAG_HAS_X: u16 = 0x0001;
@@ -117,6 +120,54 @@ impl PacketWrite for CMoveActorDelta {
     }
 }
 
+impl PacketRead for CMoveActorDelta {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let entity_runtime_id = VarULong::read(reader)?;
+        let mut flags = 0;
+        let x = read_delta(reader, &mut flags, MOVE_ACTOR_DELTA_FLAG_HAS_X)?;
+        let y = read_delta(reader, &mut flags, MOVE_ACTOR_DELTA_FLAG_HAS_Y)?;
+        let z = read_delta(reader, &mut flags, MOVE_ACTOR_DELTA_FLAG_HAS_Z)?;
+        let pitch = read_delta(reader, &mut flags, MOVE_ACTOR_DELTA_FLAG_HAS_PITCH)?;
+        let yaw = read_delta(reader, &mut flags, MOVE_ACTOR_DELTA_FLAG_HAS_YAW)?;
+        let head_yaw = read_delta(reader, &mut flags, MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW)?;
+        for flag in [
+            MOVE_ACTOR_DELTA_FLAG_ON_GROUND,
+            MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE,
+            MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE_LOCAL_ENTITY,
+            MOVE_ACTOR_DELTA_FLAG_FORCE_COMPLETION,
+        ] {
+            if bool::read(reader)? {
+                flags |= flag;
+            }
+        }
+        let tick = VarULong::read(reader)?;
+        Ok(Self {
+            entity_runtime_id,
+            flags,
+            x,
+            y,
+            z,
+            pitch,
+            yaw,
+            head_yaw,
+            tick,
+        })
+    }
+}
+
+fn read_delta<T: PacketRead + Default, R: Read>(
+    reader: &mut R,
+    flags: &mut u16,
+    flag: u16,
+) -> Result<T, Error> {
+    if bool::read(reader)? {
+        *flags |= flag;
+        T::read(reader)
+    } else {
+        Ok(T::default())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,5 +180,27 @@ mod tests {
         let mut bytes = Vec::new();
         packet.write(&mut bytes).unwrap();
         assert_eq!(bytes, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 172, 2]);
+        let mut payload = bytes.as_slice();
+        let decoded = CMoveActorDelta::read(&mut payload).unwrap();
+        assert_eq!(decoded.tick.0, 300);
+        assert_eq!(decoded.flags, 0);
+        assert!(payload.is_empty());
+    }
+
+    #[test]
+    fn reads_only_present_axes_and_angles() {
+        let mut payload: &[u8] = &[1, 1, 0, 0, 0x80, 0x3f, 0, 0, 0, 1, 64, 0, 1, 0, 0, 1, 9];
+        let packet = CMoveActorDelta::read(&mut payload).unwrap();
+        assert_eq!(packet.x, 1.0);
+        assert_eq!(packet.yaw, 64);
+        assert_eq!(
+            packet.flags,
+            MOVE_ACTOR_DELTA_FLAG_HAS_X
+                | MOVE_ACTOR_DELTA_FLAG_HAS_YAW
+                | MOVE_ACTOR_DELTA_FLAG_ON_GROUND
+                | MOVE_ACTOR_DELTA_FLAG_FORCE_COMPLETION
+        );
+        assert_eq!(packet.tick.0, 9);
+        assert!(payload.is_empty());
     }
 }

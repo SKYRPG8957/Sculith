@@ -526,9 +526,10 @@ mod tests {
         use pumpkin_protocol::codec::var_uint::VarUInt;
         use pumpkin_protocol::{Packet, serial::PacketWrite};
 
+        let form_id = 0x8000_0000;
         let mut outbound = Vec::new();
         CModalFormRequest {
-            form_id: VarUInt(300),
+            form_id: VarUInt(form_id),
             form_ui_json: "{}".into(),
         }
         .write(&mut outbound)
@@ -541,11 +542,11 @@ mod tests {
             panic!("expected a typed form request");
         };
         assert_eq!(
-            (request.form_id, request.form_ui_json.as_str()),
-            (300, "{}")
+            (request.form_id as u32, request.form_ui_json.as_str()),
+            (form_id, "{}")
         );
 
-        let mut inbound = vec![0xAC, 0x02, 1, 1, b'0', 0];
+        let mut inbound = vec![0x80, 0x80, 0x80, 0x80, 0x08, 1, 1, b'0', 0];
         let Some(BedrockServerboundPacket::SModalFormResponse(response)) = read_bedrock_received(
             CURRENT_BEDROCK_MC_PROTOCOL,
             SModalFormResponse::PACKET_ID,
@@ -553,7 +554,7 @@ mod tests {
         ) else {
             panic!("expected a typed form response");
         };
-        assert_eq!(response.form_id, 300);
+        assert_eq!(response.form_id as u32, form_id);
         assert_eq!(response.json_response.as_deref(), Some("0"));
         assert!(response.form_cancel_reason.is_none());
         assert!(read_bedrock_received(671, SModalFormResponse::PACKET_ID, &inbound).is_none());

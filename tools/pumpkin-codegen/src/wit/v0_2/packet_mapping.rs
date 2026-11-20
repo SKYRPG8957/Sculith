@@ -387,7 +387,6 @@ fn derived_bedrock_fields(packet: &syn::ItemStruct) -> Option<String> {
             .and_then(|name| name.strip_suffix('>'))
             .unwrap_or(&ty);
         if is_ref
-            || is_slice
             || !matches!(
                 ty,
                 "i8" | "u8"
@@ -411,6 +410,9 @@ fn derived_bedrock_fields(packet: &syn::ItemStruct) -> Option<String> {
                     | "Uuid"
                     | "VecU8"
             )
+            || (is_slice
+                && !matches!(&field.ty, syn::Type::Path(path)
+                if path.path.segments.last().is_some_and(|part| part.ident == "Vec")))
         {
             return None;
         }
@@ -511,6 +513,13 @@ fn bedrock_type_info(ty: &syn::Type) -> (String, bool, bool) {
             match (segment.ident.to_string().as_str(), name.as_str()) {
                 ("Cow", "str") => return ("CowStr".into(), false, false),
                 ("Vec", "u8") => return ("VecU8".into(), false, false),
+                (
+                    "Vec",
+                    "String" | "i8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "f32" | "f64"
+                    | "VarInt" | "VarUInt" | "VarLong" | "VarULong" | "Uuid",
+                ) => {
+                    return (name, false, true);
+                }
                 ("Option", "CowStr" | "String" | "VarInt" | "VarUInt" | "VarLong" | "VarULong") => {
                     return (format!("Option<{name}>"), false, false);
                 }
@@ -626,16 +635,21 @@ fn convert_value(
             }
             MappingMode::Downcast => String::new(),
         },
+        "VarUInt" if is_slice && !is_ref => match mode {
+            MappingMode::Serialize => format!(
+                "{src}.iter().map(|value| pumpkin_protocol::codec::var_uint::VarUInt(*value as _)).collect()"
+            ),
+            MappingMode::Deserialize | MappingMode::ToWit => {
+                format!("{src}.iter().map(|value| value.0 as _).collect()")
+            }
+            MappingMode::Downcast => String::new(),
+        },
         "VarUInt" => match mode {
             MappingMode::Serialize => {
-                format!(
-                    "pumpkin_protocol::codec::var_uint::VarUInt({}.try_into().unwrap())",
-                    src
-                )
+                format!("pumpkin_protocol::codec::var_uint::VarUInt({src} as _)")
             }
-            MappingMode::Deserialize | MappingMode::ToWit => {
-                format!("{}.0.try_into().{}", src, narrow(mode))
-            }
+            // The WIT field is signed. Preserve the wire bits for IDs with bit 31 set.
+            MappingMode::Deserialize | MappingMode::ToWit => format!("{src}.0 as _"),
             MappingMode::Downcast => String::new(),
         },
         "VarLong" | "VarULong" => {
@@ -716,6 +730,15 @@ fn convert_value(
             MappingMode::Downcast => String::new(),
         },
 
+        "Vector2" => match mode {
+            MappingMode::Serialize => {
+                format!("pumpkin_util::math::vector2::Vector2::new({src}.0 as _, {src}.1 as _)")
+            }
+            MappingMode::Deserialize | MappingMode::ToWit => {
+                format!("({src}.x as _, {src}.y as _)")
+            }
+            MappingMode::Downcast => String::new(),
+        },
         "Vector3" => match mode {
             MappingMode::Serialize => {
                 format!(

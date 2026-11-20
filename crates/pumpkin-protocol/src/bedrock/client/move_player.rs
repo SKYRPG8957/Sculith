@@ -1,7 +1,10 @@
-use crate::{codec::var_ulong::VarULong, serial::PacketWrite};
+use crate::{
+    codec::var_ulong::VarULong,
+    serial::{PacketRead, PacketWrite},
+};
 use pumpkin_macros::packet;
 use pumpkin_util::math::vector3::Vector3;
-use std::io::{Error, Write};
+use std::io::{Error, Read, Write};
 
 /// Sent by the server to update a player's movement, teleport, or view angle.
 #[derive(Debug)]
@@ -89,5 +92,61 @@ impl PacketWrite for CMovePlayer {
         }
         self.tick.write(writer)?;
         Ok(())
+    }
+}
+
+impl PacketRead for CMovePlayer {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let player_runtime_id = VarULong::read(reader)?;
+        let position = Vector3::read(reader)?;
+        let pitch = f32::read(reader)?;
+        let yaw = f32::read(reader)?;
+        let head_yaw = f32::read(reader)?;
+        let mode = u8::read(reader)?;
+        let on_ground = bool::read(reader)?;
+        let riding_runtime_id = VarULong::read(reader)?;
+        let (teleport_cause, teleport_source_entity_type) = if bool::read(reader)? {
+            (i32::read(reader)?, i32::read(reader)?)
+        } else {
+            (0, 0)
+        };
+        Ok(Self {
+            player_runtime_id,
+            position,
+            pitch,
+            yaw,
+            head_yaw,
+            mode,
+            on_ground,
+            riding_runtime_id,
+            teleport_cause,
+            teleport_source_entity_type,
+            tick: VarULong::read(reader)?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_teleport_data_before_the_world_tick() {
+        let mut body: &[u8] = &[
+            2, // actor runtime ID
+            0, 0, 0x80, 0x3f, 0, 0, 0, 0x40, 0, 0, 0x40, 0x40, // position
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // angles
+            2, 1, 0, 1, // teleport mode, grounded, ridden entity, data present
+            3, 0, 0, 0, 20, 0, 0, 0, // cause and entity type
+            0xac, 2,
+        ];
+        let packet = CMovePlayer::read(&mut body).unwrap();
+        assert_eq!(packet.position, Vector3::new(1.0, 2.0, 3.0));
+        assert_eq!(
+            (packet.teleport_cause, packet.teleport_source_entity_type),
+            (3, 20)
+        );
+        assert_eq!(packet.tick.0, 300);
+        assert!(body.is_empty());
     }
 }
