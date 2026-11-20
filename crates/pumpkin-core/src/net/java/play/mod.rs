@@ -56,15 +56,14 @@ use pumpkin_protocol::java::client::play::{
 use pumpkin_protocol::java::server::play::{
     Action, ActionType, CommandBlockMode, FLAG_HORIZONTAL_COLLISION, FLAG_ON_GROUND, SAttack,
     SBundleItemSelected, SChangeGameMode, SChatCommand, SChatMessage, SChunkBatch, SClientCommand,
-    SClientInformationPlay, SCommandSuggestion, SConfirmTeleport,
-    SCookieResponse as SPCookieResponse, SEditBook, SInteract, SJigsawGenerate, SKeepAlive,
-    SMoveVehicle, SPaddleBoat, SPickItemFromBlock, SPickItemFromEntity, SPlaceRecipe,
-    SPlayPingRequest, SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput,
-    SPlayerPosition, SPlayerPositionRotation, SPlayerRotation, SPlayerSession,
-    SRecipeBookChangeSettings, SRecipeBookSeenRecipe, SSeenAdvancement, SSelectTrade,
-    SSetCommandBlock, SSetCreativeSlot, SSetHeldItem, SSetJigsawBlock, SSetPlayerGround,
-    SSetTestBlock, SSwingArm, STeleportToEntity, STestInstanceBlockAction, SUpdateSign, SUseItem,
-    SUseItemOn, Status,
+    SClientInformationPlay, SCommandSuggestion, SCookieResponse as SPCookieResponse, SEditBook,
+    SInteract, SJigsawGenerate, SKeepAlive, SMoveVehicle, SPaddleBoat, SPickItemFromBlock,
+    SPickItemFromEntity, SPlaceRecipe, SPlayPingRequest, SPlayerAbilities, SPlayerAction,
+    SPlayerCommand, SPlayerInput, SPlayerPosition, SPlayerPositionRotation, SPlayerRotation,
+    SPlayerSession, SRecipeBookChangeSettings, SRecipeBookSeenRecipe, SSeenAdvancement,
+    SSelectTrade, SSetCommandBlock, SSetCreativeSlot, SSetHeldItem, SSetJigsawBlock,
+    SSetPlayerGround, SSetTestBlock, SSwingArm, STeleportToEntity, STestInstanceBlockAction,
+    SUpdateSign, SUseItem, SUseItemOn, Status,
 };
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::math::{polynomial_rolling_hash, position::BlockPos};
