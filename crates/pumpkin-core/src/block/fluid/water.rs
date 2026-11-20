@@ -8,7 +8,7 @@ use crate::{
     world::World,
 };
 use pumpkin_data::{
-    Block, BlockDirection, BlockStateId,
+    BlockDirection, BlockStateId,
     fluid::{Fluid, FluidProperties, Level},
 };
 use pumpkin_util::math::position::BlockPos;
@@ -53,14 +53,6 @@ impl FlowingWater {
         let destination = read(below)?;
         if (destination != BlockStateId::AIR && destination != falling)
             || !physics::can_be_replaced(destination.to_state(), destination.to_block(), water)
-            || world
-                .block_registry
-                .get_pumpkin_block(Block::AIR.id)
-                .is_some()
-            || world
-                .block_registry
-                .get_pumpkin_block(Block::WATER.id)
-                .is_some()
         {
             return None;
         }

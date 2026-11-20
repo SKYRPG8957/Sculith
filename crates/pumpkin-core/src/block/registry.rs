@@ -513,6 +513,7 @@ impl BlockActionResult {
 /// Marks a block with no registered behaviour. Never handed out as a real index.
 const NO_BEHAVIOUR: u16 = u16::MAX;
 const REGIONAL_WATER: u8 = 4;
+const REGIONAL_WATER_BLOCK: u8 = 8;
 
 #[derive(Clone, Copy)]
 pub(crate) enum RegionalBlockTick {
@@ -959,9 +960,17 @@ impl BlockRegistry {
         self.behaviours.push(Arc::new(block));
         for i in ids {
             self.block_indices[i.as_u16() as usize] = idx;
-            if let Some(tick) = RegionalBlockTick::for_block(i) {
-                let flag = tick as u8;
-                if std::any::TypeId::of::<T>() == tick.behaviour_type() {
+            let regional = match i {
+                BlockId::WATER => Some((
+                    REGIONAL_WATER_BLOCK,
+                    std::any::TypeId::of::<BubbleColumnBlock>(),
+                )),
+                _ => {
+                    RegionalBlockTick::for_block(i).map(|tick| (tick as u8, tick.behaviour_type()))
+                }
+            };
+            if let Some((flag, behaviour)) = regional {
+                if std::any::TypeId::of::<T>() == behaviour {
                     self.regional_ticks |= flag;
                 } else {
                     self.regional_ticks &= !flag;
@@ -990,8 +999,12 @@ impl BlockRegistry {
         }
     }
 
-    pub(crate) const fn uses_regional_water(&self) -> bool {
+    pub(crate) fn uses_regional_water(&self) -> bool {
+        // The built-in block's bubble checks only react to source placement or support changes.
         self.regional_ticks & REGIONAL_WATER != 0
+            && self.get_pumpkin_block(BlockId::AIR).is_none()
+            && (self.regional_ticks & REGIONAL_WATER_BLOCK != 0
+                || self.get_pumpkin_block(BlockId::WATER).is_none())
     }
 
     pub fn on_synced_block_event(
@@ -1691,6 +1704,35 @@ impl BlockRegistry {
             },
             |pumpkin_block| pumpkin_block.is_pathfindable(state, computation_type),
         )
+    }
+}
+
+#[cfg(test)]
+mod regional_water_tests {
+    use super::{BlockBehaviour, BlockId, BlockMetadata, BubbleColumnBlock, default_registry};
+    use std::sync::Arc;
+
+    struct WaterOverride;
+
+    impl BlockBehaviour for WaterOverride {}
+
+    impl BlockMetadata for WaterOverride {
+        fn ids() -> Box<[BlockId]> {
+            [BlockId::WATER].into()
+        }
+    }
+
+    #[test]
+    fn admits_builtin_water_block_and_defers_overridden_callbacks() {
+        let mut registry = default_registry();
+        let registry = Arc::get_mut(&mut registry).unwrap();
+        assert!(registry.uses_regional_water());
+
+        registry.register(WaterOverride);
+        assert!(!registry.uses_regional_water());
+
+        registry.register(BubbleColumnBlock);
+        assert!(registry.uses_regional_water());
     }
 }
 
