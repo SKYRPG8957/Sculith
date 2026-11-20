@@ -3482,10 +3482,8 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         accessor: &Accessor<PluginHostState, Self>,
         player: Resource<Player>,
     ) -> wasmtime::Result<()> {
-        let player = accessor.get_res(&player)?;
-        let runtime = tokio::runtime::Handle::current();
-
-        run_blocking(accessor, move || runtime.block_on(player.respawn())).await
+        accessor.get_res(&player)?.request_respawn();
+        Ok(())
     }
 
     async fn open_gui(

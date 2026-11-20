@@ -5,6 +5,7 @@ mod creative;
 pub mod forms;
 mod item_use;
 mod picking;
+mod respawn;
 mod shoulders;
 pub mod statistics;
 pub(crate) mod world_transfer;
@@ -2360,140 +2361,6 @@ impl Player {
             force: forced,
         });
         true
-    }
-
-    /// Calculates the player's respawn point based on stored spawn data.
-    ///
-    /// Returns `Some(CalculatedRespawnPoint)` if a valid respawn point exists, `None` otherwise.
-    ///
-    /// # Behavior
-    /// - If `force` flag is set (via `/spawnpoint` command), validates the spawn position is safe
-    ///   (both the block and block above allow mob spawn).
-    /// - For beds: validates the bed block still exists and finds a valid spawn position around it.
-    /// - For respawn anchors (Nether): validates the anchor has charges and finds a valid spawn position.
-    /// - Returns `None` if the spawn block is invalid/missing (caller should send
-    ///   `NoRespawnBlockAvailable` game event and use world spawn).
-    ///
-    /// # Note
-    /// This function does NOT send any packets. The caller is responsible for
-    /// sending `NoRespawnBlockAvailable` if this returns `None`.
-    pub async fn calculate_respawn_point(&self) -> Option<CalculatedRespawnPoint> {
-        type BedProperties = pumpkin_data::block_properties::WhiteBedLikeProperties;
-        type AnchorProperties = pumpkin_data::block_properties::RespawnAnchorLikeProperties;
-
-        let respawn_point = {
-            let respawn_guard = self
-                .respawn_point
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            respawn_guard.clone()?
-        };
-        let world = if self.world().dimension == respawn_point.dimension {
-            self.world()
-        } else if let Some(server) = self.world().server.upgrade() {
-            server.get_world_from_dimension(&respawn_point.dimension)
-        } else {
-            self.world()
-        };
-        let pos = &respawn_point.position;
-
-        // Ensure chunks around the spawn position are fetched
-        let min_chunk_x = (pos.0.x - 2) >> 4;
-        let max_chunk_x = (pos.0.x + 2) >> 4;
-        let min_chunk_z = (pos.0.z - 2) >> 4;
-        let max_chunk_z = (pos.0.z + 2) >> 4;
-        for cx in min_chunk_x..=max_chunk_x {
-            for cz in min_chunk_z..=max_chunk_z {
-                world
-                    .level
-                    .get_or_fetch_chunk(Vector2::new(cx, cz), |_| ())
-                    .await;
-            }
-        }
-
-        let (block, state_id) = world.get_block_and_state_id(pos);
-
-        // If force is set (from /spawnpoint command), validate position is safe
-        if respawn_point.force {
-            // For forced spawn, check if both the block and block above allow mob spawn
-            let block_state = world.get_block_state(pos);
-            let above_state = world.get_block_state(&pos.up());
-
-            // Check if blocks are passable (non-solid or air)
-            let block_safe = block_state.is_air() || !block_state.is_solid();
-            let above_safe = above_state.is_air() || !above_state.is_solid();
-
-            if block_safe && above_safe {
-                let position = Vector3::new(
-                    f64::from(pos.0.x) + 0.5,
-                    f64::from(pos.0.y) + 0.1,
-                    f64::from(pos.0.z) + 0.5,
-                );
-                debug!(
-                    "Returning forced spawn point at {:?}, dimension: {:?}",
-                    position, respawn_point.dimension
-                );
-                return Some(CalculatedRespawnPoint {
-                    position,
-                    yaw: respawn_point.yaw,
-                    pitch: 0.0,
-                    dimension: respawn_point.dimension.clone(),
-                });
-            }
-            return None;
-        }
-
-        // Handle bed respawn
-        if block.has_tag(&tag::Block::MINECRAFT_BEDS) {
-            let bed_props = BedProperties::from_state_id(state_id);
-            let facing = bed_props.facing;
-
-            // Try positions around the bed based on facing direction
-            // Vanilla tries multiple offset patterns; we use a simplified version
-            if let Some(spawn_pos) = Self::find_bed_spawn_position(&world, pos, facing) {
-                return Some(CalculatedRespawnPoint {
-                    position: spawn_pos,
-                    yaw: respawn_point.yaw,
-                    pitch: 0.0,
-                    dimension: respawn_point.dimension.clone(),
-                });
-            }
-            return None;
-        }
-
-        // Handle respawn anchor (Nether)
-        if block == &Block::RESPAWN_ANCHOR {
-            let anchor_props = AnchorProperties::from_state_id(state_id);
-            let charges = anchor_props.charges;
-
-            // Anchor needs at least 1 charge to work
-            if charges == 0 {
-                return None;
-            }
-
-            // Try positions around the anchor
-            if let Some(spawn_pos) = Self::find_anchor_spawn_position(&world, pos) {
-                // Decrement charges after successful respawn position found
-                let new_charges = charges - 1;
-                let mut new_props = anchor_props;
-                new_props.charges = new_charges;
-                world.set_block_state(
-                    pos,
-                    new_props.to_state_id(block),
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
-                );
-
-                return Some(CalculatedRespawnPoint {
-                    position: spawn_pos,
-                    yaw: respawn_point.yaw,
-                    pitch: 0.0,
-                    dimension: respawn_point.dimension.clone(),
-                });
-            }
-            return None;
-        }
-
-        None
     }
 
     /// Find a valid spawn position around a bed.
@@ -5000,7 +4867,6 @@ impl Player {
         }
     }
 
-    #[expect(clippy::too_many_lines)]
     async fn finish_world_teleport(
         self: &Arc<Self>,
         server: Arc<Server>,
@@ -5032,22 +4898,13 @@ impl Player {
                 let pitch = event.pitch;
                 let new_world = event.new_world;
 
-                let (completion, applied) = tokio::sync::oneshot::channel();
-                server.submit_world_transfer(world_transfer::WorldTransfer {
-                    player: self.clone(),
-                    source: current_world.clone(),
-                    destination: new_world.clone(),
+                let destination = world_transfer::WorldPosition {
+                    world: new_world.clone(),
                     position,
                     yaw,
                     pitch,
-                    completion,
-                });
-                let Ok(Some(mut departure)) = applied.await else {
-                    return;
                 };
-                self.finish_world_departure(&current_world, std::mem::take(&mut departure.unwatched)).await;
-                drop(departure);
-                if self.client.closed() {
+                if !self.apply_world_change(&server, &current_world, &destination, None).await {
                     return;
                 }
 
@@ -5086,26 +4943,8 @@ impl Player {
                             java.send_packet_now(data).await;
                         }
                     }
-                    ClientPlatform::Bedrock(bedrock) => {
-                        let bedrock_dimension = if new_world.dimension == Dimension::OVERWORLD {
-                            0
-                        } else if new_world.dimension == Dimension::THE_NETHER {
-                            1
-                        } else if new_world.dimension == Dimension::THE_END {
-                            2
-                        } else {
-                            0
-                        };
-                        let pos_f32 = Vector3::new(position.x as f32, position.y as f32, position.z as f32);
-                        let change_dim_packet = pumpkin_protocol::bedrock::client::CChangeDimension {
-                            dimension_id: bedrock_dimension.into(),
-                            position: pos_f32,
-                            respawn: false,
-                            loading_screen_id: None
-                        };
-                        if let Ok(data) = bedrock.serialize_packet(&change_dim_packet) {
-                            bedrock.enqueue_packet(data).await;
-                        }
+                    ClientPlatform::Bedrock(_) => {
+                        self.send_bedrock_dimension_change(&new_world, position, false).await;
                     }
                 }
 
@@ -5138,6 +4977,25 @@ impl Player {
                 server.plugin_manager.fire(&server, &mut changed_world_event).await;
             }
         }}
+    }
+
+    async fn send_bedrock_dimension_change(
+        &self,
+        world: &World,
+        position: Vector3<f64>,
+        respawn: bool,
+    ) {
+        if let ClientPlatform::Bedrock(client) = self.client.as_ref() {
+            let packet = pumpkin_protocol::bedrock::client::CChangeDimension {
+                dimension_id: respawn::bedrock_dimension_id(&world.dimension).into(),
+                position: position.to_f32_lossy(),
+                respawn,
+                loading_screen_id: None,
+            };
+            if let Ok(data) = client.serialize_packet(&packet) {
+                client.send_game_packet(data).await;
+            }
+        }
     }
 
     /// `yaw` and `pitch` are in degrees.
@@ -5749,17 +5607,6 @@ impl Player {
 
     pub fn get_ip(&self) -> String {
         self.client.address().to_string()
-    }
-
-    pub async fn respawn(self: &Arc<Self>) {
-        self.reset_mining();
-        self.world().respawn_player(self, false).await;
-        // The client rebuilt its attribute state on respawn, so send the held
-        // weapon modifiers again.
-        crate::entity::attributes::send_attribute_updates_for_living(
-            &self.living_entity,
-            vec![Attributes::ATTACK_SPEED, Attributes::ATTACK_DAMAGE],
-        );
     }
 
     pub fn ban(&self, server: &Server, reason: Option<TextComponent>) {

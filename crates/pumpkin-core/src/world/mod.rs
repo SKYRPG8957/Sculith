@@ -19,7 +19,7 @@ use rayon::prelude::*;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, RwLock, Weak};
 use std::{collections::HashMap, sync::atomic::Ordering};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 
 mod active_chunks;
 pub mod brightness;
@@ -62,10 +62,7 @@ use crate::{
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
     plugin::{
         block::block_break::BlockBreakEvent,
-        player::{
-            player_change_world::PlayerChangeWorldEvent, player_join::PlayerJoinEvent,
-            player_leave::PlayerLeaveEvent, player_respawn::PlayerRespawnEvent,
-        },
+        player::{player_join::PlayerJoinEvent, player_leave::PlayerLeaveEvent},
     },
     server::Server,
 };
@@ -97,14 +94,14 @@ use pumpkin_data::{
     world::{RAW, WorldEvent},
 };
 use pumpkin_data::{BlockDirection, BlockState, HorizontalFacingExt, translation};
+use pumpkin_inventory::Inventory;
 use pumpkin_inventory::crafting::recipe_provider::RecipeProvider;
 use pumpkin_inventory::screen_handler::InventoryPlayer;
-use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
 use pumpkin_protocol::bedrock::client::start_game::{CStartGame, ServerTelemetryData};
 use pumpkin_protocol::java::client::play::{
-    CBlockUpdate, CDisguisedChatMessage, CExplosion, CRespawn, CSetBlockDestroyStage, CWorldEvent,
+    CBlockUpdate, CDisguisedChatMessage, CExplosion, CSetBlockDestroyStage, CWorldEvent,
     PlayerSpawnData,
 };
 use pumpkin_protocol::java::client::play::{
@@ -4398,7 +4395,7 @@ impl World {
         }
     }
 
-    async fn refresh_java_player_for_bedrock(&self, subject: &Player) {
+    pub(crate) async fn refresh_java_player_for_bedrock(&self, subject: &Player) {
         if !matches!(subject.client.as_ref(), ClientPlatform::Java(_)) {
             return;
         }
@@ -4420,301 +4417,8 @@ impl World {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
-        let Some(_change) = player.reserve_world_change(self) else {
-            return;
-        };
-        let last_death_location = player
-            .last_death_location
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-
-        let data_kept = u8::from(alive);
-
-        let server = self.server.upgrade();
-        let default_world = server.as_ref().map_or_else(
-            || self.clone(),
-            |s| s.get_world_from_dimension(&Dimension::OVERWORLD),
-        );
-
-        // Copy spawn info from default world level_info to avoid holding lock across await
-        let (spawn_x, spawn_y, spawn_z, spawn_yaw, spawn_pitch, keep_inventory) = {
-            let info = default_world.level_info.load();
-            (
-                info.spawn_x,
-                info.spawn_y,
-                info.spawn_z,
-                info.spawn_yaw,
-                info.spawn_pitch,
-                info.game_rules.keep_inventory,
-            )
-        };
-
-        // Get respawn position and dimension
-        let (position, yaw, pitch, respawn_dimension) = if let Some(respawn) =
-            player.calculate_respawn_point().await
-        {
-            (
-                respawn.position,
-                respawn.yaw,
-                respawn.pitch,
-                respawn.dimension,
-            )
-        } else {
-            // No valid respawn point - send notification if player had one set
-            if player
-                .respawn_point
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .is_some()
-            {
-                player
-                    .send_client_packet(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
-                    .await;
-                let mut guard = player
-                    .respawn_point
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(point) = guard.as_ref()
-                    && !point.force
-                {
-                    *guard = None;
-                }
-            }
-
-            // FIXME: This spawn position calculation is incorrect. Should use vanilla's
-            // proper spawn position calculation (see #1381). The y-level calculation
-            // needs to account for spawn radius and find a safe spawn position.
-            let chunk_pos = Vector2::new(spawn_x >> 4, spawn_z >> 4);
-            default_world
-                .level
-                .get_or_fetch_chunk(chunk_pos, |_| ())
-                .await;
-            let top = default_world.get_top_block(Vector2::new(spawn_x, spawn_z));
-            let pos_y = if top > default_world.dimension.min_y {
-                top + 1
-            } else {
-                spawn_y
-            };
-
-            (
-                Vector3::new(
-                    f64::from(spawn_x) + 0.5,
-                    f64::from(pos_y),
-                    f64::from(spawn_z) + 0.5,
-                ),
-                spawn_yaw,
-                spawn_pitch,
-                default_world.dimension.clone(),
-            )
-        };
-
-        let mut spawn_loc_event = crate::plugin::api::events::player::player_spawn_location::PlayerSpawnLocationEvent::new(
-            player.clone(),
-            position,
-        );
-        if let Some(ref s) = server {
-            s.plugin_manager.fire(s, &mut spawn_loc_event).await;
-        }
-        let position = spawn_loc_event.spawn_pos;
-
-        // Candidate destination world for a cross-dimension respawn.
-        let candidate_world = if respawn_dimension == self.dimension {
-            None
-        } else {
-            server.as_ref().map_or_else(
-                || {
-                    warn!("Could not get server for cross-dimension respawn");
-                    None
-                },
-                |s| {
-                    let worlds = s.worlds.load();
-                    worlds
-                        .iter()
-                        .find(|w| w.dimension == respawn_dimension)
-                        .cloned()
-                },
-            )
-        };
-
-        // Fire PlayerChangeWorldEvent (cancellable) before the transfer; it runs before
-        // the non-cancellable PlayerRespawnEvent, which observes the resolved world.
-        let (resolved_world, position, yaw, pitch) = if let Some(new_world) = candidate_world {
-            if let Some(ref s) = server {
-                let mut event = PlayerChangeWorldEvent {
-                    player: player.clone(),
-                    previous_world: self.clone(),
-                    new_world: new_world.clone(),
-                    position,
-                    yaw,
-                    pitch,
-                    cancelled: false,
-                };
-                s.plugin_manager.fire(s, &mut event).await;
-
-                if event.cancelled {
-                    (None, position, yaw, pitch)
-                } else {
-                    let destination = event.new_world;
-                    let position = event.position;
-                    let yaw = event.yaw;
-                    let pitch = event.pitch;
-
-                    // Skip the transfer if redirected back to the current world.
-                    if destination.uuid != self.uuid {
-                        debug!(
-                            "Cross-dimension respawn: {} -> {}",
-                            self.dimension.minecraft_name, destination.dimension.minecraft_name
-                        );
-
-                        // Detach from the old world before publishing into the new one, so no
-                        // observer sees the player in a world whose chunk manager doesn't match.
-                        self.remove_player(player, false).await;
-                        player.unload_watched_chunks(self).await;
-                        player.change_world_chunks(&self.level, &destination);
-                        player.living_entity.entity.set_world(destination.clone());
-                        destination.players.rcu(|current_list| {
-                            let mut new_list = (**current_list).clone();
-                            new_list.push(player.clone());
-                            new_list
-                        });
-                    }
-
-                    (Some(destination), position, yaw, pitch)
-                }
-            } else {
-                warn!("Server dropped during cross-dimension respawn");
-                (None, position, yaw, pitch)
-            }
-        } else {
-            if respawn_dimension != self.dimension {
-                warn!(
-                    "Target world {:?} not found, using world spawn in {:?}",
-                    respawn_dimension, self.dimension
-                );
-            }
-            (None, position, yaw, pitch)
-        };
-
-        // Cancelled or unresolved cross-dimension respawns fall back to the current
-        // world's spawn below; otherwise the resolved values from the event apply.
-        let (target_world, position, yaw, pitch) = resolved_world.as_ref().map_or_else(
-            || (self.clone(), position, yaw, pitch),
-            |new_world| (new_world.clone(), position, yaw, pitch),
-        );
-
-        // Notify plugins that the player has respawned (non-cancellable).
-        if let Some(server) = self.server.upgrade() {
-            server
-                .plugin_manager
-                .fire(
-                    &server,
-                    &mut PlayerRespawnEvent::new(
-                        player.clone(),
-                        self.clone(),
-                        target_world.clone(),
-                        position,
-                        yaw,
-                        pitch,
-                        alive,
-                    ),
-                )
-                .await;
-        }
-
-        // Send respawn packet with target dimension (using send_packet_now to ensure proper order)
-        player
-            .send_client_packet(&CRespawn::new(
-                PlayerSpawnData::new(
-                    target_world.dimension.clone(),
-                    biome::hash_seed(target_world.level.seed.0),
-                    player.gamemode.load() as u8,
-                    player.gamemode.load() as i8,
-                    false,
-                    target_world.is_flat(),
-                    last_death_location,
-                    VarInt(player.get_entity().portal_cooldown.load(Ordering::Relaxed) as i32),
-                    target_world.sea_level.into(),
-                ),
-                data_kept,
-            ))
-            .await;
-
-        // Inform the client of the default spawn position so the client doesn't
-        // fall back to (0, 2, 0) while the world reloads (fixes rubberbanding).
-        // This must be sent after the CRespawn packet for proper client positioning.
-        let spawn_block_pos = BlockPos(Vector3::new(
-            position.x.round() as i32,
-            position.y.round() as i32,
-            position.z.round() as i32,
-        ));
-        let bedrock_dimension = match target_world.dimension.minecraft_name {
-            "minecraft:the_nether" => 1,
-            "minecraft:the_end" => 2,
-            _ => 0,
-        };
-        player
-            .send_packet_now_editioned(
-                &CPlayerSpawnPosition::new(
-                    spawn_block_pos,
-                    yaw,
-                    pitch,
-                    target_world.dimension.minecraft_name.to_string(),
-                ),
-                &pumpkin_protocol::bedrock::client::CSetSpawnPosition {
-                    spawn_position_type:
-                        pumpkin_protocol::bedrock::client::SpawnPositionType::WorldRespawn,
-                    block_position: spawn_block_pos,
-                    dimension_type: bedrock_dimension.into(),
-                    spawn_block_pos,
-                },
-            )
-            .await;
-
-        // Vanilla `restartClientLoadTimerAfterRespawn`: invulnerable and still until loaded
-        player.set_client_loaded(false);
-        player.living_entity.reset_state();
-
-        player.send_permission_lvl_update();
-
-        player.hunger_manager.restart();
-
-        if !keep_inventory {
-            player.set_experience(0, 0.0, 0);
-            player.inventory.clear();
-        }
-
-        // Set entity position BEFORE loading chunks, so chunks load at the right location
-        // This mirrors the initial spawn flow where update_position is called before teleport
-        player.get_entity().set_pos(position);
-        player.get_entity().set_rotation(yaw, pitch);
-        player.get_entity().last_pos.store(position);
-
-        // TODO: difficulty, exp bar, status effect
-
-        // Registered after positioning; a same-dimension respawn keeps its client entities.
-        if target_world.uuid == self.uuid {
-            // Clients never remove a dead entity themselves, so viewers would keep the corpse.
-            target_world
-                .entity_tracker
-                .respawn_entity(&(player.clone() as Arc<dyn EntityBase>), &target_world);
-        } else {
-            target_world.add_arriving_player(player);
-            target_world
-                .entity_tracker
-                .repair_respawned_player(player, &target_world);
-        }
-
-        // Load chunks and send world info FIRST (before teleport packet)
-        target_world.send_world_info(player);
-        target_world.send_center_chunk(player).await;
-
-        // Send teleport packet after at least the center chunk was delivered
-        player.request_teleport(position, yaw, pitch);
-
-        target_world.refresh_java_player_for_bedrock(player).await;
+        player.respawn_in(self, alive).await;
     }
 
     /// Returns true if enough players are sleeping and we should skip the night.
@@ -5782,7 +5486,7 @@ impl World {
     }
 
     /// Writes the state into the loaded chunk
-    fn write_block_state_if(
+    pub(crate) fn write_block_state_if(
         &self,
         position: &BlockPos,
         block_state_id: BlockStateId,
@@ -5832,7 +5536,7 @@ impl World {
         }
     }
 
-    fn on_block_state_set(
+    pub(crate) fn on_block_state_set(
         self: &Arc<Self>,
         position: &BlockPos,
         replaced_block_state_id: BlockStateId,

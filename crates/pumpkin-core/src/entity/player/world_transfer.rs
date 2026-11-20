@@ -11,6 +11,7 @@ use crate::server::{Server, ticker};
 use crate::world::World;
 
 use super::Player;
+use super::respawn::RespawnCommit;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum WorldChange {
@@ -24,9 +25,9 @@ pub struct PendingWorldChange {
     pub(super) source: Arc<World>,
 }
 
-pub(super) struct WorldDeparture {
+struct WorldDeparture {
     source: Arc<World>,
-    pub(super) unwatched: Vec<Vector2<i32>>,
+    unwatched: Vec<Vector2<i32>>,
 }
 
 impl Drop for WorldDeparture {
@@ -43,14 +44,25 @@ impl Drop for PendingWorldChange {
     }
 }
 
-pub struct WorldTransfer {
-    pub(super) player: Arc<Player>,
-    pub(super) source: Arc<World>,
-    pub(super) destination: Arc<World>,
+#[derive(Clone)]
+pub(super) struct WorldPosition {
+    pub(super) world: Arc<World>,
     pub(super) position: Vector3<f64>,
     pub(super) yaw: f32,
     pub(super) pitch: f32,
-    pub(super) completion: oneshot::Sender<Option<WorldDeparture>>,
+}
+
+enum AppliedWorldChange {
+    InPlace,
+    Moved(WorldDeparture),
+}
+
+pub struct WorldTransfer {
+    player: Arc<Player>,
+    source: Arc<World>,
+    destination: WorldPosition,
+    respawn: Option<RespawnCommit>,
+    completion: oneshot::Sender<Option<AppliedWorldChange>>,
 }
 
 impl WorldTransfer {
@@ -60,7 +72,7 @@ impl WorldTransfer {
         let _ = self.completion.send(departure);
     }
 
-    fn rebind_player(&self, server: &Server) -> Option<WorldDeparture> {
+    fn rebind_player(&self, server: &Server) -> Option<AppliedWorldChange> {
         let player = &self.player;
         if self.completion.is_closed()
             || server.stop_token.is_cancelled()
@@ -70,59 +82,129 @@ impl WorldTransfer {
         {
             return None;
         }
+        let destination = &self.destination.world;
         let worlds = server.worlds.load();
         if !worlds.iter().any(|world| Arc::ptr_eq(world, &self.source))
-            || !worlds
-                .iter()
-                .any(|world| Arc::ptr_eq(world, &self.destination))
+            || !worlds.iter().any(|world| Arc::ptr_eq(world, destination))
         {
             return None;
         }
 
-        let admission = self
-            .destination
+        let admission = destination
             .player_admission
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !*admission
-            || self.destination.players.load().iter().any(|other| {
+            || destination.players.load().iter().any(|other| {
                 other.gameprofile.id == player.gameprofile.id && !Arc::ptr_eq(other, player)
             })
+            || !self
+                .source
+                .players
+                .load()
+                .iter()
+                .any(|active| Arc::ptr_eq(active, player))
         {
             return None;
         }
 
-        // Keep the source available until its unwatched chunks have been handed to storage.
-        self.source
-            .pending_departures
-            .fetch_add(1, Ordering::AcqRel);
-        let mut departure = WorldDeparture {
-            source: self.source.clone(),
-            unwatched: Vec::new(),
+        let anchor = match &self.respawn {
+            Some(respawn) => respawn.check(player, destination).ok()?,
+            None => None,
         };
-        if !self.source.detach_player(player) {
+        let keep_membership = self.respawn.is_some() && Arc::ptr_eq(&self.source, destination);
+        let mut departure = if keep_membership {
+            None
+        } else {
+            // Keep the source available until its unwatched chunks have been handed to storage.
+            self.source
+                .pending_departures
+                .fetch_add(1, Ordering::AcqRel);
+            let departure = WorldDeparture {
+                source: self.source.clone(),
+                unwatched: Vec::new(),
+            };
+            if !self.source.detach_player(player) {
+                return None;
+            }
+            Some(departure)
+        };
+        if let Some(anchor) = &anchor
+            && !anchor.consume(destination)
+        {
+            if departure.is_some() {
+                self.source.register_player(player);
+            }
             return None;
         }
 
         player.world_change.store(WorldChange::Arriving);
         player.reset_mining();
-        departure.unwatched = player.release_world_watchers(&self.source);
-        player.change_world_chunks(&self.source.level, &self.destination);
-        // Bedrock's spawn latch must be reset before the next world can queue terrain.
-        player.bedrock_spawned.store(false, Ordering::Relaxed);
         let entity = player.get_entity();
-        entity.set_world(self.destination.clone());
-        entity.set_pos(self.position);
-        entity.set_rotation(self.yaw, self.pitch);
-        entity.last_pos.store(self.position);
-        self.destination.register_player(player);
+        if let Some(departure) = &mut departure {
+            departure.unwatched = player.release_world_watchers(&self.source);
+            player.change_world_chunks(&self.source.level, destination);
+            player.bedrock_spawned.store(false, Ordering::Relaxed);
+            entity.set_world(destination.clone());
+        } else {
+            player.set_client_loaded(false);
+        }
+        entity.set_pos(self.destination.position);
+        entity.set_rotation(self.destination.yaw, self.destination.pitch);
+        entity.last_pos.store(self.destination.position);
+        if departure.is_some() {
+            destination.register_player(player);
+        }
+        if let Some(respawn) = &self.respawn {
+            respawn.clear_invalid_spawn(player);
+        }
         drop(admission);
-        self.source.notify_player_departure(player);
-        Some(departure)
+        if let Some(anchor) = anchor {
+            anchor.notify(destination);
+        }
+        Some(departure.map_or_else(
+            || AppliedWorldChange::InPlace,
+            |departure| {
+                self.source.notify_player_departure(player);
+                AppliedWorldChange::Moved(departure)
+            },
+        ))
     }
 }
 
+pub(super) fn can_wait_for_world_change(server: &Server) -> bool {
+    !ticker::is_ticker_thread() && server.simulation_pool.current_thread_index().is_none()
+}
+
 impl Player {
+    pub(super) async fn apply_world_change(
+        self: &Arc<Self>,
+        server: &Server,
+        source: &Arc<World>,
+        destination: &WorldPosition,
+        respawn: Option<RespawnCommit>,
+    ) -> bool {
+        let (completion, applied) = oneshot::channel();
+        server.submit_world_transfer(WorldTransfer {
+            player: self.clone(),
+            source: source.clone(),
+            destination: destination.clone(),
+            respawn,
+            completion,
+        });
+        let Ok(Some(change)) = applied.await else {
+            return false;
+        };
+        if let AppliedWorldChange::Moved(mut departure) = change {
+            self.finish_world_departure(
+                &departure.source,
+                std::mem::take(&mut departure.unwatched),
+            )
+            .await;
+        }
+        !self.client.closed()
+    }
+
     pub(crate) fn reserve_world_change(
         self: &Arc<Self>,
         source: &Arc<World>,
@@ -173,9 +255,12 @@ impl Player {
         yaw: Option<f32>,
         pitch: Option<f32>,
     ) {
-        let wait = self.world().server.upgrade().is_some_and(|server| {
-            !ticker::is_ticker_thread() && server.simulation_pool.current_thread_index().is_none()
-        });
+        let wait = self
+            .world()
+            .server
+            .upgrade()
+            .as_deref()
+            .is_some_and(can_wait_for_world_change);
         if let Some(task) = self.start_world_teleport(destination, position, yaw, pitch)
             && wait
         {

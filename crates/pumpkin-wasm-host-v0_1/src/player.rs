@@ -3123,16 +3123,8 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         mut host: Access<'_, PluginHostState, Self>,
         player: Resource<Player>,
     ) -> wasmtime::Result<()> {
-        let (player, plugin) = {
-            let state = host.get();
-            (state.get(&player)?.clone(), plugin_from_state(state)?)
-        };
-        let runtime = tokio::runtime::Handle::current();
-
-        plugin
-            .store
-            .pump_blocking(&mut host, move || runtime.block_on(player.respawn()))
-            .await
+        host.get().get(&player)?.request_respawn();
+        Ok(())
     }
 
     async fn open_gui(

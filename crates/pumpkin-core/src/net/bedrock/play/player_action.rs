@@ -276,10 +276,7 @@ impl BedrockClient {
                 if player.living_entity.dead.load(Ordering::Relaxed)
                     || player.living_entity.health.load() <= 0.0 =>
             {
-                let player_c = player.clone();
-                player.spawn_task(async move {
-                    player_c.world().respawn_player(&player_c, false).await;
-                });
+                player.request_client_respawn();
             }
             // TODO
             _ => {}
