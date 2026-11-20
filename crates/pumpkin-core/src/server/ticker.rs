@@ -47,6 +47,14 @@ impl TickSchedule {
 
 pub struct Ticker;
 
+thread_local! {
+    static TICKER_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(crate) fn is_ticker_thread() -> bool {
+    TICKER_THREAD.get()
+}
+
 pub(crate) const CONSOLE_COMMAND_CAPACITY: usize = 16;
 
 pub(crate) struct ConsoleCommand {
@@ -81,6 +89,7 @@ impl Ticker {
         server: &Arc<Server>,
         mut commands: Option<mpsc::Receiver<ConsoleCommand>>,
     ) {
+        let previous_context = TICKER_THREAD.replace(true);
         // Single monotonic base, the schedule is plain nanosecond arithmetic.
         let base = Instant::now();
         let mut schedule = TickSchedule::new();
@@ -188,6 +197,8 @@ impl Ticker {
             }
         }
 
+        server.cancel_world_transfers();
+        TICKER_THREAD.set(previous_context);
         debug!("Ticker stopped");
     }
 }

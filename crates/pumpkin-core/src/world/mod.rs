@@ -290,6 +290,8 @@ pub struct World {
     pub block_entities: DashMap<Vector2<i32>, FxHashMap<BlockPos, Arc<dyn BlockEntity>>>,
     /// Orders hopper mutations whose source or destination inventories can overlap.
     pub(crate) hopper_moves: std::sync::Mutex<()>,
+    pub(crate) player_admission: std::sync::Mutex<bool>,
+    pub(crate) pending_departures: std::sync::atomic::AtomicUsize,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
     /// Persistent custom data for the world (matching Bukkit's `PersistentDataHolder`)
     pub custom_data: std::sync::Mutex<NbtCompound>,
@@ -454,6 +456,8 @@ impl World {
             server,
             block_entities: DashMap::new(),
             hopper_moves: std::sync::Mutex::default(),
+            player_admission: std::sync::Mutex::new(true),
+            pending_departures: std::sync::atomic::AtomicUsize::new(0),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
@@ -1672,10 +1676,12 @@ impl World {
         self.play_sound_expect(player, sound, category, &new_vec);
     }
 
-    pub(crate) fn process_player_packets(players: &[Arc<Player>]) {
+    pub(crate) fn process_player_packets(&self, players: &[Arc<Player>]) {
         // Different players' screens can mutate the same inventory.
         for player in players {
-            player.process_inbound_packets();
+            if player.can_tick_in(self) {
+                player.process_inbound_packets();
+            }
         }
     }
 
@@ -1717,20 +1723,21 @@ impl World {
 
         let t_players = std::time::Instant::now();
         // Vanilla handles all packets before any player ticks
-        Self::process_player_packets(&players);
-        players.par_iter().for_each(|player| {
-            player.tick(server);
-        });
+        self.process_player_packets(&players);
+        players
+            .par_iter()
+            .filter(|player| player.can_tick_in(self))
+            .for_each(|player| player.tick(server));
         self.encoded_chunk_cache.clear();
         // Vanilla `ServerPlayer.pushEntities`: one player after another, not while frozen
         if server.tick_rate_manager.runs_normally() {
-            for player in players.iter() {
+            for player in players.iter().filter(|player| player.can_tick_in(self)) {
                 player.push_entities();
             }
         }
         // One player after another, before entities move, like vanilla `doTick` after the
         // level tick
-        for player in players.iter() {
+        for player in players.iter().filter(|player| player.can_tick_in(self)) {
             touch_entities(self, player);
         }
         let player_elapsed = t_players.elapsed();
@@ -4415,6 +4422,9 @@ impl World {
 
     #[allow(clippy::too_many_lines)]
     pub async fn respawn_player(self: &Arc<Self>, player: &Arc<Player>, alive: bool) {
+        let Some(_change) = player.reserve_world_change(self) else {
+            return;
+        };
         let last_death_location = player
             .last_death_location
             .lock()
@@ -5187,12 +5197,44 @@ impl World {
     ///
     /// * `player`: An `Arc<Player>` reference to the player object.
     pub fn add_player(&self, player: &Arc<Player>) -> Result<(), String> {
+        let admission = self
+            .player_admission
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !*admission {
+            return Err("World is unloading".to_string());
+        }
+        self.register_player(player);
+        Ok(())
+    }
+
+    pub(crate) fn register_player(&self, player: &Arc<Player>) {
         self.players.rcu(|current_list| {
             let mut new_list = (**current_list).clone();
             new_list.push(player.clone());
             new_list
         });
         // Entity tracking starts in the spawn path, after the tab list reached viewers.
+    }
+
+    pub(crate) fn close_player_admission(&self, name: &str) -> Result<(), String> {
+        let mut admission = self
+            .player_admission
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !*admission {
+            return Err(format!("World '{name}' is already unloading"));
+        }
+        let player_count = self.players.load().len();
+        if player_count > 0 {
+            return Err(format!(
+                "Cannot unload world '{name}': {player_count} players are still in this world"
+            ));
+        }
+        if self.pending_departures.load(Ordering::Acquire) != 0 {
+            return Err(format!("Players are still leaving world '{name}'"));
+        }
+        *admission = false;
         Ok(())
     }
 
@@ -5306,76 +5348,92 @@ impl World {
         player: &Arc<Player>,
         fire_event: bool,
     ) -> Option<Arc<Player>> {
-        let mut removed_player: Option<Arc<Player>> = None;
+        if !self.detach_player(player) {
+            return None;
+        }
+        self.notify_player_departure(player);
+        if fire_event {
+            let msg_comp = TextComponent::translate_cross(
+                translation::java::MULTIPLAYER_PLAYER_LEFT,
+                translation::bedrock::MULTIPLAYER_PLAYER_LEFT,
+                [TextComponent::text(player.gameprofile.name.clone())],
+            )
+            .color_named(NamedColor::Yellow);
+            let mut event = PlayerLeaveEvent::new(player.clone(), msg_comp);
 
-        self.players.rcu(|current_list| {
-            let mut new_list = (**current_list).clone();
-            // Find the player before we filter them out
-            let pos = new_list
-                .iter()
-                .position(|p| p.gameprofile.id == player.gameprofile.id);
-            if let Some(pos) = pos {
-                removed_player = Some(new_list.remove(pos));
-            }
-            new_list
-        });
-        if let Some(ref player) = removed_player {
-            self.entity_tracker
-                .remove_entity(player.as_ref() as &dyn EntityBase, self);
-            let uuid = player.gameprofile.id;
-            let entity_id = player.entity_id();
+            if let Some(server) = self.server.upgrade() {
+                server.plugin_manager.fire(&server, &mut event).await;
 
-            let bedrock_remove_player = CPlayerList {
-                action: CPlayerList::ACTION_REMOVE,
-                entries: vec![PlayerListEntry {
-                    uuid,
-                    entity_unique_id: VarLong(entity_id as i64),
-                    username: player.gameprofile.name.clone(),
-                    xuid: String::new(),
-                    platform_chat_id: String::new(),
-                    build_platform: BuildPlatform::Unknown,
-                    skin: Skin::steve(),
-                    is_teacher: false,
-                    is_host: false,
-                    is_sub_client: false,
-                    player_color: [0, 0, 0, 0],
-                }],
-            };
-
-            for viewer in self.players.load().iter() {
-                if let ClientPlatform::Bedrock(client) = viewer.client.as_ref() {
-                    client.forget_listed(uuid);
-                }
-            }
-            self.broadcast_editioned(&CRemovePlayerInfo::new(&[uuid]), &bedrock_remove_player);
-
-            self.broadcast_editioned(
-                &CRemoveEntities::new(&[entity_id.into()]),
-                &CRemoveActor::new(VarLong(entity_id as i64)),
-            );
-
-            if fire_event {
-                let msg_comp = TextComponent::translate_cross(
-                    translation::java::MULTIPLAYER_PLAYER_LEFT,
-                    translation::bedrock::MULTIPLAYER_PLAYER_LEFT,
-                    [TextComponent::text(player.gameprofile.name.clone())],
-                )
-                .color_named(NamedColor::Yellow);
-                let mut event = PlayerLeaveEvent::new(player.clone(), msg_comp);
-
-                if let Some(server) = self.server.upgrade() {
-                    server.plugin_manager.fire(&server, &mut event).await;
-
-                    if !event.cancelled {
-                        for player in self.players.load().iter() {
-                            player.send_system_message(&event.leave_message);
-                        }
-                        info!("{}", event.leave_message.to_pretty_console());
+                if !event.cancelled {
+                    for player in self.players.load().iter() {
+                        player.send_system_message(&event.leave_message);
                     }
+                    info!("{}", event.leave_message.to_pretty_console());
                 }
             }
         }
-        removed_player
+        Some(player.clone())
+    }
+
+    /// Removes the exact session from the world before its departure is sent to viewers.
+    pub(crate) fn detach_player(&self, player: &Arc<Player>) -> bool {
+        let mut removed = false;
+        self.players.rcu(|current| {
+            let position = current.iter().position(|p| Arc::ptr_eq(p, player));
+            removed = position.is_some();
+            let Some(position) = position else {
+                return current.clone();
+            };
+            let mut players = (**current).clone();
+            players.remove(position);
+            Arc::new(players)
+        });
+        removed
+    }
+
+    pub(crate) fn notify_player_departure(&self, player: &Player) {
+        self.entity_tracker.remove_entity(player, self);
+        let uuid = player.gameprofile.id;
+        let entity_id = player.entity_id();
+
+        let bedrock_remove_player = CPlayerList {
+            action: CPlayerList::ACTION_REMOVE,
+            entries: vec![PlayerListEntry {
+                uuid,
+                entity_unique_id: VarLong(entity_id as i64),
+                username: player.gameprofile.name.clone(),
+                xuid: String::new(),
+                platform_chat_id: String::new(),
+                build_platform: BuildPlatform::Unknown,
+                skin: Skin::steve(),
+                is_teacher: false,
+                is_host: false,
+                is_sub_client: false,
+                player_color: [0, 0, 0, 0],
+            }],
+        };
+
+        for viewer in self
+            .players
+            .load()
+            .iter()
+            .filter(|p| p.gameprofile.id != uuid)
+        {
+            if let ClientPlatform::Bedrock(client) = viewer.client.as_ref() {
+                client.forget_listed(uuid);
+            }
+        }
+        self.broadcast_packet_except_editioned(
+            &[uuid],
+            &CRemovePlayerInfo::new(&[uuid]),
+            &bedrock_remove_player,
+        );
+
+        self.broadcast_packet_except_editioned(
+            &[uuid],
+            &CRemoveEntities::new(&[entity_id.into()]),
+            &CRemoveActor::new(VarLong(entity_id as i64)),
+        );
     }
 
     #[expect(clippy::needless_pass_by_value)]

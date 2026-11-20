@@ -3474,13 +3474,8 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
             let state = host.get();
             Ok((state.get(&player)?.clone(), state.take(world)?))
         })?;
-        let position = from_wasm_position(position);
-        let runtime = tokio::runtime::Handle::current();
-
-        run_blocking(accessor, move || {
-            runtime.block_on(player.teleport_world(world, position, yaw, pitch));
-        })
-        .await
+        player.request_world_teleport(world, from_wasm_position(position), yaw, pitch);
+        Ok(())
     }
 
     async fn respawn(

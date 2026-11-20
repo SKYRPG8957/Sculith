@@ -7,6 +7,7 @@ mod item_use;
 mod picking;
 mod shoulders;
 pub mod statistics;
+pub(crate) mod world_transfer;
 
 pub use client_move::{ClientMove, ClientMoveOutcome};
 pub(crate) use item_use::ItemUseSnapshot;
@@ -827,6 +828,7 @@ pub struct Player {
     /// Inbound packets waiting to be processed during player tick.
     pub inbound_packets: SegQueue<RawPacket>,
     shoulders: Mutex<shoulders::Shoulders>,
+    world_change: AtomicCell<world_transfer::WorldChange>,
 }
 
 use base64::prelude::*;
@@ -1168,6 +1170,7 @@ impl Player {
             spawn_extra_particles_on_fall: AtomicBool::new(false),
             post_effects: std::sync::Mutex::new(Vec::new()),
             inbound_packets: SegQueue::new(),
+            world_change: AtomicCell::new(world_transfer::WorldChange::Idle),
         }
     }
 
@@ -4966,40 +4969,50 @@ impl Player {
     }
 
     pub async fn unload_watched_chunks(&self, world: &World) {
-        let radial_chunks = self.watched_section.load().all_chunks_within();
+        let chunks = self.release_world_watchers(world);
+        self.finish_world_departure(world, chunks).await;
+    }
+
+    fn release_world_watchers(&self, world: &World) -> Vec<Vector2<i32>> {
+        let watched = self.watched_section.swap(Cylindrical::new(
+            Vector2::new(0, 0),
+            NonZero::new(1).unwrap_or(NonZero::<u8>::MIN),
+        ));
+        world
+            .level
+            .mark_chunks_as_not_watched(watched.all_chunks_within())
+    }
+
+    async fn finish_world_departure(&self, world: &World, chunks_to_clean: Vec<Vector2<i32>>) {
         let level = &world.level;
-        let chunks_to_clean = level.mark_chunks_as_not_watched(radial_chunks);
         if !chunks_to_clean.is_empty() {
-            world.remove_entities_in_chunks(&chunks_to_clean).await;
-            level.clean_entity_chunks(&chunks_to_clean);
+            let unwatched: Vec<_> = chunks_to_clean
+                .iter()
+                .copied()
+                .filter(|position| !level.is_chunk_watched(position))
+                .collect();
+            world.remove_entities_in_chunks(&unwatched).await;
+            level.clean_entity_chunks(&unwatched);
         }
         for chunk in &chunks_to_clean {
             self.send_client_packet(&CUnloadChunk::new(chunk.x, chunk.y))
                 .await;
         }
-
-        self.watched_section.store(Cylindrical::new(
-            Vector2::new(0, 0),
-            NonZero::new(1).unwrap_or(NonZero::<u8>::MIN),
-        ));
     }
 
-    /// Teleports the player to a different world or dimension with an optional position, yaw, and pitch.
     #[expect(clippy::too_many_lines)]
-    pub async fn teleport_world(
+    async fn finish_world_teleport(
         self: &Arc<Self>,
+        server: Arc<Server>,
+        change: world_transfer::PendingWorldChange,
         new_world: Arc<World>,
         position: Vector3<f64>,
         yaw: Option<f32>,
         pitch: Option<f32>,
     ) {
-        let current_world = self.living_entity.entity.world.load_full();
+        let current_world = change.source.clone();
         let yaw = yaw.unwrap_or(new_world.level_info.load().spawn_yaw);
         let pitch = pitch.unwrap_or(new_world.level_info.load().spawn_pitch);
-
-        let Some(server) = new_world.server.upgrade() else {
-            return;
-        };
 
         send_cancellable! {{
             server;
@@ -5014,26 +5027,29 @@ impl Player {
             };
 
             'after: {
-                // TODO: this is duplicate code from world
                 let position = event.position;
                 let yaw = event.yaw;
                 let pitch = event.pitch;
                 let new_world = event.new_world;
 
-                self.reset_mining();
-                self.set_client_loaded(false);
-                let Some(player) = current_world.remove_player(self, false).await else {
+                let (completion, applied) = tokio::sync::oneshot::channel();
+                server.submit_world_transfer(world_transfer::WorldTransfer {
+                    player: self.clone(),
+                    source: current_world.clone(),
+                    destination: new_world.clone(),
+                    position,
+                    yaw,
+                    pitch,
+                    completion,
+                });
+                let Ok(Some(mut departure)) = applied.await else {
                     return;
                 };
-               new_world.players.rcu(|current_list| {
-                    let mut new_list = (**current_list).clone();
-                    new_list.push(player.clone());
-                    new_list
-                });
-                self.unload_watched_chunks(&current_world).await;
-
-                self.change_world_chunks(&current_world.level, &new_world);
-                self.living_entity.entity.set_world(new_world.clone());
+                self.finish_world_departure(&current_world, std::mem::take(&mut departure.unwatched)).await;
+                drop(departure);
+                if self.client.closed() {
+                    return;
+                }
 
                 if new_world.dimension == pumpkin_data::dimension::Dimension::THE_NETHER {
                     self.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::EnterDimension {
@@ -5090,18 +5106,12 @@ impl Player {
                         if let Ok(data) = bedrock.serialize_packet(&change_dim_packet) {
                             bedrock.enqueue_packet(data).await;
                         }
-                        self.bedrock_spawned.store(false, Ordering::Relaxed);
                     }
                 }
 
                 self.send_permission_lvl_update();
 
-                player.get_entity().set_pos(position);
-                player.get_entity().set_rotation(yaw, pitch);
-                player.get_entity().last_pos.store(position);
-
-                // Registered after positioning, so spawns carry the new position.
-                new_world.add_arriving_player(&player);
+                new_world.add_arriving_player(self);
 
                 self.send_abilities_update();
 
@@ -5113,13 +5123,14 @@ impl Player {
 
                 self.send_health();
 
-                new_world.send_world_info(&player);
-                new_world.send_center_chunk(&player).await;
+                new_world.send_world_info(self);
+                new_world.send_center_chunk(self).await;
 
-                player.request_teleport(position, yaw, pitch);
+                self.request_teleport(position, yaw, pitch);
 
+                drop(change);
                 let mut changed_world_event = crate::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent {
-                    player: player.clone(),
+                    player: self.clone(),
                     from_world: current_world,
                     to_world: new_world,
                     cancelled: false,
@@ -8348,6 +8359,9 @@ impl EntityBase for Player {
         pitch: Option<f32>,
         world: Arc<World>,
     ) {
+        if self.world_change.load() == world_transfer::WorldChange::Arriving {
+            return;
+        }
         if Arc::ptr_eq(&world, &self.world()) {
             // Same world
             let entity = self.get_entity();
@@ -8376,9 +8390,7 @@ impl EntityBase for Player {
                 ),
             );
         } else if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id) {
-            self.spawn_task(async move {
-                player_arc.teleport_world(world, position, yaw, pitch).await;
-            });
+            player_arc.request_world_teleport(world, position, yaw, pitch);
         }
     }
 

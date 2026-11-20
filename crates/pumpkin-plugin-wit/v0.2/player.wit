@@ -1039,7 +1039,7 @@ interface player {
 
         /// Teleports the player to a position in a world.
         teleport: async func (position: position, yaw: option<f32>, pitch: option<f32>, %world: %world);
-        /// Teleports the player to another world at a specific position.
+        /// Requests a teleport to another world. The player-changed-world event observes completion.
         teleport-world: async func (world-ref: %world, position: position, yaw: option<f32>, pitch: option<f32>);
         /// Forces the player to respawn.
         respawn: async func ();

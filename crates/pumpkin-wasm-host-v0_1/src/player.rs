@@ -3111,23 +3111,12 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         yaw: Option<f32>,
         pitch: Option<f32>,
     ) -> wasmtime::Result<()> {
-        let (player, world, plugin) = {
+        let (player, world) = {
             let state = host.get();
-            (
-                state.get(&player)?.clone(),
-                state.take(world)?,
-                plugin_from_state(state)?,
-            )
+            (state.get(&player)?.clone(), state.take(world)?)
         };
-        let position = from_wasm_position(position);
-        let runtime = tokio::runtime::Handle::current();
-
-        plugin
-            .store
-            .pump_blocking(&mut host, move || {
-                runtime.block_on(player.teleport_world(world, position, yaw, pitch));
-            })
-            .await
+        player.request_world_teleport(world, from_wasm_position(position), yaw, pitch);
+        Ok(())
     }
 
     async fn respawn(

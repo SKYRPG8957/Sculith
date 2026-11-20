@@ -4,6 +4,7 @@ use crate::command::commands::defaultgamemode::DefaultGamemode;
 use crate::data::VanillaData;
 use crate::data::player_server::ServerPlayerData;
 use crate::entity::NBTStorage;
+use crate::entity::player::world_transfer::WorldTransfer;
 use crate::item::registry::ItemRegistry;
 use crate::net::authentication::fetch_mojang_public_keys;
 use crate::net::{ClientPlatform, DisconnectReason, EncryptionError, GameProfile, PlayerConfig};
@@ -175,6 +176,7 @@ pub struct Server {
     // world stuff which maybe should be put into a struct
     pub level_info: Arc<ArcSwap<LevelData>>,
     world_info_writer: Arc<dyn WorldInfoWriter>,
+    world_transfers: crossbeam::queue::SegQueue<WorldTransfer>,
 }
 
 impl Server {
@@ -399,6 +401,7 @@ impl Server {
             player_idle_timeout: AtomicI32::new(0),
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
+            world_transfers: crossbeam::queue::SegQueue::new(),
             level_info,
             management_hub,
             save_metadata_lock: tokio::sync::Mutex::new(()),
@@ -605,13 +608,7 @@ impl Server {
             return Err("Cannot unload the primary/default world".to_string());
         }
 
-        let player_count = world_to_unload.players.load().len();
-        if player_count > 0 {
-            return Err(format!(
-                "Cannot unload world '{name}': {player_count} players are still in this world"
-            ));
-        }
-
+        world_to_unload.close_player_admission(name)?;
         world_to_unload.shutdown().await;
         world_to_unload.unload().await;
 
@@ -958,6 +955,22 @@ impl Server {
             .admission_closed
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+    }
+
+    pub(crate) fn submit_world_transfer(&self, transfer: WorldTransfer) {
+        let closed = self
+            .admission_closed
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !*closed && !self.stop_token.is_cancelled() {
+            self.world_transfers.push(transfer);
+        }
+    }
+
+    pub(super) fn cancel_world_transfers(&self) {
+        // Stop admission first so no request can be left waiting after the ticker exits.
+        self.close_admission();
+        while self.world_transfers.pop().is_some() {}
     }
 
     /// Asks this server to stop: the ticker ends and a standalone server stops accepting
@@ -1356,6 +1369,14 @@ impl Server {
     /// Main server tick method. This now handles both player/network ticking (which always runs)
     /// and world/game logic ticking (which is affected by freeze state).
     pub fn tick(self: &Arc<Self>) {
+        // All simulation workers from the previous tick have returned. Bound the work
+        // per tick so arrivals do not monopolize simulation time.
+        for _ in 0..32 {
+            let Some(transfer) = self.world_transfers.pop() else {
+                break;
+            };
+            transfer.apply(self);
+        }
         self.simulation_pool.install(|| {
             // Do not flush mid-tick; `Flush` is `flushChannel`.
             let suspended = self.suspend_player_flushes();
@@ -1388,10 +1409,11 @@ impl Server {
             world.flush_synced_block_events();
 
             let players = world.players.load();
-            World::process_player_packets(&players);
-            players.par_iter().for_each(|player| {
-                player.tick(self);
-            });
+            world.process_player_packets(&players);
+            players
+                .par_iter()
+                .filter(|player| player.can_tick_in(world))
+                .for_each(|player| player.tick(self));
         }
     }
 
