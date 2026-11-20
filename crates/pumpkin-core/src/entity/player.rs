@@ -750,6 +750,7 @@ pub struct Player {
     pub awaiting_teleport: Mutex<Option<(VarInt, Vector3<f64>)>>,
     /// The coordinates of the chunk section the player is currently watching.
     pub watched_section: AtomicCell<Cylindrical>,
+    pub(crate) registered_chunk_view: Mutex<Option<Cylindrical>>,
     /// The last time the player performed an action (for idle timeout).
     pub last_action_time: AtomicCell<Instant>,
     /// The ping in millis.
@@ -1092,14 +1093,11 @@ impl Player {
             sleeping_since: AtomicCell::new(None),
             sleeping_bed_pos: AtomicCell::new(None),
             sleeping_ignored: AtomicBool::new(false),
-            // We want this to be an impossible watched section so that `chunker::update_position`
-            // will mark chunks as watched for a new join rather than a respawn.
-            // (We left shift by one so we can search around that chunk)
             watched_section: AtomicCell::new(Cylindrical::new(
                 Vector2::new(0, 0),
-                // Since 1 is not possible in vanilla it is used as uninit
-                NonZero::new(1).unwrap_or(NonZero::<u8>::MIN),
+                NonZero::<u8>::MIN,
             )),
+            registered_chunk_view: Mutex::default(),
             last_action_time: AtomicCell::new(std::time::Instant::now()),
             ping: AtomicU32::new(0),
             last_attacked_ticks: AtomicU32::new(0),
@@ -1571,37 +1569,14 @@ impl Player {
         let world = self.world();
         world.remove_player(self, true).await;
 
-        let cylindrical = self.watched_section.load();
+        let unwatched = self.release_world_watchers(&world);
         self.clean_up_chunk_tickets(&world.level);
         if let Ok(mut sender) = self.chunk_sender.lock() {
             sender.reset();
         }
-
-        // Radial chunks are all of the chunks the player is theoretically viewing.
-        // Given enough time, all of these chunks will be in memory.
-        let radial_chunks = cylindrical.all_chunks_within();
-
-        debug!(
-            "Removing player {}, unwatching {} chunks",
-            self.gameprofile.name,
-            radial_chunks.len()
-        );
-
+        world.queue_entity_chunk_changes(unwatched);
         let level = &world.level;
-
-        // Decrement the value of watched chunks
-        let chunks_to_clean = level.mark_chunks_as_not_watched(radial_chunks);
-        // Remove chunks with no watchers from the cache
-        if !chunks_to_clean.is_empty() {
-            world.remove_entities_in_chunks(&chunks_to_clean).await;
-            level.clean_entity_chunks(&chunks_to_clean);
-        }
-        // Remove left over entries from all possiblily loaded chunks
-        let cleaned_chunks = level.clean_memory();
-        if !cleaned_chunks.is_empty() {
-            world.remove_entities_in_chunks(&cleaned_chunks).await;
-            level.clean_entity_chunks(&cleaned_chunks);
-        }
+        world.queue_entity_chunk_changes(level.clean_memory());
 
         debug!(
             "Removed player id {} from world {} ({} chunks remain cached)",
@@ -4841,26 +4816,22 @@ impl Player {
     }
 
     fn release_world_watchers(&self, world: &World) -> Vec<Vector2<i32>> {
-        let watched = self.watched_section.swap(Cylindrical::new(
-            Vector2::new(0, 0),
-            NonZero::new(1).unwrap_or(NonZero::<u8>::MIN),
-        ));
+        let mut registered = self
+            .registered_chunk_view
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(watched) = registered.take() else {
+            return Vec::new();
+        };
+        self.watched_section
+            .store(Cylindrical::new(Vector2::new(0, 0), NonZero::<u8>::MIN));
         world
             .level
             .mark_chunks_as_not_watched(watched.all_chunks_within())
     }
 
     async fn finish_world_departure(&self, world: &World, chunks_to_clean: Vec<Vector2<i32>>) {
-        let level = &world.level;
-        if !chunks_to_clean.is_empty() {
-            let unwatched: Vec<_> = chunks_to_clean
-                .iter()
-                .copied()
-                .filter(|position| !level.is_chunk_watched(position))
-                .collect();
-            world.remove_entities_in_chunks(&unwatched).await;
-            level.clean_entity_chunks(&unwatched);
-        }
+        world.queue_entity_chunk_changes(chunks_to_clean.iter().copied());
         for chunk in &chunks_to_clean {
             self.send_client_packet(&CUnloadChunk::new(chunk.x, chunk.y))
                 .await;

@@ -3,7 +3,7 @@ use crate::generation::generator::WorldGenerator;
 use crate::lighting::DynamicLightEngine;
 use crate::{
     chunk::{
-        ChunkData, ChunkEntityData, ChunkReadingError,
+        ChunkData, ChunkEntityData,
         io::{Dirtiable, FileIO, LoadedData, file_manager::LevelFileIO},
         palette::has_random_ticking_fluid,
     },
@@ -15,6 +15,7 @@ use crate::{
 use arc_swap::ArcSwap;
 use crossbeam::queue::SegQueue;
 use dashmap::{DashMap, Entry};
+use futures::stream::{FuturesUnordered, StreamExt};
 use pumpkin_config::{lighting::LightingEngineConfig, world::LevelConfig};
 use pumpkin_data::biome::Biome;
 use pumpkin_data::dimension::Dimension;
@@ -22,7 +23,8 @@ use pumpkin_data::{Block, BlockStateId, block_properties::has_random_ticks, flui
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_util::world_seed::Seed;
 use rayon::prelude::*;
-use rustc_hash::{FxBuildHasher, FxHashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use std::collections::hash_map::Entry as HashEntry;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 use std::{
@@ -46,6 +48,8 @@ use tokio_util::task::TaskTracker;
 
 pub type SyncChunk = Arc<ChunkData>;
 pub type SyncEntityChunk = Arc<ChunkEntityData>;
+
+type EntityLoadWaiters = FxHashMap<Vector2<i32>, Vec<oneshot::Sender<SyncEntityChunk>>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoadedChunkChange {
@@ -87,7 +91,7 @@ pub struct Level {
     pub loaded_chunks: Arc<DashMap<Vector2<i32>, SyncChunk, FxBuildHasher>>,
     pub(crate) loaded_chunk_changes: Arc<SegQueue<LoadedChunkChange>>,
     loaded_entity_chunks: Arc<DashMap<Vector2<i32>, SyncEntityChunk, FxBuildHasher>>,
-    entity_chunk_handoff: Mutex<()>,
+    entity_chunk_handoff: Mutex<EntityLoadWaiters>,
     pub chunks_with_scheduled_ticks: Arc<dashmap::DashSet<Vector2<i32>>>,
     pub chunk_loading: Mutex<ChunkLoading>,
 
@@ -118,8 +122,6 @@ pub struct Level {
     pub save_enabled: AtomicBool,
     /// Number of ticks between autosave checks. If 0, autosave is disabled.
     pub autosave_ticks: u64,
-
-    pending_entity_generations: Arc<DashMap<Vector2<i32>, Vec<oneshot::Sender<SyncEntityChunk>>>>,
 
     pub level_channel: Arc<LevelChannel>,
     pub thread_tracker: Mutex<Vec<thread::JoinHandle<()>>>,
@@ -299,7 +301,6 @@ impl Level {
         let chunk_saver = Arc::new(ChunkSaver::from_config(&level_config.chunk));
         let entity_saver = Arc::new(EntitySaver::from_config(&level_config.chunk));
 
-        let pending_entity_generations = Arc::new(DashMap::new());
         let (send_saves, receive_saves) = mpsc::unbounded_channel();
         let level_channel = Arc::new(LevelChannel::new());
         let thread_tracker = Mutex::new(Vec::new());
@@ -323,7 +324,7 @@ impl Level {
             loaded_chunks: Arc::default(),
             loaded_chunk_changes: Arc::new(SegQueue::new()),
             loaded_entity_chunks: Arc::default(),
-            entity_chunk_handoff: Mutex::new(()),
+            entity_chunk_handoff: Mutex::default(),
             chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
             chunk_watchers: Arc::new(DashMap::new()),
@@ -337,7 +338,6 @@ impl Level {
             should_unload: AtomicBool::new(false),
             save_enabled: AtomicBool::new(true),
             autosave_ticks: level_config.autosave_ticks,
-            pending_entity_generations,
             level_channel: level_channel.clone(),
             thread_tracker,
             chunk_listener: listener.clone(),
@@ -369,19 +369,32 @@ impl Level {
     }
 
     pub fn spawn_entity_generation(self: &Arc<Self>, pos: Vector2<i32>) {
-        let arc_chunk = Arc::new(ChunkEntityData {
+        self.finish_entity_chunk_load(pos, Self::empty_entity_chunk(pos));
+    }
+
+    fn empty_entity_chunk(pos: Vector2<i32>) -> SyncEntityChunk {
+        Arc::new(ChunkEntityData {
             x: pos.x,
             z: pos.y,
-            data: std::sync::Mutex::new(Vec::new()),
+            data: Mutex::new(Vec::new()),
             live: AtomicBool::new(false),
             dirty: AtomicBool::new(false),
-        });
+        })
+    }
 
-        self.loaded_entity_chunks.insert(pos, arc_chunk.clone());
-
-        if let Some((_, waiters)) = self.pending_entity_generations.remove(&pos) {
-            for tx in waiters {
-                let _ = tx.send(arc_chunk.clone());
+    fn finish_entity_chunk_load(&self, pos: Vector2<i32>, chunk: SyncEntityChunk) {
+        let mut pending = self
+            .entity_chunk_handoff
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current = self
+            .loaded_entity_chunks
+            .entry(pos)
+            .or_insert(chunk)
+            .clone();
+        if let Some(waiters) = pending.remove(&pos) {
+            for waiter in waiters {
+                let _ = waiter.send(current.clone());
             }
         }
     }
@@ -550,16 +563,22 @@ impl Level {
         }
     }
 
-    /// Marks chunks as "watched" by a unique player. When no players are watching a chunk,
-    /// it is removed from memory. Should only be called on chunks the player was not watching
-    /// before
-    pub fn mark_chunks_as_newly_watched(&self, chunks: &[Vector2<i32>]) {
-        for chunk in chunks {
-            self.chunk_watchers
-                .entry(*chunk)
-                .and_modify(|count| *count = count.saturating_add(1))
-                .or_insert(1);
+    /// Registers a player's newly watched chunks and returns the positions whose first
+    /// watcher needs to request entity data.
+    pub fn mark_chunks_as_newly_watched(&self, chunks: &[Vector2<i32>]) -> Vec<Vector2<i32>> {
+        let mut first = Vec::new();
+        for &pos in chunks {
+            match self.chunk_watchers.entry(pos) {
+                Entry::Occupied(mut entry) => {
+                    *entry.get_mut() = entry.get().saturating_add(1);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(1);
+                    first.push(pos);
+                }
+            }
         }
+        first
     }
 
     /// Marks chunks no longer "watched" by a unique player. When no players are watching a chunk,
@@ -896,19 +915,88 @@ impl Level {
         chunk
     }
 
-    async fn load_single_entity_chunk(
-        &self,
-        pos: Vector2<i32>,
-    ) -> Result<(SyncEntityChunk, bool), ChunkReadingError> {
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-        self.entity_saver
-            .fetch_chunks(&self.level_folder, &[pos], tx)
-            .await;
+    /// Shares one disk request per position across entity chunk readers. The same
+    /// handoff lock orders cache lookup with retiring a chunk into the save queue.
+    fn request_entity_chunks(
+        self: &Arc<Self>,
+        chunks: impl IntoIterator<Item = Vector2<i32>>,
+    ) -> Vec<Result<SyncEntityChunk, oneshot::Receiver<SyncEntityChunk>>> {
+        let mut to_fetch = Vec::new();
+        let requested = {
+            let mut pending = self
+                .entity_chunk_handoff
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            chunks
+                .into_iter()
+                .map(|pos| {
+                    if let Some(chunk) = self.get_entity_chunk_sync(&pos) {
+                        return Ok(chunk);
+                    }
+                    let (sender, receiver) = oneshot::channel();
+                    if !self.cancel_token.is_cancelled() {
+                        match pending.entry(pos) {
+                            HashEntry::Occupied(mut pending) => pending.get_mut().push(sender),
+                            HashEntry::Vacant(pending) => {
+                                pending.insert(vec![sender]);
+                                to_fetch.push(pos);
+                            }
+                        }
+                    }
+                    Err(receiver)
+                })
+                .collect()
+        };
+        if !to_fetch.is_empty() {
+            let level = self.clone();
+            let abandoned = to_fetch.clone();
+            if self
+                .spawn_task(async move { level.fetch_entity_chunks(to_fetch).await })
+                .is_none()
+            {
+                self.cancel_entity_chunk_loads(abandoned);
+            }
+        }
+        requested
+    }
 
-        match rx.recv().await {
-            Some(LoadedData::Loaded(chunk)) => Ok((chunk, false)),
-            Some(LoadedData::Error((_, err))) => Err(err),
-            _ => Err(ChunkReadingError::ChunkNotExist),
+    async fn fetch_entity_chunks(&self, positions: Vec<Vector2<i32>>) {
+        let mut unfinished: FxHashSet<_> = positions.iter().copied().collect();
+        let fetch = async {
+            let (tx, mut rx) = mpsc::channel(positions.len());
+            self.entity_saver
+                .fetch_chunks(&self.level_folder, &positions, tx)
+                .await;
+            while let Some(record) = rx.recv().await {
+                let (pos, chunk) = match record {
+                    LoadedData::Loaded(chunk) => (Vector2::new(chunk.x, chunk.z), chunk),
+                    LoadedData::Missing(pos) | LoadedData::Error((pos, _)) => {
+                        (pos, Self::empty_entity_chunk(pos))
+                    }
+                };
+                if unfinished.remove(&pos) {
+                    self.finish_entity_chunk_load(pos, chunk);
+                }
+            }
+        };
+        select! {
+            () = self.cancel_token.cancelled() => {},
+            () = fetch => {},
+        }
+        self.cancel_entity_chunk_loads(unfinished);
+    }
+
+    fn cancel_entity_chunk_loads(&self, positions: impl IntoIterator<Item = Vector2<i32>>) {
+        let mut positions = positions.into_iter().peekable();
+        if positions.peek().is_none() {
+            return;
+        }
+        let mut pending = self
+            .entity_chunk_handoff
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for pos in positions {
+            pending.remove(&pos);
         }
     }
 
@@ -918,100 +1006,43 @@ impl Level {
     ) -> Receiver<(Weak<ChunkEntityData>, bool)> {
         let (sender, receiver) = mpsc::channel(64);
         let level = self.clone();
-
         self.spawn_task(async move {
-            let cancel_notifier = level.cancel_token.cancelled();
-
-            let fetch_task = async {
-                let to_fetch: Vec<_> = chunks
-                    .iter()
-                    .filter(|pos| {
-                        level.loaded_entity_chunks.get(pos).is_none_or(|chunk| {
-                            let _ = sender.try_send((Arc::downgrade(chunk.value()), false));
-                            false // Don't fetch
-                        })
-                    })
-                    .copied()
-                    .collect();
-
-                if !to_fetch.is_empty() {
-                    let (tx, mut rx) = tokio::sync::mpsc::channel::<
-                        LoadedData<SyncEntityChunk, ChunkReadingError>,
-                    >(to_fetch.len());
-
-                    level
-                        .entity_saver
-                        .fetch_chunks(&level.level_folder, &to_fetch, tx)
-                        .await;
-
-                    while let Some(data) = rx.recv().await {
-                        match data {
-                            LoadedData::Loaded(chunk) => {
-                                let pos = Vector2::new(chunk.x, chunk.z);
-                                level.loaded_entity_chunks.insert(pos, chunk.clone());
-                                let _ = sender.send((Arc::downgrade(&chunk), true)).await;
-                            }
-                            LoadedData::Missing(pos) | LoadedData::Error((pos, _)) => {
-                                let (tx, rx) = oneshot::channel();
-                                match level.pending_entity_generations.entry(pos) {
-                                    dashmap::mapref::entry::Entry::Occupied(mut entry) => {
-                                        entry.get_mut().push(tx);
-                                    }
-                                    dashmap::mapref::entry::Entry::Vacant(entry) => {
-                                        entry.insert(vec![tx]);
-                                        level.spawn_entity_generation(pos);
-                                    }
-                                }
-                                let sender_clone = sender.clone();
-                                level.spawn_task(async move {
-                                    if let Ok(chunk) = rx.await {
-                                        let _ =
-                                            sender_clone.send((Arc::downgrade(&chunk), true)).await;
-                                    }
-                                });
+            let fetch = async {
+                let mut loading = FuturesUnordered::new();
+                for request in level.request_entity_chunks(chunks) {
+                    match request {
+                        Ok(chunk) => {
+                            if sender.send((Arc::downgrade(&chunk), false)).await.is_err() {
+                                return;
                             }
                         }
+                        Err(receive) => loading.push(receive),
+                    }
+                }
+                while let Some(result) = loading.next().await {
+                    if let Ok(chunk) = result
+                        && sender.send((Arc::downgrade(&chunk), true)).await.is_err()
+                    {
+                        return;
                     }
                 }
             };
 
             select! {
-                () = cancel_notifier => {},
-                () = fetch_task => {}
+                () = level.cancel_token.cancelled() => {},
+                () = fetch => {},
             }
         });
-
         receiver
     }
 
     pub async fn get_entity_chunk(self: &Arc<Self>, pos: Vector2<i32>) -> SyncEntityChunk {
-        if let Some(chunk) = self.loaded_entity_chunks.get(&pos) {
-            return chunk.clone();
-        }
-
-        if let Ok((chunk, _)) = self.load_single_entity_chunk(pos).await {
-            self.loaded_entity_chunks.insert(pos, chunk.clone());
-            chunk
-        } else {
-            let (tx, rx) = oneshot::channel();
-            match self.pending_entity_generations.entry(pos) {
-                dashmap::mapref::entry::Entry::Occupied(mut entry) => {
-                    entry.get_mut().push(tx);
-                }
-                dashmap::mapref::entry::Entry::Vacant(entry) => {
-                    entry.insert(vec![tx]);
-                    self.spawn_entity_generation(pos);
-                }
-            }
-            rx.await.unwrap_or_else(|_| {
-                Arc::new(ChunkEntityData {
-                    x: pos.x,
-                    z: pos.y,
-                    data: std::sync::Mutex::new(Vec::new()),
-                    live: AtomicBool::new(false),
-                    dirty: AtomicBool::new(false),
-                })
-            })
+        match self.request_entity_chunks([pos]).pop() {
+            Some(Ok(chunk)) => chunk,
+            Some(Err(receive)) => receive
+                .await
+                .unwrap_or_else(|_| Self::empty_entity_chunk(pos)),
+            None => Self::empty_entity_chunk(pos),
         }
     }
 
@@ -1243,6 +1274,55 @@ mod tests {
     use super::*;
     use pumpkin_config::world::LevelConfig;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn entity_chunk_views_keep_every_cached_result() {
+        let folder = TempDir::new().unwrap();
+        let level = Level::from_root_folder(
+            &LevelConfig::default(),
+            folder.path().to_path_buf(),
+            0,
+            Dimension::OVERWORLD,
+        );
+        let positions: Vec<_> = (0..96).map(|x| Vector2::new(x, 0)).collect();
+        for &pos in &positions {
+            level.spawn_entity_generation(pos);
+        }
+        let mut received = level.receive_entity_chunks(positions.clone());
+        let mut delivered = Vec::new();
+        while let Some((chunk, loaded)) = received.recv().await {
+            assert!(!loaded);
+            let chunk = chunk.upgrade().unwrap();
+            delivered.push(Vector2::new(chunk.x, chunk.z));
+        }
+        level.shutdown().await;
+        assert_eq!(delivered, positions);
+    }
+
+    #[tokio::test]
+    async fn overlapping_entity_views_publish_one_cache_entry() {
+        let folder = TempDir::new().unwrap();
+        let level = Level::from_root_folder(
+            &LevelConfig::default(),
+            folder.path().to_path_buf(),
+            0,
+            Dimension::OVERWORLD,
+        );
+        let pos = Vector2::new(1, 2);
+        let before = Level::empty_entity_chunk(pos);
+        before
+            .data
+            .lock()
+            .unwrap()
+            .push(pumpkin_nbt::compound::NbtCompound::new());
+        before.mark_dirty(true);
+        level.write_entity_chunks(vec![(pos, before)]).await;
+        let (one, two) = tokio::join!(level.get_entity_chunk(pos), level.get_entity_chunk(pos));
+        let entry = level.get_entity_chunk_sync(&pos).unwrap();
+        assert!(Arc::ptr_eq(&one, &two) && Arc::ptr_eq(&one, &entry));
+        assert_eq!(entry.data.lock().unwrap().len(), 1);
+        level.shutdown().await;
+    }
 
     #[tokio::test]
     async fn dimension_paths_26_2() {

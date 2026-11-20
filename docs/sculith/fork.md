@@ -98,7 +98,16 @@ simulation boundary.
 
 When a chunk changes owners, its pending timers use the new clock with
 the same remaining delay. Saved chunks store that delay and rebuild their
-timers on activation. Native plugins use ABI 18.
+timers on activation.
+
+Player movement registers the new view before entity chunk readers run.
+Readers share one disk request for a chunk and return its position to the
+world. At the end of the owned world step, the world checks current watchers,
+registers the saved actors once, and retires unwatched inactive chunks using
+the live positions of entities and their vehicles. Disk reads and retirement
+writes run asynchronously. Manual saves serialize their entity snapshot
+against these residency changes. This lifecycle uses the world boundary.
+Native plugins use ABI 19.
 
 ## Shared resource delivery
 

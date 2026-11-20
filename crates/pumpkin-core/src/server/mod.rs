@@ -1470,6 +1470,7 @@ impl Server {
                 .filter(|player| player.can_tick_in(world))
                 .for_each(|player| player.tick(self));
         }
+        world.apply_entity_chunk_changes();
         world.flush_block_updates();
     }
 

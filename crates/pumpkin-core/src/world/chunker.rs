@@ -127,23 +127,52 @@ fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actua
 }
 
 pub fn update_position(player: &Arc<Player>) {
-    let entity = player.get_entity();
-    let actual = entity.chunk_pos.load();
-    let old_cylindrical = player.watched_section.load();
-
-    // Vanilla `ChunkMap.move` -> re-pair on every move, not only on a view change.
     let world = player.world();
-    world.entity_tracker.update_player_position(player, &world);
+    let entity = player.get_entity();
+    // Observe the latest view before applying a delta. Departure uses this
+    // same guard, so it cannot release a view that has not been registered.
+    let mut registered = player
+        .registered_chunk_view
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if player.client.closed()
+        || !Arc::ptr_eq(&world, &player.world())
+        || (registered.is_none()
+            && !world
+                .players
+                .load()
+                .iter()
+                .any(|active| Arc::ptr_eq(active, player)))
+    {
+        return;
+    }
+    let actual = entity.chunk_pos.load();
     let distance = get_view_distance(player);
     let pos = entity.block_pos.load();
+    let old_cylindrical = player.watched_section.load();
     let new_cylindrical = match player.client.as_ref() {
         ClientPlatform::Java(_) => Cylindrical::new(actual, distance),
         ClientPlatform::Bedrock(_) => bedrock_view(old_cylindrical, pos, distance),
     };
     update_chunk_tickets(player, &world, new_cylindrical, actual);
-    if old_cylindrical == new_cylindrical {
+    // Vanilla `ChunkMap.move` re-pairs on every move, including within one view.
+    world.entity_tracker.update_player_position(player, &world);
+    if *registered == Some(new_cylindrical) {
         return;
     }
+    let (loading_chunks, unloading_chunks) = registered.map_or_else(
+        || (new_cylindrical.all_chunks_within().collect(), Vec::new()),
+        |old| {
+            let (loading, unloading) = Cylindrical::changed_chunks(old, new_cylindrical);
+            (loading.collect::<Vec<_>>(), unloading.collect::<Vec<_>>())
+        },
+    );
+    let new_entity_chunks = world.level.mark_chunks_as_newly_watched(&loading_chunks);
+    let clean = world.level.mark_chunks_as_not_watched(&unloading_chunks);
+    *registered = Some(new_cylindrical);
+    player.watched_section.store(new_cylindrical);
+    drop(registered);
+
     let new_chunk_center = new_cylindrical.center;
     match player.client.as_ref() {
         ClientPlatform::Java(java_client) => {
@@ -170,11 +199,6 @@ pub fn update_position(player: &Arc<Player>) {
             }
         }
     }
-    let (loading_iter, unloading_iter) =
-        Cylindrical::changed_chunks(old_cylindrical, new_cylindrical);
-    let loading_chunks: Vec<_> = loading_iter.collect();
-    let unloading_chunks: Vec<_> = unloading_iter.collect();
-
     {
         let mut sender = player
             .chunk_sender
@@ -187,33 +211,9 @@ pub fn update_position(player: &Arc<Player>) {
             sender.enqueue_chunk(*pos);
         }
     }
-    player.watched_section.store(new_cylindrical);
-
-    // Make sure the watched section and the chunk watcher updates are async atomic. We want to
-    // ensure what we unload when the player disconnects is correct.
-    if !loading_chunks.is_empty() || !unloading_chunks.is_empty() {
-        let level = world.level.clone();
-        let world_clone = world.clone();
-        let loading_chunks_clone = loading_chunks.clone();
-        let unloading_chunks_clone = unloading_chunks;
-
-        if let Some(server) = world.server.upgrade() {
-            server.spawn_task(async move {
-                level.mark_chunks_as_newly_watched(&loading_chunks_clone);
-                let chunks_to_clean = level.mark_chunks_as_not_watched(&unloading_chunks_clone);
-
-                if !chunks_to_clean.is_empty() {
-                    world_clone
-                        .remove_entities_in_chunks(&chunks_to_clean)
-                        .await;
-                    world_clone.level.clean_entity_chunks(&chunks_to_clean);
-                }
-            });
-        }
-    }
-
-    if !loading_chunks.is_empty() {
-        world.spawn_world_entity_chunks(player.clone(), loading_chunks);
+    world.queue_entity_chunk_changes(clean);
+    if !new_entity_chunks.is_empty() {
+        world.request_entity_chunks(new_entity_chunks);
     }
 }
 

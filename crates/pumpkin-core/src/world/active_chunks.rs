@@ -15,6 +15,7 @@ pub(super) struct ActiveChunkTracker {
     pub players: FxHashMap<Uuid, ActivePlayerArea>,
     pub loaded_active_chunks: FxHashSet<Vector2<i32>>,
     pub tick_regions: TickRegions,
+    pub newly_inactive: Vec<Vector2<i32>>,
     watcher_counts: FxHashMap<Vector2<i32>, u32>,
     forced_chunks: FxHashSet<Vector2<i32>>,
 }
@@ -44,6 +45,7 @@ impl ActiveChunkTracker {
             self.watcher_counts.remove(&pos);
             self.loaded_active_chunks.remove(&pos);
             active_chunks.remove(&pos);
+            self.newly_inactive.push(pos);
             self.tick_regions.active_chunks_changed();
         }
     }
