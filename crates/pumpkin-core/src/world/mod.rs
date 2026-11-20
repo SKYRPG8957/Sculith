@@ -2421,8 +2421,8 @@ impl World {
                 chunk.fluid_ticks.advance();
                 chunk.mark_dirty(true);
                 if !inhabited
-                    || !block
-                        .is_some_and(|block| self.block_registry.regional_tick(block.id).is_some())
+                    || block
+                        .is_none_or(|block| self.block_registry.regional_tick(block.id).is_none())
                 {
                     continue;
                 }

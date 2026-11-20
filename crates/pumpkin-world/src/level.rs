@@ -76,18 +76,18 @@ pub fn apply_regional_block_properties(
         return None;
     }
 
-    let needs_neighbors = std::cell::Cell::new(false);
+    let first_neighbor = std::cell::Cell::new(None);
     let can_commit = || owns(source);
     let local = chunk.try_apply_ready_block_properties(
         limit,
-        |_| {
-            needs_neighbors.set(true);
+        |pos| {
+            first_neighbor.set(Some(pos.chunk_position()));
             None
         },
         can_commit,
         &update,
     );
-    if local.is_some() || !needs_neighbors.get() {
+    if local.is_some() || first_neighbor.get().is_none_or(|pos| !owns(pos)) {
         return local;
     }
 
