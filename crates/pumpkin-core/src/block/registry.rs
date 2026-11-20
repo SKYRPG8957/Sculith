@@ -512,6 +512,7 @@ impl BlockActionResult {
 
 /// Marks a block with no registered behaviour. Never handed out as a real index.
 const NO_BEHAVIOUR: u16 = u16::MAX;
+const REGIONAL_WATER: u8 = 4;
 
 #[derive(Clone, Copy)]
 pub(crate) enum RegionalBlockTick {
@@ -979,7 +980,18 @@ impl BlockRegistry {
         self.fluids.reserve(ids.len());
         for i in ids {
             self.fluids.insert(i, val.clone());
+            if i == Fluid::FLOWING_WATER.id {
+                if std::any::TypeId::of::<T>() == std::any::TypeId::of::<FlowingWater>() {
+                    self.regional_ticks |= REGIONAL_WATER;
+                } else {
+                    self.regional_ticks &= !REGIONAL_WATER;
+                }
+            }
         }
+    }
+
+    pub(crate) const fn uses_regional_water(&self) -> bool {
+        self.regional_ticks & REGIONAL_WATER != 0
     }
 
     pub fn on_synced_block_event(

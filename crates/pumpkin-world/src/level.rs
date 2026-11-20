@@ -3,7 +3,7 @@ use crate::generation::generator::WorldGenerator;
 use crate::lighting::DynamicLightEngine;
 use crate::{
     chunk::{
-        ChunkData, ChunkEntityData,
+        ChunkData, ChunkEntityData, DownwardWaterTick,
         io::{Dirtiable, FileIO, LoadedData, file_manager::LevelFileIO},
         palette::has_random_ticking_fluid,
     },
@@ -65,6 +65,21 @@ pub fn apply_regional_block_properties(
         &dyn Fn(BlockPos) -> Option<BlockStateId>,
     ) -> Option<BlockStateId>,
 ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
+    apply_regional_chunk_tick(loaded, expected, owns, |chunk, read, can_commit| {
+        chunk.try_apply_ready_block_properties(limit, read, can_commit, &update)
+    })
+}
+
+fn apply_regional_chunk_tick<R>(
+    loaded: &DashMap<Vector2<i32>, SyncChunk, FxBuildHasher>,
+    expected: &SyncChunk,
+    owns: impl Fn(Vector2<i32>) -> bool,
+    apply: impl Fn(
+        &ChunkData,
+        &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        &dyn Fn() -> bool,
+    ) -> Option<R>,
+) -> Option<R> {
     let source = Vector2::new(expected.x, expected.z);
     if !owns(source) {
         return None;
@@ -78,14 +93,13 @@ pub fn apply_regional_block_properties(
 
     let first_neighbor = std::cell::Cell::new(None);
     let can_commit = || owns(source);
-    let local = chunk.try_apply_ready_block_properties(
-        limit,
-        |pos| {
+    let local = apply(
+        &chunk,
+        &|pos| {
             first_neighbor.set(Some(pos.chunk_position()));
             None
         },
-        can_commit,
-        &update,
+        &can_commit,
     );
     if local.is_some() || first_neighbor.get().is_none_or(|pos| !owns(pos)) {
         return local;
@@ -118,7 +132,7 @@ pub fn apply_regional_block_properties(
         let (_, sections, palettes) = palettes.iter().find(|(chunk, ..)| *chunk == pos)?;
         sections.read_block_from_palettes(palettes, relative)
     };
-    chunk.try_apply_ready_block_properties(limit, read_neighbor, can_commit, update)
+    apply(&chunk, &read_neighbor, &can_commit)
 }
 
 type EntityLoadWaiters = FxHashMap<Vector2<i32>, Vec<oneshot::Sender<SyncEntityChunk>>>;
@@ -1286,6 +1300,37 @@ impl Level {
         )
     }
 
+    fn next_scheduled_tick_order(&self) -> u64 {
+        order::next_entity_order()
+            .unwrap_or_else(|| self.schedule_tick_counts.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Commits scheduled water movement and its follow-up timers in a loaded chunk.
+    ///
+    /// `owns` must be backed by the same region permit as for block properties.
+    pub fn apply_regional_water_ticks(
+        &self,
+        expected: &SyncChunk,
+        limit: usize,
+        owns: impl Fn(Vector2<i32>) -> bool,
+        evaluate: impl Fn(
+            BlockPos,
+            BlockStateId,
+            &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        ) -> Option<DownwardWaterTick>,
+    ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
+        apply_regional_chunk_tick(
+            &self.loaded_chunks,
+            expected,
+            owns,
+            |chunk, read, can_commit| {
+                chunk.try_apply_downward_water_ticks(limit, read, can_commit, &evaluate, || {
+                    self.next_scheduled_tick_order()
+                })
+            },
+        )
+    }
+
     pub fn schedule_block_tick(
         &self,
         block: &Block,
@@ -1293,8 +1338,7 @@ impl Level {
         delay: u8,
         priority: TickPriority,
     ) {
-        let tick_order = order::next_entity_order()
-            .unwrap_or_else(|| self.schedule_tick_counts.fetch_add(1, Ordering::Relaxed));
+        let tick_order = self.next_scheduled_tick_order();
         let scheduled_tick = ScheduledTick {
             delay,
             position: block_pos,
@@ -1322,8 +1366,7 @@ impl Level {
         delay: u8,
         priority: TickPriority,
     ) {
-        let tick_order = order::next_entity_order()
-            .unwrap_or_else(|| self.schedule_tick_counts.fetch_add(1, Ordering::Relaxed));
+        let tick_order = self.next_scheduled_tick_order();
         let scheduled_tick = ScheduledTick {
             delay,
             position: block_pos,

@@ -49,6 +49,7 @@ pub mod wandering_trader_spawner;
 
 use crate::block::RandomTickArgs;
 use crate::block::blocks::redstone::{redstone_lamp::RedstoneLamp, target_block::TargetBlock};
+use crate::block::fluid::water::FlowingWater;
 use crate::plugin::api::events::block::block_physics::BlockPhysicsEvent;
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{block::BlockEvent, entity::item::ItemEntity};
@@ -2418,12 +2419,17 @@ impl World {
                     chunk.inhabited_time.fetch_add(1, Relaxed);
                 }
                 let block = chunk.block_ticks.advance();
-                chunk.fluid_ticks.advance();
+                let fluid = chunk.fluid_ticks.advance();
                 chunk.mark_dirty(true);
-                if !inhabited
-                    || block
-                        .is_none_or(|block| self.block_registry.regional_tick(block.id).is_none())
-                {
+                if !inhabited {
+                    continue;
+                }
+                let regional_block = block
+                    .is_some_and(|block| self.block_registry.regional_tick(block.id).is_some());
+                let regional_water = block.is_none()
+                    && fluid == Some(&Fluid::FLOWING_WATER)
+                    && self.block_registry.uses_regional_water();
+                if !regional_block && !regional_water {
                     continue;
                 }
                 let expected = chunk.value().clone();
@@ -2437,15 +2443,27 @@ impl World {
                         .is_some_and(|extent| Arc::ptr_eq(extent, chunks))
                         && layout.owner(pos) == Some(owner)
                 };
-                let Some(changes) = apply_regional_block_properties(
-                    &self.level.loaded_chunks,
-                    &expected,
-                    CHUNK_TICK_BATCH_SIZE,
-                    owns,
-                    |block, position, state, read| {
-                        self.regional_block_replacement(block.id, position, state, read)
-                    },
-                ) else {
+                let applied = if regional_block {
+                    apply_regional_block_properties(
+                        &self.level.loaded_chunks,
+                        &expected,
+                        CHUNK_TICK_BATCH_SIZE,
+                        owns,
+                        |block, position, state, read| {
+                            self.regional_block_replacement(block.id, position, state, read)
+                        },
+                    )
+                } else {
+                    self.level.apply_regional_water_ticks(
+                        &expected,
+                        CHUNK_TICK_BATCH_SIZE,
+                        |pos| owns(pos) && FlowingWater::regional_events_unobserved(self),
+                        |position, state, read| {
+                            FlowingWater::regional_downward_tick(self, position, state, read)
+                        },
+                    )
+                };
+                let Some(changes) = applied else {
                     continue;
                 };
                 if !changes.is_empty() {

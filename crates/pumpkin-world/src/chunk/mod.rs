@@ -12,12 +12,14 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
-use std::sync::{RwLock, RwLockReadGuard, TryLockError};
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 use thiserror::Error;
 
 pub mod format;
 pub mod io;
 pub mod palette;
+mod regional_fluid;
+pub use regional_fluid::DownwardWaterTick;
 
 // TODO
 pub const CHUNK_WIDTH: usize = BlockPalette::SIZE;
@@ -129,6 +131,14 @@ impl<P> SectionPalettes<P> {
 
     pub(crate) fn try_read(&self) -> Option<RwLockReadGuard<'_, Box<[P]>>> {
         match self.palettes.try_read() {
+            Ok(guard) => Some(guard),
+            Err(TryLockError::Poisoned(error)) => Some(error.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        }
+    }
+
+    fn try_write_unmarked(&self) -> Option<RwLockWriteGuard<'_, Box<[P]>>> {
+        match self.palettes.try_write() {
             Ok(guard) => Some(guard),
             Err(TryLockError::Poisoned(error)) => Some(error.into_inner()),
             Err(TryLockError::WouldBlock) => None,
@@ -275,6 +285,24 @@ pub struct ChunkHeightmaps {
 impl ChunkHeightmaps {
     /// Longs a heightmap occupies: 256 columns of 9 bits, 7 columns per long.
     pub const LONGS: usize = 37;
+
+    fn update_for_block(
+        &mut self,
+        position: Vector3<i32>,
+        state: &BlockState,
+        min_y: i32,
+        get_block: impl Fn(i32) -> &'static BlockState,
+    ) {
+        for kind in [
+            ChunkHeightmapType::WorldSurface,
+            ChunkHeightmapType::MotionBlocking,
+            ChunkHeightmapType::MotionBlockingNoLeaves,
+        ] {
+            self.update(
+                kind, position.x, position.y, position.z, state, min_y, &get_block,
+            );
+        }
+    }
 
     pub fn set(&mut self, heightmap: ChunkHeightmapType, x: i32, z: i32, height: i32, min_y: i32) {
         let data = match heightmap {
@@ -818,11 +846,7 @@ impl ChunkData {
             &dyn Fn(BlockPos) -> Option<BlockStateId>,
         ) -> Option<BlockStateId>,
     ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
-        let mut sections = match self.section.block_sections.palettes.try_write() {
-            Ok(guard) => guard,
-            Err(TryLockError::Poisoned(error)) => error.into_inner(),
-            Err(TryLockError::WouldBlock) => return None,
-        };
+        let mut sections = self.section.block_sections.try_write_unmarked()?;
         self.commit_ready_block_properties(&mut sections, limit, read_neighbor, can_commit, update)
     }
 
@@ -1031,23 +1055,17 @@ impl ChunkData {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let min_y = self.section.min_y;
-        let x = relative_x as i32;
-        let y = relative_y as i32 + min_y;
-        let z = relative_z as i32;
-
-        for &hm_type in &[
-            ChunkHeightmapType::WorldSurface,
-            ChunkHeightmapType::MotionBlocking,
-            ChunkHeightmapType::MotionBlockingNoLeaves,
-        ] {
-            heightmap.update(hm_type, x, z, y, block_state, min_y, |y_at| {
-                let id = self
-                    .section
-                    .get_block_absolute_y(relative_x, y_at, relative_z)
-                    .unwrap_or(BlockStateId::AIR);
-                BlockState::from_id(id)
-            });
-        }
+        let position = Vector3::new(
+            relative_x as i32,
+            relative_y as i32 + min_y,
+            relative_z as i32,
+        );
+        heightmap.update_for_block(position, block_state, min_y, |y_at| {
+            self.section
+                .get_block_absolute_y(relative_x, y_at, relative_z)
+                .unwrap_or(BlockStateId::AIR)
+                .to_state()
+        });
     }
 
     /// Gets the given block in the chunk

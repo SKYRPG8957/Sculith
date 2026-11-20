@@ -116,13 +116,20 @@ the committed properties and timer removals together. The shared lighting
 engine follows changes to light properties, and both editions read the
 authoritative state.
 
+The region also executes built-in water ticks for isolated vertical flow.
+Canonical source and falling water can fill air directly below them. The
+falling block and both follow-up timers commit together, and consecutive
+ready ticks see earlier decisions in that batch. The same ownership guard
+applies to the neighboring reads. Horizontal flow, other fluid interactions
+and observable flow or physics events use the world callbacks.
+
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
 use the region tick numbers at the world boundary and advance each chunk
 once per requested world tick. Merging inherits the highest coordinated
 tick number and splitting passes that number to each successor.
 
-Other scheduled block and fluid callbacks, entity AI, player packets and
+Other scheduled callbacks, entity AI, player packets and
 entity chunk residency use world phases.
 
 Player movement registers the new view before entity chunk readers run.

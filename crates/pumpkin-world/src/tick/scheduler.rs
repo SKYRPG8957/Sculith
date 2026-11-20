@@ -59,6 +59,14 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         limit: usize,
         apply: impl FnOnce(&[OrderedTick<&'a T>]) -> Option<R>,
     ) -> Option<R> {
+        self.apply_and_schedule_ready_batch(limit, |ready| Some((apply(ready)?, Vec::new())))
+    }
+
+    pub(crate) fn apply_and_schedule_ready_batch<R>(
+        &self,
+        limit: usize,
+        apply: impl FnOnce(&[OrderedTick<&'a T>]) -> Option<(R, Vec<(ScheduledTick<&'a T>, u64)>)>,
+    ) -> Option<R> {
         let mut inner_guard = self
             .inner
             .lock()
@@ -68,8 +76,12 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
             return None;
         }
         ready.sort();
-        let result = apply(ready)?;
+        let (result, scheduled) = apply(ready)?;
         Self::take_ready_locked(&mut inner_guard);
+        let offset = self.offset.load(Ordering::Relaxed);
+        for (tick, order) in scheduled {
+            Self::schedule_locked(&mut inner_guard, &tick, order, offset);
+        }
         Some(result)
     }
 
@@ -132,8 +144,16 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let offset = self.offset.load(Ordering::Relaxed);
-        let inner = inner_guard.get_or_insert_with(Box::default);
+        Self::schedule_locked(&mut inner_guard, tick, sub_tick_order, offset);
+    }
 
+    fn schedule_locked(
+        inner: &mut Option<Box<ChunkTickSchedulerInner<&'a T>>>,
+        tick: &ScheduledTick<&'a T>,
+        sub_tick_order: u64,
+        offset: usize,
+    ) {
+        let inner = inner.get_or_insert_with(Box::default);
         if inner.queued_ticks.insert((tick.position, tick.value)) {
             let index = (offset + tick.delay as usize) % MAX_TICK_DELAY;
 
