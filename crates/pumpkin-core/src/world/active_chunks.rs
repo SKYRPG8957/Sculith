@@ -211,6 +211,8 @@ mod tests {
 
     #[test]
     fn scheduled_chunks_follow_active_region_merges_and_splits() {
+        use pumpkin_world::level::ScheduledTickStep::Advance;
+
         let mut tracker = ActiveChunkTracker::default();
         let mut active = FxHashSet::default();
         let mut newly_active = Vec::new();
@@ -223,65 +225,69 @@ mod tests {
 
         tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
         for _ in 0..3 {
-            tracker.tick_regions.step_scheduled(&active, Vec::new());
+            tracker
+                .tick_regions
+                .schedule_ticks(&active, Vec::new(), true);
         }
         forced.insert(east);
         tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
         let groups = tracker
             .tick_regions
-            .step_scheduled(&active, scheduled.clone());
+            .schedule_ticks(&active, scheduled.clone(), true);
         assert_eq!(groups.len(), 3);
         assert!(
             groups
                 .iter()
-                .any(|group| group.chunks == [west] && group.region_tick == Some(3))
+                .any(|group| group.chunks == [west] && matches!(group.step, Advance(Some(3))))
         );
         assert!(
             groups
                 .iter()
-                .any(|group| group.chunks == [east] && group.region_tick == Some(0))
+                .any(|group| group.chunks == [east] && matches!(group.step, Advance(Some(0))))
         );
         assert!(
             groups
                 .iter()
-                .any(|group| group.chunks == [inactive] && group.region_tick.is_none())
+                .any(|group| group.chunks == [inactive] && matches!(group.step, Advance(None)))
         );
 
         forced.insert(bridge);
         tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
         let merged = tracker
             .tick_regions
-            .step_scheduled(&active, scheduled.clone());
+            .schedule_ticks(&active, scheduled.clone(), true);
         assert_eq!(merged.len(), 2);
         assert!(
             merged
                 .iter()
-                .any(|group| group.chunks == [west, east] && group.region_tick == Some(4))
+                .any(|group| group.chunks == [west, east] && matches!(group.step, Advance(Some(4))))
         );
         assert!(
             merged
                 .iter()
-                .any(|group| group.chunks == [inactive] && group.region_tick.is_none())
+                .any(|group| group.chunks == [inactive] && matches!(group.step, Advance(None)))
         );
 
         forced.remove(&bridge);
         tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
-        let split = tracker.tick_regions.step_scheduled(&active, scheduled);
+        let split = tracker
+            .tick_regions
+            .schedule_ticks(&active, scheduled, true);
         assert_eq!(split.len(), 3);
         assert!(
             split
                 .iter()
-                .any(|group| group.chunks == [west] && group.region_tick == Some(5))
+                .any(|group| group.chunks == [west] && matches!(group.step, Advance(Some(5))))
         );
         assert!(
             split
                 .iter()
-                .any(|group| group.chunks == [east] && group.region_tick == Some(5))
+                .any(|group| group.chunks == [east] && matches!(group.step, Advance(Some(5))))
         );
         assert!(
             split
                 .iter()
-                .any(|group| group.chunks == [inactive] && group.region_tick.is_none())
+                .any(|group| group.chunks == [inactive] && matches!(group.step, Advance(None)))
         );
     }
 }

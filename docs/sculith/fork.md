@@ -85,32 +85,31 @@ number of ticks. Manual and periodic player snapshots coordinate the worlds
 for capture and write asynchronously.
 
 The active-chunk tracker groups connected chunks into regions for scheduled
-block and fluid work. A region collects its own pending ticks on the
-simulation pool. Work already queued in loaded chunks outside the active
-regions is also collected. The world then dispatches callbacks in the
-existing block and fluid phases, sorting the collected work by priority.
+block and fluid work. Overlapping regions reuse owner IDs, with the largest
+overlaps taking priority.
 
-Each connected region owns a local tick number for its chunk timers.
-Overlapping regions reuse owner IDs, with the largest overlaps taking
-priority. Merging inherits the highest tick number and splitting passes
-that number to each successor. The world drives these clocks at its
-simulation boundary.
-
-When a chunk changes owners, its pending timers use the new clock with
-the same remaining delay. Saved chunks store that delay and rebuild their
-timers on activation.
-
-On ordinary ticks, the server schedules each active region's chunk inhabited
-time on its own deadline. This time contributes to local difficulty and uses
-the existing chunk save fields. After a merge or split, new jobs inherit the
+On ordinary ticks, each active region advances scheduled block and fluid
+timers and chunk inhabited time on its own deadline. Loaded chunks with
+timers outside active regions share a deadline for timer work. Inhabited
+time contributes to local difficulty. Each chunk carries its remaining
+delays when it changes owners. After a merge or split, new jobs inherit the
 latest relevant deadline and wait only for jobs whose chunk extents overlap.
 A late owner drops missed starts and cannot accumulate a queue of catch-up
-ticks. Freeze pauses this clock and lets the first resumed world tick refresh
-membership after player movement. Coordinated steps and sprints advance chunk
-time once per requested world tick.
+ticks.
+
+A timer that expires stays with its chunk until the world takes it for the
+block or fluid callback phase. While it waits, the same timer cannot be
+scheduled again and a save stores it with zero remaining delay. This uses
+the existing chunk formats. The world sorts each callback type by priority.
+
+Freeze pauses timer advancement and lets the first resumed world tick
+refresh membership after player movement. Coordinated steps and sprints
+use the region tick numbers at the world boundary and advance each chunk
+once per requested world tick. Merging inherits the highest coordinated
+tick number and splitting passes that number to each successor.
 
 Scheduled block and fluid callbacks, entity AI, player packets and entity
-chunk residency still use world phases.
+chunk residency use world phases.
 
 Player movement registers the new view before entity chunk readers run.
 Readers share one disk request for a chunk and return its position to the
@@ -119,7 +118,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 20.
+Native plugins use ABI 21.
 
 ## Shared resource delivery
 

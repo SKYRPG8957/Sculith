@@ -1,7 +1,7 @@
 use std::{cmp::Reverse, collections::hash_map::Entry, sync::Arc};
 
 use pumpkin_util::math::vector2::Vector2;
-use pumpkin_world::level::ScheduledTickGroup;
+use pumpkin_world::level::{ScheduledTickGroup, ScheduledTickStep};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 pub type RegionId = usize;
@@ -10,8 +10,59 @@ pub type RegionChunks = Arc<[Vector2<i32>]>;
 /// Published after membership changes. A dispatched job retains its original extent.
 #[derive(Default)]
 pub struct RegionLayout {
-    pub(crate) owners: FxHashMap<Vector2<i32>, RegionId>,
-    pub(crate) regions: FxHashMap<RegionId, RegionChunks>,
+    active: Arc<ActiveRegions>,
+    inactive: RegionChunks,
+}
+
+#[derive(Default)]
+struct ActiveRegions {
+    owners: FxHashMap<Vector2<i32>, RegionId>,
+    regions: FxHashMap<RegionId, RegionChunks>,
+}
+
+impl RegionLayout {
+    pub(crate) const INACTIVE: RegionId = RegionId::MAX;
+
+    pub(crate) fn from_active(
+        owners: FxHashMap<Vector2<i32>, RegionId>,
+        regions: FxHashMap<RegionId, RegionChunks>,
+    ) -> Self {
+        Self {
+            active: Arc::new(ActiveRegions { owners, regions }),
+            inactive: RegionChunks::default(),
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.active.regions.is_empty() && self.inactive.is_empty()
+    }
+
+    pub(crate) fn owner(&self, pos: Vector2<i32>) -> Option<RegionId> {
+        self.active.owners.get(&pos).copied().or_else(|| {
+            self.inactive
+                .binary_search_by_key(&(pos.x, pos.y), |pos| (pos.x, pos.y))
+                .ok()
+                .map(|_| Self::INACTIVE)
+        })
+    }
+
+    pub(crate) fn chunks(&self, owner: RegionId) -> Option<&RegionChunks> {
+        if owner == Self::INACTIVE {
+            return (!self.inactive.is_empty()).then_some(&self.inactive);
+        }
+        self.active.regions.get(&owner)
+    }
+
+    pub(crate) fn regions(&self) -> impl Iterator<Item = (RegionId, &RegionChunks)> {
+        self.active
+            .regions
+            .iter()
+            .map(|(&id, chunks)| (id, chunks))
+            .chain(
+                self.chunks(Self::INACTIVE)
+                    .map(|chunks| (Self::INACTIVE, chunks)),
+            )
+    }
 }
 
 #[derive(Default)]
@@ -40,30 +91,49 @@ impl TickRegions {
         &self.layout
     }
 
-    pub(super) fn step_scheduled(
+    pub(super) fn schedule_ticks(
         &mut self,
         active: &FxHashSet<Vector2<i32>>,
         scheduled: Vec<Vector2<i32>>,
+        coordinated: bool,
     ) -> Vec<ScheduledTickGroup> {
         if std::mem::take(&mut self.needs_rebuild) {
             self.rebuild(active);
         }
 
-        let mut groups: FxHashMap<Option<usize>, Vec<_>> = FxHashMap::default();
+        let mut inactive = Vec::new();
+        let mut groups: FxHashMap<Option<RegionId>, Vec<_>> = FxHashMap::default();
         for chunk in scheduled {
             // Loaded chunks without an active owner still have advancing timers.
-            let owner = self.layout.owners.get(&chunk).copied();
+            let owner = self.layout.active.owners.get(&chunk).copied();
+            if owner.is_none() {
+                inactive.push(chunk);
+            }
             groups.entry(owner).or_default().push(chunk);
         }
+        inactive.sort_unstable_by_key(|pos| (pos.x, pos.y));
+        if self.layout.inactive.as_ref() != inactive.as_slice() {
+            self.layout = Arc::new(RegionLayout {
+                active: self.layout.active.clone(),
+                inactive: inactive.into(),
+            });
+        }
+
         let plan = groups
             .into_iter()
-            .map(|(owner, chunks)| ScheduledTickGroup {
-                chunks,
-                region_tick: owner.map(|owner| self.next_ticks[&owner]),
+            .map(|(owner, chunks)| {
+                let step = if coordinated {
+                    ScheduledTickStep::Advance(owner.map(|owner| self.next_ticks[&owner]))
+                } else {
+                    ScheduledTickStep::Ready
+                };
+                ScheduledTickGroup { chunks, step }
             })
             .collect();
-        for tick in self.next_ticks.values_mut() {
-            *tick += 1;
+        if coordinated {
+            for tick in self.next_ticks.values_mut() {
+                *tick += 1;
+            }
         }
         plan
     }
@@ -88,7 +158,7 @@ impl TickRegions {
             while let Some(chunk) = visit.pop() {
                 component.anchor = component.anchor.min((chunk.x, chunk.y));
                 component.chunks.push(chunk);
-                if let Some(&owner) = self.layout.owners.get(&chunk) {
+                if let Some(&owner) = self.layout.active.owners.get(&chunk) {
                     *component.overlaps.entry(owner).or_default() += 1;
                     component.next_tick = component.next_tick.max(self.next_ticks[&owner]);
                 }
@@ -142,10 +212,7 @@ impl TickRegions {
         for owner in owners.values_mut() {
             *owner = component_owners[*owner];
         }
-        self.layout = Arc::new(RegionLayout {
-            owners,
-            regions: region_chunks,
-        });
+        self.layout = Arc::new(RegionLayout::from_active(owners, region_chunks));
         let regions = self.next_ticks.len();
         if previous != regions {
             tracing::trace!(
@@ -172,25 +239,59 @@ mod tests {
         let mut active = FxHashSet::from_iter([east, bridge, west, west_edge]);
         let mut regions = TickRegions::default();
         regions.active_chunks_changed();
-        regions.step_scheduled(&active, Vec::new());
-        let original_owner = regions.layout.owners[&east];
+        regions.schedule_ticks(&active, Vec::new(), true);
+        let original_owner = regions.layout.owner(east).unwrap();
 
         active.remove(&bridge);
         regions.active_chunks_changed();
-        regions.step_scheduled(&active, Vec::new());
-        assert_eq!(regions.layout.owners[&west], original_owner);
-        assert_eq!(regions.layout.owners[&west_edge], original_owner);
-        assert_ne!(regions.layout.owners[&east], original_owner);
+        regions.schedule_ticks(&active, Vec::new(), true);
+        assert_eq!(regions.layout.owner(west), Some(original_owner));
+        assert_eq!(regions.layout.owner(west_edge), Some(original_owner));
+        assert_ne!(regions.layout.owner(east), Some(original_owner));
 
         active.insert(bridge);
         regions.active_chunks_changed();
-        regions.step_scheduled(&active, Vec::new());
+        regions.schedule_ticks(&active, Vec::new(), true);
         assert!(
             regions
                 .layout
+                .active
                 .owners
                 .values()
                 .all(|&owner| owner == original_owner)
         );
+    }
+
+    #[test]
+    fn scheduled_chunks_handoff_between_active_and_inactive_owners() {
+        let west = Vector2::new(0, 0);
+        let east = Vector2::new(12, 0);
+        let mut active = FxHashSet::from_iter([west]);
+        let mut regions = TickRegions::default();
+        regions.active_chunks_changed();
+        let work = regions.schedule_ticks(&active, vec![west, east], false);
+        assert!(
+            work.iter()
+                .all(|work| matches!(work.step, ScheduledTickStep::Ready))
+        );
+        let before = regions.layout().clone();
+        assert_ne!(before.owner(west), before.owner(east));
+        assert_eq!(
+            before.chunks(RegionLayout::INACTIVE).unwrap().as_ref(),
+            [east]
+        );
+
+        active.remove(&west);
+        active.insert(east);
+        regions.active_chunks_changed();
+        regions.schedule_ticks(&active, vec![west, east], true);
+        let after = regions.layout();
+        assert_eq!(after.owner(west), Some(RegionLayout::INACTIVE));
+        assert_ne!(after.owner(east), before.owner(east));
+        assert_eq!(
+            after.chunks(RegionLayout::INACTIVE).unwrap().as_ref(),
+            [west]
+        );
+        assert_eq!(before.owner(east), Some(RegionLayout::INACTIVE));
     }
 }

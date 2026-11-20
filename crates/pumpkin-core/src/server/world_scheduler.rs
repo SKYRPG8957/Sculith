@@ -155,7 +155,7 @@ impl WorldScheduler {
                             let _activity = activity;
                             let _permit = permit;
                             if !server.stop_token.is_cancelled() {
-                                world.advance_region_inhabitation(owner, &chunks);
+                                world.advance_region_time(owner, &chunks);
                                 tracing::trace!(world = %world.uuid, region = owner, "Regional chunk time step finished");
                             }
                         });

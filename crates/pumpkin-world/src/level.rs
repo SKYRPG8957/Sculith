@@ -137,7 +137,13 @@ pub struct TickData {
 
 pub struct ScheduledTickGroup {
     pub chunks: Vec<Vector2<i32>>,
-    pub region_tick: Option<u64>,
+    pub step: ScheduledTickStep,
+}
+
+#[derive(Clone, Copy)]
+pub enum ScheduledTickStep {
+    Advance(Option<u64>),
+    Ready,
 }
 
 #[derive(Clone, Copy)]
@@ -659,7 +665,7 @@ impl Level {
         self.get_tick_data_with_regions(active_chunks, random_tick_speed, |chunks| {
             vec![ScheduledTickGroup {
                 chunks,
-                region_tick: None,
+                step: ScheduledTickStep::Advance(None),
             }]
         })
     }
@@ -770,11 +776,23 @@ impl Level {
 
     fn step_scheduled_chunks(&self, group: ScheduledTickGroup, ticks: &mut TickData) {
         for pos in group.chunks {
-            if let Some(chunk) = self.loaded_chunks.get(&pos) {
-                let mut blocks = chunk.block_ticks.step_tick_at(group.region_tick);
-                let mut fluids = chunk.fluid_ticks.step_tick_at(group.region_tick);
+            // Drain block and fluid work on the same side of a region timer step.
+            if let Some(chunk) = self.loaded_chunks.get_mut(&pos) {
+                let (mut blocks, mut fluids) = match group.step {
+                    ScheduledTickStep::Advance(region_tick) => (
+                        chunk.block_ticks.step_tick_at(region_tick),
+                        chunk.fluid_ticks.step_tick_at(region_tick),
+                    ),
+                    ScheduledTickStep::Ready => (
+                        chunk.block_ticks.take_ready(),
+                        chunk.fluid_ticks.take_ready(),
+                    ),
+                };
                 let pending = chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks();
-                if pending || !blocks.is_empty() || !fluids.is_empty() {
+                if !blocks.is_empty()
+                    || !fluids.is_empty()
+                    || pending && matches!(group.step, ScheduledTickStep::Advance(_))
+                {
                     chunk.mark_dirty(true);
                 }
                 ticks.block_ticks.append(&mut blocks);

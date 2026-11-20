@@ -1703,7 +1703,7 @@ impl World {
     }
 
     #[expect(clippy::too_many_lines)]
-    fn tick_simulation(self: &Arc<Self>, server: &Arc<Server>, advance_inhabitation: bool) {
+    fn tick_simulation(self: &Arc<Self>, server: &Arc<Server>, coordinated: bool) {
         let start = std::time::Instant::now();
 
         self.flush_block_updates();
@@ -1732,7 +1732,7 @@ impl World {
         };
 
         let t_chunks = std::time::Instant::now();
-        self.tick_chunks_inner(advance_inhabitation);
+        self.tick_chunks_inner(coordinated);
         let chunk_elapsed = t_chunks.elapsed();
 
         let players = self.players.load();
@@ -2230,7 +2230,7 @@ impl World {
     }
 
     #[expect(clippy::too_many_lines)]
-    fn tick_chunks_inner(self: &Arc<Self>, advance_inhabitation: bool) {
+    fn tick_chunks_inner(self: &Arc<Self>, coordinated: bool) {
         const BATCH_SIZE: usize = 32;
         let random_tick_speed = self.level_info.load().game_rules.random_tick_speed;
 
@@ -2251,7 +2251,9 @@ impl World {
                         .active_chunks
                         .read()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    let plan = tracker.tick_regions.step_scheduled(&active, scheduled);
+                    let plan = tracker
+                        .tick_regions
+                        .schedule_ticks(&active, scheduled, coordinated);
                     let layout = tracker.tick_regions.layout();
                     if !Arc::ptr_eq(&self.region_layout.load(), layout) {
                         self.region_layout.store(layout.clone());
@@ -2376,7 +2378,7 @@ impl World {
             self.wandering_trader_spawner.tick(self);
         }
 
-        if advance_inhabitation {
+        if coordinated {
             const INHABITED_TIME_BATCH_SIZE: usize = 1024;
             let positions: Vec<_> = active_chunks.iter().copied().collect();
             positions
@@ -2387,19 +2389,31 @@ impl World {
     }
 
     pub(crate) fn invalidate_region_layout(&self) {
-        if !self.region_layout.load().regions.is_empty() {
+        if !self.region_layout.load().is_empty() {
             self.region_layout.store(Arc::default());
         }
     }
 
-    pub(crate) fn advance_region_inhabitation(&self, owner: RegionId, chunks: &RegionChunks) {
+    pub(crate) fn advance_region_time(&self, owner: RegionId, chunks: &RegionChunks) {
         let current = self.region_layout.load();
         let same_extent = current
-            .regions
-            .get(&owner)
+            .chunks(owner)
             .is_some_and(|current| Arc::ptr_eq(current, chunks));
+        let inhabited = owner != RegionLayout::INACTIVE;
         for &pos in chunks.iter() {
-            if same_extent || current.owners.get(&pos) == Some(&owner) {
+            if !same_extent && current.owner(pos) != Some(owner) {
+                continue;
+            }
+            if self.level.chunks_with_scheduled_ticks.contains(&pos) {
+                if let Some(chunk) = self.level.loaded_chunks.get_mut(&pos) {
+                    if inhabited {
+                        chunk.inhabited_time.fetch_add(1, Relaxed);
+                    }
+                    chunk.block_ticks.advance();
+                    chunk.fluid_ticks.advance();
+                    chunk.mark_dirty(true);
+                }
+            } else if inhabited {
                 self.advance_chunk_inhabitation(pos);
             }
         }
