@@ -1,6 +1,5 @@
-//! Conditional block writes submitted to the server's simulation boundary.
+//! Conditional block writes submitted to a world's simulation boundary.
 
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 
 use pumpkin_data::BlockStateId;
@@ -10,9 +9,7 @@ use tokio::sync::oneshot;
 
 use crate::world::World;
 
-use super::Server;
-
-pub(super) const BLOCK_EDIT_QUEUE_CAPACITY: usize = 1_024;
+const BLOCK_EDIT_QUEUE_CAPACITY: usize = 1_024;
 const BLOCK_EDITS_PER_TICK: usize = 32;
 
 /// The simulation owner's response to a submitted edit.
@@ -46,8 +43,7 @@ impl BlockEditReceipt {
     }
 }
 
-pub(super) struct BlockEdit {
-    world: Arc<World>,
+pub struct BlockEdit {
     position: BlockPos,
     expected: BlockStateId,
     replacement: BlockStateId,
@@ -56,29 +52,8 @@ pub(super) struct BlockEdit {
 }
 
 impl BlockEdit {
-    fn apply(&self, server: &Server) -> BlockEditStatus {
-        if server.stop_token.is_cancelled()
-            || !server
-                .worlds
-                .load()
-                .iter()
-                .any(|world| Arc::ptr_eq(world, &self.world))
-        {
-            return BlockEditStatus::Unavailable;
-        }
-        let _operation = {
-            let admission = self
-                .world
-                .player_admission
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if !*admission {
-                return BlockEditStatus::Unavailable;
-            }
-            self.world.pending_operations.fetch_add(1, Ordering::AcqRel);
-            WorldOperation(&self.world)
-        };
-        self.world
+    fn apply(&self, world: &Arc<World>) -> BlockEditStatus {
+        world
             .set_block_state_if(&self.position, self.replacement, self.flags, |current| {
                 current == self.expected
             })
@@ -86,18 +61,10 @@ impl BlockEdit {
     }
 }
 
-struct WorldOperation<'a>(&'a World);
-
-impl Drop for WorldOperation<'_> {
-    fn drop(&mut self) {
-        self.0.pending_operations.fetch_sub(1, Ordering::Release);
-    }
-}
-
 impl World {
     /// Queues a conditional edit for a later simulation boundary. The owner applies it only
     /// while the same world and chunk are loaded and the expected state is still current.
-    /// Returns `None` when the position is invalid, the queue is full, or the server is stopping.
+    /// Returns `None` when the position is invalid, the queue is full, or admission is closed.
     /// Dropping the receipt leaves an accepted edit queued.
     pub fn schedule_block_edit(
         self: &Arc<Self>,
@@ -117,11 +84,17 @@ impl World {
         if *closed || server.stop_token.is_cancelled() {
             return None;
         }
+        let world_admission = self
+            .player_admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if !*world_admission {
+            return None;
+        }
         let (result, receiver) = oneshot::channel();
-        server
-            .block_edits
+        self.block_edits
+            .get_or_init(|| crossbeam::queue::ArrayQueue::new(BLOCK_EDIT_QUEUE_CAPACITY))
             .push(BlockEdit {
-                world: self.clone(),
                 position,
                 expected,
                 replacement,
@@ -134,16 +107,23 @@ impl World {
             status: BlockEditStatus::Pending,
         })
     }
-}
-
-impl Server {
-    pub(super) fn apply_block_edits(&self) {
-        for _ in 0..self.block_edits.len().min(BLOCK_EDITS_PER_TICK) {
-            let Some(edit) = self.block_edits.pop() else {
+    /// Called while the ticker owns this world.
+    pub(crate) fn apply_block_edits(self: &Arc<Self>) {
+        let Some(queue) = self.block_edits.get() else {
+            return;
+        };
+        for _ in 0..queue.len().min(BLOCK_EDITS_PER_TICK) {
+            let Some(edit) = queue.pop() else {
                 break;
             };
             let status = edit.apply(self);
             let _ = edit.result.send(status);
+        }
+    }
+
+    pub(crate) fn cancel_block_edits(&self) {
+        if let Some(queue) = self.block_edits.get() {
+            while queue.pop().is_some() {}
         }
     }
 }

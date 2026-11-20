@@ -74,6 +74,11 @@ impl ServerPlayerData {
     /// This function is called synchronously on the server tick loop to check
     /// if it is time to save player data.
     pub fn tick(&self, server: &Server) {
+        self.tick_at_boundary(server, || {});
+    }
+
+    /// Requests a coordinated snapshot only when the periodic writer can start.
+    pub(crate) fn tick_at_boundary(&self, server: &Server, wait_for_simulation: impl FnOnce()) {
         let now = Instant::now();
 
         if !self.storage.is_save_enabled()
@@ -88,6 +93,7 @@ impl ServerPlayerData {
         let Some(access) = self.checkpoint.try_read() else {
             return;
         };
+        wait_for_simulation();
         self.last_save.store(now);
         let write = self.write_batch(&server.runtime, order, access, Self::capture_online(server));
         server.spawn_task(async move {

@@ -150,12 +150,16 @@ impl LevelTime {
             clock_updates: Vec::new(),
         };
         for world in server.worlds.load().iter() {
-            let time_of_day = world.get_time_of_day();
-            for player in world.players.load().iter() {
-                let bedrock = CSetTime::new(player.client_time_of_day(time_of_day) as _);
-                player.client.try_enqueue_packet_editioned(&java, &bedrock);
-            }
+            send_time_packets(world, &java, world.get_time_of_day());
         }
+    }
+
+    pub(crate) fn send_local_time_sync(&self, world: &World) {
+        let java = CUpdateTime {
+            game_time: self.world_age,
+            clock_updates: Vec::new(),
+        };
+        send_time_packets(world, &java, self.time_of_day);
     }
 
     pub fn add_time(&mut self, time: i64) {
@@ -200,6 +204,13 @@ impl LevelTime {
     #[must_use]
     pub const fn is_night(&self) -> bool {
         (self.time_of_day % 24000) >= 12000 && (self.time_of_day % 24000) <= 23999
+    }
+}
+
+fn send_time_packets(world: &World, java: &CUpdateTime, time_of_day: i64) {
+    for player in world.players.load().iter() {
+        let bedrock = CSetTime::new(player.client_time_of_day(time_of_day) as _);
+        player.client.try_enqueue_packet_editioned(java, &bedrock);
     }
 }
 

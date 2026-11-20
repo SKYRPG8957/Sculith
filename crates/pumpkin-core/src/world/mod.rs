@@ -288,6 +288,10 @@ pub struct World {
     /// Orders hopper mutations whose source or destination inventories can overlap.
     pub(crate) hopper_moves: std::sync::Mutex<()>,
     pub(crate) player_admission: std::sync::Mutex<bool>,
+    /// Serializes the world tick with moves into or out of this world and with unload.
+    pub(crate) simulation: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) block_edits:
+        std::sync::OnceLock<crossbeam::queue::ArrayQueue<crate::server::BlockEdit>>,
     /// World departures and edits that must finish before shutdown can unload the world.
     pub(crate) pending_operations: std::sync::atomic::AtomicUsize,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
@@ -455,6 +459,8 @@ impl World {
             block_entities: DashMap::new(),
             hopper_moves: std::sync::Mutex::default(),
             player_admission: std::sync::Mutex::new(true),
+            simulation: Arc::default(),
+            block_edits: std::sync::OnceLock::new(),
             pending_operations: std::sync::atomic::AtomicUsize::new(0),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
@@ -1683,6 +1689,17 @@ impl World {
         }
     }
 
+    pub(crate) fn try_simulation(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        self.simulation.clone().try_lock_owned().ok()
+    }
+
+    pub(crate) fn is_open(&self) -> bool {
+        *self
+            .player_admission
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[expect(clippy::too_many_lines)]
     pub fn tick(self: &Arc<Self>, server: &Arc<Server>) {
         let start = std::time::Instant::now();
@@ -1727,11 +1744,9 @@ impl World {
             .filter(|player| player.can_tick_in(self))
             .for_each(|player| player.tick(server));
         self.encoded_chunk_cache.clear();
-        // Vanilla `ServerPlayer.pushEntities`: one player after another, not while frozen
-        if server.tick_rate_manager.runs_normally() {
-            for player in players.iter().filter(|player| player.can_tick_in(self)) {
-                player.push_entities();
-            }
+        // The networking-only tick never enters world simulation.
+        for player in players.iter().filter(|player| player.can_tick_in(self)) {
+            player.push_entities();
         }
         // One player after another, before entities move, like vanilla `doTick` after the
         // level tick
@@ -2143,9 +2158,7 @@ impl World {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let advance_time = self.level_info.load().game_rules.advance_time;
-            // Vanilla `ServerLevel.tickTime`. Periodic `CUpdateTime` is
-            // `forceGameTimeSynchronization` in `Server::tick_worlds`, *before*
-            // this increment.
+            // The scheduler synchronizes time before this increment.
             level_time.tick(advance_time);
 
             // Auto-save logic
@@ -3076,6 +3089,15 @@ impl World {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         level_time.send_game_time_sync(server);
+    }
+
+    pub(crate) fn synchronize_local_time(&self) {
+        let time = self
+            .level_time
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        time.send_local_time_sync(self);
     }
 
     pub fn get_time_of_day(&self) -> i64 {

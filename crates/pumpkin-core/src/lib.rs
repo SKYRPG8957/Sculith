@@ -322,6 +322,7 @@ pub struct PumpkinServer {
     pub tcp_listener: Option<TcpListener>,
     pub nethernet_listener: Option<NetherNetListener>,
     console: ConsoleInput,
+    ticker: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
     /// Whether this instance owns the process: on shutdown, a standalone server also stops the
     /// process, while an embedded server only ends its own world.
     standalone: bool,
@@ -425,6 +426,7 @@ impl PumpkinServer {
             tcp_listener,
             nethernet_listener,
             console,
+            ticker: std::sync::Mutex::new(Some(ticker)),
             standalone,
         })
     }
@@ -613,7 +615,21 @@ impl PumpkinServer {
     /// Saves every player, kicks them, waits for their connection `tasks` to end, then unloads
     /// plugins and saves the worlds.
     pub async fn shutdown(&self, tasks: &TaskTracker) {
+        self.server.stop();
         self.server.close_admission();
+        let ticker = self
+            .ticker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(ticker) = ticker
+            && !matches!(
+                tokio::task::spawn_blocking(move || ticker.join()).await,
+                Ok(Ok(()))
+            )
+        {
+            error!("The server ticker stopped unexpectedly");
+        }
 
         if let Err(e) = self
             .server

@@ -100,6 +100,14 @@ impl ScheduledFunctionQueue {
         ids
     }
 
+    pub(super) fn has_due(&self, tick: u64) -> bool {
+        self.queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .peek()
+            .is_some_and(|event| event.trigger_tick <= tick)
+    }
+
     pub fn tick(&self, server: &Arc<Server>, current_tick: u64) {
         let mut to_run = Vec::new();
         {

@@ -66,6 +66,24 @@ Official readback was captured with REA 6.9.0. Versioned test fixtures are under
 `crates/pumpkin-world/tests/fixtures/java26_3`; the native socket probe is under
 `tests/interop/bedrock`. Reproduction commands are in that directory's README.
 
+## World scheduling
+
+Each loaded world has a monotonic tick deadline and at most one outstanding
+simulation job. The existing simulation pool executes world jobs and their
+parallel work. A busy world skips expired deadlines while other ready worlds
+can process packets, run simulation and synchronize their own clocks.
+
+Conditional plugin block edits run at the target world's boundary. Transfers
+reserve the source and destination before changing a player's membership.
+Automatic inventory checkpoints capture the worlds that contributed to the
+batch. Shutdown drains world jobs before kicking players and saving.
+
+Console commands, server-wide tick hooks, datapack functions and game tests
+use a coordinated boundary. Frozen worlds still process network packets.
+Stepping and sprinting advance every participating world by the requested
+number of ticks. Manual and periodic player snapshots coordinate the worlds
+for capture and write asynchronously. Native plugins use ABI 16.
+
 ## Shared resource delivery
 
 An opt-in shared source now compiles explicit Bedrock textures, sounds and static

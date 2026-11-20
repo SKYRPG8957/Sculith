@@ -1021,6 +1021,14 @@ impl DatapackManager {
         names
     }
 
+    pub(crate) fn has_tick_functions(&self) -> bool {
+        self.function_tags
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get("minecraft:tick")
+            .is_some_and(|functions| !functions.is_empty())
+    }
+
     pub fn execute_function(
         &self,
         server: &Arc<Server>,

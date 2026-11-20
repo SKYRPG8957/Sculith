@@ -4,7 +4,7 @@ use crate::command::commands::defaultgamemode::DefaultGamemode;
 use crate::data::VanillaData;
 use crate::data::player_server::ServerPlayerData;
 use crate::entity::NBTStorage;
-use crate::entity::player::world_transfer::WorldTransfer;
+use crate::entity::player::world_transfer::{WorldTransfer, WorldTransferReservation};
 use crate::item::registry::ItemRegistry;
 use crate::net::authentication::fetch_mojang_public_keys;
 use crate::net::{ClientPlatform, DisconnectReason, EncryptionError, GameProfile, PlayerConfig};
@@ -67,12 +67,40 @@ mod storage_checkpoint;
 pub mod tick_rate_manager;
 pub mod ticker;
 mod transfer_checkpoint;
+mod world_scheduler;
 
+pub(crate) use block_edits::BlockEdit;
 pub use block_edits::{BlockEditReceipt, BlockEditStatus};
 pub use recipe::RecipeManager;
 pub(crate) use transfer_checkpoint::StorageTransferError;
 
 use crate::data::advancement_data::AdvancementManager;
+
+struct SuspendedPlayerFlushes(Vec<Arc<Player>>);
+
+impl SuspendedPlayerFlushes {
+    fn for_world(world: &World) -> Self {
+        let mut suspended = Vec::new();
+        for player in world.players.load().iter() {
+            if let Some(client) = player.client.java() {
+                client.suspend_flushing();
+                suspended.push(player.clone());
+            }
+        }
+        Self(suspended)
+    }
+}
+
+impl Drop for SuspendedPlayerFlushes {
+    fn drop(&mut self) {
+        // Resume the same clients even if a connection was removed in this tick.
+        for player in &self.0 {
+            if let Some(client) = player.client.java() {
+                client.resume_flushing();
+            }
+        }
+    }
+}
 
 /// Represents a Minecraft server instance.
 #[repr(C)]
@@ -179,7 +207,6 @@ pub struct Server {
     pub level_info: Arc<ArcSwap<LevelData>>,
     world_info_writer: Arc<dyn WorldInfoWriter>,
     world_transfers: crossbeam::queue::SegQueue<WorldTransfer>,
-    block_edits: crossbeam::queue::ArrayQueue<block_edits::BlockEdit>,
 }
 
 impl Server {
@@ -340,7 +367,8 @@ impl Server {
         let cpus = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
         let simulation_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
-                .num_threads(cpus)
+                // Leave a worker available to another world while one runs a blocking hook.
+                .num_threads(cpus.max(2))
                 .thread_name(|i| format!("Simulation-{i}"))
                 .build()
                 .map_err(|e| WorldInfoError::IoError(std::io::Error::other(e)))?,
@@ -405,7 +433,6 @@ impl Server {
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
             world_transfers: crossbeam::queue::SegQueue::new(),
-            block_edits: crossbeam::queue::ArrayQueue::new(block_edits::BLOCK_EDIT_QUEUE_CAPACITY),
             level_info,
             management_hub,
             save_metadata_lock: tokio::sync::Mutex::new(()),
@@ -585,6 +612,7 @@ impl Server {
         );
         let world: World = World::load(level.clone(), l_info, dimension, registry, weak);
         let world = Arc::new(world);
+        let _initializing = world.try_simulation();
         let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(world.clone()));
         level.world_portal.store(Arc::new(Some(portal)));
         self.worlds.rcu(|worlds| {
@@ -612,7 +640,11 @@ impl Server {
             return Err("Cannot unload the primary/default world".to_string());
         }
 
+        let _reservation = world_to_unload
+            .try_simulation()
+            .ok_or_else(|| format!("World '{name}' is processing simulation work"))?;
         world_to_unload.close_player_admission(name)?;
+        world_to_unload.cancel_block_edits();
         world_to_unload.shutdown().await;
         world_to_unload.unload().await;
 
@@ -971,11 +1003,29 @@ impl Server {
         }
     }
 
+    fn for_each_ready_transfer(
+        &self,
+        mut apply: impl FnMut(WorldTransfer, WorldTransferReservation),
+    ) {
+        for _ in 0..self.world_transfers.len().min(32) {
+            let Some(transfer) = self.world_transfers.pop() else {
+                break;
+            };
+            if let Some(ownership) = transfer.try_reserve_worlds() {
+                apply(transfer, ownership);
+            } else {
+                self.world_transfers.push(transfer);
+            }
+        }
+    }
+
     pub(super) fn cancel_pending_simulation_changes(&self) {
         // Stop admission first so no request can be left waiting after the ticker exits.
         self.close_admission();
         while self.world_transfers.pop().is_some() {}
-        while self.block_edits.pop().is_some() {}
+        for world in self.worlds.load().iter() {
+            world.cancel_block_edits();
+        }
     }
 
     /// Asks this server to stop: the ticker ends and a standalone server stops accepting
@@ -1348,82 +1398,30 @@ impl Server {
         )
     }
 
-    /// Vanilla `ServerCommonPacketListenerImpl.suspendFlushing`. Returns the suspended players.
-    fn suspend_player_flushes(&self) -> Vec<Arc<Player>> {
-        let mut suspended = Vec::new();
-        self.for_each_player(|player| {
-            if let Some(java) = player.client.java() {
-                java.suspend_flushing();
-                suspended.push(player.clone());
-            }
-        });
-        suspended
-    }
-
-    /// Vanilla `resumeFlushing` / `Connection.flushChannel` at tick end (~50ms).
-    /// Resumes the suspended set, not a fresh world scan
-    /// off-tick respawn or world change can leave a player in no world's list at tick end.
-    fn resume_player_flushes(suspended: &[Arc<Player>]) {
-        for player in suspended {
-            if let Some(java) = player.client.java() {
-                java.resume_flushing();
-            }
-        }
-    }
-
-    /// Main server tick method. This now handles both player/network ticking (which always runs)
-    /// and world/game logic ticking (which is affected by freeze state).
+    /// A coordinated tick used by the server-wide step, sprint and legacy tick hooks.
     pub fn tick(self: &Arc<Self>) {
-        // All simulation workers from the previous tick have returned. Bound the work
-        // per tick so arrivals do not monopolize simulation time.
-        for _ in 0..32 {
-            let Some(transfer) = self.world_transfers.pop() else {
-                break;
-            };
-            transfer.apply(self);
-        }
-        self.apply_block_edits();
+        self.for_each_ready_transfer(|transfer, reservation| transfer.apply(self, reservation));
         self.simulation_pool.install(|| {
-            // Do not flush mid-tick; `Flush` is `flushChannel`.
-            let suspended = self.suspend_player_flushes();
             if self.tick_rate_manager.runs_normally() || self.tick_rate_manager.is_sprinting() {
                 self.tick_worlds();
-                // Always run player and network ticking, even when game is frozen
             } else {
                 self.sync_game_time();
                 self.tick_players_and_network();
             }
-            self.flush_pending_block_updates();
-            Self::resume_player_flushes(&suspended);
         });
-        self.storage_checkpoint.capture_at_tick_boundary(self);
+        self.storage_checkpoint.capture_at_tick_boundary(self, true);
     }
 
-    fn flush_pending_block_updates(&self) {
-        for world in self.worlds.load().iter() {
-            world.flush_block_updates();
-        }
-    }
-
-    /// Ticks essential server functions that must run even when the game is frozen.
-    /// This includes player ticking (network, keep-alives) and flushing world updates to clients.
+    /// Runs networking without advancing the worlds' simulation clocks.
     pub fn tick_players_and_network(self: &Arc<Self>) {
-        let worlds = self.worlds.load();
-
-        for world in worlds.iter() {
-            world.flush_block_updates();
-            world.flush_synced_block_events();
-
-            let players = world.players.load();
-            world.process_player_packets(&players);
-            players
-                .par_iter()
-                .filter(|player| player.can_tick_in(world))
-                .for_each(|player| player.tick(self));
+        for world in self.worlds.load().iter() {
+            if let Some(ownership) = world.try_simulation() {
+                self.tick_owned_world(world, ownership, false, false);
+            }
         }
     }
 
-    /// Ticks the game logic for all worlds. This is the part that is affected by `/tick freeze`.
+    /// Runs the coordinated game tick used by legacy global hooks and operations.
     pub fn tick_worlds(self: &Arc<Self>) {
         let source = crate::command::CommandSender::Console
             .into_source(self)
@@ -1431,22 +1429,48 @@ impl Server {
         let _ = self
             .datapack_manager
             .execute_function(self, &source, "#minecraft:tick");
-
         self.plugin_manager.tick_loaders(self);
-        self.scheduled_functions.tick(
-            self,
-            self.tick_count.load(std::sync::atomic::Ordering::Relaxed) as u64,
-        );
-
+        self.scheduled_functions
+            .tick(self, self.tick_count.load(Ordering::Relaxed) as u64);
         self.sync_game_time();
 
         let worlds = self.worlds.load();
         worlds.par_iter().for_each(|world| {
-            world.tick(self);
+            if let Some(ownership) = world.try_simulation() {
+                self.tick_owned_world(world, ownership, true, false);
+            }
         });
-
-        // Global tasks
         self.player_data_storage.tick(self);
+    }
+
+    fn tick_owned_world(
+        self: &Arc<Self>,
+        world: &Arc<World>,
+        _ownership: tokio::sync::OwnedMutexGuard<()>,
+        simulate: bool,
+        sync_time: bool,
+    ) {
+        if self.stop_token.is_cancelled() || !world.is_open() {
+            return;
+        }
+        let _flushing = SuspendedPlayerFlushes::for_world(world);
+        if sync_time {
+            world.synchronize_local_time();
+        }
+        world.apply_block_edits();
+        if simulate {
+            world.tick(self);
+        } else {
+            world.flush_block_updates();
+            world.flush_synced_block_events();
+            let players = world.players.load();
+            world.process_player_packets(&players);
+            players
+                .par_iter()
+                .filter(|player| player.can_tick_in(world))
+                .for_each(|player| player.tick(self));
+        }
+        world.flush_block_updates();
     }
 
     /// Vanilla `tickChildren` "timeSync": every 20 ticks, also while frozen.

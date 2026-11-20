@@ -40,8 +40,11 @@ pub(super) struct StorageCheckpoint {
 }
 
 impl StorageCheckpoint {
-    pub(super) fn capture_at_tick_boundary(&self, server: &Arc<Server>) {
+    pub(super) fn capture_at_tick_boundary(&self, server: &Arc<Server>, manual: bool) {
         self.transfers.finish_tick(server);
+        if !manual {
+            return;
+        }
         let mut request = self.request.lock().unwrap_or_else(PoisonError::into_inner);
         if request.is_none() {
             return;

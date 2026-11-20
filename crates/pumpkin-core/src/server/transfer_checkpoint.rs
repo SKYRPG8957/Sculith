@@ -16,8 +16,8 @@ use pumpkin_world::{
     data::checkpoint::{CheckpointFence, SaveCheckpoint},
     level::SyncChunk,
 };
-use rustc_hash::FxHashMap;
-use tokio::sync::OwnedRwLockWriteGuard;
+use rustc_hash::{FxHashMap, FxHashSet};
+use tokio::sync::{OwnedMutexGuard, OwnedRwLockWriteGuard};
 use tracing::{debug, error};
 use uuid::Uuid;
 
@@ -324,12 +324,15 @@ impl TransferCheckpoints {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let fence = &server.player_data_storage.checkpoint;
         let (data, access) = match &mut state.phase {
-            Phase::Collecting(batch) if !batch.changed => {
-                fence.set_pending(false);
-                state.phase = Phase::Idle;
-                return;
-            }
-            Phase::Collecting(_) => {
+            Phase::Collecting(batch) => {
+                let Some(_worlds) = batch.try_reserve_worlds() else {
+                    return;
+                };
+                if !batch.changed {
+                    fence.set_pending(false);
+                    state.phase = Phase::Idle;
+                    return;
+                }
                 state.revision += 1;
                 let revision = state.revision;
                 let previous = std::mem::replace(&mut state.phase, Phase::Writing(revision));
@@ -396,6 +399,17 @@ impl TransferCheckpoints {
 }
 
 impl Collecting {
+    fn try_reserve_worlds(&self) -> Option<Vec<OwnedMutexGuard<()>>> {
+        let mut reserved = FxHashSet::default();
+        self.terrain
+            .values()
+            .map(|(world, _)| world.clone())
+            .chain(self.players.values().map(|player| player.world()))
+            .filter(|world| reserved.insert(world.uuid))
+            .map(|world| world.try_simulation())
+            .collect()
+    }
+
     fn capture(self, revision: u64) -> (Arc<SaveCheckpoint>, OwnedRwLockWriteGuard<()>) {
         let mut data = SaveCheckpoint {
             revision,

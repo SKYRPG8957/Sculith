@@ -1,4 +1,5 @@
 use super::server_test_manager::{drain_game_test_queue, has_pending_game_tests};
+use super::world_scheduler::WorldScheduler;
 
 use crate::{
     command::CommandSender,
@@ -94,6 +95,7 @@ impl Ticker {
         let base = Instant::now();
         let mut schedule = TickSchedule::new();
         let mut game_test_runner = GameTestRunner::new();
+        let mut worlds = WorldScheduler::new();
 
         let park_thread = std::thread::current();
         let stop = server.stop_token.clone();
@@ -102,21 +104,10 @@ impl Ticker {
             park_thread.unpark();
         });
 
-        'ticker: loop {
-            // Give console input time even while sprinting or catching up.
-            if let Some(commands) = commands.as_mut() {
-                for _ in 0..CONSOLE_COMMAND_CAPACITY {
-                    if server.stop_token.is_cancelled() {
-                        break 'ticker;
-                    }
-                    let Ok(command) = commands.try_recv() else {
-                        break;
-                    };
-                    command.execute(server);
-                }
-            }
+        loop {
+            run_console_commands(server, &worlds, commands.as_mut());
             if server.stop_token.is_cancelled() {
-                break 'ticker;
+                break;
             }
 
             // Doubles as the tick-duration start, so the loop reads the clock twice.
@@ -144,17 +135,25 @@ impl Ticker {
             // following iteration catch-up-runs with no park.
             schedule.next_tick_nanos += this_tick_nanos;
 
+            let tick_number = server.tick_count.load(Ordering::Relaxed);
+            let has_game_tests = has_pending_game_tests() || !game_test_runner.is_empty();
+            let coordinated =
+                sprinting || needs_coordinated_tick(server, tick_number, has_game_tests);
+            if coordinated {
+                worlds.wait_idle();
+                worlds.reset_clocks();
+            }
             manager.tick();
 
-            let tick_number = server.tick_count.load(Ordering::Relaxed);
-            if server.plugin_manager.has_handlers::<ServerTickStartEvent>() {
+            if coordinated && server.plugin_manager.has_handlers::<ServerTickStartEvent>() {
                 server
                     .plugin_manager
                     .fire_blocking(server, &mut ServerTickStartEvent::new(tick_number));
             }
 
-            let should_tick_game_tests = (manager.runs_normally() || sprinting)
-                && (has_pending_game_tests() || !game_test_runner.is_empty());
+            let should_tick_game_tests =
+                coordinated && has_game_tests && (manager.runs_normally() || sprinting);
+            let period = Duration::from_nanos(this_tick_nanos as u64);
 
             if sprinting {
                 manager.start_sprint_tick_work();
@@ -163,8 +162,12 @@ impl Ticker {
                 if manager.end_sprint_tick_work() {
                     manager.finish_tick_sprint(server);
                 }
-            } else {
+            } else if coordinated {
                 server.tick();
+            } else {
+                worlds.maintain(server);
+                worlds.dispatch_transfers(server);
+                let _ = worlds.poll(server, period);
             }
 
             if should_tick_game_tests {
@@ -177,29 +180,69 @@ impl Ticker {
             let tick_duration_nanos = elapsed_nanos(base) - tick_start_nanos;
 
             let tick_number = server.tick_count.load(Ordering::Relaxed);
-            if server.plugin_manager.has_handlers::<ServerTickEndEvent>() {
+            if coordinated && server.plugin_manager.has_handlers::<ServerTickEndEvent>() {
                 server.plugin_manager.fire_blocking(
                     server,
                     &mut ServerTickEndEvent::new(tick_number, tick_duration_nanos),
                 );
             }
 
-            server.update_tick_times(tick_duration_nanos);
+            server.update_tick_times(tick_duration_nanos.max(worlds.take_longest_tick()));
 
             if server.stop_token.is_cancelled() {
-                break 'ticker;
+                break;
             }
 
-            wait_until_next_tick(server, base, schedule.next_tick_nanos, commands.as_mut());
+            wait_until_next_tick(
+                server,
+                base,
+                schedule.next_tick_nanos,
+                commands.as_mut(),
+                &mut worlds,
+                (!coordinated).then_some(period),
+            );
 
             if server.stop_token.is_cancelled() {
-                break 'ticker;
+                break;
             }
         }
 
         server.cancel_pending_simulation_changes();
+        worlds.wait_idle();
         TICKER_THREAD.set(previous_context);
         debug!("Ticker stopped");
+    }
+}
+
+fn needs_coordinated_tick(server: &Server, tick_number: i32, has_game_tests: bool) -> bool {
+    let manager = &server.tick_rate_manager;
+    manager.is_stepping_forward()
+        || has_game_tests
+        || server.plugin_manager.has_handlers::<ServerTickStartEvent>()
+        || server.plugin_manager.has_handlers::<ServerTickEndEvent>()
+        || (!manager.is_frozen()
+            && (server.datapack_manager.has_tick_functions()
+                || server.scheduled_functions.has_due(tick_number as u64)))
+}
+
+fn run_console_commands(
+    server: &Arc<Server>,
+    worlds: &WorldScheduler,
+    commands: Option<&mut mpsc::Receiver<ConsoleCommand>>,
+) {
+    let Some(commands) = commands else {
+        return;
+    };
+    // Give console input time even while sprinting or catching up.
+    for _ in 0..CONSOLE_COMMAND_CAPACITY {
+        if server.stop_token.is_cancelled() {
+            break;
+        }
+        let Ok(command) = commands.try_recv() else {
+            break;
+        };
+        worlds.wait_idle();
+        command.execute(server);
     }
 }
 
@@ -250,12 +293,14 @@ const fn apply_overload_skip(
     (schedule, None)
 }
 
-/// Run console commands between ticks, when all of the world's tick workers have returned.
+/// Polls world deadlines and runs console commands at a coordinated boundary.
 fn wait_until_next_tick(
     server: &Arc<Server>,
     base: Instant,
     next_tick_nanos: i64,
     mut commands: Option<&mut mpsc::Receiver<ConsoleCommand>>,
+    worlds: &mut WorldScheduler,
+    independent_period: Option<Duration>,
 ) {
     loop {
         if server.stop_token.is_cancelled() {
@@ -270,11 +315,26 @@ fn wait_until_next_tick(
         if let Some(commands) = commands.as_deref_mut()
             && let Ok(command) = commands.try_recv()
         {
+            worlds.wait_idle();
             command.execute(server);
             continue;
         }
 
-        std::thread::park_timeout(Duration::from_nanos(remaining as u64));
+        let mut wait = Duration::from_nanos(remaining as u64);
+        if let Some(period) = independent_period
+            && !server.tick_rate_manager.is_sprinting()
+            && !server.tick_rate_manager.is_stepping_forward()
+            && !server.storage_checkpoint.manual_capture_requested()
+        {
+            server
+                .storage_checkpoint
+                .capture_at_tick_boundary(server, false);
+            worlds.dispatch_transfers(server);
+            if let Some(world_wait) = worlds.poll(server, period) {
+                wait = wait.min(world_wait);
+            }
+        }
+        std::thread::park_timeout(wait);
     }
 }
 

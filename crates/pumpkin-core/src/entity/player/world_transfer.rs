@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
-use tokio::sync::oneshot;
+use tokio::sync::{OwnedMutexGuard, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::entity::EntityBase;
@@ -65,9 +65,27 @@ pub struct WorldTransfer {
     completion: oneshot::Sender<Option<AppliedWorldChange>>,
 }
 
+pub struct WorldTransferReservation {
+    _source: OwnedMutexGuard<()>,
+    _destination: Option<OwnedMutexGuard<()>>,
+}
+
 impl WorldTransfer {
+    pub(crate) fn try_reserve_worlds(&self) -> Option<WorldTransferReservation> {
+        let source = self.source.try_simulation()?;
+        let destination = if Arc::ptr_eq(&self.source, &self.destination.world) {
+            None
+        } else {
+            Some(self.destination.world.try_simulation()?)
+        };
+        Some(WorldTransferReservation {
+            _source: source,
+            _destination: destination,
+        })
+    }
+
     /// Publishes one coherent destination membership between simulation ticks.
-    pub(crate) fn apply(self, server: &Server) {
+    pub(crate) fn apply(self, server: &Server, _reservation: WorldTransferReservation) {
         let departure = self.rebind_player(server);
         let _ = self.completion.send(departure);
     }
