@@ -218,6 +218,9 @@ mod resource_with {
     impl FromResource for plugin::world::World {
         type Internal = Arc<World>;
     }
+    impl FromResource for plugin::world::BlockEdit {
+        type Internal = pumpkin_core::server::BlockEditReceipt;
+    }
     impl FromResource for plugin::world::Chunk {
         type Internal = (Arc<World>, Weak<pumpkin_world::chunk::ChunkData>);
     }

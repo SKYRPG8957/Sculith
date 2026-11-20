@@ -13,13 +13,13 @@ use crate::pumpkin::plugin::game_rules::{
     GameRule as WitGameRule, GameRuleValue as WitGameRuleValue,
 };
 use crate::pumpkin::plugin::world::{
-    Block as WitBlock, BlockDirection as WitBlockDirection, BlockEntityType,
-    BlockFlags as WitBlockFlags, BlockPos as WitBlockPos, BlockState as WitBlockState,
-    BlockStateInfo as WitBlockStateInfo, BoundingBox as WitBoundingBox, Chunk as WitChunk,
-    Flammable as WitFlammable, NoteblockInstrument as WitNoteblockInstrument,
-    PistonBehavior as WitPistonBehavior, RayTraceBlockResult as WitRayTraceBlockResult,
-    RayTraceEntityResult as WitRayTraceEntityResult, WorldBorder as WitWorldBorder,
-    WorldSpawnLocation as WitWorldSpawnLocation,
+    Block as WitBlock, BlockDirection as WitBlockDirection, BlockEdit as WitBlockEdit,
+    BlockEditStatus as WitBlockEditStatus, BlockEntityType, BlockFlags as WitBlockFlags,
+    BlockPos as WitBlockPos, BlockState as WitBlockState, BlockStateInfo as WitBlockStateInfo,
+    BoundingBox as WitBoundingBox, Chunk as WitChunk, Flammable as WitFlammable,
+    NoteblockInstrument as WitNoteblockInstrument, PistonBehavior as WitPistonBehavior,
+    RayTraceBlockResult as WitRayTraceBlockResult, RayTraceEntityResult as WitRayTraceEntityResult,
+    WorldBorder as WitWorldBorder, WorldSpawnLocation as WitWorldSpawnLocation,
 };
 use crate::pumpkin::{self, plugin::world::World};
 use pumpkin_core::block::entities::banner::BannerBlockEntity as InternalBannerBlockEntity;
@@ -575,6 +575,23 @@ impl pumpkin::plugin::world::Host for PluginHostState {
 impl pumpkin::plugin::particles::Host for PluginHostState {}
 impl pumpkin::plugin::sounds::Host for PluginHostState {}
 
+impl pumpkin::plugin::world::HostBlockEdit for PluginHostState {
+    fn status(&mut self, edit: Resource<WitBlockEdit>) -> wasmtime::Result<WitBlockEditStatus> {
+        use pumpkin_core::server::BlockEditStatus;
+
+        Ok(match self.get_mut(&edit)?.status() {
+            BlockEditStatus::Pending => WitBlockEditStatus::Pending,
+            BlockEditStatus::Applied => WitBlockEditStatus::Applied,
+            BlockEditStatus::Stale => WitBlockEditStatus::Stale,
+            BlockEditStatus::Unavailable => WitBlockEditStatus::Unavailable,
+        })
+    }
+
+    fn drop(&mut self, edit: Resource<WitBlockEdit>) -> wasmtime::Result<()> {
+        self.drop(edit)
+    }
+}
+
 impl pumpkin::plugin::world::HostWorld for PluginHostState {
     fn get_id(&mut self, world: Resource<World>) -> wasmtime::Result<String> {
         Ok(self.get(&world)?.get_world_name().to_string())
@@ -639,6 +656,29 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
         let world_ref = self.get(&world)?;
         let internal_pos = BlockPos::new(pos.x, pos.y, pos.z);
         Ok(world_ref.get_block_state_id(&internal_pos).as_u16())
+    }
+
+    fn schedule_block_edit(
+        &mut self,
+        world: Resource<World>,
+        pos: WitBlockPos,
+        expected: u16,
+        state: u16,
+        flags: WitBlockFlags,
+    ) -> wasmtime::Result<Option<Resource<WitBlockEdit>>> {
+        let (Some(expected), Some(state)) = (BlockStateId::new(expected), BlockStateId::new(state))
+        else {
+            return Ok(None);
+        };
+        self.get(&world)?
+            .schedule_block_edit(
+                BlockPos::new(pos.x, pos.y, pos.z),
+                expected,
+                state,
+                from_wit_block_flags(flags),
+            )
+            .map(|receipt| self.add(receipt))
+            .transpose()
     }
 
     fn get_block_state(

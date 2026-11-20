@@ -197,7 +197,7 @@ impl Ticker {
             }
         }
 
-        server.cancel_world_transfers();
+        server.cancel_pending_simulation_changes();
         TICKER_THREAD.set(previous_context);
         debug!("Ticker stopped");
     }

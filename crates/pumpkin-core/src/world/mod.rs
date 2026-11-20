@@ -288,7 +288,8 @@ pub struct World {
     /// Orders hopper mutations whose source or destination inventories can overlap.
     pub(crate) hopper_moves: std::sync::Mutex<()>,
     pub(crate) player_admission: std::sync::Mutex<bool>,
-    pub(crate) pending_departures: std::sync::atomic::AtomicUsize,
+    /// World departures and edits that must finish before shutdown can unload the world.
+    pub(crate) pending_operations: std::sync::atomic::AtomicUsize,
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
     /// Persistent custom data for the world (matching Bukkit's `PersistentDataHolder`)
     pub custom_data: std::sync::Mutex<NbtCompound>,
@@ -454,7 +455,7 @@ impl World {
             block_entities: DashMap::new(),
             hopper_moves: std::sync::Mutex::default(),
             player_admission: std::sync::Mutex::new(true),
-            pending_departures: std::sync::atomic::AtomicUsize::new(0),
+            pending_operations: std::sync::atomic::AtomicUsize::new(0),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
             custom_block_entity_data: DashMap::new(),
@@ -4935,8 +4936,8 @@ impl World {
                 "Cannot unload world '{name}': {player_count} players are still in this world"
             ));
         }
-        if self.pending_departures.load(Ordering::Acquire) != 0 {
-            return Err(format!("Players are still leaving world '{name}'"));
+        if self.pending_operations.load(Ordering::Acquire) != 0 {
+            return Err(format!("World '{name}' still has pending simulation work"));
         }
         *admission = false;
         Ok(())

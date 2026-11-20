@@ -33,7 +33,7 @@ struct WorldDeparture {
 impl Drop for WorldDeparture {
     fn drop(&mut self) {
         self.source
-            .pending_departures
+            .pending_operations
             .fetch_sub(1, Ordering::Release);
     }
 }
@@ -118,7 +118,7 @@ impl WorldTransfer {
         } else {
             // Keep the source available until its unwatched chunks have been handed to storage.
             self.source
-                .pending_departures
+                .pending_operations
                 .fetch_add(1, Ordering::AcqRel);
             let departure = WorldDeparture {
                 source: self.source.clone(),

@@ -786,6 +786,22 @@ interface %world {
         east,
     }
 
+    /// The result of an edit submitted to the simulation owner.
+    enum block-edit-status {
+        pending,
+        applied,
+        /// The expected state changed or the chunk was unloaded.
+        stale,
+        /// The world was unloaded or the server stopped.
+        unavailable,
+    }
+
+    /// An accepted block edit. The owner checks it at a later simulation boundary.
+    resource block-edit {
+        /// Checks for completion without blocking a tick hook. Completed results can be read again.
+        status: func() -> block-edit-status;
+    }
+
     /// Represents a Minecraft world (dimension).
     resource %world {
         /// Returns the unique identifier of this world.
@@ -808,6 +824,11 @@ interface %world {
 
         /// Sets the block state at the specified position.
         set-block-state: func(pos: block-pos, state: u16, update-flags: block-flags);
+
+        /// Queues an edit that requires the expected state and a loaded chunk in this world.
+        /// Returns none for an invalid position or state, an exhausted queue, or a stopping server.
+        /// Dropping the receipt leaves the accepted edit queued.
+        schedule-block-edit: func(pos: block-pos, expected: u16, state: u16, update-flags: block-flags) -> option<block-edit>;
 
         /// Gets the block type at the specified position.
         get-block: func(pos: block-pos) -> block;

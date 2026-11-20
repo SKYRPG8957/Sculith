@@ -176,8 +176,9 @@ pub use wit::pumpkin::plugin::player::{
 pub use wit::pumpkin::plugin::scoreboard::{CollisionRule, NametagVisibility, TeamSettings};
 pub use wit::pumpkin::plugin::server::Dimension;
 pub use wit::pumpkin::plugin::world::{
-    Block, BlockDirection, BlockState, BlockStateInfo, Entity, Flammable, LivingEntity, Mob,
-    PathNodeType, RayTraceBlockResult, RayTraceEntityResult, RaycastResult, World, WorldBorder,
+    Block, BlockDirection, BlockEdit, BlockEditStatus, BlockState, BlockStateInfo, Entity,
+    Flammable, LivingEntity, Mob, PathNodeType, RayTraceBlockResult, RayTraceEntityResult,
+    RaycastResult, World, WorldBorder,
 };
 pub use worldgen::{ChunkBuffer, ChunkGenerator, GenerationPhase, GeneratorManager};
 

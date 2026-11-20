@@ -53,6 +53,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+mod block_edits;
 pub mod builtin_game_tests;
 mod connection_cache;
 pub(crate) mod debug_profiler;
@@ -67,6 +68,7 @@ pub mod tick_rate_manager;
 pub mod ticker;
 mod transfer_checkpoint;
 
+pub use block_edits::{BlockEditReceipt, BlockEditStatus};
 pub use recipe::RecipeManager;
 pub(crate) use transfer_checkpoint::StorageTransferError;
 
@@ -177,6 +179,7 @@ pub struct Server {
     pub level_info: Arc<ArcSwap<LevelData>>,
     world_info_writer: Arc<dyn WorldInfoWriter>,
     world_transfers: crossbeam::queue::SegQueue<WorldTransfer>,
+    block_edits: crossbeam::queue::ArrayQueue<block_edits::BlockEdit>,
 }
 
 impl Server {
@@ -402,6 +405,7 @@ impl Server {
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
             world_transfers: crossbeam::queue::SegQueue::new(),
+            block_edits: crossbeam::queue::ArrayQueue::new(block_edits::BLOCK_EDIT_QUEUE_CAPACITY),
             level_info,
             management_hub,
             save_metadata_lock: tokio::sync::Mutex::new(()),
@@ -967,10 +971,11 @@ impl Server {
         }
     }
 
-    pub(super) fn cancel_world_transfers(&self) {
+    pub(super) fn cancel_pending_simulation_changes(&self) {
         // Stop admission first so no request can be left waiting after the ticker exits.
         self.close_admission();
         while self.world_transfers.pop().is_some() {}
+        while self.block_edits.pop().is_some() {}
     }
 
     /// Asks this server to stop: the ticker ends and a standalone server stops accepting
@@ -1377,6 +1382,7 @@ impl Server {
             };
             transfer.apply(self);
         }
+        self.apply_block_edits();
         self.simulation_pool.install(|| {
             // Do not flush mid-tick; `Flush` is `flushChannel`.
             let suspended = self.suspend_player_flushes();
