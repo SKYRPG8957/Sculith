@@ -58,6 +58,8 @@ pub type ChunkSaver = LevelFileIO<ChunkData>;
 
 pub type EntitySaver = LevelFileIO<ChunkEntityData>;
 
+pub(crate) type SaveCompletion = oneshot::Sender<Result<(), String>>;
+
 /// The `Level` module provides functionality for working with chunks within or outside a Minecraft world.
 ///
 /// Key features include:
@@ -81,6 +83,7 @@ pub struct Level {
     pub loaded_chunks: Arc<DashMap<Vector2<i32>, SyncChunk, FxBuildHasher>>,
     pub(crate) loaded_chunk_changes: Arc<SegQueue<LoadedChunkChange>>,
     loaded_entity_chunks: Arc<DashMap<Vector2<i32>, SyncEntityChunk, FxBuildHasher>>,
+    entity_chunk_handoff: Mutex<()>,
     pub chunks_with_scheduled_ticks: Arc<dashmap::DashSet<Vector2<i32>>>,
     pub chunk_loading: Mutex<ChunkLoading>,
 
@@ -103,6 +106,7 @@ pub struct Level {
 
     pub shut_down_chunk_system: AtomicBool,
     pub should_save: AtomicBool,
+    manual_saves: mpsc::UnboundedSender<SaveCompletion>,
     pub should_unload: AtomicBool,
     /// Whether periodic autosaving is enabled. Toggled by `/save-off` and `/save-on`;
     /// a manual `/save-all` still saves while this is `false`.
@@ -284,6 +288,7 @@ impl Level {
         };
 
         let pending_entity_generations = Arc::new(DashMap::new());
+        let (send_saves, receive_saves) = mpsc::unbounded_channel();
         let level_channel = Arc::new(LevelChannel::new());
         let thread_tracker = Mutex::new(Vec::new());
         let listener = Arc::new(ChunkListener::new());
@@ -305,6 +310,7 @@ impl Level {
             loaded_chunks: Arc::default(),
             loaded_chunk_changes: Arc::new(SegQueue::new()),
             loaded_entity_chunks: Arc::default(),
+            entity_chunk_handoff: Mutex::new(()),
             chunks_with_scheduled_ticks: Arc::new(dashmap::DashSet::new()),
             chunk_loading: Mutex::new(ChunkLoading::new(level_channel.clone())),
             chunk_watchers: Arc::new(DashMap::new()),
@@ -314,6 +320,7 @@ impl Level {
             cancel_token: CancellationToken::new(),
             shut_down_chunk_system: AtomicBool::new(false),
             should_save: AtomicBool::new(false),
+            manual_saves: send_saves,
             should_unload: AtomicBool::new(false),
             save_enabled: AtomicBool::new(true),
             autosave_ticks: level_config.autosave_ticks,
@@ -328,6 +335,7 @@ impl Level {
             level_ref.clone(),
             level_channel,
             listener,
+            receive_saves,
             level_ref
                 .thread_tracker
                 .lock()
@@ -446,9 +454,52 @@ impl Level {
         self.write_entity_chunks(chunks_to_write).await;
 
         info!("Flushing chunk data to disk for {}...", world_id);
-        self.chunk_saver.flush_all().await;
+        if let Err(err) = self.chunk_saver.flush_all().await {
+            error!("Failed to flush chunk data for {world_id}: {err}");
+        }
         info!("Flushing entity data to disk for {}...", world_id);
-        self.entity_saver.flush_all().await;
+        if let Err(err) = self.entity_saver.flush_all().await {
+            error!("Failed to flush entity data for {world_id}: {err}");
+        }
+    }
+
+    /// Queues a save behind the scheduler's previous terrain writes and waits for the writer.
+    pub async fn save_regions(&self) -> Result<(), String> {
+        let (send, receive) = oneshot::channel();
+        self.manual_saves
+            .send(send)
+            .map_err(|_| "Region scheduler stopped".to_string())?;
+        self.should_save.store(true, Ordering::Release);
+        self.level_channel.notify();
+
+        select! {
+            biased;
+            received = receive => received.map_err(|_| "Region writer stopped".to_string())?,
+            () = self.cancel_token.cancelled() => Err("Level is shutting down".to_string()),
+        }
+    }
+
+    pub(crate) async fn flush_regions(&self) -> Result<(), String> {
+        let save_entities = {
+            let _handoff = self
+                .entity_chunk_handoff
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let entities = self
+                .loaded_entity_chunks
+                .iter()
+                .filter(|chunk| chunk.is_dirty())
+                .map(|chunk| (*chunk.key(), chunk.value().clone()))
+                .collect();
+            self.entity_saver.queue_saves(&self.level_folder, entities)
+        };
+        let entity_save = save_entities.await;
+        let (terrain_flush, entity_flush) =
+            tokio::join!(self.chunk_saver.flush_all(), self.entity_saver.flush_all());
+        entity_save
+            .map_err(|err| format!("Failed to save entities: {err}"))
+            .and(terrain_flush.map_err(|err| format!("Failed to flush terrain: {err}")))
+            .and(entity_flush.map_err(|err| format!("Failed to flush entities: {err}")))
     }
 
     /// Writes region files whose saved chunks have waited long enough.
@@ -507,11 +558,15 @@ impl Level {
         !self.mark_chunks_as_not_watched([chunk]).is_empty()
     }
 
-    // In Level::clean_entity_chunks()
     pub fn clean_entity_chunks(
         self: &Arc<Self>,
         chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
     ) {
+        // Keep the removal and disk-queue handoff together for a concurrent manual save.
+        let _handoff = self
+            .entity_chunk_handoff
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let chunks_to_process: Vec<_> = chunks
             .into_iter()
             .filter_map(|pos_borrow| {
@@ -535,10 +590,13 @@ impl Level {
             return;
         }
 
-        let level = self.clone();
+        let save = self
+            .entity_saver
+            .queue_saves(&self.level_folder, chunks_to_process);
         self.spawn_task(async move {
-            debug!("Writing {} entity chunks to disk", chunks_to_process.len());
-            level.write_entity_chunks(chunks_to_process).await;
+            if let Err(err) = save.await {
+                error!("Failed writing entity chunks to disk: {err}");
+            }
         });
     }
 

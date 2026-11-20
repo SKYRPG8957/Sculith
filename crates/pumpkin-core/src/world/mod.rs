@@ -7938,7 +7938,7 @@ impl World {
         }
     }
 
-    pub async fn save(&self) {
+    pub async fn save(&self) -> Result<(), String> {
         let entities = self.entities.load_full();
         self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
             .await;
@@ -7952,30 +7952,34 @@ impl World {
             self.save_block_entities(chunk_pos);
         }
 
-        if let Ok(mut portal_poi) = self.portal_poi.try_lock() {
-            let _ = portal_poi.save_all();
-        }
+        let portal_result = self
+            .portal_poi
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .save_all()
+            .map_err(|err| format!("Failed to save portal POI: {err}"));
 
-        {
+        let custom_data_result = {
             let custom_data = self
                 .custom_data
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !custom_data.is_empty() {
+            if custom_data.is_empty() {
+                Ok(())
+            } else {
                 let custom_data_path = self
                     .level
                     .level_folder
                     .root_folder
                     .join("pumpkin_custom_data.nbt");
                 let nbt = pumpkin_nbt::Nbt::from(custom_data.clone());
-                let _ = std::fs::write(custom_data_path, nbt.write());
+                std::fs::write(custom_data_path, nbt.write())
+                    .map_err(|err| format!("Failed to save custom world data: {err}"))
             }
-        }
+        };
 
-        self.level
-            .should_save
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        self.level.level_channel.notify();
+        let regions_result = self.level.save_regions().await;
+        portal_result.and(custom_data_result).and(regions_result)?;
 
         let mut save_event = crate::plugin::api::events::world::world_save::WorldSaveEvent::new(
             format!("{:?}", self.dimension),
@@ -7983,6 +7987,7 @@ impl World {
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire(&server, &mut save_event).await;
         }
+        Ok(())
     }
 
     pub fn set_custom_data(&self, namespace: &str, key: &str, value: pumpkin_nbt::tag::NbtTag) {

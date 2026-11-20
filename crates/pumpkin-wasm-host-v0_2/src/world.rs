@@ -1617,8 +1617,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         world: Resource<World>,
     ) -> wasmtime::Result<Result<(), String>> {
         let world = accessor.with(|mut host| world_from_state(host.get(), &world))?;
-        in_active_context(accessor, world.save()).await?;
-        Ok(Ok(()))
+        in_active_context(accessor, world.save()).await
     }
 
     async fn set_block(

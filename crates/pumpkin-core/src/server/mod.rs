@@ -158,6 +158,7 @@ pub struct Server {
     /// Dedicated Rayon thread pool for background CPU computation (RSA, Bedrock crypto, compression).
     pub compute_pool: Arc<rayon::ThreadPool>,
     pub management_hub: Arc<crate::net::management::hub::ManagementHub>,
+    save_metadata_lock: tokio::sync::Mutex<()>,
     /// Cancelled when this server should stop. A child of [`crate::STOP_INTERRUPT`], so a
     /// process-wide stop reaches it, while an integrated server can stop without ending the
     /// process.
@@ -378,6 +379,7 @@ impl Server {
             world_info_writer: Arc::new(AnvilLevelInfo),
             level_info,
             management_hub,
+            save_metadata_lock: tokio::sync::Mutex::new(()),
             available_update: std::sync::OnceLock::new(),
         };
         let server = Arc::new(server);
@@ -639,9 +641,8 @@ impl Server {
         self.datapack_manager.is_feature_enabled(self, feature)
     }
 
-    pub async fn save_all(&self) -> Result<(), String> {
-        self.management_hub.broadcast_server_saving();
-
+    async fn save_metadata(&self) -> Result<(), String> {
+        let _save = self.save_metadata_lock.lock().await;
         if let Err(err) = self.save_world_info() {
             error!("Failed to save world info: {err}");
             return Err(format!("Failed to save world info: {err}"));
@@ -660,9 +661,26 @@ impl Server {
             error!("Failed to save player advancements: {err}");
             return Err(format!("Failed to save player advancements: {err}"));
         }
+        Ok(())
+    }
 
-        for world in self.worlds.load().iter() {
-            world.save().await;
+    pub async fn save_all(&self) -> Result<(), String> {
+        self.management_hub.broadcast_server_saving();
+        self.save_metadata().await?;
+        let mut failure = None;
+        for world in self.worlds.load_full().iter() {
+            if let Err(err) = world.save().await {
+                let error = format!(
+                    "Failed to save {} ({:?}): {err}",
+                    world.get_world_name(),
+                    world.dimension
+                );
+                error!("{error}");
+                failure.get_or_insert(error);
+            }
+        }
+        if let Some(err) = failure {
+            return Err(err);
         }
 
         self.management_hub.broadcast_server_saved();

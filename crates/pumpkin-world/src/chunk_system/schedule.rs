@@ -3,13 +3,13 @@ use super::chunk_holder::ChunkHolder;
 use super::chunk_state::{Chunk, StagedChunkEnum};
 use super::dag::{DAG, EdgeKey, Node, NodeKey};
 use super::generation_cache::{Cache, SurfaceBiomeNeighborhood};
-use super::worker_logic::{RecvChunk, io_read_work, io_write_work};
+use super::worker_logic::{ChunkWriteBatch, RecvChunk, io_read_work, io_write_work};
 use super::{
     ChunkLevel, ChunkListener, ChunkLoading, ChunkPos, HashMapType, HashSetType, IOLock,
     LevelChannel,
 };
 use crate::chunk::io::Dirtiable;
-use crate::level::{Level, LoadedChunkChange, SyncChunk};
+use crate::level::{Level, LoadedChunkChange, SaveCompletion, SyncChunk};
 use dashmap::DashMap;
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_util::math::vector2::Vector2;
@@ -18,7 +18,7 @@ use slotmap::Key;
 use std::cmp::{Ordering, max};
 use std::collections::{BinaryHeap, HashMap};
 use std::mem::swap;
-use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::Ordering::{Acquire, Relaxed};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -81,7 +81,8 @@ pub struct GenerationSchedule {
     queue_dirty: bool,
     recv_chunk: crossbeam::channel::Receiver<(ChunkPos, RecvChunk)>,
     io_read: tokio::sync::mpsc::Sender<Vec<ChunkPos>>,
-    io_write: tokio::sync::mpsc::Sender<Vec<(ChunkPos, Chunk)>>,
+    io_write: tokio::sync::mpsc::Sender<ChunkWriteBatch>,
+    manual_saves: tokio::sync::mpsc::UnboundedReceiver<SaveCompletion>,
     send_chunk: crossbeam::channel::Sender<(ChunkPos, RecvChunk)>,
     listener: Arc<ChunkListener>,
     lighting_config: LightingEngineConfig,
@@ -108,11 +109,12 @@ impl GenerationSchedule {
         removed
     }
 
-    pub fn create(
+    pub(crate) fn create(
         io_read_thread_count: usize,
         level: Arc<Level>,
         level_channel: Arc<LevelChannel>,
         listener: Arc<ChunkListener>,
+        manual_saves: tokio::sync::mpsc::UnboundedReceiver<SaveCompletion>,
         thread_tracker: &mut Vec<thread::JoinHandle<()>>,
     ) {
         let (send_chunk, recv_chunk) = crossbeam::channel::unbounded();
@@ -176,6 +178,7 @@ impl GenerationSchedule {
                     recv_chunk,
                     io_read: send_read_io,
                     io_write: send_write_io,
+                    manual_saves,
                     send_chunk,
                     listener,
                     chunk_map: HashMap::default(),
@@ -969,27 +972,10 @@ impl GenerationSchedule {
                 }
             }
         }
-        if chunks.is_empty() {
-            return;
-        }
-        let mut data = self
-            .io_lock
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (pos, _chunk) in &chunks {
-            *data.entry(*pos).or_insert(0) += 1;
-        }
-        drop(data);
-        if let Err(e) = self.io_write.blocking_send(chunks) {
-            error!(
-                "Failed to send chunks to io write thread during save (may have shut down): {:?}",
-                e
-            );
-        }
+        self.queue_chunk_writes(chunks, Vec::new());
     }
 
-    fn save_all_chunk(&mut self, save_proto_chunk: bool) {
+    fn save_all_chunk(&mut self, save_proto_chunk: bool, completions: Vec<SaveCompletion>) {
         let mut chunks = Vec::with_capacity(self.chunk_map.len());
 
         for (pos, holder) in &mut self.chunk_map {
@@ -1016,15 +1002,21 @@ impl GenerationSchedule {
             }
         }
 
-        if chunks.is_empty() {
-            return;
+        if !chunks.is_empty() {
+            info!(
+                "Saving {} chunks (collected from {} holders)...",
+                chunks.len(),
+                self.chunk_map.len()
+            );
         }
 
-        info!(
-            "Saving {} chunks (collected from {} holders)...",
-            chunks.len(),
-            self.chunk_map.len()
-        );
+        self.queue_chunk_writes(chunks, completions);
+    }
+
+    fn queue_chunk_writes(&self, chunks: Vec<(ChunkPos, Chunk)>, completions: Vec<SaveCompletion>) {
+        if chunks.is_empty() && completions.is_empty() {
+            return;
+        }
 
         let mut data = self
             .io_lock
@@ -1036,8 +1028,15 @@ impl GenerationSchedule {
         }
         drop(data);
 
-        if let Err(e) = self.io_write.blocking_send(chunks) {
-            error!("Failed to send chunks to io write thread: {:?}", e);
+        if self
+            .io_write
+            .blocking_send(ChunkWriteBatch {
+                chunks,
+                completions,
+            })
+            .is_err()
+        {
+            error!("Failed to send chunks to io write thread");
         }
     }
 
@@ -1335,14 +1334,16 @@ impl GenerationSchedule {
                 self.garbage_collect_dependencies();
                 self.process_unload_queue(level);
             }
-            if level.should_save.swap(false, Relaxed) {
-                self.save_all_chunk(false);
+            if level.should_save.swap(false, Acquire) {
+                let completions =
+                    std::iter::from_fn(|| self.manual_saves.try_recv().ok()).collect();
+                self.save_all_chunk(false, completions);
             }
             if level.shut_down_chunk_system.load(Relaxed) {
                 info!("Saving chunks before shutdown...");
                 self.garbage_collect_dependencies();
                 self.process_unload_queue(level);
-                self.save_all_chunk(true);
+                self.save_all_chunk(true, Vec::new());
                 break;
             }
 
@@ -1396,7 +1397,7 @@ impl GenerationSchedule {
                 if level.shut_down_chunk_system.load(Relaxed) {
                     self.queue.push(task);
                     info!("Shutdown detected during task processing, saving chunks...");
-                    self.save_all_chunk(true);
+                    self.save_all_chunk(true, Vec::new());
                     break 'out2;
                 }
 
@@ -1491,7 +1492,7 @@ impl GenerationSchedule {
                                 .is_err()
                         {
                             info!("IO read thread closed, saving remaining chunks...");
-                            self.save_all_chunk(true);
+                            self.save_all_chunk(true, Vec::new());
                             break 'out2;
                         }
                     } else {
@@ -1503,7 +1504,7 @@ impl GenerationSchedule {
                                 .is_err()
                         {
                             info!("IO read thread closed, saving remaining chunks...");
-                            self.save_all_chunk(true);
+                            self.save_all_chunk(true, Vec::new());
                             break 'out2;
                         }
 
@@ -1634,7 +1635,7 @@ impl GenerationSchedule {
                     .is_err()
             {
                 info!("IO read thread closed, saving remaining chunks...");
-                self.save_all_chunk(true);
+                self.save_all_chunk(true, Vec::new());
             }
 
             // 5. Wait for work or results

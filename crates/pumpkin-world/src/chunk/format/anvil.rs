@@ -3,7 +3,7 @@ use flate2::read::{GzDecoder, GzEncoder, ZlibDecoder, ZlibEncoder};
 use lz4_java_wrc::Context;
 use pumpkin_config::chunk::AnvilChunkConfig;
 use pumpkin_util::math::vector2::Vector2;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Write},
@@ -15,7 +15,10 @@ use tracing::warn;
 use crate::chunk::{
     ChunkParsingError, ChunkReadingError, ChunkSerializingError, ChunkWritingError,
     CompressionError,
-    io::{Dirtiable, RegionFile, read_exact_at, write_all_at, write_file_atomically},
+    io::{
+        Dirtiable, RegionFile, read_exact_at, sync_file, sync_parent, write_all_at,
+        write_file_atomically,
+    },
 };
 
 use super::header_journal as journal;
@@ -428,6 +431,7 @@ pub struct AnvilRegion {
     used_sectors: SectorBitmap,
     staged: FxHashMap<usize, AnvilChunkData>,
     pending_external_deletes: Vec<PathBuf>,
+    unsynced_external: FxHashSet<usize>,
     unsynced: bool,
     recovery_needed: bool,
 }
@@ -455,6 +459,7 @@ impl AnvilRegion {
             used_sectors: SectorBitmap::default(),
             staged: FxHashMap::default(),
             pending_external_deletes: Vec::new(),
+            unsynced_external: FxHashSet::default(),
             unsynced: false,
             recovery_needed: false,
         };
@@ -544,16 +549,25 @@ impl AnvilRegion {
     fn flush_with_sync(
         &mut self,
         sync: bool,
-        sync_file: impl Fn(&File) -> std::io::Result<()>,
+        sync_region: impl Fn(&File) -> std::io::Result<()>,
     ) -> std::io::Result<()> {
         self.recover_before_write()?;
+        if sync {
+            for &index in &self.unsynced_external {
+                if !self.staged.contains_key(&index) {
+                    sync_file(&self.external_path(index))?;
+                }
+            }
+        }
         if self.staged.is_empty() {
             if sync
-                && self.unsynced
+                && self.has_unsynced_writes()
                 && let Some(file) = &self.file
             {
-                sync_file(file)?;
+                sync_region(file)?;
+                sync_parent(&self.path)?;
                 self.unsynced = false;
+                self.unsynced_external.clear();
             }
             return Ok(());
         }
@@ -574,6 +588,9 @@ impl AnvilRegion {
             let (record, count) = if chunk.sector_count() >= EXTERNAL_CHUNK_THRESHOLD {
                 let path = self.external_path(index);
                 write_file_atomically(&path, &chunk.compressed_data, sync)?;
+                if !sync {
+                    self.unsynced_external.insert(index);
+                }
                 stale_external.retain(|pending| pending != &path);
                 let mut stub = Vec::with_capacity(SECTOR_BYTES);
                 stub.put_u32(1);
@@ -625,7 +642,7 @@ impl AnvilRegion {
         }
 
         let header = Self::header_bytes(&locations, &timestamps);
-        self.publish_header(&header, sync, sync_file)?;
+        self.publish_header(&header, sync, sync_region)?;
         self.locations = locations;
         self.timestamps = timestamps;
         for location in freed {
@@ -635,6 +652,13 @@ impl AnvilRegion {
         self.used_sectors = used_sectors;
         self.pending_external_deletes = stale_external;
         self.unsynced = !sync;
+        self.finish_external_writes(sync);
+        self.truncate_unused_tail();
+        self.staged.clear();
+        Ok(())
+    }
+
+    fn finish_external_writes(&mut self, sync: bool) {
         for path in self.pending_external_deletes.drain(..) {
             if let Err(err) = std::fs::remove_file(&path)
                 && err.kind() != std::io::ErrorKind::NotFound
@@ -642,9 +666,15 @@ impl AnvilRegion {
                 warn!("Failed to remove {}: {err}", path.display());
             }
         }
-        self.truncate_unused_tail();
-        self.staged.clear();
-        Ok(())
+        if sync {
+            self.unsynced_external.clear();
+        } else {
+            for (&index, chunk) in &self.staged {
+                if chunk.sector_count() < EXTERNAL_CHUNK_THRESHOLD {
+                    self.unsynced_external.remove(&index);
+                }
+            }
+        }
     }
 
     fn external_path(&self, index: usize) -> PathBuf {
@@ -769,6 +799,7 @@ impl RegionFile for AnvilRegion {
         self.used_sectors
             .set(sector_offset(location), sector_count(location), false);
         if is_external {
+            self.unsynced_external.remove(&index);
             let ext_path = self.external_path(index);
             if let Err(err) = std::fs::remove_file(&ext_path)
                 && err.kind() != io::ErrorKind::NotFound
@@ -847,6 +878,10 @@ impl RegionFile for AnvilRegion {
 
     fn has_staged(&self) -> bool {
         !self.staged.is_empty() || self.recovery_needed
+    }
+
+    fn has_unsynced_writes(&self) -> bool {
+        self.unsynced || !self.unsynced_external.is_empty()
     }
 
     fn flush(&mut self, sync: bool) -> std::io::Result<()> {
@@ -1160,6 +1195,12 @@ mod tests {
         region.flush(false).unwrap();
         let external = dir.path().join("c.1.1.mcc");
         assert!(external.exists());
+        let hidden_external = dir.path().join("external.backup");
+        std::fs::rename(&external, &hidden_external).unwrap();
+        assert!(region.flush(true).is_err());
+        std::fs::rename(&hidden_external, &external).unwrap();
+        region.flush(true).unwrap();
+        assert!(!region.has_unsynced_writes());
 
         let reopened = AnvilRegion::open(&path, Vector2::new(0, 0)).unwrap();
         let raw = reopened.read_chunk(33).unwrap().unwrap();

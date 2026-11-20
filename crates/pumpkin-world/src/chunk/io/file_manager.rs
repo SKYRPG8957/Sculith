@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::future::join_all;
+use futures::future::{BoxFuture, join_all};
 use pumpkin_util::math::vector2::Vector2;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
@@ -91,19 +91,18 @@ impl<R: RegionFile, D> RegionEntry<R, D> {
         self.state.get()
     }
 
-    fn has_staged(&self) -> bool {
+    fn can_evict(&self, require_synced: bool) -> bool {
         let pending = !self
             .pending
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .is_empty();
-        pending
-            || self.state().is_some_and(|state| {
-                state
+        !pending
+            && self.state().is_none_or(|state| {
+                let state = state
                     .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .file
-                    .has_staged()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                !state.file.has_staged() && (!require_synced || !state.file.has_unsynced_writes())
             })
     }
 
@@ -321,55 +320,142 @@ impl<R: RegionFile, D: SingleChunkDataSerializer> ChunkFileManager<R, D> {
             .collect()
     }
 
-    /// Closes regions that are idle or over the cache capacity. Regions with staged chunks or
-    /// an operation in flight stay open.
-    fn evict(&self) {
+    /// Hands dirty chunks to their regions before returning the future that persists them.
+    fn queue_saves(
+        &self,
+        folder: &LevelFolder,
+        chunks: Vec<(Vector2<i32>, Arc<D>)>,
+    ) -> impl Future<Output = Result<(), ChunkWritingError>> + Send + use<R, D>
+    where
+        D: PathFromLevelFolder,
+    {
+        let mut entries = FxHashMap::default();
+        for (pos, chunk) in chunks {
+            if chunk.is_dirty() {
+                let region = region_of(pos);
+                let entry = entries.entry(region).or_insert_with(|| {
+                    self.entry(region, D::file_path(folder, &R::file_name(region)))
+                });
+                entry
+                    .pending
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .insert(region_chunk_index(pos), chunk);
+            }
+        }
+        let config = self.config.clone();
+        async move {
+            let results = join_all(
+                entries
+                    .values()
+                    .map(|entry| entry.save_pending(config.clone())),
+            )
+            .await;
+            results.into_iter().find(Result::is_err).unwrap_or(Ok(()))
+        }
+    }
+
+    /// Syncs idle regions before closing them so a later explicit save can reach every write.
+    async fn evict(&self) {
         let now = self.now();
         let idle_ms = REGION_IDLE_TIMEOUT.as_millis() as u64;
+        let to_sync = {
+            let mut regions = self
+                .regions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+            // The map holds the only reference while nothing uses the entry.
+            let mut closable: Vec<_> = regions
+                .iter()
+                .filter(|(_, entry)| Arc::strong_count(entry) == 1 && entry.can_evict(false))
+                .map(|(pos, entry)| (*pos, entry.last_used.load(Ordering::Relaxed)))
+                .collect();
+            closable.sort_unstable_by_key(|(_, last_used)| *last_used);
+
+            let mut over_capacity = regions.len().saturating_sub(R::CACHE_CAPACITY);
+            let mut to_sync = Vec::new();
+            for (pos, last_used) in closable {
+                if over_capacity > 0 {
+                    over_capacity -= 1;
+                } else if now.saturating_sub(last_used) < idle_ms {
+                    break;
+                }
+                let entry = &regions[&pos];
+                if entry.can_evict(true) {
+                    regions.remove(&pos);
+                } else {
+                    to_sync.push(entry.clone());
+                }
+            }
+            to_sync
+        };
+        if to_sync.is_empty() {
+            return;
+        }
+        let Ok(synced) = run_blocking(move || {
+            to_sync
+                .into_iter()
+                .filter(|entry| match entry.flush(true, false) {
+                    Ok(()) => true,
+                    Err(err) => {
+                        error!(
+                            "Failed to sync {} before eviction: {err}",
+                            entry.path.display()
+                        );
+                        false
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        else {
+            error!("Region eviction sync task failed");
+            return;
+        };
         let mut regions = self
             .regions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        // The map holds the only reference while nothing uses the entry, and new references are
-        // only handed out under this lock.
-        let mut closable: Vec<(Vector2<i32>, u64)> = regions
-            .iter()
-            .filter(|(_, entry)| Arc::strong_count(entry) == 1 && !entry.has_staged())
-            .map(|(pos, entry)| (*pos, entry.last_used.load(Ordering::Relaxed)))
-            .collect();
-        closable.sort_unstable_by_key(|(_, last_used)| *last_used);
-
-        let mut over_capacity = regions.len().saturating_sub(R::CACHE_CAPACITY);
-        for (pos, last_used) in closable {
-            if over_capacity > 0 {
-                over_capacity -= 1;
-            } else if now.saturating_sub(last_used) < idle_ms {
-                break;
+        for entry in synced {
+            // Access while syncing can hand out new references or stage new writes.
+            if Arc::strong_count(&entry) == 2 && entry.can_evict(true) {
+                regions.remove(&entry.region);
             }
-            regions.remove(&pos);
         }
     }
 
-    async fn flush_entries(&self, sync: bool, only_due: bool) {
+    async fn flush_entries(&self, sync: bool, only_due: bool) -> Result<(), ChunkWritingError> {
         let entries = self.entries();
-        join_all(entries.iter().map(|entry| async {
-            if let Err(err) = entry.save_pending(self.config.clone()).await {
-                error!("Failed saving pending chunks: {err}");
+        let saves = join_all(entries.iter().map(|entry| async {
+            let result = entry.save_pending(self.config.clone()).await;
+            if let Err(err) = &result {
+                error!(
+                    "Failed saving pending chunks in {}: {err}",
+                    entry.path.display()
+                );
             }
+            result
         }))
         .await;
-        let result = run_blocking(move || {
+        let flushed = run_blocking(move || {
+            let mut failure = None;
             for entry in entries {
                 if let Err(err) = entry.flush(sync, only_due) {
-                    error!("Failed writing region file: {err}");
+                    error!("Failed writing {}: {err}", entry.path.display());
+                    failure.get_or_insert(ChunkWritingError::IoError(err));
                 }
             }
+            failure.map_or(Ok(()), Err)
         })
-        .await;
-        if result.is_err() {
+        .await
+        .unwrap_or_else(|_| {
             error!("Region flush task failed");
-        }
+            Err(ChunkWritingError::IoError(std::io::Error::other(
+                "region flush task failed",
+            )))
+        });
+        saves.into_iter().find(Result::is_err).unwrap_or(flushed)
     }
 }
 
@@ -482,38 +568,16 @@ where
         folder: &'a LevelFolder,
         chunks_data: Vec<(Vector2<i32>, Self::Data)>,
     ) -> Result<(), ChunkWritingError> {
-        let mut entries = FxHashMap::default();
-        for (pos, chunk) in chunks_data {
-            if chunk.is_dirty() {
-                let region = region_of(pos);
-                let entry = entries.entry(region).or_insert_with(|| {
-                    self.entry(region, D::file_path(folder, &R::file_name(region)))
-                });
-                entry
-                    .pending
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(region_chunk_index(pos), chunk);
-            }
-        }
-
-        let results = join_all(
-            entries
-                .values()
-                .map(|entry| entry.save_pending(self.config.clone())),
-        )
-        .await;
-        results.into_iter().find(Result::is_err).unwrap_or(Ok(()))
+        self.queue_saves(folder, chunks_data).await
     }
 
     async fn flush_due(&self) {
-        self.flush_entries(false, true).await;
-        self.evict();
+        let _ = self.flush_entries(false, true).await;
+        self.evict().await;
     }
 
-    async fn flush_all(&self) {
-        self.flush_entries(true, false).await;
-        self.evict();
+    async fn flush_all(&self) -> Result<(), ChunkWritingError> {
+        self.flush_entries(true, false).await
     }
 
     async fn is_chunk_generated(&self, folder: &LevelFolder, coord: Vector2<i32>) -> bool {
@@ -641,6 +705,23 @@ pub enum LevelFileIO<D> {
     Pump(ChunkFileManager<PumpFile, D>),
 }
 
+impl<D> LevelFileIO<D> {
+    pub(crate) fn queue_saves(
+        &self,
+        folder: &LevelFolder,
+        chunks: Vec<(Vector2<i32>, Arc<D>)>,
+    ) -> BoxFuture<'static, Result<(), ChunkWritingError>>
+    where
+        D: SingleChunkDataSerializer + PathFromLevelFolder,
+    {
+        match self {
+            Self::Linear(io) => Box::pin(io.queue_saves(folder, chunks)),
+            Self::Anvil(io) => Box::pin(io.queue_saves(folder, chunks)),
+            Self::Pump(io) => Box::pin(io.queue_saves(folder, chunks)),
+        }
+    }
+}
+
 impl<D> FileIO for LevelFileIO<D>
 where
     D: SingleChunkDataSerializer + PathFromLevelFolder,
@@ -680,7 +761,7 @@ where
         }
     }
 
-    async fn flush_all(&self) {
+    async fn flush_all(&self) -> Result<(), ChunkWritingError> {
         match self {
             Self::Linear(io) => io.flush_all().await,
             Self::Anvil(io) => io.flush_all().await,
@@ -796,6 +877,7 @@ mod tests {
                 .is_err()
         );
         assert!(chunk.is_dirty());
+        assert!(manager.flush_all().await.is_err());
         drop(chunk);
         std::fs::remove_file(entities).unwrap();
         std::fs::create_dir(entities).unwrap();
@@ -811,12 +893,42 @@ mod tests {
             vec![entity.clone()]
         );
         drop(chunk);
-        manager.flush_all().await;
+        manager.flush_all().await.unwrap();
 
         let reopened = AnvilRegion::open(&entities.join("r.0.0.mca"), Vector2::new(0, 0)).unwrap();
         let nbt = AnvilRegion::decode_chunk(reopened.read_chunk(0).unwrap().unwrap()).unwrap();
         let chunk = ChunkEntityData::from_bytes(&nbt, Vector2::new(0, 0)).unwrap();
         assert_eq!(*chunk.data.lock().unwrap(), vec![entity]);
+    }
+
+    #[tokio::test]
+    async fn eviction_retries_a_failed_sync_before_discarding_the_region() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let folder = folder(dir.path());
+        let mut manager = ChunkFileManager::<LinearV2File, ChunkEntityData>::new(());
+        manager.created -= REGION_IDLE_TIMEOUT;
+        manager
+            .save_chunks(
+                &folder,
+                vec![(Vector2::new(0, 0), Arc::new(entity_chunk(0)))],
+            )
+            .await
+            .unwrap();
+        let entry = manager.entries().pop().unwrap();
+        entry.flush(false, false).unwrap();
+        entry.last_used.store(0, Ordering::Relaxed);
+        let path = entry.path.clone();
+        drop(entry);
+
+        let hidden = path.with_extension("backup");
+        std::fs::rename(&path, &hidden).unwrap();
+        manager.evict().await;
+        assert_eq!(manager.entries().len(), 1);
+        assert!(manager.flush_all().await.is_err());
+
+        std::fs::rename(hidden, path).unwrap();
+        manager.evict().await;
+        assert!(manager.entries().is_empty());
     }
 
     #[tokio::test]
@@ -850,7 +962,7 @@ mod tests {
         assert!(chunks[1].is_dirty());
         chunks[1].fail.store(false, Ordering::Relaxed);
         drop(chunks);
-        manager.flush_all().await;
+        manager.flush_all().await.unwrap();
         let region = AnvilRegion::open(&path, Vector2::new(0, 0)).unwrap();
         assert!(region.read_chunk(1).unwrap().is_some());
     }

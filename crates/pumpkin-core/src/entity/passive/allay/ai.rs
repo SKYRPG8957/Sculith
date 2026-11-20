@@ -269,7 +269,7 @@ mod tests {
         chunk.mark_dirty(true);
         world.level.loaded_chunks.insert(chunk_pos, chunk.clone());
         world.level.write_chunks(vec![(chunk_pos, chunk)]).await;
-        world.level.chunk_saver.flush_all().await;
+        world.level.chunk_saver.flush_all().await.unwrap();
 
         let allay = AllayEntity::new(Entity::new(
             world.clone(),

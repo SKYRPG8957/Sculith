@@ -3,7 +3,7 @@ use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::chunk::io::{RegionFile, sync_file, write_file_atomically};
+use crate::chunk::io::{RegionFile, sync_file, sync_parent, write_file_atomically};
 use crate::chunk::{ChunkReadingError, ChunkWritingError};
 use bytes::{Buf, BufMut, Bytes};
 use pumpkin_util::math::vector2::Vector2;
@@ -564,10 +564,15 @@ impl RegionFile for LinearV2File {
         self.staged
     }
 
+    fn has_unsynced_writes(&self) -> bool {
+        self.unsynced
+    }
+
     fn flush(&mut self, sync: bool) -> std::io::Result<()> {
         if !self.staged {
             if sync && self.unsynced {
                 sync_file(&self.path)?;
+                sync_parent(&self.path)?;
                 self.unsynced = false;
             }
             return Ok(());

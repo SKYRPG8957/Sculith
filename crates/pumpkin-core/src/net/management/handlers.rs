@@ -802,9 +802,10 @@ async fn execute_method(
         }
         "minecraft:server/save" => {
             let _flush: bool = parse_param(params, "flush")?;
-            server.management_hub.broadcast_server_saving();
-            let _ = server.save_all().await;
-            server.management_hub.broadcast_server_saved();
+            server
+                .save_all()
+                .await
+                .map_err(|err| RpcError::internal_error(Some(err)))?;
             Ok(json!(true))
         }
         "minecraft:server/stop" => {

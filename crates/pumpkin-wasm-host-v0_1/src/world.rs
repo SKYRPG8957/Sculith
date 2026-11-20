@@ -1280,8 +1280,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         plugin
             .store
             .pump_reentry(&mut host, async move { world.save().await })
-            .await?;
-        Ok(Ok(()))
+            .await
     }
 
     async fn set_block(

@@ -81,7 +81,7 @@ where
     fn flush_due(&self) -> impl Future<Output = ()> + Send + '_;
 
     /// Writes every staged chunk and syncs the region files.
-    fn flush_all(&self) -> impl Future<Output = ()> + Send + '_;
+    fn flush_all(&self) -> impl Future<Output = Result<(), ChunkWritingError>> + Send + '_;
 
     /// Checks whether a chunk exists on disk or in pending saves without loading or decoding it.
     fn is_chunk_generated<'a>(
@@ -146,6 +146,9 @@ pub trait RegionFile: Send + Sync + Sized + 'static {
     fn stage_chunk(&mut self, index: usize, chunk: Self::Encoded);
 
     fn has_staged(&self) -> bool;
+
+    /// Whether earlier writes still need a file sync.
+    fn has_unsynced_writes(&self) -> bool;
 
     /// Writes the staged chunks to disk, and syncs the file when `sync` is set.
     fn flush(&mut self, sync: bool) -> std::io::Result<()>;
@@ -221,11 +224,29 @@ pub(crate) fn write_file_atomically(path: &Path, bytes: &[u8], sync: bool) -> st
         file.sync_data()?;
     }
     drop(file);
-    std::fs::rename(temp_path, path)
+    std::fs::rename(temp_path, path)?;
+    if sync {
+        sync_parent(path)?;
+    }
+    Ok(())
 }
 
 /// Syncs a file that an earlier `write_file_atomically` wrote without syncing.
 pub(crate) fn sync_file(path: &Path) -> std::io::Result<()> {
     // Windows needs write access to flush a file's buffers.
     File::options().write(true).open(path)?.sync_data()
+}
+
+#[cfg(unix)]
+pub(crate) fn sync_parent(path: &Path) -> std::io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    File::open(parent)?.sync_all()
+}
+
+#[cfg(not(unix))]
+pub(crate) fn sync_parent(_path: &Path) -> std::io::Result<()> {
+    Ok(())
 }

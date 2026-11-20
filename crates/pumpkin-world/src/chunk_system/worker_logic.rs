@@ -5,7 +5,7 @@ use crate::ProtoChunk;
 use crate::chunk::format::LightContainer;
 use crate::chunk::io::LoadedData::Loaded;
 use crate::chunk::io::{FileIO, LoadedData, run_blocking};
-use crate::level::Level;
+use crate::level::{Level, SaveCompletion};
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::chunk::ChunkStatus;
 use std::collections::hash_map::Entry;
@@ -181,8 +181,13 @@ pub async fn io_read_work(
 /// How often the writer checks for region files with chunks waiting to be written.
 const REGION_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 
-pub async fn io_write_work(
-    mut recv: tokio::sync::mpsc::Receiver<Vec<(ChunkPos, Chunk)>>,
+pub(crate) struct ChunkWriteBatch {
+    pub chunks: Vec<(ChunkPos, Chunk)>,
+    pub completions: Vec<SaveCompletion>,
+}
+
+pub(crate) async fn io_write_work(
+    mut recv: tokio::sync::mpsc::Receiver<ChunkWriteBatch>,
     level: Arc<Level>,
     lock: IOLock,
 ) {
@@ -194,7 +199,10 @@ pub async fn io_write_work(
             level.flush_due_regions().await;
             last_flush = Instant::now();
         }
-        let data = match received {
+        let ChunkWriteBatch {
+            chunks: data,
+            completions,
+        } = match received {
             Ok(Some(data)) => data,
             Ok(None) => break,
             Err(_) => continue,
@@ -221,19 +229,18 @@ pub async fn io_write_work(
             vec
         })
         .await;
-        let upgrade_failed = match upgrade_result {
-            Ok(vec) => {
-                if let Err(e) = level
-                    .chunk_saver
-                    .save_chunks(&level.level_folder, vec)
-                    .await
-                {
-                    error!("Failed to save chunks: {:?}", e);
-                }
-                false
-            }
-            Err(_) => true,
+        let upgrade_failed = upgrade_result.is_err();
+        let save_result = match upgrade_result {
+            Ok(vec) => level
+                .chunk_saver
+                .save_chunks(&level.level_folder, vec)
+                .await
+                .map_err(|err| format!("Failed to save terrain chunks: {err}")),
+            Err(_) => Err("Failed to upgrade chunks for saving".to_string()),
         };
+        if let Err(err) = &save_result {
+            error!("{err}");
+        }
 
         {
             let mut data = lock
@@ -261,8 +268,14 @@ pub async fn io_write_work(
         }
         lock.1.notify_waiters();
 
+        if !completions.is_empty() {
+            let result = save_result.and(level.flush_regions().await);
+            for completion in completions {
+                let _ = completion.send(result.clone());
+            }
+        }
+
         if upgrade_failed {
-            error!("Failed to upgrade chunks for saving");
             break;
         }
     }

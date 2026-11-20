@@ -18,7 +18,7 @@ use xxhash_rust::xxh64::xxh64;
 use crate::chunk::{
     ChunkReadingError, ChunkSerializingError, ChunkWritingError,
     format::anvil::{CHUNK_COUNT, SectorBitmap, SingleChunkDataSerializer},
-    io::{RegionFile, read_exact_at, write_all_at, write_file_atomically},
+    io::{RegionFile, read_exact_at, sync_parent, write_all_at, write_file_atomically},
 };
 
 use super::header_journal as journal;
@@ -148,6 +148,7 @@ impl PumpFile {
                 && let Some(file) = &self.file
             {
                 sync_file(file)?;
+                sync_parent(&self.path)?;
                 self.unsynced = false;
             }
             return Ok(());
@@ -412,6 +413,10 @@ impl RegionFile for PumpFile {
 
     fn has_staged(&self) -> bool {
         !self.staged.is_empty() || self.recovery_needed
+    }
+
+    fn has_unsynced_writes(&self) -> bool {
+        self.unsynced
     }
 
     fn flush(&mut self, sync: bool) -> std::io::Result<()> {

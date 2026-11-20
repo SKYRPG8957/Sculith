@@ -8,7 +8,7 @@ use pumpkin_util::math::vector2::Vector2;
 use tracing::warn;
 use xxhash_rust::xxh64::xxh64;
 
-use crate::chunk::io::{read_exact_at, write_all_at, write_file_atomically};
+use crate::chunk::io::{read_exact_at, sync_parent, write_all_at, write_file_atomically};
 
 const MAGIC: &[u8; 8] = b"SCLREG01";
 const PREFIX_BYTES: usize = 24;
@@ -108,11 +108,7 @@ fn write(
     bytes.extend_from_slice(before);
     bytes.extend_from_slice(after);
     bytes.extend_from_slice(&xxh64(&bytes, 0).to_be_bytes());
-    write_file_atomically(path, &bytes, sync)?;
-    if sync {
-        sync_parent(path)?;
-    }
-    Ok(())
+    write_file_atomically(path, &bytes, sync)
 }
 
 fn read_journal(
@@ -167,18 +163,4 @@ fn invalid(path: &Path, reason: &str) -> io::Error {
         io::ErrorKind::InvalidData,
         format!("{} ({reason})", path.display()),
     )
-}
-
-#[cfg(unix)]
-fn sync_parent(path: &Path) -> io::Result<()> {
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    File::open(parent)?.sync_all()
-}
-
-#[cfg(not(unix))]
-fn sync_parent(_path: &Path) -> io::Result<()> {
-    Ok(())
 }
