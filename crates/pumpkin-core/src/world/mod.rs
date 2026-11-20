@@ -676,7 +676,7 @@ impl World {
 
     pub async fn shutdown(&self) {
         let _region_shutdown = self.region_activity.write().await;
-        self.region_layout.store(Arc::default());
+        self.invalidate_region_layout();
         let entities = self.entities.load_full();
         self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
             .await;
@@ -2383,6 +2383,12 @@ impl World {
                 .into_par_iter()
                 .with_min_len(INHABITED_TIME_BATCH_SIZE)
                 .for_each(|pos| self.advance_chunk_inhabitation(pos));
+        }
+    }
+
+    pub(crate) fn invalidate_region_layout(&self) {
+        if !self.region_layout.load().regions.is_empty() {
+            self.region_layout.store(Arc::default());
         }
     }
 

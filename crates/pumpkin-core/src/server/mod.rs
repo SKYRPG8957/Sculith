@@ -1470,6 +1470,8 @@ impl Server {
             WorldStep::Coordinated => world.tick(self),
             WorldStep::RegionalDeadlines => world.tick_with_region_deadlines(self),
             WorldStep::NetworkOnly => {
+                // Players can move while frozen. Resume from a fresh simulation extent.
+                world.invalidate_region_layout();
                 world.flush_block_updates();
                 world.flush_synced_block_events();
                 let players = world.players.load();

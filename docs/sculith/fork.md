@@ -105,7 +105,8 @@ time on its own deadline. This time contributes to local difficulty and uses
 the existing chunk save fields. After a merge or split, new jobs inherit the
 latest relevant deadline and wait only for jobs whose chunk extents overlap.
 A late owner drops missed starts and cannot accumulate a queue of catch-up
-ticks. Freeze pauses this clock. Coordinated steps and sprints advance chunk
+ticks. Freeze pauses this clock and lets the first resumed world tick refresh
+membership after player movement. Coordinated steps and sprints advance chunk
 time once per requested world tick.
 
 Scheduled block and fluid callbacks, entity AI, player packets and entity
