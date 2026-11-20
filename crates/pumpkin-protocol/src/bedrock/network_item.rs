@@ -3,7 +3,10 @@ use std::num::NonZero;
 
 use pumpkin_data::item::{BedrockItem, JavaToBedrockItemMapping};
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_nbt::{Nbt, deserializer::NbtReadHelperBedrock};
+use pumpkin_nbt::{
+    Nbt,
+    deserializer::{NbtReadHelperBedrock, NbtReadHelperBedrockDisk},
+};
 
 use crate::{
     codec::{var_int::VarInt, var_uint::VarUInt},
@@ -150,7 +153,10 @@ impl NetworkItemDescriptor {
         } else {
             (-1i16).write(&mut buf)?;
             (1i8).write(&mut buf)?;
-            self.nbt_data.clone().write_to_writer_bedrock(&mut buf)?;
+            self.nbt_data
+                .clone()
+                .write_to_writer_bedrock_disk(&mut buf)
+                .map_err(Error::other)?;
         }
         write_user_data_strings(&mut buf, &self.place_on_blocks)?;
         write_user_data_strings(&mut buf, &self.destroy_blocks)?;
@@ -629,15 +635,15 @@ fn write_user_data_strings<W: Write>(writer: &mut W, values: &[String]) -> Resul
     (values.len() as i32).write(writer)?;
     for value in values {
         let bytes = value.as_bytes();
-        let len = u16::try_from(bytes.len())
+        let len = i16::try_from(bytes.len())
             .map_err(|_| Error::new(std::io::ErrorKind::InvalidInput, "item string too long"))?;
-        writer.write_all(&len.to_be_bytes())?;
+        len.write(writer)?;
         writer.write_all(bytes)?;
     }
     Ok(())
 }
 
-fn read_user_data_strings<R: Read>(reader: &mut R) -> Result<Vec<String>, Error> {
+fn read_user_data_strings<R: Read>(reader: &mut R, legacy: bool) -> Result<Vec<String>, Error> {
     let len = i32::read(reader)?;
     if !(0..=1024).contains(&len) {
         return Err(Error::new(
@@ -647,9 +653,11 @@ fn read_user_data_strings<R: Read>(reader: &mut R) -> Result<Vec<String>, Error>
     }
     let mut values = Vec::with_capacity((len as usize).min(32));
     for _ in 0..len {
-        let mut length = [0; 2];
-        reader.read_exact(&mut length)?;
-        let str_len = usize::from(u16::from_be_bytes(length));
+        let str_len = usize::from(if legacy {
+            u16::read_be(reader)?
+        } else {
+            u16::read(reader)?
+        });
         if str_len > 32767 {
             return Err(Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -666,31 +674,54 @@ fn read_user_data_strings<R: Read>(reader: &mut R) -> Result<Vec<String>, Error>
     Ok(values)
 }
 
-fn read_user_data(
-    user_data: Vec<u8>,
-    is_shield: bool,
-) -> Result<(Nbt, Vec<String>, Vec<String>, i64), Error> {
+type ItemUserData = (Nbt, Vec<String>, Vec<String>, i64);
+
+fn read_user_data(user_data: Vec<u8>, is_shield: bool) -> Result<ItemUserData, Error> {
     if user_data.is_empty() {
         return Ok((Nbt::default(), Vec::new(), Vec::new(), 0));
     }
 
-    let mut cursor = std::io::Cursor::new(user_data);
-    let nbt_version = i16::read(&mut cursor)?;
-    let nbt_data = if nbt_version == -1 {
-        let _version = i8::read(&mut cursor)?;
-        let mut nbt_reader = NbtReadHelperBedrock::new(&mut cursor);
-        Nbt::read(&mut nbt_reader)
-            .map_err(|error| Error::new(std::io::ErrorKind::InvalidData, error))?
-    } else {
+    let mut cursor = std::io::Cursor::new(user_data.as_slice());
+    let nbt_length = i16::read(&mut cursor)?;
+    if nbt_length < -1 || (nbt_length == -1 && u8::read(&mut cursor)? != 1) {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "unsupported Bedrock item NBT version",
+        ));
+    }
+    let data_start = cursor.position();
+    read_item_attributes(&mut cursor, nbt_length != 0, is_shield, false).or_else(|error| {
+        // Older Sculith writers used network NBT and big-endian filter string lengths.
+        cursor.set_position(data_start);
+        read_item_attributes(&mut cursor, nbt_length != 0, is_shield, true).or(Err(error))
+    })
+}
+
+fn read_item_attributes(
+    cursor: &mut std::io::Cursor<&[u8]>,
+    has_nbt: bool,
+    is_shield: bool,
+    legacy: bool,
+) -> Result<ItemUserData, Error> {
+    let nbt_data = if !has_nbt {
         Nbt::default()
-    };
-    let place_on_blocks = read_user_data_strings(&mut cursor)?;
-    let destroy_blocks = read_user_data_strings(&mut cursor)?;
-    let shield_blocking_tick = if is_shield {
-        i64::read(&mut cursor)?
     } else {
-        0
+        let result = if legacy {
+            Nbt::read(&mut NbtReadHelperBedrock::new(&mut *cursor))
+        } else {
+            Nbt::read(&mut NbtReadHelperBedrockDisk::new(&mut *cursor))
+        };
+        result.map_err(|error| Error::new(ErrorKind::InvalidData, error))?
     };
+    let place_on_blocks = read_user_data_strings(cursor, legacy)?;
+    let destroy_blocks = read_user_data_strings(cursor, legacy)?;
+    let shield_blocking_tick = if is_shield { i64::read(cursor)? } else { 0 };
+    if cursor.position() != cursor.get_ref().len() as u64 {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "trailing Bedrock item user data",
+        ));
+    }
     Ok((
         nbt_data,
         place_on_blocks,
@@ -702,6 +733,38 @@ fn read_user_data(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_item_metadata_and_filter_strings_in_both_encodings() {
+        let mut tags = pumpkin_nbt::NbtCompound::new();
+        tags.put_int("rank", 20);
+        let nbt = Nbt::from(tags);
+        let item = NetworkItemDescriptor {
+            id: VarInt(7),
+            stack_size: 2,
+            nbt_data: nbt.clone(),
+            place_on_blocks: vec!["stone".into()],
+            ..Default::default()
+        };
+        let mut body = Vec::new();
+        item.write_item_instance(&mut body).unwrap();
+        let mut body = body.as_slice();
+        let decoded = NetworkItemDescriptor::read_item_instance(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(decoded.nbt_data.get_int("rank"), Some(20));
+        assert_eq!(decoded.place_on_blocks, ["stone"]);
+
+        let mut legacy = vec![0xff, 0xff, 1];
+        nbt.write_to_writer_bedrock(&mut legacy).unwrap();
+        legacy.extend_from_slice(&[1, 0, 0, 0, 0, 5]);
+        legacy.extend_from_slice(b"stone");
+        legacy.extend_from_slice(&[0, 0, 0, 0]);
+        let (tags, place_on, destroy, blocking) = read_user_data(legacy, false).unwrap();
+        assert_eq!(tags.get_int("rank"), Some(20));
+        assert_eq!(place_on, ["stone"]);
+        assert!(destroy.is_empty());
+        assert_eq!(blocking, 0);
+    }
 
     #[test]
     fn parses_reserved_container_names() {

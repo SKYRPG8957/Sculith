@@ -146,7 +146,12 @@ impl RecipeUnlockRequirement {
 impl PacketWrite for RecipeUnlockRequirement {
     fn write<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
         VarInt(self.context).write(writer)?;
-        self.ingredients.write(writer)
+        self.ingredients.is_some().write(writer)?;
+        if let Some(ingredients) = &self.ingredients {
+            VarUInt(ingredients.len() as u32).write(writer)?;
+            ingredients.write(writer)?;
+        }
+        Ok(())
     }
 }
 
@@ -639,6 +644,21 @@ mod tests {
         expected.extend_from_slice(b"minecraft:planks");
         expected.extend_from_slice(&[0xfe, 0xff, 0x03, 0x02]);
         assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn round_trips_an_optional_recipe_ingredient_list() {
+        let requirement = RecipeUnlockRequirement {
+            context: 0,
+            ingredients: Some(vec![ItemDescriptorCount::tag("minecraft:planks".into())]),
+        };
+        let mut body = Vec::new();
+        requirement.write(&mut body).unwrap();
+        let mut body = body.as_slice();
+        let decoded = RecipeUnlockRequirement::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(decoded.context, 0);
+        assert_eq!(decoded.ingredients, requirement.ingredients);
     }
 
     fn sample_dynamic_recipes(dynamic_net_id: u32) -> Vec<BedrockRecipe> {

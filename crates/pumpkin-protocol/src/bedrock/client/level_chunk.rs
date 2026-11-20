@@ -36,6 +36,7 @@ impl PacketWrite for CLevelChunkPayload<'_> {
         self.sub_chunk_count.write(writer)?;
         self.sub_chunk_limit.write(writer)?;
         self.cache_enabled.write(writer)?;
+        VarUInt(self.blob_hashes.len() as u32).write(writer)?;
         self.blob_hashes.write(writer)?;
         VarUInt(self.chunk_data.len() as u32).write(writer)?;
         writer.write_all(self.chunk_data)?;
