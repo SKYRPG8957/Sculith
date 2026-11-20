@@ -23,7 +23,7 @@ use super::{
 };
 use crate::chunk::ChunkData;
 
-const SLOTS: usize = 27;
+pub(super) const SLOTS: usize = 27;
 
 pub(super) type StorageItemRegistry = HashMap<&'static str, i16>;
 
@@ -82,7 +82,7 @@ pub(super) fn import_record(
     Ok(complete)
 }
 
-fn position(saved: &NbtCompound) -> Option<BlockPos> {
+pub(super) fn position(saved: &NbtCompound) -> Option<BlockPos> {
     Some(BlockPos::new(
         saved.get_int("x")?,
         saved.get_int("y")?,
@@ -90,36 +90,14 @@ fn position(saved: &NbtCompound) -> Option<BlockPos> {
     ))
 }
 
-fn convert_container(
-    saved: &NbtCompound,
+pub(super) fn check_container_at(
+    chunk: &ChunkData,
     kind: &str,
     position: BlockPos,
-    chunk: &ChunkData,
-    terrain: &TerrainRegistry,
-    items: &StorageItemRegistry,
-) -> Result<NbtCompound, String> {
+) -> Result<(), String> {
     let BlockPos(pos) = position;
     if (pos.x.div_euclid(16), pos.z.div_euclid(16)) != (chunk.x, chunk.z) {
-        return Err("container coordinates are outside the source chunk".into());
-    }
-    if let Some(field) = saved
-        .child_tags
-        .keys()
-        .filter(|field| {
-            !matches!(
-                field.as_ref(),
-                "id" | "x" | "y" | "z" | "Items" | "BlockEntityVersion" | "Findable" | "isMovable"
-            )
-        })
-        .min()
-    {
-        return Err(format!("unsupported container field {field:?}"));
-    }
-    if !matches!(
-        saved.get("BlockEntityVersion"),
-        None | Some(NbtTag::Byte(0) | NbtTag::Short(0) | NbtTag::Int(0))
-    ) {
-        return Err("unsupported block entity version".into());
+        return Err("container coordinates are outside its chunk".into());
     }
     if !(OVERWORLD.min_y..OVERWORLD.min_y + OVERWORLD.height).contains(&pos.y) {
         return Err("container height is outside the world".into());
@@ -142,6 +120,38 @@ fn convert_container(
     }
     if kind == "Chest" && ChestLikeProperties::from_state_id(state).r#type != ChestType::Single {
         return Err("only single chests are supported".into());
+    }
+    Ok(())
+}
+
+fn convert_container(
+    saved: &NbtCompound,
+    kind: &str,
+    position: BlockPos,
+    chunk: &ChunkData,
+    terrain: &TerrainRegistry,
+    items: &StorageItemRegistry,
+) -> Result<NbtCompound, String> {
+    check_container_at(chunk, kind, position)?;
+    let BlockPos(pos) = position;
+    if let Some(field) = saved
+        .child_tags
+        .keys()
+        .filter(|field| {
+            !matches!(
+                field.as_ref(),
+                "id" | "x" | "y" | "z" | "Items" | "BlockEntityVersion" | "Findable" | "isMovable"
+            )
+        })
+        .min()
+    {
+        return Err(format!("unsupported container field {field:?}"));
+    }
+    if !matches!(
+        saved.get("BlockEntityVersion"),
+        None | Some(NbtTag::Byte(0) | NbtTag::Short(0) | NbtTag::Int(0))
+    ) {
+        return Err("unsupported block entity version".into());
     }
     let source_items = match saved.get("Items") {
         None => &[][..],
@@ -188,7 +198,7 @@ fn convert_container(
     Ok(entity)
 }
 
-fn convert_stack(
+pub(super) fn convert_stack(
     source: &NbtCompound,
     terrain: &TerrainRegistry,
     items: &StorageItemRegistry,

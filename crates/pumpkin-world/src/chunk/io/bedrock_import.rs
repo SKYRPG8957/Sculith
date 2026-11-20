@@ -35,9 +35,12 @@ use crate::{
 use super::{RegionFile, region_chunk_index, region_of};
 
 mod storage;
+mod storage_export;
 mod terrain;
 #[cfg(test)]
 mod tests;
+
+pub use storage_export::{StorageExportStats, export_storage};
 
 const OVERWORLD: Dimension = Dimension::OVERWORLD;
 const STORAGE_VERSION: u32 = 10;

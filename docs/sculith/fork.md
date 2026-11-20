@@ -194,10 +194,24 @@ imported block, and Java received the original flat strata in a newly generated
 column. An unmodified Java 26.3 client joined the imported flat world.
 Source file hashes matched after import and after a rejected conversion.
 
+## Bedrock storage export
+
+`sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION`
+copies a stopped Bedrock world and transfers supported inventories from its
+stopped Sculith import. Use a new destination outside both inputs. The inputs
+must have the same seed and matching ordinary single chests or barrels at the
+template positions.
+
+The output uses the template's terrain, players and metadata. The transfer
+covers plain mapped item IDs, slots and counts in the template's supported
+containers. The command keeps unsupported template records and reports why it
+preserved them. A missing or incompatible Sculith container blocks the export
+before the destination is published.
+
 ## Remaining work
 
-Bedrock world export and conversion of entities, player data and other
-block-entity contents remain open.
+Standalone Bedrock world export and conversion of entities, player data and
+other block-entity contents remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack

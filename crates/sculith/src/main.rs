@@ -10,7 +10,8 @@ use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_world::{
     CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION,
     chunk::io::bedrock_import::{
-        GeneratorPolicy, ImportStats, import_terrain_with_generator, inspect_terrain,
+        GeneratorPolicy, ImportStats, export_storage, import_terrain_with_generator,
+        inspect_terrain,
     },
 };
 use std::{
@@ -69,6 +70,9 @@ async fn main() {
         }
         Some("--inspect-bedrock-world") => {
             exit(inspect_bedrock_command(std::env::args_os().skip(2)))
+        }
+        Some("--export-bedrock-storage") => {
+            exit(export_bedrock_command(std::env::args_os().skip(2)))
         }
         _ => {}
     }
@@ -531,6 +535,39 @@ fn bedrock_generator_policy(mut args: impl Iterator<Item = OsString>) -> Option<
 
 #[expect(
     clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "the export command runs before server logging is initialized"
+)]
+fn export_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
+    let (Some(template), Some(shared), Some(destination), None) =
+        (args.next(), args.next(), args.next(), args.next())
+    else {
+        eprintln!(
+            "Run sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION"
+        );
+        return 2;
+    };
+    let destination = Path::new(&destination);
+    match export_storage(Path::new(&template), Path::new(&shared), destination) {
+        Ok(stats) => {
+            println!(
+                "Updated {} of {} supported storage inventories in {}.",
+                stats.inventories_updated,
+                stats.containers_checked,
+                destination.display()
+            );
+            print_block_entity_examples(&stats.preserved, "Preserved");
+            0
+        }
+        Err(error) => {
+            eprintln!("Bedrock storage export failed ({error}).");
+            1
+        }
+    }
+}
+
+#[expect(
+    clippy::print_stdout,
     reason = "the CLI prints migration results before logging starts"
 )]
 fn print_bedrock_import_stats(stats: &ImportStats, verb: &str) {
@@ -546,18 +583,26 @@ fn print_bedrock_import_stats(stats: &ImportStats, verb: &str) {
             "New chunks use Sculith's normal generator because the source layers are unspecified."
         );
     }
+    print_block_entity_examples(stats, "Skipped");
+}
+
+#[expect(
+    clippy::print_stdout,
+    reason = "the CLI prints migration results before logging starts"
+)]
+fn print_block_entity_examples(stats: &ImportStats, verb: &str) {
     for skipped in &stats.skipped_block_entity_examples {
         let location = skipped
             .position
             .map_or_else(|| "unknown position".to_owned(), |pos| pos.to_string());
         println!(
-            "Skipped Bedrock {:?} at {location} ({}).",
+            "{verb} Bedrock {:?} at {location} ({}).",
             skipped.kind, skipped.reason
         );
     }
     if stats.block_entities_skipped > stats.skipped_block_entity_examples.len() {
         println!(
-            "{} further block entities skipped.",
+            "{} further block entities in this category.",
             stats.block_entities_skipped - stats.skipped_block_entity_examples.len()
         );
     }

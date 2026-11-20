@@ -431,6 +431,75 @@ pub struct AnvilRegion {
 }
 
 impl AnvilRegion {
+    pub(crate) fn open_read_only(
+        path: &Path,
+        region: Vector2<i32>,
+    ) -> Result<Self, ChunkReadingError> {
+        Self::open_with_access(path, region, false)
+    }
+
+    fn open_with_access(
+        path: &Path,
+        region: Vector2<i32>,
+        writable: bool,
+    ) -> Result<Self, ChunkReadingError> {
+        let mut this = Self {
+            path: path.to_path_buf(),
+            region,
+            file: None,
+            file_len: 0,
+            locations: vec![0; CHUNK_COUNT].into_boxed_slice(),
+            timestamps: vec![0; CHUNK_COUNT].into_boxed_slice(),
+            used_sectors: SectorBitmap::default(),
+            staged: FxHashMap::default(),
+            pending_external_deletes: Vec::new(),
+            unsynced: false,
+        };
+        this.used_sectors.set(0, 2, true);
+
+        let file = match OpenOptions::new().read(true).write(writable).open(path) {
+            Ok(file) => file,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(this),
+            Err(err) => return Err(ChunkReadingError::IoError(err)),
+        };
+        let file_len = file.metadata().map_err(ChunkReadingError::IoError)?.len();
+        let mut header = vec![0; HEADER_BYTES];
+        let header_len = HEADER_BYTES.min(file_len as usize);
+        if header_len < HEADER_BYTES && header_len > 0 {
+            warn!(
+                "Region file {} has a truncated header: {header_len} bytes",
+                path.display()
+            );
+        }
+        read_exact_at(&file, &mut header[..header_len], 0).map_err(ChunkReadingError::IoError)?;
+
+        let (mut location_bytes, mut timestamp_bytes) = header.split_at(SECTOR_BYTES);
+        for index in 0..CHUNK_COUNT {
+            let location = location_bytes.get_u32();
+            let timestamp = timestamp_bytes.get_u32();
+            if location == 0 {
+                continue;
+            }
+            let offset = sector_offset(location);
+            let count = sector_count(location);
+            // The same checks vanilla's RegionFile runs when it opens a file.
+            if offset < 2 || count == 0 || u64::from(offset) * SECTOR_BYTES as u64 > file_len {
+                warn!(
+                    "Region file {} has an invalid sector at index {index}: offset {offset}, count {count}",
+                    path.display()
+                );
+                continue;
+            }
+            this.locations[index] = location;
+            this.timestamps[index] = timestamp;
+            this.used_sectors.set(offset, count, true);
+        }
+
+        this.file = Some(file);
+        this.file_len = file_len;
+        Ok(this)
+    }
+
     fn flush_with_sync(
         &mut self,
         sync: bool,
@@ -637,61 +706,7 @@ impl RegionFile for AnvilRegion {
     }
 
     fn open(path: &Path, region: Vector2<i32>) -> Result<Self, ChunkReadingError> {
-        let mut this = Self {
-            path: path.to_path_buf(),
-            region,
-            file: None,
-            file_len: 0,
-            locations: vec![0; CHUNK_COUNT].into_boxed_slice(),
-            timestamps: vec![0; CHUNK_COUNT].into_boxed_slice(),
-            used_sectors: SectorBitmap::default(),
-            staged: FxHashMap::default(),
-            pending_external_deletes: Vec::new(),
-            unsynced: false,
-        };
-        this.used_sectors.set(0, 2, true);
-
-        let file = match OpenOptions::new().read(true).write(true).open(path) {
-            Ok(file) => file,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(this),
-            Err(err) => return Err(ChunkReadingError::IoError(err)),
-        };
-        let file_len = file.metadata().map_err(ChunkReadingError::IoError)?.len();
-        let mut header = vec![0; HEADER_BYTES];
-        let header_len = HEADER_BYTES.min(file_len as usize);
-        if header_len < HEADER_BYTES && header_len > 0 {
-            warn!(
-                "Region file {} has a truncated header: {header_len} bytes",
-                path.display()
-            );
-        }
-        read_exact_at(&file, &mut header[..header_len], 0).map_err(ChunkReadingError::IoError)?;
-
-        let (mut location_bytes, mut timestamp_bytes) = header.split_at(SECTOR_BYTES);
-        for index in 0..CHUNK_COUNT {
-            let location = location_bytes.get_u32();
-            let timestamp = timestamp_bytes.get_u32();
-            if location == 0 {
-                continue;
-            }
-            let offset = sector_offset(location);
-            let count = sector_count(location);
-            // The same checks vanilla's RegionFile runs when it opens a file.
-            if offset < 2 || count == 0 || u64::from(offset) * SECTOR_BYTES as u64 > file_len {
-                warn!(
-                    "Region file {} has an invalid sector at index {index}: offset {offset}, count {count}",
-                    path.display()
-                );
-                continue;
-            }
-            this.locations[index] = location;
-            this.timestamps[index] = timestamp;
-            this.used_sectors.set(offset, count, true);
-        }
-
-        this.file = Some(file);
-        this.file_len = file_len;
-        Ok(this)
+        Self::open_with_access(path, region, true)
     }
 
     fn has_chunk(&self, index: usize) -> bool {

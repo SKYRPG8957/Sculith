@@ -211,6 +211,63 @@ fn preserves_valid_slots_without_importing_partial_containers() {
 }
 
 #[test]
+fn storage_export_replaces_slots_and_keeps_unsupported_compound_bytes() {
+    let pos = BlockPos::new(-1, -60, 0);
+    let mut raw = Vec::new();
+    container(&mut raw, "Chest", -1, &[(0, "minecraft:iron_ingot", 19)]);
+    let boundary = raw.len();
+    container(&mut raw, "Furnace", -2, &[]);
+    let terrain = terrain::TerrainRegistry::load().unwrap();
+    let items = storage::item_registry();
+    let mut original = ChunkData::empty(-1, 0);
+    original
+        .section
+        .set_block_absolute_y(15, -60, 0, Block::CHEST.default_state.id);
+    storage::import_record(
+        &raw,
+        &mut original,
+        &terrain,
+        &items,
+        &mut ImportStats::default(),
+    )
+    .unwrap();
+
+    let mut shared = ChunkData::empty(-1, 0);
+    shared
+        .section
+        .set_block_absolute_y(15, -60, 0, Block::CHEST.default_state.id);
+    let mut entity = original.pending_block_entities.get_mut().unwrap()[&pos].clone();
+    let mut entry = pumpkin_nbt::compound::NbtCompound::new();
+    entry.put_byte("Slot", 8);
+    entry.put_string("id", "minecraft:diamond".into());
+    entry.put_int("count", 3);
+    entity.put_list("Items", vec![pumpkin_nbt::tag::NbtTag::Compound(entry)]);
+    shared
+        .pending_block_entities
+        .get_mut()
+        .unwrap()
+        .insert(pos, entity);
+
+    let (exported, edited) =
+        storage_export::export_record(&raw, &original, &shared, &terrain, &items).unwrap();
+    assert_eq!(edited, 1);
+    assert!(exported.ends_with(&raw[boundary..]));
+    let mut reader = NbtReadHelperBedrockDisk::new(Cursor::new(exported.as_slice()));
+    let chest = Nbt::read(&mut reader).unwrap();
+    let stacks = chest.get_list("Items").unwrap();
+    assert_eq!(stacks.len(), 1);
+    let stack = stacks[0].extract_compound().unwrap();
+    assert_eq!(stack.get_string("Name"), Some("minecraft:diamond"));
+    assert_eq!(stack.get_byte("Slot"), Some(8));
+    assert_eq!(stack.get_byte("Count"), Some(3));
+    assert_eq!(stack.get_short("Damage"), Some(0));
+    assert_eq!(
+        Nbt::read(&mut reader).unwrap().get_string("id"),
+        Some("Furnace")
+    );
+}
+
+#[test]
 fn converts_a_saved_column_without_writing_to_the_source() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("bedrock");

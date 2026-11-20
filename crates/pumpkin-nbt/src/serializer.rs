@@ -102,6 +102,42 @@ impl<W: Write> NbtWriteHelper for NbtWriteHelperJava<W> {
     }
 }
 
+/// Writes fixed-width, little-endian Bedrock disk NBT.
+pub struct NbtWriteHelperBedrockDisk<W: Write> {
+    writer: W,
+}
+
+impl<W: Write> NbtWriteHelperBedrockDisk<W> {
+    /// Creates a writer over `w`.
+    pub const fn new(w: W) -> Self {
+        Self { writer: w }
+    }
+
+    define_write_number_le!(write_string_len, u16);
+}
+
+impl<W: Write> NbtWriteHelper for NbtWriteHelperBedrockDisk<W> {
+    type Writer = W;
+
+    fn writer(&mut self) -> &mut W {
+        &mut self.writer
+    }
+
+    define_write_number_le!(write_u8, u8);
+    define_write_number_le!(write_i8, i8);
+    define_write_number_le!(write_i16, i16);
+    define_write_number_le!(write_i32, i32);
+    define_write_number_le!(write_i64, i64);
+    define_write_number_le!(write_f32, f32);
+    define_write_number_le!(write_f64, f64);
+
+    fn write_string(&mut self, value: &str) -> Result<()> {
+        let len = u16::try_from(value.len()).map_err(|_| Error::LargeLength(value.len()))?;
+        self.write_string_len(len)?;
+        self.write_slice(value.as_bytes())
+    }
+}
+
 /// Writes Bedrock network NBT primitives using little-endian and variable-length encoding.
 pub struct NbtWriteHelperBedrock<W: Write> {
     writer: W,

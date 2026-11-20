@@ -14,7 +14,9 @@ use std::{
 
 use bytes::Bytes;
 use deserializer::NbtReadHelper;
-use serializer::{NbtWriteHelper, NbtWriteHelperBedrock, NbtWriteHelperJava};
+use serializer::{
+    NbtWriteHelper, NbtWriteHelperBedrock, NbtWriteHelperBedrockDisk, NbtWriteHelperJava,
+};
 use tag::NbtTag;
 use thiserror::Error;
 
@@ -206,6 +208,14 @@ impl Nbt {
     pub fn write_to_writer_bedrock<W: Write>(self, mut writer: W) -> Result<(), io::Error> {
         writer.write_all(&self.write_bedrock())?;
         Ok(())
+    }
+
+    /// Writes this document in the fixed-width Bedrock disk representation.
+    pub fn write_to_writer_bedrock_disk<W: Write>(self, writer: W) -> Result<(), Error> {
+        let mut writer = NbtWriteHelperBedrockDisk::new(writer);
+        writer.write_u8(COMPOUND_ID)?;
+        writer.write_string(&self.name)?;
+        self.root_tag.serialize_content(&mut writer)
     }
 
     /// Serializes this document without the root compound's name.
