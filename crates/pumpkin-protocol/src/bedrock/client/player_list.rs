@@ -1,9 +1,10 @@
 use crate::{
     codec::{var_long::VarLong, var_uint::VarUInt},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
+use bytes::Bytes;
 use pumpkin_macros::packet;
-use std::io::{Error, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 use uuid::Uuid;
 
 use super::common::BuildPlatform;
@@ -52,6 +53,31 @@ impl CPlayerList {
     pub const ACTION_REMOVE: u8 = 1;
 }
 
+/// Player list additions and removals read from the wire.
+#[derive(PacketRead)]
+#[packet(pumpkin_data::bedrock_packet::PLAYER_LIST)]
+pub struct CPlayerListPayload {
+    pub entries: Vec<PlayerListChange>,
+}
+
+pub enum PlayerListChange {
+    Add(Box<PlayerListEntry>),
+    Remove(Uuid),
+}
+
+impl PacketRead for PlayerListChange {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        match (VarUInt::read(reader)?.0, u8::read(reader)?) {
+            (0, CPlayerList::ACTION_REMOVE) => Ok(Self::Remove(Uuid::read(reader)?)),
+            (1, CPlayerList::ACTION_ADD) => Ok(Self::Add(Box::new(PlayerListEntry::read(reader)?))),
+            _ => Err(Error::new(
+                ErrorKind::InvalidData,
+                "invalid Bedrock player list action",
+            )),
+        }
+    }
+}
+
 pub struct PlayerListEntry {
     pub uuid: Uuid,
     pub entity_unique_id: VarLong,
@@ -64,6 +90,33 @@ pub struct PlayerListEntry {
     pub is_host: bool,
     pub is_sub_client: bool,
     pub player_color: [u8; 4], // ARGB
+}
+
+impl PacketRead for PlayerListEntry {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let uuid = Uuid::read(reader)?;
+        let entity_unique_id = VarLong::read(reader)?;
+        let username = String::read(reader)?;
+        let xuid = String::read(reader)?;
+        let play_fab_id = String::read(reader)?;
+        let platform_chat_id = String::read(reader)?;
+        let build_platform = BuildPlatform::read(reader)?;
+        let mut skin = Skin::read(reader)?;
+        skin.play_fab_id = play_fab_id;
+        Ok(Self {
+            uuid,
+            entity_unique_id,
+            username,
+            xuid,
+            platform_chat_id,
+            build_platform,
+            skin,
+            is_teacher: bool::read(reader)?,
+            is_host: bool::read(reader)?,
+            is_sub_client: bool::read(reader)?,
+            player_color: u32::read(reader)?.to_be_bytes(),
+        })
+    }
 }
 
 impl PacketWrite for PlayerListEntry {
@@ -206,6 +259,75 @@ impl PacketWrite for Skin {
     }
 }
 
+impl PacketRead for Skin {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let skin_id = String::read(reader)?;
+        let resource_patch = Bytes::read(reader)?.into();
+        let image_width = u32::read(reader)?;
+        let image_height = u32::read(reader)?;
+        let skin_data = Bytes::read(reader)?.into();
+        let animations = Vec::read(reader)?;
+        let cape_width = u32::read(reader)?;
+        let cape_height = u32::read(reader)?;
+        let cape_data = Bytes::read(reader)?.into();
+        let geometry_data = Bytes::read(reader)?.into();
+        let geometry_data_engine_version = Bytes::read(reader)?.into();
+        let animation_data = Bytes::read(reader)?.into();
+        let cape_id = String::read(reader)?;
+        let full_id = String::read(reader)?;
+        let arm_size = match u8::read(reader)? {
+            0 => "slim".into(),
+            1 => "wide".into(),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "invalid Bedrock skin arm size",
+                ));
+            }
+        };
+        let skin_color = format!("#{:08x}", u32::read(reader)?);
+        let persona_pieces = Vec::read(reader)?;
+        let piece_tint_colors = Vec::read(reader)?;
+        let is_premium = bool::read(reader)?;
+        let is_persona = bool::read(reader)?;
+        let persona_cape_on_classic = bool::read(reader)?;
+        let is_primary_user = bool::read(reader)?;
+        let override_appearance = bool::read(reader)?;
+        let is_trusted = String::read(reader)?
+            .parse()
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid Bedrock skin trust flag"))?;
+        let profile_hash = String::read(reader)?;
+        Ok(Self {
+            skin_id,
+            play_fab_id: String::new(),
+            resource_patch,
+            image_width,
+            image_height,
+            skin_data,
+            animations,
+            cape_width,
+            cape_height,
+            cape_data,
+            geometry_data,
+            animation_data,
+            geometry_data_engine_version,
+            cape_id,
+            full_id,
+            arm_size,
+            skin_color,
+            persona_pieces,
+            piece_tint_colors,
+            is_premium,
+            is_persona,
+            persona_cape_on_classic,
+            is_primary_user,
+            override_appearance,
+            is_trusted,
+            profile_hash,
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct SkinAnimation {
     pub image_width: u32,
@@ -228,7 +350,20 @@ impl PacketWrite for SkinAnimation {
     }
 }
 
-#[derive(Clone, PacketWrite)]
+impl PacketRead for SkinAnimation {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(Self {
+            image_width: u32::read(reader)?,
+            image_height: u32::read(reader)?,
+            image_data: Bytes::read(reader)?.into(),
+            animation_type: VarUInt::read(reader)?.0,
+            frames: f32::read(reader)?,
+            expression_type: VarUInt::read(reader)?.0,
+        })
+    }
+}
+
+#[derive(Clone, PacketRead, PacketWrite)]
 pub struct PersonaPiece {
     pub piece_id: String,
     pub piece_type: i32,
@@ -237,7 +372,7 @@ pub struct PersonaPiece {
     pub product_id: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PacketRead)]
 pub struct PieceTintColor {
     pub piece_type: String,
     pub colors: [i32; 4],
@@ -268,6 +403,46 @@ fn parse_color(color: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{DEFAULT_SKIN_GEOMETRY, SLIM_SKIN_RESOURCE_PATCH, Skin, WIDE_SKIN_RESOURCE_PATCH};
+
+    #[test]
+    fn reads_player_list_addition_with_skin_and_removal_with_uuid() {
+        use super::*;
+
+        let uuid = Uuid::from_u128(0x1234_5678_9abc_def0_3141_5926_5358_9793);
+        for action in [CPlayerList::ACTION_ADD, CPlayerList::ACTION_REMOVE] {
+            let packet = CPlayerList {
+                action,
+                entries: vec![PlayerListEntry {
+                    uuid,
+                    entity_unique_id: VarLong(18),
+                    username: "Tester".into(),
+                    xuid: String::new(),
+                    platform_chat_id: String::new(),
+                    build_platform: BuildPlatform::Uwp,
+                    skin: Skin::steve(),
+                    is_teacher: false,
+                    is_host: false,
+                    is_sub_client: false,
+                    player_color: [255, 9, 8, 7],
+                }],
+            };
+            let mut encoded = Vec::new();
+            packet.write(&mut encoded).unwrap();
+            let mut body = encoded.as_slice();
+            let decoded = CPlayerListPayload::read(&mut body).unwrap();
+            assert!(body.is_empty());
+            match (&decoded.entries[0], action) {
+                (PlayerListChange::Remove(id), CPlayerList::ACTION_REMOVE) => assert_eq!(*id, uuid),
+                (PlayerListChange::Add(entry), CPlayerList::ACTION_ADD) => {
+                    assert_eq!(entry.uuid, uuid);
+                    assert_eq!(entry.username, "Tester");
+                    assert_eq!(entry.player_color, [255, 9, 8, 7]);
+                    assert_eq!(entry.skin.skin_data.len(), 16_384);
+                }
+                _ => panic!("unexpected player list action"),
+            }
+        }
+    }
 
     #[test]
     fn fallback_skin_contains_the_geometry_it_references() {

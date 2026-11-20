@@ -3,12 +3,12 @@
 use crate::{
     bedrock::{client::CommandPermissionLevel, enum_as_str::EnumAsStr},
     codec::var_uint::VarUInt,
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_macros::packet;
 
 /// Advertises available console and chat commands, arguments, overloads, and auto-completion structures.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::AVAILABLE_COMMANDS)]
 pub struct CAvailableCommands {
     /// Global table of all unique string arguments and options referenced by command enums.
@@ -30,7 +30,7 @@ pub struct CAvailableCommands {
 }
 
 /// A fixed command enum and its allowed option indices.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct EnumData {
     /// Name of the enumeration.
     pub name: String,
@@ -39,7 +39,7 @@ pub struct EnumData {
 }
 
 /// Represents a subcommand that can chain commands, e.g. `/execute`.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct ChainedSubcommandData {
     /// Name of the chained subcommand.
     pub name: String,
@@ -48,7 +48,7 @@ pub struct ChainedSubcommandData {
 }
 
 /// Relationship between a chained subcommand value and argument flags.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct ChainedSubcommandRelationship {
     /// Index into the `ChainedSubcommandValues` flat list.
     pub index: VarUInt,
@@ -57,7 +57,7 @@ pub struct ChainedSubcommandRelationship {
 }
 
 /// Metadata, permissions, aliases, and argument overloads for a single registered command.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct CommandData {
     /// Canonical command name (without leading slash).
     pub name: String,
@@ -76,7 +76,7 @@ pub struct CommandData {
 }
 
 /// An overload variant describing a sequence of expected arguments.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct OverloadData {
     /// Whether this overload is part of a chained command invocation.
     pub is_chaining: bool,
@@ -85,7 +85,7 @@ pub struct OverloadData {
 }
 
 /// An individual parameter definition within a command overload.
-#[derive(Clone, PacketWrite)]
+#[derive(Clone, PacketRead, PacketWrite)]
 pub struct ParamData {
     /// Parameter name shown in command hints.
     pub name: String,
@@ -132,7 +132,7 @@ pub mod arg_types {
 }
 
 /// A dynamic command enumeration whose choices can update without resending all commands.
-#[derive(Clone, PacketWrite)]
+#[derive(Clone, PacketRead, PacketWrite)]
 pub struct SoftEnumData {
     /// Name of the dynamic enumeration.
     pub enum_name: String,
@@ -141,7 +141,7 @@ pub struct SoftEnumData {
 }
 
 /// Restricts specific enum values based on constraints.
-#[derive(Clone, PacketWrite)]
+#[derive(Clone, PacketRead, PacketWrite)]
 pub struct ConstrainedValueData {
     /// Symbol of the enum value being constrained.
     pub enum_value_symbol: u32,

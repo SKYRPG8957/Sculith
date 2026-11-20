@@ -254,7 +254,7 @@ fn append_dynamic_crafting_recipe(
                     block: "crafting_table".to_string(),
                     priority: VarInt(1),
                     assume_symmetry: true,
-                    unlock_requirement: RecipeUnlockRequirement { context: 1 },
+                    unlock_requirement: Some(RecipeUnlockRequirement::always_unlocked()),
                     recipe_network_id: VarUInt(*network_id),
                 }));
                 *network_id += 1;
@@ -284,7 +284,7 @@ fn append_dynamic_crafting_recipe(
                     uuid: Uuid::from_u128(u128::from(*network_id)),
                     block: "crafting_table".to_string(),
                     priority: VarInt(1),
-                    unlock_requirement: RecipeUnlockRequirement { context: 1 },
+                    unlock_requirement: Some(RecipeUnlockRequirement::always_unlocked()),
                     recipe_network_id: VarUInt(*network_id),
                 }));
                 *network_id += 1;
@@ -310,7 +310,7 @@ fn append_dynamic_stonecutter_recipe(
             uuid: Uuid::from_u128(u128::from(*network_id)),
             block: "stonecutter".to_string(),
             priority: VarInt(1),
-            unlock_requirement: RecipeUnlockRequirement { context: 1 },
+            unlock_requirement: Some(RecipeUnlockRequirement::always_unlocked()),
             recipe_network_id: VarUInt(*network_id),
         }));
         *network_id += 1;
@@ -342,7 +342,7 @@ fn append_dynamic_cooking_recipe(
                 uuid: Uuid::from_u128(u128::from(*network_id)),
                 block: block.to_string(),
                 priority: VarInt(0),
-                unlock_requirement: RecipeUnlockRequirement { context: 1 },
+                unlock_requirement: Some(RecipeUnlockRequirement::always_unlocked()),
                 recipe_network_id: VarUInt(*network_id),
             }));
             *network_id += 1;
@@ -393,7 +393,9 @@ mod tests {
             .iter()
             .filter_map(|option| match &option.descriptor {
                 RecipeItemDescriptor::Item { identifier, .. } => Some(identifier.as_str()),
-                RecipeItemDescriptor::Empty | RecipeItemDescriptor::Tag(_) => None,
+                RecipeItemDescriptor::Empty
+                | RecipeItemDescriptor::Tag(_)
+                | RecipeItemDescriptor::Molang(_) => None,
             })
             .collect::<Vec<_>>();
 

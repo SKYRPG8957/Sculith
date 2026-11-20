@@ -27,6 +27,12 @@ without a compatible decoder or variant is reported as `Unknown`. The typed
 fields describe the payload passed to the callback. Returning edits uses the
 packet ID and raw payload fields.
 
+Under protocol 2225, v0.2 has decoders for all 37 serverbound and 77
+clientbound packet IDs defined by Sculith. For pre-encoded assets the observed
+packet uses a payload record, such as `c-biome-definition-list-payload` or
+`c-crafting-data-payload`, with the decoded contents. The protocol catalogue
+also lists packet IDs for which Sculith has no codec.
+
 ## Bedrock packet IDs
 
 Bedrock packet definitions use generated constants from

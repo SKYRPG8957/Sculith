@@ -1,10 +1,10 @@
 use crate::{
     bedrock::network_item::NetworkItemDescriptor,
     codec::{var_int::VarInt, var_uint::VarUInt},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_macros::packet;
-use std::io::{Error, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,6 +15,7 @@ pub enum RecipeItemDescriptor {
         metadata_value: i32,
     },
     Tag(String),
+    Molang(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,23 +75,87 @@ impl PacketWrite for ItemDescriptorCount {
                 identifier.write(writer)?;
                 VarInt(32767).write(writer)?;
             }
+            RecipeItemDescriptor::Molang(expression) => {
+                VarUInt(1).write(writer)?;
+                "tags".write(writer)?;
+                expression.write(writer)?;
+                VarInt(32767).write(writer)?;
+            }
         }
         VarInt(self.count).write(writer)?;
         Ok(())
     }
 }
 
+impl PacketRead for ItemDescriptorCount {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let descriptor = match VarUInt::read(reader)?.0 {
+            0 => {
+                let _auxiliary = VarInt::read(reader)?;
+                RecipeItemDescriptor::Empty
+            }
+            1 => {
+                let kind = String::read(reader)?;
+                let value = String::read(reader)?;
+                let auxiliary = VarInt::read(reader)?.0;
+                match kind.as_str() {
+                    "name" => RecipeItemDescriptor::Item {
+                        identifier: value,
+                        metadata_value: auxiliary,
+                    },
+                    "item_tag" => RecipeItemDescriptor::Tag(value),
+                    "tags" => RecipeItemDescriptor::Molang(value),
+                    _ => {
+                        return Err(Error::new(
+                            ErrorKind::InvalidData,
+                            "invalid Bedrock recipe ingredient",
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "unsupported Bedrock item descriptor",
+                ));
+            }
+        };
+        Ok(Self {
+            descriptor,
+            count: VarInt::read(reader)?.0,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RecipeUnlockRequirement {
     pub context: i32,
+    pub ingredients: Option<Vec<ItemDescriptorCount>>,
+}
+
+impl RecipeUnlockRequirement {
+    #[must_use]
+    pub const fn always_unlocked() -> Self {
+        Self {
+            context: 1,
+            ingredients: None,
+        }
+    }
 }
 
 impl PacketWrite for RecipeUnlockRequirement {
     fn write<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
         VarInt(self.context).write(writer)?;
-        // Context NONE carries an optional ingredient list; Pumpkin currently
-        // sends ALWAYS for its generated recipes.
-        false.write(writer)
+        self.ingredients.write(writer)
+    }
+}
+
+impl PacketRead for RecipeUnlockRequirement {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(Self {
+            context: VarInt::read(reader)?.0,
+            ingredients: Option::read(reader)?,
+        })
     }
 }
 
@@ -102,7 +167,7 @@ pub struct BedrockShapelessRecipe {
     pub uuid: Uuid,
     pub block: String,
     pub priority: VarInt,
-    pub unlock_requirement: RecipeUnlockRequirement,
+    pub unlock_requirement: Option<RecipeUnlockRequirement>,
     pub recipe_network_id: VarUInt,
 }
 
@@ -137,13 +202,42 @@ impl PacketWrite for BedrockShapelessRecipe {
         // priority
         self.priority.write(writer)?;
 
-        true.write(writer)?;
         self.unlock_requirement.write(writer)?;
 
         // recipe_network_id
         self.recipe_network_id.write(writer)?;
 
         Ok(())
+    }
+}
+
+fn read_recipe_outputs<R: Read>(reader: &mut R) -> Result<Vec<NetworkItemDescriptor>, Error> {
+    let count = VarUInt::read(reader)?.0 as usize;
+    if count > 65_536 {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "too many Bedrock recipe outputs",
+        ));
+    }
+    let mut output = Vec::with_capacity(count.min(16));
+    for _ in 0..count {
+        output.push(NetworkItemDescriptor::read_item_instance(reader)?);
+    }
+    Ok(output)
+}
+
+impl PacketRead for BedrockShapelessRecipe {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(Self {
+            recipe_id: String::read(reader)?,
+            input: Vec::read(reader)?,
+            output: read_recipe_outputs(reader)?,
+            uuid: Uuid::read(reader)?,
+            block: String::read(reader)?,
+            priority: VarInt::read(reader)?,
+            unlock_requirement: Option::read(reader)?,
+            recipe_network_id: VarUInt::read(reader)?,
+        })
     }
 }
 
@@ -158,7 +252,7 @@ pub struct BedrockShapedRecipe {
     pub block: String,
     pub priority: VarInt,
     pub assume_symmetry: bool,
-    pub unlock_requirement: RecipeUnlockRequirement,
+    pub unlock_requirement: Option<RecipeUnlockRequirement>,
     pub recipe_network_id: VarUInt,
 }
 
@@ -191,13 +285,43 @@ impl PacketWrite for BedrockShapedRecipe {
         // assume_symmetry
         self.assume_symmetry.write(writer)?;
 
-        true.write(writer)?;
         self.unlock_requirement.write(writer)?;
 
         // recipe_network_id
         self.recipe_network_id.write(writer)?;
 
         Ok(())
+    }
+}
+
+impl PacketRead for BedrockShapedRecipe {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let recipe_id = String::read(reader)?;
+        let width = VarInt::read(reader)?;
+        let height = VarInt::read(reader)?;
+        let input = Vec::read(reader)?;
+        if width.0 < 0
+            || height.0 < 0
+            || i64::from(width.0) * i64::from(height.0) != input.len() as i64
+        {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Bedrock recipe input count does not match its dimensions",
+            ));
+        }
+        Ok(Self {
+            recipe_id,
+            width,
+            height,
+            input,
+            output: read_recipe_outputs(reader)?,
+            uuid: Uuid::read(reader)?,
+            block: String::read(reader)?,
+            priority: VarInt::read(reader)?,
+            assume_symmetry: bool::read(reader)?,
+            unlock_requirement: Option::read(reader)?,
+            recipe_network_id: VarUInt::read(reader)?,
+        })
     }
 }
 
@@ -291,6 +415,104 @@ impl PacketWrite for CCraftingData {
     }
 }
 
+/// All recipe tables carried by a Bedrock crafting data packet.
+#[derive(PacketRead)]
+#[packet(pumpkin_data::bedrock_packet::CRAFTING_DATA)]
+pub struct CCraftingDataPayload {
+    pub shaped: Vec<BedrockShapedRecipe>,
+    pub shapeless: Vec<BedrockShapelessRecipe>,
+    pub multi: Vec<BedrockMultiRecipe>,
+    pub user_data_shapeless: Vec<BedrockShapelessRecipe>,
+    pub shapeless_chemistry: Vec<BedrockShapelessRecipe>,
+    pub shaped_chemistry: Vec<BedrockShapedRecipe>,
+    pub smithing_transform: Vec<BedrockSmithingTransformRecipe>,
+    pub smithing_trim: Vec<BedrockSmithingTrimRecipe>,
+    pub potions: Vec<BedrockPotionRecipe>,
+    pub potion_container_changes: Vec<BedrockPotionContainerChange>,
+    pub material_reducers: Vec<BedrockMaterialReducer>,
+    pub clean_recipes: bool,
+}
+
+#[derive(PacketRead)]
+pub struct BedrockMultiRecipe {
+    pub uuid: Uuid,
+    pub recipe_network_id: VarUInt,
+}
+
+pub struct BedrockSmithingTransformRecipe {
+    pub recipe_id: String,
+    pub template: ItemDescriptorCount,
+    pub base: ItemDescriptorCount,
+    pub addition: ItemDescriptorCount,
+    pub result: NetworkItemDescriptor,
+    pub block: String,
+    pub recipe_network_id: VarUInt,
+}
+
+impl PacketRead for BedrockSmithingTransformRecipe {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(Self {
+            recipe_id: String::read(reader)?,
+            template: ItemDescriptorCount::read(reader)?,
+            base: ItemDescriptorCount::read(reader)?,
+            addition: ItemDescriptorCount::read(reader)?,
+            result: NetworkItemDescriptor::read_item_instance(reader)?,
+            block: String::read(reader)?,
+            recipe_network_id: VarUInt::read(reader)?,
+        })
+    }
+}
+
+#[derive(PacketRead)]
+pub struct BedrockSmithingTrimRecipe {
+    pub recipe_id: String,
+    pub template: ItemDescriptorCount,
+    pub base: ItemDescriptorCount,
+    pub addition: ItemDescriptorCount,
+    pub block: String,
+    pub recipe_network_id: VarUInt,
+}
+
+#[derive(PacketRead)]
+pub struct BedrockPotionRecipe {
+    pub input_potion_id: VarInt,
+    pub input_potion_metadata: VarInt,
+    pub reagent_item_id: VarInt,
+    pub reagent_item_metadata: VarInt,
+    pub output_potion_id: VarInt,
+    pub output_potion_metadata: VarInt,
+}
+
+#[derive(PacketRead)]
+pub struct BedrockPotionContainerChange {
+    pub input_item_id: VarInt,
+    pub reagent_item_id: VarInt,
+    pub output_item_id: VarInt,
+}
+
+pub struct BedrockMaterialReducer {
+    pub input_item_id: i32,
+    pub input_item_metadata: u16,
+    pub outputs: Vec<BedrockMaterialReducerOutput>,
+}
+
+impl PacketRead for BedrockMaterialReducer {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let input = VarInt::read(reader)?.0;
+        Ok(Self {
+            input_item_id: input >> 16,
+            input_item_metadata: input as u16,
+            outputs: Vec::read(reader)?,
+        })
+    }
+}
+
+#[derive(PacketRead)]
+pub struct BedrockMaterialReducerOutput {
+    pub item_id: VarInt,
+    pub count: VarInt,
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Cursor, Read};
@@ -305,7 +527,7 @@ mod tests {
 
     use super::{
         BedrockRecipe, BedrockShapedRecipe, BedrockShapelessRecipe, CCraftingData,
-        ItemDescriptorCount, RecipeUnlockRequirement,
+        CCraftingDataPayload, ItemDescriptorCount, RecipeUnlockRequirement,
     };
 
     fn read_str(cursor: &mut Cursor<&[u8]>) -> String {
@@ -441,7 +663,7 @@ mod tests {
                 block: "crafting_table".to_string(),
                 priority: VarInt(1),
                 assume_symmetry: true,
-                unlock_requirement: RecipeUnlockRequirement { context: 1 },
+                unlock_requirement: Some(RecipeUnlockRequirement::always_unlocked()),
                 recipe_network_id: VarUInt(dynamic_net_id),
             }),
             BedrockRecipe::Shapeless(BedrockShapelessRecipe {
@@ -451,7 +673,7 @@ mod tests {
                 uuid: Uuid::from_u128(2),
                 block: "crafting_table".to_string(),
                 priority: VarInt(1),
-                unlock_requirement: RecipeUnlockRequirement { context: 1 },
+                unlock_requirement: Some(RecipeUnlockRequirement::always_unlocked()),
                 recipe_network_id: VarUInt(dynamic_net_id + 1),
             }),
         ]
@@ -567,5 +789,18 @@ mod tests {
         assert_tail_sections(&mut cursor, dynamic_net_id);
         assert!(bool::read(&mut cursor).unwrap());
         assert_eq!(cursor.position() as usize, encoded.len());
+
+        let mut body = encoded.as_slice();
+        let decoded = CCraftingDataPayload::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert!(decoded.clean_recipes);
+        assert_eq!(
+            decoded.shaped.last().unwrap().recipe_network_id.0,
+            dynamic_net_id
+        );
+        assert_eq!(
+            decoded.shapeless.last().unwrap().recipe_network_id.0,
+            dynamic_net_id + 1
+        );
     }
 }

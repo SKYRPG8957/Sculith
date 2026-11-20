@@ -1,3 +1,5 @@
+use std::io::Error;
+
 use pumpkin_macros::packet;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
@@ -65,4 +67,3 @@ mod tests {
         );
     }
 }
-use std::io::Error;

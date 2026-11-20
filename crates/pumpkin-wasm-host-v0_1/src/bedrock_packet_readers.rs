@@ -28,7 +28,7 @@ pub fn deserialize_bedrock_serverbound_packet(
                 action: project_bedrock_animate_action(p.action)?,
                 target_actor_runtime_id: p.target_actor_runtime_id.0 as _,
                 data: p.data.try_into().ok()?,
-                swing_source: match p.swing_source { Some(element) => Some(project_bedrock_actor_swing_source(element.into_inner())?), None => None },
+                swing_source: p.swing_source.map_or(Some(None), |element| Some(Some(project_bedrock_actor_swing_source(element.into_inner())?)))?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::server::SBlockPickRequest as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -214,9 +214,9 @@ pub fn deserialize_bedrock_serverbound_packet(
                 interact_yaw: p.interact_yaw.try_into().ok()?,
                 tick: p.tick.0 as _,
                 delta: (p.delta.x as _, p.delta.y as _, p.delta.z as _),
-                block_actions: match p.block_actions { Some(element) => Some(element.into_iter().map(|element| Some(project_bedrock_player_block_action(element)?)).collect::<Option<Vec<_>>>()?), None => None },
-                item_interaction: match p.item_interaction { Some(element) => Some(project_bedrock_player_inventory_action(element)?), None => None },
-                item_stack_request: match p.item_stack_request { Some(element) => Some(project_bedrock_item_stack_request(element)?), None => None },
+                block_actions: p.block_actions.map_or(Some(None), |element| Some(Some(element.into_iter().map(|element| Some(project_bedrock_player_block_action(element)?)).collect::<Option<Vec<_>>>()?)))?,
+                item_interaction: p.item_interaction.map_or(Some(None), |element| Some(Some(project_bedrock_player_inventory_action(element)?)))?,
+                item_stack_request: p.item_stack_request.map_or(Some(None), |element| Some(Some(project_bedrock_item_stack_request(element)?)))?,
                 vehicle_rotation: p.vehicle_rotation.as_ref().map(|value| (value.x as _, value.y as _)),
                 vehicle_unique_id: p.vehicle_unique_id.map(|value| value.0.try_into()).transpose().ok()?,
                 analog_move: (p.analog_move.x as _, p.analog_move.y as _),
@@ -325,6 +325,21 @@ pub fn deserialize_bedrock_clientbound_packet(
     payload: &[u8],
 ) -> Option<BClientboundPacket> {
     match id {
+        id if id == <pumpkin_protocol::bedrock::client::CAvailableCommands as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CAvailableCommands as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CAvailableCommands(crate::pumpkin::plugin::bedrock_packets::CAvailableCommands {
+                enum_values: p.enum_values.iter().map(|s| s.to_string()).collect(),
+                chained_subcommand_values: p.chained_subcommand_values.iter().map(|s| s.to_string()).collect(),
+                post_fixes: p.post_fixes.iter().map(|s| s.to_string()).collect(),
+                enum_data: p.enum_data.into_iter().map(|element| Some(project_bedrock_enum_data(element)?)).collect::<Option<Vec<_>>>()?,
+                chained_subcommand_data: p.chained_subcommand_data.into_iter().map(|element| Some(project_bedrock_chained_subcommand_data(element)?)).collect::<Option<Vec<_>>>()?,
+                commands: p.commands.into_iter().map(|element| Some(project_bedrock_command_data(element)?)).collect::<Option<Vec<_>>>()?,
+                soft_enums: p.soft_enums.into_iter().map(|element| Some(project_bedrock_soft_enum_data(element)?)).collect::<Option<Vec<_>>>()?,
+                constraints: p.constraints.into_iter().map(|element| Some(project_bedrock_constrained_value_data(element)?)).collect::<Option<Vec<_>>>()?,
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::client::CBlockActorData as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = <pumpkin_protocol::bedrock::client::CBlockActorData as pumpkin_protocol::serial::PacketReadSlice>::read_slice(&mut body).ok()?;
@@ -463,8 +478,8 @@ pub fn deserialize_bedrock_clientbound_packet(
             Some(BClientboundPacket::CInventorySlot(crate::pumpkin::plugin::bedrock_packets::CInventorySlot {
                 container_id: p.container_id.0 as _,
                 slot: p.slot.0 as _,
-                full_container_name: match p.full_container_name { Some(element) => Some(project_bedrock_full_container_name(element)?), None => None },
-                storage_item: match p.storage_item { Some(element) => Some(project_bedrock_network_item_stack_descriptor(element)?), None => None },
+                full_container_name: p.full_container_name.map_or(Some(None), |element| Some(Some(project_bedrock_full_container_name(element)?)))?,
+                storage_item: p.storage_item.map_or(Some(None), |element| Some(Some(project_bedrock_network_item_stack_descriptor(element)?)))?,
                 item: project_bedrock_network_item_stack_descriptor(p.item)?,
             }))
         }
@@ -785,6 +800,15 @@ pub fn deserialize_bedrock_clientbound_packet(
                 player_game_type: project_bedrock_game_type(p.player_game_type)?,
             }))
         }
+        id if id == <pumpkin_protocol::bedrock::client::CSetScore as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CSetScore as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CSetScore(crate::pumpkin::plugin::bedrock_packets::CSetScore {
+                action: p.action.0.try_into().ok()?,
+                entries: p.entries.into_iter().map(|element| Some(project_bedrock_score_entry(element)?)).collect::<Option<Vec<_>>>()?,
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::client::CSetSpawnPosition as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = <pumpkin_protocol::bedrock::client::CSetSpawnPosition as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
@@ -889,10 +913,28 @@ pub fn deserialize_bedrock_clientbound_packet(
                 layer: p.layer.0 as _,
             }))
         }
+        id if id == <pumpkin_protocol::bedrock::client::CUpdateTrade as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CUpdateTrade as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CUpdateTrade(crate::pumpkin::plugin::bedrock_packets::CUpdateTrade {
+                container_id: p.container_id.try_into().ok()?,
+                r_type: p.r#type.try_into().ok()?,
+                size: p.size.0.try_into().ok()?,
+                trader_tier: p.trader_tier.0.try_into().ok()?,
+                entity_unique_id: p.entity_unique_id.0.try_into().ok()?,
+                last_trading_player: p.last_trading_player.0.try_into().ok()?,
+                display_name: p.display_name.into(),
+                use_new_trade_screen: p.use_new_trade_screen.try_into().ok()?,
+                using_economy_trade: p.using_economy_trade.try_into().ok()?,
+                data: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(p.data)),
+            }))
+        }
         _ => None,
     }
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_ability_value(
     value: pumpkin_protocol::bedrock::server::request_ability::AbilityValue,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AbilityValue> {
@@ -906,7 +948,8 @@ fn project_bedrock_ability_value(
     })
 }
 
-const fn project_bedrock_action(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_action(
     value: pumpkin_protocol::bedrock::server::interact::Action,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::Action> {
     Some(match value {
@@ -928,7 +971,8 @@ const fn project_bedrock_action(
     })
 }
 
-const fn project_bedrock_actor_event_id(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_actor_event_id(
     value: pumpkin_protocol::bedrock::server::actor_event::ActorEventID,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ActorEventId> {
     Some(match value {
@@ -996,6 +1040,7 @@ pumpkin_protocol::bedrock::server::actor_event::ActorEventID::HurtWithoutReceivi
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_actor_link(
     value: pumpkin_protocol::bedrock::client::common::ActorLink,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ActorLink> {
@@ -1012,7 +1057,8 @@ fn project_bedrock_actor_link(
     })
 }
 
-const fn project_bedrock_actor_swing_source(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_actor_swing_source(
     value: pumpkin_protocol::bedrock::server::animate::ActorSwingSource,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ActorSwingSource> {
     Some(match value {
@@ -1046,7 +1092,8 @@ const fn project_bedrock_actor_swing_source(
     })
 }
 
-const fn project_bedrock_animate_action(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_animate_action(
     value: pumpkin_protocol::bedrock::server::animate::AnimateAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AnimateAction> {
     Some(match value {
@@ -1068,6 +1115,7 @@ const fn project_bedrock_animate_action(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_attribute_data(
     value: pumpkin_protocol::bedrock::client::update_attributes::AttributeData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AttributeData> {
@@ -1090,6 +1138,7 @@ fn project_bedrock_attribute_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_attribute_modifier(
     value: pumpkin_protocol::bedrock::client::update_attributes::AttributeModifier,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AttributeModifier> {
@@ -1106,6 +1155,65 @@ fn project_bedrock_attribute_modifier(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_chained_subcommand_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::ChainedSubcommandData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ChainedSubcommandData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ChainedSubcommandData {
+            name: record_value.name.into(),
+            subcommand_values: record_value
+                .subcommand_values
+                .into_iter()
+                .map(|element| Some(project_bedrock_chained_subcommand_relationship(element)?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_chained_subcommand_relationship(
+    value: pumpkin_protocol::bedrock::client::available_commands::ChainedSubcommandRelationship,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ChainedSubcommandRelationship> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ChainedSubcommandRelationship {
+            index: record_value.index.0 as _,
+            value: record_value.value.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_command_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::CommandData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::CommandData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::CommandData {
+            name: record_value.name.into(),
+            description: record_value.description.into(),
+            flags: record_value.flags.try_into().ok()?,
+            permission_level: project_bedrock_command_permission_level(
+                record_value.permission_level.into_inner(),
+            )?,
+            alias_enum: record_value.alias_enum.try_into().ok()?,
+            command_data_chained_subcommand_indexes: record_value
+                .command_data_chained_subcommand_indexes
+                .iter()
+                .map(|&value| value as _)
+                .collect(),
+            overloads: record_value
+                .overloads
+                .into_iter()
+                .map(|element| Some(project_bedrock_overload_data(element)?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_command_origin_data(
     value: pumpkin_protocol::bedrock::server::command_request::CommandOriginData<'_>,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::CommandOriginData> {
@@ -1122,7 +1230,8 @@ fn project_bedrock_command_origin_data(
     })
 }
 
-const fn project_bedrock_command_permission_level(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_command_permission_level(
     value: pumpkin_protocol::bedrock::client::common::CommandPermissionLevel,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::CommandPermissionLevel> {
     Some(match value {
@@ -1147,7 +1256,22 @@ const fn project_bedrock_command_permission_level(
     })
 }
 
-const fn project_bedrock_container_name(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_constrained_value_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::ConstrainedValueData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ConstrainedValueData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ConstrainedValueData {
+            enum_value_symbol: record_value.enum_value_symbol as _,
+            enum_symbol: record_value.enum_symbol as _,
+            constraint_indices: record_value.constraint_indices,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_container_name(
     value: pumpkin_protocol::bedrock::network_item::ContainerName,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ContainerName> {
     Some(match value {
@@ -1359,6 +1483,24 @@ const fn project_bedrock_container_name(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_enum_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::EnumData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::EnumData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::EnumData {
+            name: record_value.name.into(),
+            values: record_value
+                .values
+                .iter()
+                .map(|&value| value as _)
+                .collect(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_experiment_toggle(
     value: pumpkin_protocol::bedrock::client::start_game::ExperimentToggle,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ExperimentToggle> {
@@ -1371,6 +1513,7 @@ fn project_bedrock_experiment_toggle(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_experiments(
     value: pumpkin_protocol::bedrock::client::start_game::Experiments,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::Experiments> {
@@ -1387,6 +1530,7 @@ fn project_bedrock_experiments(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_full_container_name(
     value: pumpkin_protocol::bedrock::network_item::FullContainerName,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::FullContainerName> {
@@ -1399,7 +1543,8 @@ fn project_bedrock_full_container_name(
     })
 }
 
-const fn project_bedrock_game_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_game_type(
     value: pumpkin_protocol::bedrock::client::common::GameType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::GameType> {
     Some(match value {
@@ -1424,7 +1569,8 @@ const fn project_bedrock_game_type(
     })
 }
 
-const fn project_bedrock_hand_slot(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_hand_slot(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::HandSlot,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::HandSlot> {
     Some(match value {
@@ -1437,6 +1583,7 @@ const fn project_bedrock_hand_slot(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_inventory_action(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::InventoryAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::InventoryAction> {
@@ -1455,6 +1602,7 @@ fn project_bedrock_inventory_action(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_request(
     value: pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequest,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackRequest> {
@@ -1477,6 +1625,7 @@ fn project_bedrock_item_stack_request(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_request_action(
     value: pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackRequestAction> {
@@ -1555,6 +1704,7 @@ times_crafted: times_crafted.try_into().ok()?,
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_request_slot_info(
     value: pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackRequestSlotInfo> {
@@ -1568,6 +1718,7 @@ fn project_bedrock_item_stack_request_slot_info(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_response_container_info(
     value: pumpkin_protocol::bedrock::client::item_stack_response::ItemStackResponseContainerInfo,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackResponseContainerInfo> {
@@ -1586,6 +1737,7 @@ fn project_bedrock_item_stack_response_container_info(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_response_info(
     value: pumpkin_protocol::bedrock::client::item_stack_response::ItemStackResponseInfo,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackResponseInfo> {
@@ -1603,6 +1755,7 @@ fn project_bedrock_item_stack_response_info(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_response_slot_info(
     value: pumpkin_protocol::bedrock::client::item_stack_response::ItemStackResponseSlotInfo,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackResponseSlotInfo> {
@@ -1620,6 +1773,7 @@ fn project_bedrock_item_stack_response_slot_info(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_legacy_set_item_slot(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::LegacySetItemSlot,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::LegacySetItemSlot> {
@@ -1632,7 +1786,8 @@ fn project_bedrock_legacy_set_item_slot(
     })
 }
 
-const fn project_bedrock_loading_screen_packet_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_loading_screen_packet_type(
     value: pumpkin_protocol::bedrock::server::loading_screen::LoadingScreenPacketType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::LoadingScreenPacketType> {
     Some(match value {
@@ -1641,6 +1796,7 @@ pumpkin_protocol::bedrock::server::loading_screen::LoadingScreenPacketType::EndL
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_missing_blob_data(
     value: pumpkin_protocol::bedrock::client::client_cache_miss_response::MissingBlobData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::MissingBlobData> {
@@ -1653,6 +1809,7 @@ fn project_bedrock_missing_blob_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_network_item_descriptor(
     value: pumpkin_protocol::bedrock::network_item::NetworkItemDescriptor,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::NetworkItemDescriptor> {
@@ -1681,6 +1838,7 @@ fn project_bedrock_network_item_descriptor(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_network_item_stack_descriptor(
     value: pumpkin_protocol::bedrock::network_item::NetworkItemStackDescriptor,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::NetworkItemStackDescriptor> {
@@ -1692,14 +1850,31 @@ fn project_bedrock_network_item_stack_descriptor(
             aux_value: record_value.aux_value.0 as _,
             block_runtime_id: record_value.block_runtime_id.0 as _,
             extra_data: record_value.extra_data,
-            net_id: match record_value.net_id {
-                Some(element) => Some(element.get().try_into().ok()?),
-                None => None,
-            },
+            net_id: record_value.net_id.map_or(Some(None), |element| {
+                Some(Some(element.get().try_into().ok()?))
+            })?,
         }
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_overload_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::OverloadData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::OverloadData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::OverloadData {
+            is_chaining: record_value.is_chaining.try_into().ok()?,
+            parameter_data: record_value
+                .parameter_data
+                .into_iter()
+                .map(|element| Some(project_bedrock_param_data(element)?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_pack_id_version(
     value: pumpkin_protocol::bedrock::client::resource_packs_info::PackIdVersion,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PackIdVersion> {
@@ -1714,6 +1889,7 @@ fn project_bedrock_pack_id_version(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_pack_info_data(
     value: pumpkin_protocol::bedrock::client::resource_packs_info::PackInfoData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PackInfoData> {
@@ -1733,6 +1909,7 @@ fn project_bedrock_pack_info_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_pack_instance_id(
     value: pumpkin_protocol::bedrock::client::resource_pack_stack::PackInstanceId,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PackInstanceId> {
@@ -1746,7 +1923,23 @@ fn project_bedrock_pack_instance_id(
     })
 }
 
-const fn project_bedrock_player_action_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_param_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::ParamData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ParamData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ParamData {
+            name: record_value.name.into(),
+            parse_symbol: record_value.parse_symbol as _,
+            is_optional: record_value.is_optional.try_into().ok()?,
+            options: record_value.options.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_player_action_type(
     value: pumpkin_protocol::bedrock::server::player_action::PlayerActionType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerActionType> {
     Some(match value {
@@ -1794,6 +1987,7 @@ pumpkin_protocol::bedrock::server::player_action::PlayerActionType::Count => cra
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_player_block_action(
     value: pumpkin_protocol::bedrock::server::player_auth_input::PlayerBlockAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerBlockAction> {
@@ -1811,6 +2005,7 @@ fn project_bedrock_player_block_action(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_player_inventory_action(
     value: pumpkin_protocol::bedrock::server::player_auth_input::PlayerInventoryAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerInventoryAction> {
@@ -1835,7 +2030,8 @@ fn project_bedrock_player_inventory_action(
     })
 }
 
-const fn project_bedrock_player_permission_level(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_player_permission_level(
     value: pumpkin_protocol::bedrock::client::common::PlayerPermissionLevel,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerPermissionLevel> {
     Some(match value {
@@ -1854,6 +2050,7 @@ const fn project_bedrock_player_permission_level(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_player_use_item_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::UseItemTransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerUseItemTransactionData> {
@@ -1887,6 +2084,7 @@ fn project_bedrock_player_use_item_transaction_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_release_item_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::ReleaseItemTransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ReleaseItemTransactionData> {
@@ -1905,7 +2103,8 @@ fn project_bedrock_release_item_transaction_data(
     })
 }
 
-const fn project_bedrock_respawn_state(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_respawn_state(
     value: pumpkin_protocol::bedrock::server::respawn::RespawnState,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::RespawnState> {
     Some(match value {
@@ -1921,6 +2120,24 @@ const fn project_bedrock_respawn_state(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_score_entry(
+    value: pumpkin_protocol::bedrock::client::set_score::ScoreEntry,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ScoreEntry> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ScoreEntry {
+            scoreboard_id: record_value.scoreboard_id.try_into().ok()?,
+            objective_name: record_value.objective_name.into(),
+            score: record_value.score.0.try_into().ok()?,
+            entry_type: record_value.entry_type.0.try_into().ok()?,
+            entity_unique_id: record_value.entity_unique_id.try_into().ok()?,
+            custom_name: record_value.custom_name.into(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_serialized_abilities_data(
     value: pumpkin_protocol::bedrock::client::common::SerializedAbilitiesData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::SerializedAbilitiesData> {
@@ -1947,6 +2164,7 @@ fn project_bedrock_serialized_abilities_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_serialized_abilities_data_serialized_layer(
     value: pumpkin_protocol::bedrock::client::common::SerializedAbilitiesDataSerializedLayer,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::SerializedAbilitiesDataSerializedLayer> {
@@ -1963,7 +2181,25 @@ fn project_bedrock_serialized_abilities_data_serialized_layer(
     })
 }
 
-const fn project_bedrock_spawn_position_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_soft_enum_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::SoftEnumData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::SoftEnumData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::SoftEnumData {
+            enum_name: record_value.enum_name.into(),
+            enum_options: record_value
+                .enum_options
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_spawn_position_type(
     value: pumpkin_protocol::bedrock::client::set_spawn_position::SpawnPositionType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::SpawnPositionType> {
     Some(match value {
@@ -1976,6 +2212,7 @@ const fn project_bedrock_spawn_position_type(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_stack_request_item(
     value: pumpkin_protocol::bedrock::server::item_stack_request::StackRequestItem,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::StackRequestItem> {
@@ -1991,7 +2228,8 @@ fn project_bedrock_stack_request_item(
     })
 }
 
-const fn project_bedrock_text_packet_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_text_packet_type(
     value: pumpkin_protocol::bedrock::server::text::TextPacketType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::TextPacketType> {
     Some(match value {
@@ -2034,7 +2272,8 @@ const fn project_bedrock_text_packet_type(
     })
 }
 
-const fn project_bedrock_title_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_title_type(
     value: pumpkin_protocol::bedrock::client::set_title::TitleType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::TitleType> {
     Some(match value {
@@ -2068,6 +2307,7 @@ const fn project_bedrock_title_type(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::TransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::TransactionData> {
@@ -2080,6 +2320,7 @@ pumpkin_protocol::bedrock::server::inventory_transaction::TransactionData::Relea
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_use_item_on_entity_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::UseItemOnEntityTransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::UseItemOnEntityTransactionData> {
@@ -2104,6 +2345,7 @@ fn project_bedrock_use_item_on_entity_transaction_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_use_item_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::UseItemTransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::UseItemTransactionData> {

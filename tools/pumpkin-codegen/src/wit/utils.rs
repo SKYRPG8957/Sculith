@@ -31,6 +31,13 @@ pub fn map_type(ty: &Type, defined_types: &HashSet<String>) -> (WitType, bool) {
                 "Bytes" | "BoxedU8Slice" | "ChunkData" => (WitType::list(WitType::U8), true),
                 "BitSet" | "Bitset" => (WitType::list(WitType::S64), true),
                 "NbtCompound" | "Nbt" => (WitType::Named("nbt-tree".into()), true),
+                "SyncedActorDataList" => (
+                    WitType::list(WitType::tuple([
+                        WitType::S32,
+                        WitType::named("metadata-value"),
+                    ])),
+                    true,
+                ),
                 "Option" => {
                     if let PathArguments::AngleBracketed(args) = &last_segment.arguments
                         && let Some(GenericArgument::Type(inner_ty)) = args.args.first()

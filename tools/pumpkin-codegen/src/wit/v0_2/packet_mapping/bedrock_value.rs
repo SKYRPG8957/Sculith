@@ -135,15 +135,39 @@ impl<'a> BedrockValues<'a> {
             ));
         }
 
+        if name == "SyncedActorDataList" {
+            return self.project_value(
+                &syn::parse_quote!(HashMap<u32, MetadataValue>),
+                &format!("{source}.0"),
+                visiting,
+            );
+        }
+
+        if name == "HashMap"
+            && let PathArguments::AngleBracketed(params) = &segment.arguments
+            && let (Some(GenericArgument::Type(key)), Some(GenericArgument::Type(item))) =
+                (params.args.first(), params.args.iter().nth(1))
+        {
+            let key = self.project_value(key, "key", visiting)?;
+            let item = self.project_value(item, "item", visiting)?;
+            return Some(format!(
+                "{{ let mut entries = {source}.into_iter().collect::<Vec<_>>();\nentries.sort_unstable_by(|a, b| a.0.cmp(&b.0));\nentries.into_iter().map(|(key, item)| Some(({key}, {item}))).collect::<Option<Vec<_>>>()? }}"
+            ));
+        }
+
         if let PathArguments::AngleBracketed(params) = &segment.arguments
             && let Some(GenericArgument::Type(inner)) = params.args.first()
         {
             return match name.as_str() {
                 "Option" => {
                     let value = self.project_value(inner, "element", visiting)?;
-                    Some(format!(
-                        "match {source} {{ Some(element) => Some({value}), None => None }}"
-                    ))
+                    if value.contains('?') {
+                        Some(format!(
+                            "{source}.map_or(Some(None), |element| Some(Some({value})))?"
+                        ))
+                    } else {
+                        Some(format!("{source}.map(|element| {value})"))
+                    }
                 }
                 "Vec" => {
                     let value = self.project_value(inner, "element", visiting)?;
@@ -158,7 +182,8 @@ impl<'a> BedrockValues<'a> {
                             "{source}.into_vec().into_iter().map(|element| Some({value})).collect::<Option<Vec<_>>>()?"
                         ))
                     } else {
-                        self.project_value(inner, &format!("(*{source})"), visiting)
+                        let value = self.project_value(inner, "unboxed", visiting)?;
+                        Some(format!("{{ let unboxed = *{source}; {value} }}"))
                     }
                 }
                 "NonZero" => self.project_value(inner, &format!("{source}.get()"), visiting),
@@ -228,20 +253,9 @@ impl<'a> BedrockValues<'a> {
             1 => "<'_>",
             _ => return None,
         };
-        let const_prefix = match ty {
-            Item::Struct(record) if matches!(record.fields, Fields::Unit) => "const ",
-            Item::Enum(enumeration)
-                if enumeration
-                    .variants
-                    .iter()
-                    .all(|variant| matches!(variant.fields, Fields::Unit)) =>
-            {
-                "const "
-            }
-            _ => "",
-        };
+        // These functions share one code path for runtime values, including owned collections.
         let definition = format!(
-            "{const_prefix}fn {function}(value: {rust_module}::{rust_name}{lifetimes}) -> Option<{wit_type}> {{\n    Some({result})\n}}\n\n"
+            "#[allow(clippy::missing_const_for_fn)]\nfn {function}(value: {rust_module}::{rust_name}{lifetimes}) -> Option<{wit_type}> {{\n    Some({result})\n}}\n\n"
         );
         self.projections.borrow_mut().insert(function, definition);
         Some(call)

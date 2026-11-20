@@ -483,13 +483,9 @@ impl<'a> PacketReadSlice<'a> for Cow<'a, str> {
 
 impl PacketRead for pumpkin_nbt::compound::NbtCompound {
     fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
-        let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes)?;
-        let cursor = std::io::Cursor::new(bytes.as_slice());
-        let mut helper = pumpkin_nbt::deserializer::NbtReadHelperBedrock::new(cursor);
-        let nbt = pumpkin_nbt::Nbt::read(&mut helper)
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
-        Ok(nbt.root_tag)
+        pumpkin_nbt::Nbt::read_bedrock(reader)
+            .map(|nbt| nbt.root_tag)
+            .map_err(|error| Error::new(ErrorKind::InvalidData, error))
     }
 }
 

@@ -2,8 +2,9 @@ use std::io::{Error, Write};
 
 use pumpkin_data::bedrock_jigsaw::JIGSAW_STRUCTURE_DATA;
 use pumpkin_macros::packet;
+use pumpkin_nbt::NbtCompound;
 
-use crate::serial::PacketWrite;
+use crate::serial::{PacketRead, PacketWrite};
 
 /// Transmits server-defined jigsaw structure generation rules, processors, and template pools.
 #[packet(pumpkin_data::bedrock_packet::JIGSAW_STRUCTURE_DATA)]
@@ -15,12 +16,15 @@ impl PacketWrite for CJigsawStructureData {
     }
 }
 
+/// Parsed structure, processor and template registries.
+#[derive(PacketRead)]
+#[packet(pumpkin_data::bedrock_packet::JIGSAW_STRUCTURE_DATA)]
+pub struct CJigsawStructureDataPayload {
+    pub data: NbtCompound,
+}
+
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
-    use pumpkin_nbt::{Nbt, deserializer::NbtReadHelperBedrock};
-
     use super::*;
 
     #[test]
@@ -28,10 +32,9 @@ mod tests {
         let mut encoded = Vec::new();
         CJigsawStructureData.write(&mut encoded).unwrap();
 
-        let mut cursor = Cursor::new(encoded.as_slice());
-        let mut reader = NbtReadHelperBedrock::new(&mut cursor);
-        let nbt = Nbt::read(&mut reader).unwrap();
-        assert_eq!(cursor.position() as usize, encoded.len());
+        let mut body = encoded.as_slice();
+        let nbt = CJigsawStructureDataPayload::read(&mut body).unwrap().data;
+        assert!(body.is_empty());
 
         assert_eq!(
             nbt.get_list("jigsaws").unwrap().len(),

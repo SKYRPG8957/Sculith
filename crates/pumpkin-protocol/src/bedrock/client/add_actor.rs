@@ -2,7 +2,7 @@
 
 use crate::{
     codec::{var_long::VarLong, var_ulong::VarULong},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_macros::packet;
 use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
@@ -14,7 +14,7 @@ use super::{
 };
 
 /// Sent by the server to spawn non-player entities (mobs, projectiles, vehicles, items) on the client.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::ADD_ACTOR)]
 pub struct CAddActor {
     /// Unique entity ID across sessions.
@@ -46,7 +46,7 @@ pub struct CAddActor {
 }
 
 /// Synchronized numeric entity attribute with min, current, and max bounds.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct SyncedAttribute {
     /// Identifier string for the attribute (e.g. `minecraft:health`).
     pub attribute_name: String,

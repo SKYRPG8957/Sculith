@@ -1,17 +1,20 @@
 // Last verified for v2169
 
-use std::{collections::HashMap, io::Write};
+use std::{
+    collections::HashMap,
+    io::{Error, ErrorKind, Read, Write},
+};
 
 use crate::{
     codec::{var_int::VarInt, var_long::VarLong, var_uint::VarUInt, var_ulong::VarULong},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_macros::packet;
+use pumpkin_nbt::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
-use std::io::Error;
 
 /// Sent by the server to update metadata and Molang properties of an entity (e.g. name tags, fire, scale).
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::SET_ACTOR_DATA)]
 pub struct CSetActorData {
     /// The unique runtime ID of the entity being updated
@@ -113,6 +116,40 @@ impl PacketWrite for SyncedActorDataList {
     }
 }
 
+fn read_indexed_values<R: Read, V>(
+    reader: &mut R,
+    mut read_value: impl FnMut(&mut R) -> Result<V, Error>,
+) -> Result<HashMap<u32, V>, Error> {
+    let count = VarUInt::read(reader)?.0 as usize;
+    if count > 65_536 {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "too many Bedrock actor data entries",
+        ));
+    }
+    let mut values = HashMap::with_capacity(count.min(64));
+    for _ in 0..count {
+        values.insert(VarUInt::read(reader)?.0, read_value(reader)?);
+    }
+    Ok(values)
+}
+
+impl PacketRead for SyncedActorDataList {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        read_indexed_values(reader, |reader| {
+            let type_id = VarUInt::read(reader)?.0;
+            if u32::from(u8::read(reader)?) != type_id {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "inconsistent Bedrock actor data type",
+                ));
+            }
+            MetadataValue::read_for_type(reader, type_id)
+        })
+        .map(Self)
+    }
+}
+
 #[derive(Clone)]
 pub enum MetadataValue {
     Byte(i8),
@@ -120,7 +157,7 @@ pub enum MetadataValue {
     Int(i32),
     Float(f32),
     String(String),
-    CompoundTag,
+    CompoundTag(NbtCompound),
     ItemPos(BlockPos),
     Int64(i64),
     Vec3(Vector3<f32>),
@@ -135,7 +172,7 @@ impl MetadataValue {
             Self::Int(_) => 2,
             Self::Float(_) => 3,
             Self::String(_) => 4,
-            Self::CompoundTag => 5,
+            Self::CompoundTag(_) => 5,
             Self::ItemPos(_) => 6,
             Self::Int64(_) => 7,
             Self::Vec3(_) => 8,
@@ -149,11 +186,31 @@ impl MetadataValue {
             Self::Int(v) => VarInt(*v).write(writer),
             Self::Float(v) => v.write(writer),
             Self::String(v) => v.write(writer),
-            Self::CompoundTag => Err(Error::other("CompoundTag not implemented")),
+            Self::CompoundTag(nbt) => nbt.write(writer),
             Self::ItemPos(v) => v.write(writer),
             Self::Int64(v) => VarLong(*v).write(writer),
             Self::Vec3(v) => v.write(writer),
         }
+    }
+
+    fn read_for_type<R: Read>(reader: &mut R, type_id: u32) -> Result<Self, Error> {
+        Ok(match type_id {
+            0 => Self::Byte(i8::read(reader)?),
+            1 => Self::Short(i16::read(reader)?),
+            2 => Self::Int(VarInt::read(reader)?.0),
+            3 => Self::Float(f32::read(reader)?),
+            4 => Self::String(String::read(reader)?),
+            5 => Self::CompoundTag(NbtCompound::read(reader)?),
+            6 => Self::ItemPos(BlockPos::read(reader)?),
+            7 => Self::Int64(VarLong::read(reader)?.0),
+            8 => Self::Vec3(Vector3::read(reader)?),
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "invalid Bedrock actor data type",
+                ));
+            }
+        })
     }
 }
 
@@ -177,6 +234,17 @@ impl PacketWrite for PropertySyncData {
             value.write(writer)?;
         }
         Ok(())
+    }
+}
+
+impl PacketRead for PropertySyncData {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let int_entries_list = read_indexed_values(reader, |reader| Ok(VarInt::read(reader)?.0))?;
+        let float_entries_list = read_indexed_values(reader, f32::read)?;
+        Ok(Self {
+            int_entries_list,
+            float_entries_list,
+        })
     }
 }
 pub mod entity_data_key {
@@ -458,6 +526,37 @@ pub mod entity_data_flag {
 #[cfg(test)]
 mod tests {
     use super::{SyncedActorDataList, entity_data_key};
+
+    #[test]
+    fn preserves_metadata_nbt_and_the_following_properties() {
+        use super::*;
+
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("key", "value".into());
+        let mut actor_data = SyncedActorDataList::new();
+        actor_data.set(2, MetadataValue::CompoundTag(nbt));
+        let packet = CSetActorData {
+            target_runtime_id: VarULong(4),
+            actor_data,
+            synced_properties: PropertySyncData {
+                int_entries_list: HashMap::from([(7, -32)]),
+                float_entries_list: HashMap::from([(8, 1.5)]),
+            },
+            tick: VarULong(9),
+        };
+        let mut encoded = Vec::new();
+        packet.write(&mut encoded).unwrap();
+        let mut body = encoded.as_slice();
+        let decoded = CSetActorData::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        let Some(MetadataValue::CompoundTag(nbt)) = decoded.actor_data.0.get(&2) else {
+            panic!("expected a typed NBT metadata value");
+        };
+        assert_eq!(nbt.get_string("key"), Some("value"));
+        assert_eq!(decoded.synced_properties.int_entries_list[&7], -32);
+        assert_eq!(decoded.synced_properties.float_entries_list[&8], 1.5);
+        assert_eq!(decoded.tick, VarULong(9));
+    }
 
     #[test]
     fn partial_metadata_does_not_reset_flags() {

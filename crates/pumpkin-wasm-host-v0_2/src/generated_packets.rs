@@ -3770,7 +3770,7 @@ pub fn deserialize_bedrock_serverbound_packet(
                 action: project_bedrock_animate_action(p.action)?,
                 target_actor_runtime_id: p.target_actor_runtime_id.0 as _,
                 data: p.data.try_into().ok()?,
-                swing_source: match p.swing_source { Some(element) => Some(project_bedrock_actor_swing_source(element.into_inner())?), None => None },
+                swing_source: p.swing_source.map_or(Some(None), |element| Some(Some(project_bedrock_actor_swing_source(element.into_inner())?)))?,
                 hand: p.hand.try_into().ok()?,
             }))
         }
@@ -3808,6 +3808,28 @@ pub fn deserialize_bedrock_serverbound_packet(
             if !body.is_empty() { return None; }
             Some(BServerboundPacket::SClientCacheStatus(crate::pumpkin::plugin::bedrock_packets::SClientCacheStatus {
                 is_cache_supported: p.is_cache_supported.try_into().ok()?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::server::SClientMovementPredictionSync as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::server::SClientMovementPredictionSync as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BServerboundPacket::SClientMovementPredictionSync(crate::pumpkin::plugin::bedrock_packets::SClientMovementPredictionSync {
+                actor_flags: p.actor_flags.into_iter().map(|element| Some(element as _)).collect::<Option<Vec<_>>>()?,
+                bounding_box_scale: p.bounding_box_scale.try_into().ok()?,
+                bounding_box_width: p.bounding_box_width.try_into().ok()?,
+                bounding_box_height: p.bounding_box_height.try_into().ok()?,
+                movement_speed: p.movement_speed.try_into().ok()?,
+                underwater_movement_speed: p.underwater_movement_speed.try_into().ok()?,
+                lava_movement_speed: p.lava_movement_speed.try_into().ok()?,
+                jump_strength: p.jump_strength.try_into().ok()?,
+                health: p.health.try_into().ok()?,
+                hunger: p.hunger.try_into().ok()?,
+                friction_modifier: p.friction_modifier.try_into().ok()?,
+                bounciness: p.bounciness.try_into().ok()?,
+                air_drag_modifier: p.air_drag_modifier.try_into().ok()?,
+                actor_unique_id: p.actor_unique_id.0.try_into().ok()?,
+                flying: p.flying.try_into().ok()?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::server::SCommandRequest as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -3981,9 +4003,9 @@ pub fn deserialize_bedrock_serverbound_packet(
                 interact_yaw: p.interact_yaw.try_into().ok()?,
                 tick: p.tick.0 as _,
                 delta: (p.delta.x as _, p.delta.y as _, p.delta.z as _),
-                block_actions: match p.block_actions { Some(element) => Some(element.into_iter().map(|element| Some(project_bedrock_player_block_action(element)?)).collect::<Option<Vec<_>>>()?), None => None },
-                item_interaction: match p.item_interaction { Some(element) => Some(project_bedrock_player_inventory_action(element)?), None => None },
-                item_stack_request: match p.item_stack_request { Some(element) => Some(project_bedrock_item_stack_request(element)?), None => None },
+                block_actions: p.block_actions.map_or(Some(None), |element| Some(Some(element.into_iter().map(|element| Some(project_bedrock_player_block_action(element)?)).collect::<Option<Vec<_>>>()?)))?,
+                item_interaction: p.item_interaction.map_or(Some(None), |element| Some(Some(project_bedrock_player_inventory_action(element)?)))?,
+                item_stack_request: p.item_stack_request.map_or(Some(None), |element| Some(Some(project_bedrock_item_stack_request(element)?)))?,
                 vehicle_rotation: p.vehicle_rotation.as_ref().map(|value| (value.x as _, value.y as _)),
                 vehicle_unique_id: p.vehicle_unique_id.map(|value| value.0.try_into()).transpose().ok()?,
                 analog_move: (p.analog_move.x as _, p.analog_move.y as _),
@@ -4127,6 +4149,102 @@ pub fn deserialize_bedrock_clientbound_packet(
     payload: &[u8],
 ) -> Option<BClientboundPacket> {
     match id {
+        id if id == <pumpkin_protocol::bedrock::client::CAddActor as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CAddActor as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CAddActor(crate::pumpkin::plugin::bedrock_packets::CAddActor {
+                target_actor_id: p.target_actor_id.0.try_into().ok()?,
+                target_runtime_id: p.target_runtime_id.0 as _,
+                actor_type: p.actor_type.into(),
+                position: (p.position.x as _, p.position.y as _, p.position.z as _),
+                velocity: (p.velocity.x as _, p.velocity.y as _, p.velocity.z as _),
+                rotation: (p.rotation.x as _, p.rotation.y as _),
+                y_head_rotation: p.y_head_rotation.try_into().ok()?,
+                y_body_rotation: p.y_body_rotation.try_into().ok()?,
+                attributes_list: p.attributes_list.into_iter().map(|element| Some(project_bedrock_synced_attribute(element)?)).collect::<Option<Vec<_>>>()?,
+                actor_data: { let mut entries = p.actor_data.0.into_iter().collect::<Vec<_>>();
+entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+entries.into_iter().map(|(key, item)| Some((key as _, project_bedrock_metadata_value(item)?))).collect::<Option<Vec<_>>>()? },
+                synced_properties: project_bedrock_property_sync_data(p.synced_properties)?,
+                actor_links: p.actor_links.into_iter().map(|element| Some(project_bedrock_actor_link(element)?)).collect::<Option<Vec<_>>>()?,
+                passenger_of_block: p.passenger_of_block.map_or(Some(None), |element| Some(Some(project_bedrock_passenger_of_block_data(element)?)))?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CAddItemActor as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CAddItemActor as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CAddItemActor(crate::pumpkin::plugin::bedrock_packets::CAddItemActor {
+                target_actor_id: p.target_actor_id.0.try_into().ok()?,
+                target_runtime_id: p.target_runtime_id.0 as _,
+                item: project_bedrock_item_stack_wrapper(p.item)?,
+                position: (p.position.x as _, p.position.y as _, p.position.z as _),
+                velocity: (p.velocity.x as _, p.velocity.y as _, p.velocity.z as _),
+                entity_data: { let mut entries = p.entity_data.0.into_iter().collect::<Vec<_>>();
+entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+entries.into_iter().map(|(key, item)| Some((key as _, project_bedrock_metadata_value(item)?))).collect::<Option<Vec<_>>>()? },
+                is_from_fishing: p.is_from_fishing.try_into().ok()?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CAddPlayer as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CAddPlayer as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CAddPlayer(crate::pumpkin::plugin::bedrock_packets::CAddPlayer {
+                uuid: <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(&p.uuid),
+                player_name: p.player_name.into(),
+                target_runtime_id: p.target_runtime_id.0 as _,
+                platform_chat_id: p.platform_chat_id.into(),
+                position: (p.position.x as _, p.position.y as _, p.position.z as _),
+                velocity: (p.velocity.x as _, p.velocity.y as _, p.velocity.z as _),
+                rotation: (p.rotation.x as _, p.rotation.y as _),
+                y_head_rotation: p.y_head_rotation.try_into().ok()?,
+                carried_item: project_bedrock_network_item_stack_descriptor(p.carried_item)?,
+                player_game_type: project_bedrock_game_type(p.player_game_type)?,
+                entity_data: { let mut entries = p.entity_data.0.into_iter().collect::<Vec<_>>();
+entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+entries.into_iter().map(|(key, item)| Some((key as _, project_bedrock_metadata_value(item)?))).collect::<Option<Vec<_>>>()? },
+                synced_properties: project_bedrock_property_sync_data(p.synced_properties)?,
+                abilities_data: project_bedrock_serialized_abilities_data(p.abilities_data)?,
+                actor_links: p.actor_links.into_iter().map(|element| Some(project_bedrock_actor_link(element)?)).collect::<Option<Vec<_>>>()?,
+                passenger_of_block: p.passenger_of_block.map_or(Some(None), |element| Some(Some(project_bedrock_passenger_of_block_data(element)?)))?,
+                device_id: p.device_id.into(),
+                build_platform: project_bedrock_build_platform(p.build_platform)?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CAvailableActorIdentifiersPayload as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CAvailableActorIdentifiersPayload as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CAvailableActorIdentifiersPayload(crate::pumpkin::plugin::bedrock_packets::CAvailableActorIdentifiersPayload {
+                identifiers: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(p.identifiers)),
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CAvailableCommands as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CAvailableCommands as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CAvailableCommands(crate::pumpkin::plugin::bedrock_packets::CAvailableCommands {
+                enum_values: p.enum_values.iter().map(|s| s.to_string()).collect(),
+                chained_subcommand_values: p.chained_subcommand_values.iter().map(|s| s.to_string()).collect(),
+                post_fixes: p.post_fixes.iter().map(|s| s.to_string()).collect(),
+                enum_data: p.enum_data.into_iter().map(|element| Some(project_bedrock_enum_data(element)?)).collect::<Option<Vec<_>>>()?,
+                chained_subcommand_data: p.chained_subcommand_data.into_iter().map(|element| Some(project_bedrock_chained_subcommand_data(element)?)).collect::<Option<Vec<_>>>()?,
+                commands: p.commands.into_iter().map(|element| Some(project_bedrock_command_data(element)?)).collect::<Option<Vec<_>>>()?,
+                soft_enums: p.soft_enums.into_iter().map(|element| Some(project_bedrock_soft_enum_data(element)?)).collect::<Option<Vec<_>>>()?,
+                constraints: p.constraints.into_iter().map(|element| Some(project_bedrock_constrained_value_data(element)?)).collect::<Option<Vec<_>>>()?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CBiomeDefinitionListPayload as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CBiomeDefinitionListPayload as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CBiomeDefinitionListPayload(crate::pumpkin::plugin::bedrock_packets::CBiomeDefinitionListPayload {
+                biomes: p.biomes.into_iter().map(|element| Some(project_bedrock_bedrock_biome_definition(element)?)).collect::<Option<Vec<_>>>()?,
+                strings: p.strings.iter().map(|s| s.to_string()).collect(),
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::client::CBlockActorData as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = <pumpkin_protocol::bedrock::client::CBlockActorData as pumpkin_protocol::serial::PacketReadSlice>::read_slice(&mut body).ok()?;
@@ -4250,6 +4368,34 @@ pub fn deserialize_bedrock_clientbound_packet(
                 tick: p.tick.0 as _,
             }))
         }
+        id if id == <pumpkin_protocol::bedrock::client::CCraftingDataPayload as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CCraftingDataPayload as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CCraftingDataPayload(crate::pumpkin::plugin::bedrock_packets::CCraftingDataPayload {
+                shaped: p.shaped.into_iter().map(|element| Some(project_bedrock_bedrock_shaped_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                shapeless: p.shapeless.into_iter().map(|element| Some(project_bedrock_bedrock_shapeless_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                multi: p.multi.into_iter().map(|element| Some(project_bedrock_bedrock_multi_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                user_data_shapeless: p.user_data_shapeless.into_iter().map(|element| Some(project_bedrock_bedrock_shapeless_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                shapeless_chemistry: p.shapeless_chemistry.into_iter().map(|element| Some(project_bedrock_bedrock_shapeless_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                shaped_chemistry: p.shaped_chemistry.into_iter().map(|element| Some(project_bedrock_bedrock_shaped_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                smithing_transform: p.smithing_transform.into_iter().map(|element| Some(project_bedrock_bedrock_smithing_transform_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                smithing_trim: p.smithing_trim.into_iter().map(|element| Some(project_bedrock_bedrock_smithing_trim_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                potions: p.potions.into_iter().map(|element| Some(project_bedrock_bedrock_potion_recipe(element)?)).collect::<Option<Vec<_>>>()?,
+                potion_container_changes: p.potion_container_changes.into_iter().map(|element| Some(project_bedrock_bedrock_potion_container_change(element)?)).collect::<Option<Vec<_>>>()?,
+                material_reducers: p.material_reducers.into_iter().map(|element| Some(project_bedrock_bedrock_material_reducer(element)?)).collect::<Option<Vec<_>>>()?,
+                clean_recipes: p.clean_recipes.try_into().ok()?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CCreativeContentPayload as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CCreativeContentPayload as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CCreativeContentPayload(crate::pumpkin::plugin::bedrock_packets::CCreativeContentPayload {
+                groups: p.groups.into_iter().map(|element| Some(project_bedrock_creative_group_info_payload(element)?)).collect::<Option<Vec<_>>>()?,
+                entries: p.entries.into_iter().map(|element| Some(project_bedrock_creative_item_entry_payload(element)?)).collect::<Option<Vec<_>>>()?,
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::client::CDisconnect as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = <pumpkin_protocol::bedrock::client::CDisconnect as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
@@ -4259,6 +4405,14 @@ pub fn deserialize_bedrock_clientbound_packet(
                 skip_message: p.skip_message.try_into().ok()?,
                 message: p.message.into(),
                 filtered_message: p.filtered_message.into(),
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CGamerulesChanged as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CGamerulesChanged as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CGamerulesChanged(crate::pumpkin::plugin::bedrock_packets::CGamerulesChanged {
+                rule_data: p.rule_data.into_iter().map(|element| Some(project_bedrock_game_rule(element)?)).collect::<Option<Vec<_>>>()?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CInventoryContent as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -4279,9 +4433,17 @@ pub fn deserialize_bedrock_clientbound_packet(
             Some(BClientboundPacket::CInventorySlot(crate::pumpkin::plugin::bedrock_packets::CInventorySlot {
                 container_id: p.container_id.0 as _,
                 slot: p.slot.0 as _,
-                full_container_name: match p.full_container_name { Some(element) => Some(project_bedrock_full_container_name(element)?), None => None },
-                storage_item: match p.storage_item { Some(element) => Some(project_bedrock_network_item_stack_descriptor(element)?), None => None },
+                full_container_name: p.full_container_name.map_or(Some(None), |element| Some(Some(project_bedrock_full_container_name(element)?)))?,
+                storage_item: p.storage_item.map_or(Some(None), |element| Some(Some(project_bedrock_network_item_stack_descriptor(element)?)))?,
                 item: project_bedrock_network_item_stack_descriptor(p.item)?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CItemRegistryPayload as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CItemRegistryPayload as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CItemRegistryPayload(crate::pumpkin::plugin::bedrock_packets::CItemRegistryPayload {
+                items: p.items.into_iter().map(|element| Some(project_bedrock_registered_item(element)?)).collect::<Option<Vec<_>>>()?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CItemStackResponse as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -4290,6 +4452,14 @@ pub fn deserialize_bedrock_clientbound_packet(
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CItemStackResponse(crate::pumpkin::plugin::bedrock_packets::CItemStackResponse {
                 responses: p.responses.into_iter().map(|element| Some(project_bedrock_item_stack_response_info(element)?)).collect::<Option<Vec<_>>>()?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CJigsawStructureDataPayload as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CJigsawStructureDataPayload as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CJigsawStructureDataPayload(crate::pumpkin::plugin::bedrock_packets::CJigsawStructureDataPayload {
+                data: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(p.data)),
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CLevelChunkPayload as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -4353,7 +4523,7 @@ pub fn deserialize_bedrock_clientbound_packet(
             Some(BClientboundPacket::CMatchmakingState(crate::pumpkin::plugin::bedrock_packets::CMatchmakingState {
                 state: p.state.try_into().ok()?,
                 destination_name: p.destination_name.into(),
-                options: match p.options { Some(element) => Some(project_bedrock_matchmaking_state_options(element)?), None => None },
+                options: p.options.map_or(Some(None), |element| Some(Some(project_bedrock_matchmaking_state_options(element)?)))?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CMobArmorEquipment as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -4574,6 +4744,14 @@ pub fn deserialize_bedrock_clientbound_packet(
                 should_select_slot: p.should_select_slot.try_into().ok()?,
             }))
         }
+        id if id == <pumpkin_protocol::bedrock::client::CPlayerListPayload as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CPlayerListPayload as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CPlayerListPayload(crate::pumpkin::plugin::bedrock_packets::CPlayerListPayload {
+                entries: p.entries.into_iter().map(|element| Some(project_bedrock_player_list_change(element)?)).collect::<Option<Vec<_>>>()?,
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::client::CRemoveActor as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = pumpkin_protocol::bedrock::client::CRemoveActor {
@@ -4644,6 +4822,19 @@ pub fn deserialize_bedrock_clientbound_packet(
                 resource_packs: p.resource_packs.into_iter().map(|element| Some(project_bedrock_pack_info_data(element)?)).collect::<Option<Vec<_>>>()?,
             }))
         }
+        id if id == <pumpkin_protocol::bedrock::client::CSetActorData as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CSetActorData as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CSetActorData(crate::pumpkin::plugin::bedrock_packets::CSetActorData {
+                target_runtime_id: p.target_runtime_id.0 as _,
+                actor_data: { let mut entries = p.actor_data.0.into_iter().collect::<Vec<_>>();
+entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+entries.into_iter().map(|(key, item)| Some((key as _, project_bedrock_metadata_value(item)?))).collect::<Option<Vec<_>>>()? },
+                synced_properties: project_bedrock_property_sync_data(p.synced_properties)?,
+                tick: p.tick.0 as _,
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::client::CSetActorLink as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = <pumpkin_protocol::bedrock::client::CSetActorLink as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
@@ -4710,7 +4901,7 @@ pub fn deserialize_bedrock_clientbound_packet(
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CSetPassengerOfBlock(crate::pumpkin::plugin::bedrock_packets::CSetPassengerOfBlock {
                 passenger_unique_id: p.passenger_unique_id.0.try_into().ok()?,
-                passenger_of_block: match p.passenger_of_block { Some(element) => Some(project_bedrock_passenger_of_block_data(element)?), None => None },
+                passenger_of_block: p.passenger_of_block.map_or(Some(None), |element| Some(Some(project_bedrock_passenger_of_block_data(element)?)))?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CSetPlayerGameType as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -4719,6 +4910,15 @@ pub fn deserialize_bedrock_clientbound_packet(
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CSetPlayerGameType(crate::pumpkin::plugin::bedrock_packets::CSetPlayerGameType {
                 player_game_type: project_bedrock_game_type(p.player_game_type)?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CSetScore as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CSetScore as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CSetScore(crate::pumpkin::plugin::bedrock_packets::CSetScore {
+                action: p.action.0.try_into().ok()?,
+                entries: p.entries.into_iter().map(|element| Some(project_bedrock_score_entry(element)?)).collect::<Option<Vec<_>>>()?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CSetSpawnPosition as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -4767,6 +4967,40 @@ pub fn deserialize_bedrock_clientbound_packet(
             Some(BClientboundPacket::CShowCredits(crate::pumpkin::plugin::bedrock_packets::CShowCredits {
                 player_runtime_id: p.player_runtime_id.0 as _,
                 credits_state: p.credits_state.0.try_into().ok()?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CStartGame as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CStartGame as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CStartGame(crate::pumpkin::plugin::bedrock_packets::CStartGame {
+                entity_id: p.entity_id.0.try_into().ok()?,
+                runtime_entity_id: p.runtime_entity_id.0 as _,
+                player_gamemode: project_bedrock_game_type(p.player_gamemode)?,
+                position: (p.position.x as _, p.position.y as _, p.position.z as _),
+                pitch: p.pitch.try_into().ok()?,
+                yaw: p.yaw.try_into().ok()?,
+                level_settings: project_bedrock_level_settings(p.level_settings)?,
+                level_id: p.level_id.into(),
+                level_name: p.level_name.into(),
+                premium_world_template_id: p.premium_world_template_id.into(),
+                is_trial: p.is_trial.try_into().ok()?,
+                rewind_history_size: p.rewind_history_size.0.try_into().ok()?,
+                server_authoritative_block_breaking: p.server_authoritative_block_breaking.try_into().ok()?,
+                current_level_time: p.current_level_time as _,
+                enchantment_seed: p.enchantment_seed.0.try_into().ok()?,
+                block_properties: p.block_properties.into_iter().map(|element| Some(project_bedrock_block_property(element)?)).collect::<Option<Vec<_>>>()?,
+                multiplayer_correlation_id: p.multiplayer_correlation_id.into(),
+                enable_itemstack_net_manager: p.enable_itemstack_net_manager.try_into().ok()?,
+                server_version: p.server_version.into(),
+                player_property_data: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(p.player_property_data)),
+                block_registry_checksum: p.block_registry_checksum as _,
+                world_template_id: <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(&p.world_template_id),
+                enable_clientside_generation: p.enable_clientside_generation.try_into().ok()?,
+                blocknetwork_ids_are_hashed: p.blocknetwork_ids_are_hashed.try_into().ok()?,
+                server_auth_sounds: p.server_auth_sounds.try_into().ok()?,
+                server_join_information: p.server_join_information.map_or(Some(None), |element| Some(Some(project_bedrock_server_join_information(element)?)))?,
+                telemetry: project_bedrock_server_telemetry_data(p.telemetry)?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CStonecutterSetRecipe as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -4853,6 +5087,45 @@ pub fn deserialize_bedrock_clientbound_packet(
                 layer: p.layer.0 as _,
             }))
         }
+        id if id == <pumpkin_protocol::bedrock::client::CUpdateEquip as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CUpdateEquip as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CUpdateEquip(crate::pumpkin::plugin::bedrock_packets::CUpdateEquip {
+                container_id: p.container_id.try_into().ok()?,
+                container_type: p.container_type.try_into().ok()?,
+                size: p.size.0.try_into().ok()?,
+                entity_unique_id: p.entity_unique_id.0.try_into().ok()?,
+                data: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(p.data)),
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CUpdateTrade as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CUpdateTrade as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CUpdateTrade(crate::pumpkin::plugin::bedrock_packets::CUpdateTrade {
+                container_id: p.container_id.try_into().ok()?,
+                r_type: p.r#type.try_into().ok()?,
+                size: p.size.0.try_into().ok()?,
+                trader_tier: p.trader_tier.0.try_into().ok()?,
+                entity_unique_id: p.entity_unique_id.0.try_into().ok()?,
+                last_trading_player: p.last_trading_player.0.try_into().ok()?,
+                display_name: p.display_name.into(),
+                use_new_trade_screen: p.use_new_trade_screen.try_into().ok()?,
+                using_economy_trade: p.using_economy_trade.try_into().ok()?,
+                data: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(p.data)),
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CVoxelShapesPayload as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CVoxelShapesPayload as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CVoxelShapesPayload(crate::pumpkin::plugin::bedrock_packets::CVoxelShapesPayload {
+                shapes: p.shapes.into_iter().map(|element| Some(project_bedrock_bedrock_voxel_shape(element)?)).collect::<Option<Vec<_>>>()?,
+                name_map: p.name_map.into_iter().map(|element| Some(project_bedrock_voxel_shape_name_entry(element)?)).collect::<Option<Vec<_>>>()?,
+                custom_shape_count: p.custom_shape_count.try_into().ok()?,
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::network_stack_latency::NetworkStackLatency as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = <pumpkin_protocol::bedrock::network_stack_latency::NetworkStackLatency as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
@@ -4881,7 +5154,7 @@ pub fn deserialize_bedrock_clientbound_packet(
                 action: project_bedrock_animate_action(p.action)?,
                 target_actor_runtime_id: p.target_actor_runtime_id.0 as _,
                 data: p.data.try_into().ok()?,
-                swing_source: match p.swing_source { Some(element) => Some(project_bedrock_actor_swing_source(element.into_inner())?), None => None },
+                swing_source: p.swing_source.map_or(Some(None), |element| Some(Some(project_bedrock_actor_swing_source(element.into_inner())?)))?,
                 hand: p.hand.try_into().ok()?,
             }))
         }
@@ -4904,6 +5177,7 @@ pub fn deserialize_bedrock_clientbound_packet(
     }
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_ability_value(
     value: pumpkin_protocol::bedrock::server::request_ability::AbilityValue,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AbilityValue> {
@@ -4917,7 +5191,8 @@ fn project_bedrock_ability_value(
     })
 }
 
-const fn project_bedrock_action(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_action(
     value: pumpkin_protocol::bedrock::server::interact::Action,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::Action> {
     Some(match value {
@@ -4939,7 +5214,8 @@ const fn project_bedrock_action(
     })
 }
 
-const fn project_bedrock_actor_event_id(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_actor_event_id(
     value: pumpkin_protocol::bedrock::server::actor_event::ActorEventID,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ActorEventId> {
     Some(match value {
@@ -5007,6 +5283,7 @@ pumpkin_protocol::bedrock::server::actor_event::ActorEventID::HurtWithoutReceivi
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_actor_link(
     value: pumpkin_protocol::bedrock::client::common::ActorLink,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ActorLink> {
@@ -5023,7 +5300,8 @@ fn project_bedrock_actor_link(
     })
 }
 
-const fn project_bedrock_actor_swing_source(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_actor_swing_source(
     value: pumpkin_protocol::bedrock::server::animate::ActorSwingSource,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ActorSwingSource> {
     Some(match value {
@@ -5057,7 +5335,8 @@ const fn project_bedrock_actor_swing_source(
     })
 }
 
-const fn project_bedrock_animate_action(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_animate_action(
     value: pumpkin_protocol::bedrock::server::animate::AnimateAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AnimateAction> {
     Some(match value {
@@ -5079,6 +5358,7 @@ const fn project_bedrock_animate_action(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_attribute_data(
     value: pumpkin_protocol::bedrock::client::update_attributes::AttributeData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AttributeData> {
@@ -5101,6 +5381,7 @@ fn project_bedrock_attribute_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_attribute_modifier(
     value: pumpkin_protocol::bedrock::client::update_attributes::AttributeModifier,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AttributeModifier> {
@@ -5117,6 +5398,7 @@ fn project_bedrock_attribute_modifier(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_audio_content_registration_entry(
     value: pumpkin_protocol::bedrock::server::register_audio_content::AudioContentRegistrationEntry,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AudioContentRegistrationEntry> {
@@ -5131,6 +5413,7 @@ fn project_bedrock_audio_content_registration_entry(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_audio_content_sound(
     value: pumpkin_protocol::bedrock::client::play_audio_content::AudioContentSound,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::AudioContentSound> {
@@ -5158,6 +5441,798 @@ fn project_bedrock_audio_content_sound(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_biome_definition(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BedrockBiomeDefinition,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockBiomeDefinition> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockBiomeDefinition {
+            name_index: record_value.name_index.try_into().ok()?,
+            biome_id: record_value.biome_id.try_into().ok()?,
+            temperature: record_value.temperature.try_into().ok()?,
+            downfall: record_value.downfall.try_into().ok()?,
+            foliage_snow: record_value.foliage_snow.try_into().ok()?,
+            depth: record_value.depth.try_into().ok()?,
+            scale: record_value.scale.try_into().ok()?,
+            water_color_argb: record_value.water_color_argb.try_into().ok()?,
+            rain: record_value.rain.try_into().ok()?,
+            tags: record_value
+                .tags
+                .map(|element| element.iter().map(|v| *v as _).collect()),
+            chunk_generation: record_value
+                .chunk_generation
+                .map_or(Some(None), |element| {
+                    Some(Some(project_bedrock_biome_chunk_generation(element)?))
+                })?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_material_reducer(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockMaterialReducer,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockMaterialReducer> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockMaterialReducer {
+            input_item_id: record_value.input_item_id.try_into().ok()?,
+            input_item_metadata: record_value.input_item_metadata.try_into().ok()?,
+            outputs: record_value
+                .outputs
+                .into_iter()
+                .map(|element| Some(project_bedrock_bedrock_material_reducer_output(element)?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_material_reducer_output(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockMaterialReducerOutput,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockMaterialReducerOutput> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockMaterialReducerOutput {
+            item_id: record_value.item_id.0.try_into().ok()?,
+            count: record_value.count.0.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_multi_recipe(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockMultiRecipe,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockMultiRecipe> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockMultiRecipe {
+            uuid: <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(
+                &record_value.uuid,
+            ),
+            recipe_network_id: record_value.recipe_network_id.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_potion_container_change(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockPotionContainerChange,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockPotionContainerChange> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockPotionContainerChange {
+            input_item_id: record_value.input_item_id.0.try_into().ok()?,
+            reagent_item_id: record_value.reagent_item_id.0.try_into().ok()?,
+            output_item_id: record_value.output_item_id.0.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_potion_recipe(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockPotionRecipe,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockPotionRecipe> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockPotionRecipe {
+            input_potion_id: record_value.input_potion_id.0.try_into().ok()?,
+            input_potion_metadata: record_value.input_potion_metadata.0.try_into().ok()?,
+            reagent_item_id: record_value.reagent_item_id.0.try_into().ok()?,
+            reagent_item_metadata: record_value.reagent_item_metadata.0.try_into().ok()?,
+            output_potion_id: record_value.output_potion_id.0.try_into().ok()?,
+            output_potion_metadata: record_value.output_potion_metadata.0.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_shaped_recipe(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockShapedRecipe,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockShapedRecipe> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockShapedRecipe {
+            recipe_id: record_value.recipe_id.into(),
+            width: record_value.width.0.try_into().ok()?,
+            height: record_value.height.0.try_into().ok()?,
+            input: record_value
+                .input
+                .into_iter()
+                .map(|element| Some(project_bedrock_item_descriptor_count(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            output: record_value
+                .output
+                .into_iter()
+                .map(|element| Some(project_bedrock_network_item_descriptor(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            uuid: <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(
+                &record_value.uuid,
+            ),
+            block: record_value.block.into(),
+            priority: record_value.priority.0.try_into().ok()?,
+            assume_symmetry: record_value.assume_symmetry.try_into().ok()?,
+            unlock_requirement: record_value
+                .unlock_requirement
+                .map_or(Some(None), |element| {
+                    Some(Some(project_bedrock_recipe_unlock_requirement(element)?))
+                })?,
+            recipe_network_id: record_value.recipe_network_id.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_shapeless_recipe(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockShapelessRecipe,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockShapelessRecipe> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockShapelessRecipe {
+            recipe_id: record_value.recipe_id.into(),
+            input: record_value
+                .input
+                .into_iter()
+                .map(|element| Some(project_bedrock_item_descriptor_count(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            output: record_value
+                .output
+                .into_iter()
+                .map(|element| Some(project_bedrock_network_item_descriptor(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            uuid: <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(
+                &record_value.uuid,
+            ),
+            block: record_value.block.into(),
+            priority: record_value.priority.0.try_into().ok()?,
+            unlock_requirement: record_value
+                .unlock_requirement
+                .map_or(Some(None), |element| {
+                    Some(Some(project_bedrock_recipe_unlock_requirement(element)?))
+                })?,
+            recipe_network_id: record_value.recipe_network_id.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_smithing_transform_recipe(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockSmithingTransformRecipe,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockSmithingTransformRecipe> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockSmithingTransformRecipe {
+            recipe_id: record_value.recipe_id.into(),
+            template: project_bedrock_item_descriptor_count(record_value.template)?,
+            base: project_bedrock_item_descriptor_count(record_value.base)?,
+            addition: project_bedrock_item_descriptor_count(record_value.addition)?,
+            result: project_bedrock_network_item_descriptor(record_value.result)?,
+            block: record_value.block.into(),
+            recipe_network_id: record_value.recipe_network_id.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_smithing_trim_recipe(
+    value: pumpkin_protocol::bedrock::client::crafting_data::BedrockSmithingTrimRecipe,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockSmithingTrimRecipe> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockSmithingTrimRecipe {
+            recipe_id: record_value.recipe_id.into(),
+            template: project_bedrock_item_descriptor_count(record_value.template)?,
+            base: project_bedrock_item_descriptor_count(record_value.base)?,
+            addition: project_bedrock_item_descriptor_count(record_value.addition)?,
+            block: record_value.block.into(),
+            recipe_network_id: record_value.recipe_network_id.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_bedrock_voxel_shape(
+    value: pumpkin_protocol::bedrock::client::voxel_shapes::BedrockVoxelShape,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BedrockVoxelShape> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BedrockVoxelShape {
+            dimensions: record_value
+                .dimensions
+                .into_iter()
+                .map(|element| Some(element.try_into().ok()?))
+                .collect::<Option<Vec<_>>>()?,
+            cell_bits: record_value.cell_bits.to_vec(),
+            x_coordinates: record_value.x_coordinates.iter().map(|v| *v as _).collect(),
+            y_coordinates: record_value.y_coordinates.iter().map(|v| *v as _).collect(),
+            z_coordinates: record_value.z_coordinates.iter().map(|v| *v as _).collect(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_capped_surface(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeCappedSurface,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeCappedSurface> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeCappedSurface {
+            floor_blocks: record_value.floor_blocks.iter().map(|v| *v as _).collect(),
+            ceiling_blocks: record_value
+                .ceiling_blocks
+                .iter()
+                .map(|v| *v as _)
+                .collect(),
+            sea_block: record_value
+                .sea_block
+                .map(|value| value.try_into().unwrap()),
+            foundation_block: record_value
+                .foundation_block
+                .map(|value| value.try_into().unwrap()),
+            beach_block: record_value
+                .beach_block
+                .map(|value| value.try_into().unwrap()),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_chunk_generation(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeChunkGeneration,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeChunkGeneration> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeChunkGeneration {
+            climate: record_value.climate.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_climate(element)?))
+            })?,
+            features: record_value.features.map_or(Some(None), |element| {
+                Some(Some(
+                    element
+                        .into_iter()
+                        .map(|element| Some(project_bedrock_biome_generation_feature(element)?))
+                        .collect::<Option<Vec<_>>>()?,
+                ))
+            })?,
+            mountain: record_value.mountain.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_mountain(element)?))
+            })?,
+            material_adjustments: record_value.material_adjustments.map_or(
+                Some(None),
+                |element| {
+                    Some(Some(
+                        element
+                            .into_iter()
+                            .map(|element| {
+                                Some(project_bedrock_biome_material_adjustment(element)?)
+                            })
+                            .collect::<Option<Vec<_>>>()?,
+                    ))
+                },
+            )?,
+            overworld: record_value.overworld.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_overworld_rules(element)?))
+            })?,
+            multi_noise: record_value.multi_noise.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_multi_noise_rules(element)?))
+            })?,
+            legacy_pre_hills: record_value
+                .legacy_pre_hills
+                .map_or(Some(None), |element| {
+                    Some(Some(
+                        element
+                            .into_iter()
+                            .map(|element| {
+                                Some(project_bedrock_biome_conditional_transformation(element)?)
+                            })
+                            .collect::<Option<Vec<_>>>()?,
+                    ))
+                })?,
+            replacements: record_value.replacements.map_or(Some(None), |element| {
+                Some(Some(
+                    element
+                        .into_iter()
+                        .map(|element| Some(project_bedrock_biome_replacement(element)?))
+                        .collect::<Option<Vec<_>>>()?,
+                ))
+            })?,
+            village_type: record_value
+                .village_type
+                .map(|value| value.try_into().unwrap()),
+            surface: record_value.surface.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_surface_builder(element)?))
+            })?,
+            subsurface: record_value.subsurface.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_surface_builder(element)?))
+            })?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_climate(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeClimate,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeClimate> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeClimate {
+            temperature: record_value.temperature.try_into().ok()?,
+            downfall: record_value.downfall.try_into().ok()?,
+            snow_accumulation_min: record_value.snow_accumulation_min.try_into().ok()?,
+            snow_accumulation_max: record_value.snow_accumulation_max.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_conditional_transformation(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeConditionalTransformation,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeConditionalTransformation> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeConditionalTransformation {
+            transforms_into: record_value
+                .transforms_into
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_weighted_transformation(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            condition_index: record_value.condition_index.try_into().ok()?,
+            minimum_passing_neighbors: record_value.minimum_passing_neighbors as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_feature_coordinate(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeFeatureCoordinate,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeFeatureCoordinate> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeFeatureCoordinate {
+            minimum_operation: record_value.minimum_operation.0 as _,
+            minimum: record_value.minimum.try_into().ok()?,
+            maximum_operation: record_value.maximum_operation.0 as _,
+            maximum: record_value.maximum.try_into().ok()?,
+            grid_offset: record_value.grid_offset as _,
+            grid_step_size: record_value.grid_step_size as _,
+            distribution: record_value.distribution.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_feature_scatter(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeFeatureScatter,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeFeatureScatter> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeFeatureScatter {
+            coordinates: record_value
+                .coordinates
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_feature_coordinate(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            evaluation_order: record_value.evaluation_order.0 as _,
+            chance_percent_operation: record_value.chance_percent_operation.0 as _,
+            chance_percent: record_value.chance_percent.try_into().ok()?,
+            chance_numerator: record_value.chance_numerator.try_into().ok()?,
+            chance_denominator: record_value.chance_denominator.try_into().ok()?,
+            iterations_operation: record_value.iterations_operation.0 as _,
+            iterations: record_value.iterations.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_generation_feature(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeGenerationFeature,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeGenerationFeature> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeGenerationFeature {
+            scatter: project_bedrock_biome_feature_scatter(record_value.scatter)?,
+            feature_index: record_value.feature_index.try_into().ok()?,
+            identifier_index: record_value.identifier_index.try_into().ok()?,
+            pass_index: record_value.pass_index.try_into().ok()?,
+            can_use_internal_feature: record_value.can_use_internal_feature.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_material_adjustment(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeMaterialAdjustment,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeMaterialAdjustment> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeMaterialAdjustment {
+            noise_frequency_scale: record_value.noise_frequency_scale.try_into().ok()?,
+            noise_lower_bound: record_value.noise_lower_bound.try_into().ok()?,
+            noise_upper_bound: record_value.noise_upper_bound.try_into().ok()?,
+            height_minimum_operation: record_value.height_minimum_operation.0 as _,
+            height_minimum: record_value.height_minimum.try_into().ok()?,
+            height_maximum_operation: record_value.height_maximum_operation.0 as _,
+            height_maximum: record_value.height_maximum.try_into().ok()?,
+            adjusted_materials: project_bedrock_biome_surface_materials(
+                record_value.adjusted_materials,
+            )?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_mesa_surface(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeMesaSurface,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeMesaSurface> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeMesaSurface {
+            clay_material: record_value.clay_material.try_into().ok()?,
+            hard_clay_material: record_value.hard_clay_material.try_into().ok()?,
+            bryce_pillars: record_value.bryce_pillars.try_into().ok()?,
+            has_forest: record_value.has_forest.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_mountain(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeMountain,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeMountain> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeMountain {
+            steep_block: record_value.steep_block.try_into().ok()?,
+            north_slopes: record_value.north_slopes.try_into().ok()?,
+            south_slopes: record_value.south_slopes.try_into().ok()?,
+            west_slopes: record_value.west_slopes.try_into().ok()?,
+            east_slopes: record_value.east_slopes.try_into().ok()?,
+            top_slide_enabled: record_value.top_slide_enabled.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_multi_noise_rules(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeMultiNoiseRules,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeMultiNoiseRules> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeMultiNoiseRules {
+            temperature: record_value.temperature.try_into().ok()?,
+            humidity: record_value.humidity.try_into().ok()?,
+            altitude: record_value.altitude.try_into().ok()?,
+            weirdness: record_value.weirdness.try_into().ok()?,
+            weight: record_value.weight.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_noise_block(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeNoiseBlock,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeNoiseBlock> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeNoiseBlock {
+            noise: record_value.noise.into(),
+            threshold: record_value.threshold.try_into().ok()?,
+            minimum: record_value.minimum.try_into().ok()?,
+            maximum: record_value.maximum.try_into().ok()?,
+            block: record_value.block.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_noise_gradient_surface(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeNoiseGradientSurface,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeNoiseGradientSurface> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeNoiseGradientSurface {
+            nonreplaceable_blocks: record_value
+                .nonreplaceable_blocks
+                .iter()
+                .map(|v| *v as _)
+                .collect(),
+            gradient_blocks: record_value
+                .gradient_blocks
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_noise_block(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            noise_name: record_value.noise_name.into(),
+            first_octave: record_value.first_octave.try_into().ok()?,
+            amplitudes: record_value.amplitudes.iter().map(|v| *v as _).collect(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_overworld_rules(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeOverworldRules,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeOverworldRules> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeOverworldRules {
+            hills: record_value
+                .hills
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_weighted_transformation(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            mutate: record_value
+                .mutate
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_weighted_transformation(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            river: record_value
+                .river
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_weighted_transformation(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            shore: record_value
+                .shore
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_weighted_transformation(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            pre_hills_edge: record_value
+                .pre_hills_edge
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_conditional_transformation(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            post_shore_edge: record_value
+                .post_shore_edge
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_conditional_transformation(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            climate: record_value
+                .climate
+                .into_iter()
+                .map(|element| Some(project_bedrock_biome_weighted_temperature(element)?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_replacement(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeReplacement,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeReplacement> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeReplacement {
+            biome_index: record_value.biome_index.try_into().ok()?,
+            dimension: record_value.dimension.try_into().ok()?,
+            target_biomes: record_value.target_biomes.iter().map(|v| *v as _).collect(),
+            amount: record_value.amount.try_into().ok()?,
+            noise_frequency_scale: record_value.noise_frequency_scale.try_into().ok()?,
+            replacement_index: record_value.replacement_index.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_surface_builder(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeSurfaceBuilder,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeSurfaceBuilder> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeSurfaceBuilder {
+            surface_materials: record_value
+                .surface_materials
+                .map_or(Some(None), |element| {
+                    Some(Some(project_bedrock_biome_surface_materials(element)?))
+                })?,
+            has_default_overworld_surface: record_value
+                .has_default_overworld_surface
+                .try_into()
+                .ok()?,
+            has_swamp_surface: record_value.has_swamp_surface.try_into().ok()?,
+            has_frozen_ocean_surface: record_value.has_frozen_ocean_surface.try_into().ok()?,
+            has_the_end_surface: record_value.has_the_end_surface.try_into().ok()?,
+            mesa: record_value.mesa.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_mesa_surface(element)?))
+            })?,
+            capped: record_value.capped.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_capped_surface(element)?))
+            })?,
+            noise_gradient: record_value.noise_gradient.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_biome_noise_gradient_surface(element)?))
+            })?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_surface_materials(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeSurfaceMaterials,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeSurfaceMaterials> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeSurfaceMaterials {
+            top_block: record_value.top_block.try_into().ok()?,
+            mid_block: record_value.mid_block.try_into().ok()?,
+            sea_floor_block: record_value.sea_floor_block.try_into().ok()?,
+            foundation_block: record_value.foundation_block.try_into().ok()?,
+            sea_block: record_value.sea_block.try_into().ok()?,
+            sea_floor_depth: record_value.sea_floor_depth.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_weighted_temperature(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeWeightedTemperature,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeWeightedTemperature> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeWeightedTemperature {
+            temperature: record_value.temperature.0 as _,
+            weight: record_value.weight.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_biome_weighted_transformation(
+    value: pumpkin_protocol::bedrock::client::biome_definition_list::BiomeWeightedTransformation,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BiomeWeightedTransformation> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BiomeWeightedTransformation {
+            biome_index: record_value.biome_index.try_into().ok()?,
+            weight: record_value.weight.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_block_property(
+    value: pumpkin_protocol::bedrock::client::start_game::BlockProperty,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BlockProperty> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::BlockProperty {
+            name: record_value.name.into(),
+            properties: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(
+                record_value.properties,
+            )),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_build_platform(
+    value: pumpkin_protocol::bedrock::client::common::BuildPlatform,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::BuildPlatform> {
+    Some(match value {
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Unknown => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Unknown
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Google => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Google
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Ios => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Ios
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Osx => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Osx
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Amazon => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Amazon
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::GearVr => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::GearVr
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Uwp => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Uwp
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Win32 => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Win32
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Dedicated => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Dedicated
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::TvOs => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::TvOs
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Sony => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Sony
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Nintendo => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Nintendo
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Xbox => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Xbox
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::WindowsPhone => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::WindowsPhone
+        }
+        pumpkin_protocol::bedrock::client::common::BuildPlatform::Linux => {
+            crate::pumpkin::plugin::bedrock_packets::BuildPlatform::Linux
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_chained_subcommand_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::ChainedSubcommandData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ChainedSubcommandData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ChainedSubcommandData {
+            name: record_value.name.into(),
+            subcommand_values: record_value
+                .subcommand_values
+                .into_iter()
+                .map(|element| Some(project_bedrock_chained_subcommand_relationship(element)?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_chained_subcommand_relationship(
+    value: pumpkin_protocol::bedrock::client::available_commands::ChainedSubcommandRelationship,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ChainedSubcommandRelationship> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ChainedSubcommandRelationship {
+            index: record_value.index.0 as _,
+            value: record_value.value.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_command_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::CommandData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::CommandData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::CommandData {
+            name: record_value.name.into(),
+            description: record_value.description.into(),
+            flags: record_value.flags.try_into().ok()?,
+            permission_level: project_bedrock_command_permission_level(
+                record_value.permission_level.into_inner(),
+            )?,
+            alias_enum: record_value.alias_enum.try_into().ok()?,
+            command_data_chained_subcommand_indexes: record_value
+                .command_data_chained_subcommand_indexes
+                .iter()
+                .map(|&value| value as _)
+                .collect(),
+            overloads: record_value
+                .overloads
+                .into_iter()
+                .map(|element| Some(project_bedrock_overload_data(element)?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_command_origin_data(
     value: pumpkin_protocol::bedrock::server::command_request::CommandOriginData<'_>,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::CommandOriginData> {
@@ -5174,7 +6249,8 @@ fn project_bedrock_command_origin_data(
     })
 }
 
-const fn project_bedrock_command_permission_level(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_command_permission_level(
     value: pumpkin_protocol::bedrock::client::common::CommandPermissionLevel,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::CommandPermissionLevel> {
     Some(match value {
@@ -5199,7 +6275,22 @@ const fn project_bedrock_command_permission_level(
     })
 }
 
-const fn project_bedrock_container_name(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_constrained_value_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::ConstrainedValueData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ConstrainedValueData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ConstrainedValueData {
+            enum_value_symbol: record_value.enum_value_symbol as _,
+            enum_symbol: record_value.enum_symbol as _,
+            constraint_indices: record_value.constraint_indices,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_container_name(
     value: pumpkin_protocol::bedrock::network_item::ContainerName,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ContainerName> {
     Some(match value {
@@ -5419,6 +6510,81 @@ const fn project_bedrock_container_name(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_creative_category(
+    value: pumpkin_protocol::bedrock::client::creative_content::CreativeCategory,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::CreativeCategory> {
+    Some(match value {
+        pumpkin_protocol::bedrock::client::creative_content::CreativeCategory::All => {
+            crate::pumpkin::plugin::bedrock_packets::CreativeCategory::All
+        }
+        pumpkin_protocol::bedrock::client::creative_content::CreativeCategory::Construction => {
+            crate::pumpkin::plugin::bedrock_packets::CreativeCategory::Construction
+        }
+        pumpkin_protocol::bedrock::client::creative_content::CreativeCategory::Nature => {
+            crate::pumpkin::plugin::bedrock_packets::CreativeCategory::Nature
+        }
+        pumpkin_protocol::bedrock::client::creative_content::CreativeCategory::Equipment => {
+            crate::pumpkin::plugin::bedrock_packets::CreativeCategory::Equipment
+        }
+        pumpkin_protocol::bedrock::client::creative_content::CreativeCategory::Items => {
+            crate::pumpkin::plugin::bedrock_packets::CreativeCategory::Items
+        }
+        pumpkin_protocol::bedrock::client::creative_content::CreativeCategory::ItemCommandOnly => {
+            crate::pumpkin::plugin::bedrock_packets::CreativeCategory::ItemCommandOnly
+        }
+        pumpkin_protocol::bedrock::client::creative_content::CreativeCategory::Undefined => {
+            crate::pumpkin::plugin::bedrock_packets::CreativeCategory::Undefined
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_creative_group_info_payload(
+    value: pumpkin_protocol::bedrock::client::creative_content::CreativeGroupInfoPayload,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::CreativeGroupInfoPayload> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::CreativeGroupInfoPayload {
+            creative_category: project_bedrock_creative_category(record_value.creative_category)?,
+            name: record_value.name.into(),
+            group_icon_item: project_bedrock_network_item_descriptor(record_value.group_icon_item)?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_creative_item_entry_payload(
+    value: pumpkin_protocol::bedrock::client::creative_content::CreativeItemEntryPayload,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::CreativeItemEntryPayload> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::CreativeItemEntryPayload {
+            id: record_value.id.0 as _,
+            item: project_bedrock_network_item_descriptor(record_value.item)?,
+            group_index: record_value.group_index.0 as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_enum_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::EnumData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::EnumData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::EnumData {
+            name: record_value.name.into(),
+            values: record_value
+                .values
+                .iter()
+                .map(|&value| value as _)
+                .collect(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_experiment_toggle(
     value: pumpkin_protocol::bedrock::client::start_game::ExperimentToggle,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ExperimentToggle> {
@@ -5431,6 +6597,7 @@ fn project_bedrock_experiment_toggle(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_experiments(
     value: pumpkin_protocol::bedrock::client::start_game::Experiments,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::Experiments> {
@@ -5447,6 +6614,7 @@ fn project_bedrock_experiments(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_full_container_name(
     value: pumpkin_protocol::bedrock::network_item::FullContainerName,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::FullContainerName> {
@@ -5459,7 +6627,45 @@ fn project_bedrock_full_container_name(
     })
 }
 
-const fn project_bedrock_game_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_game_publish_setting(
+    value: pumpkin_protocol::bedrock::client::start_game::GamePublishSetting,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::GamePublishSetting> {
+    Some(match value {
+        pumpkin_protocol::bedrock::client::start_game::GamePublishSetting::NoMultiPlay => {
+            crate::pumpkin::plugin::bedrock_packets::GamePublishSetting::NoMultiPlay
+        }
+        pumpkin_protocol::bedrock::client::start_game::GamePublishSetting::InviteOnly => {
+            crate::pumpkin::plugin::bedrock_packets::GamePublishSetting::InviteOnly
+        }
+        pumpkin_protocol::bedrock::client::start_game::GamePublishSetting::FriendsOnly => {
+            crate::pumpkin::plugin::bedrock_packets::GamePublishSetting::FriendsOnly
+        }
+        pumpkin_protocol::bedrock::client::start_game::GamePublishSetting::FriendsOfFriends => {
+            crate::pumpkin::plugin::bedrock_packets::GamePublishSetting::FriendsOfFriends
+        }
+        pumpkin_protocol::bedrock::client::start_game::GamePublishSetting::Public => {
+            crate::pumpkin::plugin::bedrock_packets::GamePublishSetting::Public
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_game_rule(
+    value: pumpkin_protocol::bedrock::client::gamerules_changed::GameRule,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::GameRule> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::GameRule {
+            rule_name: record_value.rule_name.into(),
+            rule_can_be_modified: record_value.rule_can_be_modified.try_into().ok()?,
+            rule_value: project_bedrock_rule_value(record_value.rule_value)?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_game_type(
     value: pumpkin_protocol::bedrock::client::common::GameType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::GameType> {
     Some(match value {
@@ -5484,7 +6690,36 @@ const fn project_bedrock_game_type(
     })
 }
 
-const fn project_bedrock_hand_slot(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_gathering_join_info(
+    value: pumpkin_protocol::bedrock::client::start_game::GatheringJoinInfo,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::GatheringJoinInfo> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::GatheringJoinInfo {
+            experience_id: <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(
+                &record_value.experience_id,
+            ),
+            experience_name: record_value.experience_name.into(),
+            experience_world_id: record_value.experience_world_id.map(|element| {
+                <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(&element)
+            }),
+            experience_world_name: record_value
+                .experience_world_name
+                .as_ref()
+                .map(ToString::to_string),
+            creator_id: record_value.creator_id.into(),
+            target_id: record_value.target_id.map(|element| {
+                <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(&element)
+            }),
+            scenario_id: record_value.scenario_id.as_ref().map(ToString::to_string),
+            server_id: record_value.server_id.as_ref().map(ToString::to_string),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_hand_slot(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::HandSlot,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::HandSlot> {
     Some(match value {
@@ -5497,6 +6732,7 @@ const fn project_bedrock_hand_slot(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_inventory_action(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::InventoryAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::InventoryAction> {
@@ -5515,6 +6751,20 @@ fn project_bedrock_inventory_action(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_item_descriptor_count(
+    value: pumpkin_protocol::bedrock::client::crafting_data::ItemDescriptorCount,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemDescriptorCount> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ItemDescriptorCount {
+            descriptor: project_bedrock_recipe_item_descriptor(record_value.descriptor)?,
+            count: record_value.count.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_request(
     value: pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequest,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackRequest> {
@@ -5537,6 +6787,7 @@ fn project_bedrock_item_stack_request(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_request_action(
     value: pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackRequestAction> {
@@ -5618,6 +6869,7 @@ times_crafted: times_crafted.try_into().ok()?,
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_request_slot_info(
     value: pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackRequestSlotInfo> {
@@ -5631,6 +6883,7 @@ fn project_bedrock_item_stack_request_slot_info(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_response_container_info(
     value: pumpkin_protocol::bedrock::client::item_stack_response::ItemStackResponseContainerInfo,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackResponseContainerInfo> {
@@ -5649,6 +6902,7 @@ fn project_bedrock_item_stack_response_container_info(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_response_info(
     value: pumpkin_protocol::bedrock::client::item_stack_response::ItemStackResponseInfo,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackResponseInfo> {
@@ -5666,6 +6920,7 @@ fn project_bedrock_item_stack_response_info(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_item_stack_response_slot_info(
     value: pumpkin_protocol::bedrock::client::item_stack_response::ItemStackResponseSlotInfo,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackResponseSlotInfo> {
@@ -5683,6 +6938,39 @@ fn project_bedrock_item_stack_response_slot_info(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_item_stack_wrapper(
+    value: pumpkin_protocol::bedrock::network_item::ItemStackWrapper,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ItemStackWrapper> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ItemStackWrapper {
+            id: record_value.id.try_into().ok()?,
+            stack_size: record_value.stack_size.try_into().ok()?,
+            aux_value: record_value.aux_value.0 as _,
+            block_runtime_id: record_value.block_runtime_id.0.try_into().ok()?,
+            nbt_data: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(
+                record_value.nbt_data.root_tag,
+            )),
+            place_on_blocks: record_value
+                .place_on_blocks
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            destroy_blocks: record_value
+                .destroy_blocks
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            shield_blocking_tick: record_value.shield_blocking_tick.try_into().ok()?,
+            net_id: record_value.net_id.map_or(Some(None), |element| {
+                Some(Some(element.get().try_into().ok()?))
+            })?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_legacy_set_item_slot(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::LegacySetItemSlot,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::LegacySetItemSlot> {
@@ -5695,7 +6983,121 @@ fn project_bedrock_legacy_set_item_slot(
     })
 }
 
-const fn project_bedrock_loading_screen_packet_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_level_settings(
+    value: pumpkin_protocol::bedrock::client::start_game::LevelSettings,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::LevelSettings> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::LevelSettings {
+            seed: record_value.seed as _,
+            spawn_biome_type: record_value.spawn_biome_type.try_into().ok()?,
+            custom_biome_name: record_value.custom_biome_name.into(),
+            dimension: record_value.dimension.0.try_into().ok()?,
+            generator_type: record_value.generator_type.0.try_into().ok()?,
+            world_gamemode: project_bedrock_game_type(record_value.world_gamemode)?,
+            hardcore: record_value.hardcore.try_into().ok()?,
+            difficulty: record_value.difficulty.0.try_into().ok()?,
+            spawn_position: (
+                record_value.spawn_position.0.x,
+                record_value.spawn_position.0.y,
+                record_value.spawn_position.0.z,
+            ),
+            has_achievements_disabled: record_value.has_achievements_disabled.try_into().ok()?,
+            editor_world_type: record_value.editor_world_type.0.try_into().ok()?,
+            is_created_in_editor: record_value.is_created_in_editor.try_into().ok()?,
+            is_exported_from_editor: record_value.is_exported_from_editor.try_into().ok()?,
+            editor_level_migration_version: record_value
+                .editor_level_migration_version
+                .try_into()
+                .ok()?,
+            day_cycle_stop_time: record_value.day_cycle_stop_time.0.try_into().ok()?,
+            education_edition_offer: record_value.education_edition_offer.0 as _,
+            has_education_features_enabled: record_value
+                .has_education_features_enabled
+                .try_into()
+                .ok()?,
+            education_product_id: record_value.education_product_id.into(),
+            rain_level: record_value.rain_level.try_into().ok()?,
+            lightning_level: record_value.lightning_level.try_into().ok()?,
+            has_confirmed_platform_locked_content: record_value
+                .has_confirmed_platform_locked_content
+                .try_into()
+                .ok()?,
+            was_multiplayer_intended: record_value.was_multiplayer_intended.try_into().ok()?,
+            was_lan_broadcasting_intended: record_value
+                .was_lan_broadcasting_intended
+                .try_into()
+                .ok()?,
+            xbox_live_broadcast_setting: project_bedrock_game_publish_setting(
+                record_value.xbox_live_broadcast_setting,
+            )?,
+            platform_broadcast_setting: project_bedrock_game_publish_setting(
+                record_value.platform_broadcast_setting,
+            )?,
+            commands_enabled: record_value.commands_enabled.try_into().ok()?,
+            is_texture_packs_required: record_value.is_texture_packs_required.try_into().ok()?,
+            rule_data: record_value
+                .rule_data
+                .into_iter()
+                .map(|element| Some(project_bedrock_game_rule(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            experiments: project_bedrock_experiments(record_value.experiments)?,
+            bonus_chest: record_value.bonus_chest.try_into().ok()?,
+            has_start_with_map_enabled: record_value.has_start_with_map_enabled.try_into().ok()?,
+            permission_level: record_value.permission_level.try_into().ok()?,
+            server_simulation_distance: record_value.server_simulation_distance.try_into().ok()?,
+            has_locked_behavior_pack: record_value.has_locked_behavior_pack.try_into().ok()?,
+            has_locked_resource_pack: record_value.has_locked_resource_pack.try_into().ok()?,
+            is_from_locked_world_template: record_value
+                .is_from_locked_world_template
+                .try_into()
+                .ok()?,
+            is_using_msa_gamertags_only: record_value
+                .is_using_msa_gamertags_only
+                .try_into()
+                .ok()?,
+            is_from_world_template: record_value.is_from_world_template.try_into().ok()?,
+            is_world_template_option_locked: record_value
+                .is_world_template_option_locked
+                .try_into()
+                .ok()?,
+            is_only_spawning_v1_villagers: record_value
+                .is_only_spawning_v1_villagers
+                .try_into()
+                .ok()?,
+            is_disabling_personas: record_value.is_disabling_personas.try_into().ok()?,
+            is_disabling_custom_skins: record_value.is_disabling_custom_skins.try_into().ok()?,
+            emote_chat_muted: record_value.emote_chat_muted.try_into().ok()?,
+            game_version: record_value.game_version.into(),
+            limited_world_width: record_value.limited_world_width.try_into().ok()?,
+            limited_world_height: record_value.limited_world_height.try_into().ok()?,
+            new_nether: record_value.new_nether.try_into().ok()?,
+            edu_shared_uri_button_name: record_value.edu_shared_uri_button_name.into(),
+            edu_shared_uri_link_uri: record_value.edu_shared_uri_link_uri.into(),
+            force_experimental_gameplay: record_value
+                .force_experimental_gameplay
+                .map(|value| value.try_into().unwrap()),
+            chat_restriction_level: record_value.chat_restriction_level,
+            disable_player_interactions: record_value
+                .disable_player_interactions
+                .try_into()
+                .ok()?,
+            server_editor_connection_policy: record_value
+                .server_editor_connection_policy
+                .0
+                .try_into()
+                .ok()?,
+            allow_anonymous_block_drops_in_editor_worlds: record_value
+                .allow_anonymous_block_drops_in_editor_worlds
+                .try_into()
+                .ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_loading_screen_packet_type(
     value: pumpkin_protocol::bedrock::server::loading_screen::LoadingScreenPacketType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::LoadingScreenPacketType> {
     Some(match value {
@@ -5704,6 +7106,7 @@ pumpkin_protocol::bedrock::server::loading_screen::LoadingScreenPacketType::EndL
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_matchmaking_state_options(
     value: pumpkin_protocol::bedrock::client::matchmaking_state::MatchmakingStateOptions,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::MatchmakingStateOptions> {
@@ -5721,7 +7124,59 @@ fn project_bedrock_matchmaking_state_options(
     })
 }
 
-const fn project_bedrock_mismatch_transaction_data(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_metadata_value(
+    value: pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::MetadataValue> {
+    Some(match value {
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Byte(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::MetadataValue::Byte(element_0)
+        }
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Short(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::MetadataValue::Short(
+                element_0.try_into().ok()?,
+            )
+        }
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Int(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::MetadataValue::Int(element_0.try_into().ok()?)
+        }
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Float(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::MetadataValue::Float(
+                element_0.try_into().ok()?,
+            )
+        }
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::String(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::MetadataValue::String(element_0.into())
+        }
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::CompoundTag(
+            element_0,
+        ) => crate::pumpkin::plugin::bedrock_packets::MetadataValue::CompoundTag(
+            crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(element_0)),
+        ),
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::ItemPos(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::MetadataValue::ItemPos((
+                element_0.0.x,
+                element_0.0.y,
+                element_0.0.z,
+            ))
+        }
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Int64(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::MetadataValue::Int64(
+                element_0.try_into().ok()?,
+            )
+        }
+        pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Vec3(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::MetadataValue::Vec3((
+                element_0.x as _,
+                element_0.y as _,
+                element_0.z as _,
+            ))
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_mismatch_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::MismatchTransactionData,
 ) -> Option<crate::pumpkin::plugin::common::InexpressibleHostType> {
     Some({
@@ -5730,6 +7185,7 @@ const fn project_bedrock_mismatch_transaction_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_missing_blob_data(
     value: pumpkin_protocol::bedrock::client::client_cache_miss_response::MissingBlobData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::MissingBlobData> {
@@ -5742,6 +7198,7 @@ fn project_bedrock_missing_blob_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_network_item_descriptor(
     value: pumpkin_protocol::bedrock::network_item::NetworkItemDescriptor,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::NetworkItemDescriptor> {
@@ -5770,6 +7227,7 @@ fn project_bedrock_network_item_descriptor(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_network_item_stack_descriptor(
     value: pumpkin_protocol::bedrock::network_item::NetworkItemStackDescriptor,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::NetworkItemStackDescriptor> {
@@ -5781,15 +7239,15 @@ fn project_bedrock_network_item_stack_descriptor(
             aux_value: record_value.aux_value.0 as _,
             block_runtime_id: record_value.block_runtime_id.0 as _,
             extra_data: record_value.extra_data,
-            net_id: match record_value.net_id {
-                Some(element) => Some(element.get().try_into().ok()?),
-                None => None,
-            },
+            net_id: record_value.net_id.map_or(Some(None), |element| {
+                Some(Some(element.get().try_into().ok()?))
+            })?,
         }
     })
 }
 
-const fn project_bedrock_normal_transaction_data(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_normal_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::NormalTransactionData,
 ) -> Option<crate::pumpkin::plugin::common::InexpressibleHostType> {
     Some({
@@ -5798,6 +7256,24 @@ const fn project_bedrock_normal_transaction_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_overload_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::OverloadData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::OverloadData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::OverloadData {
+            is_chaining: record_value.is_chaining.try_into().ok()?,
+            parameter_data: record_value
+                .parameter_data
+                .into_iter()
+                .map(|element| Some(project_bedrock_param_data(element)?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_pack_id_version(
     value: pumpkin_protocol::bedrock::client::resource_packs_info::PackIdVersion,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PackIdVersion> {
@@ -5812,6 +7288,7 @@ fn project_bedrock_pack_id_version(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_pack_info_data(
     value: pumpkin_protocol::bedrock::client::resource_packs_info::PackInfoData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PackInfoData> {
@@ -5831,6 +7308,7 @@ fn project_bedrock_pack_info_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_pack_instance_id(
     value: pumpkin_protocol::bedrock::client::resource_pack_stack::PackInstanceId,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PackInstanceId> {
@@ -5844,6 +7322,22 @@ fn project_bedrock_pack_instance_id(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_param_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::ParamData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ParamData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ParamData {
+            name: record_value.name.into(),
+            parse_symbol: record_value.parse_symbol as _,
+            is_optional: record_value.is_optional.try_into().ok()?,
+            options: record_value.options.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_passenger_of_block_data(
     value: pumpkin_protocol::bedrock::client::set_passenger_of_block::PassengerOfBlockData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PassengerOfBlockData> {
@@ -5867,7 +7361,43 @@ fn project_bedrock_passenger_of_block_data(
     })
 }
 
-const fn project_bedrock_player_action_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_persona_piece(
+    value: pumpkin_protocol::bedrock::client::player_list::PersonaPiece,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::PersonaPiece> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::PersonaPiece {
+            piece_id: record_value.piece_id.into(),
+            piece_type: record_value.piece_type.try_into().ok()?,
+            pack_id: <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(
+                &record_value.pack_id,
+            ),
+            is_default: record_value.is_default.try_into().ok()?,
+            product_id: record_value.product_id.into(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_piece_tint_color(
+    value: pumpkin_protocol::bedrock::client::player_list::PieceTintColor,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::PieceTintColor> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::PieceTintColor {
+            piece_type: record_value.piece_type.into(),
+            colors: record_value
+                .colors
+                .into_iter()
+                .map(|element| Some(element.try_into().ok()?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_player_action_type(
     value: pumpkin_protocol::bedrock::server::player_action::PlayerActionType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerActionType> {
     Some(match value {
@@ -5915,6 +7445,7 @@ pumpkin_protocol::bedrock::server::player_action::PlayerActionType::Count => cra
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_player_block_action(
     value: pumpkin_protocol::bedrock::server::player_auth_input::PlayerBlockAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerBlockAction> {
@@ -5932,6 +7463,7 @@ fn project_bedrock_player_block_action(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_player_inventory_action(
     value: pumpkin_protocol::bedrock::server::player_auth_input::PlayerInventoryAction,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerInventoryAction> {
@@ -5954,7 +7486,55 @@ fn project_bedrock_player_inventory_action(
     })
 }
 
-const fn project_bedrock_player_permission_level(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_player_list_change(
+    value: pumpkin_protocol::bedrock::client::player_list::PlayerListChange,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerListChange> {
+    Some(match value {
+        pumpkin_protocol::bedrock::client::player_list::PlayerListChange::Add(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::PlayerListChange::Add({
+                let unboxed = *element_0;
+                project_bedrock_player_list_entry(unboxed)?
+            })
+        }
+        pumpkin_protocol::bedrock::client::player_list::PlayerListChange::Remove(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::PlayerListChange::Remove(
+                <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(&element_0),
+            )
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_player_list_entry(
+    value: pumpkin_protocol::bedrock::client::player_list::PlayerListEntry,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerListEntry> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::PlayerListEntry {
+            uuid: <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::to_wit(
+                &record_value.uuid,
+            ),
+            entity_unique_id: record_value.entity_unique_id.0.try_into().ok()?,
+            username: record_value.username.into(),
+            xuid: record_value.xuid.into(),
+            platform_chat_id: record_value.platform_chat_id.into(),
+            build_platform: project_bedrock_build_platform(record_value.build_platform)?,
+            skin: project_bedrock_skin(record_value.skin)?,
+            is_teacher: record_value.is_teacher.try_into().ok()?,
+            is_host: record_value.is_host.try_into().ok()?,
+            is_sub_client: record_value.is_sub_client.try_into().ok()?,
+            player_color: record_value
+                .player_color
+                .into_iter()
+                .map(|element| Some(element.try_into().ok()?))
+                .collect::<Option<Vec<_>>>()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_player_permission_level(
     value: pumpkin_protocol::bedrock::client::common::PlayerPermissionLevel,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::PlayerPermissionLevel> {
     Some(match value {
@@ -5973,6 +7553,121 @@ const fn project_bedrock_player_permission_level(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_presence_info(
+    value: pumpkin_protocol::bedrock::client::start_game::PresenceInfo,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::PresenceInfo> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::PresenceInfo {
+            rich_presence_id: record_value
+                .rich_presence_id
+                .as_ref()
+                .map(ToString::to_string),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_property_sync_data(
+    value: pumpkin_protocol::bedrock::client::set_actor_data::PropertySyncData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::PropertySyncData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::PropertySyncData {
+            int_entries_list: {
+                let mut entries = record_value
+                    .int_entries_list
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                entries
+                    .into_iter()
+                    .map(|(key, item)| Some((key as _, item.try_into().ok()?)))
+                    .collect::<Option<Vec<_>>>()?
+            },
+            float_entries_list: {
+                let mut entries = record_value
+                    .float_entries_list
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                entries
+                    .into_iter()
+                    .map(|(key, item)| Some((key as _, item.try_into().ok()?)))
+                    .collect::<Option<Vec<_>>>()?
+            },
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_recipe_item_descriptor(
+    value: pumpkin_protocol::bedrock::client::crafting_data::RecipeItemDescriptor,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::RecipeItemDescriptor> {
+    Some(match value {
+        pumpkin_protocol::bedrock::client::crafting_data::RecipeItemDescriptor::Empty => {
+            crate::pumpkin::plugin::bedrock_packets::RecipeItemDescriptor::Empty
+        }
+        pumpkin_protocol::bedrock::client::crafting_data::RecipeItemDescriptor::Item {
+            identifier,
+            metadata_value,
+        } => crate::pumpkin::plugin::bedrock_packets::RecipeItemDescriptor::Item(
+            crate::pumpkin::plugin::bedrock_packets::RecipeItemDescriptorItem {
+                identifier: identifier.into(),
+                metadata_value: metadata_value.try_into().ok()?,
+            },
+        ),
+        pumpkin_protocol::bedrock::client::crafting_data::RecipeItemDescriptor::Tag(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::RecipeItemDescriptor::Tag(element_0.into())
+        }
+        pumpkin_protocol::bedrock::client::crafting_data::RecipeItemDescriptor::Molang(
+            element_0,
+        ) => {
+            crate::pumpkin::plugin::bedrock_packets::RecipeItemDescriptor::Molang(element_0.into())
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_recipe_unlock_requirement(
+    value: pumpkin_protocol::bedrock::client::crafting_data::RecipeUnlockRequirement,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::RecipeUnlockRequirement> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::RecipeUnlockRequirement {
+            context: record_value.context.try_into().ok()?,
+            ingredients: record_value.ingredients.map_or(Some(None), |element| {
+                Some(Some(
+                    element
+                        .into_iter()
+                        .map(|element| Some(project_bedrock_item_descriptor_count(element)?))
+                        .collect::<Option<Vec<_>>>()?,
+                ))
+            })?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_registered_item(
+    value: pumpkin_protocol::bedrock::client::item_registry::RegisteredItem,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::RegisteredItem> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::RegisteredItem {
+            item_name: record_value.item_name.into(),
+            item_id: record_value.item_id.try_into().ok()?,
+            is_component_based: record_value.is_component_based.try_into().ok()?,
+            item_version: record_value.item_version.0.try_into().ok()?,
+            components: crate::common::to_wit_nbt_tree(pumpkin_nbt::tag::NbtTag::Compound(
+                record_value.components,
+            )),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_release_item_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::ReleaseItemTransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::ReleaseItemTransactionData> {
@@ -5992,7 +7687,8 @@ fn project_bedrock_release_item_transaction_data(
     })
 }
 
-const fn project_bedrock_respawn_state(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_respawn_state(
     value: pumpkin_protocol::bedrock::server::respawn::RespawnState,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::RespawnState> {
     Some(match value {
@@ -6008,6 +7704,44 @@ const fn project_bedrock_respawn_state(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_rule_value(
+    value: pumpkin_protocol::bedrock::client::gamerules_changed::RuleValue,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::RuleValue> {
+    Some(match value {
+        pumpkin_protocol::bedrock::client::gamerules_changed::RuleValue::Null => {
+            crate::pumpkin::plugin::bedrock_packets::RuleValue::Null
+        }
+        pumpkin_protocol::bedrock::client::gamerules_changed::RuleValue::Boolean(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::RuleValue::Boolean(element_0.try_into().ok()?)
+        }
+        pumpkin_protocol::bedrock::client::gamerules_changed::RuleValue::Integer(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::RuleValue::Integer(element_0 as _)
+        }
+        pumpkin_protocol::bedrock::client::gamerules_changed::RuleValue::Float(element_0) => {
+            crate::pumpkin::plugin::bedrock_packets::RuleValue::Float(element_0.try_into().ok()?)
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_score_entry(
+    value: pumpkin_protocol::bedrock::client::set_score::ScoreEntry,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ScoreEntry> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ScoreEntry {
+            scoreboard_id: record_value.scoreboard_id.try_into().ok()?,
+            objective_name: record_value.objective_name.into(),
+            score: record_value.score.0.try_into().ok()?,
+            entry_type: record_value.entry_type.0.try_into().ok()?,
+            entity_unique_id: record_value.entity_unique_id.try_into().ok()?,
+            custom_name: record_value.custom_name.into(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_serialized_abilities_data(
     value: pumpkin_protocol::bedrock::client::common::SerializedAbilitiesData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::SerializedAbilitiesData> {
@@ -6034,6 +7768,7 @@ fn project_bedrock_serialized_abilities_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_serialized_abilities_data_serialized_layer(
     value: pumpkin_protocol::bedrock::client::common::SerializedAbilitiesDataSerializedLayer,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::SerializedAbilitiesDataSerializedLayer> {
@@ -6050,7 +7785,128 @@ fn project_bedrock_serialized_abilities_data_serialized_layer(
     })
 }
 
-const fn project_bedrock_spawn_position_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_server_join_information(
+    value: pumpkin_protocol::bedrock::client::start_game::ServerJoinInformation,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ServerJoinInformation> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ServerJoinInformation {
+            gathering: record_value.gathering.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_gathering_join_info(element)?))
+            })?,
+            store_entry_point: record_value
+                .store_entry_point
+                .map_or(Some(None), |element| {
+                    Some(Some(project_bedrock_store_entry_point_info(element)?))
+                })?,
+            presence: record_value.presence.map_or(Some(None), |element| {
+                Some(Some(project_bedrock_presence_info(element)?))
+            })?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_server_telemetry_data(
+    value: pumpkin_protocol::bedrock::client::start_game::ServerTelemetryData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::ServerTelemetryData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::ServerTelemetryData {
+            server_id: record_value.server_id.into(),
+            scenario_id: record_value.scenario_id.into(),
+            world_id: record_value.world_id.into(),
+            owner_id: record_value.owner_id.into(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_skin(
+    value: pumpkin_protocol::bedrock::client::player_list::Skin,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::Skin> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::Skin {
+            skin_id: record_value.skin_id.into(),
+            play_fab_id: record_value.play_fab_id.into(),
+            resource_patch: record_value.resource_patch,
+            image_width: record_value.image_width as _,
+            image_height: record_value.image_height as _,
+            skin_data: record_value.skin_data,
+            animations: record_value
+                .animations
+                .into_iter()
+                .map(|element| Some(project_bedrock_skin_animation(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            cape_width: record_value.cape_width as _,
+            cape_height: record_value.cape_height as _,
+            cape_data: record_value.cape_data,
+            geometry_data: record_value.geometry_data,
+            animation_data: record_value.animation_data,
+            geometry_data_engine_version: record_value.geometry_data_engine_version,
+            cape_id: record_value.cape_id.into(),
+            full_id: record_value.full_id.into(),
+            arm_size: record_value.arm_size.into(),
+            skin_color: record_value.skin_color.into(),
+            persona_pieces: record_value
+                .persona_pieces
+                .into_iter()
+                .map(|element| Some(project_bedrock_persona_piece(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            piece_tint_colors: record_value
+                .piece_tint_colors
+                .into_iter()
+                .map(|element| Some(project_bedrock_piece_tint_color(element)?))
+                .collect::<Option<Vec<_>>>()?,
+            is_premium: record_value.is_premium.try_into().ok()?,
+            is_persona: record_value.is_persona.try_into().ok()?,
+            persona_cape_on_classic: record_value.persona_cape_on_classic.try_into().ok()?,
+            is_primary_user: record_value.is_primary_user.try_into().ok()?,
+            override_appearance: record_value.override_appearance.try_into().ok()?,
+            is_trusted: record_value.is_trusted.try_into().ok()?,
+            profile_hash: record_value.profile_hash.into(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_skin_animation(
+    value: pumpkin_protocol::bedrock::client::player_list::SkinAnimation,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::SkinAnimation> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::SkinAnimation {
+            image_width: record_value.image_width as _,
+            image_height: record_value.image_height as _,
+            image_data: record_value.image_data,
+            animation_type: record_value.animation_type as _,
+            frames: record_value.frames.try_into().ok()?,
+            expression_type: record_value.expression_type as _,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_soft_enum_data(
+    value: pumpkin_protocol::bedrock::client::available_commands::SoftEnumData,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::SoftEnumData> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::SoftEnumData {
+            enum_name: record_value.enum_name.into(),
+            enum_options: record_value
+                .enum_options
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_spawn_position_type(
     value: pumpkin_protocol::bedrock::client::set_spawn_position::SpawnPositionType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::SpawnPositionType> {
     Some(match value {
@@ -6063,6 +7919,7 @@ const fn project_bedrock_spawn_position_type(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_stack_request_item(
     value: pumpkin_protocol::bedrock::server::item_stack_request::StackRequestItem,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::StackRequestItem> {
@@ -6078,7 +7935,36 @@ fn project_bedrock_stack_request_item(
     })
 }
 
-const fn project_bedrock_text_packet_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_store_entry_point_info(
+    value: pumpkin_protocol::bedrock::client::start_game::StoreEntryPointInfo,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::StoreEntryPointInfo> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::StoreEntryPointInfo {
+            store_id: record_value.store_id.into(),
+            store_name: record_value.store_name.into(),
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_synced_attribute(
+    value: pumpkin_protocol::bedrock::client::add_actor::SyncedAttribute,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::SyncedAttribute> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::SyncedAttribute {
+            attribute_name: record_value.attribute_name.into(),
+            min_value: record_value.min_value.try_into().ok()?,
+            current_value: record_value.current_value.try_into().ok()?,
+            max_value: record_value.max_value.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_text_packet_type(
     value: pumpkin_protocol::bedrock::server::text::TextPacketType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::TextPacketType> {
     Some(match value {
@@ -6121,7 +8007,8 @@ const fn project_bedrock_text_packet_type(
     })
 }
 
-const fn project_bedrock_title_type(
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_title_type(
     value: pumpkin_protocol::bedrock::client::set_title::TitleType,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::TitleType> {
     Some(match value {
@@ -6155,6 +8042,7 @@ const fn project_bedrock_title_type(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::TransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::TransactionData> {
@@ -6167,6 +8055,7 @@ pumpkin_protocol::bedrock::server::inventory_transaction::TransactionData::Relea
 })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_use_item_on_entity_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::UseItemOnEntityTransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::UseItemOnEntityTransactionData> {
@@ -6192,6 +8081,7 @@ fn project_bedrock_use_item_on_entity_transaction_data(
     })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn project_bedrock_use_item_transaction_data(
     value: pumpkin_protocol::bedrock::server::inventory_transaction::UseItemTransactionData,
 ) -> Option<crate::pumpkin::plugin::bedrock_packets::UseItemTransactionData> {
@@ -6222,6 +8112,19 @@ fn project_bedrock_use_item_transaction_data(
             block_runtime_id: record_value.block_runtime_id.0 as _,
             client_prediction: record_value.client_prediction.try_into().ok()?,
             client_cooldown_state: record_value.client_cooldown_state.try_into().ok()?,
+        }
+    })
+}
+
+#[allow(clippy::missing_const_for_fn)]
+fn project_bedrock_voxel_shape_name_entry(
+    value: pumpkin_protocol::bedrock::client::voxel_shapes::VoxelShapeNameEntry,
+) -> Option<crate::pumpkin::plugin::bedrock_packets::VoxelShapeNameEntry> {
+    Some({
+        let record_value = value;
+        crate::pumpkin::plugin::bedrock_packets::VoxelShapeNameEntry {
+            name: record_value.name.into(),
+            shape_id: record_value.shape_id.try_into().ok()?,
         }
     })
 }

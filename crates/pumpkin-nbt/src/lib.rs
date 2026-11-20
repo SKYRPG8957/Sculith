@@ -13,7 +13,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use deserializer::NbtReadHelper;
+use deserializer::{NbtForwardReader, NbtReadHelper, NbtReadHelperBedrock};
 use serializer::{
     NbtWriteHelper, NbtWriteHelperBedrock, NbtWriteHelperBedrockDisk, NbtWriteHelperJava,
 };
@@ -148,6 +148,11 @@ impl Nbt {
             name: reader.get_string()?.into_owned(),
             root_tag: NbtCompound::deserialize_content(reader)?,
         })
+    }
+
+    /// Reads one named Bedrock network NBT document and leaves any following bytes in the reader.
+    pub fn read_bedrock<R: io::Read>(reader: &mut R) -> Result<Self, Error> {
+        Self::read(&mut NbtReadHelperBedrock::new(NbtForwardReader(reader)))
     }
 
     /// Reads an NBT document that omits the root compound's name.

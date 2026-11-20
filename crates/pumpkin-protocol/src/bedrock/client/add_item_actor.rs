@@ -3,7 +3,7 @@
 use crate::{
     bedrock::network_item::ItemStackWrapper,
     codec::{var_long::VarLong, var_ulong::VarULong},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_macros::packet;
 use pumpkin_util::math::vector3::Vector3;
@@ -11,7 +11,7 @@ use pumpkin_util::math::vector3::Vector3;
 use super::set_actor_data::SyncedActorDataList;
 
 /// Sent by the server to spawn a dropped item entity in the world.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::ADD_ITEM_ACTOR)]
 pub struct CAddItemActor {
     /// Persistent unique entity ID of the dropped item entity.

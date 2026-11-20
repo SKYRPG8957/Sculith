@@ -11,7 +11,7 @@ use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use uuid::Uuid;
 
 /// Sent by the server to initialize the client's world, spawn coordinates, gamerules, and entity runtime ID.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::START_GAME)]
 pub struct CStartGame {
     /// Persistent unique ID of the player entity across sessions.
@@ -57,10 +57,8 @@ pub struct CStartGame {
     /// Version string of the server software.
     pub server_version: String,
 
-    //pub player_property_data: NbtCompound
-    pub compound_id: i8,
-    pub compound_len: VarUInt,
-    pub compound_end: i8,
+    /// Network NBT containing properties for the joining player.
+    pub player_property_data: NbtCompound,
 
     /// CRC64 checksum of the block state registry.
     pub block_registry_checksum: u64,
@@ -81,38 +79,37 @@ pub struct CStartGame {
     pub telemetry: ServerTelemetryData,
 }
 
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct ServerJoinInformation {
-    gathering: Option<GatheringJoinInfo>,
-    store_entry_point: Option<StoreEntryPointInfo>,
-    presence: Option<PresenceInfo>,
+    pub gathering: Option<GatheringJoinInfo>,
+    pub store_entry_point: Option<StoreEntryPointInfo>,
+    pub presence: Option<PresenceInfo>,
 }
 
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct GatheringJoinInfo {
-    experience_id: Uuid,
-    experience_name: String,
-    experience_world_id: Uuid,
-    experience_world_name: String,
-    creator_id: String,
-    unknown_uuid_1: Uuid,
-    unknown_uuid_2: Uuid,
-    server_id: String,
+    pub experience_id: Uuid,
+    pub experience_name: String,
+    pub experience_world_id: Option<Uuid>,
+    pub experience_world_name: Option<String>,
+    pub creator_id: String,
+    pub target_id: Option<Uuid>,
+    pub scenario_id: Option<String>,
+    pub server_id: Option<String>,
 }
 
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct StoreEntryPointInfo {
-    store_id: String,
-    store_name: String,
+    pub store_id: String,
+    pub store_name: String,
 }
 
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct PresenceInfo {
-    experience_name: String,
-    world_name: String,
+    pub rich_presence_id: Option<String>,
 }
 
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct ServerTelemetryData {
     pub server_id: String,
     pub scenario_id: String,
@@ -120,7 +117,7 @@ pub struct ServerTelemetryData {
     pub owner_id: String,
 }
 
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 pub struct LevelSettings {
     // https://mojang.github.io/bedrock-protocol-docs/html/LevelSettings.html
     pub seed: u64,
@@ -181,7 +178,7 @@ pub struct LevelSettings {
     pub new_nether: bool,
     pub edu_shared_uri_button_name: String,
     pub edu_shared_uri_link_uri: String,
-    pub override_force_experimental_gameplay_has_value: bool,
+    pub force_experimental_gameplay: Option<bool>,
     pub chat_restriction_level: i8,
     pub disable_player_interactions: bool,
     pub server_editor_connection_policy: VarInt,
@@ -232,7 +229,7 @@ pub struct ExperimentToggle {
     pub enabled: bool,
 }
 
-#[derive(Clone, Copy, PacketWrite)]
+#[derive(Clone, Copy, PacketRead, PacketWrite)]
 #[repr(i32)]
 #[serial(varint)]
 pub enum GamePublishSetting {
@@ -247,7 +244,7 @@ pub enum GamePublishSetting {
 ///
 /// The runtime ID of these custom block entries is based on their alphabetic index
 /// within the registered block palette.
-#[derive(Clone, Debug, PartialEq, PacketWrite)]
+#[derive(Clone, Debug, PartialEq, PacketRead, PacketWrite)]
 pub struct BlockProperty {
     /// Name or identifier of the custom block (e.g. `namespace:block`).
     pub name: String,
@@ -274,6 +271,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reads_start_game_with_rules_and_distinct_nbt_documents() {
+        use crate::bedrock::client::gamerules_changed::RuleValue;
+
+        // Body produced by gophertunnel's protocol 2225 writer.
+        let bytes = include_bytes!("../../../tests/fixtures/start_game_2225.bin");
+        let mut body = bytes.as_slice();
+        let packet = CStartGame::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(packet.entity_id, VarLong(-42));
+        assert_eq!(packet.runtime_entity_id, VarULong(123));
+        assert_eq!(packet.level_name, "Wasm test");
+        assert_eq!(packet.position, Vector3::new(4.0, 65.0, -8.0));
+        assert!(packet.level_settings.commands_enabled);
+        assert!(matches!(
+            packet.level_settings.rule_data[0].rule_value,
+            RuleValue::Boolean(true)
+        ));
+        assert!(matches!(
+            packet.level_settings.rule_data[1].rule_value,
+            RuleValue::Integer(256)
+        ));
+        assert!(packet.level_settings.experiments.toggles[0].enabled);
+        assert_eq!(
+            packet.level_settings.force_experimental_gameplay,
+            Some(true)
+        );
+        assert_eq!(
+            packet.block_properties[0].properties.get_int("variant"),
+            Some(4)
+        );
+        assert_eq!(
+            packet.player_property_data.get_string("owner"),
+            Some("player")
+        );
+        assert_eq!(packet.telemetry.owner_id, "test-owner");
+        assert_eq!(
+            packet
+                .server_join_information
+                .unwrap()
+                .presence
+                .unwrap()
+                .rich_presence_id
+                .as_deref(),
+            Some("presence-id")
+        );
+    }
+
+    #[test]
     fn block_property_serializes_with_bedrock_nbt() {
         let prop = BlockProperty::new("custom:block", NbtCompound::new());
         let mut encoded = Vec::new();
@@ -284,5 +329,10 @@ mod tests {
         assert_eq!(&encoded[1..13], b"custom:block");
         // Root compound tag ID (10) followed by empty string length and END tag (0)
         assert_eq!(&encoded[13..], &[10, 0, 0]);
+
+        encoded.push(42);
+        let mut body = encoded.as_slice();
+        assert_eq!(BlockProperty::read(&mut body).unwrap(), prop);
+        assert_eq!(body, [42]);
     }
 }

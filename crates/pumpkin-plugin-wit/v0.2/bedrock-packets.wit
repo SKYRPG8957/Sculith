@@ -150,6 +150,25 @@ interface bedrock-packets {
     /// True if the client supports caching sub-chunk blobs by hash.
     is-cache-supported: bool,
   }
+  /// The client's actor flags and movement prediction state after an authoritative correction.
+  record s-client-movement-prediction-sync {
+    /// Set flags as 64-bit words, starting with the lowest numbered flags.
+    actor-flags: list<s64>,
+    bounding-box-scale: f32,
+    bounding-box-width: f32,
+    bounding-box-height: f32,
+    movement-speed: f32,
+    underwater-movement-speed: f32,
+    lava-movement-speed: f32,
+    jump-strength: f32,
+    health: f32,
+    hunger: f32,
+    friction-modifier: f32,
+    bounciness: f32,
+    air-drag-modifier: f32,
+    actor-unique-id: s64,
+    flying: bool,
+  }
   /// Sent by the client to request server-side execution of a slash command.
   record s-command-request {
     /// Raw command line string (with leading slash).
@@ -956,9 +975,7 @@ interface bedrock-packets {
     /// Entity attributes (health, movement speed, follow range).
     attributes-list: list<synced-attribute>,
     /// Metadata dictionary (flags, name tags, scale).
-    /// 
-    /// WARNING: Could not fully translate type `SyncedActorDataList` to WIT
-    actor-data: inexpressible-host-type,
+    actor-data: list<tuple<s32, metadata-value>>,
     /// Dynamic Molang property synchronization data.
     synced-properties: property-sync-data,
     /// Entity attachment links (e.g. passenger or leash connections).
@@ -990,9 +1007,7 @@ interface bedrock-packets {
     /// Movement velocity vector.
     velocity: tuple<f64, f64, f64>,
     /// Metadata dictionary for the item entity.
-    /// 
-    /// WARNING: Could not fully translate type `SyncedActorDataList` to WIT
-    entity-data: inexpressible-host-type,
+    entity-data: list<tuple<s32, metadata-value>>,
     /// Whether the item originated from fishing.
     is-from-fishing: bool,
   }
@@ -1019,9 +1034,7 @@ interface bedrock-packets {
     /// Game mode of the player.
     player-game-type: game-type,
     /// Entity metadata flags and properties.
-    /// 
-    /// WARNING: Could not fully translate type `SyncedActorDataList` to WIT
-    entity-data: inexpressible-host-type,
+    entity-data: list<tuple<s32, metadata-value>>,
     /// Dynamic Molang property synchronization.
     synced-properties: property-sync-data,
     /// Permissions and ability layers for this player.
@@ -1038,6 +1051,10 @@ interface bedrock-packets {
   /// Registers actor identifiers before their first spawn packet.
   record c-available-actor-identifiers {
     identifiers: list<u8>,
+  }
+  /// Parsed actor identifier registry carried by `CAvailableActorIdentifiers`.
+  record c-available-actor-identifiers-payload {
+    identifiers: nbt-tree,
   }
   /// Advertises available console and chat commands, arguments, overloads, and auto-completion structures.
   record c-available-commands {
@@ -1129,6 +1146,169 @@ interface bedrock-packets {
     enum-symbol: s32,
     /// Indices of constraints applied.
     constraint-indices: list<u8>,
+  }
+  /// Biome definitions and the string table referenced by their indices.
+  record c-biome-definition-list-payload {
+    biomes: list<bedrock-biome-definition>,
+    strings: list<string>,
+  }
+  record bedrock-biome-definition {
+    name-index: s32,
+    biome-id: s32,
+    temperature: f32,
+    downfall: f32,
+    foliage-snow: f32,
+    depth: f32,
+    scale: f32,
+    water-color-argb: s32,
+    rain: bool,
+    tags: option<list<s32>>,
+    chunk-generation: option<biome-chunk-generation>,
+  }
+  record biome-chunk-generation {
+    climate: option<biome-climate>,
+    features: option<list<biome-generation-feature>>,
+    mountain: option<biome-mountain>,
+    material-adjustments: option<list<biome-material-adjustment>>,
+    overworld: option<biome-overworld-rules>,
+    multi-noise: option<biome-multi-noise-rules>,
+    legacy-pre-hills: option<list<biome-conditional-transformation>>,
+    replacements: option<list<biome-replacement>>,
+    village-type: option<u8>,
+    surface: option<biome-surface-builder>,
+    subsurface: option<biome-surface-builder>,
+  }
+  record biome-climate {
+    temperature: f32,
+    downfall: f32,
+    snow-accumulation-min: f32,
+    snow-accumulation-max: f32,
+  }
+  record biome-generation-feature {
+    scatter: biome-feature-scatter,
+    feature-index: s32,
+    identifier-index: s32,
+    pass-index: s32,
+    can-use-internal-feature: bool,
+  }
+  record biome-feature-scatter {
+    coordinates: list<biome-feature-coordinate>,
+    evaluation-order: s32,
+    chance-percent-operation: s32,
+    chance-percent: s32,
+    chance-numerator: s32,
+    chance-denominator: s32,
+    iterations-operation: s32,
+    iterations: s32,
+  }
+  record biome-feature-coordinate {
+    minimum-operation: s32,
+    minimum: s32,
+    maximum-operation: s32,
+    maximum: s32,
+    grid-offset: s32,
+    grid-step-size: s32,
+    distribution: s32,
+  }
+  record biome-mountain {
+    steep-block: s32,
+    north-slopes: bool,
+    south-slopes: bool,
+    west-slopes: bool,
+    east-slopes: bool,
+    top-slide-enabled: bool,
+  }
+  record biome-material-adjustment {
+    noise-frequency-scale: f32,
+    noise-lower-bound: f32,
+    noise-upper-bound: f32,
+    height-minimum-operation: s32,
+    height-minimum: s32,
+    height-maximum-operation: s32,
+    height-maximum: s32,
+    adjusted-materials: biome-surface-materials,
+  }
+  record biome-surface-materials {
+    top-block: s32,
+    mid-block: s32,
+    sea-floor-block: s32,
+    foundation-block: s32,
+    sea-block: s32,
+    sea-floor-depth: s32,
+  }
+  record biome-overworld-rules {
+    hills: list<biome-weighted-transformation>,
+    mutate: list<biome-weighted-transformation>,
+    river: list<biome-weighted-transformation>,
+    shore: list<biome-weighted-transformation>,
+    pre-hills-edge: list<biome-conditional-transformation>,
+    post-shore-edge: list<biome-conditional-transformation>,
+    climate: list<biome-weighted-temperature>,
+  }
+  record biome-weighted-transformation {
+    biome-index: s32,
+    weight: s32,
+  }
+  record biome-conditional-transformation {
+    transforms-into: list<biome-weighted-transformation>,
+    condition-index: s32,
+    minimum-passing-neighbors: s32,
+  }
+  record biome-weighted-temperature {
+    temperature: s32,
+    weight: s32,
+  }
+  record biome-multi-noise-rules {
+    temperature: f32,
+    humidity: f32,
+    altitude: f32,
+    weirdness: f32,
+    weight: f32,
+  }
+  record biome-replacement {
+    biome-index: s32,
+    dimension: s32,
+    target-biomes: list<s32>,
+    amount: f32,
+    noise-frequency-scale: f32,
+    replacement-index: s32,
+  }
+  record biome-surface-builder {
+    surface-materials: option<biome-surface-materials>,
+    has-default-overworld-surface: bool,
+    has-swamp-surface: bool,
+    has-frozen-ocean-surface: bool,
+    has-the-end-surface: bool,
+    mesa: option<biome-mesa-surface>,
+    capped: option<biome-capped-surface>,
+    noise-gradient: option<biome-noise-gradient-surface>,
+  }
+  record biome-mesa-surface {
+    clay-material: s32,
+    hard-clay-material: s32,
+    bryce-pillars: bool,
+    has-forest: bool,
+  }
+  record biome-capped-surface {
+    floor-blocks: list<s32>,
+    ceiling-blocks: list<s32>,
+    sea-block: option<s32>,
+    foundation-block: option<s32>,
+    beach-block: option<s32>,
+  }
+  record biome-noise-gradient-surface {
+    nonreplaceable-blocks: list<s32>,
+    gradient-blocks: list<biome-noise-block>,
+    noise-name: string,
+    first-octave: s32,
+    amplitudes: list<f32>,
+  }
+  record biome-noise-block {
+    noise: string,
+    threshold: f32,
+    minimum: f32,
+    maximum: f32,
+    block: s32,
   }
   /// Synchronizes the complete block-actor data for a block position.
   record c-block-actor-data {
@@ -1325,6 +1505,7 @@ interface bedrock-packets {
     empty,
     item(recipe-item-descriptor-item),
     tag(string),
+    molang(string),
   }
   record item-descriptor-count {
     descriptor: recipe-item-descriptor,
@@ -1332,6 +1513,7 @@ interface bedrock-packets {
   }
   record recipe-unlock-requirement {
     context: s32,
+    ingredients: option<list<item-descriptor-count>>,
   }
   record bedrock-shapeless-recipe {
     recipe-id: string,
@@ -1340,7 +1522,7 @@ interface bedrock-packets {
     uuid: uuid,
     block: string,
     priority: s32,
-    unlock-requirement: recipe-unlock-requirement,
+    unlock-requirement: option<recipe-unlock-requirement>,
     recipe-network-id: s32,
   }
   record bedrock-shaped-recipe {
@@ -1353,7 +1535,7 @@ interface bedrock-packets {
     block: string,
     priority: s32,
     assume-symmetry: bool,
-    unlock-requirement: recipe-unlock-requirement,
+    unlock-requirement: option<recipe-unlock-requirement>,
     recipe-network-id: s32,
   }
   variant bedrock-recipe {
@@ -1367,11 +1549,74 @@ interface bedrock-packets {
     /// Whether previous recipe entries should be cleared and replaced with the full static + dynamic set.
     clean-recipes: bool,
   }
+  /// All recipe tables carried by a Bedrock crafting data packet.
+  record c-crafting-data-payload {
+    shaped: list<bedrock-shaped-recipe>,
+    shapeless: list<bedrock-shapeless-recipe>,
+    multi: list<bedrock-multi-recipe>,
+    user-data-shapeless: list<bedrock-shapeless-recipe>,
+    shapeless-chemistry: list<bedrock-shapeless-recipe>,
+    shaped-chemistry: list<bedrock-shaped-recipe>,
+    smithing-transform: list<bedrock-smithing-transform-recipe>,
+    smithing-trim: list<bedrock-smithing-trim-recipe>,
+    potions: list<bedrock-potion-recipe>,
+    potion-container-changes: list<bedrock-potion-container-change>,
+    material-reducers: list<bedrock-material-reducer>,
+    clean-recipes: bool,
+  }
+  record bedrock-multi-recipe {
+    uuid: uuid,
+    recipe-network-id: s32,
+  }
+  record bedrock-smithing-transform-recipe {
+    recipe-id: string,
+    template: item-descriptor-count,
+    base: item-descriptor-count,
+    addition: item-descriptor-count,
+    %result: network-item-descriptor,
+    block: string,
+    recipe-network-id: s32,
+  }
+  record bedrock-smithing-trim-recipe {
+    recipe-id: string,
+    template: item-descriptor-count,
+    base: item-descriptor-count,
+    addition: item-descriptor-count,
+    block: string,
+    recipe-network-id: s32,
+  }
+  record bedrock-potion-recipe {
+    input-potion-id: s32,
+    input-potion-metadata: s32,
+    reagent-item-id: s32,
+    reagent-item-metadata: s32,
+    output-potion-id: s32,
+    output-potion-metadata: s32,
+  }
+  record bedrock-potion-container-change {
+    input-item-id: s32,
+    reagent-item-id: s32,
+    output-item-id: s32,
+  }
+  record bedrock-material-reducer {
+    input-item-id: s32,
+    input-item-metadata: s32,
+    outputs: list<bedrock-material-reducer-output>,
+  }
+  record bedrock-material-reducer-output {
+    item-id: s32,
+    count: s32,
+  }
   /// Sent by the server to populate the creative inventory menu with item categories, groups, and items.
   record c-creative-content {
     /// Creative tab groups with category icons and display names.
     groups: list<creative-group-info-payload>,
     /// Individual creative item stack entries.
+    entries: list<creative-item-entry-payload>,
+  }
+  /// The creative inventory groups and items parsed from a packet body.
+  record c-creative-content-payload {
+    groups: list<creative-group-info-payload>,
     entries: list<creative-item-entry-payload>,
   }
   enum creative-category {
@@ -1418,8 +1663,11 @@ interface bedrock-packets {
     /// Value associated with the gamerule.
     rule-value: rule-value,
   }
-  enum rule-value {
+  variant rule-value {
     null,
+    boolean(bool),
+    integer(s32),
+    float(f32),
   }
   /// Sent by the server to synchronize the entire contents of an inventory or container window.
   record c-inventory-content {
@@ -1463,6 +1711,17 @@ interface bedrock-packets {
     /// Pre-serialized Bedrock NBT compound representing the item components.
     component-data: list<u8>,
   }
+  /// The registered item definitions as parsed from the Bedrock wire payload.
+  record c-item-registry-payload {
+    items: list<registered-item>,
+  }
+  record registered-item {
+    item-name: string,
+    item-id: s32,
+    is-component-based: bool,
+    item-version: s32,
+    components: nbt-tree,
+  }
   /// Slot update information resulting from an approved item stack request.
   record item-stack-response-slot-info {
     /// Slot index requested by the client.
@@ -1497,6 +1756,10 @@ interface bedrock-packets {
   record c-item-stack-response {
     /// List of response statuses corresponding to client requests.
     responses: list<item-stack-response-info>,
+  }
+  /// Parsed structure, processor and template registries.
+  record c-jigsaw-structure-data-payload {
+    data: nbt-tree,
   }
   /// Encoded column, optional cache references and chunk payload sent to a Bedrock client.
   record c-level-chunk-payload {
@@ -1785,6 +2048,14 @@ interface bedrock-packets {
     /// Player entries being added or removed.
     entries: list<player-list-entry>,
   }
+  /// Player list additions and removals read from the wire.
+  record c-player-list-payload {
+    entries: list<player-list-change>,
+  }
+  variant player-list-change {
+    add(player-list-entry),
+    remove(uuid),
+  }
   record player-list-entry {
     uuid: uuid,
     entity-unique-id: s64,
@@ -1953,9 +2224,7 @@ interface bedrock-packets {
     /// The unique runtime ID of the entity being updated
     target-runtime-id: s64,
     /// A map of entity metadata properties (e.g., flags, name tags, scale)
-    /// 
-    /// WARNING: Could not fully translate type `SyncedActorDataList` to WIT
-    actor-data: inexpressible-host-type,
+    actor-data: list<tuple<s32, metadata-value>>,
     /// Dynamic properties synced between client and server
     synced-properties: property-sync-data,
     /// The server tick at which this update occurred
@@ -1967,7 +2236,7 @@ interface bedrock-packets {
     int(s32),
     float(f32),
     %string(string),
-    compound-tag,
+    compound-tag(nbt-tree),
     item-pos(tuple<s32, s32, s32>),
     int64(s64),
     vec3(tuple<f64, f64, f64>),
@@ -2176,9 +2445,8 @@ interface bedrock-packets {
     enable-itemstack-net-manager: bool,
     /// Version string of the server software.
     server-version: string,
-    compound-id: s8,
-    compound-len: s32,
-    compound-end: s8,
+    /// Network NBT containing properties for the joining player.
+    player-property-data: nbt-tree,
     /// CRC64 checksum of the block state registry.
     block-registry-checksum: s64,
     /// UUID of the world template if created from a template.
@@ -2202,20 +2470,19 @@ interface bedrock-packets {
   record gathering-join-info {
     experience-id: uuid,
     experience-name: string,
-    experience-world-id: uuid,
-    experience-world-name: string,
+    experience-world-id: option<uuid>,
+    experience-world-name: option<string>,
     creator-id: string,
-    unknown-uuid-1: uuid,
-    unknown-uuid-2: uuid,
-    server-id: string,
+    target-id: option<uuid>,
+    scenario-id: option<string>,
+    server-id: option<string>,
   }
   record store-entry-point-info {
     store-id: string,
     store-name: string,
   }
   record presence-info {
-    experience-name: string,
-    world-name: string,
+    rich-presence-id: option<string>,
   }
   record server-telemetry-data {
     server-id: string,
@@ -2273,7 +2540,7 @@ interface bedrock-packets {
     new-nether: bool,
     edu-shared-uri-button-name: string,
     edu-shared-uri-link-uri: string,
-    override-force-experimental-gameplay-has-value: bool,
+    force-experimental-gameplay: option<bool>,
     chat-restriction-level: s8,
     disable-player-interactions: bool,
     server-editor-connection-policy: s32,
@@ -2450,6 +2717,23 @@ interface bedrock-packets {
     /// Network NBT compound containing full recipe and trade offer definitions.
     data: nbt-tree,
   }
+  /// Collision and selection voxel shapes parsed from a Bedrock packet.
+  record c-voxel-shapes-payload {
+    shapes: list<bedrock-voxel-shape>,
+    name-map: list<voxel-shape-name-entry>,
+    custom-shape-count: s32,
+  }
+  record bedrock-voxel-shape {
+    dimensions: list<u8>,
+    cell-bits: list<u8>,
+    x-coordinates: list<f32>,
+    y-coordinates: list<f32>,
+    z-coordinates: list<f32>,
+  }
+  record voxel-shape-name-entry {
+    name: string,
+    shape-id: s32,
+  }
   record network-stack-latency {
     timestamp: s64,
     from-server: bool,
@@ -2621,9 +2905,8 @@ interface bedrock-packets {
     s-client-cache-blob-status(s-client-cache-blob-status),
     /// Sent by the client during login to inform the server whether client-side chunk blob caching is supported.
     s-client-cache-status(s-client-cache-status),
-    /// The client's movement prediction state (actor flags, bounding box, movement attributes,
-    /// flying). Only sent after server-authoritative movement corrections, so its body is not read.
-    s-client-movement-prediction-sync,
+    /// The client's actor flags and movement prediction state after an authoritative correction.
+    s-client-movement-prediction-sync(s-client-movement-prediction-sync),
     /// Sent by the client to request server-side execution of a slash command.
     s-command-request(s-command-request),
     /// Sent by either client or server to close an open container inventory window.
@@ -2698,10 +2981,14 @@ interface bedrock-packets {
     c-add-player(c-add-player),
     /// Registers actor identifiers before their first spawn packet.
     c-available-actor-identifiers(c-available-actor-identifiers),
+    /// Parsed actor identifier registry carried by `CAvailableActorIdentifiers`.
+    c-available-actor-identifiers-payload(c-available-actor-identifiers-payload),
     /// Advertises available console and chat commands, arguments, overloads, and auto-completion structures.
     c-available-commands(c-available-commands),
     /// Sent by the server to synchronize all available biome definitions and properties with the client.
     c-biome-definition-list,
+    /// Biome definitions and the string table referenced by their indices.
+    c-biome-definition-list-payload(c-biome-definition-list-payload),
     /// Synchronizes the complete block-actor data for a block position.
     c-block-actor-data(c-block-actor-data),
     /// Updates a client-side block animation, such as a chest lid opening or closing.
@@ -2724,8 +3011,12 @@ interface bedrock-packets {
     c-correct-player-move-prediction(c-correct-player-move-prediction),
     /// Sent by the server to send all crafting and smelting recipes available in the world.
     c-crafting-data(c-crafting-data),
+    /// All recipe tables carried by a Bedrock crafting data packet.
+    c-crafting-data-payload(c-crafting-data-payload),
     /// Sent by the server to populate the creative inventory menu with item categories, groups, and items.
     c-creative-content(c-creative-content),
+    /// The creative inventory groups and items parsed from a packet body.
+    c-creative-content-payload(c-creative-content-payload),
     /// Sent by the server to cleanly disconnect a client with an optional error code and kick message.
     c-disconnect(c-disconnect),
     /// Sent by the server to update gamerules on the client (e.g. `showcoordinates` or `dodaylightcycle`).
@@ -2736,10 +3027,14 @@ interface bedrock-packets {
     c-inventory-slot(c-inventory-slot),
     /// Sent by the server to register custom and vanilla item identifiers with their component definitions.
     c-item-registry(c-item-registry),
+    /// The registered item definitions as parsed from the Bedrock wire payload.
+    c-item-registry-payload(c-item-registry-payload),
     /// Sent by the server to approve or reject item stack requests and sync modified slots.
     c-item-stack-response(c-item-stack-response),
     /// Transmits server-defined jigsaw structure generation rules, processors, and template pools.
     c-jigsaw-structure-data,
+    /// Parsed structure, processor and template registries.
+    c-jigsaw-structure-data-payload(c-jigsaw-structure-data-payload),
     /// Encoded column, optional cache references and chunk payload sent to a Bedrock client.
     c-level-chunk-payload(c-level-chunk-payload),
     /// Broadcasts visual or auditory level-wide events, such as particles or block breaking.
@@ -2779,6 +3074,8 @@ interface bedrock-packets {
     c-player-hotbar(c-player-hotbar),
     /// Sent by the server to add or remove players from the in-game pause screen player list.
     c-player-list(c-player-list),
+    /// Player list additions and removals read from the wire.
+    c-player-list-payload(c-player-list-payload),
     /// Sent by the server to despawn an entity from the client's world.
     c-remove-actor(c-remove-actor),
     /// Removes a scoreboard objective, hiding it from the player's screen.
@@ -2839,6 +3136,8 @@ interface bedrock-packets {
     c-update-trade(c-update-trade),
     /// Sends collision and selection voxel shapes to the client before `CStartGame`.
     c-voxel-shapes,
+    /// Collision and selection voxel shapes parsed from a Bedrock packet.
+    c-voxel-shapes-payload(c-voxel-shapes-payload),
     network-stack-latency(network-stack-latency),
     unknown,
   }

@@ -110,6 +110,35 @@ impl NetworkItemDescriptor {
         self.write_user_data(writer)
     }
 
+    /// Reads the item descriptor used in creative inventory and crafting recipes.
+    pub fn read_item_instance<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let id = VarInt::read(reader)?;
+        let stack_size = u16::read(reader)?;
+        let aux_value = VarUInt::read(reader)?;
+        let block_runtime_id = VarInt::read(reader)?;
+        let len = VarUInt::read(reader)?.0 as usize;
+        if len > 1_048_576 {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "item user data exceeds 1MB",
+            ));
+        }
+        let mut user_data = vec![0; len];
+        reader.read_exact(&mut user_data)?;
+        let (nbt_data, place_on_blocks, destroy_blocks, shield_blocking_tick) =
+            read_user_data(user_data, id.0 == i32::from(BedrockItem::SHIELD.id))?;
+        Ok(Self {
+            id,
+            stack_size,
+            aux_value,
+            block_runtime_id,
+            nbt_data,
+            place_on_blocks,
+            destroy_blocks,
+            shield_blocking_tick,
+        })
+    }
+
     fn write_user_data<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
         if self.id.0 == 0 {
             return VarUInt(0).write(writer);

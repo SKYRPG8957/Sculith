@@ -1,7 +1,7 @@
 use crate::{
     bedrock::{client::GameType, network_item::NetworkItemStackDescriptor},
     codec::var_ulong::VarULong,
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_macros::packet;
 use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
@@ -15,7 +15,7 @@ use super::{
 };
 
 /// Sent by the server to spawn another player client-side into the world.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::ADD_PLAYER)]
 pub struct CAddPlayer {
     /// UUID of the player being spawned.

@@ -2,8 +2,9 @@ use std::io::{Error, Write};
 
 use bytes::Bytes;
 use pumpkin_macros::packet;
+use pumpkin_nbt::NbtCompound;
 
-use crate::serial::PacketWrite;
+use crate::serial::{PacketRead, PacketWrite};
 
 pub const VANILLA_ACTOR_IDENTIFIERS: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -23,6 +24,13 @@ impl PacketWrite for CAvailableActorIdentifiers {
     }
 }
 
+/// Parsed actor identifier registry carried by `CAvailableActorIdentifiers`.
+#[derive(PacketRead)]
+#[packet(pumpkin_data::bedrock_packet::AVAILABLE_ACTOR_IDENTIFIERS)]
+pub struct CAvailableActorIdentifiersPayload {
+    pub identifiers: NbtCompound,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -36,5 +44,9 @@ mod tests {
         let mut encoded = Vec::new();
         packet.write(&mut encoded).unwrap();
         assert_eq!(encoded, empty_registry);
+        let mut body = encoded.as_slice();
+        let decoded = CAvailableActorIdentifiersPayload::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(decoded.identifiers.get_list("idlist").unwrap().len(), 0);
     }
 }

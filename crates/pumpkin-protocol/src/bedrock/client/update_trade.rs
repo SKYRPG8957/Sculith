@@ -5,11 +5,11 @@ use pumpkin_nbt::compound::NbtCompound;
 
 use crate::{
     codec::{var_int::VarInt, var_long::VarLong},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 
 /// Opens or refreshes a Bedrock merchant screen with its complete offer list.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::UPDATE_TRADE)]
 pub struct CUpdateTrade {
     /// Window identifier of the active trade screen.
@@ -61,5 +61,10 @@ mod tests {
         let mut encoded = Vec::new();
         packet.write(&mut encoded).unwrap();
         assert!(encoded.ends_with(&[0]));
+        let mut body = encoded.as_slice();
+        let decoded = CUpdateTrade::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(decoded.display_name, "Villager");
+        assert_eq!(decoded.data, packet.data);
     }
 }

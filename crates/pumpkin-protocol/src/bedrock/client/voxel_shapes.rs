@@ -1,9 +1,10 @@
 use std::io::{Error, Write};
 
+use bytes::Bytes;
 use pumpkin_data::bedrock_voxel_shape::VOXEL_SHAPES;
 use pumpkin_macros::packet;
 
-use crate::serial::PacketWrite;
+use crate::serial::{PacketRead, PacketWrite};
 
 /// Sends collision and selection voxel shapes to the client before `CStartGame`.
 #[packet(pumpkin_data::bedrock_packet::VOXEL_SHAPES)]
@@ -13,6 +14,30 @@ impl PacketWrite for CVoxelShapes {
     fn write<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
         writer.write_all(VOXEL_SHAPES)
     }
+}
+
+/// Collision and selection voxel shapes parsed from a Bedrock packet.
+#[derive(PacketRead)]
+#[packet(pumpkin_data::bedrock_packet::VOXEL_SHAPES)]
+pub struct CVoxelShapesPayload {
+    pub shapes: Vec<BedrockVoxelShape>,
+    pub name_map: Vec<VoxelShapeNameEntry>,
+    pub custom_shape_count: u16,
+}
+
+#[derive(PacketRead)]
+pub struct BedrockVoxelShape {
+    pub dimensions: [u8; 3],
+    pub cell_bits: Bytes,
+    pub x_coordinates: Vec<f32>,
+    pub y_coordinates: Vec<f32>,
+    pub z_coordinates: Vec<f32>,
+}
+
+#[derive(PacketRead)]
+pub struct VoxelShapeNameEntry {
+    pub name: String,
+    pub shape_id: u16,
 }
 
 #[cfg(test)]
@@ -87,5 +112,12 @@ mod tests {
         let custom_shape_count = u16::read(&mut cursor).unwrap();
         assert_eq!(custom_shape_count, 0);
         assert_eq!(cursor.position() as usize, encoded.len());
+
+        let mut body = encoded.as_slice();
+        let payload = CVoxelShapesPayload::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(payload.shapes.len(), shape_count);
+        assert_eq!(payload.name_map.len(), name_map_count);
+        assert_eq!(payload.custom_shape_count, 0);
     }
 }

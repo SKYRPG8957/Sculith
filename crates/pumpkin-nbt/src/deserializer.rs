@@ -156,6 +156,53 @@ impl<'a, R: Read + Seek> NbtDataSource<'a> for NbtStreamReader<R> {
     }
 }
 
+/// An NBT byte source for network readers that can only advance.
+pub(crate) struct NbtForwardReader<R>(pub R);
+
+impl<'a, R: Read> NbtDataSource<'a> for NbtForwardReader<R> {
+    fn read_u8(&mut self) -> Result<u8> {
+        let mut bytes = [0];
+        self.read_bytes(&mut bytes)?;
+        Ok(bytes[0])
+    }
+
+    fn read_bytes(&mut self, buf: &mut [u8]) -> Result<()> {
+        self.0.read_exact(buf).map_err(Error::Incomplete)
+    }
+
+    fn seek_relative(&mut self, offset: i64) -> Result<()> {
+        let count = u64::try_from(offset).map_err(|_| {
+            Error::Incomplete(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot rewind NBT stream",
+            ))
+        })?;
+        let read = io::copy(&mut self.0.by_ref().take(count), &mut io::sink())
+            .map_err(Error::Incomplete)?;
+        if read == count {
+            Ok(())
+        } else {
+            Err(unexpected_eof())
+        }
+    }
+
+    fn read_string(&mut self, len: usize) -> Result<Cow<'a, str>> {
+        let mut bytes = vec![0; len];
+        self.read_bytes(&mut bytes)?;
+        Ok(Cow::Owned(
+            crate::cesu8::from_java_cesu8(&bytes)?.into_owned(),
+        ))
+    }
+
+    fn read_byte_array(&mut self, len: usize) -> Result<Cow<'a, [i8]>> {
+        let mut bytes = vec![0; len];
+        self.read_bytes(&mut bytes)?;
+        Ok(Cow::Owned(
+            bytes.into_iter().map(|byte| byte as i8).collect(),
+        ))
+    }
+}
+
 impl<'a> NbtDataSource<'a> for Cursor<&'a [u8]> {
     fn read_u8(&mut self) -> Result<u8> {
         let mut buf = [0u8; 1];

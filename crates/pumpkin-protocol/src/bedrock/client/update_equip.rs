@@ -3,14 +3,14 @@ use pumpkin_nbt::compound::NbtCompound;
 
 use crate::{
     codec::{var_int::VarInt, var_long::VarLong},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 
 /// Bedrock container type of horse and llama screens.
 pub const HORSE_CONTAINER_TYPE: u8 = 12;
 
 /// Opens a mount equipment screen (horse, llama) on the client.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::UPDATE_EQUIP)]
 pub struct CUpdateEquip {
     pub container_id: u8,

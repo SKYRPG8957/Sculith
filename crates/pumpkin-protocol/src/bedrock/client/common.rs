@@ -1,3 +1,5 @@
+use std::{io, str::FromStr};
+
 use pumpkin_util::GameMode;
 
 use crate::{
@@ -86,9 +88,8 @@ pub enum CommandPermissionLevel {
     Internal = 5,
 }
 
-#[allow(clippy::to_string_trait_impl)]
-impl ToString for CommandPermissionLevel {
-    fn to_string(&self) -> String {
+impl CommandPermissionLevel {
+    const fn as_str(self) -> &'static str {
         match self {
             Self::Any => "any",
             Self::GameDirectors => "gamedirectors",
@@ -97,7 +98,36 @@ impl ToString for CommandPermissionLevel {
             Self::Owner => "owner",
             Self::Internal => "internal",
         }
-        .into()
+    }
+}
+
+#[allow(clippy::to_string_trait_impl)]
+impl ToString for CommandPermissionLevel {
+    fn to_string(&self) -> String {
+        self.as_str().into()
+    }
+}
+
+impl FromStr for CommandPermissionLevel {
+    type Err = io::Error;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        [
+            Self::Any,
+            Self::GameDirectors,
+            Self::Admin,
+            Self::Host,
+            Self::Owner,
+            Self::Internal,
+        ]
+        .into_iter()
+        .find(|level| level.as_str() == name)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid Bedrock command permission",
+            )
+        })
     }
 }
 
