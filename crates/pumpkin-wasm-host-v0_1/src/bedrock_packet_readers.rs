@@ -9,6 +9,17 @@ pub fn deserialize_bedrock_serverbound_packet(
     payload: &[u8],
 ) -> Option<BServerboundPacket> {
     match id {
+        id if id == <pumpkin_protocol::bedrock::server::SActorEvent as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::server::SActorEvent as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BServerboundPacket::SActorEvent(crate::pumpkin::plugin::bedrock_packets::SActorEvent {
+                target_runtime_id: p.target_runtime_id.0 as _,
+                event_id: match &p.event_id { pumpkin_protocol::bedrock::server::actor_event::ActorEventID::None => crate::pumpkin::plugin::bedrock_packets::ActorEventId::None,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::Jump => crate::pumpkin::plugin::bedrock_packets::ActorEventId::Jump,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::Hurt => crate::pumpkin::plugin::bedrock_packets::ActorEventId::Hurt,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::Death => crate::pumpkin::plugin::bedrock_packets::ActorEventId::Death,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::StartAttacking => crate::pumpkin::plugin::bedrock_packets::ActorEventId::StartAttacking,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::StopAttacking => crate::pumpkin::plugin::bedrock_packets::ActorEventId::StopAttacking,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::TamingFailed => crate::pumpkin::plugin::bedrock_packets::ActorEventId::TamingFailed,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::TamingSucceeded => crate::pumpkin::plugin::bedrock_packets::ActorEventId::TamingSucceeded,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::ShakeWetness => crate::pumpkin::plugin::bedrock_packets::ActorEventId::ShakeWetness,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::EatGrass => crate::pumpkin::plugin::bedrock_packets::ActorEventId::EatGrass,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::FishhookBubble => crate::pumpkin::plugin::bedrock_packets::ActorEventId::FishhookBubble,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::FishhookFishPos => crate::pumpkin::plugin::bedrock_packets::ActorEventId::FishhookFishPos,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::FishhookHookTime => crate::pumpkin::plugin::bedrock_packets::ActorEventId::FishhookHookTime,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::FishhookTease => crate::pumpkin::plugin::bedrock_packets::ActorEventId::FishhookTease,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::SquidFleeing => crate::pumpkin::plugin::bedrock_packets::ActorEventId::SquidFleeing,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::ZombieConverting => crate::pumpkin::plugin::bedrock_packets::ActorEventId::ZombieConverting,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::PlayAmbient => crate::pumpkin::plugin::bedrock_packets::ActorEventId::PlayAmbient,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::SpawnAlive => crate::pumpkin::plugin::bedrock_packets::ActorEventId::SpawnAlive,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::StartOfferFlower => crate::pumpkin::plugin::bedrock_packets::ActorEventId::StartOfferFlower,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::StopOfferFlower => crate::pumpkin::plugin::bedrock_packets::ActorEventId::StopOfferFlower,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::LoveHearts => crate::pumpkin::plugin::bedrock_packets::ActorEventId::LoveHearts,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::VillagerAngry => crate::pumpkin::plugin::bedrock_packets::ActorEventId::VillagerAngry,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::VillagerHappy => crate::pumpkin::plugin::bedrock_packets::ActorEventId::VillagerHappy,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::WitchHatMagic => crate::pumpkin::plugin::bedrock_packets::ActorEventId::WitchHatMagic,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::FireworksExplode => crate::pumpkin::plugin::bedrock_packets::ActorEventId::FireworksExplode,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::InLoveHearts => crate::pumpkin::plugin::bedrock_packets::ActorEventId::InLoveHearts,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::SilverfishMergeAnimation => crate::pumpkin::plugin::bedrock_packets::ActorEventId::SilverfishMergeAnimation,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::GuardianAttackSound => crate::pumpkin::plugin::bedrock_packets::ActorEventId::GuardianAttackSound,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::DrinkPotion => crate::pumpkin::plugin::bedrock_packets::ActorEventId::DrinkPotion,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::ThrowPotion => crate::pumpkin::plugin::bedrock_packets::ActorEventId::ThrowPotion,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::PrimeTNTCart => crate::pumpkin::plugin::bedrock_packets::ActorEventId::PrimeTntCart,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::PrimeCreeper => crate::pumpkin::plugin::bedrock_packets::ActorEventId::PrimeCreeper,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::AirSupply => crate::pumpkin::plugin::bedrock_packets::ActorEventId::AirSupply,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::DeprecatedAddPlayerLevels => crate::pumpkin::plugin::bedrock_packets::ActorEventId::DeprecatedAddPlayerLevels,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::GuardianMiningFatigue => crate::pumpkin::plugin::bedrock_packets::ActorEventId::GuardianMiningFatigue,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::AgentSwingArm => crate::pumpkin::plugin::bedrock_packets::ActorEventId::AgentSwingArm,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::DragonStartDeathAnim => crate::pumpkin::plugin::bedrock_packets::ActorEventId::DragonStartDeathAnim,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::GroundDust => crate::pumpkin::plugin::bedrock_packets::ActorEventId::GroundDust,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::Shake => crate::pumpkin::plugin::bedrock_packets::ActorEventId::Shake,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::Feed => crate::pumpkin::plugin::bedrock_packets::ActorEventId::Feed,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::BabyAge => crate::pumpkin::plugin::bedrock_packets::ActorEventId::BabyAge,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::InstantDeath => crate::pumpkin::plugin::bedrock_packets::ActorEventId::InstantDeath,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::NotifyTrade => crate::pumpkin::plugin::bedrock_packets::ActorEventId::NotifyTrade,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::LeashDestroyed => crate::pumpkin::plugin::bedrock_packets::ActorEventId::LeashDestroyed,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::CaravanUpdated => crate::pumpkin::plugin::bedrock_packets::ActorEventId::CaravanUpdated,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::TalismanActivate => crate::pumpkin::plugin::bedrock_packets::ActorEventId::TalismanActivate,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::DeprecatedUpdateStructureFeature => crate::pumpkin::plugin::bedrock_packets::ActorEventId::DeprecatedUpdateStructureFeature,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::PlayerSpawnedMob => crate::pumpkin::plugin::bedrock_packets::ActorEventId::PlayerSpawnedMob,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::Puke => crate::pumpkin::plugin::bedrock_packets::ActorEventId::Puke,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::UpdateStackSize => crate::pumpkin::plugin::bedrock_packets::ActorEventId::UpdateStackSize,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::StartSwimming => crate::pumpkin::plugin::bedrock_packets::ActorEventId::StartSwimming,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::BalloonPop => crate::pumpkin::plugin::bedrock_packets::ActorEventId::BalloonPop,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::TreasureHunt => crate::pumpkin::plugin::bedrock_packets::ActorEventId::TreasureHunt,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::SummonAgent => crate::pumpkin::plugin::bedrock_packets::ActorEventId::SummonAgent,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::FinishedChargingItem => crate::pumpkin::plugin::bedrock_packets::ActorEventId::FinishedChargingItem,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::ActorGrowUp => crate::pumpkin::plugin::bedrock_packets::ActorEventId::ActorGrowUp,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::VibrationDetected => crate::pumpkin::plugin::bedrock_packets::ActorEventId::VibrationDetected,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::DrinkMilk => crate::pumpkin::plugin::bedrock_packets::ActorEventId::DrinkMilk,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::ShakeWetnessStop => crate::pumpkin::plugin::bedrock_packets::ActorEventId::ShakeWetnessStop,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::KineticDamageDealt => crate::pumpkin::plugin::bedrock_packets::ActorEventId::KineticDamageDealt,pumpkin_protocol::bedrock::server::actor_event::ActorEventID::HurtWithoutReceivingDamage => crate::pumpkin::plugin::bedrock_packets::ActorEventId::HurtWithoutReceivingDamage, },
+                data: p.data.0.try_into().ok()?,
+                fire_at_position: p.fire_at_position.as_ref().map(|value| (value.x as _, value.y as _, value.z as _)),
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::server::SBlockPickRequest as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = <pumpkin_protocol::bedrock::server::SBlockPickRequest as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
@@ -51,7 +62,7 @@ pub fn deserialize_bedrock_serverbound_packet(
             let p = <pumpkin_protocol::bedrock::server::SEmote as pumpkin_protocol::serial::PacketReadSlice>::read_slice(&mut body).ok()?;
             if !body.is_empty() { return None; }
             Some(BServerboundPacket::SEmote(crate::pumpkin::plugin::bedrock_packets::SEmote {
-                actor_runtime_id: p.actor_runtime_id.0.try_into().ok()?,
+                actor_runtime_id: p.actor_runtime_id.0 as _,
                 emote_id: p.emote_id.to_string(),
                 emote_length_ticks: p.emote_length_ticks.0 as _,
                 xuid: p.xuid.to_string(),
@@ -64,8 +75,18 @@ pub fn deserialize_bedrock_serverbound_packet(
             let p = <pumpkin_protocol::bedrock::server::SEmoteList as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
             if !body.is_empty() { return None; }
             Some(BServerboundPacket::SEmoteList(crate::pumpkin::plugin::bedrock_packets::SEmoteList {
-                runtime_id: p.runtime_id.0.try_into().ok()?,
+                runtime_id: p.runtime_id.0 as _,
                 emote_piece_ids: p.emote_piece_ids.iter().map(|u| crate::pumpkin::plugin::uuid::Uuid { high: u.as_u64_pair().1, low: u.as_u64_pair().0 }).collect(),
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::server::SInteract as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::server::SInteract as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BServerboundPacket::SInteract(crate::pumpkin::plugin::bedrock_packets::SInteract {
+                action: match &p.action { pumpkin_protocol::bedrock::server::interact::Action::Invalid => crate::pumpkin::plugin::bedrock_packets::Action::Invalid,pumpkin_protocol::bedrock::server::interact::Action::StopRiding => crate::pumpkin::plugin::bedrock_packets::Action::StopRiding,pumpkin_protocol::bedrock::server::interact::Action::InteractUpdate => crate::pumpkin::plugin::bedrock_packets::Action::InteractUpdate,pumpkin_protocol::bedrock::server::interact::Action::NpcOpen => crate::pumpkin::plugin::bedrock_packets::Action::NpcOpen,pumpkin_protocol::bedrock::server::interact::Action::OpenInventory => crate::pumpkin::plugin::bedrock_packets::Action::OpenInventory, },
+                target_runtime_id: p.target_runtime_id.0 as _,
+                position: p.position.as_ref().map(|value| (value.x as _, value.y as _, value.z as _)),
             }))
         }
         id if id == <pumpkin_protocol::bedrock::server::SLogin as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -97,6 +118,18 @@ pub fn deserialize_bedrock_serverbound_packet(
                 violation_severity: p.violation_severity.0.try_into().ok()?,
                 violation_packet_id: p.violation_packet_id.0.try_into().ok()?,
                 violation_context: p.violation_context.into(),
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::server::SPlayerAction as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::server::SPlayerAction as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BServerboundPacket::SPlayerAction(crate::pumpkin::plugin::bedrock_packets::SPlayerAction {
+                player_runtime_id: p.player_runtime_id.0 as _,
+                action: match &p.action { pumpkin_protocol::bedrock::server::player_action::PlayerActionType::Unknown => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::Unknown,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartDestroyBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartDestroyBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::AbortDestroyBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::AbortDestroyBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopDestroyBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopDestroyBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::GetUpdatedBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::GetUpdatedBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::DropItem => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::DropItem,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartSleeping => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartSleeping,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopSleeping => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopSleeping,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::Respawn => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::Respawn,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartJump => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartJump,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartSprinting => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartSprinting,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopSprinting => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopSprinting,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartSneaking => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartSneaking,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopSneaking => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopSneaking,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::CreativeDestroyBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::CreativeDestroyBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::ChangeDimensionAck => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::ChangeDimensionAck,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartGliding => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartGliding,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopGliding => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopGliding,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::DenyDestroyBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::DenyDestroyBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::CrackBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::CrackBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::ChangeSkin => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::ChangeSkin,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::UpdatedEnchantingSeed => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::UpdatedEnchantingSeed,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartSwimming => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartSwimming,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopSwimming => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopSwimming,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartSpinAttack => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartSpinAttack,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopSpinAttack => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopSpinAttack,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::InteractWithBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::InteractWithBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::PredictDestroyBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::PredictDestroyBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::ContinueDestroyBlock => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::ContinueDestroyBlock,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartItemUseOn => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartItemUseOn,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopItemUseOn => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopItemUseOn,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::HandledTeleport => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::HandledTeleport,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::MissedSwing => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::MissedSwing,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartCrawling => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartCrawling,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopCrawling => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopCrawling,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartFlying => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartFlying,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StopFlying => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StopFlying,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::ClientAckServerData => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::ClientAckServerData,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::StartUsingItem => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::StartUsingItem,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::InternalUpdate => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::InternalUpdate,pumpkin_protocol::bedrock::server::player_action::PlayerActionType::Count => crate::pumpkin::plugin::bedrock_packets::PlayerActionType::Count, },
+                block_position: (p.block_position.0.x, p.block_position.0.y, p.block_position.0.z),
+                result_pos: (p.result_pos.0.x, p.result_pos.0.y, p.result_pos.0.z),
+                face: p.face.0.try_into().ok()?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::server::SPlayerHotbar as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -136,12 +169,22 @@ pub fn deserialize_bedrock_serverbound_packet(
                 pack_ids: p.pack_ids.iter().map(|s| s.to_string()).collect(),
             }))
         }
+        id if id == <pumpkin_protocol::bedrock::server::SRespawn as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::server::SRespawn as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BServerboundPacket::SRespawn(crate::pumpkin::plugin::bedrock_packets::SRespawn {
+                position: (p.position.x as _, p.position.y as _, p.position.z as _),
+                state: match &p.state { pumpkin_protocol::bedrock::server::respawn::RespawnState::SearchingForSpawn => crate::pumpkin::plugin::bedrock_packets::RespawnState::SearchingForSpawn,pumpkin_protocol::bedrock::server::respawn::RespawnState::ReadyToSpawn => crate::pumpkin::plugin::bedrock_packets::RespawnState::ReadyToSpawn,pumpkin_protocol::bedrock::server::respawn::RespawnState::ClientReadyToSpawn => crate::pumpkin::plugin::bedrock_packets::RespawnState::ClientReadyToSpawn, },
+                player_runtime_id: p.player_runtime_id.0 as _,
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::server::SSetLocalPlayerAsInitialized as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = <pumpkin_protocol::bedrock::server::SSetLocalPlayerAsInitialized as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
             if !body.is_empty() { return None; }
             Some(BServerboundPacket::SSetLocalPlayerAsInitialized(crate::pumpkin::plugin::bedrock_packets::SSetLocalPlayerAsInitialized {
-                player_id: p.player_id.0.try_into().ok()?,
+                player_id: p.player_id.0 as _,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::server::SSetPlayerInventoryOptions as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -255,7 +298,7 @@ pub fn deserialize_bedrock_clientbound_packet(
                 rotation: (p.rotation.x as _, p.rotation.y as _),
                 vehicle_angular_velocity: p.vehicle_angular_velocity.map(|value| value.try_into().unwrap()),
                 on_ground: p.on_ground.try_into().ok()?,
-                tick: p.tick.0.try_into().ok()?,
+                tick: p.tick.0 as _,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CLevelEvent as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -272,6 +315,30 @@ pub fn deserialize_bedrock_clientbound_packet(
                 data: p.data.0.try_into().ok()?,
             }))
         }
+        id if id == <pumpkin_protocol::bedrock::client::CLevelSoundEvent as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = pumpkin_protocol::bedrock::client::CLevelSoundEvent {
+                sound_event: pumpkin_protocol::serial::PacketRead::read(&mut body).ok()?,
+                position: pumpkin_protocol::serial::PacketRead::read(&mut body).ok()?,
+                data: pumpkin_protocol::serial::PacketRead::read(&mut body).ok()?,
+                actor_identifier: pumpkin_protocol::serial::PacketRead::read(&mut body).ok()?,
+                is_baby: pumpkin_protocol::serial::PacketRead::read(&mut body).ok()?,
+                is_global: pumpkin_protocol::serial::PacketRead::read(&mut body).ok()?,
+                actor_unique_id: pumpkin_protocol::serial::PacketRead::read(&mut body).ok()?,
+                fire_at_position: pumpkin_protocol::serial::PacketRead::read(&mut body).ok()?,
+            };
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CLevelSoundEvent(crate::pumpkin::plugin::bedrock_packets::CLevelSoundEvent {
+                sound_event: p.sound_event.into(),
+                position: (p.position.x as _, p.position.y as _, p.position.z as _),
+                data: p.data.0.try_into().ok()?,
+                actor_identifier: p.actor_identifier.into(),
+                is_baby: p.is_baby.try_into().ok()?,
+                is_global: p.is_global.try_into().ok()?,
+                actor_unique_id: p.actor_unique_id.try_into().ok()?,
+                fire_at_position: p.fire_at_position.as_ref().map(|value| (value.x as _, value.y as _, value.z as _)),
+            }))
+        }
         id if id == <pumpkin_protocol::bedrock::client::CMobEffect as pumpkin_protocol::Packet>::PACKET_ID => {
             let mut body = payload;
             let p = pumpkin_protocol::bedrock::client::CMobEffect {
@@ -286,13 +353,13 @@ pub fn deserialize_bedrock_clientbound_packet(
             };
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CMobEffect(crate::pumpkin::plugin::bedrock_packets::CMobEffect {
-                target_runtime_id: p.target_runtime_id.0.try_into().ok()?,
+                target_runtime_id: p.target_runtime_id.0 as _,
                 event_id: p.event_id.try_into().ok()?,
                 effect_id: p.effect_id.0.try_into().ok()?,
                 effect_amplifier: p.effect_amplifier.0.try_into().ok()?,
                 show_particles: p.show_particles.try_into().ok()?,
                 effect_duration_ticks: p.effect_duration_ticks.0.try_into().ok()?,
-                tick: p.tick.0.try_into().ok()?,
+                tick: p.tick.0 as _,
                 ambient: p.ambient.try_into().ok()?,
             }))
         }
@@ -317,7 +384,7 @@ pub fn deserialize_bedrock_clientbound_packet(
             };
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CMoveActorAbsolute(crate::pumpkin::plugin::bedrock_packets::CMoveActorAbsolute {
-                actor_runtime_id: p.actor_runtime_id.0.try_into().ok()?,
+                actor_runtime_id: p.actor_runtime_id.0 as _,
                 header: p.header.try_into().ok()?,
                 position: (p.position.x as _, p.position.y as _, p.position.z as _),
                 rotation_x: p.rotation_x.try_into().ok()?,
@@ -330,7 +397,7 @@ pub fn deserialize_bedrock_clientbound_packet(
             let p = <pumpkin_protocol::bedrock::client::CMoveActorDelta as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CMoveActorDelta(crate::pumpkin::plugin::bedrock_packets::CMoveActorDelta {
-                entity_runtime_id: p.entity_runtime_id.0.try_into().ok()?,
+                entity_runtime_id: p.entity_runtime_id.0 as _,
                 flags: p.flags.try_into().ok()?,
                 x: p.x.try_into().ok()?,
                 y: p.y.try_into().ok()?,
@@ -338,7 +405,7 @@ pub fn deserialize_bedrock_clientbound_packet(
                 pitch: p.pitch.try_into().ok()?,
                 yaw: p.yaw.try_into().ok()?,
                 head_yaw: p.head_yaw.try_into().ok()?,
-                tick: p.tick.0.try_into().ok()?,
+                tick: p.tick.0 as _,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CMovePlayer as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -346,17 +413,17 @@ pub fn deserialize_bedrock_clientbound_packet(
             let p = <pumpkin_protocol::bedrock::client::CMovePlayer as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CMovePlayer(crate::pumpkin::plugin::bedrock_packets::CMovePlayer {
-                player_runtime_id: p.player_runtime_id.0.try_into().ok()?,
+                player_runtime_id: p.player_runtime_id.0 as _,
                 position: (p.position.x as _, p.position.y as _, p.position.z as _),
                 pitch: p.pitch.try_into().ok()?,
                 yaw: p.yaw.try_into().ok()?,
                 head_yaw: p.head_yaw.try_into().ok()?,
                 mode: p.mode.try_into().ok()?,
                 on_ground: p.on_ground.try_into().ok()?,
-                riding_runtime_id: p.riding_runtime_id.0.try_into().ok()?,
+                riding_runtime_id: p.riding_runtime_id.0 as _,
                 teleport_cause: p.teleport_cause.try_into().ok()?,
                 teleport_source_entity_type: p.teleport_source_entity_type.try_into().ok()?,
-                tick: p.tick.0.try_into().ok()?,
+                tick: p.tick.0 as _,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CNetworkSettings as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -420,9 +487,9 @@ pub fn deserialize_bedrock_clientbound_packet(
             };
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CSetActorMotion(crate::pumpkin::plugin::bedrock_packets::CSetActorMotion {
-                target_runtime_id: p.target_runtime_id.0.try_into().ok()?,
+                target_runtime_id: p.target_runtime_id.0 as _,
                 motion: (p.motion.x as _, p.motion.y as _, p.motion.z as _),
-                tick: p.tick.0.try_into().ok()?,
+                tick: p.tick.0 as _,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CSetDifficulty as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -481,7 +548,7 @@ pub fn deserialize_bedrock_clientbound_packet(
             };
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CShowCredits(crate::pumpkin::plugin::bedrock_packets::CShowCredits {
-                player_runtime_id: p.player_runtime_id.0.try_into().ok()?,
+                player_runtime_id: p.player_runtime_id.0 as _,
                 credits_state: p.credits_state.0.try_into().ok()?,
             }))
         }
@@ -493,8 +560,8 @@ pub fn deserialize_bedrock_clientbound_packet(
             };
             if !body.is_empty() { return None; }
             Some(BClientboundPacket::CTakeItemActor(crate::pumpkin::plugin::bedrock_packets::CTakeItemActor {
-                item_runtime_id: p.item_runtime_id.0.try_into().ok()?,
-                actor_runtime_id: p.actor_runtime_id.0.try_into().ok()?,
+                item_runtime_id: p.item_runtime_id.0 as _,
+                actor_runtime_id: p.actor_runtime_id.0 as _,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CUpdateBlock as pumpkin_protocol::Packet>::PACKET_ID => {

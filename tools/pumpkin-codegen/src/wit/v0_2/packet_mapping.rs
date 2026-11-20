@@ -368,7 +368,7 @@ fn emit_bedrock_read(
 
 /// The PacketWrite derive serializes named fields in declaration order. Synthesize a read only
 /// when all fields use matching, owned, length-aware codecs. Hand-written writers need a reader.
-fn derived_bedrock_fields(packet: &syn::ItemStruct) -> Option<String> {
+fn derived_bedrock_fields(packet: &syn::ItemStruct, local_items: &[Item]) -> Option<String> {
     if !derives(&packet.attrs).any(|path| {
         path.segments
             .last()
@@ -386,30 +386,38 @@ fn derived_bedrock_fields(packet: &syn::ItemStruct) -> Option<String> {
             .strip_prefix("Option<")
             .and_then(|name| name.strip_suffix('>'))
             .unwrap_or(&ty);
+        let readable_enum =
+            local_unit_enum(&field.ty, local_items).is_some_and(|(_, enumeration)| {
+                matches!(
+                    bedrock_reader(&enumeration.attrs, local_items, &enumeration.ident),
+                    Some(BedrockReader::Read)
+                )
+            });
         if is_ref
-            || !matches!(
-                ty,
-                "i8" | "u8"
-                    | "i16"
-                    | "u16"
-                    | "i32"
-                    | "u32"
-                    | "i64"
-                    | "u64"
-                    | "bool"
-                    | "f32"
-                    | "f64"
-                    | "String"
-                    | "VarInt"
-                    | "VarUInt"
-                    | "VarLong"
-                    | "VarULong"
-                    | "BlockPos"
-                    | "Vector2"
-                    | "Vector3"
-                    | "Uuid"
-                    | "VecU8"
-            )
+            || (!readable_enum
+                && !matches!(
+                    ty,
+                    "i8" | "u8"
+                        | "i16"
+                        | "u16"
+                        | "i32"
+                        | "u32"
+                        | "i64"
+                        | "u64"
+                        | "bool"
+                        | "f32"
+                        | "f64"
+                        | "String"
+                        | "VarInt"
+                        | "VarUInt"
+                        | "VarLong"
+                        | "VarULong"
+                        | "BlockPos"
+                        | "Vector2"
+                        | "Vector3"
+                        | "Uuid"
+                        | "VecU8"
+                ))
             || (is_slice
                 && !matches!(&field.ty, syn::Type::Path(path)
                 if path.path.segments.last().is_some_and(|part| part.ident == "Vec")))
@@ -520,7 +528,11 @@ fn bedrock_type_info(ty: &syn::Type) -> (String, bool, bool) {
                 ) => {
                     return (name, false, true);
                 }
-                ("Option", "CowStr" | "String" | "VarInt" | "VarUInt" | "VarLong" | "VarULong") => {
+                (
+                    "Option",
+                    "CowStr" | "String" | "VarInt" | "VarUInt" | "VarLong" | "VarULong"
+                    | "BlockPos" | "Vector2" | "Vector3",
+                ) => {
                     return (format!("Option<{name}>"), false, false);
                 }
                 _ => {}
@@ -528,6 +540,80 @@ fn bedrock_type_info(ty: &syn::Type) -> (String, bool, bool) {
         }
     }
     get_type_info(ty)
+}
+
+fn local_unit_enum<'a>(
+    ty: &syn::Type,
+    items: &'a [Item],
+) -> Option<(&'static str, &'a syn::ItemEnum)> {
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    let segment = path.path.segments.last()?;
+    let (container, ident) = match (&segment.arguments, segment.ident.to_string().as_str()) {
+        (syn::PathArguments::AngleBracketed(args), "Option" | "Vec") => {
+            let Some(syn::GenericArgument::Type(syn::Type::Path(inner))) = args.args.first() else {
+                return None;
+            };
+            let container = if segment.ident == "Option" {
+                "option"
+            } else {
+                "list"
+            };
+            (container, &inner.path.segments.last()?.ident)
+        }
+        (syn::PathArguments::None, _) => ("", &segment.ident),
+        _ => return None,
+    };
+    items.iter().find_map(|item| match item {
+        Item::Enum(enumeration)
+            if enumeration.ident == *ident
+                && crate::wit::utils::is_valid_helper_enum(enumeration)
+                && enumeration
+                    .variants
+                    .iter()
+                    .all(|variant| matches!(variant.fields, Fields::Unit)) =>
+        {
+            Some((container, enumeration))
+        }
+        _ => None,
+    })
+}
+
+fn convert_bedrock_unit_enum(
+    ty: &syn::Type,
+    items: &[Item],
+    module: &str,
+    mode: MappingMode,
+    source: &str,
+) -> Option<String> {
+    let (container, enumeration) = local_unit_enum(ty, items)?;
+    let rust_type = format!("{module}::{}", enumeration.ident);
+    let wit_name = enumeration
+        .ident
+        .to_string()
+        .to_kebab_case()
+        .to_pascal_case();
+    let wit_type = format!("crate::pumpkin::plugin::bedrock_packets::{wit_name}");
+    let arms = enumeration
+        .variants
+        .iter()
+        .map(|variant| {
+            let case = variant.ident.to_string();
+            let rust = format!("{rust_type}::{case}");
+            let wit = format!("{wit_type}::{}", case.to_kebab_case().to_pascal_case());
+            if mode == MappingMode::Serialize {
+                format!("{wit} => {rust},")
+            } else {
+                format!("{rust} => {wit},")
+            }
+        })
+        .collect::<String>();
+    Some(match container {
+        "option" => format!("{source}.as_ref().map(|value| match value {{ {arms} }})"),
+        "list" => format!("{source}.iter().map(|value| match value {{ {arms} }}).collect()"),
+        _ => format!("match &{source} {{ {arms} }}"),
+    })
 }
 
 /// Generates the conversion of a value according to its type.
@@ -558,6 +644,9 @@ fn convert_value(
                 MappingMode::Serialize => format!("{src}.clone().map(Into::into)"),
                 _ => format!("{src}.as_ref().map(ToString::to_string)"),
             }
+        } else if matches!(inner, "BlockPos" | "Vector2" | "Vector3") {
+            let (_, inner_expr, _) = convert_value(inner, false, false, "value", None, mode, "");
+            format!("{src}.as_ref().map(|value| {inner_expr})")
         } else if matches!(inner, "VarInt" | "VarUInt" | "VarLong" | "VarULong") {
             let (_, inner_expr, _) = convert_value(inner, false, false, "value", None, mode, "");
             if mode == MappingMode::Deserialize && inner_expr.ends_with('?') {
@@ -649,6 +738,13 @@ fn convert_value(
                 format!("pumpkin_protocol::codec::var_uint::VarUInt({src} as _)")
             }
             // The WIT field is signed. Preserve the wire bits for IDs with bit 31 set.
+            MappingMode::Deserialize | MappingMode::ToWit => format!("{src}.0 as _"),
+            MappingMode::Downcast => String::new(),
+        },
+        "VarULong" if !is_ref && !is_slice => match mode {
+            MappingMode::Serialize => {
+                format!("pumpkin_protocol::codec::var_ulong::VarULong({src} as _)")
+            }
             MappingMode::Deserialize | MappingMode::ToWit => format!("{src}.0 as _"),
             MappingMode::Downcast => String::new(),
         },
@@ -999,6 +1095,11 @@ fn parse_packet_file(
 ) {
     let content = fs::read_to_string(path).expect("Failed to read file");
     let file = syn::parse_file(&content).expect("Failed to parse file");
+    let module = path
+        .to_string_lossy()
+        .split_once("/src/bedrock/")
+        .and_then(|(_, relative)| relative.strip_suffix(".rs"))
+        .map(|relative| format!("pumpkin_protocol::bedrock::{}", relative.replace('/', "::")));
     let include = |name: &syn::Ident| {
         allowed.is_none_or(|allowed| allowed.contains(&name.to_string().to_kebab_case()))
     };
@@ -1018,6 +1119,8 @@ fn parse_packet_file(
                     rust_path_prefix,
                     mode,
                     bedrock_reader(&s.attrs, &file.items, &s.ident),
+                    module.as_deref(),
+                    &file.items,
                 );
             }
             Item::Enum(e) if has_attr(&e.attrs, attr_name) && include(&e.ident) => {
@@ -1046,6 +1149,8 @@ fn process_struct(
     rust_path_prefix: &str,
     mode: MappingMode,
     reader: Option<BedrockReader>,
+    local_module: Option<&str>,
+    local_items: &[Item],
 ) {
     let struct_name = s.ident.to_string();
     let wit_case = if state == "play" {
@@ -1067,7 +1172,7 @@ fn process_struct(
         && rust_path_prefix.ends_with("::client")
         && reader.is_none()
     {
-        derived_bedrock_fields(&s)
+        derived_bedrock_fields(&s, local_items)
     } else {
         None
     };
@@ -1107,7 +1212,7 @@ fn process_struct(
                 MappingMode::Downcast => String::new(),
             };
 
-            let (prep, expr, ok) = convert_value(
+            let (prep, mut expr, ok) = convert_value(
                 &type_ident,
                 is_ref,
                 is_slice,
@@ -1118,8 +1223,13 @@ fn process_struct(
             );
 
             if !ok {
-                possible = false;
-                break;
+                let Some(enum_expr) = local_module.and_then(|module| {
+                    convert_bedrock_unit_enum(&field.ty, local_items, module, mode, &src)
+                }) else {
+                    possible = false;
+                    break;
+                };
+                expr = enum_expr;
             }
 
             prep_code.push_str(&prep);
