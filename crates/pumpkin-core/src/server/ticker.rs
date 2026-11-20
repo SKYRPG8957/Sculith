@@ -1,8 +1,10 @@
 use super::server_test_manager::{drain_game_test_queue, has_pending_game_tests};
 
 use crate::{
+    command::CommandSender,
     plugin::server::{
-        server_tick_end::ServerTickEndEvent, server_tick_start::ServerTickStartEvent,
+        server_command::ServerCommandEvent, server_tick_end::ServerTickEndEvent,
+        server_tick_start::ServerTickStartEvent,
     },
     server::Server,
 };
@@ -10,6 +12,7 @@ use pumpkin_gametest::GameTestRunner;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, warn};
 
 const NANOSECONDS_PER_MILLISECOND: i64 = 1_000_000;
@@ -44,9 +47,40 @@ impl TickSchedule {
 
 pub struct Ticker;
 
+pub(crate) const CONSOLE_COMMAND_CAPACITY: usize = 16;
+
+pub(crate) struct ConsoleCommand {
+    pub(crate) text: String,
+    pub(crate) done: Option<oneshot::Sender<()>>,
+}
+
+impl ConsoleCommand {
+    fn execute(self, server: &Arc<Server>) {
+        let mut event = ServerCommandEvent::new(self.text.clone());
+        server.plugin_manager.fire_blocking(server, &mut event);
+        if !event.cancelled {
+            let _runtime = server.runtime.enter();
+            server
+                .command_dispatcher
+                .load()
+                .handle_command(&CommandSender::Console.into_source(server), &self.text);
+        }
+        if let Some(done) = self.done {
+            let _ = done.send(());
+        }
+    }
+}
+
 impl Ticker {
     /// Runs the main server tick loop on a dedicated thread.
     pub fn run(server: &Arc<Server>) {
+        Self::run_with_console(server, None);
+    }
+
+    pub(crate) fn run_with_console(
+        server: &Arc<Server>,
+        mut commands: Option<mpsc::Receiver<ConsoleCommand>>,
+    ) {
         // Single monotonic base, the schedule is plain nanosecond arithmetic.
         let base = Instant::now();
         let mut schedule = TickSchedule::new();
@@ -60,6 +94,22 @@ impl Ticker {
         });
 
         'ticker: loop {
+            // Give console input time even while sprinting or catching up.
+            if let Some(commands) = commands.as_mut() {
+                for _ in 0..CONSOLE_COMMAND_CAPACITY {
+                    if server.stop_token.is_cancelled() {
+                        break 'ticker;
+                    }
+                    let Ok(command) = commands.try_recv() else {
+                        break;
+                    };
+                    command.execute(server);
+                }
+            }
+            if server.stop_token.is_cancelled() {
+                break 'ticker;
+            }
+
             // Doubles as the tick-duration start, so the loop reads the clock twice.
             let tick_start_nanos = elapsed_nanos(base);
             let manager = &server.tick_rate_manager;
@@ -131,7 +181,7 @@ impl Ticker {
                 break 'ticker;
             }
 
-            wait_until_next_tick(server, base, schedule.next_tick_nanos);
+            wait_until_next_tick(server, base, schedule.next_tick_nanos, commands.as_mut());
 
             if server.stop_token.is_cancelled() {
                 break 'ticker;
@@ -189,11 +239,13 @@ const fn apply_overload_skip(
     (schedule, None)
 }
 
-/// Vanilla `waitUntilNextTick` / `LockSupport.parkNanos`.
-///
-/// Vanilla drains its server-thread queue here (`pollTask`). there is no such queue:
-/// that work runs on the runtime and keeps going while this thread parks.
-fn wait_until_next_tick(server: &Server, base: Instant, next_tick_nanos: i64) {
+/// Run console commands between ticks, when all of the world's tick workers have returned.
+fn wait_until_next_tick(
+    server: &Arc<Server>,
+    base: Instant,
+    next_tick_nanos: i64,
+    mut commands: Option<&mut mpsc::Receiver<ConsoleCommand>>,
+) {
     loop {
         if server.stop_token.is_cancelled() {
             return;
@@ -202,6 +254,13 @@ fn wait_until_next_tick(server: &Server, base: Instant, next_tick_nanos: i64) {
         let remaining = next_tick_nanos - elapsed_nanos(base);
         if remaining <= 0 {
             return;
+        }
+
+        if let Some(commands) = commands.as_deref_mut()
+            && let Ok(command) = commands.try_recv()
+        {
+            command.execute(server);
+            continue;
         }
 
         std::thread::park_timeout(Duration::from_nanos(remaining as u64));

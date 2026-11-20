@@ -21,8 +21,10 @@ use crate::net::java::pending::PendingConnection;
 use crate::net::{ClientPlatform, DisconnectReason, PacketHandlerResult, PacketRateLimiter};
 use crate::net::{lan_broadcast::LANBroadcast, management::ManagementServer, query};
 use crate::plugin::loader::PluginLoader;
-use crate::plugin::server::server_command::ServerCommandEvent;
-use crate::server::{Server, ticker::Ticker};
+use crate::server::{
+    Server,
+    ticker::{CONSOLE_COMMAND_CAPACITY, ConsoleCommand, Ticker},
+};
 use plugin::server::server_load::{LoadType, ServerLoadEvent};
 use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use pumpkin_util::text::TextComponent;
@@ -319,6 +321,7 @@ pub struct PumpkinServer {
     pub server: Arc<Server>,
     pub tcp_listener: Option<TcpListener>,
     pub nethernet_listener: Option<NetherNetListener>,
+    console: ConsoleInput,
     /// Whether this instance owns the process: on shutdown, a standalone server also stops the
     /// process, while an embedded server only ends its own world.
     standalone: bool,
@@ -402,14 +405,17 @@ impl PumpkinServer {
         }
 
         // Ticker
-        {
+        let (sender, commands) = tokio::sync::mpsc::channel(CONSOLE_COMMAND_CAPACITY);
+        let ticker = {
             let ticker_server = server.clone();
             std::thread::Builder::new()
                 .name("Server-Ticker".into())
-                .spawn(move || {
-                    Ticker::run(&ticker_server);
-                })
-                .map_err(ServerSetupError::TickerSpawn)?;
+                .spawn(move || Ticker::run_with_console(&ticker_server, Some(commands)))
+                .map_err(ServerSetupError::TickerSpawn)?
+        };
+        let console = ConsoleInput {
+            sender,
+            ticker: ticker.thread().clone(),
         };
 
         let nethernet_listener = Self::bind_nethernet(&server, ice_socket).await;
@@ -418,6 +424,7 @@ impl PumpkinServer {
             server,
             tcp_listener,
             nethernet_listener,
+            console,
             standalone,
         })
     }
@@ -534,14 +541,14 @@ impl PumpkinServer {
             && let Some((wrapper, _, _)) = LOGGER_IMPL.wait()
         {
             if let Some(rl) = wrapper.take_readline() {
-                setup_console(rl, self.server.clone());
+                setup_console(rl, &self.server, self.console.clone());
             } else {
                 if self.server.advanced_config.commands.use_tty {
                     warn!(
                         "The input is not a TTY; falling back to simple logger and ignoring `use_tty` setting"
                     );
                 }
-                setup_stdin_console(&self.server);
+                setup_stdin_console(&self.server, self.console.clone());
             }
         }
 
@@ -806,10 +813,30 @@ impl PumpkinServer {
     }
 }
 
-fn setup_stdin_console(server: &Arc<Server>) {
-    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+#[derive(Clone)]
+struct ConsoleInput {
+    sender: tokio::sync::mpsc::Sender<ConsoleCommand>,
+    ticker: std::thread::Thread,
+}
+
+impl ConsoleInput {
+    fn send(&self, text: String, done: Option<tokio::sync::oneshot::Sender<()>>) -> bool {
+        if self
+            .sender
+            .blocking_send(ConsoleCommand { text, done })
+            .is_err()
+        {
+            return false;
+        }
+        self.ticker.unpark();
+        true
+    }
+}
+
+fn setup_stdin_console(server: &Server, console: ConsoleInput) {
+    let stop = server.stop_token.clone();
     std::thread::spawn(move || {
-        while !SHOULD_STOP.load(Ordering::Relaxed) {
+        while !stop.is_cancelled() {
             let mut line = String::new();
             if let Ok(size) = stdin().read_line(&mut line) {
                 // if no bytes were read, we may have hit EOF
@@ -822,41 +849,18 @@ fn setup_stdin_console(server: &Arc<Server>) {
             if line.is_empty() || line.as_bytes()[line.len() - 1] != b'\n' {
                 warn!("Console command was not terminated with a newline");
             }
-            if tx.blocking_send(line.trim().to_string()).is_err() {
+            if !console.send(line.trim().to_string(), None) {
                 break;
-            }
-        }
-    });
-    let server_clone = server.clone();
-    server.spawn_task(async move {
-        while !SHOULD_STOP.load(Ordering::Relaxed) {
-            // stdin may never reach EOF (a pipe), so stopping must wake this up too
-            let command = select! {
-                command = rx.recv() => command,
-                () = STOP_INTERRUPT.cancelled() => None,
-            };
-            let Some(command) = command else {
-                break;
-            };
-            let mut event = ServerCommandEvent::new(command.clone());
-            server_clone
-                .plugin_manager
-                .fire(&server_clone, &mut event)
-                .await;
-            if !event.cancelled {
-                server_clone.command_dispatcher.load().handle_command(
-                    &command::CommandSender::Console.into_source(&server_clone),
-                    command.as_str(),
-                );
             }
         }
     });
 }
 
-fn setup_console(mut rl: Editor<PumpkinCommandCompleter, FileHistory>, server: Arc<Server>) {
-    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-    let (tx_reply, mut rx_reply) = tokio::sync::mpsc::channel(1);
-
+fn setup_console(
+    mut rl: Editor<PumpkinCommandCompleter, FileHistory>,
+    server: &Arc<Server>,
+    console: ConsoleInput,
+) {
     if let Some(helper) = rl.helper_mut() {
         if let Ok(mut server_lock) = helper.server.write() {
             *server_lock = Some(server.clone());
@@ -864,18 +868,17 @@ fn setup_console(mut rl: Editor<PumpkinCommandCompleter, FileHistory>, server: A
         let _ = helper.rt.set(tokio::runtime::Handle::current());
     }
 
+    let stop = server.stop_token.clone();
     std::thread::spawn(move || {
-        while !SHOULD_STOP.load(Ordering::Relaxed) {
+        while !stop.is_cancelled() {
             let readline = rl.readline("$ ");
             match readline {
                 Ok(line) => {
                     let _ = rl.add_history_entry(line.clone());
-                    if tx.blocking_send(line).is_err() {
+                    let (done, completion) = tokio::sync::oneshot::channel();
+                    if !console.send(line, Some(done)) || completion.blocking_recv().is_err() {
                         break;
                     }
-
-                    // Wait for the command to be fully processed before continuing
-                    let _ = rx_reply.blocking_recv();
                 }
                 Err(ReadlineError::Interrupted) => {
                     info!("CTRL-C");
@@ -896,34 +899,6 @@ fn setup_console(mut rl: Editor<PumpkinCommandCompleter, FileHistory>, server: A
         if let Some((wrapper, _, _)) = LOGGER_IMPL.wait() {
             wrapper.return_readline(rl);
         }
-    });
-
-    server.clone().spawn_task(async move {
-        while !SHOULD_STOP.load(Ordering::Relaxed) {
-            let t1 = rx.recv();
-            let t2 = STOP_INTERRUPT.cancelled();
-
-            let result = select! {
-                line = t1 => line,
-                () = t2 => None,
-            };
-
-            if let Some(line) = result {
-                let mut event = ServerCommandEvent::new(line.clone());
-                server.plugin_manager.fire(&server, &mut event).await;
-                if !event.cancelled {
-                    server.command_dispatcher.load().handle_command(
-                        &command::CommandSender::Console.into_source(&server),
-                        &line,
-                    );
-                }
-                let _ = tx_reply.send(1).await;
-            } else {
-                break;
-            }
-        }
-        drop(rx);
-        debug!("Stopped console commands task");
     });
 }
 
