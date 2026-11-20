@@ -44,35 +44,31 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         Self::take_ready_locked(&mut inner_guard)
     }
 
-    /// Advances the timer ring and returns the value when exactly one entry is ready.
+    /// Advances the timer ring and returns the first ready value, if any.
     pub fn advance(&self) -> Option<&'a T> {
         let mut inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.advance_locked(&mut inner_guard, None);
-        match inner_guard.as_ref()?.ready.as_slice() {
-            [tick] => Some(tick.value),
-            _ => None,
-        }
+        inner_guard.as_ref()?.ready.first().map(|tick| tick.value)
     }
 
-    pub(crate) fn apply_single_ready<R>(
+    pub(crate) fn apply_ready_batch<R>(
         &self,
-        value: &T,
-        apply: impl FnOnce(BlockPos) -> Option<R>,
+        limit: usize,
+        apply: impl FnOnce(&[OrderedTick<&'a T>]) -> Option<R>,
     ) -> Option<R> {
         let mut inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let [tick] = inner_guard.as_ref()?.ready.as_slice() else {
-            return None;
-        };
-        if tick.value != value {
+        let ready = &mut inner_guard.as_mut()?.ready;
+        if ready.is_empty() || ready.len() > limit {
             return None;
         }
-        let result = apply(tick.position)?;
+        ready.sort();
+        let result = apply(ready)?;
         Self::take_ready_locked(&mut inner_guard);
         Some(result)
     }

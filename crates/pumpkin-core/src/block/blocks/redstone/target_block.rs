@@ -1,5 +1,5 @@
-use pumpkin_data::Block;
 use pumpkin_data::block_properties::TargetProperties;
+use pumpkin_data::{Block, BlockStateId};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::tick::TickPriority;
@@ -33,6 +33,14 @@ fn get_redstone_strength(hit_pos: &Vector3<f64>) -> u8 {
 
 #[pumpkin_block("minecraft:target")]
 pub struct TargetBlock;
+
+impl TargetBlock {
+    pub(crate) fn scheduled_replacement(state: BlockStateId) -> BlockStateId {
+        let mut props = TargetProperties::from_state_id(state);
+        props.r#power = 0;
+        props.to_state_id(&Block::TARGET)
+    }
+}
 
 impl BlockBehaviour for TargetBlock {
     fn emits_redstone_power(&self, _args: EmitsRedstonePowerArgs<'_>) -> bool {
@@ -80,14 +88,17 @@ impl BlockBehaviour for TargetBlock {
     }
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        let state_id = args.world.get_block_state_id(args.position);
-        let mut props = TargetProperties::from_state_id(state_id);
-        if props.r#power != 0 {
-            props.r#power = 0;
-            args.world.set_block_state(
+        let state = args.world.get_block_state_id(args.position);
+        if state.to_block_id() == Block::TARGET.id {
+            let replacement = Self::scheduled_replacement(state);
+            if replacement == state {
+                return;
+            }
+            args.world.set_block_state_if(
                 args.position,
-                props.to_state_id(args.block),
+                replacement,
                 BlockFlags::NOTIFY_ALL,
+                |current| current == state,
             );
         }
     }

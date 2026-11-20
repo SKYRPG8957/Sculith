@@ -102,13 +102,16 @@ block or fluid callback phase. While it waits, the same timer cannot be
 scheduled again and a save stores it with zero remaining delay. This uses
 the existing chunk formats. The world sorts each callback type by priority.
 
-An active region can commit a built-in redstone lamp's scheduled turn-off
-on its own deadline. The lamp must be the chunk's sole ready block tick,
-and all six neighbours must be in that chunk, non-solid and free of
-registered block behaviour. This rules out power and shape callbacks.
-A save sees the property change and timer removal together. The change
-triggers the shared lighting engine after releasing the chunk, and packet
-flushes read the authoritative state for both editions.
+An active region can commit a chunk's ready batch of built-in redstone
+lamp turn-offs and target block pulse resets on its own deadline. Each
+decision uses the same chunk snapshot in tick priority order. Lamp checks
+inspect adjacent blocks and possible strong power through solid neighbours.
+Target resets require that adjacent block and fluid callbacks have no work
+and that no plugin observes block physics. A batch with a read beyond the
+chunk, a callback requiring the world owner or more than 32 ready ticks
+stays queued for the world phase. Both save formats capture the committed
+properties and timer removals together. The shared lighting engine follows
+changes to light properties, and both editions read the authoritative state.
 
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
@@ -126,7 +129,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 22.
+Native plugins use ABI 23.
 
 ## Shared resource delivery
 

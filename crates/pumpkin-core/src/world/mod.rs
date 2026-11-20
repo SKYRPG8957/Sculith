@@ -47,12 +47,14 @@ pub mod time;
 pub mod village_siege;
 pub mod wandering_trader_spawner;
 
-use crate::block::{RandomTickArgs, blocks::redstone::redstone_lamp::RedstoneLamp};
+use crate::block::RandomTickArgs;
+use crate::block::blocks::redstone::{redstone_lamp::RedstoneLamp, target_block::TargetBlock};
+use crate::plugin::api::events::block::block_physics::BlockPhysicsEvent;
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
     block::{
-        registry::BlockRegistry,
+        registry::{BlockRegistry, RegionalBlockTick},
         {OnNeighborUpdateArgs, OnScheduledTickArgs},
     },
     command::client_suggestions,
@@ -86,7 +88,7 @@ use pumpkin_data::game_rules::{GameRule, GameRuleValue};
 use pumpkin_data::noise_settings::NoiseSettings;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{
-    Block, BlockStateId,
+    Block, BlockId, BlockStateId,
     entity::{EntityStatus, EntityType},
     fluid::Fluid,
     item_stack::ItemStack,
@@ -200,6 +202,7 @@ use weather::Weather;
 
 const MAX_LIGHT_LEVEL: u8 = 15;
 const LIGHTNING_ROD_SEARCH_RADIUS: i32 = 128;
+const CHUNK_TICK_BATCH_SIZE: usize = 32;
 pub const MOON_BRIGHTNESS_PER_PHASE: [f32; 8] = [1.0, 0.75, 0.5, 0.25, 0.0, 0.25, 0.5, 0.75];
 
 fn bedrock_chest_block_actor(state_id: BlockStateId, position: BlockPos) -> Option<NbtCompound> {
@@ -2235,7 +2238,6 @@ impl World {
 
     #[expect(clippy::too_many_lines)]
     fn tick_chunks_inner(self: &Arc<Self>, coordinated: bool) {
-        const BATCH_SIZE: usize = 32;
         let random_tick_speed = self.level_info.load().game_rules.random_tick_speed;
 
         let active_chunks = self
@@ -2269,7 +2271,7 @@ impl World {
         let world = self.clone();
         tick_data
             .block_ticks
-            .par_chunks(BATCH_SIZE)
+            .par_chunks(CHUNK_TICK_BATCH_SIZE)
             .for_each(|batch| {
                 let world = world.clone();
                 for scheduled_tick in batch {
@@ -2289,7 +2291,7 @@ impl World {
         let world = self.clone();
         tick_data
             .fluid_ticks
-            .par_chunks(BATCH_SIZE)
+            .par_chunks(CHUNK_TICK_BATCH_SIZE)
             .for_each(|batch| {
                 let world = world.clone();
                 for scheduled_tick in batch {
@@ -2305,7 +2307,7 @@ impl World {
         let world = self.clone();
         tick_data
             .random_ticks
-            .par_chunks(BATCH_SIZE)
+            .par_chunks(CHUNK_TICK_BATCH_SIZE)
             .for_each(|batch| {
                 let world = world.clone();
                 for scheduled_tick in batch {
@@ -2419,25 +2421,90 @@ impl World {
                 chunk.fluid_ticks.advance();
                 chunk.mark_dirty(true);
                 if inhabited
-                    && block == Some(&Block::REDSTONE_LAMP)
-                    && self.block_registry.uses_builtin_redstone_lamp()
+                    && block
+                        .is_some_and(|block| self.block_registry.regional_tick(block.id).is_some())
                     && self.region_layout.load().owner(pos) == Some(owner)
-                    && let Some((position, state)) =
-                        chunk.apply_ready_block_property(&Block::REDSTONE_LAMP, |p, s, read| {
-                            if !self.is_in_build_limit(p) {
-                                return None;
-                            }
-                            RedstoneLamp::regional_replacement(&self.block_registry, p, s, read)
-                        })
+                    && let Some(changes) = chunk.apply_ready_block_properties(
+                        CHUNK_TICK_BATCH_SIZE,
+                        |block, position, state, read| {
+                            self.regional_block_replacement(block.id, position, state, read)
+                        },
+                    )
                 {
-                    self.register_block_change(position, state);
+                    if !changes.is_empty() {
+                        self.unsent_block_changes
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .extend(
+                                changes
+                                    .iter()
+                                    .map(|&(position, _, state)| (position, state)),
+                            );
+                    }
                     drop(chunk);
-                    self.level
-                        .light_engine
-                        .update_lighting_at(&self.level, position);
+                    for (position, old, new) in changes {
+                        if pumpkin_world::lighting::LightEngine::has_different_light_properties(
+                            old.to_state(),
+                            new.to_state(),
+                        ) {
+                            self.level
+                                .light_engine
+                                .update_lighting_at(&self.level, position);
+                        }
+                    }
                 }
             } else if inhabited {
                 self.advance_chunk_inhabitation(pos);
+            }
+        }
+    }
+
+    fn regional_block_replacement(
+        &self,
+        block: BlockId,
+        position: BlockPos,
+        state: BlockStateId,
+        read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> Option<BlockStateId> {
+        if !self.is_in_build_limit(position) {
+            return None;
+        }
+        let read = |position| {
+            self.is_in_build_limit(position)
+                .then(|| read(position))
+                .flatten()
+        };
+        match self.block_registry.regional_tick(block)? {
+            RegionalBlockTick::Lamp => {
+                RedstoneLamp::regional_replacement(&self.block_registry, position, state, &read)
+            }
+            RegionalBlockTick::Target => {
+                let replacement = TargetBlock::scheduled_replacement(state);
+                if replacement == state {
+                    return Some(state);
+                }
+                if replacement.has_analog_output_signal()
+                    || self.server.upgrade().is_some_and(|server| {
+                        server.plugin_manager.has_handlers::<BlockPhysicsEvent>()
+                    })
+                {
+                    return None;
+                }
+                // The usual callback notifies neighbor blocks and their fluids.
+                // Leave that work on the world owner whenever it can have an effect.
+                for direction in BlockDirection::all() {
+                    let neighbor = read(position.offset(direction.to_offset()))?;
+                    let fluid = Self::get_fluid_from_state_id(neighbor);
+                    if self
+                        .block_registry
+                        .get_pumpkin_block(neighbor.to_block_id())
+                        .is_some()
+                        || self.block_registry.get_pumpkin_fluid(fluid.id).is_some()
+                    {
+                        return None;
+                    }
+                }
+                Some(replacement)
             }
         }
     }
@@ -6654,10 +6721,7 @@ impl World {
             (self.get_block(position), None)
         };
 
-        let mut event = crate::plugin::api::events::block::block_physics::BlockPhysicsEvent::new(
-            *position,
-            *source_position,
-        );
+        let mut event = BlockPhysicsEvent::new(*position, *source_position);
         if let Some(server) = self.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }

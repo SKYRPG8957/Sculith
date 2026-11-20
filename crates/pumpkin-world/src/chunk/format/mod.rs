@@ -1462,53 +1462,81 @@ impl Default for LightContainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_data::{Block, block_properties::RedstoneOreLikeProperties};
+    use pumpkin_data::{
+        Block,
+        block_properties::{RedstoneOreLikeProperties, TargetProperties},
+    };
     use pumpkin_nbt::compound::NbtCompound;
     use pumpkin_nbt::tag::NbtTag;
 
     #[test]
-    fn regional_change_saves_the_block_and_timer_together() {
-        let position = BlockPos::new(1, 64, 3);
-        let chunk_position = position.chunk_position();
+    fn regional_batch_saves_the_blocks_and_timers_together() {
+        let lamp_pos = BlockPos::new(1, 64, 3);
+        let target_pos = BlockPos::new(5, 64, 3);
+        let chunk_position = lamp_pos.chunk_position();
         let lamp = &Block::REDSTONE_LAMP;
+        let target = &Block::TARGET;
         let lit = RedstoneOreLikeProperties { lit: true }.to_state_id(lamp);
         let dark = RedstoneOreLikeProperties { lit: false }.to_state_id(lamp);
+        let powered = TargetProperties { r#power: 15 }.to_state_id(target);
+        let inactive = TargetProperties { r#power: 0 }.to_state_id(target);
         let chunk = ChunkData::empty(chunk_position.x, chunk_position.y);
         chunk.set_block_absolute_y(1, 64, 3, lit);
-        chunk.block_ticks.schedule_tick(
-            &ScheduledTick {
-                position,
-                value: lamp,
-                delay: 0,
-                priority: TickPriority::Normal,
-            },
-            0,
-        );
-        assert_eq!(chunk.block_ticks.advance(), Some(lamp));
+        chunk.set_block_absolute_y(5, 64, 3, powered);
+        for (position, value, priority) in [
+            (target_pos, target, TickPriority::Normal),
+            (lamp_pos, lamp, TickPriority::High),
+        ] {
+            chunk.block_ticks.schedule_tick(
+                &ScheduledTick {
+                    position,
+                    value,
+                    delay: 0,
+                    priority,
+                },
+                0,
+            );
+        }
+        assert_eq!(chunk.block_ticks.advance(), Some(target));
 
-        let check_save = |state, has_timer| {
+        let check_save = |lamp_state, target_state, has_timer| {
             for bytes in [chunk.internal_to_bytes(), chunk.internal_to_pump_bytes()] {
                 let saved = ChunkData::internal_from_bytes(&bytes, chunk_position).unwrap();
-                assert_eq!(saved.section.get_block_absolute_y(1, 64, 3), Some(state));
-                assert_eq!(saved.block_ticks.is_scheduled(position, lamp), has_timer);
+                assert_eq!(
+                    saved.section.get_block_absolute_y(1, 64, 3),
+                    Some(lamp_state)
+                );
+                assert_eq!(
+                    saved.section.get_block_absolute_y(5, 64, 3),
+                    Some(target_state)
+                );
+                assert_eq!(saved.block_ticks.is_scheduled(lamp_pos, lamp), has_timer);
+                assert_eq!(
+                    saved.block_ticks.is_scheduled(target_pos, target),
+                    has_timer
+                );
             }
         };
         assert_eq!(
-            chunk.apply_ready_block_property(lamp, |_, _, read| {
-                read(BlockPos::new(16, 64, 3)).map(|_| dark)
+            chunk.apply_ready_block_properties(2, |block, _, _, read| {
+                if block == lamp {
+                    Some(dark)
+                } else {
+                    read(BlockPos::new(16, 64, 3))
+                }
             }),
             None
         );
-        check_save(lit, true);
+        check_save(lit, powered, true);
 
         assert_eq!(
-            chunk.apply_ready_block_property(lamp, |pos, state, read| {
-                assert_eq!(state, lit);
-                (read(pos.up())? == BlockStateId::AIR).then_some(dark)
+            chunk.apply_ready_block_properties(2, |block, _, _, read| {
+                assert_eq!(read(lamp_pos), Some(lit));
+                Some(if block == lamp { dark } else { inactive })
             }),
-            Some((position, dark))
+            Some(vec![(lamp_pos, lit, dark), (target_pos, powered, inactive)])
         );
-        check_save(dark, false);
+        check_save(dark, inactive, false);
     }
 
     #[test]

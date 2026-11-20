@@ -36,19 +36,31 @@ impl RedstoneLamp {
         state: BlockStateId,
         read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
     ) -> Option<BlockStateId> {
-        let replacement = Self::scheduled_replacement(state, || false)?;
+        let Some(replacement) = Self::scheduled_replacement(state, || false) else {
+            return Some(state);
+        };
         for direction in BlockDirection::all() {
-            let neighbor = read(position.offset(direction.to_offset()))?;
-            // A solid block can conduct power. Registered blocks can respond to a
-            // shape update or emit power through their own behavior.
-            if neighbor.to_state().is_solid_block()
-                || registry.get_pumpkin_block(neighbor.to_block_id()).is_some()
-            {
+            let neighbor_position = position.offset(direction.to_offset());
+            let neighbor = read(neighbor_position)?;
+            // Registered neighbors can respond to a shape update or emit power.
+            if registry.get_pumpkin_block(neighbor.to_block_id()).is_some() {
                 return None;
             }
+            if neighbor.to_state().is_solid_block() {
+                // A solid neighbor can conduct a strong signal from one block away.
+                for side in BlockDirection::all() {
+                    let source = neighbor_position.offset(side.to_offset());
+                    if source != position
+                        && registry
+                            .get_pumpkin_block(read(source)?.to_block_id())
+                            .is_some()
+                    {
+                        return None;
+                    }
+                }
+            }
         }
-        (state.to_state().collision_shapes == replacement.to_state().collision_shapes)
-            .then_some(replacement)
+        Some(replacement)
     }
 }
 

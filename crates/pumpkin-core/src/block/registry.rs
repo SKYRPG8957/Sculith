@@ -513,11 +513,34 @@ impl BlockActionResult {
 /// Marks a block with no registered behaviour. Never handed out as a real index.
 const NO_BEHAVIOUR: u16 = u16::MAX;
 
+#[derive(Clone, Copy)]
+pub(crate) enum RegionalBlockTick {
+    Lamp = 1,
+    Target = 2,
+}
+
+impl RegionalBlockTick {
+    const fn for_block(id: BlockId) -> Option<Self> {
+        match id {
+            BlockId::REDSTONE_LAMP => Some(Self::Lamp),
+            BlockId::TARGET => Some(Self::Target),
+            _ => None,
+        }
+    }
+
+    const fn behaviour_type(self) -> std::any::TypeId {
+        match self {
+            Self::Lamp => std::any::TypeId::of::<RedstoneLamp>(),
+            Self::Target => std::any::TypeId::of::<TargetBlock>(),
+        }
+    }
+}
+
 pub struct BlockRegistry {
     block_indices: [u16; pumpkin_data::BlockId::COUNT as usize],
     behaviours: Vec<Arc<dyn BlockBehaviour>>,
     fluids: FxHashMap<u16, Arc<dyn FluidBehaviour>>,
-    uses_builtin_redstone_lamp: bool,
+    regional_ticks: u8,
 }
 
 impl Default for BlockRegistry {
@@ -526,7 +549,7 @@ impl Default for BlockRegistry {
             block_indices: [NO_BEHAVIOUR; pumpkin_data::BlockId::COUNT as usize],
             behaviours: Vec::new(),
             fluids: FxHashMap::default(),
-            uses_builtin_redstone_lamp: false,
+            regional_ticks: 0,
         }
     }
 }
@@ -935,15 +958,19 @@ impl BlockRegistry {
         self.behaviours.push(Arc::new(block));
         for i in ids {
             self.block_indices[i.as_u16() as usize] = idx;
-            if i == Block::REDSTONE_LAMP.id {
-                self.uses_builtin_redstone_lamp =
-                    std::any::TypeId::of::<T>() == std::any::TypeId::of::<RedstoneLamp>();
+            if let Some(tick) = RegionalBlockTick::for_block(i) {
+                let flag = tick as u8;
+                if std::any::TypeId::of::<T>() == tick.behaviour_type() {
+                    self.regional_ticks |= flag;
+                } else {
+                    self.regional_ticks &= !flag;
+                }
             }
         }
     }
 
-    pub(crate) const fn uses_builtin_redstone_lamp(&self) -> bool {
-        self.uses_builtin_redstone_lamp
+    pub(crate) fn regional_tick(&self, block: BlockId) -> Option<RegionalBlockTick> {
+        RegionalBlockTick::for_block(block).filter(|tick| self.regional_ticks & (*tick as u8) != 0)
     }
 
     pub fn register_fluid<T: FluidBehaviour + FluidMetadata + 'static>(&mut self, fluid: T) {

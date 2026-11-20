@@ -760,18 +760,18 @@ impl ChunkData {
         Some(old)
     }
 
-    /// Applies a single ready tick that only changes properties of its block.
-    /// The caller owns the chunk's scheduled work. The update runs under the palette
-    /// and timer locks and can read this chunk through the supplied accessor.
-    pub fn apply_ready_block_property(
+    /// Commits a ready batch of isolated block property changes. Each decision reads
+    /// the same chunk snapshot. A rejected decision leaves the entire batch ready.
+    pub fn apply_ready_block_properties(
         &self,
-        block: &Block,
-        update: impl FnOnce(
+        limit: usize,
+        update: impl Fn(
+            &Block,
             BlockPos,
             BlockStateId,
             &dyn Fn(BlockPos) -> Option<BlockStateId>,
         ) -> Option<BlockStateId>,
-    ) -> Option<(BlockPos, BlockStateId)> {
+    ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
         // The chunk writers read the palette before the timer ring. Holding both in
         // that order commits the state and consumes the tick in one save snapshot.
         let mut sections = self
@@ -787,7 +787,7 @@ impl ChunkData {
             let y = usize::try_from(relative.y.checked_sub(self.section.min_y)?).ok()?;
             Some((relative.x as usize, y, relative.z as usize))
         };
-        self.block_ticks.apply_single_ready(block, |position| {
+        self.block_ticks.apply_ready_batch(limit, |ready| {
             let read = |pos| {
                 let (x, y, z) = coordinates(pos)?;
                 Some(
@@ -796,27 +796,51 @@ impl ChunkData {
                         .get(x, y % BlockPalette::SIZE, z),
                 )
             };
-            let old = read(position)?;
-            if Block::from_state_id(old) != block {
-                return None;
+            let mut changes = Vec::with_capacity(ready.len());
+            for tick in ready {
+                let position = tick.position;
+                let block = tick.value;
+                let old = read(position)?;
+                if Block::from_state_id(old) != block {
+                    return None;
+                }
+                let new = update(block, position, old, &read)?;
+                if old == new {
+                    continue;
+                }
+                let old_state = old.to_state();
+                let new_state = new.to_state();
+                if Block::from_state_id(new) != block
+                    || has_random_ticks(old) != has_random_ticks(new)
+                    || has_random_ticking_fluid(old) != has_random_ticking_fluid(new)
+                    || old_state.collision_shapes != new_state.collision_shapes
+                    || old_state.block_entity_type != new_state.block_entity_type
+                    || pumpkin_data::poi_type::PoiType::from_state_id(old.as_u16())
+                        != pumpkin_data::poi_type::PoiType::from_state_id(new.as_u16())
+                    || [
+                        ChunkHeightmapType::WorldSurface,
+                        ChunkHeightmapType::MotionBlocking,
+                    ]
+                    .iter()
+                    .any(|kind| kind.is_opaque(old_state) != kind.is_opaque(new_state))
+                {
+                    return None;
+                }
+                changes.push((position, old, new));
             }
-            let new = update(position, old, &read)?;
-            if Block::from_state_id(new) != block
-                || has_random_ticks(old) != has_random_ticks(new)
-                || has_random_ticking_fluid(old) != has_random_ticking_fluid(new)
-                || [
-                    ChunkHeightmapType::WorldSurface,
-                    ChunkHeightmapType::MotionBlocking,
-                ]
-                .iter()
-                .any(|kind| kind.is_opaque(old.to_state()) != kind.is_opaque(new.to_state()))
-            {
-                return None;
+            for &(position, _, new) in &changes {
+                // The earlier read validated these coordinates.
+                let (_, relative) = position.chunk_and_chunk_relative_position();
+                let y = (relative.y - self.section.min_y) as usize;
+                sections[y / BlockPalette::SIZE].set(
+                    relative.x as usize,
+                    y % BlockPalette::SIZE,
+                    relative.z as usize,
+                    new,
+                );
             }
-            let (x, y, z) = coordinates(position)?;
-            sections[y / BlockPalette::SIZE].set(x, y % BlockPalette::SIZE, z, new);
             self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
-            Some((position, new))
+            Some(changes)
         })
     }
 
