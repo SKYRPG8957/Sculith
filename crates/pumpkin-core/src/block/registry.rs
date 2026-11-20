@@ -517,6 +517,7 @@ pub struct BlockRegistry {
     block_indices: [u16; pumpkin_data::BlockId::COUNT as usize],
     behaviours: Vec<Arc<dyn BlockBehaviour>>,
     fluids: FxHashMap<u16, Arc<dyn FluidBehaviour>>,
+    uses_builtin_redstone_lamp: bool,
 }
 
 impl Default for BlockRegistry {
@@ -525,6 +526,7 @@ impl Default for BlockRegistry {
             block_indices: [NO_BEHAVIOUR; pumpkin_data::BlockId::COUNT as usize],
             behaviours: Vec::new(),
             fluids: FxHashMap::default(),
+            uses_builtin_redstone_lamp: false,
         }
     }
 }
@@ -933,7 +935,15 @@ impl BlockRegistry {
         self.behaviours.push(Arc::new(block));
         for i in ids {
             self.block_indices[i.as_u16() as usize] = idx;
+            if i == Block::REDSTONE_LAMP.id {
+                self.uses_builtin_redstone_lamp =
+                    std::any::TypeId::of::<T>() == std::any::TypeId::of::<RedstoneLamp>();
+            }
         }
+    }
+
+    pub(crate) const fn uses_builtin_redstone_lamp(&self) -> bool {
+        self.uses_builtin_redstone_lamp
     }
 
     pub fn register_fluid<T: FluidBehaviour + FluidMetadata + 'static>(&mut self, fluid: T) {

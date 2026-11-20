@@ -44,13 +44,37 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         Self::take_ready_locked(&mut inner_guard)
     }
 
-    /// Advances the timer ring while leaving due entries available to save or cancel.
-    pub fn advance(&self) {
+    /// Advances the timer ring and returns the value when exactly one entry is ready.
+    pub fn advance(&self) -> Option<&'a T> {
         let mut inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.advance_locked(&mut inner_guard, None);
+        match inner_guard.as_ref()?.ready.as_slice() {
+            [tick] => Some(tick.value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn apply_single_ready<R>(
+        &self,
+        value: &T,
+        apply: impl FnOnce(BlockPos) -> Option<R>,
+    ) -> Option<R> {
+        let mut inner_guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let [tick] = inner_guard.as_ref()?.ready.as_slice() else {
+            return None;
+        };
+        if tick.value != value {
+            return None;
+        }
+        let result = apply(tick.position)?;
+        Self::take_ready_locked(&mut inner_guard);
+        Some(result)
     }
 
     /// Takes ready work at the simulation boundary that will execute it.

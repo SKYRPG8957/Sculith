@@ -760,6 +760,66 @@ impl ChunkData {
         Some(old)
     }
 
+    /// Applies a single ready tick that only changes properties of its block.
+    /// The caller owns the chunk's scheduled work. The update runs under the palette
+    /// and timer locks and can read this chunk through the supplied accessor.
+    pub fn apply_ready_block_property(
+        &self,
+        block: &Block,
+        update: impl FnOnce(
+            BlockPos,
+            BlockStateId,
+            &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        ) -> Option<BlockStateId>,
+    ) -> Option<(BlockPos, BlockStateId)> {
+        // The chunk writers read the palette before the timer ring. Holding both in
+        // that order commits the state and consumes the tick in one save snapshot.
+        let mut sections = self
+            .section
+            .block_sections
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let coordinates = |pos: BlockPos| {
+            let (chunk, relative) = pos.chunk_and_chunk_relative_position();
+            if (chunk.x, chunk.y) != (self.x, self.z) {
+                return None;
+            }
+            let y = usize::try_from(relative.y.checked_sub(self.section.min_y)?).ok()?;
+            Some((relative.x as usize, y, relative.z as usize))
+        };
+        self.block_ticks.apply_single_ready(block, |position| {
+            let read = |pos| {
+                let (x, y, z) = coordinates(pos)?;
+                Some(
+                    sections
+                        .get(y / BlockPalette::SIZE)?
+                        .get(x, y % BlockPalette::SIZE, z),
+                )
+            };
+            let old = read(position)?;
+            if Block::from_state_id(old) != block {
+                return None;
+            }
+            let new = update(position, old, &read)?;
+            if Block::from_state_id(new) != block
+                || has_random_ticks(old) != has_random_ticks(new)
+                || has_random_ticking_fluid(old) != has_random_ticking_fluid(new)
+                || [
+                    ChunkHeightmapType::WorldSurface,
+                    ChunkHeightmapType::MotionBlocking,
+                ]
+                .iter()
+                .any(|kind| kind.is_opaque(old.to_state()) != kind.is_opaque(new.to_state()))
+            {
+                return None;
+            }
+            let (x, y, z) = coordinates(position)?;
+            sections[y / BlockPalette::SIZE].set(x, y % BlockPalette::SIZE, z, new);
+            self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+            Some((position, new))
+        })
+    }
+
     /// Sets multiple blocks in the chunk at absolute Y coordinates in a single batch.
     ///
     /// This acquires section write locks and heightmap locks once across all updates,

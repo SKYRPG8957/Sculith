@@ -1462,9 +1462,54 @@ impl Default for LightContainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_data::Block;
+    use pumpkin_data::{Block, block_properties::RedstoneOreLikeProperties};
     use pumpkin_nbt::compound::NbtCompound;
     use pumpkin_nbt::tag::NbtTag;
+
+    #[test]
+    fn regional_change_saves_the_block_and_timer_together() {
+        let position = BlockPos::new(1, 64, 3);
+        let chunk_position = position.chunk_position();
+        let lamp = &Block::REDSTONE_LAMP;
+        let lit = RedstoneOreLikeProperties { lit: true }.to_state_id(lamp);
+        let dark = RedstoneOreLikeProperties { lit: false }.to_state_id(lamp);
+        let chunk = ChunkData::empty(chunk_position.x, chunk_position.y);
+        chunk.set_block_absolute_y(1, 64, 3, lit);
+        chunk.block_ticks.schedule_tick(
+            &ScheduledTick {
+                position,
+                value: lamp,
+                delay: 0,
+                priority: TickPriority::Normal,
+            },
+            0,
+        );
+        assert_eq!(chunk.block_ticks.advance(), Some(lamp));
+
+        let check_save = |state, has_timer| {
+            for bytes in [chunk.internal_to_bytes(), chunk.internal_to_pump_bytes()] {
+                let saved = ChunkData::internal_from_bytes(&bytes, chunk_position).unwrap();
+                assert_eq!(saved.section.get_block_absolute_y(1, 64, 3), Some(state));
+                assert_eq!(saved.block_ticks.is_scheduled(position, lamp), has_timer);
+            }
+        };
+        assert_eq!(
+            chunk.apply_ready_block_property(lamp, |_, _, read| {
+                read(BlockPos::new(16, 64, 3)).map(|_| dark)
+            }),
+            None
+        );
+        check_save(lit, true);
+
+        assert_eq!(
+            chunk.apply_ready_block_property(lamp, |pos, state, read| {
+                assert_eq!(state, lit);
+                (read(pos.up())? == BlockStateId::AIR).then_some(dark)
+            }),
+            Some((position, dark))
+        );
+        check_save(dark, false);
+    }
 
     #[test]
     fn java_26_3_chunk_saves_current_palette_keys() {

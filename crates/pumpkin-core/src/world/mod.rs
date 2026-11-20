@@ -47,7 +47,7 @@ pub mod time;
 pub mod village_siege;
 pub mod wandering_trader_spawner;
 
-use crate::block::RandomTickArgs;
+use crate::block::{RandomTickArgs, blocks::redstone::redstone_lamp::RedstoneLamp};
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{block::BlockEvent, entity::item::ItemEntity};
 use crate::{
@@ -2012,6 +2012,10 @@ impl World {
             std::mem::take(&mut *guard)
         };
         for (position, block_state_id) in changes {
+            // Another simulation owner may have changed this position since it was queued.
+            let block_state_id = self
+                .get_block_state_id_if_loaded(&position)
+                .unwrap_or(block_state_id);
             let chunk_section = chunk_section_from_pos(&position);
             block_state_updates_by_chunk_section
                 .entry(chunk_section)
@@ -2405,13 +2409,32 @@ impl World {
                 continue;
             }
             if self.level.chunks_with_scheduled_ticks.contains(&pos) {
-                if let Some(chunk) = self.level.loaded_chunks.get_mut(&pos) {
-                    if inhabited {
-                        chunk.inhabited_time.fetch_add(1, Relaxed);
-                    }
-                    chunk.block_ticks.advance();
-                    chunk.fluid_ticks.advance();
-                    chunk.mark_dirty(true);
+                let Some(chunk) = self.level.loaded_chunks.get_mut(&pos) else {
+                    continue;
+                };
+                if inhabited {
+                    chunk.inhabited_time.fetch_add(1, Relaxed);
+                }
+                let block = chunk.block_ticks.advance();
+                chunk.fluid_ticks.advance();
+                chunk.mark_dirty(true);
+                if inhabited
+                    && block == Some(&Block::REDSTONE_LAMP)
+                    && self.block_registry.uses_builtin_redstone_lamp()
+                    && self.region_layout.load().owner(pos) == Some(owner)
+                    && let Some((position, state)) =
+                        chunk.apply_ready_block_property(&Block::REDSTONE_LAMP, |p, s, read| {
+                            if !self.is_in_build_limit(p) {
+                                return None;
+                            }
+                            RedstoneLamp::regional_replacement(&self.block_registry, p, s, read)
+                        })
+                {
+                    self.register_block_change(position, state);
+                    drop(chunk);
+                    self.level
+                        .light_engine
+                        .update_lighting_at(&self.level, position);
                 }
             } else if inhabited {
                 self.advance_chunk_inhabitation(pos);

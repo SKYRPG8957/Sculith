@@ -102,14 +102,22 @@ block or fluid callback phase. While it waits, the same timer cannot be
 scheduled again and a save stores it with zero remaining delay. This uses
 the existing chunk formats. The world sorts each callback type by priority.
 
+An active region can commit a built-in redstone lamp's scheduled turn-off
+on its own deadline. The lamp must be the chunk's sole ready block tick,
+and all six neighbours must be in that chunk, non-solid and free of
+registered block behaviour. This rules out power and shape callbacks.
+A save sees the property change and timer removal together. The change
+triggers the shared lighting engine after releasing the chunk, and packet
+flushes read the authoritative state for both editions.
+
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
 use the region tick numbers at the world boundary and advance each chunk
 once per requested world tick. Merging inherits the highest coordinated
 tick number and splitting passes that number to each successor.
 
-Scheduled block and fluid callbacks, entity AI, player packets and entity
-chunk residency use world phases.
+Other scheduled block and fluid callbacks, entity AI, player packets and
+entity chunk residency use world phases.
 
 Player movement registers the new view before entity chunk readers run.
 Readers share one disk request for a chunk and return its position to the
@@ -118,7 +126,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 21.
+Native plugins use ABI 22.
 
 ## Shared resource delivery
 
