@@ -7,12 +7,12 @@ use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Block::MINECRAFT_LEAVES;
 use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use std::sync::RwLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
+use std::sync::{RwLock, RwLockReadGuard, TryLockError};
 use thiserror::Error;
 
 pub mod format;
@@ -123,9 +123,21 @@ impl<P> SectionPalettes<P> {
 
     pub fn write(&self) -> std::sync::LockResult<std::sync::RwLockWriteGuard<'_, Box<[P]>>> {
         let guard = self.palettes.write();
+        self.mark_changed();
+        guard
+    }
+
+    pub(crate) fn try_read(&self) -> Option<RwLockReadGuard<'_, Box<[P]>>> {
+        match self.palettes.try_read() {
+            Ok(guard) => Some(guard),
+            Err(TryLockError::Poisoned(error)) => Some(error.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        }
+    }
+
+    fn mark_changed(&self) {
         self.revision
             .fetch_add(1, std::sync::atomic::Ordering::Release);
-        guard
     }
 
     pub fn bedrock_blobs(
@@ -458,6 +470,19 @@ impl ChunkSections {
         }
     }
 
+    pub(crate) fn read_block_from_palettes(
+        &self,
+        palettes: &[BlockPalette],
+        relative: Vector3<i32>,
+    ) -> Option<BlockStateId> {
+        let y = usize::try_from(relative.y.checked_sub(self.min_y)?).ok()?;
+        Some(palettes.get(y / BlockPalette::SIZE)?.get(
+            relative.x as usize,
+            y % BlockPalette::SIZE,
+            relative.z as usize,
+        ))
+    }
+
     pub fn set_block_absolute_y(
         &self,
         relative_x: usize,
@@ -772,35 +797,68 @@ impl ChunkData {
             &dyn Fn(BlockPos) -> Option<BlockStateId>,
         ) -> Option<BlockStateId>,
     ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
-        // The chunk writers read the palette before the timer ring. Holding both in
-        // that order commits the state and consumes the tick in one save snapshot.
         let mut sections = self
             .section
             .block_sections
+            .palettes
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let coordinates = |pos: BlockPos| {
-            let (chunk, relative) = pos.chunk_and_chunk_relative_position();
-            if (chunk.x, chunk.y) != (self.x, self.z) {
-                return None;
-            }
-            let y = usize::try_from(relative.y.checked_sub(self.section.min_y)?).ok()?;
-            Some((relative.x as usize, y, relative.z as usize))
+        self.commit_ready_block_properties(&mut sections, limit, |_| None, || true, update)
+    }
+
+    pub(crate) fn try_apply_ready_block_properties(
+        &self,
+        limit: usize,
+        read_neighbor: impl Fn(BlockPos) -> Option<BlockStateId>,
+        can_commit: impl Fn() -> bool,
+        update: impl Fn(
+            &Block,
+            BlockPos,
+            BlockStateId,
+            &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        ) -> Option<BlockStateId>,
+    ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
+        let mut sections = match self.section.block_sections.palettes.try_write() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(TryLockError::WouldBlock) => return None,
         };
+        self.commit_ready_block_properties(&mut sections, limit, read_neighbor, can_commit, update)
+    }
+
+    fn commit_ready_block_properties(
+        &self,
+        sections: &mut [BlockPalette],
+        limit: usize,
+        read_neighbor: impl Fn(BlockPos) -> Option<BlockStateId>,
+        can_commit: impl Fn() -> bool,
+        update: impl Fn(
+            &Block,
+            BlockPos,
+            BlockStateId,
+            &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        ) -> Option<BlockStateId>,
+    ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
+        // Save readers take the palette before the timer ring. This order keeps
+        // the state change and timer removal in the same stored snapshot.
         self.block_ticks.apply_ready_batch(limit, |ready| {
-            let read = |pos| {
-                let (x, y, z) = coordinates(pos)?;
-                Some(
-                    sections
-                        .get(y / BlockPalette::SIZE)?
-                        .get(x, y % BlockPalette::SIZE, z),
-                )
+            let read = |pos: BlockPos| {
+                let (chunk, relative) = pos.chunk_and_chunk_relative_position();
+                if (chunk.x, chunk.y) == (self.x, self.z) {
+                    self.section.read_block_from_palettes(sections, relative)
+                } else {
+                    read_neighbor(pos)
+                }
             };
             let mut changes = Vec::with_capacity(ready.len());
             for tick in ready {
                 let position = tick.position;
                 let block = tick.value;
-                let old = read(position)?;
+                let (chunk, relative) = position.chunk_and_chunk_relative_position();
+                if (chunk.x, chunk.y) != (self.x, self.z) {
+                    return None;
+                }
+                let old = self.section.read_block_from_palettes(sections, relative)?;
                 if Block::from_state_id(old) != block {
                     return None;
                 }
@@ -827,6 +885,12 @@ impl ChunkData {
                     return None;
                 }
                 changes.push((position, old, new));
+            }
+            if !can_commit() {
+                return None;
+            }
+            if !changes.is_empty() {
+                self.section.block_sections.mark_changed();
             }
             for &(position, _, new) in &changes {
                 // The earlier read validated these coordinates.

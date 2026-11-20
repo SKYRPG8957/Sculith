@@ -104,14 +104,17 @@ the existing chunk formats. The world sorts each callback type by priority.
 
 An active region can commit a chunk's ready batch of built-in redstone
 lamp turn-offs and target block pulse resets on its own deadline. Each
-decision uses the same chunk snapshot in tick priority order. Lamp checks
+decision uses locked block palettes in tick priority order. Lamp checks
 inspect adjacent blocks and possible strong power through solid neighbours.
 Target resets require that adjacent block and fluid callbacks have no work
-and that no plugin observes block physics. A batch with a read beyond the
-chunk, a callback requiring the world owner or more than 32 ready ticks
-stays queued for the world phase. Both save formats capture the committed
-properties and timer removals together. The shared lighting engine follows
-changes to light properties, and both editions read the authoritative state.
+and that no plugin observes block physics. Reads can reach adjacent chunks
+in the region's dispatched extent. Their loaded entries and block palettes
+stay pinned through the commit, which rechecks the published extent. A batch
+requiring an unavailable chunk, a callback on the world owner or more than
+32 ready ticks stays queued for the world phase. Both save formats capture
+the committed properties and timer removals together. The shared lighting
+engine follows changes to light properties, and both editions read the
+authoritative state.
 
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints

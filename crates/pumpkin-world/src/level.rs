@@ -14,7 +14,7 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use crossbeam::queue::SegQueue;
-use dashmap::{DashMap, Entry};
+use dashmap::{DashMap, Entry, try_result::TryResult};
 use futures::stream::{FuturesUnordered, StreamExt};
 use pumpkin_config::{lighting::LightingEngineConfig, world::LevelConfig};
 use pumpkin_data::biome::Biome;
@@ -48,6 +48,78 @@ use tokio_util::task::TaskTracker;
 
 pub type SyncChunk = Arc<ChunkData>;
 pub type SyncEntityChunk = Arc<ChunkEntityData>;
+
+/// Commits ready property changes to the loaded source chunk.
+///
+/// The caller's region permit must cover every chunk accepted by `owns` until this returns.
+/// State reads may extend one chunk in either horizontal direction.
+pub fn apply_regional_block_properties(
+    loaded: &DashMap<Vector2<i32>, SyncChunk, FxBuildHasher>,
+    expected: &SyncChunk,
+    limit: usize,
+    owns: impl Fn(Vector2<i32>) -> bool,
+    update: impl Fn(
+        &Block,
+        BlockPos,
+        BlockStateId,
+        &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> Option<BlockStateId>,
+) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
+    let source = Vector2::new(expected.x, expected.z);
+    if !owns(source) {
+        return None;
+    }
+    let TryResult::Present(chunk) = loaded.try_get(&source) else {
+        return None;
+    };
+    if !Arc::ptr_eq(chunk.value(), expected) {
+        return None;
+    }
+
+    let needs_neighbors = std::cell::Cell::new(false);
+    let can_commit = || owns(source);
+    let local = chunk.try_apply_ready_block_properties(
+        limit,
+        |_| {
+            needs_neighbors.set(true);
+            None
+        },
+        can_commit,
+        &update,
+    );
+    if local.is_some() || !needs_neighbors.get() {
+        return local;
+    }
+
+    // Retain the loaded-map references as well as the read locks. Acquiring a
+    // shard or palette never waits while another palette is held.
+    let mut neighbors = Vec::with_capacity(8);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            let pos = source.add_raw(dx, dz);
+            if pos != source
+                && owns(pos)
+                && let TryResult::Present(neighbor) = loaded.try_get(&pos)
+            {
+                neighbors.push(neighbor);
+            }
+        }
+    }
+    let palettes: Vec<_> = neighbors
+        .iter()
+        .filter_map(|chunk| {
+            let sections = &chunk.section;
+            let palettes = sections.block_sections.try_read()?;
+            Some((*chunk.key(), sections, palettes))
+        })
+        .collect();
+    let read_neighbor = |position: BlockPos| {
+        let (pos, relative) = position.chunk_and_chunk_relative_position();
+        let (_, sections, palettes) = palettes.iter().find(|(chunk, ..)| *chunk == pos)?;
+        sections.read_block_from_palettes(palettes, relative)
+    };
+    chunk.try_apply_ready_block_properties(limit, read_neighbor, can_commit, update)
+}
 
 type EntityLoadWaiters = FxHashMap<Vector2<i32>, Vec<oneshot::Sender<SyncEntityChunk>>>;
 
@@ -1291,7 +1363,72 @@ impl Level {
 mod tests {
     use super::*;
     use pumpkin_config::world::LevelConfig;
+    use pumpkin_data::block_properties::RedstoneOreLikeProperties;
+    use std::cell::Cell;
     use tempfile::TempDir;
+
+    #[test]
+    fn regional_batch_requires_a_current_owned_neighbor_snapshot() {
+        let loaded = DashMap::with_hasher(FxBuildHasher);
+        let source = ChunkData::empty_sync(0, 0);
+        let neighbor = ChunkData::empty_sync(1, 0);
+        let at = BlockPos::new(15, 64, 3);
+        let across = BlockPos::new(16, 64, 3);
+        let lamp = &Block::REDSTONE_LAMP;
+        let lit = RedstoneOreLikeProperties { lit: true }.to_state_id(lamp);
+        let dark = RedstoneOreLikeProperties { lit: false }.to_state_id(lamp);
+        source.set_block_absolute_y(15, 64, 3, lit);
+        source.block_ticks.schedule_tick(
+            &ScheduledTick {
+                position: at,
+                value: lamp,
+                delay: 0,
+                priority: TickPriority::Normal,
+            },
+            0,
+        );
+        source.block_ticks.advance();
+        neighbor.set_block_absolute_y(0, 64, 3, Block::STONE.default_state.id);
+        loaded.insert(at.chunk_position(), source.clone());
+        loaded.insert(across.chunk_position(), neighbor.clone());
+
+        let plan = |owns_neighbor, invalidate: bool| {
+            let owned = Cell::new(true);
+            apply_regional_block_properties(
+                &loaded,
+                &source,
+                4,
+                |pos| owned.get() && (pos == at.chunk_position() || owns_neighbor),
+                |_, _, _, read| {
+                    if read(across)? != Block::STONE.default_state.id {
+                        return None;
+                    }
+                    owned.set(!invalidate);
+                    Some(dark)
+                },
+            )
+        };
+        let encodes = Cell::new(0);
+        let encode = |_: &[crate::chunk::palette::BlockPalette]| {
+            encodes.set(encodes.get() + 1);
+            Ok(Vec::new())
+        };
+        source.section.block_sections.bedrock_blobs(encode).unwrap();
+        assert_eq!(plan(false, false), None);
+        let busy_palette = neighbor.section.block_sections.write().unwrap();
+        assert_eq!(plan(true, false), None);
+        drop(busy_palette);
+        assert_eq!(plan(true, true), None);
+        assert_eq!(source.section.get_block_absolute_y(15, 64, 3), Some(lit));
+        assert!(source.block_ticks.is_scheduled(at, lamp));
+        source.section.block_sections.bedrock_blobs(encode).unwrap();
+        assert_eq!(encodes.get(), 1);
+
+        assert_eq!(plan(true, false), Some(vec![(at, lit, dark)]));
+        assert!(!source.block_ticks.is_scheduled(at, lamp));
+        source.section.block_sections.bedrock_blobs(encode).unwrap();
+        assert_eq!(encodes.get(), 2);
+    }
 
     #[tokio::test]
     async fn entity_chunk_views_keep_every_cached_result() {

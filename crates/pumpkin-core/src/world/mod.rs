@@ -167,7 +167,7 @@ use pumpkin_world::{
 };
 use pumpkin_world::{chunk::ChunkData, chunk_system::ChunkPos, world::BlockAccessor};
 use pumpkin_world::{
-    level::Level,
+    level::{Level, apply_regional_block_properties},
     tick::{TickPriority, order},
 };
 pub use pumpkin_world::{world::BlockFlags, world_info::LevelData};
@@ -2420,37 +2420,52 @@ impl World {
                 let block = chunk.block_ticks.advance();
                 chunk.fluid_ticks.advance();
                 chunk.mark_dirty(true);
-                if inhabited
-                    && block
+                if !inhabited
+                    || !block
                         .is_some_and(|block| self.block_registry.regional_tick(block.id).is_some())
-                    && self.region_layout.load().owner(pos) == Some(owner)
-                    && let Some(changes) = chunk.apply_ready_block_properties(
-                        CHUNK_TICK_BATCH_SIZE,
-                        |block, position, state, read| {
-                            self.regional_block_replacement(block.id, position, state, read)
-                        },
-                    )
                 {
-                    if !changes.is_empty() {
-                        self.unsent_block_changes
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .extend(
-                                changes
-                                    .iter()
-                                    .map(|&(position, _, state)| (position, state)),
-                            );
-                    }
-                    drop(chunk);
-                    for (position, old, new) in changes {
-                        if pumpkin_world::lighting::LightEngine::has_different_light_properties(
-                            old.to_state(),
-                            new.to_state(),
-                        ) {
-                            self.level
-                                .light_engine
-                                .update_lighting_at(&self.level, position);
-                        }
+                    continue;
+                }
+                let expected = chunk.value().clone();
+                // The operation pins its own map entries. A neighboring chunk
+                // can hash to the same shard, so release the write guard first.
+                drop(chunk);
+                let owns = |pos| {
+                    let layout = self.region_layout.load();
+                    layout
+                        .chunks(owner)
+                        .is_some_and(|extent| Arc::ptr_eq(extent, chunks))
+                        && layout.owner(pos) == Some(owner)
+                };
+                let Some(changes) = apply_regional_block_properties(
+                    &self.level.loaded_chunks,
+                    &expected,
+                    CHUNK_TICK_BATCH_SIZE,
+                    owns,
+                    |block, position, state, read| {
+                        self.regional_block_replacement(block.id, position, state, read)
+                    },
+                ) else {
+                    continue;
+                };
+                if !changes.is_empty() {
+                    self.unsent_block_changes
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .extend(
+                            changes
+                                .iter()
+                                .map(|&(position, _, state)| (position, state)),
+                        );
+                }
+                for (position, old, new) in changes {
+                    if pumpkin_world::lighting::LightEngine::has_different_light_properties(
+                        old.to_state(),
+                        new.to_state(),
+                    ) {
+                        self.level
+                            .light_engine
+                            .update_lighting_at(&self.level, position);
                     }
                 }
             } else if inhabited {
