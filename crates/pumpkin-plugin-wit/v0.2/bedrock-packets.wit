@@ -446,7 +446,9 @@ interface bedrock-packets {
   }
   /// Sent by the client to update the server on client-side loading screen transitions.
   record s-loading-screen {
+    /// Which loading screen transition the client completed.
     loading-screen-packet-type: loading-screen-packet-type,
+    /// ID of the loading screen, when supplied by the client.
     loading-screen-id: option<s32>,
   }
   /// Type of loading screen transition event.
@@ -1496,6 +1498,18 @@ interface bedrock-packets {
     /// List of response statuses corresponding to client requests.
     responses: list<item-stack-response-info>,
   }
+  /// Encoded column, optional cache references and chunk payload sent to a Bedrock client.
+  record c-level-chunk-payload {
+    chunk-x: s32,
+    chunk-z: s32,
+    dimension: s32,
+    sub-chunk-count: s32,
+    sub-chunk-limit: option<s32>,
+    cache-enabled: bool,
+    blob-hashes: list<s64>,
+    chunk-data: list<u8>,
+    client-biome-update: bool,
+  }
   /// Broadcasts visual or auditory level-wide events, such as particles or block breaking.
   record c-level-event {
     /// Identifier corresponding to the specific level event action.
@@ -2436,6 +2450,10 @@ interface bedrock-packets {
     /// Network NBT compound containing full recipe and trade offer definitions.
     data: nbt-tree,
   }
+  record network-stack-latency {
+    timestamp: s64,
+    from-server: bool,
+  }
   /// Describes a network item stack transmitted over the wire in Bedrock packets.
   /// 
   /// Contains the item runtime ID, count, aux/metadata value, block runtime state,
@@ -2662,9 +2680,16 @@ interface bedrock-packets {
     s-stonecutter-set-recipe(s-stonecutter-set-recipe),
     /// Transmits in-game chat messages, system alerts, popups, and raw JSON text between client and server.
     s-text(s-text),
+    network-stack-latency(network-stack-latency),
     unknown,
   }
   variant clientbound-packet {
+    /// Transmits actor-specific animations, sounds, and state changes (such as hurt, taming, or eating).
+    s-actor-event(s-actor-event),
+    /// Plays animations (arm swing, critical strike particles, waking up) on an actor.
+    s-animate(s-animate),
+    /// Transmits in-game chat messages, system alerts, popups, and raw JSON text between client and server.
+    s-text(s-text),
     /// Sent by the server to spawn non-player entities (mobs, projectiles, vehicles, items) on the client.
     c-add-actor(c-add-actor),
     /// Sent by the server to spawn a dropped item entity in the world.
@@ -2715,6 +2740,8 @@ interface bedrock-packets {
     c-item-stack-response(c-item-stack-response),
     /// Transmits server-defined jigsaw structure generation rules, processors, and template pools.
     c-jigsaw-structure-data,
+    /// Encoded column, optional cache references and chunk payload sent to a Bedrock client.
+    c-level-chunk-payload(c-level-chunk-payload),
     /// Broadcasts visual or auditory level-wide events, such as particles or block breaking.
     c-level-event(c-level-event),
     /// Plays a sound effect at a designated world position or associated with an actor.
@@ -2812,6 +2839,7 @@ interface bedrock-packets {
     c-update-trade(c-update-trade),
     /// Sends collision and selection voxel shapes to the client before `CStartGame`.
     c-voxel-shapes,
+    network-stack-latency(network-stack-latency),
     unknown,
   }
 }

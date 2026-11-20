@@ -1,10 +1,12 @@
 // Last verified for v2169
 
+use std::io::Error;
+
 use pumpkin_macros::packet;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 
-use crate::serial::PacketWrite;
+use crate::serial::{PacketRead, PacketReadSlice, PacketWrite};
 
 /// Synchronizes the complete block-actor data for a block position.
 #[derive(PacketWrite)]
@@ -24,6 +26,15 @@ impl CBlockActorData {
             block_position,
             actor_data_tags,
         }
+    }
+}
+
+impl<'a> PacketReadSlice<'a> for CBlockActorData {
+    fn read_slice(body: &mut &'a [u8]) -> Result<Self, Error> {
+        Ok(Self {
+            block_position: BlockPos::read(body)?,
+            actor_data_tags: NbtCompound::read_slice(body)?,
+        })
     }
 }
 
@@ -57,5 +68,11 @@ mod tests {
         let parsed = Nbt::read(&mut reader).unwrap();
         assert_eq!(parsed.get_string("id"), Some("Bed"));
         assert_eq!(parsed.get_byte("color"), Some(11));
+
+        let mut body = encoded.as_slice();
+        let decoded = CBlockActorData::read_slice(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(decoded.block_position, BlockPos::new(1, 64, -2));
+        assert_eq!(decoded.actor_data_tags.get_string("id"), Some("Bed"));
     }
 }

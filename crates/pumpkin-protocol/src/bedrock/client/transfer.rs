@@ -1,8 +1,8 @@
 use pumpkin_macros::packet;
 
-use std::io::{Error, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 
-use crate::serial::PacketWrite;
+use crate::serial::{PacketRead, PacketWrite};
 
 /// Instructs the client to disconnect and reconnect to another server address and port.
 #[packet(pumpkin_data::bedrock_packet::TRANSFER)]
@@ -25,6 +25,21 @@ impl PacketWrite for CTransfer {
     }
 }
 
+impl PacketRead for CTransfer {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let server_address = String::read(reader)?;
+        let server_port = u16::read(reader)?;
+        let reload_world = bool::read(reader)?;
+        if bool::read(reader)? {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Bedrock transfer includes unsupported gathering join information",
+            ));
+        }
+        Ok(Self::new(server_address, server_port, reload_world))
+    }
+}
+
 impl CTransfer {
     /// Constructs a transfer packet with target server connection parameters.
     #[must_use]
@@ -34,5 +49,24 @@ impl CTransfer {
             server_port,
             reload_world,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trips_a_direct_transfer() {
+        let mut body = Vec::new();
+        CTransfer::new("localhost".into(), 19132, false)
+            .write(&mut body)
+            .unwrap();
+        let mut body = body.as_slice();
+        let packet = CTransfer::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(packet.server_address, "localhost");
+        assert_eq!(packet.server_port, 19132);
+        assert!(!packet.reload_world);
     }
 }

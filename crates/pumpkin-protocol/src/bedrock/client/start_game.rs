@@ -1,9 +1,9 @@
-use std::io::{Error, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 
 use crate::{
     bedrock::client::{GameType, gamerules_changed::GameRule},
     codec::{var_int::VarInt, var_long::VarLong, var_uint::VarUInt, var_ulong::VarULong},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_macros::packet;
 use pumpkin_nbt::compound::NbtCompound;
@@ -206,7 +206,27 @@ impl PacketWrite for Experiments {
     }
 }
 
-#[derive(PacketWrite)]
+impl PacketRead for Experiments {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let count = u32::read(reader)?;
+        if count > 65_536 {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Bedrock experiment count exceeds 65536",
+            ));
+        }
+        let mut toggles = Vec::new();
+        for _ in 0..count {
+            toggles.push(ExperimentToggle::read(reader)?);
+        }
+        Ok(Self {
+            toggles,
+            experiments_ever_toggled: bool::read(reader)?,
+        })
+    }
+}
+
+#[derive(PacketRead, PacketWrite)]
 pub struct ExperimentToggle {
     pub name: String,
     pub enabled: bool,

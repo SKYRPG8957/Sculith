@@ -1,9 +1,9 @@
-use std::io::{Error, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 
 use crate::{
     bedrock::network_item::FullContainerName,
     codec::{var_int::VarInt, var_uint::VarUInt},
-    serial::PacketWrite,
+    serial::{PacketRead, PacketWrite},
 };
 use pumpkin_macros::packet;
 
@@ -47,7 +47,34 @@ impl PacketWrite for ItemStackResponseSlotInfo {
     }
 }
 
-#[derive(PacketWrite, Debug, Clone)]
+impl PacketRead for ItemStackResponseSlotInfo {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let requested_slot = u8::read(reader)?;
+        let slot = u8::read(reader)?;
+        let amount = u8::read(reader)?;
+        let item_stack_net_id = Option::<VarInt>::read(reader)?.unwrap_or(VarInt(0));
+        let custom_name = String::read(reader)?;
+        let filtered_custom_name = String::read(reader)?;
+        let durability_correction = VarInt::read(reader)?;
+        if i16::try_from(durability_correction.0).is_err() {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "durability correction must fit in an i16",
+            ));
+        }
+        Ok(Self {
+            requested_slot,
+            slot,
+            amount,
+            item_stack_net_id,
+            custom_name,
+            filtered_custom_name,
+            durability_correction,
+        })
+    }
+}
+
+#[derive(PacketRead, PacketWrite, Debug, Clone)]
 pub struct ItemStackResponseContainerInfo {
     pub full_container_name: FullContainerName,
     pub slots: Vec<ItemStackResponseSlotInfo>,
@@ -80,6 +107,16 @@ impl PacketWrite for ItemStackResponseInfo {
     }
 }
 
+impl PacketRead for ItemStackResponseInfo {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        Ok(Self {
+            result: u8::read(reader)?,
+            client_request_id: VarInt::read(reader)?,
+            containers: Option::<Vec<_>>::read(reader)?.unwrap_or_default(),
+        })
+    }
+}
+
 /// Sent by the server to approve or reject item stack requests and sync modified slots.
 #[derive(Debug, Clone)]
 #[packet(pumpkin_data::bedrock_packet::ITEM_STACK_RESPONSE)]
@@ -104,6 +141,23 @@ impl PacketWrite for CItemStackResponse {
     }
 }
 
+impl PacketRead for CItemStackResponse {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let count = VarUInt::read(reader)?.0;
+        if count > 4096 {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "item stack response count exceeds 4096",
+            ));
+        }
+        let mut responses = Vec::new();
+        for _ in 0..count {
+            responses.push(ItemStackResponseInfo::read(reader)?);
+        }
+        Ok(Self { responses })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,5 +174,24 @@ mod tests {
             durability_correction: VarInt(32768),
         };
         assert!(slot.write(&mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn round_trips_failed_response_without_containers() {
+        let response = CItemStackResponse {
+            responses: vec![ItemStackResponseInfo {
+                result: 1,
+                client_request_id: VarInt(-7),
+                containers: vec![],
+            }],
+        };
+        let mut bytes = Vec::new();
+        response.write(&mut bytes).unwrap();
+        assert_eq!(bytes, [1, 1, 13, 0]);
+        let mut body = bytes.as_slice();
+        let decoded = CItemStackResponse::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(decoded.responses[0].client_request_id, VarInt(-7));
+        assert!(decoded.responses[0].containers.is_empty());
     }
 }

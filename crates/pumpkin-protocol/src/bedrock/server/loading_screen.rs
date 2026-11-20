@@ -8,8 +8,10 @@ use crate::serial::PacketRead;
 #[derive(PacketRead)]
 #[packet(pumpkin_data::bedrock_packet::SERVER_BOUND_LOADING_SCREEN)]
 pub struct SLoadingScreen {
-    loading_screen_packet_type: LoadingScreenPacketType,
-    _loading_screen_id: Option<u32>,
+    /// Which loading screen transition the client completed.
+    pub loading_screen_packet_type: LoadingScreenPacketType,
+    /// ID of the loading screen, when supplied by the client.
+    pub loading_screen_id: Option<u32>,
 }
 
 /// Type of loading screen transition event.

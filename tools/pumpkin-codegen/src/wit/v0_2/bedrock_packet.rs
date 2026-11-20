@@ -16,8 +16,13 @@ use wit_encoder::{
 enum FileCategory {
     Server,
     Client,
+    Shared,
     HelperTypes,
 }
+
+pub(super) const SHARED_BEDROCK_SERVER_CASES: &[&str] = &["s-actor-event", "s-animate", "s-text"];
+pub(super) const STACK_LATENCY_PACKET_FILE: &str =
+    "../../crates/pumpkin-protocol/src/bedrock/network_stack_latency.rs";
 
 pub fn build() -> String {
     let mut package = Package::new(PackageName::new(
@@ -44,6 +49,7 @@ pub fn build() -> String {
             Path::new("../../crates/pumpkin-protocol/src/bedrock/client"),
             FileCategory::Client,
         ),
+        (Path::new(STACK_LATENCY_PACKET_FILE), FileCategory::Shared),
         (
             Path::new("../../crates/pumpkin-protocol/src/bedrock/network_item.rs"),
             FileCategory::HelperTypes,
@@ -76,8 +82,19 @@ pub fn build() -> String {
         .collect::<HashSet<_>>();
 
     for (item, category) in syn_items {
+        if let Item::Struct(s) = &item {
+            let name = s.ident.to_string().to_kebab_case();
+            if matches!(category, FileCategory::Shared)
+                || (matches!(category, FileCategory::Server)
+                    && SHARED_BEDROCK_SERVER_CASES.contains(&name.as_str()))
+            {
+                let mut case = VariantCase::value(name.clone(), WitType::named(name));
+                case.set_docs(extract_doc_comments(&s.attrs));
+                clientbound_variant.case(case);
+            }
+        }
         let variant = match category {
-            FileCategory::Server => &mut serverbound_variant,
+            FileCategory::Server | FileCategory::Shared => &mut serverbound_variant,
             _ => &mut clientbound_variant,
         };
         match item {

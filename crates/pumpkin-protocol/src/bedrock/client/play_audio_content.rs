@@ -1,10 +1,13 @@
 use pumpkin_macros::packet;
 use pumpkin_util::math::position::BlockPos;
 
-use crate::{codec::var_int::VarInt, serial::PacketWrite};
+use crate::{
+    codec::var_int::VarInt,
+    serial::{PacketRead, PacketWrite},
+};
 
 /// Sound playback options for signed audio content.
-#[derive(Clone, Debug, PartialEq, PacketWrite)]
+#[derive(Clone, Debug, PartialEq, PacketRead, PacketWrite)]
 pub struct AudioContentSound {
     pub sound_name: String,
     pub position: BlockPos,
@@ -17,7 +20,7 @@ pub struct AudioContentSound {
 }
 
 /// Sent by the server to instruct the client to play signed audio content.
-#[derive(Clone, Debug, PartialEq, PacketWrite)]
+#[derive(Clone, Debug, PartialEq, PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::CLIENTBOUND_PLAY_AUDIO_CONTENT)]
 pub struct CPlayAudioContent {
     pub shared_metadata: String,

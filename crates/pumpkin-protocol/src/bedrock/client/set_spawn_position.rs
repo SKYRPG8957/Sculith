@@ -3,10 +3,13 @@
 use pumpkin_macros::packet;
 use pumpkin_util::math::position::BlockPos;
 
-use crate::{codec::var_int::VarInt, serial::PacketWrite};
+use crate::{
+    codec::var_int::VarInt,
+    serial::{PacketRead, PacketWrite},
+};
 
 /// Updates the player or world spawn coordinates, affecting respawning and compass orientation.
-#[derive(Clone, Copy, PacketWrite)]
+#[derive(Clone, Copy, PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::SET_SPAWN_POSITION)]
 pub struct CSetSpawnPosition {
     /// Determines whether this update configures a player-specific or world spawn location.
@@ -20,7 +23,7 @@ pub struct CSetSpawnPosition {
 }
 
 /// Scope of the spawn position update.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketWrite)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketRead, PacketWrite)]
 #[repr(i32)]
 #[serial(varint)]
 pub enum SpawnPositionType {

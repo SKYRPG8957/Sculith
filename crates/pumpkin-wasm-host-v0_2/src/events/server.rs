@@ -604,6 +604,39 @@ mod tests {
     }
 
     #[test]
+    fn projects_player_input_flags_and_embedded_item_stack_actions() {
+        use crate::pumpkin::plugin::bedrock_packets::ItemStackRequestAction;
+        use pumpkin_data::bedrock_packet::PLAYER_AUTH_INPUT;
+
+        // Body generated with gophertunnel's protocol 2225 writer.
+        let body = [
+            0x00, 0x00, 0x50, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xc1, 0x00, 0x00,
+            0x80, 0x42, 0x00, 0x00, 0xe0, 0x40, 0x00, 0x00, 0x00, 0x3f, 0x00, 0x00, 0x00, 0xbf,
+            0x00, 0x00, 0x00, 0x00, 0x02, 0x0c, 0x82, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x0d, 0x01, 0x0c, 0x0e, 0x0c, 0x01, 0x00, 0xff,
+            0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let Some(BedrockServerboundPacket::SPlayerAuthInput(input)) =
+            read_bedrock_received(CURRENT_BEDROCK_MC_PROTOCOL, PLAYER_AUTH_INPUT, &body)
+        else {
+            panic!("expected typed player input");
+        };
+        assert_eq!(input.position, (-9.0, 64.0, 7.0));
+        assert_eq!(input.move_vec, (0.5, -0.5));
+        assert_eq!(input.tick, 47);
+        assert_eq!(input.input_data, [64, 2]);
+        let request = input.item_stack_request.unwrap();
+        assert_eq!((request.request_id, request.filter_cause), (-7, -1));
+        let [ItemStackRequestAction::CraftCreative(action)] = request.actions.as_slice() else {
+            panic!("expected a typed creative inventory action");
+        };
+        assert_eq!((action.creative_item_id, action.repetitions), (12, 1));
+    }
+
+    #[test]
     fn server_list_ping_applies_and_consumes_returned_resources() {
         let mut state = PluginHostState::new();
         let original_motd = TextComponent::text("Original");

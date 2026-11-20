@@ -187,6 +187,27 @@ impl<T: PacketRead> PacketRead for Vec<T> {
     }
 }
 
+impl PacketRead for bytes::Bytes {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let len = VarUInt::read(reader)?.0 as usize;
+        if len > crate::MAX_PACKET_DATA_SIZE {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Bedrock byte array is too large",
+            ));
+        }
+        let mut bytes = Vec::with_capacity(len.min(4096));
+        reader.take(len as u64).read_to_end(&mut bytes)?;
+        if bytes.len() != len {
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "incomplete Bedrock byte array",
+            ));
+        }
+        Ok(Self::from(bytes))
+    }
+}
+
 impl<T: PacketRead> PacketRead for Vector3<T> {
     fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
         Ok(Self {

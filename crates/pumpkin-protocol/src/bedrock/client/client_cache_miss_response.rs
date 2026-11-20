@@ -3,10 +3,10 @@
 use bytes::Bytes;
 use pumpkin_macros::packet;
 
-use crate::serial::PacketWrite;
+use crate::serial::{PacketRead, PacketWrite};
 
 /// Payload data for a requested chunk blob that was missing from the client cache.
-#[derive(PacketWrite, Clone, Debug)]
+#[derive(PacketRead, PacketWrite, Clone, Debug)]
 pub struct MissingBlobData {
     /// 64-bit hash identifier of the blob.
     pub blob_id: u64,
@@ -15,11 +15,36 @@ pub struct MissingBlobData {
 }
 
 /// Sent by the server in response to [`SClientCacheBlobStatus`](crate::bedrock::server::client_cache_blob_status::SClientCacheBlobStatus) with requested chunk blobs.
-#[derive(PacketWrite)]
+#[derive(PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::CLIENT_CACHE_MISS_RESPONSE)]
 pub struct CClientCacheMissResponse {
     /// Array of blob byte payloads corresponding to missed blob hashes.
     pub missing_blobs: Vec<MissingBlobData>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trips_blob_ids_and_bytes() {
+        let packet = CClientCacheMissResponse {
+            missing_blobs: vec![MissingBlobData {
+                blob_id: u64::MAX,
+                blob_data: Bytes::from_static(b"terrain"),
+            }],
+        };
+        let mut body = Vec::new();
+        packet.write(&mut body).unwrap();
+        let mut truncated = &body[..body.len() - 1];
+        assert!(CClientCacheMissResponse::read(&mut truncated).is_err());
+
+        let mut body = body.as_slice();
+        let packet = CClientCacheMissResponse::read(&mut body).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(packet.missing_blobs[0].blob_id, u64::MAX);
+        assert_eq!(packet.missing_blobs[0].blob_data.as_ref(), b"terrain");
+    }
 }
 
 #[cfg(test)]

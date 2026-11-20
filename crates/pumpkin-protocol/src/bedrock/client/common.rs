@@ -1,9 +1,12 @@
 use pumpkin_util::GameMode;
 
-use crate::{codec::var_long::VarLong, serial::PacketWrite};
+use crate::{
+    codec::var_long::VarLong,
+    serial::{PacketRead, PacketWrite},
+};
 
 /// Operating system or client platform identifier reported by the client.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketWrite)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketRead, PacketWrite)]
 #[repr(i32)]
 pub enum BuildPlatform {
     Unknown = -1,
@@ -24,7 +27,7 @@ pub enum BuildPlatform {
 }
 
 /// Game mode identifier used in Bedrock protocol packets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketWrite)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketRead, PacketWrite)]
 #[repr(i32)]
 #[serial(varint)]
 pub enum GameType {
@@ -49,7 +52,7 @@ impl From<GameMode> for GameType {
 }
 
 /// Serialized abilities data containing permissions and ability bitmasks for a player.
-#[derive(Clone, PacketWrite)]
+#[derive(Clone, PacketRead, PacketWrite)]
 pub struct SerializedAbilitiesData {
     /// Unique entity ID of the target player.
     pub target_player_raw_id: i64,
@@ -62,7 +65,7 @@ pub struct SerializedAbilitiesData {
 }
 
 /// Player permission level representing their world access rights.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketWrite)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketRead, PacketWrite)]
 #[repr(i8)]
 pub enum PlayerPermissionLevel {
     Visitor = 0,
@@ -72,7 +75,7 @@ pub enum PlayerPermissionLevel {
 }
 
 /// Command permission level determining allowed command execution scope.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketWrite)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PacketRead, PacketWrite)]
 #[repr(u8)]
 pub enum CommandPermissionLevel {
     Any = 0,
@@ -99,7 +102,7 @@ impl ToString for CommandPermissionLevel {
 }
 
 /// A single ability layer defining movement speeds and allowed action bitflags.
-#[derive(Default, Clone, PacketWrite)]
+#[derive(Default, Clone, PacketRead, PacketWrite)]
 pub struct SerializedAbilitiesDataSerializedLayer {
     /// Layer type index (such as base, spectator, or creative).
     pub serialized_layer: u16,
@@ -116,7 +119,7 @@ pub struct SerializedAbilitiesDataSerializedLayer {
 }
 
 /// Describes an attachment link between two entities, such as a player riding a vehicle.
-#[derive(Default, Clone, PacketWrite)]
+#[derive(Default, Clone, PacketRead, PacketWrite)]
 pub struct ActorLink {
     /// Unique entity ID of the vehicle / entity being ridden.
     pub ridden_unique_id: VarLong,

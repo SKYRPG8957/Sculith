@@ -1,7 +1,10 @@
 use pumpkin_macros::packet;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 
-use crate::{codec::var_long::VarLong, serial::PacketWrite};
+use crate::{
+    codec::var_long::VarLong,
+    serial::{PacketRead, PacketWrite},
+};
 
 /// Pose/emote the entity displays while riding the block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PacketWrite)]
@@ -13,7 +16,7 @@ pub enum PassengerOfBlockEmote {
 }
 
 /// Data for a block that an entity is riding.
-#[derive(Clone, Debug, PartialEq, PacketWrite)]
+#[derive(Clone, Debug, PartialEq, PacketRead, PacketWrite)]
 pub struct PassengerOfBlockData {
     /// World position of the block.
     pub block_position: BlockPos,
@@ -28,7 +31,7 @@ pub struct PassengerOfBlockData {
 }
 
 /// Sent by the server to attach or detach an entity to/from a block.
-#[derive(Clone, Debug, PartialEq, PacketWrite)]
+#[derive(Clone, Debug, PartialEq, PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::SET_PASSENGER_OF_BLOCK)]
 pub struct CSetPassengerOfBlock {
     /// Unique entity ID of the passenger.

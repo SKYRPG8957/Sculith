@@ -1,6 +1,6 @@
 use pumpkin_macros::packet;
 
-use crate::serial::PacketWrite;
+use crate::serial::{PacketRead, PacketWrite};
 
 /// Matchmaking state reported to the client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PacketWrite)]
@@ -18,14 +18,14 @@ pub enum MatchmakingState {
 }
 
 /// Optional details regarding the matchmaking transition.
-#[derive(Clone, Debug, PartialEq, Eq, PacketWrite)]
+#[derive(Clone, Debug, PartialEq, Eq, PacketRead, PacketWrite)]
 pub struct MatchmakingStateOptions {
     pub triggering_player_name: Option<String>,
     pub triggered_by_local_player: Option<bool>,
 }
 
 /// Sent by the server to inform the client of matchmaking status.
-#[derive(Clone, Debug, PartialEq, Eq, PacketWrite)]
+#[derive(Clone, Debug, PartialEq, Eq, PacketRead, PacketWrite)]
 #[packet(pumpkin_data::bedrock_packet::CLIENTBOUND_MATCHMAKING_STATE)]
 pub struct CMatchmakingState {
     pub state: u8,

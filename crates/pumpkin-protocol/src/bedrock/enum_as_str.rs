@@ -5,6 +5,13 @@ use std::str::FromStr;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EnumAsStr<T>(T);
 
+impl<T> EnumAsStr<T> {
+    #[must_use]
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
 impl<T: FromStr> FromStr for EnumAsStr<T>
 where
     std::io::Error: From<T::Err>,

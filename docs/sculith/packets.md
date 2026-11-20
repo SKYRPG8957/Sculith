@@ -13,13 +13,19 @@ packets. These are queued after the original, or on their own when it is cancell
 Stable Wasm v0.1 retains its existing record and supports ID, payload and
 cancellation changes without a component ABI change.
 
-The Bedrock decoder uses the current protocol payload and checks that the codec
-consumes the complete packet body. Code generation uses existing packet readers
-and the field layout of supported `PacketWrite` derives. Wasm v0.1 uses the
-decoders that match its existing packet types, and v0.2 includes this typed view
-in its Bedrock connection events as well. Payloads without a generated decoder
-are reported as `Unknown`. The typed fields describe the payload passed to the
-callback. Returning edits uses the packet ID and raw payload fields.
+The Bedrock decoder checks that the current protocol codec consumes the complete
+packet body. Code generation uses existing packet readers and the field layout
+of supported `PacketWrite` derives. It projects nested records, lists,
+variants and NBT into the Wasm packet types. Movement input flags expose two
+64-bit words, with the lower word first. Unsigned fields represented by signed
+WIT integers preserve their wire bits.
+
+Wasm v0.1 projects fields and variants represented by its existing interface.
+Wasm v0.2 also includes typed fields in Bedrock connection events and covers
+shared packet types such as chat and animation in both directions. A payload
+without a compatible decoder or variant is reported as `Unknown`. The typed
+fields describe the payload passed to the callback. Returning edits uses the
+packet ID and raw payload fields.
 
 ## Bedrock packet IDs
 

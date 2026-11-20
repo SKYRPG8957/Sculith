@@ -3,12 +3,13 @@
 use pumpkin_macros::packet;
 
 use crate::{
-    bedrock::network_item::NetworkItemStackDescriptor, codec::var_ulong::VarULong,
-    serial::PacketWrite,
+    bedrock::network_item::NetworkItemStackDescriptor,
+    codec::var_ulong::VarULong,
+    serial::{PacketRead, PacketWrite},
 };
 
 /// Sent by the server to synchronize the armor and body equipment worn by an actor.
-#[derive(PacketWrite, Debug)]
+#[derive(PacketRead, PacketWrite, Debug)]
 #[packet(pumpkin_data::bedrock_packet::MOB_ARMOUR_EQUIPMENT)]
 pub struct CMobArmorEquipment {
     /// Runtime entity ID of the equipped actor.

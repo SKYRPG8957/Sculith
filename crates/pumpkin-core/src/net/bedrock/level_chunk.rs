@@ -56,7 +56,7 @@ pub struct CLevelChunk<'a> {
 }
 
 impl pumpkin_protocol::packet::Packet for CLevelChunk<'_> {
-    const PACKET_ID: i32 = 58;
+    const PACKET_ID: i32 = pumpkin_data::bedrock_packet::LEVEL_CHUNK;
 }
 
 pub type ChunkBlob = (u64, Bytes);

@@ -2,10 +2,10 @@
 
 use pumpkin_macros::packet;
 
-use crate::serial::PacketWrite;
+use crate::serial::{PacketRead, PacketWrite};
 
 /// Sent by the server to inform the client of login results, version compatibility, or player spawn readiness.
-#[derive(Clone, Copy, PacketWrite)]
+#[derive(Clone, Copy, PacketRead, PacketWrite)]
 #[repr(i32)]
 #[serial(big_endian)]
 #[packet(pumpkin_data::bedrock_packet::PLAY_STATUS)]
@@ -44,6 +44,10 @@ mod tests {
             .write(&mut outdated_client)
             .unwrap();
         assert_eq!(outdated_client, [0, 0, 0, 1]);
+        assert!(matches!(
+            CPlayStatus::read(&mut outdated_client.as_slice()).unwrap(),
+            CPlayStatus::OutdatedClient
+        ));
 
         let mut outdated_server = Vec::new();
         CPlayStatus::OutdatedServer

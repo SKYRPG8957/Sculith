@@ -1,9 +1,12 @@
 // Last verified for v2169
 
 use pumpkin_macros::packet;
-use std::io::{Error, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 
-use crate::{codec::var_int::VarInt, serial::PacketWrite};
+use crate::{
+    codec::{var_int::VarInt, var_uint::VarUInt},
+    serial::{PacketRead, PacketWrite},
+};
 
 /// Sent by the server to cleanly disconnect a client with an optional error code and kick message.
 #[packet(pumpkin_data::bedrock_packet::DISCONNECT)]
@@ -33,11 +36,56 @@ impl CDisconnect {
 impl PacketWrite for CDisconnect {
     fn write<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
         self.reason.write(writer)?;
-        self.skip_message.write(writer)?;
+        VarUInt(u32::from(self.skip_message)).write(writer)?;
         if !self.skip_message {
             self.message.write(writer)?;
             self.filtered_message.write(writer)?;
         }
         Ok(())
+    }
+}
+
+impl PacketRead for CDisconnect {
+    fn read<R: Read>(reader: &mut R) -> Result<Self, Error> {
+        let reason = VarInt::read(reader)?;
+        match VarUInt::read(reader)?.0 {
+            0 => Ok(Self {
+                reason,
+                skip_message: false,
+                message: String::read(reader)?,
+                filtered_message: String::read(reader)?,
+            }),
+            1 => Ok(Self {
+                reason,
+                skip_message: true,
+                message: String::new(),
+                filtered_message: String::new(),
+            }),
+            _ => Err(Error::new(
+                ErrorKind::InvalidData,
+                "invalid Bedrock disconnect message selector",
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preserves_both_disconnect_message_variants() {
+        for message in ["", "Disconnected"] {
+            let mut body = Vec::new();
+            CDisconnect::new(8, message.into())
+                .write(&mut body)
+                .unwrap();
+            let mut body = body.as_slice();
+            let packet = CDisconnect::read(&mut body).unwrap();
+            assert!(body.is_empty());
+            assert_eq!(packet.reason.0, 8);
+            assert_eq!(packet.skip_message, message.is_empty());
+            assert_eq!(packet.message, message);
+        }
     }
 }

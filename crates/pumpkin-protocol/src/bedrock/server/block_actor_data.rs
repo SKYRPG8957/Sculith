@@ -2,7 +2,10 @@ use pumpkin_macros::packet;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 
-use crate::serial::PacketRead;
+use crate::{
+    bedrock::client::CBlockActorData,
+    serial::{PacketRead, PacketReadSlice},
+};
 
 /// Synchronizes block-actor updates from the client, such as edited sign text.
 #[derive(PacketRead)]
@@ -12,6 +15,16 @@ pub struct SBlockActorData {
     pub block_position: BlockPos,
     /// Network NBT compound containing all properties and state of the block entity.
     pub actor_data_tags: NbtCompound,
+}
+
+impl<'a> PacketReadSlice<'a> for SBlockActorData {
+    fn read_slice(body: &mut &'a [u8]) -> Result<Self, Error> {
+        let decoded = CBlockActorData::read_slice(body)?;
+        Ok(Self {
+            block_position: decoded.block_position,
+            actor_data_tags: decoded.actor_data_tags,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -52,3 +65,4 @@ mod tests {
         );
     }
 }
+use std::io::Error;
