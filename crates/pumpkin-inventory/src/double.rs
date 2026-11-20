@@ -37,6 +37,12 @@ impl DoubleInventory {
     pub fn new(first: Arc<dyn Inventory>, second: Arc<dyn Inventory>) -> Arc<Self> {
         Arc::new(Self { first, second })
     }
+
+    /// The backing inventories in screen slot order.
+    #[must_use]
+    pub fn halves(&self) -> [&Arc<dyn Inventory>; 2] {
+        [&self.first, &self.second]
+    }
 }
 
 impl Inventory for DoubleInventory {

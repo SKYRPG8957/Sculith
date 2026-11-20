@@ -1,13 +1,14 @@
 //! Batches direct transfers at the simulation boundary under the shared storage fence.
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, PoisonError, atomic::Ordering},
     time::{Duration, Instant},
 };
 
 use pumpkin_inventory::{
-    generic_container_screen_handler::GenericContainerScreenHandler, screen_handler::ScreenHandler,
+    double::DoubleInventory, generic_container_screen_handler::GenericContainerScreenHandler,
+    screen_handler::ScreenHandler,
 };
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::{
@@ -20,26 +21,57 @@ use tracing::{debug, error};
 use uuid::Uuid;
 
 use crate::{
-    block::entities::BlockEntity, data::player_server::ServerPlayerData, entity::player::Player,
+    block::{blocks::chests::paired_chest_for_inventory, entities::BlockEntity},
+    data::player_server::ServerPlayerData,
+    entity::player::Player,
     world::World,
 };
 
 use super::{Server, storage_checkpoint::persist};
 
-/// The tick can collect 100 separate player-to-container pairs with room for more targets.
+/// Bound the combined number of players and terrain chunks captured in a tick.
 const MAX_TARGETS: usize = 256;
 const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
-pub struct StorageTransfer {
-    world: Arc<World>,
+pub enum StorageTransferError {
+    Busy,
+    StaleContainer,
+}
+
+struct TerrainTarget {
     chunk: SyncChunk,
     entity: Arc<dyn BlockEntity>,
 }
 
+impl TerrainTarget {
+    fn loaded(world: &World, entity: Arc<dyn BlockEntity>) -> Result<Self, StorageTransferError> {
+        let chunk = world
+            .level
+            .loaded_chunks
+            .get(&entity.get_position().chunk_position())
+            .ok_or(StorageTransferError::StaleContainer)?
+            .value()
+            .clone();
+        Ok(Self { chunk, entity })
+    }
+
+    fn position(&self) -> Vector2<i32> {
+        Vector2::new(self.chunk.x, self.chunk.z)
+    }
+}
+
+pub struct StorageTransfer {
+    world: Arc<World>,
+    primary: TerrainTarget,
+    paired: Option<TerrainTarget>,
+}
+
 impl StorageTransfer {
     pub(crate) fn record(self) {
-        self.world
-            .record_storage_transfer(&self.chunk, self.entity.as_ref());
+        for target in std::iter::once(&self.primary).chain(self.paired.as_ref()) {
+            self.world
+                .record_storage_transfer(&target.chunk, target.entity.as_ref());
+        }
         if let Some(server) = self.world.server.upgrade() {
             server.storage_checkpoint.transfers.mark_changed();
         }
@@ -51,7 +83,7 @@ impl Server {
         &self,
         player: &Arc<Player>,
         handler: &dyn ScreenHandler,
-    ) -> Result<Option<StorageTransfer>, ()> {
+    ) -> Result<Option<StorageTransfer>, StorageTransferError> {
         let world = player.world();
         if !self.player_data_storage.is_save_enabled()
             || !world.level.save_enabled.load(Ordering::Relaxed)
@@ -67,50 +99,52 @@ impl Server {
         let Some(pos) = player.open_container_pos.load() else {
             return Ok(None);
         };
-        let Some(entity) = world.get_block_entity(&pos) else {
-            return Ok(None);
-        };
-        if !matches!(
-            entity.resource_location(),
-            "minecraft:chest" | "minecraft:trapped_chest" | "minecraft:barrel"
-        ) || entity
-            .clone()
-            .get_inventory()
-            .is_none_or(|inventory| !Arc::ptr_eq(&inventory, &storage.inventory))
-        {
-            return Ok(None);
-        }
-
-        let chunk = world
-            .level
-            .loaded_chunks
-            .get(&pos.chunk_position())
-            .ok_or(())?
-            .value()
-            .clone();
+        let primary = world.get_block_entity(&pos);
+        let (primary, paired) =
+            if let Some(inventory) = storage.inventory.as_any().downcast_ref::<DoubleInventory>() {
+                let primary = primary.ok_or(StorageTransferError::StaleContainer)?;
+                let paired = paired_chest_for_inventory(&world, &pos, &primary, inventory)
+                    .ok_or(StorageTransferError::StaleContainer)?;
+                (primary, Some(paired))
+            } else {
+                let Some(primary) = primary.filter(|entity| {
+                    matches!(
+                        entity.resource_location(),
+                        "minecraft:chest" | "minecraft:trapped_chest" | "minecraft:barrel"
+                    ) && entity
+                        .clone()
+                        .get_inventory()
+                        .is_some_and(|inventory| Arc::ptr_eq(&inventory, &storage.inventory))
+                }) else {
+                    return Ok(None);
+                };
+                (primary, None)
+            };
         let root = self.basic_config.get_world_path();
         let relative = world
             .level
             .level_folder
             .dim_folder
             .strip_prefix(root)
-            .map_err(|_| ())?
+            .map_err(|_| StorageTransferError::Busy)?
             .to_path_buf();
+        let transfer = StorageTransfer {
+            primary: TerrainTarget::loaded(&world, primary)?,
+            paired: paired
+                .map(|entity| TerrainTarget::loaded(&world, entity))
+                .transpose()?,
+            world,
+        };
         if !self.storage_checkpoint.transfers.admit(
             &self.player_data_storage.checkpoint,
             !self.storage_checkpoint.manual_capture_requested(),
             player,
-            world.clone(),
-            relative,
-            chunk.clone(),
+            &relative,
+            &transfer,
         ) {
-            return Err(());
+            return Err(StorageTransferError::Busy);
         }
-        Ok(Some(StorageTransfer {
-            world,
-            chunk,
-            entity,
-        }))
+        Ok(Some(transfer))
     }
 }
 
@@ -150,9 +184,8 @@ impl TransferCheckpoints {
         fence: &CheckpointFence,
         start_allowed: bool,
         player: &Arc<Player>,
-        world: Arc<World>,
-        relative: PathBuf,
-        chunk: SyncChunk,
+        relative: &Path,
+        transfer: &StorageTransfer,
     ) -> bool {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if matches!(state.phase, Phase::Idle) && start_allowed && !fence.is_pending() {
@@ -171,14 +204,28 @@ impl TransferCheckpoints {
             return false;
         };
         let id = player.gameprofile.id;
-        let key = (relative, Vector2::new(chunk.x, chunk.z));
+        let neighbor_chunk = transfer
+            .paired
+            .as_ref()
+            .filter(|paired| paired.position() != transfer.primary.position());
+        let chunks = std::iter::once(&transfer.primary)
+            .chain(neighbor_chunk)
+            .map(|target| ((relative.to_path_buf(), target.position()), &target.chunk));
         let new_targets = usize::from(!batch.players.contains_key(&id))
-            + usize::from(!batch.terrain.contains_key(&key));
+            + chunks
+                .clone()
+                .filter(|(key, _)| !batch.terrain.contains_key(key))
+                .count();
         if batch.players.len() + batch.terrain.len() + new_targets > MAX_TARGETS {
             return false;
         }
         batch.players.entry(id).or_insert_with(|| player.clone());
-        batch.terrain.entry(key).or_insert((world, chunk));
+        for (key, chunk) in chunks {
+            batch
+                .terrain
+                .entry(key)
+                .or_insert_with(|| (transfer.world.clone(), chunk.clone()));
+        }
         true
     }
 

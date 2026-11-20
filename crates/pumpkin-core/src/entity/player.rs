@@ -330,7 +330,7 @@ use crate::plugin::player::player_permission_check::PlayerPermissionCheckEvent;
 use crate::plugin::player::player_teleport::PlayerTeleportEvent;
 use crate::plugin::server::packet::PacketSentEvent;
 use crate::plugin::world::chunk_send::ChunkSend;
-use crate::server::Server;
+use crate::server::{Server, StorageTransferError};
 use crate::world::{BlockBreakingProgress, World};
 use bytes::Bytes;
 
@@ -7617,9 +7617,17 @@ impl Player {
                 screen_handler.sync_state();
                 return;
             }
-            let Ok(transfer) = server.prepare_storage_transfer(self, &*screen_handler) else {
-                screen_handler.sync_state();
-                return;
+            let transfer = match server.prepare_storage_transfer(self, &*screen_handler) {
+                Ok(transfer) => transfer,
+                Err(StorageTransferError::Busy) => {
+                    screen_handler.sync_state();
+                    return;
+                }
+                Err(StorageTransferError::StaleContainer) => {
+                    drop(screen_handler);
+                    self.close_handled_screen();
+                    return;
+                }
             };
             transfer.and_then(|transfer| {
                 screen_handler

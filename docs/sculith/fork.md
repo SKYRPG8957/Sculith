@@ -247,11 +247,17 @@ require the checkpoint to be fully applied.
 ## Automatic inventory checkpoints
 
 When terrain autosave and player saving are enabled, Java quick moves and
-number-key swaps and Bedrock direct slot transfers between a player and one
-chest, trapped chest, or barrel enter a shared checkpoint. The server captures
-the touched players and terrain chunks at the end of the tick. One group can
-hold 256 distinct player and chunk targets. Clients get the resulting slots
-in memory, and the checkpoint journal records when the group becomes durable.
+number-key swaps and Bedrock direct slot transfers between a player and a chest,
+trapped chest, or barrel enter a shared checkpoint. A double chest includes both
+of its live halves in the same checkpoint, including Bedrock direct transfers
+between the halves. A transfer across storage boundaries requires the open
+double chest's backing inventories to match the live pair. A replaced or
+disconnected half closes the stale screen when the player attempts the transfer.
+
+The server captures touched players and terrain chunks at the end of the tick.
+One group can hold 256 distinct player and chunk targets, counting halves in the
+same chunk once. Clients get the resulting slots in memory, and the checkpoint
+journal records when the group becomes durable.
 
 The writer attempts a failed group again after one second and keeps the
 captured data available for replay. Supported transfers that arrive while the
@@ -264,7 +270,7 @@ replays a published group before admitting players.
 Standalone Bedrock world export and conversion of entities, player data and
 other block-entity contents remain open.
 
-Automatic checkpoints for cursor gestures, double chests, and automated container
+Automatic checkpoints for cursor gestures and automated container
 transfers remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.

@@ -7,6 +7,7 @@ use pumpkin_inventory::{
         crafting_inventory::CraftingInventory,
         crafting_screen_handler::{CraftingTableScreenHandler, match_crafting_recipe},
     },
+    double::DoubleInventory,
     generic_container_screen_handler::GenericContainerScreenHandler,
     inventory::Inventory,
     player::{player_inventory::PlayerInventory, player_screen_handler::PlayerScreenHandler},
@@ -46,6 +47,7 @@ use crate::{
         player::inventory_interact::InventoryClickEvent,
         player::player_drop_item::PlayerDropItemEvent,
     },
+    server::StorageTransferError,
     world::World,
 };
 
@@ -729,12 +731,20 @@ impl InventoryPlan {
         }
         let transfer = if !cursor_changed
             && self.drops.is_empty()
-            && self.touches_both_inventories(&*handler)
+            && self.crosses_storage_boundaries(&*handler)
             && let Some(server) = self.world.server.upgrade()
         {
             match server.prepare_storage_transfer(player, &*handler) {
                 Ok(transfer) => transfer,
-                Err(()) => return false,
+                Err(StorageTransferError::Busy) => return false,
+                Err(StorageTransferError::StaleContainer) => {
+                    drop(cursor);
+                    drop(handler);
+                    // Closing the screen reacquires the active handler lock.
+                    drop(current);
+                    player.close_handled_screen();
+                    return false;
+                }
             }
         } else {
             None
@@ -754,7 +764,7 @@ impl InventoryPlan {
         true
     }
 
-    fn touches_both_inventories(&self, handler: &dyn ScreenHandler) -> bool {
+    fn crosses_storage_boundaries(&self, handler: &dyn ScreenHandler) -> bool {
         let Some(storage) = handler
             .as_any()
             .downcast_ref::<GenericContainerScreenHandler>()
@@ -771,7 +781,17 @@ impl InventoryPlan {
                 .zip(&self.after[range])
                 .any(|(before, after)| !same_stack(before, after))
         };
-        changed(0..count) && changed(count..self.before.len())
+        if changed(0..count) && changed(count..self.before.len()) {
+            return true;
+        }
+        storage
+            .inventory
+            .as_any()
+            .downcast_ref::<DoubleInventory>()
+            .is_some_and(|inventory| {
+                let split = inventory.halves()[0].size();
+                changed(0..split) && changed(split..count)
+            })
     }
 
     fn execute(self, player: &Arc<Player>, dragging: bool) -> Option<Vec<SlotUpdate>> {

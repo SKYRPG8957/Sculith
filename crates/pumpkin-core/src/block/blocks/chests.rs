@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use crate::block::entities::BlockEntity;
 use crate::block::entities::chest::ChestBlockEntity;
+use crate::block::entities::trapped_chest::TrappedChestBlockEntity;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{ChestLikeProperties, ChestType, HorizontalFacing};
 use pumpkin_data::entity::EntityPose;
 use pumpkin_data::loot_table::get_loot_table;
 use pumpkin_data::sound::Sound;
+use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection, translation};
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::double::DoubleInventory;
@@ -133,6 +135,63 @@ fn placed_chest_impl<E: BlockEntity + 'static>(
     }
 }
 
+fn paired_chest_position(
+    world: &World,
+    position: &BlockPos,
+    block: &Block,
+    properties: ChestLikeProperties,
+) -> Option<BlockPos> {
+    let direction = match properties.r#type {
+        ChestType::Single => return None,
+        ChestType::Left => properties.facing.rotate_clockwise(),
+        ChestType::Right => properties.facing.rotate_counter_clockwise(),
+    };
+    get_chest_properties_if_can_connect(
+        world,
+        block,
+        position,
+        properties.facing,
+        direction,
+        properties.r#type.opposite(),
+    )?;
+    Some(position.offset(direction.to_offset()))
+}
+
+/// Resolves the other live half only if the open inventory still uses both halves in order.
+pub(crate) fn paired_chest_for_inventory(
+    world: &World,
+    position: &BlockPos,
+    chest: &Arc<dyn BlockEntity>,
+    inventory: &DoubleInventory,
+) -> Option<Arc<dyn BlockEntity>> {
+    let (block, state_id) = world.get_block_and_state_id(position);
+    if !block.has_tag(&tag::Block::C_CHESTS_WOODEN)
+        && !block.has_tag(&tag::Block::MINECRAFT_COPPER_CHESTS)
+    {
+        return None;
+    }
+    let properties = ChestLikeProperties::from_state_id(state_id);
+    let partner =
+        world.get_block_entity(&paired_chest_position(world, position, block, properties)?)?;
+    let expected = if block.id == Block::TRAPPED_CHEST.id {
+        TrappedChestBlockEntity::ID
+    } else {
+        ChestBlockEntity::ID
+    };
+    if chest.resource_location() != expected || partner.resource_location() != expected {
+        return None;
+    }
+    let opened = chest.clone().get_inventory()?;
+    let paired = partner.clone().get_inventory()?;
+    let [first, second] = inventory.halves();
+    let (expected_first, expected_second) = if properties.r#type == ChestType::Right {
+        (&opened, &paired)
+    } else {
+        (&paired, &opened)
+    };
+    (Arc::ptr_eq(first, expected_first) && Arc::ptr_eq(second, expected_second)).then_some(partner)
+}
+
 /// Resolves a single or double chest inventory (`ChestBlock.getContainer`), optionally
 /// ignoring obstruction checks (used by hoppers, droppers, and crafters).
 pub(crate) fn get_chest_inventory(
@@ -145,29 +204,14 @@ pub(crate) fn get_chest_inventory(
     let first_chest = world.get_block_entity(position)?;
     let block = Block::from_state_id(state_id);
     let chest_props = ChestLikeProperties::from_state_id(state_id);
-    let connected_towards = match chest_props.r#type {
-        ChestType::Single => None,
-        ChestType::Left => Some(chest_props.facing.rotate_clockwise()),
-        ChestType::Right => Some(chest_props.facing.rotate_counter_clockwise()),
-    }
-    .filter(|&direction| {
-        get_chest_properties_if_can_connect(
-            world,
-            block,
-            position,
-            chest_props.facing,
-            direction,
-            chest_props.r#type.opposite(),
-        )
-        .is_some()
-    });
+    let neighbor = paired_chest_position(world, position, block, chest_props);
 
     if !ignore_being_blocked {
         if is_chest_blocked(world, position) {
             return None;
         }
-        if let Some(direction) = connected_towards
-            && is_chest_blocked(world, &position.offset(direction.to_offset()))
+        if let Some(neighbor) = neighbor
+            && is_chest_blocked(world, &neighbor)
         {
             return None;
         }
@@ -196,17 +240,16 @@ pub(crate) fn get_chest_inventory(
     unpack_non_player(&first_chest, position);
     let first_inventory = first_chest.get_inventory()?;
 
-    if let Some(direction) = connected_towards {
-        let neighbor_pos = position.offset(direction.to_offset());
-        if let Some(second_chest) = world.get_block_entity(&neighbor_pos) {
-            unpack_non_player(&second_chest, &neighbor_pos);
-            if let Some(second_inventory) = second_chest.get_inventory() {
-                return Some(if matches!(chest_props.r#type, ChestType::Right) {
-                    DoubleInventory::new(first_inventory, second_inventory)
-                } else {
-                    DoubleInventory::new(second_inventory, first_inventory)
-                });
-            }
+    if let Some(neighbor) = neighbor
+        && let Some(second_chest) = world.get_block_entity(&neighbor)
+    {
+        unpack_non_player(&second_chest, &neighbor);
+        if let Some(second_inventory) = second_chest.get_inventory() {
+            return Some(if matches!(chest_props.r#type, ChestType::Right) {
+                DoubleInventory::new(first_inventory, second_inventory)
+            } else {
+                DoubleInventory::new(second_inventory, first_inventory)
+            });
         }
     }
 

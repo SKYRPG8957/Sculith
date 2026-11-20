@@ -67,6 +67,7 @@ pub mod ticker;
 mod transfer_checkpoint;
 
 pub use recipe::RecipeManager;
+pub(crate) use transfer_checkpoint::StorageTransferError;
 
 use crate::data::advancement_data::AdvancementManager;
 
