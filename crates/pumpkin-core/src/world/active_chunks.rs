@@ -2,6 +2,8 @@ use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::{FxHashMap, FxHashSet};
 use uuid::Uuid;
 
+use super::tick_regions::TickRegions;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct ActivePlayerArea {
     pub center: Vector2<i32>,
@@ -12,6 +14,7 @@ pub(super) struct ActivePlayerArea {
 pub(super) struct ActiveChunkTracker {
     pub players: FxHashMap<Uuid, ActivePlayerArea>,
     pub loaded_active_chunks: FxHashSet<Vector2<i32>>,
+    pub tick_regions: TickRegions,
     watcher_counts: FxHashMap<Vector2<i32>, u32>,
     forced_chunks: FxHashSet<Vector2<i32>>,
 }
@@ -28,6 +31,7 @@ impl ActiveChunkTracker {
         if *count == 1 {
             active_chunks.insert(pos);
             newly_active.push(pos);
+            self.tick_regions.active_chunks_changed();
         }
     }
 
@@ -40,6 +44,7 @@ impl ActiveChunkTracker {
             self.watcher_counts.remove(&pos);
             self.loaded_active_chunks.remove(&pos);
             active_chunks.remove(&pos);
+            self.tick_regions.active_chunks_changed();
         }
     }
 
@@ -200,5 +205,43 @@ mod tests {
 
         tracker.remove_player(second, &mut active);
         assert!(active.is_empty());
+    }
+
+    #[test]
+    fn scheduled_chunks_follow_active_region_merges_and_splits() {
+        let mut tracker = ActiveChunkTracker::default();
+        let mut active = FxHashSet::default();
+        let mut newly_active = Vec::new();
+        let west = Vector2::new(-1, -1);
+        let east = Vector2::new(1, 1);
+        let bridge = Vector2::new(0, 0);
+        let inactive = Vector2::new(4, 4);
+        let mut forced = FxHashSet::from_iter([west, east]);
+        let scheduled = vec![west, east, inactive];
+
+        tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
+        let groups = tracker
+            .tick_regions
+            .group_scheduled(&active, scheduled.clone());
+        assert_eq!(groups.len(), 3);
+        assert!(scheduled.iter().all(|chunk| groups.contains(&vec![*chunk])));
+
+        forced.insert(bridge);
+        tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
+        // All work can use the same collection job with a single active region.
+        assert_eq!(
+            tracker
+                .tick_regions
+                .group_scheduled(&active, scheduled.clone()),
+            vec![scheduled.clone()]
+        );
+
+        forced.remove(&bridge);
+        tracker.sync_forced_chunks(&forced, &mut active, &mut newly_active);
+        let split = tracker
+            .tick_regions
+            .group_scheduled(&active, scheduled.clone());
+        assert_eq!(split.len(), 3);
+        assert!(scheduled.iter().all(|chunk| split.contains(&vec![*chunk])));
     }
 }

@@ -40,6 +40,7 @@ pub mod portal;
 pub mod raid;
 pub mod random_sequences;
 pub mod stopwatches;
+mod tick_regions;
 pub mod time;
 pub mod village_siege;
 pub mod wandering_trader_spawner;
@@ -535,11 +536,11 @@ impl World {
         for change in self.level.loaded_chunk_changes() {
             match change {
                 pumpkin_world::level::LoadedChunkChange::Loaded(pos) => {
-                    if active_chunks.contains(&pos)
-                        && self.level.is_chunk_loaded(&pos)
-                        && tracker.loaded_active_chunks.insert(pos)
-                    {
-                        migrations.push(pos);
+                    if active_chunks.contains(&pos) && self.level.is_chunk_loaded(&pos) {
+                        self.level.track_scheduled_chunk(&pos);
+                        if tracker.loaded_active_chunks.insert(pos) {
+                            migrations.push(pos);
+                        }
                     }
                 }
                 pumpkin_world::level::LoadedChunkChange::Unloaded(pos) => {
@@ -567,6 +568,7 @@ impl World {
                 .map(|player| player.get_entity().chunk_pos.load()),
         );
         for pos in migrations {
+            self.level.track_scheduled_chunk(&pos);
             self.migrate_pending_block_entities(pos);
         }
 
@@ -2243,7 +2245,20 @@ impl World {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        let tick_data = self.level.get_tick_data(&active_chunks, random_tick_speed);
+        let tick_data =
+            self.level
+                .get_tick_data_with_regions(&active_chunks, random_tick_speed, |scheduled| {
+                    // Read membership and its invalidation under the same locks as the writer.
+                    let mut tracker = self
+                        .active_chunk_tracker
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let active = self
+                        .active_chunks
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    tracker.tick_regions.group_scheduled(&active, scheduled)
+                });
 
         // 1. Parallel Block Ticks via Rayon
         let world = self.clone();

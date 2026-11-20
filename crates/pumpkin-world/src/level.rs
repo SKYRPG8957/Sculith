@@ -21,6 +21,7 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_data::{Block, BlockStateId, block_properties::has_random_ticks, fluid::Fluid};
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_util::world_seed::Seed;
+use rayon::prelude::*;
 use rustc_hash::{FxBuildHasher, FxHashSet};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
@@ -125,6 +126,7 @@ pub struct Level {
     pub chunk_listener: Arc<ChunkListener>,
 }
 
+#[derive(Default)]
 pub struct TickData {
     pub block_ticks: Vec<OrderedTick<&'static Block>>,
     pub fluid_ticks: Vec<OrderedTick<&'static Fluid>>,
@@ -630,6 +632,17 @@ impl Level {
         active_chunks: &FxHashSet<Vector2<i32>>,
         random_tick_speed: i64,
     ) -> TickData {
+        self.get_tick_data_with_regions(active_chunks, random_tick_speed, |chunks| vec![chunks])
+    }
+
+    /// Collects due ticks using the world's current ownership of scheduled chunks.
+    /// The partition must return each supplied position once.
+    pub fn get_tick_data_with_regions(
+        &self,
+        active_chunks: &FxHashSet<Vector2<i32>>,
+        random_tick_speed: i64,
+        partition: impl FnOnce(Vec<Vector2<i32>>) -> Vec<Vec<Vector2<i32>>>,
+    ) -> TickData {
         let samples_per_section = random_tick_speed.max(0);
 
         let mut ticks = TickData {
@@ -687,32 +700,78 @@ impl Level {
             }
         }
 
-        // 2. Process chunks with scheduled ticks
-        // We collect keys first to avoid holding DashSet shard lock while accessing loaded_chunks (deadlock risk)
-        let scheduled_chunk_pos: Vec<_> = self
+        // Drop the index's shard guards before accessing the loaded chunks.
+        let scheduled: Vec<_> = self
             .chunks_with_scheduled_ticks
             .iter()
             .map(|p| *p)
             .collect();
-        for pos in scheduled_chunk_pos {
-            if let Some(chunk) = self.loaded_chunks.get(&pos) {
-                let chunk = chunk.value();
-                ticks.block_ticks.append(&mut chunk.block_ticks.step_tick());
-                ticks.fluid_ticks.append(&mut chunk.fluid_ticks.step_tick());
-
-                // Remove from set if it no longer has ticks
-                if !chunk.block_ticks.has_ticks() && !chunk.fluid_ticks.has_ticks() {
-                    self.chunks_with_scheduled_ticks.remove(&pos);
-                }
-            } else {
-                self.chunks_with_scheduled_ticks.remove(&pos); // Chunk unloaded
-            }
+        if scheduled.len() < 2 {
+            self.step_scheduled_chunks(scheduled, &mut ticks);
+        } else {
+            self.step_scheduled_chunk_groups(partition(scheduled), &mut ticks);
         }
 
+        // World callbacks can reach across regions and still use the global priority order.
         ticks.block_ticks.sort_unstable();
         ticks.fluid_ticks.sort_unstable();
-
         ticks
+    }
+
+    fn step_scheduled_chunk_groups(
+        &self,
+        mut groups: Vec<Vec<Vector2<i32>>>,
+        ticks: &mut TickData,
+    ) {
+        if groups.len() < 2 {
+            if let Some(positions) = groups.pop() {
+                self.step_scheduled_chunks(positions, ticks);
+            }
+        } else {
+            let partials: Vec<_> = groups
+                .into_par_iter()
+                .map(|positions| {
+                    let mut data = TickData::default();
+                    self.step_scheduled_chunks(positions, &mut data);
+                    data
+                })
+                .collect();
+            for mut partial in partials {
+                ticks.block_ticks.append(&mut partial.block_ticks);
+                ticks.fluid_ticks.append(&mut partial.fluid_ticks);
+            }
+        }
+    }
+
+    fn step_scheduled_chunks(&self, positions: Vec<Vector2<i32>>, ticks: &mut TickData) {
+        for pos in positions {
+            if let Some(chunk) = self.loaded_chunks.get(&pos) {
+                let mut blocks = chunk.block_ticks.step_tick();
+                let mut fluids = chunk.fluid_ticks.step_tick();
+                let pending = chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks();
+                if pending || !blocks.is_empty() || !fluids.is_empty() {
+                    chunk.mark_dirty(true);
+                }
+                ticks.block_ticks.append(&mut blocks);
+                ticks.fluid_ticks.append(&mut fluids);
+
+                if pending {
+                    continue;
+                }
+            }
+            self.chunks_with_scheduled_ticks.remove(&pos);
+            // A new tick or replacement chunk may have been registered as we removed it.
+            self.track_scheduled_chunk(&pos);
+        }
+    }
+
+    /// Restores pending work when a loaded chunk becomes active.
+    pub fn track_scheduled_chunk(&self, pos: &Vector2<i32>) {
+        if let Some(chunk) = self.loaded_chunks.get(pos)
+            && (chunk.block_ticks.has_ticks() || chunk.fluid_ticks.has_ticks())
+        {
+            self.chunks_with_scheduled_ticks.insert(*pos);
+        }
     }
 
     pub fn clean_entity_chunk(self: &Arc<Self>, chunk: &Vector2<i32>) {
@@ -1121,6 +1180,7 @@ impl Level {
         if self
             .read_chunk_sync(&chunk_pos, |chunk| {
                 chunk.block_ticks.schedule_tick(&scheduled_tick, tick_order);
+                chunk.mark_dirty(true);
             })
             .is_some()
         {
@@ -1149,6 +1209,7 @@ impl Level {
         if self
             .read_chunk_sync(&chunk_pos, |chunk| {
                 chunk.fluid_ticks.schedule_tick(&scheduled_tick, tick_order);
+                chunk.mark_dirty(true);
             })
             .is_some()
         {

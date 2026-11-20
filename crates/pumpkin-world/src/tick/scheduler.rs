@@ -20,15 +20,13 @@ struct ChunkTickSchedulerInner<T> {
 
 impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
     pub fn step_tick(&self) -> Vec<OrderedTick<&'a T>> {
-        // Atomic update for the offset
-        let current_offset = self.offset.fetch_add(1, Ordering::SeqCst) % MAX_TICK_DELAY;
-        let next_offset = (current_offset + 1) % MAX_TICK_DELAY;
-        self.offset.store(next_offset, Ordering::SeqCst);
-
         let mut inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current_offset = self.offset.load(Ordering::Relaxed);
+        let next_offset = (current_offset + 1) % MAX_TICK_DELAY;
+        self.offset.store(next_offset, Ordering::Relaxed);
         let Some(inner) = inner_guard.as_mut() else {
             return Vec::new();
         };
@@ -49,11 +47,11 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
     }
 
     pub fn schedule_tick(&self, tick: &ScheduledTick<&'a T>, sub_tick_order: u64) {
-        let offset = self.offset.load(Ordering::SeqCst);
         let mut inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let offset = self.offset.load(Ordering::Relaxed);
         let inner = inner_guard.get_or_insert_with(|| {
             Box::new(ChunkTickSchedulerInner {
                 tick_queue: std::array::from_fn(|_| Vec::new()),
@@ -122,11 +120,11 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
 
     #[must_use]
     pub fn to_vec(&self) -> Vec<ScheduledTick<&'a T>> {
-        let offset = self.offset.load(Ordering::SeqCst);
         let inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let offset = self.offset.load(Ordering::Relaxed);
         let Some(inner) = inner_guard.as_ref() else {
             return Vec::new();
         };

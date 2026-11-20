@@ -82,7 +82,17 @@ Console commands, server-wide tick hooks, datapack functions and game tests
 use a coordinated boundary. Frozen worlds still process network packets.
 Stepping and sprinting advance every participating world by the requested
 number of ticks. Manual and periodic player snapshots coordinate the worlds
-for capture and write asynchronously. Native plugins use ABI 16.
+for capture and write asynchronously.
+
+The active-chunk tracker groups connected chunks into regions for scheduled
+block and fluid work. A region collects its own pending ticks on the
+simulation pool. Work already queued in loaded chunks outside the active
+regions is also collected. The world then dispatches callbacks in the
+existing block and fluid phases, sorting the collected work by priority.
+
+Chunk activation restores pending timers from saved data. The remaining
+delay is stored with the chunk, so changes in region membership and saves
+carry the same pending work forward. Native plugins use ABI 17.
 
 ## Shared resource delivery
 
