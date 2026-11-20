@@ -23,7 +23,7 @@ use tracing::{debug, error, info};
 
 mod active_chunks;
 mod block_updates;
-use block_updates::{BlockUpdates, group_by_section};
+use block_updates::BlockUpdates;
 pub mod brightness;
 pub mod chunker;
 mod entity_chunks;
@@ -1993,65 +1993,41 @@ impl World {
         self.block_updates.queue_world(changes.iter().copied());
     }
 
-    #[expect(clippy::too_many_lines)]
     pub fn flush_block_updates(&self) {
         let Some(_publishing) = self.block_updates.try_publish() else {
             return;
         };
-        let changes = self.block_updates.take_world();
-        let block_state_updates_by_chunk_section =
-            group_by_section(changes.into_iter().map(|(position, block_state_id)| {
-                // Another simulation owner may have changed this position since it was queued.
-                let block_state_id = self
-                    .get_block_state_id_if_loaded(&position)
-                    .unwrap_or(block_state_id);
-                (position, block_state_id)
-            }));
+        let sections = self
+            .block_updates
+            .take_world_sections(|position| self.get_block_state_id_if_loaded(position));
 
         // TODO: only send packet to players who have the chunks loaded
         // TODO: Send light updates to update the wire directly next to a broken block
-        for (chunk_section, updates) in block_state_updates_by_chunk_section {
-            if updates.is_empty() {
-                continue;
-            }
+        for ((chunk_section, sent), updates) in sections {
             let chunk_pos = Vector2::new(chunk_section.x, chunk_section.z);
-            if updates.len() == 1 {
-                let (block_pos, block_state_id) = updates[0];
-                let be_block_id = BlockState::to_be_network_id(block_state_id);
-                self.broadcast_to_chunk_editioned(
-                    chunk_pos,
-                    &CBlockUpdate::new(block_pos, i32::from(block_state_id.as_u16()).into()),
-                    &pumpkin_protocol::bedrock::client::CUpdateBlock::new(block_pos, be_block_id),
-                );
-                if let Some(block_entity) = self.get_block_entity(&block_pos)
-                    && let Some(nbt) = block_entity.chunk_data_nbt()
-                {
-                    let bytes = pumpkin_nbt::Nbt::from(nbt).write_unnamed();
-                    self.broadcast_to_chunk(
-                        chunk_pos,
-                        &CBlockEntityData::new(
-                            block_pos,
-                            VarInt(block_entity.get_id() as i32),
-                            bytes.as_ref().into(),
-                        ),
-                    );
-                }
-                if let Some(data) = self.bedrock_block_entity_data(block_state_id, block_pos) {
-                    self.broadcast_to_chunk_bedrock(
-                        chunk_pos,
-                        &CBlockActorData::new(block_pos, data),
-                    );
-                }
-            } else {
-                let players = self.players.load();
-                let mut java_recipients = Vec::new();
-
-                let recipients = players.iter().filter(|p| {
-                    p.watched_section
+            let players = self.players.load();
+            let recipients = || {
+                players.iter().filter(|player| {
+                    player
+                        .watched_section
                         .load()
                         .is_within_distance(chunk_pos.x, chunk_pos.y)
-                });
-
+                        && !sent.contains(player)
+                })
+            };
+            let java = || recipients().filter_map(|player| player.client.java());
+            let bedrock = || recipients().filter_map(|player| player.client.bedrock());
+            if let &[(block_pos, block_state_id)] = updates.as_slice() {
+                let be_block_id = BlockState::to_be_network_id(block_state_id);
+                Self::broadcast_java_clients(
+                    &CBlockUpdate::new(block_pos, i32::from(block_state_id.as_u16()).into()),
+                    java(),
+                );
+                Self::broadcast_bedrock_grouped(
+                    &pumpkin_protocol::bedrock::client::CUpdateBlock::new(block_pos, be_block_id),
+                    bedrock(),
+                );
+            } else {
                 let mut bedrock_packets = Vec::new();
                 for (block_pos, block_state_id) in &updates {
                     let be_block_id = BlockState::to_be_network_id(*block_state_id);
@@ -2065,17 +2041,7 @@ impl World {
                     bedrock_packets.push((update_packet, actor_packet));
                 }
 
-                let mut bedrock_recipients = Vec::new();
-                for p in recipients {
-                    match p.client.as_ref() {
-                        ClientPlatform::Java(java_client) => java_recipients.push(java_client),
-                        ClientPlatform::Bedrock(be_client) => {
-                            bedrock_recipients.push(be_client);
-                        }
-                    }
-                }
-
-                for be_client in bedrock_recipients {
+                for be_client in bedrock() {
                     for (update_packet, actor_packet) in &bedrock_packets {
                         if let Ok(data) = be_client.serialize_packet(update_packet) {
                             be_client.try_enqueue_packet(data);
@@ -2088,26 +2054,27 @@ impl World {
                     }
                 }
 
-                Self::broadcast_java_clients(
-                    &CMultiBlockUpdate::new(&updates),
-                    java_recipients.into_iter(),
-                );
-
-                for (block_pos, _) in &updates {
-                    if let Some(block_entity) = self.get_block_entity(block_pos)
-                        && let Some(nbt) = block_entity.chunk_data_nbt()
-                    {
-                        let bytes = pumpkin_nbt::Nbt::from(nbt).write_unnamed();
-                        self.broadcast_to_chunk(
-                            chunk_pos,
-                            &CBlockEntityData::new(
-                                *block_pos,
-                                VarInt(block_entity.get_id() as i32),
-                                bytes.as_ref().into(),
-                            ),
-                        );
-                    }
+                Self::broadcast_java_clients(&CMultiBlockUpdate::new(&updates), java());
+            }
+            for (block_pos, _) in &updates {
+                if let Some(block_entity) = self.get_block_entity(block_pos)
+                    && let Some(nbt) = block_entity.chunk_data_nbt()
+                {
+                    let bytes = pumpkin_nbt::Nbt::from(nbt).write_unnamed();
+                    Self::broadcast_java_clients(
+                        &CBlockEntityData::new(
+                            *block_pos,
+                            VarInt(block_entity.get_id() as i32),
+                            bytes.as_ref().into(),
+                        ),
+                        java(),
+                    );
                 }
+            }
+            if let &[(block_pos, block_state_id)] = updates.as_slice()
+                && let Some(data) = self.bedrock_block_entity_data(block_state_id, block_pos)
+            {
+                Self::broadcast_bedrock_grouped(&CBlockActorData::new(block_pos, data), bedrock());
             }
 
             let mut bedrock_water_packets = Vec::new();
@@ -2121,21 +2088,10 @@ impl World {
                 bedrock_water_packets.push(packet);
             }
 
-            if !bedrock_water_packets.is_empty() {
-                let players = self.players.load();
-                let recipients = players.iter().filter(|player| {
-                    player
-                        .watched_section
-                        .load()
-                        .is_within_distance(chunk_pos.x, chunk_pos.y)
-                });
-                for player in recipients {
-                    if let ClientPlatform::Bedrock(client) = player.client.as_ref() {
-                        for packet in &bedrock_water_packets {
-                            if let Ok(data) = client.serialize_packet(packet) {
-                                client.try_enqueue_packet(data);
-                            }
-                        }
+            for client in bedrock() {
+                for packet in &bedrock_water_packets {
+                    if let Ok(data) = client.serialize_packet(packet) {
+                        client.try_enqueue_packet(data);
                     }
                 }
             }

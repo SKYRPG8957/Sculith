@@ -92,16 +92,43 @@ pub struct EncodedChunk {
     pub position: Vector2<i32>,
     pub payload: Bytes,
     pub chunk_ref: Weak<ChunkData>,
+    terrain_revision: (u64, u64),
 }
 
 impl EncodedChunk {
+    fn encode(candidate: &PreparedChunk) -> Option<Self> {
+        let chunk = &candidate.chunk;
+        let terrain_revision = chunk.section.terrain_revision();
+        let mut buffer = Vec::with_capacity(32 * 1024);
+        buffer
+            .write_var_int(&VarInt(CChunkData::to_id(CURRENT_MC_VERSION)))
+            .ok()?;
+        CChunkData(chunk)
+            .write_packet_data(&mut buffer, &CURRENT_MC_VERSION)
+            .ok()?;
+        Some(Self {
+            position: candidate.position,
+            payload: Bytes::from(buffer),
+            chunk_ref: Arc::downgrade(chunk),
+            terrain_revision,
+        })
+    }
+
     #[must_use]
     pub fn is_fresh_for(&self, candidate: &PreparedChunk) -> bool {
         let Some(held) = self.chunk_ref.upgrade() else {
             return false;
         };
 
-        self.position == candidate.position && Arc::ptr_eq(&held, &candidate.chunk)
+        self.position == candidate.position
+            && Arc::ptr_eq(&held, &candidate.chunk)
+            && held.section.terrain_revision() == self.terrain_revision
+    }
+
+    fn has_current_terrain(&self) -> bool {
+        self.chunk_ref
+            .upgrade()
+            .is_some_and(|chunk| chunk.section.terrain_revision() == self.terrain_revision)
     }
 }
 
@@ -493,26 +520,7 @@ impl ChunkSender {
                     return Some(cached.clone());
                 }
 
-                let chunk = &candidate.chunk;
-                let mut chunk_buf = Vec::with_capacity(32 * 1024);
-                if chunk_buf
-                    .write_var_int(&VarInt(CChunkData::to_id(CURRENT_MC_VERSION)))
-                    .is_err()
-                {
-                    return None;
-                }
-                if CChunkData(chunk)
-                    .write_packet_data(&mut chunk_buf, &CURRENT_MC_VERSION)
-                    .is_err()
-                {
-                    return None;
-                }
-
-                Some(EncodedChunk {
-                    position: pos,
-                    payload: Bytes::from(chunk_buf),
-                    chunk_ref: Arc::downgrade(chunk),
-                })
+                EncodedChunk::encode(candidate)
             })
             .collect();
 
@@ -541,26 +549,7 @@ impl ChunkSender {
                     return Some(cached.value().clone());
                 }
 
-                let chunk = &candidate.chunk;
-                let mut chunk_buf = Vec::with_capacity(32 * 1024);
-                if chunk_buf
-                    .write_var_int(&VarInt(CChunkData::to_id(CURRENT_MC_VERSION)))
-                    .is_err()
-                {
-                    return None;
-                }
-                if CChunkData(chunk)
-                    .write_packet_data(&mut chunk_buf, &CURRENT_MC_VERSION)
-                    .is_err()
-                {
-                    return None;
-                }
-
-                let encoded = EncodedChunk {
-                    position: pos,
-                    payload: Bytes::from(chunk_buf),
-                    chunk_ref: Arc::downgrade(chunk),
-                };
+                let encoded = EncodedChunk::encode(candidate)?;
                 cache.insert(pos, encoded.clone());
                 Some(encoded)
             })
@@ -614,7 +603,9 @@ impl ChunkSender {
         };
 
         for chunk in encoded_chunks {
-            if !self.pending_chunks.remove(&chunk.position) {
+            // A regional commit can change a palette while it is being encoded.
+            // A stale result leaves the pending chunk in place for another batch.
+            if !chunk.has_current_terrain() || !self.pending_chunks.remove(&chunk.position) {
                 continue;
             }
 
@@ -711,6 +702,27 @@ impl Default for ChunkSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pumpkin_data::Block;
+
+    #[test]
+    fn java_chunk_encoding_expires_when_the_same_chunk_changes() {
+        let position = Vector2::new(3, -2);
+        let batch = batch_for(position, 0);
+        let candidate = &batch.chunks[0];
+        let mut cache = FxHashMap::default();
+        let encoded = ChunkSender::encode_batch(&batch, &mut cache);
+        assert!(encoded[0].is_fresh_for(candidate));
+
+        candidate
+            .chunk
+            .set_block_absolute_y(0, 64, 0, Block::STONE.default_state.id);
+        assert!(!encoded[0].has_current_terrain());
+        assert!(!encoded[0].is_fresh_for(candidate));
+
+        let current = ChunkSender::encode_batch(&batch, &mut cache);
+        assert!(current[0].is_fresh_for(candidate));
+        assert_ne!(encoded[0].payload, current[0].payload);
+    }
 
     #[test]
     fn bedrock_batch_moves_pending_chunks_to_sent() {

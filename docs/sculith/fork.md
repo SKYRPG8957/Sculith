@@ -136,10 +136,12 @@ API and report success, staleness or unavailable worlds as before.
 Region jobs can also publish their committed block changes to Java and Bedrock
 watchers before the world finishes its tick. Delivery checks the current owner,
 the loaded block state and each connection's chunk sender. Packets go through
-the existing FIFO, including Bedrock's separate water layer. The world and
-regions serialize queued block publication, and the world reconciles deferred
-updates with the authoritative state. Packet observers, translated protocols
-and chunks still being delivered use the world publication path.
+the existing FIFO, including Bedrock's separate water layer. Each ready
+connection can receive an update while another viewer waits for its terrain.
+The world reconciles deferred changes with the authoritative state. A viewer
+that already got that state in the same connection epoch skips the duplicate.
+Packet observers and translated clients use the world publication path. The
+Java chunk sender checks terrain revisions before reusing or queuing an encoding.
 
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
@@ -157,7 +159,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 25.
+Native plugins use ABI 26.
 
 ## Shared resource delivery
 
