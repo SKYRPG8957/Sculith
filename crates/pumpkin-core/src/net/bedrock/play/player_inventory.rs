@@ -682,7 +682,7 @@ impl InventoryPlan {
         true
     }
 
-    fn commit(&self, player: &Player) -> bool {
+    fn commit(&self, player: &Arc<Player>) -> bool {
         let current = player
             .current_screen_handler
             .lock()
@@ -696,7 +696,9 @@ impl InventoryPlan {
         let mut handler = current
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if handler.get_behaviour().slots.len() != self.slots.len() || !handler.can_use(player) {
+        if handler.get_behaviour().slots.len() != self.slots.len()
+            || !handler.can_use(player.as_ref())
+        {
             return false;
         }
         for (index, before) in self.before.iter().enumerate() {
@@ -725,6 +727,18 @@ impl InventoryPlan {
         {
             return false;
         }
+        let transfer = if !cursor_changed
+            && self.drops.is_empty()
+            && self.touches_both_inventories(&*handler)
+            && let Some(server) = self.world.server.upgrade()
+        {
+            match server.prepare_storage_transfer(player, &*handler) {
+                Ok(transfer) => transfer,
+                Err(()) => return false,
+            }
+        } else {
+            None
+        };
         for (index, after) in self.after.iter().enumerate() {
             if !same_stack(&self.before[index], after) {
                 self.slots[index].set_stack(after.clone());
@@ -734,7 +748,30 @@ impl InventoryPlan {
         if let Some(cursor) = &mut cursor {
             **cursor = self.cursor_after.clone();
         }
+        if let Some(transfer) = transfer {
+            transfer.record();
+        }
         true
+    }
+
+    fn touches_both_inventories(&self, handler: &dyn ScreenHandler) -> bool {
+        let Some(storage) = handler
+            .as_any()
+            .downcast_ref::<GenericContainerScreenHandler>()
+        else {
+            return false;
+        };
+        let count = storage.inventory.size();
+        if count > self.before.len() {
+            return false;
+        }
+        let changed = |range: std::ops::Range<usize>| {
+            self.before[range.clone()]
+                .iter()
+                .zip(&self.after[range])
+                .any(|(before, after)| !same_stack(before, after))
+        };
+        changed(0..count) && changed(count..self.before.len())
     }
 
     fn execute(self, player: &Arc<Player>, dragging: bool) -> Option<Vec<SlotUpdate>> {

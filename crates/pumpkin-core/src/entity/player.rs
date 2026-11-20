@@ -262,6 +262,7 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockState, Enchantment, screen::WindowType, tag, translation};
+use pumpkin_inventory::generic_container_screen_handler::GenericContainerScreenHandler;
 use pumpkin_inventory::mount_screen_handler::MountScreenHandler;
 use pumpkin_inventory::player::{
     player_inventory::PlayerInventory, player_screen_handler::PlayerScreenHandler,
@@ -568,6 +569,27 @@ fn bedrock_container_type(window_type: Option<WindowType>, block: Option<&'stati
         Some(WindowType::Smithing) => 34,
         Some(WindowType::Crafter3x3) => 36,
         _ => 0,
+    }
+}
+
+fn is_direct_storage_click(handler: &dyn ScreenHandler, packet: &SClickSlot) -> bool {
+    let Some(storage) = handler
+        .as_any()
+        .downcast_ref::<GenericContainerScreenHandler>()
+    else {
+        return false;
+    };
+    let Ok(slot) = usize::try_from(packet.slot) else {
+        return false;
+    };
+    match packet.mode {
+        SlotActionType::QuickMove => handler
+            .get_behaviour()
+            .slots
+            .get(slot)
+            .is_some_and(|slot| !slot.get_cloned_stack().is_empty()),
+        SlotActionType::Swap => slot < storage.inventory.size(),
+        _ => false,
     }
 }
 
@@ -7588,6 +7610,28 @@ impl Player {
                 .revision
                 .load(Ordering::Relaxed) as i32);
 
+        let transfer = if is_direct_storage_click(&*screen_handler, &packet) {
+            if i32::from(screen_handler.sync_id()) != packet.sync_id.0
+                || !screen_handler.can_use(self.as_ref())
+            {
+                screen_handler.sync_state();
+                return;
+            }
+            let Ok(transfer) = server.prepare_storage_transfer(self, &*screen_handler) else {
+                screen_handler.sync_state();
+                return;
+            };
+            transfer.and_then(|transfer| {
+                screen_handler
+                    .get_behaviour()
+                    .slots
+                    .get(slot as usize)
+                    .map(|slot| (transfer, slot.clone(), slot.get_cloned_stack()))
+            })
+        } else {
+            None
+        };
+
         screen_handler.disable_sync();
         screen_handler.on_slot_click(
             i32::from(slot),
@@ -7595,6 +7639,11 @@ impl Player {
             packet.mode.clone(),
             self.as_ref(),
         );
+        if let Some((transfer, slot, before)) = transfer
+            && !before.are_equal(&slot.get_cloned_stack())
+        {
+            transfer.record();
+        }
 
         for (key, value) in packet.array_of_changed_slots {
             screen_handler.set_received_hash(key as usize, value);

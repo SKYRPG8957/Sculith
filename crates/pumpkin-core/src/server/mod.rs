@@ -64,6 +64,7 @@ pub mod server_test_manager;
 mod storage_checkpoint;
 pub mod tick_rate_manager;
 pub mod ticker;
+mod transfer_checkpoint;
 
 pub use recipe::RecipeManager;
 
@@ -698,7 +699,10 @@ impl Server {
 
     pub async fn save_all(&self) -> Result<(), String> {
         self.management_hub.broadcast_server_saving();
-        self.finish_save(None).await
+        tokio::select! {
+            result = self.finish_save(None) => result,
+            () = self.player_data_storage.checkpoint.pending() => Err("A world checkpoint is in progress".to_string()),
+        }
     }
 
     pub(crate) async fn save_with_checkpoint(self: &Arc<Self>) -> Result<(), String> {

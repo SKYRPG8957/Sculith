@@ -29,7 +29,8 @@ use crate::{
 use super::player_data::PlayerDataStorage;
 
 const JOURNAL_NAME: &str = ".sculith-world-checkpoint";
-const MAGIC: &[u8; 8] = b"SCWORLD\x01";
+const MAGIC: &[u8; 8] = b"SCWORLD\x02";
+const LEGACY_MAGIC: &[u8; 8] = b"SCWORLD\x01";
 
 pub type TerrainImages = BTreeMap<PathBuf, Vec<(Vector2<i32>, Bytes)>>;
 pub type PreparedTerrain = BTreeMap<PathBuf, Vec<(Vector2<i32>, SyncChunk)>>;
@@ -38,20 +39,40 @@ pub type PreparedTerrain = BTreeMap<PathBuf, Vec<(Vector2<i32>, SyncChunk)>>;
 #[derive(Default)]
 pub struct CheckpointFence {
     access: Arc<RwLock<()>>,
+    terrain_reads: Arc<RwLock<()>>,
     pending: AtomicBool,
+    terrain_pending: AtomicBool,
     changed: Notify,
 }
 
 impl CheckpointFence {
     pub async fn read(&self, cancelling: &CancellationToken) -> Option<OwnedRwLockReadGuard<()>> {
+        self.read_when_ready(&self.access, &self.pending, cancelling)
+            .await
+    }
+
+    pub async fn read_terrain(
+        &self,
+        cancelling: &CancellationToken,
+    ) -> Option<OwnedRwLockReadGuard<()>> {
+        self.read_when_ready(&self.terrain_reads, &self.terrain_pending, cancelling)
+            .await
+    }
+
+    async fn read_when_ready(
+        &self,
+        lock: &Arc<RwLock<()>>,
+        pending: &AtomicBool,
+        cancelling: &CancellationToken,
+    ) -> Option<OwnedRwLockReadGuard<()>> {
         loop {
             let changed = self.changed.notified();
             let access = tokio::select! {
                 biased;
-                guard = self.access.clone().read_owned() => guard,
+                guard = lock.clone().read_owned() => guard,
                 () = cancelling.cancelled() => return None,
             };
-            if !self.is_pending() {
+            if !pending.load(Ordering::Acquire) {
                 return Some(access);
             }
             drop(access);
@@ -60,6 +81,17 @@ impl CheckpointFence {
                 () = cancelling.cancelled() => return None,
             }
         }
+    }
+
+    pub async fn materialize_terrain(&self) -> OwnedRwLockWriteGuard<()> {
+        let access = self.terrain_reads.clone().write_owned().await;
+        self.terrain_pending.store(true, Ordering::Release);
+        access
+    }
+
+    pub fn terrain_materialized(&self) {
+        self.terrain_pending.store(false, Ordering::Release);
+        self.changed.notify_waiters();
     }
 
     pub fn try_read(&self) -> Option<OwnedRwLockReadGuard<()>> {
@@ -102,6 +134,7 @@ impl CheckpointFence {
 
 #[derive(Default)]
 pub struct SaveCheckpoint {
+    pub revision: u64,
     pub players: Vec<(Uuid, NbtCompound)>,
     pub worlds: TerrainImages,
 }
@@ -126,6 +159,7 @@ impl SaveCheckpoint {
 
     pub fn publish(&self, root: &Path, format: RegionFormat) -> io::Result<()> {
         let mut bytes = MAGIC.to_vec();
+        bytes.put_u64(self.revision);
         put_bytes(&mut bytes, format.name().as_bytes())?;
         put_length(&mut bytes, self.players.len())?;
         for (uuid, nbt) in &self.players {
@@ -158,9 +192,9 @@ impl SaveCheckpoint {
         sync_parent(&root.join(JOURNAL_NAME))
     }
 
-    pub fn save_players(self, storage: &PlayerDataStorage) -> Result<(), String> {
+    pub fn save_players(&self, storage: &PlayerDataStorage) -> Result<(), String> {
         storage
-            .write_committed_batch(self.players)
+            .write_committed_batch(self.players.iter().cloned())
             .map_err(|err| err.to_string())
     }
 
@@ -223,18 +257,29 @@ fn frame(data: &mut Bytes) -> io::Result<Bytes> {
 
 fn decode(mut bytes: Bytes, format: RegionFormat) -> io::Result<SaveCheckpoint> {
     let (payload, checksum) = bytes.split_last_chunk::<8>().ok_or_else(invalid)?;
-    if *checksum != xxh64(payload, 0).to_be_bytes() || !payload.starts_with(MAGIC) {
+    if *checksum != xxh64(payload, 0).to_be_bytes()
+        || !(payload.starts_with(MAGIC) || payload.starts_with(LEGACY_MAGIC))
+    {
         return Err(invalid());
     }
+    let has_revision = payload.starts_with(MAGIC);
     bytes.truncate(payload.len());
     bytes.advance(MAGIC.len());
+    let revision = if has_revision {
+        bytes.try_get_u64().map_err(|_| invalid())?
+    } else {
+        0
+    };
     if frame(&mut bytes)?.as_ref() != format.name().as_bytes() {
         return Err(io::Error::other(
             "storage format changed with a pending world checkpoint",
         ));
     }
 
-    let mut result = SaveCheckpoint::default();
+    let mut result = SaveCheckpoint {
+        revision,
+        ..SaveCheckpoint::default()
+    };
     let player_count = bytes.try_get_u32().map_err(|_| invalid())?;
     for _ in 0..player_count {
         let uuid = Uuid::from_u128(bytes.try_get_u128().map_err(|_| invalid())?);
@@ -285,6 +330,7 @@ mod tests {
         let path = PathBuf::from("dimensions/minecraft/overworld");
         let chunks = vec![(pos, Bytes::from_static(b"chunk image"))];
         let checkpoint = SaveCheckpoint {
+            revision: 17,
             players: vec![(uuid, inventory.clone())],
             worlds: BTreeMap::from([(path.clone(), chunks.clone())]),
         };
@@ -295,6 +341,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(decoded.players, [(uuid, inventory)]);
+        assert_eq!(decoded.revision, 17);
         assert_eq!(decoded.worlds[&path], chunks);
         SaveCheckpoint::remove(root.path()).unwrap();
         SaveCheckpoint::require_materialized(root.path()).unwrap();
@@ -309,5 +356,26 @@ mod tests {
         };
         checkpoint.publish(root.path(), RegionFormat::Pump).unwrap();
         assert!(SaveCheckpoint::read(root.path(), RegionFormat::Pump).is_err());
+    }
+
+    #[test]
+    fn checkpoint_reader_accepts_the_previous_version() {
+        let root = tempfile::tempdir().unwrap();
+        let checkpoint = SaveCheckpoint::default();
+        checkpoint.publish(root.path(), RegionFormat::Pump).unwrap();
+        let path = root.path().join(JOURNAL_NAME);
+        let current = fs::read(&path).unwrap();
+        let mut legacy = LEGACY_MAGIC.to_vec();
+        legacy.extend_from_slice(&current[MAGIC.len() + 8..current.len() - 8]);
+        let checksum = xxh64(&legacy, 0);
+        legacy.put_u64(checksum);
+        fs::write(&path, legacy).unwrap();
+        assert_eq!(
+            SaveCheckpoint::read(root.path(), RegionFormat::Pump)
+                .unwrap()
+                .unwrap()
+                .revision,
+            0
+        );
     }
 }

@@ -142,6 +142,10 @@ impl ServerPlayerData {
         self.storage.clone()
     }
 
+    pub(crate) fn is_save_enabled(&self) -> bool {
+        self.storage.is_save_enabled()
+    }
+
     /// Extracts and saves data from a player.
     ///
     /// This function extracts NBT data from a player and saves it to disk.
@@ -177,7 +181,7 @@ impl ServerPlayerData {
         snapshots
     }
 
-    fn capture(player: &Player) -> (Uuid, NbtCompound) {
+    pub(crate) fn capture(player: &Player) -> (Uuid, NbtCompound) {
         let mut nbt = NbtCompound::new();
         player.write_nbt(&mut nbt);
         (player.gameprofile.id, nbt)

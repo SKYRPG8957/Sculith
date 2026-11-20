@@ -475,6 +475,12 @@ impl Level {
         self.checkpoint_fence.read(&self.cancel_token).await
     }
 
+    pub(crate) async fn checkpoint_terrain_read(
+        &self,
+    ) -> Option<tokio::sync::OwnedRwLockReadGuard<()>> {
+        self.checkpoint_fence.read_terrain(&self.cancel_token).await
+    }
+
     /// Queues a save behind the scheduler's previous terrain writes and waits for the writer.
     pub async fn save_regions(
         &self,
@@ -775,7 +781,11 @@ impl Level {
     /// Deletes an unloaded chunk (and its entity chunk) from disk storage.
     /// Returns `false` if the chunk is currently loaded or did not exist on disk.
     pub async fn delete_chunk(&self, pos: Vector2<i32>) -> bool {
-        let Some(_access) = self.checkpoint_access().await else {
+        let access = select! {
+            () = self.checkpoint_fence.pending() => None,
+            access = self.checkpoint_access() => access,
+        };
+        let Some(_access) = access else {
             return false;
         };
         if self.is_chunk_loaded(&pos) {

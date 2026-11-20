@@ -131,7 +131,7 @@ pub async fn io_read_work(
         let level_clone = level.clone();
 
         let fetch_task = tokio::spawn(async move {
-            let Some(_access) = level_clone.checkpoint_access().await else {
+            let Some(_access) = level_clone.checkpoint_terrain_read().await else {
                 return;
             };
             level_clone

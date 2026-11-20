@@ -244,12 +244,28 @@ opening region caches or admitting players. A retry can finish an interrupted
 checkpoint while the server is running. Offline conversion and storage export
 require the checkpoint to be fully applied.
 
+## Automatic inventory checkpoints
+
+When terrain autosave and player saving are enabled, Java quick moves and
+number-key swaps and Bedrock direct slot transfers between a player and one
+chest, trapped chest, or barrel enter a shared checkpoint. The server captures
+the touched players and terrain chunks at the end of the tick. One group can
+hold 256 distinct player and chunk targets. Clients get the resulting slots
+in memory, and the checkpoint journal records when the group becomes durable.
+
+The writer attempts a failed group again after one second and keeps the
+captured data available for replay. Supported transfers that arrive while the
+writer is busy receive the server's current slot contents. A process
+interruption before publication leaves the earlier stored state, and startup
+replays a published group before admitting players.
+
 ## Remaining work
 
 Standalone Bedrock world export and conversion of entities, player data and
 other block-entity contents remain open.
 
-Persisting every player-to-container transfer between manual checkpoints remains open.
+Automatic checkpoints for cursor gestures, double chests, and automated container
+transfers remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack

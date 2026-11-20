@@ -23,7 +23,7 @@ use tracing::info;
 
 use crate::{data::player_server::ServerPlayerData, world::World};
 
-use super::Server;
+use super::{Server, transfer_checkpoint::TransferCheckpoints};
 
 struct Capture {
     checkpoint: SaveCheckpoint,
@@ -36,10 +36,12 @@ pub(super) type SavedChunks = BTreeMap<PathBuf, FxHashSet<Vector2<i32>>>;
 pub(super) struct StorageCheckpoint {
     request: Mutex<Option<oneshot::Sender<Result<Capture, String>>>>,
     pub(super) saves: tokio::sync::Mutex<()>,
+    pub(super) transfers: TransferCheckpoints,
 }
 
 impl StorageCheckpoint {
-    pub(super) fn capture_at_tick_boundary(&self, server: &Server) {
+    pub(super) fn capture_at_tick_boundary(&self, server: &Arc<Server>) {
+        self.transfers.finish_tick(server);
         let mut request = self.request.lock().unwrap_or_else(PoisonError::into_inner);
         if request.is_none() {
             return;
@@ -57,6 +59,13 @@ impl StorageCheckpoint {
         }
     }
 
+    pub(super) fn manual_capture_requested(&self) -> bool {
+        self.request
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+    }
+
     pub(super) async fn save(&self, server: &Server) -> Result<Option<SavedChunks>, String> {
         let root = server.basic_config.get_world_path();
         let config = &server.advanced_config.world.chunk;
@@ -66,16 +75,12 @@ impl StorageCheckpoint {
 
         if fence.is_pending() {
             let _access = fence.write().await;
-            let pending = read(root.clone(), format).await?;
-            if let Some(checkpoint) = pending {
-                apply(
-                    checkpoint,
-                    &root,
-                    config,
-                    &server.worlds.load_full(),
-                    players.clone(),
-                )
-                .await?;
+            if let Some(checkpoint) = self.transfers.take_retry() {
+                self.transfers.write(server, checkpoint).await?;
+            } else if let Some(checkpoint) = read(root.clone(), format).await? {
+                apply_live(server, Arc::new(checkpoint)).await?;
+            } else {
+                fence.terrain_materialized();
             }
             fence.set_pending(false);
         }
@@ -94,15 +99,7 @@ impl StorageCheckpoint {
         }
         // The checkpoint owns both writers until publication and replay finish. On failure,
         // keep the journal authoritative until a retry applies it.
-        let publication_root = root.clone();
         fence.set_pending(true);
-        let checkpoint = blocking(move || {
-            checkpoint
-                .publish(&publication_root, format)
-                .map_err(|err| err.to_string())?;
-            Ok(checkpoint)
-        })
-        .await?;
         let covered = checkpoint
             .worlds
             .iter()
@@ -113,18 +110,45 @@ impl StorageCheckpoint {
                 )
             })
             .collect();
-        apply(
-            checkpoint,
-            &root,
-            config,
-            &server.worlds.load_full(),
-            players,
-        )
-        .await?;
+        persist(server, Arc::new(checkpoint)).await?;
         fence.set_pending(false);
         drop(access);
         Ok(Some(covered))
     }
+}
+
+pub(super) async fn persist(
+    server: &Server,
+    checkpoint: Arc<SaveCheckpoint>,
+) -> Result<(), String> {
+    let root = server.basic_config.get_world_path();
+    let config = &server.advanced_config.world.chunk;
+    let publication_root = root.clone();
+    let format = RegionFormat::from_config(config);
+    let data = checkpoint.clone();
+    blocking(move || {
+        data.publish(&publication_root, format)
+            .map_err(|err| err.to_string())
+    })
+    .await?;
+    apply_live(server, checkpoint).await
+}
+
+async fn apply_live(server: &Server, checkpoint: Arc<SaveCheckpoint>) -> Result<(), String> {
+    let fence = &server.player_data_storage.checkpoint;
+    let _access = fence.materialize_terrain().await;
+    let result = apply(
+        checkpoint,
+        &server.basic_config.get_world_path(),
+        &server.advanced_config.world.chunk,
+        &server.worlds.load_full(),
+        server.player_data_storage.checkpoint_storage(),
+    )
+    .await;
+    if result.is_ok() {
+        fence.terrain_materialized();
+    }
+    result
 }
 
 fn capture(server: &Server) -> Result<SaveCheckpoint, String> {
@@ -158,8 +182,12 @@ pub(super) async fn recover(
     players: Arc<PlayerDataStorage>,
 ) -> Result<(), String> {
     if let Some(checkpoint) = read(root.to_path_buf(), RegionFormat::from_config(config)).await? {
-        apply(checkpoint, root, config, &[], players).await?;
-        info!("Recovered world checkpoint in {}", root.display());
+        let revision = checkpoint.revision;
+        apply(Arc::new(checkpoint), root, config, &[], players).await?;
+        info!(
+            "Recovered world checkpoint revision {revision} in {}",
+            root.display()
+        );
     }
     Ok(())
 }
@@ -169,7 +197,7 @@ async fn read(root: PathBuf, format: RegionFormat) -> Result<Option<SaveCheckpoi
 }
 
 async fn apply(
-    checkpoint: SaveCheckpoint,
+    checkpoint: Arc<SaveCheckpoint>,
     root: &Path,
     config: &ChunkConfig,
     worlds: &[Arc<World>],

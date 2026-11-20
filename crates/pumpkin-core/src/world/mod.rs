@@ -8009,10 +8009,26 @@ impl World {
             .into_iter()
             .filter_map(|pos| {
                 let chunk = self.level.loaded_chunks.get(&pos)?.value().clone();
-                self.save_block_entities(pos);
-                Some((pos, chunk.internal_to_pump_bytes()))
+                Some((pos, self.capture_storage_chunk(&chunk)))
             })
             .collect()
+    }
+
+    pub(crate) fn capture_storage_chunk(&self, chunk: &ChunkData) -> bytes::Bytes {
+        self.save_block_entities(Vector2::new(chunk.x, chunk.z));
+        chunk.internal_to_pump_bytes()
+    }
+
+    /// Records the edited container in the chunk that owned it when the transfer started.
+    pub(crate) fn record_storage_transfer(&self, chunk: &ChunkData, entity: &dyn BlockEntity) {
+        let nbt = self.block_entity_save_data(entity);
+        let pos = entity.get_position();
+        chunk
+            .pending_block_entities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(pos, nbt);
+        chunk.mark_dirty(true);
     }
 
     pub fn set_custom_data(&self, namespace: &str, key: &str, value: pumpkin_nbt::tag::NbtTag) {
