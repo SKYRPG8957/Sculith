@@ -9,10 +9,13 @@ compile_error!("Compiling for WASI targets is not supported!");
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_world::{
     CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION,
-    chunk::io::bedrock_import::import_terrain,
+    chunk::io::bedrock_import::{
+        GeneratorPolicy, ImportStats, import_terrain_with_generator, inspect_terrain,
+    },
 };
 use std::{
     backtrace::{Backtrace, BacktraceStatus},
+    ffi::{OsStr, OsString},
     io::{self},
     panic::PanicHookInfo,
     path::Path,
@@ -56,11 +59,18 @@ static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 async fn main() {
     let _ = MAIN_THREAD.set(thread::current().id());
 
-    if std::env::args_os()
+    match std::env::args_os()
         .nth(1)
-        .is_some_and(|arg| arg == "--import-bedrock-terrain")
+        .as_deref()
+        .and_then(OsStr::to_str)
     {
-        exit(import_bedrock_command(std::env::args_os().skip(2)));
+        Some("--import-bedrock-terrain") => {
+            exit(import_bedrock_command(std::env::args_os().skip(2)))
+        }
+        Some("--inspect-bedrock-world") => {
+            exit(inspect_bedrock_command(std::env::args_os().skip(2)))
+        }
+        _ => {}
     }
 
     let exec_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -445,12 +455,14 @@ fn check_settings(dir: &Path, offline: bool) -> i32 {
     clippy::print_stderr,
     reason = "the import command runs before server logging is initialized"
 )]
-fn import_bedrock_command(mut args: impl Iterator<Item = std::ffi::OsString>) -> i32 {
-    let (Some(source), Some(destination), None) = (args.next(), args.next(), args.next()) else {
-        eprintln!("Usage: sculith --import-bedrock-terrain SOURCE DESTINATION");
+fn import_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
+    let (Some(source), Some(destination), Some(policy)) =
+        (args.next(), args.next(), bedrock_generator_policy(args))
+    else {
+        eprintln!("Run sculith --import-bedrock-terrain SOURCE DESTINATION [--new-chunks=normal]");
         return 2;
     };
-    match import_terrain(Path::new(&source), Path::new(&destination)) {
+    match import_terrain_with_generator(Path::new(&source), Path::new(&destination), policy) {
         Ok(stats) => {
             println!(
                 "Imported {} Overworld chunks in {} regions to {}.",
@@ -458,34 +470,96 @@ fn import_bedrock_command(mut args: impl Iterator<Item = std::ffi::OsString>) ->
                 stats.regions,
                 Path::new(&destination).display()
             );
-            println!("Imported {} storage containers.", stats.containers_imported);
-            println!(
-                "Excluded data in {} block-entity records, {} entity records and {} other LevelDB records.",
-                stats.block_entity_records_excluded,
-                stats.entity_records_excluded,
-                stats.other_records_excluded
-            );
-            for skipped in &stats.skipped_block_entity_examples {
-                let location = skipped
-                    .position
-                    .map_or_else(|| "unknown position".to_owned(), |pos| pos.to_string());
-                println!(
-                    "Skipped Bedrock {:?} at {location} ({}).",
-                    skipped.kind, skipped.reason
-                );
-            }
-            if stats.block_entities_skipped > stats.skipped_block_entity_examples.len() {
-                println!(
-                    "{} further block entities skipped.",
-                    stats.block_entities_skipped - stats.skipped_block_entity_examples.len()
-                );
-            }
+            print_bedrock_import_stats(&stats, "Imported");
             0
         }
         Err(error) => {
             eprintln!("Bedrock terrain import failed: {error}");
             1
         }
+    }
+}
+
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "the inspection command runs before server logging is initialized"
+)]
+fn inspect_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
+    let (Some(source), Some(policy)) = (args.next(), bedrock_generator_policy(args)) else {
+        eprintln!("Run sculith --inspect-bedrock-world SOURCE [--new-chunks=normal]");
+        return 2;
+    };
+    let report = match inspect_terrain(Path::new(&source), policy) {
+        Ok(report) => report,
+        Err(error) => {
+            eprintln!("Bedrock world inspection failed ({error}).");
+            return 1;
+        }
+    };
+    println!(
+        "Read {} Overworld chunks in {} regions.",
+        report.stats.chunks, report.stats.regions
+    );
+    print_bedrock_import_stats(&report.stats, "Read");
+    if report.blockers == 0 {
+        println!("Bedrock import check passed.");
+        return 0;
+    }
+    eprintln!("Bedrock import blocked by {} issues.", report.blockers);
+    for issue in &report.blocker_examples {
+        eprintln!("{issue}");
+    }
+    if report.blockers > report.blocker_examples.len() {
+        eprintln!(
+            "{} further issues.",
+            report.blockers - report.blocker_examples.len()
+        );
+    }
+    1
+}
+
+fn bedrock_generator_policy(mut args: impl Iterator<Item = OsString>) -> Option<GeneratorPolicy> {
+    match (args.next(), args.next()) {
+        (None, None) => Some(GeneratorPolicy::RequireSource),
+        (Some(flag), None) if flag == "--new-chunks=normal" => {
+            Some(GeneratorPolicy::NormalIfUnspecified)
+        }
+        _ => None,
+    }
+}
+
+#[expect(
+    clippy::print_stdout,
+    reason = "the CLI prints migration results before logging starts"
+)]
+fn print_bedrock_import_stats(stats: &ImportStats, verb: &str) {
+    println!("{verb} {} storage containers.", stats.containers_imported);
+    println!(
+        "Excluded data in {} block-entity records, {} entity records and {} other LevelDB records.",
+        stats.block_entity_records_excluded,
+        stats.entity_records_excluded,
+        stats.other_records_excluded
+    );
+    if stats.default_generator_selected {
+        println!(
+            "New chunks use Sculith's normal generator because the source layers are unspecified."
+        );
+    }
+    for skipped in &stats.skipped_block_entity_examples {
+        let location = skipped
+            .position
+            .map_or_else(|| "unknown position".to_owned(), |pos| pos.to_string());
+        println!(
+            "Skipped Bedrock {:?} at {location} ({}).",
+            skipped.kind, skipped.reason
+        );
+    }
+    if stats.block_entities_skipped > stats.skipped_block_entity_examples.len() {
+        println!(
+            "{} further block entities skipped.",
+            stats.block_entities_skipped - stats.skipped_block_entity_examples.len()
+        );
     }
 }
 

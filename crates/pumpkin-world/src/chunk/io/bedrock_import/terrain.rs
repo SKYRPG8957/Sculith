@@ -164,8 +164,15 @@ pub(super) fn subchunk(
         return Err(invalid(format!("unsupported subchunk version {version}")));
     }
     let layers = reader.get_u8()?;
-    if !matches!(layers, 1 | 2) || reader.get_i8()? != y {
+    if layers > 2 || reader.get_i8()? != y {
         return Err(invalid("invalid subchunk layer count or vertical index"));
+    }
+    // Dragonfly saves empty sections as a version 9 header with no palettes.
+    if layers == 0 {
+        if reader.reader().position() != bytes.len() as u64 {
+            return Err(invalid("trailing data in empty subchunk"));
+        }
+        return Ok(BlockPalette::Homogeneous(BlockStateId::AIR));
     }
 
     let mut primary = read_block_layer(&mut reader, registry)?;

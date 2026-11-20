@@ -46,6 +46,7 @@ const AUTOMATIC_SPAWN_Y: i32 = i16::MAX as i32;
 const CHUNK_COORDINATE_LIMIT: u32 = 30_000_000 / 16;
 const MAX_LEVEL_DAT_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TABLE_BLOCK_BYTES: usize = 16 * 1024 * 1024;
+const DIAGNOSTIC_LIMIT: usize = 16;
 
 const BIOMES: u8 = 0x2b;
 const VERSION: u8 = 0x2c;
@@ -84,6 +85,22 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::Invalid(message.into())
 }
 
+impl Error {
+    fn at_chunk(self, x: i32, z: i32) -> Self {
+        Self::Chunk {
+            x,
+            z,
+            error: Box::new(self),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum GeneratorPolicy {
+    RequireSource,
+    NormalIfUnspecified,
+}
+
 #[derive(Default, Debug)]
 pub struct ImportStats {
     pub regions: usize,
@@ -94,6 +111,7 @@ pub struct ImportStats {
     pub skipped_block_entity_examples: Vec<SkippedBlockEntity>,
     pub entity_records_excluded: usize,
     pub other_records_excluded: usize,
+    pub default_generator_selected: bool,
 }
 
 #[derive(Debug)]
@@ -106,7 +124,7 @@ pub struct SkippedBlockEntity {
 impl ImportStats {
     fn skip_block_entity(&mut self, kind: &str, position: Option<BlockPos>, reason: String) {
         self.block_entities_skipped += 1;
-        if self.skipped_block_entity_examples.len() < 16 {
+        if self.skipped_block_entity_examples.len() < DIAGNOSTIC_LIMIT {
             self.skipped_block_entity_examples.push(SkippedBlockEntity {
                 kind: kind.to_owned(),
                 position,
@@ -114,30 +132,109 @@ impl ImportStats {
             });
         }
     }
+
+    fn add_storage_results(&mut self, parsed: Self) {
+        self.containers_imported += parsed.containers_imported;
+        self.block_entities_skipped += parsed.block_entities_skipped;
+        self.skipped_block_entity_examples.extend(
+            parsed
+                .skipped_block_entity_examples
+                .into_iter()
+                .take(DIAGNOSTIC_LIMIT - self.skipped_block_entity_examples.len()),
+        );
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Inspection {
+    pub stats: ImportStats,
+    pub blockers: usize,
+    pub blocker_examples: Vec<Error>,
+}
+
+impl Inspection {
+    fn record_blocker(&mut self, error: Error) {
+        self.blockers += 1;
+        if self.blocker_examples.len() < DIAGNOSTIC_LIMIT {
+            self.blocker_examples.push(error);
+        }
+    }
+}
+
+/// Checks the same saved data and generator settings used by the importer.
+/// Reads through a temporary `LevelDB` snapshot.
+pub fn inspect_terrain(source: &Path, policy: GeneratorPolicy) -> Result<Inspection, Error> {
+    let source = source.canonicalize()?;
+    let temp = std::env::temp_dir().canonicalize()?;
+    let scratch = if temp.starts_with(&source) {
+        source
+            .parent()
+            .ok_or_else(|| invalid("no scratch directory outside the source world"))?
+    } else {
+        &temp
+    };
+    let staging = tempfile::tempdir_in(scratch)?;
+    let registry = terrain::TerrainRegistry::load()?;
+    let items = storage::item_registry();
+    let mut inspection = Inspection::default();
+    let mut stats = ImportStats::default();
+    match read_level(&source, &registry, policy) {
+        Ok((_, default_selected)) => stats.default_generator_selected = default_selected,
+        Err(error) => inspection.record_blocker(error),
+    }
+    let db = open_database_copy(&source, staging.path())?;
+    let regions = index_chunks(&db, &mut stats, |error| {
+        inspection.record_blocker(error);
+        Ok(())
+    })?;
+    if regions.is_empty() {
+        inspection.record_blocker(invalid("the source contains no saved Overworld terrain"));
+    }
+    for columns in regions.into_values() {
+        let before = stats.chunks;
+        for ((x, z), sections) in columns {
+            match read_chunk(&db, x, z, sections, &registry, &items, &mut stats) {
+                Ok(_) => stats.chunks += 1,
+                Err(error) => inspection.record_blocker(error.at_chunk(x, z)),
+            }
+        }
+        if stats.chunks > before {
+            stats.regions += 1;
+        }
+    }
+    inspection.stats = stats;
+    Ok(inspection)
 }
 
 /// Imports saved Overworld terrain and supported storage into a new directory.
 /// The completed world is moved into place after conversion succeeds.
 pub fn import_terrain(source: &Path, destination: &Path) -> Result<ImportStats, Error> {
+    import_terrain_with_generator(source, destination, GeneratorPolicy::RequireSource)
+}
+
+pub fn import_terrain_with_generator(
+    source: &Path,
+    destination: &Path,
+    policy: GeneratorPolicy,
+) -> Result<ImportStats, Error> {
     let source = source.canonicalize()?;
     let destination = new_destination(destination, &source)?;
     let registry = terrain::TerrainRegistry::load()?;
     let items = storage::item_registry();
-    let mut info = read_level(&source, &registry)?;
+    let (mut info, default_generator_selected) = read_level(&source, &registry, policy)?;
 
-    // Opening LevelDB may replay its journal and update files, even for reads.
-    // Use a private snapshot so recovery never runs on the source world.
     let staging = tempfile::tempdir_in(
         destination
             .parent()
             .ok_or_else(|| invalid("invalid destination"))?,
     )?;
-    let database = staging.path().join("db");
-    copy_database(&source.join("db"), &database)?;
-    let db = DB::open(database, bedrock_db_options())?;
+    let db = open_database_copy(&source, staging.path())?;
 
-    let mut stats = ImportStats::default();
-    let regions = index_chunks(&db, &mut stats)?;
+    let mut stats = ImportStats {
+        default_generator_selected,
+        ..ImportStats::default()
+    };
+    let regions = index_chunks(&db, &mut stats, Err)?;
     if regions.is_empty() {
         return Err(invalid("the source contains no saved Overworld terrain"));
     }
@@ -151,13 +248,8 @@ pub fn import_terrain(source: &Path, destination: &Path) -> Result<ImportStats, 
         let path = region_folder.join(AnvilRegion::file_name(region_pos));
         let mut region = AnvilRegion::open(&path, region_pos)?;
         for ((x, z), sections) in columns {
-            let chunk = read_chunk(&db, x, z, sections, &registry, &items, &mut stats).map_err(
-                |error| Error::Chunk {
-                    x,
-                    z,
-                    error: Box::new(error),
-                },
-            )?;
+            let chunk = read_chunk(&db, x, z, sections, &registry, &items, &mut stats)
+                .map_err(|error| error.at_chunk(x, z))?;
             update_spawn_height(&mut info, &chunk);
             let encoded = AnvilRegion::encode_chunk(chunk.internal_to_bytes(), &config)?;
             region.stage_chunk(region_chunk_index(Vector2::new(x, z)), encoded);
@@ -176,6 +268,13 @@ pub fn import_terrain(source: &Path, destination: &Path) -> Result<ImportStats, 
     ensure_absent(&destination)?;
     fs::rename(output, destination)?;
     Ok(stats)
+}
+
+fn open_database_copy(source: &Path, staging: &Path) -> Result<DB, Error> {
+    // Recovery during a LevelDB open may update files even when only reading.
+    let database = staging.join("db");
+    copy_database(&source.join("db"), &database)?;
+    Ok(DB::open(database, bedrock_db_options())?)
 }
 
 fn new_destination(destination: &Path, source: &Path) -> Result<PathBuf, Error> {
@@ -297,10 +396,14 @@ fn bedrock_db_options() -> Options {
 
 type ChunkIndex = BTreeMap<(i32, i32), BTreeMap<(i32, i32), u32>>;
 
-fn index_chunks(db: &DB, stats: &mut ImportStats) -> Result<ChunkIndex, Error> {
+fn index_chunks(
+    db: &DB,
+    stats: &mut ImportStats,
+    mut on_blocker: impl FnMut(Error) -> Result<(), Error>,
+) -> Result<ChunkIndex, Error> {
     let mut regions = ChunkIndex::new();
     for entry in db.new_iter()?.entries() {
-        let (key, value) = entry?;
+        let (key, _) = entry?;
         let Some(record) = ChunkKey::read(&key) else {
             if key.starts_with(b"actorprefix") {
                 stats.entity_records_excluded += 1;
@@ -309,28 +412,35 @@ fn index_chunks(db: &DB, stats: &mut ImportStats) -> Result<ChunkIndex, Error> {
             }
             continue;
         };
-        record.validate()?;
+        let (x, z) = record.pos;
+        if let Err(error) = record.validate() {
+            on_blocker(error.at_chunk(x, z))?;
+            continue;
+        }
         match record.tag {
             BIOMES | VERSION | SUBCHUNK => {
-                if record.tag == VERSION && value != [CHUNK_VERSION] {
-                    return Err(invalid(format!(
-                        "unsupported Bedrock chunk version in {}, {}",
-                        record.pos.0, record.pos.1
-                    )));
-                }
-                let region = region_of(Vector2::new(record.pos.0, record.pos.1));
+                let section = match record.subchunk.map(section_index).transpose() {
+                    Ok(section) => section,
+                    Err(error) => {
+                        on_blocker(error.at_chunk(x, z))?;
+                        continue;
+                    }
+                };
+                let region = region_of(Vector2::new(x, z));
                 let sections = regions
                     .entry((region.x, region.y))
                     .or_default()
                     .entry(record.pos)
                     .or_default();
-                if let Some(y) = record.subchunk {
-                    *sections |= 1 << section_index(y)?;
+                if let Some(section) = section {
+                    *sections |= 1 << section;
                 }
             }
             BLOCK_ENTITY => stats.block_entity_records_excluded += 1,
             ENTITY => stats.entity_records_excluded += 1,
-            0x30 | 0x76 => return Err(invalid("legacy Bedrock terrain is unsupported")),
+            0x30 | 0x76 => {
+                on_blocker(invalid("legacy Bedrock terrain is unsupported").at_chunk(x, z))?;
+            }
             _ => stats.other_records_excluded += 1,
         }
     }
@@ -414,8 +524,10 @@ fn read_chunk(
     key[..4].copy_from_slice(&x.to_le_bytes());
     key[4..8].copy_from_slice(&z.to_le_bytes());
     key[8] = VERSION;
-    if db.try_get(&key[..9])?.as_deref() != Some(&[CHUNK_VERSION]) {
-        return Err(invalid("missing supported chunk version"));
+    match db.try_get(&key[..9])?.as_deref() {
+        Some([CHUNK_VERSION]) => {}
+        Some(_) => return Err(invalid("unsupported Bedrock chunk version")),
+        None => return Err(invalid("missing Bedrock chunk version")),
     }
     key[8] = BIOMES;
     let data = db
@@ -439,15 +551,21 @@ fn read_chunk(
     chunk.section = ChunkSections::from_palettes(blocks, biomes, OVERWORLD.min_y);
     chunk.heightmap = std::sync::Mutex::new(chunk.calculate_heightmap());
     key[8] = BLOCK_ENTITY;
-    if let Some(record) = db.try_get(&key[..9])?
-        && storage::import_record(&record, &mut chunk, registry, items, stats)?
-    {
-        stats.block_entity_records_excluded -= 1;
+    if let Some(record) = db.try_get(&key[..9])? {
+        let mut parsed = ImportStats::default();
+        if storage::import_record(&record, &mut chunk, registry, items, &mut parsed)? {
+            stats.block_entity_records_excluded -= 1;
+        }
+        stats.add_storage_results(parsed);
     }
     Ok(chunk)
 }
 
-fn read_level(source: &Path, registry: &terrain::TerrainRegistry) -> Result<LevelData, Error> {
+fn read_level(
+    source: &Path,
+    registry: &terrain::TerrainRegistry,
+    policy: GeneratorPolicy,
+) -> Result<(LevelData, bool), Error> {
     let mut file = File::open(source.join("level.dat"))?;
     let mut header = [0; 8];
     file.read_exact(&mut header)?;
@@ -472,9 +590,20 @@ fn read_level(source: &Path, registry: &terrain::TerrainRegistry) -> Result<Leve
             .ok_or_else(|| invalid("world seed is missing"))?
             .cast_unsigned(),
     );
+    let mut default_generator_selected = false;
+    let flat_layers = data.get_string("FlatWorldLayers");
     let mut info = match data.get_int("Generator") {
         Some(1) => LevelData::default(seed),
-        Some(2) => flat_level(seed, data.get_string("FlatWorldLayers"), registry)?,
+        Some(2) if !data.has("FlatWorldLayers") || flat_layers == Some("") => {
+            if !matches!(policy, GeneratorPolicy::NormalIfUnspecified) {
+                return Err(invalid(
+                    "source has no flat generator layers. Use --new-chunks=normal to set the generator for new chunks",
+                ));
+            }
+            default_generator_selected = true;
+            LevelData::default(seed)
+        }
+        Some(2) => flat_level(seed, flat_layers, registry)?,
         _ => return Err(invalid("unsupported Bedrock world generator")),
     };
     if let Some(name) = data.get_string("LevelName") {
@@ -496,7 +625,7 @@ fn read_level(source: &Path, registry: &terrain::TerrainRegistry) -> Result<Leve
     {
         return Err(invalid("Bedrock spawn is out of world bounds"));
     }
-    Ok(info)
+    Ok((info, default_generator_selected))
 }
 
 fn flat_level(

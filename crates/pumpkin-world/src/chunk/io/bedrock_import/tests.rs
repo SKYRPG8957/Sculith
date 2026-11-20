@@ -4,6 +4,8 @@ use crate::world_info::WorldInfoReader;
 
 use super::*;
 
+const FLAT_LAYERS: &str = r#"{"biome_id":1,"block_layers":[{"block_name":"minecraft:stone","count":3}],"encoding_version":6,"structure_options":null,"world_version":"version.post_1_18"}"#;
+
 fn named_tag(nbt: &mut Vec<u8>, type_id: u8, key: &str, bytes: &[u8]) {
     nbt.push(type_id);
     nbt.extend_from_slice(&u16::try_from(key.len()).unwrap().to_le_bytes());
@@ -20,7 +22,7 @@ fn block_entry(nbt: &mut Vec<u8>, name: &str, states: &[u8]) {
     nbt.push(0);
 }
 
-fn write_world(source: &Path, corrupt: bool) {
+fn write_world(source: &Path, corrupt: bool, flat_layers: &str) {
     fs::create_dir(source).unwrap();
     let mut nbt = vec![pumpkin_nbt::COMPOUND_ID, 0, 0];
     named_tag(
@@ -37,10 +39,7 @@ fn write_world(source: &Path, corrupt: bool) {
     ] {
         named_tag(&mut nbt, pumpkin_nbt::INT_ID, name, &value.to_le_bytes());
     }
-    let flat = br#"{"biome_id":1,"block_layers":[{"block_name":"minecraft:stone","count":3}],"encoding_version":6,"structure_options":null,"world_version":"version.post_1_18"}"#;
-    let mut layers = u16::try_from(flat.len()).unwrap().to_le_bytes().to_vec();
-    layers.extend_from_slice(flat);
-    named_tag(&mut nbt, pumpkin_nbt::STRING_ID, "FlatWorldLayers", &layers);
+    string_tag(&mut nbt, "FlatWorldLayers", flat_layers);
     nbt.push(0);
     let mut level_dat = STORAGE_VERSION.to_le_bytes().to_vec();
     level_dat.extend_from_slice(&u32::try_from(nbt.len()).unwrap().to_le_bytes());
@@ -90,6 +89,8 @@ fn write_world(source: &Path, corrupt: bool) {
     fluid_state.push(0);
     block_entry(&mut section, "minecraft:flowing_water", &fluid_state);
     db.put(&key, &section).unwrap();
+    key[9] = (-3i8).cast_unsigned();
+    db.put(&key, &[9, 0, key[9]]).unwrap();
     db.close().unwrap();
 }
 
@@ -214,7 +215,7 @@ fn converts_a_saved_column_without_writing_to_the_source() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("bedrock");
     let destination = directory.path().join("java");
-    write_world(&source, false);
+    write_world(&source, false, FLAT_LAYERS);
     let before = snapshot(&source);
     let stats = import_terrain(&source, &destination).unwrap();
     assert_eq!((stats.chunks, stats.regions), (1, 1));
@@ -274,7 +275,7 @@ fn malformed_block_entities_leave_no_destination() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("bedrock");
     let destination = directory.path().join("java");
-    write_world(&source, false);
+    write_world(&source, false, FLAT_LAYERS);
     let db = DB::open(source.join("db"), Options::default()).unwrap();
     let mut key = (-1i32).to_le_bytes().to_vec();
     key.extend_from_slice(&0i32.to_le_bytes());
@@ -293,10 +294,64 @@ fn unmapped_terrain_leaves_no_destination() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("bedrock");
     let destination = directory.path().join("java");
-    write_world(&source, true);
+    write_world(&source, true, FLAT_LAYERS);
+    let db = DB::open(source.join("db"), Options::default()).unwrap();
+    let mut key = [0; 9];
+    key[8] = VERSION;
+    db.put(&key, &[CHUNK_VERSION - 1]).unwrap();
+    db.close().unwrap();
     let before = snapshot(&source);
+    let inspection = inspect_terrain(&source, GeneratorPolicy::RequireSource).unwrap();
+    assert_eq!(inspection.blockers, 2);
+    assert_eq!(inspection.stats.chunks, 0);
+    assert!(
+        inspection.blocker_examples[0]
+            .to_string()
+            .contains("example:unmapped")
+    );
+    assert!(
+        inspection.blocker_examples[1]
+            .to_string()
+            .contains("unsupported Bedrock chunk version")
+    );
     let error = import_terrain(&source, &destination).unwrap_err();
     assert!(error.to_string().contains("example:unmapped"));
     assert!(!destination.exists());
+    assert_eq!(snapshot(&source), before);
+}
+
+#[test]
+fn missing_generator_requires_an_explicit_policy_for_new_chunks() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("bedrock");
+    let destination = directory.path().join("java");
+    write_world(&source, false, "");
+    let before = snapshot(&source);
+
+    let inspection = inspect_terrain(&source, GeneratorPolicy::RequireSource).unwrap();
+    assert_eq!((inspection.blockers, inspection.stats.chunks), (1, 1));
+    assert!(
+        inspection.blocker_examples[0]
+            .to_string()
+            .contains("--new-chunks=normal")
+    );
+    assert!(import_terrain(&source, &destination).is_err());
+    assert!(!destination.exists());
+    assert_eq!(snapshot(&source), before);
+
+    let policy = GeneratorPolicy::NormalIfUnspecified;
+    let inspection = inspect_terrain(&source, policy).unwrap();
+    assert_eq!((inspection.blockers, inspection.stats.chunks), (0, 1));
+    assert!(inspection.stats.default_generator_selected);
+    let stats = import_terrain_with_generator(&source, &destination, policy).unwrap();
+    assert!(stats.default_generator_selected);
+    let info = AnvilLevelInfo.read_world_info(&destination).unwrap();
+    assert_eq!(info.world_gen_settings.seed, -764);
+    assert_eq!(
+        info.world_gen_settings.dimensions[OVERWORLD.minecraft_name]
+            .generator
+            .generator_type,
+        "minecraft:noise"
+    );
     assert_eq!(snapshot(&source), before);
 }

@@ -160,11 +160,23 @@ rewrite before admission. Both checks fail on the earlier server. See the
 
 ## Bedrock world import
 
+Run `sculith --inspect-bedrock-world SOURCE` on a stopped world to check what
+can migrate before choosing a destination. It uses the same terrain and item
+decoders as the importer and reports readable columns, storage, excluded
+records and up to 16 blocking diagnostics. An inspection returns exit code 1
+when the source has blocking issues.
+
 `sculith --import-bedrock-terrain SOURCE DESTINATION` reads a stopped Bedrock
 world through a temporary LevelDB copy. The command accepts storage version 10,
 chunk version 42 and subchunk version 9 in the Overworld. It writes a new Anvil
 world after all imported columns have converted. Unknown block and biome
 palettes, unsupported generators and other dimensions fail the import.
+
+Dragonfly v0.11.6 can save flat terrain with its generator layers unspecified.
+Append `--new-chunks=normal` to either command to select Sculith's normal
+generator for new chunks in this case. Saved terrain, seed and spawn still
+come from the source. The option preserves complete generator metadata when
+the source supplies it.
 
 Biome storage is sampled at the origin of each four-block Java biome cell.
 The import carries the seed and spawn into Sculith. New chunks use Sculith's
