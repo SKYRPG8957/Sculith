@@ -22,6 +22,7 @@ use crate::{
 use arc_swap::ArcSwap;
 use connection_cache::{CachedBranding, CachedStatus};
 use key_store::KeyStore;
+use pumpkin_config::world::WorldPreset;
 use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use pumpkin_data::dimension::Dimension;
 use pumpkin_util::permission::PermissionManager;
@@ -39,7 +40,9 @@ use pumpkin_util::text::TextComponent;
 use pumpkin_world::world_info::anvil::{
     AnvilLevelInfo, LEVEL_DAT_BACKUP_FILE_NAME, LEVEL_DAT_FILE_NAME,
 };
-use pumpkin_world::world_info::{LevelData, WorldInfoError, WorldInfoReader, WorldInfoWriter};
+use pumpkin_world::world_info::{
+    GeneratorSettings, LevelData, WorldInfoError, WorldInfoReader, WorldInfoWriter,
+};
 use rand::seq::IndexedRandom;
 use rayon::prelude::*;
 use rsa::PublicKey as RsaPublicKey;
@@ -287,12 +290,35 @@ impl Server {
                     world_path.display(),
                     basic_config.seed.0 as i64
                 );
-                let overworld_gen = pumpkin_world::generation::generator::VanillaGenerator::new(
-                    basic_config.seed,
-                    Dimension::OVERWORLD,
-                );
-                let mut default_data =
-                    LevelData::from_world_generator(basic_config.seed, &overworld_gen);
+                let seed = basic_config.seed;
+                let mut default_data = match advanced_config.world.generator {
+                    WorldPreset::Normal => {
+                        let overworld_gen =
+                            pumpkin_world::generation::generator::VanillaGenerator::new(
+                                seed,
+                                Dimension::OVERWORLD,
+                            );
+                        LevelData::from_world_generator(seed, &overworld_gen)
+                    }
+                    WorldPreset::Flat => {
+                        let mut data = LevelData::default_with_preset(seed, "flat");
+                        let overworld = Dimension::OVERWORLD;
+                        let settings = data
+                            .world_gen_settings
+                            .dimensions
+                            .get(overworld.minecraft_name)
+                            .and_then(|dim| dim.generator.settings.as_ref())
+                            .and_then(GeneratorSettings::as_flat_settings)
+                            .ok_or_else(|| {
+                                WorldInfoError::DeserializationError(
+                                    "Could not load the built-in flat world preset".to_string(),
+                                )
+                            })?;
+                        data.spawn_y =
+                            overworld.min_y + settings.layers.iter().map(|l| l.height).sum::<i32>();
+                        data
+                    }
+                };
                 if basic_config.hardcore {
                     default_data.difficulty = Difficulty::Hard;
                     default_data.difficulty_locked = true;

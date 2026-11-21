@@ -29,6 +29,10 @@ Protocol plugins can use the [packet events](docs/sculith/packets.md).
 
 ## Worlds
 
+To create a flat world, set `default_level_name` to a new folder name and
+`generator = "flat"` in the `[world]` table of `sculith.toml`. Sculith saves
+the generator with the world and reads it from the save on later starts.
+
 Sculith supports Anvil, Linear and Pump storage. To bring in saved Bedrock
 1.26.63 Overworld terrain, stop the source server and choose a new destination.
 Run the import from the Sculith server directory.

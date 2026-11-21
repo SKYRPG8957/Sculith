@@ -8,7 +8,11 @@ use crate::{chunk::ChunkConfig, lighting::LightingEngineConfig};
 #[derive(Deserialize, Serialize, Clone)]
 pub struct LevelConfig {
     /// Configuration for chunk behaviour and management.
+    #[serde(default)]
     pub chunk: ChunkConfig,
+    /// Overworld preset used when creating a new world.
+    #[serde(default)]
+    pub generator: WorldPreset,
     /// Configuration for lighting engine propagation mode.
     #[serde(default)]
     pub lighting: LightingEngineConfig,
@@ -19,6 +23,17 @@ pub struct LevelConfig {
     #[serde(default)]
     pub entity_islands: EntityIslandsConfig,
     // TODO: More options
+}
+
+/// Terrain generation preset for a newly created Overworld.
+#[derive(Debug, Default, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldPreset {
+    /// Standard terrain with biomes and elevation.
+    #[default]
+    Normal,
+    /// Flat grass terrain generated from the built-in preset.
+    Flat,
 }
 
 /// Safety margins for ticking entities in parallel islands. Lower values tick more entities in
@@ -78,6 +93,7 @@ impl Default for LevelConfig {
     fn default() -> Self {
         Self {
             chunk: ChunkConfig::default(),
+            generator: WorldPreset::default(),
             lighting: LightingEngineConfig::default(),
             autosave_ticks: default_autosave_ticks(),
             entity_islands: EntityIslandsConfig::default(),
@@ -92,6 +108,12 @@ mod tests {
     #[test]
     fn default_level_config_enables_autosave() {
         assert_eq!(LevelConfig::default().autosave_ticks, 6000);
+    }
+
+    #[test]
+    fn flat_generation_can_be_selected_in_the_world_table() {
+        let world: LevelConfig = toml::from_str("generator = \"flat\"").unwrap();
+        assert_eq!(world.generator, WorldPreset::Flat);
     }
 
     #[test]
