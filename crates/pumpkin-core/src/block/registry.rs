@@ -187,14 +187,15 @@ use crate::world::World;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::SnowLikeProperties;
 use pumpkin_data::block_rotation::{Mirror, Rotation};
-use pumpkin_data::data_component_impl::EquipmentSlot;
+use pumpkin_data::data_component_impl::{
+    BlockEntityDataImpl, BlockStateImpl, CanPlaceOnImpl, EquipmentSlot,
+};
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockState};
 use pumpkin_inventory::screen_handler::ScreenHandlerFactory;
-use pumpkin_protocol::java::server::play::SUseItemOn;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
@@ -207,10 +208,10 @@ use super::blocks::plant::crop::gourds::attached_stem::AttachedStemBlock;
 use super::blocks::plant::crop::gourds::stem::StemBlock;
 use super::fluid::FluidBehaviour;
 use super::{
-    AttackArgs, BrokenArgs, CanPlaceAtArgs, CanUpdateAtArgs, EmitsRedstonePowerArgs, ExplodeArgs,
-    GetRedstonePowerArgs, GetStateForNeighborUpdateArgs, NormalUseArgs, OnNeighborUpdateArgs,
-    OnPlaceArgs, OnStateReplacedArgs, OnSyncedBlockEventArgs, PlacedArgs, PlayerPlacedArgs,
-    PrepareArgs, UseWithItemArgs,
+    AttackArgs, BlockPlacement, BrokenArgs, CanPlaceAtArgs, CanUpdateAtArgs,
+    EmitsRedstonePowerArgs, ExplodeArgs, GetRedstonePowerArgs, GetStateForNeighborUpdateArgs,
+    NormalUseArgs, OnNeighborUpdateArgs, OnPlaceArgs, OnStateReplacedArgs, OnSyncedBlockEventArgs,
+    PlacedArgs, PlayerPlacedArgs, PrepareArgs, UseWithItemArgs,
 };
 use crate::block::blocks::blast_furnace::BlastFurnaceBlock;
 use crate::block::blocks::chain::ChainBlock;
@@ -664,11 +665,10 @@ impl BlockRegistry {
         world: &World,
         player: &Player,
         placed_block: &Block,
-        use_item_on: &SUseItemOn,
-        location: BlockPos,
-        face: BlockDirection,
+        placement: &BlockPlacement,
     ) -> Option<(BlockPos, BlockDirection, BlockIsReplacing)> {
-        let clicked_block_pos = BlockPos(location.0);
+        let clicked_block_pos = placement.clicked_pos;
+        let face = placement.clicked_face;
         let (clicked_block, clicked_block_state) = world.get_block_and_state(&clicked_block_pos);
 
         let replace_clicked_block = if clicked_block == placed_block {
@@ -678,7 +678,7 @@ impl BlockRegistry {
                 clicked_block_state.id,
                 &clicked_block_pos,
                 face,
-                use_item_on,
+                placement,
                 player,
             )
             .then_some(BlockIsReplacing::Itself(clicked_block_state.id))
@@ -698,7 +698,7 @@ impl BlockRegistry {
             return Some((clicked_block_pos, face.opposite(), replacing));
         }
 
-        let block_pos = BlockPos(location.0 + face.to_offset());
+        let block_pos = clicked_block_pos.offset(face.to_offset());
         let (previous_block, previous_block_state) = world.get_block_and_state(&block_pos);
 
         let replace_previous_block = if previous_block == placed_block {
@@ -708,7 +708,7 @@ impl BlockRegistry {
                 previous_block_state.id,
                 &block_pos,
                 face.opposite(),
-                use_item_on,
+                placement,
                 player,
             )
             .then_some(BlockIsReplacing::Itself(previous_block_state.id))
@@ -733,15 +733,12 @@ impl BlockRegistry {
         player: &Arc<Player>,
         placed_block: &'static Block,
         server: &Arc<Server>,
-        use_item_on: &SUseItemOn,
-        location: BlockPos,
-        face: BlockDirection,
+        placement: &BlockPlacement,
     ) -> Result<Option<(BlockPos, BlockStateId)>, BlockPlacingError> {
         let entity = &player.get_entity();
-        let held_stack = pumpkin_util::Hand::from_packet_id(use_item_on.hand.0)
-            .ok()
-            .map(|hand| player.inventory().get_stack_in_hand(hand));
-        let clicked_block_pos = BlockPos(location.0);
+        let held_stack = player.inventory().get_stack_in_hand(placement.hand);
+        let clicked_block_pos = placement.clicked_pos;
+        let face = placement.clicked_face;
         let world = entity.world.load_full();
         let clicked_block = world.get_block(&clicked_block_pos);
 
@@ -751,10 +748,7 @@ impl BlockRegistry {
             }
             pumpkin_util::GameMode::Adventure => {
                 let can_place = held_stack
-                    .as_ref()
-                    .and_then(|s| {
-                        s.get_data_component::<pumpkin_data::data_component_impl::CanPlaceOnImpl>()
-                    })
+                    .get_data_component::<CanPlaceOnImpl>()
                     .is_some_and(|comp| comp.matches_block(clicked_block));
                 if !can_place {
                     return Err(BlockPlacingError::InvalidGamemode);
@@ -763,11 +757,12 @@ impl BlockRegistry {
             _ => {}
         }
 
-        if location.0.y + face.to_offset().y < world.get_bottom_y() {
+        let adjacent_y = clicked_block_pos.0.y + face.to_offset().y;
+        if adjacent_y < world.get_bottom_y() {
             return Err(BlockPlacingError::BlockOutOfWorld);
         }
 
-        if location.0.y + face.to_offset().y > world.get_top_y() {
+        if adjacent_y > world.get_top_y() {
             player.send_system_message_raw(
                 &pumpkin_util::text::TextComponent::translate_cross(
                     pumpkin_data::translation::java::BUILD_TOOHIGH,
@@ -783,7 +778,7 @@ impl BlockRegistry {
         }
 
         let Some((final_block_pos, final_face, replacing)) =
-            self.placement_target(&world, player, placed_block, use_item_on, location, face)
+            self.placement_target(&world, player, placed_block, placement)
         else {
             return Ok(None);
         };
@@ -808,7 +803,7 @@ impl BlockRegistry {
             placed_block.default_state,
             &final_block_pos,
             Some(final_face),
-            Some(use_item_on),
+            Some(placement),
         ) {
             return Ok(None);
         }
@@ -821,12 +816,10 @@ impl BlockRegistry {
             &final_block_pos,
             final_face,
             replacing,
-            use_item_on,
+            placement,
         );
 
-        if let Some(ref stack) = held_stack
-            && let Some(block_state_comp) =
-                stack.get_data_component::<pumpkin_data::data_component_impl::BlockStateImpl>()
+        if let Some(block_state_comp) = held_stack.get_data_component::<BlockStateImpl>()
             && let Some(props) = placed_block.properties(new_state)
         {
             let mut prop_list = props.to_props();
@@ -900,11 +893,8 @@ impl BlockRegistry {
             BlockState::to_be_network_id(new_state) as i32,
         );
 
-        if let Some(ref stack) = held_stack
-            && placed_block.default_state.block_entity_type != u16::MAX
-        {
-            if let Some(block_entity_data) =
-                stack.get_data_component::<pumpkin_data::data_component_impl::BlockEntityDataImpl>()
+        if placed_block.default_state.block_entity_type != u16::MAX {
+            if let Some(block_entity_data) = held_stack.get_data_component::<BlockEntityDataImpl>()
                 && let Some(existing_be) = world.get_block_entity(&final_block_pos)
             {
                 let expected_id = existing_be
@@ -929,7 +919,7 @@ impl BlockRegistry {
                 }
             }
             if let Some(block_entity) = world.get_block_entity(&final_block_pos) {
-                block_entity.apply_item_components(stack);
+                block_entity.apply_item_components(&held_stack);
             }
         }
 
@@ -1219,7 +1209,7 @@ impl BlockRegistry {
         state: &BlockState,
         position: &BlockPos,
         direction: Option<BlockDirection>,
-        use_item_on: Option<&SUseItemOn>,
+        placement: Option<&BlockPlacement>,
     ) -> bool {
         let pumpkin_block = self.get_pumpkin_block(block.id);
         if let Some(pumpkin_block) = pumpkin_block {
@@ -1232,7 +1222,7 @@ impl BlockRegistry {
                 position,
                 direction,
                 player,
-                use_item_on,
+                placement,
             });
         }
         true
@@ -1246,7 +1236,7 @@ impl BlockRegistry {
         state_id: BlockStateId,
         position: &BlockPos,
         direction: BlockDirection,
-        use_item_on: &SUseItemOn,
+        placement: &BlockPlacement,
         player: &Player,
     ) -> bool {
         let pumpkin_block = self.get_pumpkin_block(block.id);
@@ -1258,7 +1248,7 @@ impl BlockRegistry {
                 position,
                 direction,
                 player,
-                use_item_on,
+                placement,
             });
         }
         false
@@ -1274,7 +1264,7 @@ impl BlockRegistry {
         position: &BlockPos,
         direction: BlockDirection,
         replacing: BlockIsReplacing,
-        use_item_on: &SUseItemOn,
+        placement: &BlockPlacement,
     ) -> BlockStateId {
         let pumpkin_block = self.get_pumpkin_block(block.id);
         if let Some(pumpkin_block) = pumpkin_block {
@@ -1286,7 +1276,7 @@ impl BlockRegistry {
                 direction,
                 player,
                 replacing,
-                use_item_on,
+                placement,
             });
         }
         block.default_state.id

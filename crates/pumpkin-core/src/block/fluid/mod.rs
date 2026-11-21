@@ -11,13 +11,12 @@ pub mod flowing {
     pub use super::physics::*;
 }
 
-use super::{BlockIsReplacing, registry::BlockActionResult};
+use super::{BlockIsReplacing, BlockPlacement, registry::BlockActionResult};
 use crate::entity::{EntityBase, player::Player};
 use crate::{server::Server, world::World};
 use pumpkin_data::BlockDirection;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::{fluid::Fluid, item::Item};
-use pumpkin_protocol::java::server::play::SUseItemOn;
 use pumpkin_util::math::position::BlockPos;
 use std::sync::Arc;
 
@@ -63,7 +62,7 @@ pub trait FluidBehaviour: Send + Sync {
         fluid: &Fluid,
         _face: BlockDirection,
         _block_pos: &BlockPos,
-        _use_item_on: &SUseItemOn,
+        _placement: &BlockPlacement,
         _replacing: BlockIsReplacing,
     ) -> BlockStateId {
         fluid.states[fluid.default_state_index as usize].block_state_id

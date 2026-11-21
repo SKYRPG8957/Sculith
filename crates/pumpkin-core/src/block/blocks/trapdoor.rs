@@ -105,7 +105,7 @@ impl BlockBehaviour for TrapDoorBlock {
             BlockDirection::Up => Half::Top,
             BlockDirection::Down => Half::Bottom,
             _ => {
-                if args.use_item_on.cursor_pos.y > 0.5 {
+                if args.placement.cursor_pos.y > 0.5 {
                     Half::Top
                 } else {
                     Half::Bottom

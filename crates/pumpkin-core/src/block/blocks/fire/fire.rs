@@ -209,7 +209,7 @@ impl BlockBehaviour for FireBlock {
             position: args.position,
             direction: None,
             player: None,
-            use_item_on: None,
+            placement: None,
         }) {
             let age = FireProperties::from_state_id(args.state_id).age;
             let state_id = self.get_state_for_position(args.world, args.block, args.position);
@@ -251,7 +251,7 @@ impl BlockBehaviour for FireBlock {
             position: pos,
             direction: None,
             player: None,
-            use_item_on: None,
+            placement: None,
         }) {
             world.set_block_state(
                 pos,

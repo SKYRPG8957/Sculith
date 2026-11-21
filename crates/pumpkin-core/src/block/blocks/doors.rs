@@ -10,6 +10,7 @@ use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockState, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockAccessor;
 use pumpkin_world::world::BlockFlags;
 use std::sync::Arc;
@@ -27,7 +28,6 @@ use crate::block::PlacedArgs;
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::registry::BlockActionResult;
 use crate::entity::player::Player;
-use pumpkin_protocol::java::server::play::SUseItemOn;
 
 use crate::world::World;
 use pumpkin_util::GameMode;
@@ -103,7 +103,7 @@ fn get_sound(block: &Block, open: bool) -> Sound {
 fn get_hinge(
     world: &World,
     pos: &BlockPos,
-    use_item: &SUseItemOn,
+    hit: Vector3<f32>,
     facing: HorizontalFacing,
 ) -> DoorHinge {
     let top_pos = pos.up();
@@ -135,7 +135,6 @@ fn get_hinge(
     if (!has_left_door || has_right_door) && score <= 0 {
         if (!has_right_door || has_left_door) && score >= 0 {
             let offset = facing.to_offset();
-            let hit = use_item.cursor_pos;
             if (offset.x >= 0 || hit.z > 0.5)
                 && (offset.x <= 0 || hit.z < 0.5)
                 && (offset.z >= 0 || hit.x < 0.5)
@@ -227,7 +226,7 @@ impl BlockBehaviour for DoorBlock {
             || block_receives_redstone_power(args.world, &args.position.up());
         door_props.facing = facing;
         door_props.half = DoubleBlockHalf::Lower;
-        door_props.hinge = get_hinge(args.world, args.position, args.use_item_on, facing);
+        door_props.hinge = get_hinge(args.world, args.position, args.placement.cursor_pos, facing);
         door_props.open = powered;
         door_props.powered = powered;
         door_props.to_state_id(args.block)

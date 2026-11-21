@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::block::BlockPlacement;
 use crate::item::registry::should_try_block_placement;
 use pumpkin_data::block_properties::BlockProperties;
 
@@ -156,8 +157,13 @@ impl JavaClient {
             // Check if the item is a block, because not every item can be placed :D
             let item_id = item.item.id;
             if let Some(block) = Block::from_item_id(item_id) {
-                should_try_decrement =
-                    Self::run_is_block_place(player, block, server, use_item_on, position, face)?;
+                let placement = BlockPlacement {
+                    clicked_pos: position,
+                    clicked_face: face,
+                    cursor_pos,
+                    hand,
+                };
+                should_try_decrement = Self::run_is_block_place(player, block, server, &placement)?;
             }
         }
 
@@ -239,13 +245,11 @@ impl JavaClient {
         player: &Arc<Player>,
         block: &'static Block,
         server: &Arc<Server>,
-        use_item_on: &SUseItemOn,
-        location: BlockPos,
-        face: BlockDirection,
+        placement: &BlockPlacement,
     ) -> Result<bool, BlockPlacingError> {
         match server
             .block_registry
-            .place_block(player, block, server, use_item_on, location, face)
+            .place_block(player, block, server, placement)
         {
             Ok(Some((final_block_pos, new_state))) => {
                 player.try_send_client_packet(&CBlockUpdate::new(

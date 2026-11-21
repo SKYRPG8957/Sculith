@@ -28,7 +28,7 @@ impl BlockBehaviour for StairBlock {
         stair_props.half = match args.direction {
             BlockDirection::Up => Half::Top,
             BlockDirection::Down => Half::Bottom,
-            _ => match args.use_item_on.cursor_pos.y {
+            _ => match args.placement.cursor_pos.y {
                 0.0..=0.5 => Half::Bottom,
                 _ => Half::Top,
             },

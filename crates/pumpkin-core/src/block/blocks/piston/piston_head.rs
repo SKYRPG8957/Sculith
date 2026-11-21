@@ -86,7 +86,7 @@ impl BlockBehaviour for PistonHeadBlock {
                 position: args.position,
                 direction: None,
                 player: None,
-                use_item_on: None,
+                placement: None,
             })
         {
             Block::AIR.default_state.id
@@ -117,7 +117,7 @@ impl BlockBehaviour for PistonHeadBlock {
             position: args.position,
             direction: None,
             player: None,
-            use_item_on: None,
+            placement: None,
         }) {
             let head_props = PistonHeadProperties::from_state_id(state.id);
             let base_pos = args.position.offset(

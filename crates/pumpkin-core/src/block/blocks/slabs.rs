@@ -28,7 +28,7 @@ impl BlockBehaviour for SlabBlock {
         slab_props.r#type = match args.direction {
             BlockDirection::Up => SlabType::Top,
             BlockDirection::Down => SlabType::Bottom,
-            _ => match args.use_item_on.cursor_pos.y {
+            _ => match args.placement.cursor_pos.y {
                 0.0..=0.5 => SlabType::Bottom,
                 _ => SlabType::Top,
             },
@@ -60,7 +60,7 @@ impl BlockBehaviour for SlabBlock {
             == match args.direction {
                 BlockDirection::Up => SlabType::Bottom,
                 BlockDirection::Down => SlabType::Top,
-                _ => match args.use_item_on.cursor_pos.y {
+                _ => match args.placement.cursor_pos.y {
                     0.0..=0.5 => SlabType::Top,
                     _ => SlabType::Bottom,
                 },

@@ -425,9 +425,8 @@ impl BlockBehaviour for SignBlock {
         }
 
         let clicked_face = args
-            .use_item_on
-            .and_then(|u| pumpkin_data::BlockDirection::try_from(u.face.0).ok())
-            .unwrap_or(pumpkin_data::BlockDirection::Up);
+            .placement
+            .map_or(BlockDirection::Up, |placement| placement.clicked_face);
 
         // Detection for floor-to-wall attachment (broken rn)
         if is_hanging && clicked_face == BlockDirection::Up {

@@ -63,7 +63,7 @@ impl FireBlockBase {
                 position: block_pos,
                 direction: None,
                 player: None,
-                use_item_on: None,
+                placement: None,
             })
         } else {
             FireBlock.can_place_at(CanPlaceAtArgs {
@@ -75,7 +75,7 @@ impl FireBlockBase {
                 position: block_pos,
                 direction: None,
                 player: None,
-                use_item_on: None,
+                placement: None,
             }) || Self::should_light_portal_at(world, block_pos, BlockDirection::Up)
         }
     }

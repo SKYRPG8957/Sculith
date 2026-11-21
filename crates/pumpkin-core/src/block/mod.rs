@@ -25,7 +25,7 @@ use pumpkin_data::block_rotation::{Mirror, Rotation};
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::screen_handler::ScreenHandlerFactory;
-use pumpkin_protocol::java::server::play::SUseItemOn;
+use pumpkin_util::Hand;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
@@ -340,6 +340,14 @@ pub struct OnSyncedBlockEventArgs<'a> {
     pub data: u8,
 }
 
+/// The player's block hit and held hand for a placement attempt.
+pub struct BlockPlacement {
+    pub clicked_pos: BlockPos,
+    pub clicked_face: BlockDirection,
+    pub cursor_pos: Vector3<f32>,
+    pub hand: Hand,
+}
+
 pub struct OnPlaceArgs<'a> {
     pub server: &'a Server,
     pub world: &'a World,
@@ -348,7 +356,7 @@ pub struct OnPlaceArgs<'a> {
     pub direction: BlockDirection,
     pub player: &'a Player,
     pub replacing: BlockIsReplacing,
-    pub use_item_on: &'a SUseItemOn,
+    pub placement: &'a BlockPlacement,
 }
 
 pub struct RandomTickArgs<'a> {
@@ -366,7 +374,7 @@ pub struct CanPlaceAtArgs<'a> {
     pub position: &'a BlockPos,
     pub direction: Option<BlockDirection>,
     pub player: Option<&'a Player>,
-    pub use_item_on: Option<&'a SUseItemOn>,
+    pub placement: Option<&'a BlockPlacement>,
 }
 
 pub struct CanUpdateAtArgs<'a> {
@@ -376,7 +384,7 @@ pub struct CanUpdateAtArgs<'a> {
     pub position: &'a BlockPos,
     pub direction: BlockDirection,
     pub player: &'a Player,
-    pub use_item_on: &'a SUseItemOn,
+    pub placement: &'a BlockPlacement,
 }
 
 pub struct PlacedArgs<'a> {

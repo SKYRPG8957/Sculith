@@ -1,13 +1,12 @@
 use crate::block::{
-    AttackArgs, BlockBehaviour, BlockMetadata, OnEntityStepArgs, RandomTickArgs, UseWithItemArgs,
-    registry::BlockActionResult,
+    AttackArgs, BlockBehaviour, BlockMetadata, BlockPlacement, OnEntityStepArgs, RandomTickArgs,
+    UseWithItemArgs, registry::BlockActionResult,
 };
 use crate::world::World;
 use pumpkin_data::block_properties::RedstoneOreLikeProperties;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::{Block, BlockId};
-use pumpkin_protocol::VarInt;
-use pumpkin_protocol::java::server::play::SUseItemOn;
+use pumpkin_util::Hand;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 use std::sync::Arc;
@@ -45,26 +44,20 @@ impl BlockBehaviour for RedstoneOreBlock {
             return BlockActionResult::Success;
         };
         // Vanilla only passes a block item on when BlockPlaceContext.canPlace() holds; otherwise the use is consumed.
-        let use_item_on = SUseItemOn {
-            hand: VarInt(i32::from(*args.equipment_slot == EquipmentSlot::OFF_HAND)),
-            position: *args.position,
-            face: VarInt(i32::from(args.hit.face.to_index())),
+        let placement = BlockPlacement {
+            clicked_pos: *args.position,
+            clicked_face: *args.hit.face,
             cursor_pos: *args.hit.cursor_pos,
-            inside_block: false,
-            is_against_world_border: false,
-            sequence: VarInt(0),
+            hand: if *args.equipment_slot == EquipmentSlot::OFF_HAND {
+                Hand::Left
+            } else {
+                Hand::Right
+            },
         };
         if args
             .server
             .block_registry
-            .placement_target(
-                args.world,
-                args.player,
-                placed_block,
-                &use_item_on,
-                *args.position,
-                *args.hit.face,
-            )
+            .placement_target(args.world, args.player, placed_block, &placement)
             .is_some()
         {
             BlockActionResult::Pass
