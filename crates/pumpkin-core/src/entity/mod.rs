@@ -4018,6 +4018,18 @@ impl Entity {
         self.world.load().remove_entity(self);
     }
 
+    pub(crate) fn mark_discarded(&self) -> bool {
+        if self
+            .removal_reason
+            .compare_exchange(None, Some(RemovalReason::Discarded))
+            .is_err()
+        {
+            return false;
+        }
+        self.removed.store(true, Ordering::Release);
+        true
+    }
+
     /// Vanilla `ClientboundAddEntityPacket(entity, serverEntity)`: tracker, not live.
     /// Players live: tracker skips `send_changes` for them.
     fn spawn_state(&self) -> SpawnState {
@@ -4808,7 +4820,10 @@ impl Entity {
         pitch: Option<f32>,
         world: &World,
     ) {
-        let _motion = self.hold_item_motion();
+        let motion = self.hold_item_motion();
+        if motion.is_some() && self.is_removed() {
+            return;
+        }
         // Update server-side position and bounding box
         self.set_pos(position);
         if let Some(yaw) = yaw {
@@ -5511,6 +5526,14 @@ impl Entity {
         reason = "callers pass owned Arc for vehicle and passenger"
     )]
     pub fn add_passenger(&self, vehicle: Arc<dyn EntityBase>, passenger: Arc<dyn EntityBase>) {
+        let passenger_entity = passenger.get_entity();
+        let vehicle_access = self.hold_item_motion();
+        let passenger_access = passenger_entity.hold_item_motion();
+        if vehicle_access.is_some() && self.is_removed()
+            || passenger_access.is_some() && passenger_entity.is_removed()
+        {
+            return;
+        }
         let mut mount_event =
             crate::plugin::api::events::entity::entity_mount::EntityMountEvent::new(
                 passenger.get_entity().entity_id,
@@ -5533,7 +5556,6 @@ impl Entity {
             return;
         }
 
-        let passenger_entity = passenger.get_entity();
         *passenger_entity
             .vehicle
             .lock()
@@ -5584,7 +5606,7 @@ impl Entity {
         );
         passenger_entity.send_bedrock_actor_data(&rider_meta);
 
-        passengers.push(passenger);
+        passengers.push(passenger.clone());
         let link_type = if passengers.len() == 1 { 1 } else { 2 };
 
         let passenger_ids: Vec<VarInt> = passengers

@@ -165,10 +165,12 @@ An isolated airborne item can also move on the region clock while its swept
 bounds touch only air in loaded chunks of the same owner. The owner pins the
 terrain and spatial indices through the update, including when the item crosses
 a chunk boundary. The separate motion deadline prevents a repeated step.
-Movement outside the region, ground and fluid contact, interaction, pickup,
-merging, expiry and entity packets are handled by the world. Native library
-loading disables regional item motion
-because native plugins can write live actor fields. Merge and despawn event
+An expired unmounted drop can be removed from the live registry by its region.
+The commit excludes concurrent actor interactions and shares the entity-save
+guard. The world publishes removal packets on its next publication step.
+Movement outside the region, ground and fluid contact, pickup and merging
+are handled by the world. Native library loading disables regional item motion
+and expiry because native plugins can write live actor fields. Merge and despawn event
 handlers use the world clock, as do coordinated steps and sprints. Saved items
 retain their remaining timers and last position.
 

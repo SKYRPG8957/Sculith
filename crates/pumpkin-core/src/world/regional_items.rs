@@ -6,14 +6,17 @@ use std::{
 
 use dashmap::try_result::TryResult;
 use pumpkin_util::math::vector2::Vector2;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    entity::{Entity, EntityBase, item::ItemEntity},
+    entity::{
+        Entity, EntityBase,
+        item::{ItemEntity, RegionalItemStep},
+    },
     server::{Server, TickDeadline},
 };
 
-use super::{RegionId, RegionLayout, World};
+use super::{RegionId, RegionLayout, World, regional_campfires::RegionalEntityUpdate};
 
 #[derive(Clone, Default)]
 pub(super) struct RegionalItemTimers {
@@ -202,6 +205,7 @@ impl World {
         let Some(actors) = plan.by_region.get(&owner) else {
             return;
         };
+        let mut expired = Vec::new();
         for actor in actors {
             let Some(item) = (actor.as_ref() as &dyn Any).downcast_ref::<ItemEntity>() else {
                 continue;
@@ -213,27 +217,92 @@ impl World {
             }
             // Pin residency and the current assignment through timers and motion.
             let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
-                return;
+                break;
             };
             let Ok(published) = self.regional_item_timers.try_read() else {
-                return;
+                break;
             };
             if !Arc::ptr_eq(&published, &plan) {
-                return;
+                break;
             }
             let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&chunk) else {
                 continue;
             };
-            let can_move = item.advance_regional_timers(owner, deadline, || {
+            let step = item.advance_regional_timers(owner, deadline, || {
                 !base.is_removed()
                     && std::ptr::eq(base.world.load().as_ref(), self)
                     && base.chunk_pos.load() == chunk
                     && owns(chunk)
             });
             drop(loaded);
-            if can_move && let Some(_native) = server.plugin_manager.try_without_native_code() {
-                item.try_regional_motion(self, chunk, owner, deadline, owns);
+            match step {
+                RegionalItemStep::Advanced => {
+                    if let Some(_native) = server.plugin_manager.try_without_native_code() {
+                        item.try_regional_motion(self, chunk, owner, deadline, owns);
+                    }
+                }
+                RegionalItemStep::Expired => expired.push((actor, item)),
+                RegionalItemStep::Skipped => {}
             }
+        }
+        if !expired.is_empty() {
+            self.expire_regional_items(server, owner, &expired, owns);
+        }
+    }
+
+    fn expire_regional_items(
+        &self,
+        server: &Server,
+        owner: RegionId,
+        items: &[(&Arc<dyn EntityBase>, &ItemEntity)],
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) {
+        let Some(_native) = server.plugin_manager.try_without_native_code() else {
+            return;
+        };
+        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+            return;
+        };
+        let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
+            return;
+        };
+        let Ok(published) = self.regional_item_timers.try_read() else {
+            return;
+        };
+        let Ok(mut pending) = self.regional_entity_updates.0.try_lock() else {
+            return;
+        };
+
+        let mut discarded = FxHashSet::default();
+        for &(actor, item) in items {
+            let base = item.get_entity();
+            let chunk = base.chunk_pos.load();
+            if published.assigned.get(&base.entity_id) != Some(&owner) || !owns(chunk) {
+                continue;
+            }
+            let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk) else {
+                continue;
+            };
+            item.try_regional_expiry(|| {
+                if base.chunk_pos.load() == chunk
+                    && std::ptr::eq(base.world.load().as_ref(), self)
+                    && ItemEntity::timers_unobserved(server)
+                    && base.mark_discarded()
+                {
+                    discarded.insert(base.entity_id);
+                    pending.push(RegionalEntityUpdate::Expired(actor.clone()));
+                }
+            });
+        }
+        if !discarded.is_empty() {
+            // One registry update for the batch. Packet callbacks stay on the world owner.
+            self.entities.rcu(|current| {
+                current
+                    .iter()
+                    .filter(|actor| !discarded.contains(&actor.get_entity().entity_id))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            });
         }
     }
 }

@@ -1517,7 +1517,7 @@ impl Server {
             world.synchronize_local_time();
         }
         world.apply_block_edits();
-        world.flush_regional_campfire_outputs();
+        world.flush_regional_entity_updates();
         match mode {
             WorldStep::Coordinated => world.tick(self),
             WorldStep::RegionalDeadlines(deadline) => {
@@ -1537,7 +1537,7 @@ impl Server {
             }
         }
         world.apply_entity_chunk_changes();
-        world.flush_regional_campfire_outputs();
+        world.flush_regional_entity_updates();
         world.flush_block_updates();
     }
 

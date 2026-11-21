@@ -25,14 +25,17 @@ struct ReadyRecipe {
     result: &'static RecipeResultStruct,
 }
 
-struct CookedDrop {
-    position: BlockPos,
-    fire: Arc<dyn BlockEntity>,
-    item: Arc<dyn EntityBase>,
+pub(super) enum RegionalEntityUpdate {
+    Cooked {
+        position: BlockPos,
+        fire: Arc<dyn BlockEntity>,
+        item: Arc<dyn EntityBase>,
+    },
+    Expired(Arc<dyn EntityBase>),
 }
 
 #[derive(Default)]
-pub(super) struct RegionalCampfireOutputs(Mutex<Vec<CookedDrop>>);
+pub(super) struct RegionalEntityUpdates(pub(super) Mutex<Vec<RegionalEntityUpdate>>);
 
 impl World {
     pub(super) fn advance_regional_campfires(
@@ -121,7 +124,7 @@ impl World {
         } else {
             None
         };
-        let Ok(mut pending) = self.regional_campfire_outputs.0.try_lock() else {
+        let Ok(mut pending) = self.regional_entity_updates.0.try_lock() else {
             return;
         };
         let TryResult::Present(entities) = self.block_entities.try_get(&pos) else {
@@ -150,7 +153,7 @@ impl World {
                         }
                         let item: Arc<dyn EntityBase> = item;
                         self.append_live_entity(&item);
-                        pending.push(CookedDrop {
+                        pending.push(RegionalEntityUpdate::Cooked {
                             position: recipe.position,
                             fire: recipe.fire,
                             item,
@@ -162,21 +165,33 @@ impl World {
             });
     }
 
-    pub(crate) fn flush_regional_campfire_outputs(&self) {
+    pub(crate) fn flush_regional_entity_updates(&self) {
         let pending = std::mem::take(
             &mut *self
-                .regional_campfire_outputs
+                .regional_entity_updates
                 .0
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner),
         );
         let mut changed_fires = FxHashMap::default();
-        for drop in pending {
-            if !drop.item.get_entity().is_removed() {
-                self.track_new_entity(&drop.item);
-                self.finish_entity_registration(&drop.item);
+        for update in pending {
+            match update {
+                RegionalEntityUpdate::Cooked {
+                    position,
+                    fire,
+                    item,
+                } => {
+                    if !item.get_entity().is_removed() {
+                        self.track_new_entity(&item);
+                        self.finish_entity_registration(&item);
+                    }
+                    changed_fires.insert(position, fire);
+                }
+                RegionalEntityUpdate::Expired(entity) => {
+                    self.spawn_state.load().remove_entity(self, entity.as_ref());
+                    self.entity_tracker.remove_entity(entity.as_ref(), self);
+                }
             }
-            changed_fires.insert(drop.position, drop.fire);
         }
         for (position, fire) in changed_fires {
             // The position can have been broken, replaced or unloaded since

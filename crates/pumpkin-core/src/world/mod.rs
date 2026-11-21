@@ -43,7 +43,7 @@ pub mod portal;
 pub mod raid;
 pub mod random_sequences;
 mod regional_campfires;
-use regional_campfires::RegionalCampfireOutputs;
+use regional_campfires::RegionalEntityUpdates;
 mod regional_items;
 use regional_items::RegionalItemTimers;
 pub mod stopwatches;
@@ -299,7 +299,7 @@ pub struct World {
     /// Allows independent region work while keeping level shutdown exclusive.
     pub(crate) region_activity: Arc<tokio::sync::RwLock<()>>,
     entity_chunk_changes: entity_chunks::EntityChunkChanges,
-    regional_campfire_outputs: RegionalCampfireOutputs,
+    regional_entity_updates: RegionalEntityUpdates,
     regional_item_timers: RwLock<Arc<RegionalItemTimers>>,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
     /// Block entities indexed by chunk, so ticking only visits the currently
@@ -476,7 +476,7 @@ impl World {
             region_layout: ArcSwap::from_pointee(RegionLayout::default()),
             region_activity: Arc::default(),
             entity_chunk_changes: entity_chunks::EntityChunkChanges::default(),
-            regional_campfire_outputs: RegionalCampfireOutputs::default(),
+            regional_entity_updates: RegionalEntityUpdates::default(),
             regional_item_timers: RwLock::default(),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
             server,
@@ -5434,14 +5434,9 @@ impl World {
         let entity = registered.as_deref().unwrap_or(entity);
         let base_entity = entity.get_entity();
         let _motion = base_entity.hold_item_motion();
-        if base_entity
-            .removal_reason
-            .compare_exchange(None, Some(RemovalReason::Discarded))
-            .is_err()
-        {
+        if !base_entity.mark_discarded() {
             return;
         }
-        base_entity.removed.store(true, Ordering::Release);
 
         if let Some(vehicle) = base_entity.get_vehicle() {
             vehicle

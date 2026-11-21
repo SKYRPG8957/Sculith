@@ -525,6 +525,10 @@ impl HopperBlockEntity {
         into: &dyn Inventory,
         item_entity: &crate::entity::item::ItemEntity,
     ) -> bool {
+        let _motion = item_entity.get_entity().hold_item_motion();
+        if item_entity.get_entity().is_removed() {
+            return false;
+        }
         let copy = {
             let stack = item_entity
                 .get_item_stack()
@@ -596,6 +600,10 @@ impl HopperBlockEntity {
                     continue;
                 }
                 if let Some(item_entity) = entity_base.get_item_entity() {
+                    let _motion = item_entity.get_entity().hold_item_motion();
+                    if item_entity.get_entity().is_removed() {
+                        continue;
+                    }
                     let (is_empty, registry_key) = {
                         let stack = item_entity
                             .get_item_stack()

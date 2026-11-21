@@ -60,6 +60,27 @@ impl Entity {
 }
 
 impl ItemEntity {
+    pub(crate) fn try_regional_expiry(&self, discard: impl FnOnce()) {
+        let entity = self.get_entity();
+        let Some(motion) = entity.item_motion.as_deref() else {
+            return;
+        };
+        let Ok(motion) = motion.try_lock() else {
+            return;
+        };
+        if motion.world_users != 0 || !self.has_expired() {
+            return;
+        }
+        let (Ok(vehicle), Ok(passengers)) =
+            (entity.vehicle.try_lock(), entity.passengers.try_lock())
+        else {
+            return;
+        };
+        if vehicle.is_none() && passengers.is_empty() {
+            discard();
+        }
+    }
+
     pub(crate) fn try_regional_motion(
         &self,
         world: &World,

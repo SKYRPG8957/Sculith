@@ -1330,6 +1330,7 @@ pub(crate) fn pick_up_nearby_items(mob: &dyn Mob) {
         let Some(item) = candidate.get_item_entity() else {
             continue;
         };
+        let _motion = item.get_entity().hold_item_motion();
         if item.get_entity().is_removed() || item.get_pickup_delay() != 0 {
             continue;
         }

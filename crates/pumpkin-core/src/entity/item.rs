@@ -52,6 +52,12 @@ pub(crate) enum ItemTimerStep {
     Region,
 }
 
+pub(crate) enum RegionalItemStep {
+    Skipped,
+    Advanced,
+    Expired,
+}
+
 #[derive(Default)]
 pub(super) struct ItemClock {
     last: Option<(ItemTimerOwner, std::time::Instant)>,
@@ -513,18 +519,18 @@ impl ItemEntity {
         owner: RegionId,
         deadline: TickDeadline,
         still_owned: impl FnOnce() -> bool,
-    ) -> bool {
+    ) -> RegionalItemStep {
         let Ok(stack) = self.item_stack.try_lock() else {
-            return false;
+            return RegionalItemStep::Skipped;
         };
         let Ok(mut clock) = self.clock.try_lock() else {
-            return false;
+            return RegionalItemStep::Skipped;
         };
         if stack.is_empty()
             || !still_owned()
             || !clock.claim(ItemTimerOwner::Region(owner), deadline)
         {
-            return false;
+            return RegionalItemStep::Skipped;
         }
 
         self.decrement_pickup_delay();
@@ -533,9 +539,15 @@ impl ItemEntity {
             if age < LIFETIME {
                 self.item_age.store(age + 1, Relaxed);
             }
-            return age < LIFETIME - 1;
+            if age >= LIFETIME - 1 {
+                return RegionalItemStep::Expired;
+            }
         }
-        true
+        RegionalItemStep::Advanced
+    }
+
+    pub(super) fn has_expired(&self) -> bool {
+        !self.never_despawn.load(Relaxed) && self.item_age.load(Relaxed) >= LIFETIME
     }
 
     pub(crate) fn tick_from_world(
@@ -546,6 +558,9 @@ impl ItemEntity {
         deadline: Option<TickDeadline>,
     ) {
         let (_permit, advance_motion) = self.entity.begin_item_world_tick(deadline);
+        if self.entity.is_removed() {
+            return;
+        }
         if advance_motion {
             let entity = &self.entity;
             entity.tick_count.fetch_add(1, Relaxed);
@@ -817,7 +832,9 @@ impl EntityBase for ItemEntity {
 
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         let _motion = self.entity.hold_item_motion();
-        self.tick_with_time(caller, server, ItemTimerStep::World(None));
+        if !self.entity.is_removed() {
+            self.tick_with_time(caller, server, ItemTimerStep::World(None));
+        }
     }
 
     fn init_data_tracker(&self) {
@@ -844,7 +861,7 @@ impl EntityBase for ItemEntity {
         // Vanilla `ItemEntity.hurtServer`.
         let entity = &self.entity;
         let _motion = entity.hold_item_motion();
-        if entity.is_invulnerable_to(&damage_type, cause) {
+        if entity.is_removed() || entity.is_invulnerable_to(&damage_type, cause) {
             return false;
         }
         let world = entity.world.load_full();
@@ -905,7 +922,7 @@ impl EntityBase for ItemEntity {
 
     fn on_player_collision(&self, player: &Arc<Player>) {
         let _motion = self.entity.hold_item_motion();
-        if self.pickup_delay.load(Ordering::Relaxed) > 0 {
+        if self.entity.is_removed() || self.pickup_delay.load(Ordering::Relaxed) > 0 {
             return;
         }
 
