@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{
         Mutex,
         atomic::{AtomicU32, Ordering},
@@ -10,19 +10,27 @@ use pumpkin_plugin_api::{
     Context, Plugin, PluginMetadata, Result, Server,
     command::{CommandError, CommandSender, ConsumedArgs},
     commands::{Command, CommandHandler},
-    events::{DialogClickActionEvent, EventData, EventHandler, EventPriority, PlayerLeaveEvent},
+    events::{
+        DialogClickActionEvent, EventData, EventHandler, EventPriority, PlayerJoinEvent,
+        PlayerLeaveEvent,
+    },
     forms::{FormResponseEvent, SimpleFormBuilder},
     permission::{Permission, PermissionDefault},
+    persistent_data::PersistentDataHolder,
     player::Player,
     register_plugin,
+    scheduler::SchedulerExt,
     server::CommandSender as ServerCommandSender,
     text::TextComponent,
+    uuid::Uuid,
 };
 use serde_json::json;
 
 const PAGES: [&str; 3] = ["engine", "arena", "status"];
 const BUTTONS: [&str; 3] = ["이전", "닫기", "다음"];
 const ACTION_PREFIX: &str = "sculith:intro/";
+const NAMESPACE: &str = "sculith-intro";
+const SEEN_INTRO: &str = "seen-intro";
 
 type PlayerId = (u64, u64);
 
@@ -32,11 +40,33 @@ struct Page {
 }
 
 static PENDING: Mutex<BTreeMap<PlayerId, Page>> = Mutex::new(BTreeMap::new());
+static WAITING_FOR_LOAD: Mutex<BTreeSet<PlayerId>> = Mutex::new(BTreeSet::new());
 static NEXT_JAVA_ID: AtomicU32 = AtomicU32::new(1);
 
 fn player_id(player: &Player) -> PlayerId {
     let id = player.get_id();
     (id.high, id.low)
+}
+
+fn open_first_page(server: &Server, player: &Player) -> bool {
+    if let Err(error) = show_page(server, player, 0) {
+        tracing::warn!(%error, "Unable to open the intro page");
+        return false;
+    }
+    player.set_bool(NAMESPACE, SEEN_INTRO, true);
+    true
+}
+
+fn open_new_player_intros(server: Server) {
+    let waiting: Vec<_> = WAITING_FOR_LOAD.lock().unwrap().iter().copied().collect();
+    for (high, low) in waiting {
+        let Some(player) = server.get_player_by_uuid(Uuid { high, low }) else {
+            continue;
+        };
+        if player.is_client_ready() && WAITING_FOR_LOAD.lock().unwrap().remove(&(high, low)) {
+            open_first_page(&server, &player);
+        }
+    }
 }
 
 fn java_target(player: &Player) -> Option<String> {
@@ -149,11 +179,8 @@ impl CommandHandler for Intro {
             sender.send_message(TextComponent::text("게임에서 /sculithintro를 입력하세요."));
             return Ok(0);
         };
-        if let Err(error) = show_page(&server, &player, 0) {
-            tracing::warn!(%error, "Unable to open the intro page");
-            return Ok(0);
-        }
-        Ok(1)
+        WAITING_FOR_LOAD.lock().unwrap().remove(&player_id(&player));
+        Ok(i32::from(open_first_page(&server, &player)))
     }
 }
 
@@ -196,7 +223,25 @@ impl EventHandler<DialogClickActionEvent> for Intro {
 
 impl EventHandler<PlayerLeaveEvent> for Intro {
     fn handle(&self, _: Server, event: EventData<PlayerLeaveEvent>) -> EventData<PlayerLeaveEvent> {
-        PENDING.lock().unwrap().remove(&player_id(&event.player));
+        let id = player_id(&event.player);
+        PENDING.lock().unwrap().remove(&id);
+        WAITING_FOR_LOAD.lock().unwrap().remove(&id);
+        event
+    }
+}
+
+impl EventHandler<PlayerJoinEvent> for Intro {
+    fn handle(&self, _: Server, event: EventData<PlayerJoinEvent>) -> EventData<PlayerJoinEvent> {
+        if !event
+            .player
+            .get_bool(NAMESPACE, SEEN_INTRO)
+            .unwrap_or(false)
+        {
+            WAITING_FOR_LOAD
+                .lock()
+                .unwrap()
+                .insert(player_id(&event.player));
+        }
         event
     }
 }
@@ -208,8 +253,8 @@ impl Plugin for Intro {
 
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
-            name: "sculith-intro".into(),
-            version: "0.1.0".into(),
+            name: NAMESPACE.into(),
+            version: env!("CARGO_PKG_VERSION").into(),
             authors: vec![],
             description: "Sculith introduction menu for Bedrock and Java".into(),
             permissions: vec![],
@@ -238,6 +283,9 @@ impl Plugin for Intro {
             true,
         )?;
         ctx.register_event_handler::<PlayerLeaveEvent, _>(Intro, EventPriority::Normal, true)?;
+        // Join can precede the client's world-load acknowledgement by many ticks.
+        ctx.register_event_handler::<PlayerJoinEvent, _>(Intro, EventPriority::Normal, true)?;
+        ctx.schedule_repeating_task(1, 4, open_new_player_intros);
         Ok(())
     }
 }
