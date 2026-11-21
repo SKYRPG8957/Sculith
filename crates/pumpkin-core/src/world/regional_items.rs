@@ -1,5 +1,6 @@
 use std::{
     any::Any,
+    collections::hash_map::Entry,
     sync::{Arc, PoisonError},
 };
 
@@ -8,14 +9,15 @@ use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    entity::{EntityBase, item::ItemEntity},
+    entity::{Entity, EntityBase, item::ItemEntity},
     server::{Server, TickDeadline},
 };
 
 use super::{RegionId, RegionLayout, World};
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct RegionalItemTimers {
+    enabled: bool,
     by_region: FxHashMap<RegionId, Vec<Arc<dyn EntityBase>>>,
     assigned: FxHashMap<i32, RegionId>,
 }
@@ -23,6 +25,22 @@ pub(super) struct RegionalItemTimers {
 impl RegionalItemTimers {
     pub(super) fn contains(&self, entity_id: i32) -> bool {
         self.assigned.contains_key(&entity_id)
+    }
+
+    fn unassign(&mut self, entity_id: i32) -> Option<Arc<dyn EntityBase>> {
+        let owner = self.assigned.remove(&entity_id)?;
+        let Entry::Occupied(mut entry) = self.by_region.entry(owner) else {
+            return None;
+        };
+        let actors = entry.get_mut();
+        let index = actors
+            .iter()
+            .position(|actor| actor.get_entity().entity_id == entity_id)?;
+        let actor = actors.swap_remove(index);
+        if actors.is_empty() {
+            entry.remove();
+        }
+        Some(actor)
     }
 }
 
@@ -33,27 +51,34 @@ impl World {
         tickable: &[(&Arc<dyn EntityBase>, Vector2<i32>)],
         regional: bool,
     ) -> Arc<RegionalItemTimers> {
-        let mut next = RegionalItemTimers::default();
-        if regional && ItemEntity::timers_unobserved(server) {
+        let previous = self
+            .regional_item_timers
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let mut next = RegionalItemTimers {
+            enabled: regional && ItemEntity::timers_unobserved(server),
+            ..Default::default()
+        };
+        if next.enabled {
             let layout = self.region_layout.load();
-            for &(entity, chunk) in tickable {
+            for &(entity, _) in tickable {
+                let base = entity.get_entity();
                 if (entity.as_ref() as &dyn Any).is::<ItemEntity>()
-                    && let Some(owner) = layout.owner(chunk)
+                    && let Some(owner) = layout.owner(base.chunk_pos.load())
                     && owner != RegionLayout::INACTIVE
                 {
-                    next.assigned.insert(entity.get_entity().entity_id, owner);
+                    next.assigned.insert(base.entity_id, owner);
                 }
             }
         }
-        {
-            let published = self
+        if next.enabled == previous.enabled && next.assigned == previous.assigned {
+            // A running region can keep its snapshot across an ordinary world tick.
+            return self
                 .regional_item_timers
                 .read()
-                .unwrap_or_else(PoisonError::into_inner);
-            // A running region can keep its snapshot across an ordinary world tick.
-            if next.assigned == published.assigned {
-                return published.clone();
-            }
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
         }
         for &(entity, _) in tickable {
             if let Some(&owner) = next.assigned.get(&entity.get_entity().entity_id) {
@@ -67,8 +92,60 @@ impl World {
             .regional_item_timers
             .write()
             .unwrap_or_else(PoisonError::into_inner);
-        *published = Arc::new(next);
+        // A movement may have assigned a new owner while this plan was built.
+        if !next.enabled || Arc::ptr_eq(&published, &previous) {
+            *published = Arc::new(next);
+        }
         published.clone()
+    }
+
+    pub(crate) fn move_item_between_regions(
+        &self,
+        entity: &Entity,
+        origin: Vector2<i32>,
+        destination: Vector2<i32>,
+        commit_position: impl FnOnce(),
+    ) {
+        let layout = self.region_layout.load();
+        if layout.owner(origin) == layout.owner(destination) {
+            commit_position();
+            return;
+        }
+        drop(layout);
+
+        // A regional job holds a read permit while it touches the item. Keep
+        // position and ownership in the same handoff under the write permit.
+        let mut published = self
+            .regional_item_timers
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        commit_position();
+        if !published.enabled
+            || entity.is_removed()
+            || !std::ptr::eq(entity.world.load().as_ref(), self)
+        {
+            return;
+        }
+        let owner = self
+            .region_layout
+            .load()
+            .owner(entity.chunk_pos.load())
+            .filter(|&owner| owner != RegionLayout::INACTIVE);
+        let id = entity.entity_id;
+        if published.assigned.get(&id).copied() == owner {
+            return;
+        }
+
+        let timers = Arc::make_mut(&mut published);
+        let previous = timers.unassign(id);
+        if let Some(owner) = owner
+            && let Some(actor) =
+                previous.or_else(|| self.entity_index.by_id(&self.entities.load_full(), id))
+            && std::ptr::eq(actor.get_entity(), entity)
+        {
+            timers.assigned.insert(id, owner);
+            timers.by_region.entry(owner).or_default().push(actor);
+        }
     }
 
     pub(super) fn clear_regional_item_timers(&self) {
@@ -76,7 +153,7 @@ impl World {
             .regional_item_timers
             .write()
             .unwrap_or_else(PoisonError::into_inner);
-        if !published.assigned.is_empty() {
+        if published.enabled {
             *published = Arc::default();
         }
     }
@@ -108,7 +185,7 @@ impl World {
             if !owns(chunk) {
                 continue;
             }
-            // Hold residency and the current assignment only for a timer mutation.
+            // Pin residency and the current assignment through timers and motion.
             let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
                 return;
             };

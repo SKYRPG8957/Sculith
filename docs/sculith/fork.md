@@ -153,9 +153,11 @@ entity chunk retirement can defer a regional completion until its next deadline.
 
 Dropped items in active loaded chunks take their lifetime and pickup delay
 steps from the region owner. The world publishes the assignment from the
-entity's current chunk, and a regional job checks that assignment and
-residency before touching the counters. After a change of owner, the item
-keeps its most recent deadline so two close deadlines cannot advance it twice.
+entity's current chunk. A movement between owners updates position and
+assignment together so the destination region can take over before the next
+world tick. A regional job checks assignment and residency before touching
+the counters. The item keeps its most recent deadline across the handoff so
+two close deadlines cannot advance it twice.
 An isolated airborne item can also move on the region clock while its swept
 bounds touch only air in loaded chunks of the same owner. The owner pins the
 terrain and spatial indices through the update, including when the item crosses

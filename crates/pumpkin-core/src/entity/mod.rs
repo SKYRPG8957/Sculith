@@ -2365,18 +2365,34 @@ impl Entity {
     ///
     /// This function calculates the new position, block position, and chunk position based on the provided coordinates. If any of these values change, the corresponding fields are updated.
     pub fn set_pos(&self, new_position: Vector3<f64>) {
-        let _motion = self.hold_item_motion();
-        self.set_pos_with(
-            new_position,
-            || {
-                self.bounding_box.store(Self::make_bounding_box(
-                    self.entity_type,
-                    new_position,
-                    &self.entity_dimension.load(),
-                ));
-            },
-            |position| self.world.load().level.get_rough_biome(&position),
-        );
+        let item_motion = self.hold_item_motion();
+        let commit_position = || {
+            self.set_pos_with(
+                new_position,
+                || {
+                    self.bounding_box.store(Self::make_bounding_box(
+                        self.entity_type,
+                        new_position,
+                        &self.entity_dimension.load(),
+                    ));
+                },
+                |position| self.world.load().level.get_rough_biome(&position),
+            );
+        };
+        if item_motion.is_some() {
+            let origin = self.chunk_pos.load();
+            let destination = BlockPos::floored_v(new_position).chunk_position();
+            if origin != destination {
+                self.world.load().move_item_between_regions(
+                    self,
+                    origin,
+                    destination,
+                    commit_position,
+                );
+                return;
+            }
+        }
+        commit_position();
     }
 
     fn set_pos_with(
