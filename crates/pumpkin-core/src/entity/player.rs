@@ -3895,8 +3895,9 @@ impl Player {
             self.bedrock_spawned.store(false, Ordering::Relaxed);
             return;
         }
-        // Under the lock, so a world change resetting the sender also undoes this
-        self.set_client_loaded(true);
+        // Gameplay can proceed once the spawn is queued. Keep client_loaded
+        // for the acknowledgement received from the client.
+        self.client_loaded_timeout.store(0, Ordering::Relaxed);
         drop(sender);
         self.send_health();
         if self.living_entity.health.load() <= 0.0 {
@@ -5733,9 +5734,11 @@ impl Player {
             return;
         }
         if !self.client_loaded.load(Ordering::Relaxed) {
-            let timeout = self.client_loaded_timeout.load(Ordering::Relaxed);
-            self.client_loaded_timeout
-                .store(timeout.saturating_sub(1), Ordering::Relaxed);
+            let _ = self.client_loaded_timeout.try_update(
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                |timeout| timeout.checked_sub(1),
+            );
         }
     }
 
