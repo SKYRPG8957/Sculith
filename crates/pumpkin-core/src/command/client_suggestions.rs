@@ -7,10 +7,13 @@ use pumpkin_protocol::{
 };
 use std::sync::Arc;
 
-use crate::command::node::{
-    attached::{AttachedNode, NodeId},
-    dispatcher::CommandDispatcher,
-    tree::ROOT_NODE_ID,
+use crate::command::{
+    CommandSource,
+    node::{
+        attached::{AttachedNode, NodeId},
+        dispatcher::CommandDispatcher,
+        tree::ROOT_NODE_ID,
+    },
 };
 use crate::entity::player::Player;
 use crate::server::Server;
@@ -18,6 +21,21 @@ use pumpkin_protocol::bedrock::client::available_commands::{
     CAvailableCommands, CommandData, EnumData, OverloadData, ParamData, arg_flags, arg_types,
 };
 use pumpkin_protocol::java::client::play::SuggestionProviders;
+
+fn visible_root(
+    node: &AttachedNode,
+    dispatcher: &CommandDispatcher,
+    source: &CommandSource,
+) -> bool {
+    let (name, lowercase) = match node {
+        AttachedNode::Literal(child) => (&child.meta.literal, &child.meta.literal_lowercase),
+        AttachedNode::Command(child) => (&child.meta.literal, &child.meta.literal_lowercase),
+        _ => return true,
+    };
+    !dispatcher.is_disabled(lowercase)
+        && node.requirements().evaluate(source)
+        && (!name.starts_with("//") || dispatcher.tree.get(&name[1..]).is_none())
+}
 
 #[allow(clippy::too_many_lines)]
 pub fn send_c_commands_packet(
@@ -36,25 +54,7 @@ pub fn send_c_commands_packet(
                 node.children_ref()
                     .values()
                     .copied()
-                    .filter(|id| {
-                        let (disabled, requirement, name) = match &dispatcher.tree[*id] {
-                            AttachedNode::Literal(child) => (
-                                dispatcher.is_disabled(&child.meta.literal_lowercase),
-                                child.owned.requirements.evaluate(source),
-                                child.meta.literal.as_ref(),
-                            ),
-                            AttachedNode::Command(child) => (
-                                dispatcher.is_disabled(&child.meta.literal_lowercase),
-                                child.owned.requirements.evaluate(source),
-                                child.meta.literal.as_ref(),
-                            ),
-                            _ => (false, true, ""),
-                        };
-                        !disabled
-                            && requirement
-                            && (!name.starts_with("//")
-                                || dispatcher.tree.get(&name[1..]).is_none())
-                    })
+                    .filter(|id| visible_root(&dispatcher.tree[*id], dispatcher, source))
                     .map(|id| VarInt((id.0.get() - 1) as i32))
                     .collect()
             }
@@ -149,16 +149,18 @@ pub fn send_c_commands_packet(
 struct BuilderContext<'a> {
     enum_values: &'a mut Vec<String>,
     enums: &'a mut Vec<EnumData>,
+    source: &'a CommandSource,
 }
 
 pub fn send_bedrock_commands_packet(
     player: &Arc<Player>,
-    _server: &Server,
+    server: &Arc<Server>,
     dispatcher: &CommandDispatcher,
 ) {
     let mut enum_values: Vec<String> = Vec::new();
     let mut enums: Vec<EnumData> = Vec::new();
     let mut commands: Vec<CommandData> = Vec::new();
+    let source = &super::CommandSender::Player(player.clone()).into_source(server);
 
     let tree_nodes: Vec<&AttachedNode> = dispatcher.tree.iter().collect();
 
@@ -178,6 +180,9 @@ pub fn send_bedrock_commands_packet(
         let Some(node) = tree_nodes.get(idx) else {
             continue;
         };
+        if !visible_root(node, dispatcher, source) {
+            continue;
+        }
 
         let (name, is_executable, child_ids) = match node {
             AttachedNode::Literal(lit) => (
@@ -193,17 +198,10 @@ pub fn send_bedrock_commands_packet(
             _ => continue,
         };
 
-        if dispatcher.is_disabled(&name.to_ascii_lowercase()) {
-            continue;
-        }
-
-        if name.starts_with("//") && dispatcher.tree.get(&name[1..]).is_some() {
-            continue;
-        }
-
         let mut ctx = BuilderContext {
             enum_values: &mut enum_values,
             enums: &mut enums,
+            source,
         };
 
         let overloads =
@@ -251,7 +249,7 @@ fn build_overloads_from_attached_nodes(
             parameter_data: Vec::new(),
         });
     }
-    collect_overloads_from_attached(tree, child_ids, &Vec::new(), &mut overloads, ctx);
+    collect_overloads_from_attached(tree, child_ids, &[], &mut overloads, ctx);
     if overloads.is_empty() {
         overloads.push(OverloadData {
             is_chaining: false,
@@ -271,6 +269,9 @@ fn collect_overloads_from_attached(
     for &child_id in child_ids {
         let idx = child_id.0.get() - 1;
         let Some(node) = tree.get(idx) else { continue };
+        if !node.requirements().evaluate(ctx.source) {
+            continue;
+        }
 
         match node {
             AttachedNode::Literal(lit) => {
