@@ -54,12 +54,6 @@ impl BedrockClient {
             player.apply_sprint_input(server, false);
         }
 
-        if flags.get(InputData::StartCrawling as usize) {
-            entity.set_pose(EntityPose::Swimming);
-        } else if flags.get(InputData::StopCrawling as usize) {
-            player.update_player_pose();
-        }
-
         if flags.get(InputData::StartSpinAttack as usize) {
             entity.set_pose(EntityPose::SpinAttack);
         } else if flags.get(InputData::StopSpinAttack as usize) {
@@ -97,6 +91,12 @@ impl BedrockClient {
             player.apply_bedrock_swim_input(false);
         } else if flags.get(InputData::StartSwimming as usize) {
             player.apply_bedrock_swim_input(true);
+        }
+
+        if flags.get(InputData::StopCrawling as usize) {
+            player.apply_bedrock_crawl_input(false);
+        } else if flags.get(InputData::StartCrawling as usize) {
+            player.apply_bedrock_crawl_input(true);
         }
 
         if let Some(vehicle) = entity.get_vehicle() {

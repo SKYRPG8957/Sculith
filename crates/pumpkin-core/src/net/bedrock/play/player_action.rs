@@ -215,13 +215,8 @@ impl BedrockClient {
             PlayerAction::StopSprinting => {
                 player.apply_sprint_input(server, false);
             }
-            PlayerAction::StartCrawling => {
-                player
-                    .get_entity()
-                    .set_pose(pumpkin_data::entity::EntityPose::Swimming);
-            }
-            PlayerAction::StopCrawling => {
-                player.update_player_pose();
+            PlayerAction::StartCrawling | PlayerAction::StopCrawling => {
+                player.apply_bedrock_crawl_input(matches!(action, PlayerAction::StartCrawling));
             }
             PlayerAction::StopSleeping => {
                 player.wake_up();

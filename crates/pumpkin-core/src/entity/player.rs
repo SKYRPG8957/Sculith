@@ -2638,6 +2638,17 @@ impl Player {
         }
     }
 
+    pub(crate) fn apply_bedrock_crawl_input(&self, crawling: bool) {
+        let entity = self.get_entity();
+        let was_crawling = entity.is_bedrock_crawling();
+        self.update_player_pose();
+        let actual = entity.is_bedrock_crawling();
+        if actual == was_crawling && actual != crawling {
+            // Correct predicted crawling on open ground or standing under a low ceiling.
+            entity.send_bedrock_flags_two();
+        }
+    }
+
     fn can_swim_bedrock(&self) -> bool {
         let entity = self.get_entity();
         if self.is_flying() || self.gamemode.load() == GameMode::Spectator || entity.has_vehicle() {
@@ -2740,6 +2751,9 @@ impl Player {
     }
 
     fn apply_player_pose(&self) {
+        if self.living_entity.is_dead_or_dying() {
+            return;
+        }
         let desired_pose = self.get_desired_pose();
         let actual_pose = if self.gamemode.load() == GameMode::Spectator
             || self.get_entity().has_vehicle()

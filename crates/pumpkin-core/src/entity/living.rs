@@ -2834,6 +2834,9 @@ impl LivingEntity {
                 }
             }
             self.entity.pose.store(EntityPose::Dying);
+            if self.entity.sync_bedrock_crawling() {
+                self.entity.send_bedrock_flags_two();
+            }
 
             if should_drop_loot {
                 self.drop_equipment(looting_level);

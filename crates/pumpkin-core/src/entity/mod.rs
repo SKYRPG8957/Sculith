@@ -122,6 +122,7 @@ pub enum DelayedLeash {
 }
 
 const LEASH_RESTORE_TIMEOUT: i32 = 100;
+const BEDROCK_CRAWLING_MASK: i64 = 1 << (entity_data_flag::CRAWLING - 64);
 
 /// The maximum number of scoreboard tags an entity can carry, matching Vanilla.
 pub const MAX_SCOREBOARD_TAGS: usize = 1024;
@@ -2023,6 +2024,13 @@ impl Entity {
         }
     }
 
+    fn write_bedrock_flags_two(&self, metadata: &mut SyncedActorDataList) {
+        metadata.set(
+            entity_data_key::FLAGS_TWO,
+            MetadataValue::Int64(self.bedrock_flags_two.load(Relaxed)),
+        );
+    }
+
     pub fn bedrock_metadata(&self) -> SyncedActorDataList {
         self.init_bedrock_flags();
 
@@ -2045,10 +2053,7 @@ impl Entity {
             entity_data_key::FLAGS,
             MetadataValue::Int64(self.bedrock_flags.load(Ordering::Relaxed)),
         );
-        metadata.set(
-            entity_data_key::FLAGS_TWO,
-            MetadataValue::Int64(self.bedrock_flags_two.load(Ordering::Relaxed)),
-        );
+        self.write_bedrock_flags_two(&mut metadata);
         if is_baby {
             metadata.set_flag(entity_data_key::FLAGS, entity_data_flag::BABY as u8, true);
         }
@@ -4148,6 +4153,35 @@ impl Entity {
         self.is_visually_swimming() && !self.is_in_water()
     }
 
+    fn is_bedrock_crawling(&self) -> bool {
+        self.bedrock_flags_two.load(Relaxed) & BEDROCK_CRAWLING_MASK != 0
+    }
+
+    fn set_bedrock_crawling(&self, crawling: bool) -> bool {
+        if self.entity_type != &EntityType::PLAYER || self.is_bedrock_crawling() == crawling {
+            return false;
+        }
+        if crawling {
+            self.bedrock_flags_two
+                .fetch_or(BEDROCK_CRAWLING_MASK, Relaxed);
+        } else {
+            self.bedrock_flags_two
+                .fetch_and(!BEDROCK_CRAWLING_MASK, Relaxed);
+        }
+        true
+    }
+
+    fn sync_bedrock_crawling(&self) -> bool {
+        // Crawling and swimming share a collision box but use separate Bedrock flags.
+        self.set_bedrock_crawling(self.is_visually_swimming() && !self.is_swimming())
+    }
+
+    fn send_bedrock_flags_two(&self) {
+        let mut metadata = SyncedActorDataList::new();
+        self.write_bedrock_flags_two(&mut metadata);
+        self.send_bedrock_actor_data(&metadata);
+    }
+
     pub fn set_swimming(&self, swimming: bool) {
         if self.swimming.load(Ordering::Relaxed) != swimming {
             let mut event =
@@ -4162,6 +4196,9 @@ impl Entity {
                 return;
             }
             self.swimming.store(event.is_swimming, Relaxed);
+            if event.is_swimming {
+                self.set_bedrock_crawling(false);
+            }
             self.set_flag(Flag::Swimming, event.is_swimming);
         }
     }
@@ -4391,10 +4428,7 @@ impl Entity {
             entity_data_key::FLAGS,
             MetadataValue::Int64(self.bedrock_flags.load(Ordering::Relaxed)),
         );
-        metadata.set(
-            entity_data_key::FLAGS_TWO,
-            MetadataValue::Int64(self.bedrock_flags_two.load(Ordering::Relaxed)),
-        );
+        self.write_bedrock_flags_two(&mut metadata);
         let packet = CSetActorData {
             target_runtime_id: VarULong(self.entity_id as u64),
             actor_data: metadata,
@@ -4588,31 +4622,33 @@ impl Entity {
 
     pub fn set_pose(&self, pose: EntityPose) {
         let _motion = self.hold_item_motion();
-        if self.pose.load() == pose {
-            return;
-        }
-
-        let mut pose_event =
-            crate::plugin::api::events::entity::entity_pose_change::EntityPoseChangeEvent::new(
-                self.entity_id,
-                (pose as u8).to_string(),
-            );
-        if let Some(server) = self.world.load().server.upgrade() {
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut pose_event);
-            if pose_event.cancelled {
+        if self.pose.load() != pose {
+            let mut pose_event =
+                crate::plugin::api::events::entity::entity_pose_change::EntityPoseChangeEvent::new(
+                    self.entity_id,
+                    (pose as u8).to_string(),
+                );
+            if let Some(server) = self.world.load().server.upgrade() {
+                server
+                    .plugin_manager
+                    .fire_blocking(&server, &mut pose_event);
+            }
+            if !pose_event.cancelled {
+                self.pose.store(pose);
+                let pose = pose as i32;
+                let mut bedrock_meta = SyncedActorDataList::new();
+                bedrock_meta.set(entity_data_key::POSE_INDEX, MetadataValue::Int(pose));
+                self.refresh_dimensions_into(&mut bedrock_meta);
+                self.set_synced_data(tracked_data::entity::DATA_POSE, VarInt(pose));
+                self.send_bedrock_actor_data(&bedrock_meta);
                 return;
             }
         }
 
-        self.pose.store(pose);
-        let pose = pose as i32;
-        let mut bedrock_meta = SyncedActorDataList::new();
-        bedrock_meta.set(entity_data_key::POSE_INDEX, MetadataValue::Int(pose));
-        self.refresh_dimensions_into(&mut bedrock_meta);
-        self.set_synced_data(tracked_data::entity::DATA_POSE, VarInt(pose));
-        self.send_bedrock_actor_data(&bedrock_meta);
+        // A swim can end while the player still needs the same low collision box.
+        if self.sync_bedrock_crawling() {
+            self.send_bedrock_flags_two();
+        }
     }
 
     /// Vanilla `getDefaultDimensions` changed, e.g. a baby growing up.
@@ -4659,6 +4695,9 @@ impl Entity {
             entity_data_key::HEIGHT,
             MetadataValue::Float(dimensions.height),
         );
+        if self.sync_bedrock_crawling() {
+            self.write_bedrock_flags_two(metadata);
+        }
         if !self.first_tick.load(Ordering::Relaxed)
             && !self.no_physics.load(Ordering::Relaxed)
             && dimensions.width <= 4.0
