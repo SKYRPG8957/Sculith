@@ -1,5 +1,6 @@
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 
+use arc_swap::ArcSwap;
 use pumpkin_data::entity::EntityType;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use rustc_hash::FxHashMap;
@@ -308,6 +309,28 @@ pub struct EntityIndex {
 }
 
 impl EntityIndex {
+    /// Regions can publish registry changes while the world is busy. Use the current
+    /// generation even when a world query has not refreshed this index yet.
+    fn try_read_current<'index, T, R>(
+        lock: &'index RwLock<T>,
+        source: &ArcSwap<R>,
+        matches: impl Fn(&T, &Arc<R>) -> bool,
+        rebuild: impl FnOnce(&mut T, &Arc<R>),
+    ) -> Option<(Arc<R>, RwLockReadGuard<'index, T>)> {
+        let index = lock.try_read().ok()?;
+        let registry = source.load_full();
+        if matches(&index, &registry) {
+            return Some((registry, index));
+        }
+        drop(index);
+        let mut index = lock.try_write().ok()?;
+        let registry = source.load_full();
+        if !matches(&index, &registry) {
+            rebuild(&mut index, &registry);
+        }
+        Some((registry, RwLockWriteGuard::downgrade(index)))
+    }
+
     fn with_index<T>(&self, registry: &Arc<Registry>, query: impl FnOnce(&Index) -> T) -> T {
         let index = self
             .inner
@@ -465,18 +488,23 @@ impl EntityIndex {
         bounds: BoundingBox,
         apply: impl FnOnce() -> bool,
     ) {
-        let entities = world.entities.load_full();
-        let players = world.players.load_full();
+        let Some((players, player_index)) = Self::try_read_current(
+            &self.players,
+            &world.players,
+            PlayerIndex::matches,
+            PlayerIndex::rebuild,
+        ) else {
+            return;
+        };
+        let Some((entities, index)) =
+            Self::try_read_current(&self.inner, &world.entities, Index::matches, Index::rebuild)
+        else {
+            return;
+        };
         let registries_unchanged = || {
             Arc::ptr_eq(&entities, &world.entities.load())
                 && Arc::ptr_eq(&players, &world.players.load())
         };
-        let (Ok(player_index), Ok(index)) = (self.players.try_read(), self.inner.try_read()) else {
-            return;
-        };
-        if !index.matches(&entities) || !player_index.matches(&players) {
-            return;
-        }
         let Some(&own_slot) = index.slots.get(&entity_id) else {
             return;
         };
@@ -652,6 +680,64 @@ mod tests {
             assert!(ids(&world, &old).is_empty());
             assert_eq!(ids(&world, &moved), [entity.entity_id]);
         }
+        world.level.shutdown().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn regional_motion_uses_new_registries_before_a_world_query()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let start = Vector3::new(102.0, 66.0, 2.0);
+        let chunk = BlockPos::floored_v(start).chunk_position();
+        world
+            .level
+            .loaded_chunks
+            .insert(chunk, ChunkData::empty_sync(chunk.x, chunk.y));
+        let item = Arc::new(ItemEntity::new_with_velocity(
+            Entity::new(world.clone(), start, &EntityType::ITEM),
+            ItemStack::new(1, &Item::STONE),
+            Vector3::new(0.3, -0.2, 0.0),
+            ItemEntity::DEFAULT_PICKUP_DELAY,
+        ));
+        let entity = item.get_entity();
+        let original = entity.bounding_box.load();
+        let neighbor = InteractionEntity::new(Entity::new(
+            world.clone(),
+            start + Vector3::new(0.7, 0.0, 0.0),
+            &EntityType::INTERACTION,
+        ));
+        world.entities.store(Arc::new(vec![item.clone()]));
+        assert_eq!(ids(&world, &original), [entity.entity_id]);
+        assert!(world.get_players_at_box(&original).is_empty());
+
+        // A newly registered neighbor must prevent isolated movement.
+        world.entities.store(Arc::new(vec![item.clone(), neighbor]));
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        item.try_regional_motion(&world, chunk, 0, deadline, &|pos| pos == chunk);
+        assert_eq!(entity.pos.load(), start);
+        let current = {
+            let index = world
+                .entity_index
+                .inner
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            index.matches(&world.entities.load())
+        };
+        assert!(current);
+
+        // A regional expiry can replace the registry without a coordinated world tick.
+        world.entities.store(Arc::new(vec![item.clone()]));
+        world.players.store(Arc::default());
+        item.try_regional_motion(&world, chunk, 0, deadline, &|pos| pos == chunk);
+        let moved = entity.bounding_box.load();
+        assert!(moved.min.x > original.max.x);
+        assert!(ids(&world, &original).is_empty());
+        assert_eq!(ids(&world, &moved), [entity.entity_id]);
         world.level.shutdown().await;
         Ok(())
     }
