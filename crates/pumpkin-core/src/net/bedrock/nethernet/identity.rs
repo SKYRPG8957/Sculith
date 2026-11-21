@@ -185,11 +185,23 @@ pub(super) fn add_server_identity(sdp: &str, key: &SigningKey) -> Result<String,
         .to_public_key_der()
         .map_err(|error| error.to_string())?;
     let public_key = general_purpose::STANDARD.encode(public_der.as_bytes());
+    let point = key.verifying_key().to_sec1_point(false);
+    let (Some(x), Some(y)) = (point.x(), point.y()) else {
+        return Err("NetherNet server identity has no public key coordinates".to_string());
+    };
+    // Bedrock pins the operator's JWK in the server token. The client's token
+    // has a different encoding and still carries a base64 DER key.
+    let cpk = json!({
+        "kty": "EC",
+        "crv": "P-384",
+        "x": general_purpose::URL_SAFE_NO_PAD.encode(x),
+        "y": general_purpose::URL_SAFE_NO_PAD.encode(y),
+    });
     let now = unix_time();
     let token = sign_jws(
         key,
         &json!({"alg": "ES384", "x5u": public_key}),
-        &json!({"exp": now + 60, "iat": now, "cpk": public_key}),
+        &json!({"exp": now + 60, "iat": now, "cpk": cpk}),
     )?;
     let fingerprints = sign_detached(key, fingerprint_payload(sdp)?);
     let assertion = serde_json::to_string(&json!({
@@ -272,12 +284,57 @@ mod tests {
     use super::*;
 
     #[test]
-    fn server_identity_is_valid_and_verifiable() {
+    fn server_identity_uses_a_verifiable_p384_jwk() {
         let key = SigningKey::from_slice(&[7; 48]).unwrap();
         let sdp = "v=0\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=fingerprint:sha-256 AA:BB\r\n";
         let answer = add_server_identity(sdp, &key).unwrap();
-        let (_, public_key) = verify_and_strip_identity(&answer, None).unwrap();
+        let encoded = answer
+            .lines()
+            .find_map(|line| line.strip_prefix("a=identity:"))
+            .unwrap();
+        let identity: Value =
+            serde_json::from_slice(&general_purpose::STANDARD.decode(encoded).unwrap()).unwrap();
+        let assertion: Value =
+            serde_json::from_str(identity["assertion"].as_str().unwrap()).unwrap();
+        let (input, signature) = assertion["token"]
+            .as_str()
+            .unwrap()
+            .rsplit_once('.')
+            .unwrap();
+        let (_, encoded_claims) = input.split_once('.').unwrap();
+        let claims: Value = serde_json::from_slice(
+            &general_purpose::URL_SAFE_NO_PAD
+                .decode(encoded_claims)
+                .unwrap(),
+        )
+        .unwrap();
+        let jwk = &claims["cpk"];
+        assert_eq!(jwk["kty"], "EC");
+        assert_eq!(jwk["crv"], "P-384");
+        let x = general_purpose::URL_SAFE_NO_PAD
+            .decode(jwk["x"].as_str().unwrap())
+            .unwrap();
+        let y = general_purpose::URL_SAFE_NO_PAD
+            .decode(jwk["y"].as_str().unwrap())
+            .unwrap();
+        assert_eq!((x.len(), y.len()), (48, 48));
+        let mut point = vec![4];
+        point.extend(x);
+        point.extend(y);
+        let public_key = PublicKey::from_sec1_bytes(&point).unwrap();
         assert_eq!(public_key, PublicKey::from(key.verifying_key()));
+        let signature =
+            Signature::from_slice(&general_purpose::URL_SAFE_NO_PAD.decode(signature).unwrap())
+                .unwrap();
+        pumpkin_auth::p384::ecdsa::VerifyingKey::from(public_key)
+            .verify(input.as_bytes(), &signature)
+            .unwrap();
+        verify_fingerprint_assertion(
+            assertion["fingerprints"].as_str().unwrap(),
+            &answer,
+            &public_key,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -313,6 +370,16 @@ mod tests {
         let mut identity: Value =
             serde_json::from_slice(&general_purpose::STANDARD.decode(encoded).unwrap()).unwrap();
         identity["idp"] = json!({"domain": "", "protocol": "offline"});
+        let mut assertion: Value =
+            serde_json::from_str(identity["assertion"].as_str().unwrap()).unwrap();
+        let public_key = PublicKey::from(key.verifying_key())
+            .to_public_key_der()
+            .unwrap();
+        assertion["token"] = json!(sign_jws(
+            &key, &json!({"alg": "ES384"}),
+            &json!({"exp": unix_time() + 60, "cpk": general_purpose::STANDARD.encode(public_key.as_bytes())}),
+        ).unwrap());
+        identity["assertion"] = json!(assertion.to_string());
         let offline_identity =
             general_purpose::STANDARD.encode(serde_json::to_vec(&identity).unwrap());
         let offer = answer.replace(encoded, &offline_identity);
