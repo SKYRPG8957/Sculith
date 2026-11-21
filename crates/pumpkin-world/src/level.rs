@@ -1296,6 +1296,79 @@ impl Level {
         Some(apply(biome))
     }
 
+    /// Pins an all-air sweep across at most four chunks and the destination biome.
+    /// The region permit must cover every chunk accepted by `owns` until this returns.
+    /// Neither callback can wait for work that uses the pinned chunks or palettes.
+    pub fn try_with_clear_regional_path<R>(
+        &self,
+        min: BlockPos,
+        max: BlockPos,
+        destination: BlockPos,
+        owns: impl Fn(Vector2<i32>) -> bool,
+        apply: impl FnOnce(&'static Biome) -> R,
+    ) -> Option<R> {
+        let first = min.chunk_position();
+        let last = max.chunk_position();
+        if first == last {
+            if !owns(first) {
+                return None;
+            }
+            return self.try_with_clear_chunk_path(min, max, destination, |biome| {
+                owns(first).then(|| apply(biome))
+            })?;
+        }
+        if last.x - first.x > 1 || last.y - first.y > 1 {
+            return None;
+        }
+
+        let positions =
+            (first.x..=last.x).flat_map(|x| (first.y..=last.y).map(move |z| Vector2::new(x, z)));
+        let mut chunks = [None, None, None, None];
+        for (slot, pos) in chunks.iter_mut().zip(positions) {
+            if !owns(pos) {
+                return None;
+            }
+            let TryResult::Present(chunk) = self.loaded_chunks.try_get(&pos) else {
+                return None;
+            };
+            *slot = Some(chunk);
+        }
+
+        let mut palettes = [None, None, None, None];
+        for (slot, chunk) in palettes.iter_mut().zip(chunks.iter().flatten()) {
+            let sections = &chunk.section;
+            *slot = Some((*chunk.key(), sections, sections.block_sections.try_read()?));
+        }
+        let palette_for = |pos| palettes.iter().flatten().find(|(chunk, ..)| *chunk == pos);
+        for position in BlockPos::iterate(min, max) {
+            let (pos, local) = position.chunk_and_chunk_relative_position();
+            let (_, sections, blocks) = palette_for(pos)?;
+            if !sections
+                .read_block_from_palettes(blocks, local)?
+                .to_state()
+                .is_air()
+            {
+                return None;
+            }
+        }
+
+        let (chunk, local) = destination.chunk_and_chunk_relative_position();
+        let (_, sections, _blocks) = palette_for(chunk)?;
+        let biomes = sections.biome_sections.try_read()?;
+        let id = sections.read_rough_biome_from_palettes(
+            &biomes,
+            local.x as usize,
+            local.y,
+            local.z as usize,
+        );
+        let biome = Biome::from_id(id.unwrap_or(0)).unwrap_or(&Biome::THE_VOID);
+        palettes
+            .iter()
+            .flatten()
+            .all(|(pos, ..)| owns(*pos))
+            .then(|| apply(biome))
+    }
+
     pub fn read_entity_chunk_sync<R, F: Fn(&SyncEntityChunk) -> R>(
         &self,
         coordinates: &Vector2<i32>,
@@ -1494,6 +1567,49 @@ mod tests {
     use pumpkin_data::block_properties::RedstoneOreLikeProperties;
     use std::cell::Cell;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn diagonal_regional_path_requires_all_four_chunks() {
+        let folder = TempDir::new().unwrap();
+        let level = Level::from_root_folder(
+            &LevelConfig::default(),
+            folder.path().to_path_buf(),
+            0,
+            Dimension::OVERWORLD,
+        );
+        let min = BlockPos::new(-1, 64, -1);
+        let destination = BlockPos::new(0, 64, 0);
+        // The item crosses diagonally, but its swept bounds also touch this corner.
+        let corner = ChunkData::empty_sync(0, -1);
+        let corner_pos = Vector2::new(0, -1);
+        for (x, z) in [(-1, -1), (-1, 0), (0, 0)] {
+            level
+                .loaded_chunks
+                .insert(Vector2::new(x, z), ChunkData::empty_sync(x, z));
+        }
+        let read = |owns_corner| {
+            level.try_with_clear_regional_path(
+                min,
+                destination,
+                destination,
+                |pos| owns_corner || pos != corner_pos,
+                |biome| biome.id,
+            )
+        };
+        assert_eq!(read(true), None);
+        level.loaded_chunks.insert(corner_pos, corner.clone());
+        assert_eq!(read(false), None);
+
+        corner.set_block_absolute_y(0, 64, 15, Block::STONE.default_state.id);
+        assert_eq!(read(true), None);
+        corner.set_block_absolute_y(0, 64, 15, Block::AIR.default_state.id);
+        let busy = corner.section.block_sections.write().unwrap();
+        assert_eq!(read(true), None);
+        drop(busy);
+
+        assert_eq!(read(true), Some(level.get_rough_biome(&destination).id));
+        level.shutdown().await;
+    }
 
     #[test]
     fn regional_batch_requires_a_current_owned_neighbor_snapshot() {

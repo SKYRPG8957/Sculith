@@ -157,11 +157,12 @@ entity's current chunk, and a regional job checks that assignment and
 residency before touching the counters. After a change of owner, the item
 keeps its most recent deadline so two close deadlines cannot advance it twice.
 An isolated airborne item can also move on the region clock while its swept
-bounds stay in one loaded chunk and touch only air. The owner pins the terrain
-and spatial indices through the update. The item keeps a separate motion
-deadline so the world and region cannot repeat a movement step. Ground and
-fluid contact, interaction, pickup, merging, expiry and entity packets are
-handled by the world. Native library loading disables regional item motion
+bounds touch only air in loaded chunks of the same owner. The owner pins the
+terrain and spatial indices through the update, including when the item crosses
+a chunk boundary. The separate motion deadline prevents a repeated step.
+Movement outside the region, ground and fluid contact, interaction, pickup,
+merging, expiry and entity packets are handled by the world. Native library
+loading disables regional item motion
 because native plugins can write live actor fields. Merge and despawn event
 handlers use the world clock, as do coordinated steps and sprints. Saved items
 retain their remaining timers and last position.

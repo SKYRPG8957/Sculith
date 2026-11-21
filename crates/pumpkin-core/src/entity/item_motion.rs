@@ -116,9 +116,6 @@ impl ItemEntity {
             return;
         }
         let destination = BlockPos::floored_v(position);
-        if destination.chunk_position() != chunk {
-            return;
-        }
         let next_bounds = Entity::make_bounding_box(
             entity.entity_type,
             position,
@@ -133,7 +130,7 @@ impl ItemEntity {
         let max = swept.max_block_pos();
         world
             .level
-            .try_with_clear_chunk_path(min, max, destination, |biome| {
+            .try_with_clear_regional_path(min, max, destination, owns, |biome| {
                 world.entity_index.try_move_isolated_item(
                     world,
                     entity.entity_id,
