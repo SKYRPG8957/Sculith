@@ -258,7 +258,7 @@ use pumpkin_data::damage::DamageScaling;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::{AttributeModifiersImpl, EnchantmentsImpl, Operation};
 use pumpkin_data::data_component_impl::{
-    EquipmentSlot, EquippableImpl, GliderImpl, ToolImpl, WeaponImpl,
+    BlocksAttacksImpl, EquipmentSlot, EquippableImpl, GliderImpl, ToolImpl, WeaponImpl,
 };
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::{EntityPose, EntityStatus, EntityType, MovementEmission};
@@ -3561,6 +3561,7 @@ impl Player {
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
 
         self.living_entity.tick(self, server);
+        self.update_bedrock_shield_sneaking();
 
         self.breath_manager.tick(self);
 
@@ -5269,41 +5270,60 @@ impl Player {
         if !matches!(self.client.as_ref(), ClientPlatform::Bedrock(_)) {
             return;
         }
-        if !self.get_entity().is_sneaking() {
-            if self.living_entity.is_blocking() {
-                self.living_entity.clear_active_hand();
-            }
-            return;
-        }
+        let living = &self.living_entity;
+        let may_block = living.entity.is_sneaking()
+            && self.has_client_loaded()
+            && !living.is_dead_or_dying()
+            && !self.is_spectator();
+        let shield = if may_block {
+            [Hand::Left, Hand::Right].into_iter().find_map(|hand| {
+                let stack = self.inventory.get_stack_in_hand(hand);
+                (!stack.is_empty()
+                    && stack.get_data_component::<BlocksAttacksImpl>().is_some()
+                    && !self.is_on_cooldown(stack.item.registry_key))
+                .then_some((hand, stack))
+            })
+        } else {
+            None
+        };
 
-        let is_blocking = self.living_entity.is_blocking();
-        let shield_hand_and_stack = [Hand::Left, Hand::Right].into_iter().find_map(|hand| {
-            let stack = self.inventory.get_stack_in_hand(hand);
-            (stack
-                .get_data_component::<pumpkin_data::data_component_impl::BlocksAttacksImpl>()
-                .is_some()
-                && !self.is_on_cooldown(stack.item.registry_key))
-            .then_some((hand, stack))
+        let current_hand = shield.as_ref().and_then(|_| {
+            *living
+                .active_hand
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
         });
+        let active = living
+            .item_in_use
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let active_blocking = active
+            .as_ref()
+            .and_then(|stack| stack.get_data_component::<BlocksAttacksImpl>());
 
-        match (is_blocking, shield_hand_and_stack) {
-            (true, Some((hand, stack))) => {
-                let current_hand = *self
-                    .living_entity
-                    .active_hand
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if current_hand != Some(hand) {
-                    self.living_entity.set_active_hand(hand, stack, 72000);
-                }
+        if let Some((hand, stack)) = shield {
+            let active_id = active.as_ref().map(|item| item.uid);
+            if current_hand == Some(hand)
+                && active_id == Some(stack.uid)
+                && active_blocking == stack.get_data_component::<BlocksAttacksImpl>()
+                && living.item_use_time.load(Ordering::Relaxed) > 0
+            {
+                return;
             }
-            (true, None) => {
-                self.living_entity.clear_active_hand();
+            let using_other_item = active_blocking.is_none() && active_id.is_some();
+            drop(active);
+            if using_other_item
+                && current_hand
+                    .zip(active_id)
+                    .is_some_and(|(hand, uid)| self.inventory.get_stack_in_hand(hand).uid == uid)
+            {
+                return;
             }
-            (false, Some((hand, stack))) => {
-                self.living_entity.set_active_hand(hand, stack, 72000);
-            }
-            (false, None) => {}
+            let duration = stack.get_max_use_time();
+            living.set_active_hand(hand, stack, duration);
+        } else if active_blocking.is_some() {
+            drop(active);
+            living.clear_active_hand();
         }
     }
 

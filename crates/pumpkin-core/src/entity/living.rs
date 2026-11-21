@@ -979,10 +979,11 @@ impl LivingEntity {
             pumpkin_data::game_event::GameEvent::ItemInteractStart,
         );
         self.item_use_time.store(duration, Ordering::Relaxed);
-        *self
+        let previous = self
             .item_in_use
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(stack);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace(stack);
         *self
             .active_hand
             .lock()
@@ -993,8 +994,10 @@ impl LivingEntity {
             .clear();
         self.set_living_flag(Self::USING_ITEM_FLAG, true);
         self.set_living_flag(Self::OFF_HAND_ACTIVE_FLAG, hand == Hand::Left);
-        if is_blocking {
-            self.set_bedrock_blocking(true);
+        if is_blocking
+            || previous.is_some_and(|item| item.get_data_component::<BlocksAttacksImpl>().is_some())
+        {
+            self.set_bedrock_blocking(is_blocking);
         }
     }
 
@@ -3223,7 +3226,14 @@ impl LivingEntity {
         position: Option<Vector3<f64>>,
         source: Option<&dyn EntityBase>,
     ) -> f32 {
-        if amount <= 0.0 || !self.is_blocking() {
+        if amount <= 0.0 {
+            return 0.0;
+        }
+        if let Some(player) = caller.get_player() {
+            // Equipment or cooldowns can change before the defending player ticks.
+            player.update_bedrock_shield_sneaking();
+        }
+        if !self.is_blocking() {
             return 0.0;
         }
         if source.is_some_and(|src| {
@@ -3255,6 +3265,8 @@ impl LivingEntity {
         }
 
         let player_pos = self.entity.pos.load();
+        // Direct hits can carry an attacker without a separate impact position.
+        let position = position.or_else(|| source.map(|actor| actor.get_entity().pos.load()));
         let angle_rad = position.map_or(std::f64::consts::PI, |pos| {
             let look_vec = Vector3::rotation_vector(0.0, f64::from(self.entity.head_yaw.load()));
             let mut to_source = pos - player_pos;

@@ -2,6 +2,7 @@ use std::any::Any;
 
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
+use crate::net::ClientPlatform;
 use pumpkin_data::item::Item;
 use pumpkin_util::Hand;
 
@@ -22,6 +23,10 @@ impl ItemBehaviour for ShieldItem {
         _pitch: f32,
         hand: Hand,
     ) {
+        if matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
+            player.update_bedrock_shield_sneaking();
+            return;
+        }
         let stack = player.inventory.get_stack_in_hand(hand);
         player
             .living_entity
