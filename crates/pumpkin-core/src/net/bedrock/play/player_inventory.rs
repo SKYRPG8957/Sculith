@@ -22,6 +22,7 @@ use pumpkin_protocol::{
         },
         network_item::{
             ContainerName, FullContainerName, NetworkItemDescriptor, NetworkItemStackDescriptor,
+            potion_contents_from_bedrock,
         },
         server::{
             cursor_item_drag::{CURSOR_ITEM_DRAG_START, CURSOR_ITEM_DRAG_STOP, SCursorItemDrag},
@@ -262,7 +263,11 @@ fn creative_stack(network_id: u32) -> Option<ItemStack> {
         entry.item_aux_value,
     )?;
     let limit = ItemStack::static_new_java(1, mapping.java_item).get_max_stack_size();
-    Some(ItemStack::new(limit, mapping.java_item))
+    let mut stack = ItemStack::new(limit, mapping.java_item);
+    if let Some(contents) = potion_contents_from_bedrock(entry.item_id, entry.item_aux_value) {
+        stack.set_data_component(contents);
+    }
+    Some(stack)
 }
 
 impl InventoryPlan {

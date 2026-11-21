@@ -13,6 +13,10 @@ use crate::{
     serial::{PacketRead, PacketWrite},
 };
 
+mod components;
+
+pub use components::potion_contents_from_bedrock;
+
 /// Describes a network item stack transmitted over the wire in Bedrock packets.
 ///
 /// Contains the item runtime ID, count, aux/metadata value, block runtime state,
@@ -147,24 +151,29 @@ impl NetworkItemDescriptor {
             return VarUInt(0).write(writer);
         }
 
-        let mut buf = Vec::new();
-        if self.nbt_data.is_empty() {
-            (0i16).write(&mut buf)?;
-        } else {
-            (-1i16).write(&mut buf)?;
-            (1i8).write(&mut buf)?;
-            self.nbt_data
-                .clone()
-                .write_to_writer_bedrock_disk(&mut buf)
-                .map_err(Error::other)?;
-        }
-        write_user_data_strings(&mut buf, &self.place_on_blocks)?;
-        write_user_data_strings(&mut buf, &self.destroy_blocks)?;
-        if self.id.0 == i32::from(BedrockItem::SHIELD.id) {
-            self.shield_blocking_tick.write(&mut buf)?;
-        }
+        let mut buf = Vec::with_capacity(10);
+        self.write_user_data_buffer(&mut buf)?;
         VarUInt(buf.len() as u32).write(writer)?;
         writer.write_all(&buf)
+    }
+
+    fn write_user_data_buffer<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
+        if self.nbt_data.is_empty() {
+            (0i16).write(writer)?;
+        } else {
+            (-1i16).write(writer)?;
+            (1i8).write(writer)?;
+            self.nbt_data
+                .clone()
+                .write_to_writer_bedrock_disk(&mut *writer)
+                .map_err(Error::other)?;
+        }
+        write_user_data_strings(writer, &self.place_on_blocks)?;
+        write_user_data_strings(writer, &self.destroy_blocks)?;
+        if self.id.0 == i32::from(BedrockItem::SHIELD.id) {
+            self.shield_blocking_tick.write(writer)?;
+        }
+        Ok(())
     }
 }
 
@@ -178,12 +187,13 @@ impl From<&ItemStack> for NetworkItemDescriptor {
                 |mapping| Self {
                     id: VarInt::from(mapping.bedrock_item.id),
                     stack_size: stack.item_count as u16,
-                    aux_value: VarUInt(mapping.bedrock_data),
+                    aux_value: VarUInt(
+                        components::potion_aux(stack, mapping.bedrock_item.id)
+                            .unwrap_or(mapping.bedrock_data),
+                    ),
                     block_runtime_id: VarInt::from(mapping.bedrock_block_state),
-                    nbt_data: Nbt::default(),
-                    place_on_blocks: Vec::default(),
-                    destroy_blocks: Vec::default(),
-                    shield_blocking_tick: 0,
+                    nbt_data: components::enchantment_nbt(stack),
+                    ..Self::default()
                 },
             )
         }
@@ -283,23 +293,17 @@ impl PacketRead for ItemStackWrapper {
 
 impl From<&ItemStack> for ItemStackWrapper {
     fn from(stack: &ItemStack) -> Self {
-        if stack.is_empty() {
-            Self::default()
-        } else {
-            JavaToBedrockItemMapping::from_java_item_id(stack.get_item().id).map_or(
-                Self::default(),
-                |mapping| Self {
-                    id: mapping.bedrock_item.id,
-                    stack_size: stack.item_count as u16,
-                    aux_value: VarUInt(mapping.bedrock_data),
-                    block_runtime_id: VarInt::from(mapping.bedrock_block_state),
-                    nbt_data: Nbt::default(),
-                    place_on_blocks: Vec::default(),
-                    destroy_blocks: Vec::default(),
-                    shield_blocking_tick: 0,
-                    net_id: Some(stack.uid),
-                },
-            )
+        let item = NetworkItemDescriptor::from(stack);
+        Self {
+            id: item.id.0 as i16,
+            stack_size: item.stack_size,
+            aux_value: item.aux_value,
+            block_runtime_id: item.block_runtime_id,
+            nbt_data: item.nbt_data,
+            place_on_blocks: item.place_on_blocks,
+            destroy_blocks: item.destroy_blocks,
+            shield_blocking_tick: item.shield_blocking_tick,
+            net_id: (item.id.0 != 0).then_some(stack.uid),
         }
     }
 }
@@ -382,25 +386,20 @@ impl PacketRead for NetworkItemStackDescriptor {
 
 impl From<&ItemStack> for NetworkItemStackDescriptor {
     fn from(stack: &ItemStack) -> Self {
-        if stack.is_empty() {
-            Self::default()
-        } else {
-            JavaToBedrockItemMapping::from_java_item_id(stack.get_item().id).map_or(
-                Self::default(),
-                |mapping| {
-                    // Empty NBT followed by empty can-place and can-destroy lists.
-                    let extra_data = vec![0; 10];
-
-                    Self {
-                        id: mapping.bedrock_item.id,
-                        stack_size: stack.item_count as u16,
-                        aux_value: VarUInt(mapping.bedrock_data),
-                        block_runtime_id: VarUInt(mapping.bedrock_block_state as u32),
-                        extra_data,
-                        net_id: Some(stack.uid),
-                    }
-                },
-            )
+        let item = NetworkItemDescriptor::from(stack);
+        if item.id.0 == 0 {
+            return Self::default();
+        }
+        let mut extra_data = Vec::with_capacity(10);
+        item.write_user_data_buffer(&mut extra_data)
+            .expect("server-generated item data can be serialized to a buffer");
+        Self {
+            id: item.id.0 as i16,
+            stack_size: item.stack_size,
+            aux_value: item.aux_value,
+            block_runtime_id: VarUInt(item.block_runtime_id.0 as u32),
+            extra_data,
+            net_id: Some(stack.uid),
         }
     }
 }
@@ -733,6 +732,79 @@ fn read_item_attributes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pumpkin_data::{enchantment::Enchantment, item::Item, potion::Potion};
+
+    #[test]
+    fn preserves_potion_variants_in_item_descriptors() {
+        for (item, bedrock, aux, potion) in [
+            (&Item::POTION, &BedrockItem::POTION, 21, &Potion::HEALING),
+            (
+                &Item::SPLASH_POTION,
+                &BedrockItem::SPLASH_POTION,
+                16,
+                &Potion::STRONG_SWIFTNESS,
+            ),
+            (
+                &Item::LINGERING_POTION,
+                &BedrockItem::LINGERING_POTION,
+                46,
+                &Potion::INFESTED,
+            ),
+        ] {
+            let mut stack = ItemStack::new(1, item);
+            let contents = potion_contents_from_bedrock(bedrock.id, aux).unwrap();
+            assert_eq!(contents.potion_id, Some(i32::from(potion.id)));
+            stack.set_data_component(contents);
+            let item = NetworkItemDescriptor::from(&stack);
+            assert_eq!(item.id.0, i32::from(bedrock.id));
+            for aux_value in [
+                item.aux_value,
+                ItemStackWrapper::from(&stack).aux_value,
+                NetworkItemStackDescriptor::from(&stack).aux_value,
+            ] {
+                assert_eq!(aux_value, VarUInt(aux));
+            }
+            let mut bytes = Vec::new();
+            item.write_item_instance(&mut bytes).unwrap();
+            let decoded = NetworkItemDescriptor::read_item_instance(&mut bytes.as_slice()).unwrap();
+            assert_eq!(decoded.aux_value, VarUInt(aux));
+        }
+        assert!(potion_contents_from_bedrock(BedrockItem::POTION.id, 100).is_none());
+        assert!(potion_contents_from_bedrock(BedrockItem::ARROW.id, 21).is_none());
+    }
+
+    #[test]
+    fn writes_bedrock_enchantments_to_equipment_and_inventory() {
+        let mut stack = ItemStack::new(1, &Item::DIAMOND_CHESTPLATE);
+        stack.add_enchantment(&Enchantment::PROTECTION, 4);
+        stack.add_enchantment(&Enchantment::UNBREAKING, 3);
+        let mut bytes = Vec::new();
+        NetworkItemDescriptor::from(&stack)
+            .write(&mut bytes)
+            .unwrap();
+        let equipment = NetworkItemDescriptor::read(&mut bytes.as_slice()).unwrap();
+        bytes.clear();
+        ItemStackWrapper::from(&stack).write(&mut bytes).unwrap();
+        let wrapped = ItemStackWrapper::read(&mut bytes.as_slice()).unwrap();
+        assert_eq!(wrapped.net_id, Some(stack.uid));
+        bytes.clear();
+        NetworkItemStackDescriptor::from(&stack)
+            .write(&mut bytes)
+            .unwrap();
+        let inventory = NetworkItemDescriptor::read(&mut bytes.as_slice()).unwrap();
+        for nbt in [&equipment.nbt_data, &wrapped.nbt_data, &inventory.nbt_data] {
+            let entries: Vec<_> = nbt
+                .get_list("ench")
+                .unwrap()
+                .iter()
+                .map(|tag| {
+                    let tag = tag.extract_compound().unwrap();
+                    (tag.get_short("id").unwrap(), tag.get_short("lvl").unwrap())
+                })
+                .collect();
+            assert_eq!(entries, [(0, 4), (17, 3)]);
+        }
+    }
 
     #[test]
     fn reads_item_metadata_and_filter_strings_in_both_encodings() {
