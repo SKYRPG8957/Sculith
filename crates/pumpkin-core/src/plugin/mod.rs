@@ -7,7 +7,7 @@ use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     pin::Pin,
-    sync::{Arc, RwLock as SyncRwLock, atomic::AtomicBool},
+    sync::{Arc, RwLock as SyncRwLock, RwLockReadGuard, atomic::AtomicBool},
     thread::ThreadId,
     time::Duration,
 };
@@ -38,7 +38,7 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Bump this whenever the public plugin API or any event layout changes in a way
 /// that makes old binary plugins incompatible.
-pub const PLUGIN_API_VERSION: u32 = 29;
+pub const PLUGIN_API_VERSION: u32 = 30;
 
 const PLUGIN_DIR: &str = "./plugins";
 
@@ -201,6 +201,7 @@ pub struct PluginManager {
     // Background task for hot reloading
     hot_reload_task: RwLock<Option<JoinHandle<()>>>,
     hot_reload_enabled: AtomicBool,
+    native_code_loaded: SyncRwLock<bool>,
     // Thread ID of the thread that created the plugin manager.
     // Permission prompts use rustyline, which is only safe on this thread.
     main_thread_id: ThreadId,
@@ -257,7 +258,23 @@ impl PluginManager {
             state_notify: Arc::new(Notify::new()),
             hot_reload_task: RwLock::new(None),
             hot_reload_enabled: AtomicBool::new(false),
+            native_code_loaded: SyncRwLock::new(false),
             main_thread_id: std::thread::current().id(),
+        }
+    }
+
+    pub(crate) fn try_without_native_code(&self) -> Option<RwLockReadGuard<'_, bool>> {
+        let loaded = self.native_code_loaded.try_read().ok()?;
+        (!*loaded).then_some(loaded)
+    }
+
+    fn before_plugin_load(&self, path: &Path) {
+        if NativePluginLoader.can_load(path) {
+            // Library startup can retain native references before metadata validation.
+            *self
+                .native_code_loaded
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
         }
     }
 
@@ -725,6 +742,7 @@ impl PluginManager {
             let mut loader_found = false;
             for loader in &loaders {
                 if loader.can_load(&path) {
+                    self.before_plugin_load(&path);
                     match loader.load(&path).await {
                         Ok((instance, metadata, loader_data)) => {
                             let plugin_override =
@@ -932,6 +950,7 @@ impl PluginManager {
         let loaders = self.loaders.read().await.clone();
         for loader in &loaders {
             if loader.can_load(path) {
+                self.before_plugin_load(path);
                 let (instance, metadata, loader_data) = loader.load(path).await?;
 
                 let plugin_override = server.advanced_config.plugins.overrides.get(&metadata.name);

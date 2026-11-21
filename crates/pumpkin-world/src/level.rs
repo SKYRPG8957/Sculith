@@ -1257,6 +1257,45 @@ impl Level {
         Some(read(chunk.value(), state))
     }
 
+    /// Runs a local update with an all-air path and its destination biome pinned.
+    /// The callback must not acquire the chunk or either palette lock again.
+    pub fn try_with_clear_chunk_path<R>(
+        &self,
+        min: BlockPos,
+        max: BlockPos,
+        destination: BlockPos,
+        apply: impl FnOnce(&'static Biome) -> R,
+    ) -> Option<R> {
+        let (chunk_pos, relative) = destination.chunk_and_chunk_relative_position();
+        if min.chunk_position() != chunk_pos || max.chunk_position() != chunk_pos {
+            return None;
+        }
+        let TryResult::Present(chunk) = self.loaded_chunks.try_get(&chunk_pos) else {
+            return None;
+        };
+        let sections = &chunk.section;
+        let blocks = sections.block_sections.try_read()?;
+        for position in BlockPos::iterate(min, max) {
+            let (_, local) = position.chunk_and_chunk_relative_position();
+            if !sections
+                .read_block_from_palettes(&blocks, local)?
+                .to_state()
+                .is_air()
+            {
+                return None;
+            }
+        }
+        let biomes = sections.biome_sections.try_read()?;
+        let id = sections.read_rough_biome_from_palettes(
+            &biomes,
+            relative.x as usize,
+            relative.y,
+            relative.z as usize,
+        );
+        let biome = Biome::from_id(id.unwrap_or(0)).unwrap_or(&Biome::THE_VOID);
+        Some(apply(biome))
+    }
+
     pub fn read_entity_chunk_sync<R, F: Fn(&SyncEntityChunk) -> R>(
         &self,
         coordinates: &Vector2<i32>,

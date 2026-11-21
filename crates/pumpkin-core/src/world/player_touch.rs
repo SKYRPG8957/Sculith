@@ -36,12 +36,16 @@ pub(super) fn touch_entities(world: &World, player: &Arc<Player>) {
     let mut orbs = Vec::new();
     // Removed entities may still be indexed; vanilla's section lookup no longer has them
     for entity in world.get_entities_at_box(&area) {
-        if !entity.receives_player_touch() || entity.get_entity().is_removed() {
+        let base = entity.get_entity();
+        if !entity.receives_player_touch() || base.is_removed() {
             continue;
         }
-        if entity.get_entity().entity_type == &EntityType::EXPERIENCE_ORB {
+        if base.entity_type == &EntityType::EXPERIENCE_ORB {
             orbs.push(entity);
-        } else {
+            continue;
+        }
+        let motion = base.hold_item_motion();
+        if motion.is_none() || area.intersects(&base.bounding_box.load()) {
             entity.on_player_collision(player);
         }
     }

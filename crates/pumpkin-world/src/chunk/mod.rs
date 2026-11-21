@@ -551,18 +551,26 @@ impl ChunkSections {
         y: i32,
         relative_z: usize,
     ) -> Option<u8> {
-        let y = y - self.min_y;
-        if y < 0 {
-            None
-        } else {
-            let relative_y = y as usize;
-            self.get_noise_biome(
-                relative_y / BlockPalette::SIZE,
-                relative_x >> 2 & 3,
-                relative_y >> 2 & 3,
-                relative_z >> 2 & 3,
-            )
-        }
+        let palettes = self
+            .biome_sections
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.read_rough_biome_from_palettes(&palettes, relative_x, y, relative_z)
+    }
+
+    pub(crate) fn read_rough_biome_from_palettes(
+        &self,
+        palettes: &[BiomePalette],
+        relative_x: usize,
+        y: i32,
+        relative_z: usize,
+    ) -> Option<u8> {
+        let y = usize::try_from(y.checked_sub(self.min_y)?).ok()?;
+        Some(palettes.get(y / BlockPalette::SIZE)?.get(
+            relative_x >> 2 & 3,
+            y >> 2 & 3,
+            relative_z >> 2 & 3,
+        ))
     }
 
     /// Gets the given block in the chunk

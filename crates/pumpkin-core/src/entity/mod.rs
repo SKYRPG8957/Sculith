@@ -92,6 +92,7 @@ pub mod falling;
 pub mod hunger;
 pub mod interaction;
 pub mod item;
+mod item_motion;
 pub mod item_steerable;
 pub mod lightning;
 pub mod living;
@@ -246,6 +247,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         true
     }
     fn write_nbt(&self, nbt: &mut NbtCompound) {
+        let _motion = self.get_entity().hold_item_motion();
         self.get_entity().write_nbt(nbt);
         if let Some(living) = self.get_living_entity() {
             living.write_living_nbt(nbt);
@@ -276,6 +278,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     }
 
     fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
+        let _motion = self.get_entity().hold_item_motion();
         self.get_entity()
             .read_nbt_with_max_air_supply(nbt, self.get_max_air_supply());
         if let Some(living) = self.get_living_entity() {
@@ -995,6 +998,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
 
     fn set_on_fire_for_ticks(&self, ticks: u32) {
         let entity = self.get_entity();
+        let _motion = entity.hold_item_motion();
         let mut event = crate::plugin::api::events::entity::entity_combust::EntityCombustEvent::new(
             entity.entity_id,
             ticks as f32 / 20.0,
@@ -1694,6 +1698,7 @@ pub struct Entity {
     pub velocity_dirty: AtomicBool,
     /// velocity goes to the own client
     pub sync_velocity: AtomicBool,
+    item_motion: Option<Box<std::sync::Mutex<item_motion::ItemMotion>>>,
     /// Unsent entity pushes on a player. Bedrock clients don't predict them, so they stay
     /// pending at full size until `SetActorMotion` can layer them on the last client delta.
     pub push_impulse: AtomicCell<Vector3<f64>>,
@@ -1965,6 +1970,7 @@ impl Entity {
             movement_multiplier: AtomicCell::new(Vector3::default()),
             velocity_dirty: AtomicBool::new(true),
             sync_velocity: AtomicBool::new(false),
+            item_motion: (entity_type == &EntityType::ITEM).then(Box::default),
             push_impulse: AtomicCell::new(Vector3::default()),
             removed: AtomicBool::new(false),
             last_sent_yaw: AtomicU8::new(0),
@@ -1977,17 +1983,26 @@ impl Entity {
     }
 
     pub fn add_velocity(&self, velocity: Vector3<f64>) {
+        let _motion = self.hold_item_motion();
         self.set_velocity(self.velocity.load() + velocity);
     }
 
     pub fn set_velocity(&self, velocity: Vector3<f64>) {
+        let _motion = self.hold_item_motion();
         self.velocity.store(velocity);
         self.send_velocity();
+    }
+
+    /// Changes the velocity without sending a packet immediately.
+    pub fn store_velocity(&self, velocity: Vector3<f64>) {
+        let _motion = self.hold_item_motion();
+        self.velocity.store(velocity);
     }
 
     /// Updates the world reference for this entity.
     /// Called when the entity changes dimensions (e.g., through a nether portal).
     pub fn set_world(&self, world: Arc<World>) {
+        let _motion = self.hold_item_motion();
         let block_pos = self.block_pos.load();
         let biome = world.level.get_rough_biome(&block_pos);
         self.current_biome.store(Arc::new(biome));
@@ -2350,14 +2365,30 @@ impl Entity {
     ///
     /// This function calculates the new position, block position, and chunk position based on the provided coordinates. If any of these values change, the corresponding fields are updated.
     pub fn set_pos(&self, new_position: Vector3<f64>) {
+        let _motion = self.hold_item_motion();
+        self.set_pos_with(
+            new_position,
+            || {
+                self.bounding_box.store(Self::make_bounding_box(
+                    self.entity_type,
+                    new_position,
+                    &self.entity_dimension.load(),
+                ));
+            },
+            |position| self.world.load().level.get_rough_biome(&position),
+        );
+    }
+
+    fn set_pos_with(
+        &self,
+        new_position: Vector3<f64>,
+        set_bounds: impl FnOnce(),
+        biome_at: impl FnOnce(BlockPos) -> &'static Biome,
+    ) {
         let pos = self.pos.load();
         if pos != new_position {
             self.pos.store(new_position);
-            self.bounding_box.store(Self::make_bounding_box(
-                self.entity_type,
-                new_position,
-                &self.entity_dimension.load(),
-            ));
+            set_bounds();
 
             let floor_x = new_position.x.floor() as i32;
             let floor_y = new_position.y.floor() as i32;
@@ -2373,8 +2404,7 @@ impl Entity {
                 let new_bp = BlockPos(new_block_pos);
                 self.block_pos.store(new_bp);
 
-                let world = self.world.load();
-                let biome = world.level.get_rough_biome(&new_bp);
+                let biome = biome_at(new_bp);
                 self.current_biome.store(Arc::new(biome));
                 self.last_biome_update_pos.store(new_bp);
 
@@ -2729,6 +2759,7 @@ impl Entity {
     /// `combat::knockback_after_resistance` first; callers modelling vanilla's raw
     /// `Entity.push` (such as the ender dragon) pass `strength` unscaled.
     pub fn apply_knockback(&self, strength: f64, mut x: f64, mut z: f64, attacker: Option<&Self>) {
+        let _motion = self.hold_item_motion();
         if strength <= 0.0 {
             // No vanilla knockback, but plugins can still add one
             if let Some(knockback) =
@@ -2987,6 +3018,7 @@ impl Entity {
     /// Vanilla `Entity.push(Vec3)`. A player's pushes are also kept apart for Bedrock,
     /// whose client doesn't predict them.
     pub fn push_by(&self, impulse: Vector3<f64>) {
+        let _motion = self.hold_item_motion();
         self.velocity.store(self.velocity.load() + impulse);
         self.velocity_dirty.store(true, Ordering::SeqCst);
         if self.entity_type == &EntityType::PLAYER {
@@ -2996,6 +3028,7 @@ impl Entity {
 
     /// `push_by` on the pusher in its own `pushEntities`, which stays off the Bedrock impulse.
     pub fn push_back_by(&self, impulse: Vector3<f64>) {
+        let _motion = self.hold_item_motion();
         self.velocity.store(self.velocity.load() + impulse);
         self.velocity_dirty.store(true, Ordering::SeqCst);
     }
@@ -3304,6 +3337,7 @@ impl Entity {
     }
 
     pub fn move_pos(&self, delta: Vector3<f64>) {
+        let _motion = self.hold_item_motion();
         self.set_pos(self.pos.load() + delta);
     }
 
@@ -3314,6 +3348,7 @@ impl Entity {
         if caller.get_player().is_some() {
             return;
         }
+        let _item_motion = self.hold_item_motion();
 
         if self.no_physics.load(Ordering::Relaxed) {
             self.move_pos(motion);
@@ -3827,6 +3862,7 @@ impl Entity {
 
     /// Extinguishes this entity.
     pub fn extinguish(&self) {
+        let _motion = self.hold_item_motion();
         self.fire_ticks.store(0, Ordering::Relaxed);
     }
 
@@ -4518,6 +4554,7 @@ impl Entity {
     }
 
     pub fn set_pose(&self, pose: EntityPose) {
+        let _motion = self.hold_item_motion();
         if self.pose.load() == pose {
             return;
         }
@@ -4566,6 +4603,7 @@ impl Entity {
 
     /// Vanilla `refreshDimensions`: size and bounding box for the current pose.
     pub fn refresh_dimensions(&self) {
+        let _motion = self.hold_item_motion();
         let mut metadata = SyncedActorDataList::new();
         self.refresh_dimensions_into(&mut metadata);
         self.send_bedrock_actor_data(&metadata);
@@ -4757,6 +4795,7 @@ impl Entity {
         pitch: Option<f32>,
         world: &World,
     ) {
+        let _motion = self.hold_item_motion();
         // Update server-side position and bounding box
         self.set_pos(position);
         if let Some(yaw) = yaw {
@@ -6101,6 +6140,7 @@ impl Entity {
 
 impl Entity {
     pub fn write_nbt(&self, nbt: &mut NbtCompound) {
+        let _motion = self.hold_item_motion();
         let position = self.pos.load();
         nbt.put_string(
             "id",
@@ -6247,6 +6287,7 @@ impl Entity {
     }
 
     fn read_nbt_with_max_air_supply(&self, nbt: &NbtCompound, max_air_supply: i32) {
+        let _motion = self.hold_item_motion();
         self.read_placement_nbt(nbt);
         self.fire_ticks.store(
             i32::from(nbt.get_numeric_short("Fire").unwrap_or(0)),

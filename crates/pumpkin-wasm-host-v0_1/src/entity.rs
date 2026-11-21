@@ -153,8 +153,7 @@ impl HostEntity for PluginHostState {
         let entity = self.get(&entity)?;
         entity
             .get_entity()
-            .velocity
-            .store(pumpkin_util::math::vector3::Vector3::new(
+            .store_velocity(pumpkin_util::math::vector3::Vector3::new(
                 velocity.0, velocity.1, velocity.2,
             ));
         Ok(())

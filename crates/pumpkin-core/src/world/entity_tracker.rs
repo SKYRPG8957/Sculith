@@ -197,6 +197,7 @@ impl TrackedEntity {
     /// Vanilla `ServerEntity.sendChanges`. Non-player entities only.
     pub fn send_changes(&self, world: &World) {
         let entity = self.entity.get_entity();
+        let _motion = entity.hold_item_motion();
         if entity.is_removed() {
             return;
         }

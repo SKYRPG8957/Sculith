@@ -41,7 +41,7 @@ use crate::world::RegionId;
 use crate::world::entity_islands::{self, AuditedReach};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ItemTimerOwner {
+pub(super) enum ItemTimerOwner {
     World,
     Region(RegionId),
 }
@@ -53,15 +53,19 @@ pub(crate) enum ItemTimerStep {
 }
 
 #[derive(Default)]
-struct ItemClock {
+pub(super) struct ItemClock {
     last: Option<(ItemTimerOwner, std::time::Instant)>,
 }
 
 impl ItemClock {
-    fn claim(&mut self, owner: ItemTimerOwner, deadline: TickDeadline) -> bool {
-        if let Some((previous, at)) = self.last
-            && (deadline.at <= at || (previous != owner && deadline.at - at < deadline.period))
-        {
+    pub(super) fn can_claim(&self, owner: ItemTimerOwner, deadline: TickDeadline) -> bool {
+        self.last.is_none_or(|(previous, at)| {
+            deadline.at > at && (previous == owner || deadline.at - at >= deadline.period)
+        })
+    }
+
+    pub(super) fn claim(&mut self, owner: ItemTimerOwner, deadline: TickDeadline) -> bool {
+        if !self.can_claim(owner, deadline) {
             return false;
         }
         self.last = Some((owner, deadline.at));
@@ -133,6 +137,7 @@ const MERGE_DISTANCE: f64 = 0.5;
 
 impl ItemEntity {
     pub const DEFAULT_PICKUP_DELAY: u8 = 10;
+    pub(super) const AIR_DRAG: f64 = 0.98;
 
     pub fn new(entity: Entity, item_stack: ItemStack) -> Self {
         entity.velocity.store(Vector3::new(
@@ -283,6 +288,16 @@ impl ItemEntity {
 
     #[expect(clippy::too_many_lines)]
     fn try_merge_with(&self, other: &Self) {
+        let _motion = other.entity.hold_item_motion();
+        if !self
+            .entity
+            .bounding_box
+            .load()
+            .expand(MERGE_DISTANCE, 0.0, MERGE_DISTANCE)
+            .intersects(&other.entity.bounding_box.load())
+        {
+            return;
+        }
         // Always lock in entity_id order to prevent deadlock when two
         // items try to merge with each other concurrently.
         let (low, high) = if self.entity.entity_id < other.entity.entity_id {
@@ -490,18 +505,18 @@ impl ItemEntity {
         owner: RegionId,
         deadline: TickDeadline,
         still_owned: impl FnOnce() -> bool,
-    ) {
+    ) -> bool {
         let Ok(stack) = self.item_stack.try_lock() else {
-            return;
+            return false;
         };
         let Ok(mut clock) = self.clock.try_lock() else {
-            return;
+            return false;
         };
         if stack.is_empty()
             || !still_owned()
             || !clock.claim(ItemTimerOwner::Region(owner), deadline)
         {
-            return;
+            return false;
         }
 
         self.decrement_pickup_delay();
@@ -510,23 +525,46 @@ impl ItemEntity {
             if age < LIFETIME {
                 self.item_age.store(age + 1, Relaxed);
             }
+            return age < LIFETIME - 1;
         }
+        true
     }
 
-    pub(crate) fn tick_with_time(
+    pub(crate) fn tick_from_world(
         &self,
         caller: &dyn EntityBase,
         server: &Server,
         time: ItemTimerStep,
+        deadline: Option<TickDeadline>,
     ) {
-        let entity = &self.entity;
-        if self
+        let (_permit, advance_motion) = self.entity.begin_item_world_tick(deadline);
+        if advance_motion {
+            let entity = &self.entity;
+            entity.tick_count.fetch_add(1, Relaxed);
+            if entity.has_vehicle() {
+                entity.velocity.store(Vector3::default());
+            }
+            self.tick_with_time(caller, server, time);
+        } else if !self.entity.is_removed() && !self.remove_empty_stack() {
+            self.process_age_and_merge(self.tick_timers(time));
+        }
+    }
+
+    fn remove_empty_stack(&self) -> bool {
+        let empty = self
             .item_stack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
-        {
-            entity.remove();
+            .is_empty();
+        if empty {
+            self.entity.remove();
+        }
+        empty
+    }
+
+    fn tick_with_time(&self, caller: &dyn EntityBase, server: &Server, time: ItemTimerStep) {
+        let entity = &self.entity;
+        if self.remove_empty_stack() {
             return;
         }
 
@@ -536,6 +574,25 @@ impl ItemEntity {
             return;
         }
 
+        let advance_time = self.tick_timers(time);
+
+        let original_velo = entity.velocity.load();
+        entity
+            .velocity
+            .store(self.apply_fluid_drag_or_gravity(original_velo));
+        self.update_no_physics_and_push_out();
+
+        let move_velo = entity.velocity.load(); // In case push_out_of_blocks modifies it
+        if self.should_tick_move(move_velo) {
+            self.move_and_apply_friction(caller, move_velo);
+        }
+
+        if self.process_age_and_merge(advance_time) {
+            self.mark_needs_sync(caller, original_velo);
+        }
+    }
+
+    fn tick_timers(&self, time: ItemTimerStep) -> bool {
         let advance_time = match time {
             ItemTimerStep::Region => false,
             ItemTimerStep::World(deadline) => {
@@ -554,24 +611,10 @@ impl ItemEntity {
         if advance_time {
             self.decrement_pickup_delay();
         }
-
-        let original_velo = entity.velocity.load();
-        entity
-            .velocity
-            .store(self.apply_fluid_drag_or_gravity(original_velo));
-        self.update_no_physics_and_push_out();
-
-        let move_velo = entity.velocity.load(); // In case push_out_of_blocks modifies it
-        if self.should_tick_move(move_velo) {
-            self.move_and_apply_friction(caller, move_velo);
-        }
-
-        if self.process_age_and_merge(advance_time) {
-            self.mark_needs_sync(caller, original_velo);
-        }
+        advance_time
     }
 
-    fn apply_fluid_drag_or_gravity(&self, mut velo: Vector3<f64>) -> Vector3<f64> {
+    pub(super) fn apply_fluid_drag_or_gravity(&self, mut velo: Vector3<f64>) -> Vector3<f64> {
         let entity = &self.entity;
 
         if entity.touching_water.load(Ordering::SeqCst) && entity.water_height.load() > 0.1 {
@@ -635,7 +678,7 @@ impl ItemEntity {
         entity.tick_block_collisions(caller);
 
         // air drag
-        let air_drag = 0.98;
+        let air_drag = Self::AIR_DRAG;
         let mut friction = air_drag;
         let on_ground = entity.on_ground.load(Ordering::SeqCst);
 
@@ -703,7 +746,12 @@ impl ItemEntity {
         // comes from the block effects, so it must not be applied a second time.
         let in_fluid = !entity.update_fluid_interaction(caller).is_empty();
 
-        if in_fluid || entity.velocity.load().sub(&original_velo).length_squared() > 0.01 {
+        self.mark_velocity_change(original_velo, in_fluid);
+    }
+
+    pub(super) fn mark_velocity_change(&self, original: Vector3<f64>, in_fluid: bool) {
+        let entity = &self.entity;
+        if in_fluid || entity.velocity.load().sub(&original).length_squared() > 0.01 {
             entity.velocity_dirty.store(true, Ordering::SeqCst);
         }
     }
@@ -760,6 +808,7 @@ impl EntityBase for ItemEntity {
     }
 
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        let _motion = self.entity.hold_item_motion();
         self.tick_with_time(caller, server, ItemTimerStep::World(None));
     }
 
@@ -786,6 +835,7 @@ impl EntityBase for ItemEntity {
     ) -> bool {
         // Vanilla `ItemEntity.hurtServer`.
         let entity = &self.entity;
+        let _motion = entity.hold_item_motion();
         if entity.is_invulnerable_to(&damage_type, cause) {
             return false;
         }
@@ -846,6 +896,7 @@ impl EntityBase for ItemEntity {
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
+        let _motion = self.entity.hold_item_motion();
         if self.pickup_delay.load(Ordering::Relaxed) > 0 {
             return;
         }

@@ -10,6 +10,8 @@ use crate::entity::mob::has_game_event_listener;
 use crate::entity::player::Player;
 use crossbeam::atomic::AtomicCell;
 
+use super::World;
+
 type Registry = Vec<Arc<dyn EntityBase>>;
 type PlayerRegistry = Vec<Arc<Player>>;
 type Cell = [i32; 3];
@@ -441,6 +443,49 @@ impl EntityIndex {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         index.update(entity_id, &area);
         bounds.store(area);
+    }
+
+    /// Pins both current indices while committing an isolated movement.
+    pub fn try_move_isolated_item(
+        &self,
+        world: &World,
+        entity_id: i32,
+        swept: BoundingBox,
+        bounds: BoundingBox,
+        apply: impl FnOnce() -> bool,
+    ) {
+        let entities = world.entities.load_full();
+        let players = world.players.load_full();
+        // Even same-cell movement updates bounds through the read locks.
+        let (Ok(player_index), Ok(mut index)) = (self.players.try_write(), self.inner.try_write())
+        else {
+            return;
+        };
+        if !index.matches(&entities) || !player_index.matches(&players) {
+            return;
+        }
+        let Some(&own_slot) = index.slots.get(&entity_id) else {
+            return;
+        };
+        if index
+            .candidates(&swept, |_| true)
+            .into_iter()
+            .any(|slot| slot != own_slot && index.intersects(slot, &swept))
+            || player_index
+                .candidates(&swept)
+                .into_iter()
+                .any(|slot| player_index.intersects(slot, &swept))
+        {
+            return;
+        }
+        if !Arc::ptr_eq(&entities, &world.entities.load())
+            || !Arc::ptr_eq(&players, &world.players.load())
+        {
+            return;
+        }
+        if apply() {
+            index.update(entity_id, &bounds);
+        }
     }
 
     pub fn set_player_bounds(

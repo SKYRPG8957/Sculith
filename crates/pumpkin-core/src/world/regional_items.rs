@@ -118,15 +118,19 @@ impl World {
             if !Arc::ptr_eq(&published, &plan) {
                 return;
             }
-            let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk) else {
+            let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&chunk) else {
                 continue;
             };
-            item.advance_regional_timers(owner, deadline, || {
+            let can_move = item.advance_regional_timers(owner, deadline, || {
                 !base.is_removed()
                     && std::ptr::eq(base.world.load().as_ref(), self)
                     && base.chunk_pos.load() == chunk
                     && owns(chunk)
             });
+            drop(loaded);
+            if can_move && let Some(_native) = server.plugin_manager.try_without_native_code() {
+                item.try_regional_motion(self, chunk, owner, deadline, owns);
+            }
         }
     }
 }

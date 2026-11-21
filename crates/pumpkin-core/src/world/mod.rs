@@ -213,6 +213,7 @@ use weather::Weather;
 const MAX_LIGHT_LEVEL: u8 = 15;
 const LIGHTNING_ROD_SEARCH_RADIUS: i32 = 128;
 const CHUNK_TICK_BATCH_SIZE: usize = 32;
+pub(crate) const COLLISION_LOOK_BELOW: f64 = 0.50001;
 pub const MOON_BRIGHTNESS_PER_PHASE: [f32; 8] = [1.0, 0.75, 0.5, 0.25, 0.0, 0.25, 0.5, 0.75];
 
 fn bedrock_chest_block_actor(state_id: BlockStateId, position: BlockPos) -> Option<NbtCompound> {
@@ -1870,11 +1871,6 @@ impl World {
             order::set_entity_order(Some(first_order + index as u64 * order::ORDERS_PER_ENTITY));
 
             let base = entity.get_entity();
-            base.tick_count.fetch_add(1, Relaxed);
-            // Vanilla `rideTick`: a rider starts its tick without motion
-            if base.has_vehicle() {
-                base.velocity.store(Vector3::default());
-            }
             if let Some(item) = (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ItemEntity>()
             {
                 let time = if item_timers.contains(base.entity_id) {
@@ -1882,8 +1878,13 @@ impl World {
                 } else {
                     ItemTimerStep::World(deadline)
                 };
-                item.tick_with_time(entity.as_ref(), server_ref, time);
+                item.tick_from_world(entity.as_ref(), server_ref, time, deadline);
             } else {
+                base.tick_count.fetch_add(1, Relaxed);
+                // Vanilla `rideTick`: a rider starts its tick without motion.
+                if base.has_vehicle() {
+                    base.velocity.store(Vector3::default());
+                }
                 entity.tick(entity.as_ref(), server_ref);
             }
         };
@@ -2745,7 +2746,7 @@ impl World {
 
         let mut positions = Vec::new();
 
-        let min = BlockPos::floored_v(bounding_box.min.add_raw(0.0, -0.50001, 0.0));
+        let min = BlockPos::floored_v(bounding_box.min.add_raw(0.0, -COLLISION_LOOK_BELOW, 0.0));
         let max = bounding_box.max_block_pos();
         let pos_iter = BlockPos::iterate(min, max);
 
@@ -5421,6 +5422,7 @@ impl World {
         let registered = self.get_entity_by_id(entity.get_entity().entity_id);
         let entity = registered.as_deref().unwrap_or(entity);
         let base_entity = entity.get_entity();
+        let _motion = base_entity.hold_item_motion();
         if base_entity
             .removal_reason
             .compare_exchange(None, Some(RemovalReason::Discarded))

@@ -156,9 +156,15 @@ steps from the region owner. The world publishes the assignment from the
 entity's current chunk, and a regional job checks that assignment and
 residency before touching the counters. After a change of owner, the item
 keeps its most recent deadline so two close deadlines cannot advance it twice.
-Motion, collisions, pickup, merging and expired-item removal still use the
-world step. Merge and despawn event handlers use the world clock, as do
-coordinated steps and sprints. Saved items retain their remaining timers.
+An isolated airborne item can also move on the region clock while its swept
+bounds stay in one loaded chunk and touch only air. The owner pins the terrain
+and spatial indices through the update. The item keeps a separate motion
+deadline so the world and region cannot repeat a movement step. Ground and
+fluid contact, interaction, pickup, merging, expiry and entity packets are
+handled by the world. Native library loading disables regional item motion
+because native plugins can write live actor fields. Merge and despawn event
+handlers use the world clock, as do coordinated steps and sprints. Saved items
+retain their remaining timers and last position.
 
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
@@ -176,7 +182,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 28.
+Native plugins use ABI 30.
 
 ## Shared resource delivery
 

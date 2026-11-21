@@ -276,8 +276,10 @@ pub fn throw_target(attacker: &Entity, target: &dyn EntityBase) {
     let dx = target_pos.x - my_pos.x;
     let dz = target_pos.z - my_pos.z;
     let dist = dx.hypot(dz).max(0.001);
-    let vel = target.get_entity().velocity.load();
-    target.get_entity().velocity.store(Vector3::new(
+    let target = target.get_entity();
+    let _motion = target.hold_item_motion();
+    let vel = target.velocity.load();
+    target.velocity.store(Vector3::new(
         vel.x + (dx / dist) * 0.5,
         0.5,
         vel.z + (dz / dist) * 0.5,
