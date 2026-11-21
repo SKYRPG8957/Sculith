@@ -192,13 +192,10 @@ impl BedrockClient {
             PlayerAction::DropItem => {
                 player.drop_held_item(false);
             }
-            PlayerAction::StartGliding => {
-                Self::start_gliding(player, server);
-            }
-            PlayerAction::StopGliding => {
-                Self::stop_gliding(
-                    player,
-                    player.get_entity().on_ground.load(Ordering::Relaxed),
+            PlayerAction::StartGliding | PlayerAction::StopGliding => {
+                player.apply_bedrock_glide_input(
+                    server,
+                    matches!(action, PlayerAction::StartGliding),
                 );
             }
             PlayerAction::StartSwimming => {

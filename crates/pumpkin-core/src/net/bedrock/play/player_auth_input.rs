@@ -80,13 +80,11 @@ impl BedrockClient {
             player.apply_flight_input(server, false);
         }
 
-        // Bedrock can stop in the same input it started, then it never glided.
-        if flags.get(InputData::StartGliding as usize)
-            && !flags.get(InputData::StopGliding as usize)
-        {
-            Self::start_gliding(player, server);
-        } else if flags.get(InputData::StopGliding as usize) {
-            Self::stop_gliding(player, on_ground);
+        // A stop in the same input takes precedence over starting a glide.
+        if flags.get(InputData::StopGliding as usize) {
+            player.apply_bedrock_glide_input(server, false);
+        } else if flags.get(InputData::StartGliding as usize) {
+            player.apply_bedrock_glide_input(server, true);
         }
 
         let new_pos = player.feet_from_bedrock_pos(packet.position.to_f64());
@@ -132,45 +130,6 @@ impl BedrockClient {
 }
 
 impl BedrockClient {
-    /// The Bedrock client glides straight out of creative flight, which vanilla `canGlide`
-    /// forbids, so flight ends first and comes back if the glide is refused.
-    pub(super) fn start_gliding(player: &Arc<Player>, server: &Arc<Server>) {
-        if player.get_entity().is_fall_flying() {
-            return;
-        }
-        let was_flying = player.is_flying();
-        let set_flying = |flying: bool| {
-            player
-                .abilities
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .flying = flying;
-        };
-        if was_flying {
-            set_flying(false);
-        }
-        if !player.try_to_start_fall_flying(server) {
-            if was_flying {
-                set_flying(true);
-            }
-            player.get_entity().stop_fall_flying();
-        }
-        if was_flying {
-            player.send_abilities_update();
-        }
-    }
-
-    /// Java cannot cancel elytra in mid-air, landing / `canGlide` already stops it.
-    /// A rejected stop resends GLIDING true, as `StopGliding` expects an answer either way.
-    pub(super) fn stop_gliding(player: &Arc<Player>, on_ground: bool) {
-        let entity = player.get_entity();
-        if !entity.is_fall_flying() {
-            return;
-        }
-        let stop = (on_ground || !player.can_glide()) && player.glide_stop_allowed();
-        entity.set_fall_flying(!stop);
-    }
-
     /// Client state at this input, which push motions build on.
     fn store_input_state(&self, packet: &SPlayerAuthInput) {
         self.input_tick.store(packet.tick.0, Ordering::Relaxed);

@@ -3770,6 +3770,16 @@ impl Player {
         !event.cancelled && !event.is_gliding
     }
 
+    fn try_to_stop_fall_flying(&self) -> bool {
+        let entity = self.get_entity();
+        if !entity.is_fall_flying() || !self.glide_stop_allowed() {
+            return false;
+        }
+        entity.set_fall_flying(false);
+        self.fall_fly_ticks.store(0, Ordering::Relaxed);
+        true
+    }
+
     /// Vanilla `updateFallFlying`: ends the glide once it isn't possible, wears the glider every second
     fn tick_fall_flying(&self) {
         let entity = &self.living_entity.entity;
@@ -3783,10 +3793,7 @@ impl Player {
             self.living_entity.fall_distance.store(1.0);
         }
         if !self.can_glide() {
-            if self.glide_stop_allowed() {
-                entity.set_fall_flying(false);
-                self.fall_fly_ticks.store(0, Ordering::Relaxed);
-            }
+            self.try_to_stop_fall_flying();
             return;
         }
         let ticks = self.fall_fly_ticks.fetch_add(1, Ordering::Relaxed) + 1;

@@ -168,6 +168,41 @@ impl Player {
         }}
     }
 
+    /// Bedrock can stop a glide in the air or start one directly from creative flight.
+    pub(crate) fn apply_bedrock_glide_input(&self, server: &Arc<Server>, gliding: bool) {
+        let entity = self.get_entity();
+        if entity.is_fall_flying() == gliding {
+            return;
+        }
+        if !gliding {
+            if !self.try_to_stop_fall_flying() {
+                // Correct the client's predicted stop after a plugin veto.
+                entity.set_fall_flying(true);
+            }
+            return;
+        }
+
+        let was_flying = self.is_flying();
+        let set_flying = |flying| {
+            self.abilities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .flying = flying;
+        };
+        if was_flying {
+            set_flying(false);
+        }
+        if !self.try_to_start_fall_flying(server) {
+            if was_flying {
+                set_flying(true);
+            }
+            entity.stop_fall_flying();
+        }
+        if was_flying {
+            self.send_abilities_update();
+        }
+    }
+
     /// Snap the client back. Vanilla `ServerGamePacketListenerImpl.teleport` used when a move is refused.
     pub fn reject_client_move(&self) {
         let entity = self.get_entity();
@@ -315,8 +350,8 @@ impl Player {
         entity
             .horizontal_collision
             .store(requested.horizontal_collision, Ordering::Relaxed);
-        if requested.on_ground && entity.is_fall_flying() && self.glide_stop_allowed() {
-            entity.set_fall_flying(false);
+        if requested.on_ground {
+            self.try_to_stop_fall_flying();
         }
 
         let pos_changed = delta.length_squared() > 0.0;
