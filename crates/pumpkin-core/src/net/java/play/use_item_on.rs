@@ -1,6 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::block::BlockPlacement;
+use crate::entity::player::ItemUseSnapshot;
 use crate::item::registry::should_try_block_placement;
 use pumpkin_data::block_properties::BlockProperties;
 
@@ -36,34 +37,29 @@ impl JavaClient {
             return Err(BlockPlacingError::InvalidHand);
         };
 
-        if player.gamemode.load() == GameMode::Spectator {
-            let entity = &player.get_entity();
-            let world = entity.world.load_full();
-            let block = world.get_block(&position);
-
-            let event = PlayerInteractEvent::new(
-                player,
-                InteractAction::RightClickBlock,
-                block,
-                Some(position),
+        let placement = BlockPlacement {
+            clicked_pos: position,
+            clicked_face: face,
+            cursor_pos,
+            hand,
+        };
+        let snapshot = ItemUseSnapshot::new(player, hand);
+        let spectator = player.gamemode.load() == GameMode::Spectator;
+        if !spectator {
+            player.increment_stat(
+                StatisticCategory::Used,
+                i32::from(snapshot.stack.item.id),
+                1,
             );
-
-            send_cancellable_blocking! {{
-                server;
-                event;
-                'cancelled: {
-                    let state_id = world.get_block_state_id(&position);
-                    player.try_send_client_packet(&CBlockUpdate::new(
-                        position,
-                        VarInt(i32::from(state_id.as_u16())),
-                    ));
-                    return Ok(());
-                }
-            }}
-
+        }
+        let Some(block) = snapshot.block_interaction(player, server, &placement) else {
+            return Ok(());
+        };
+        let world = snapshot.world();
+        if spectator {
             if let Some(factory) = server
                 .block_registry
-                .get_screen_handler_factory(block, player, &position, server, &world)
+                .get_screen_handler_factory(block, player, &position, server, world)
             {
                 player.open_handled_screen(factory.as_ref(), Some(position));
             }
@@ -71,46 +67,8 @@ impl JavaClient {
         }
 
         let inventory = player.inventory();
-        let held_item = inventory.held_item();
-        let off_hand_item = inventory.off_hand_item();
-        let held_item_empty = held_item.is_empty();
-        let off_hand_item_empty = off_hand_item.is_empty();
-
-        let mut item = inventory.get_stack_in_hand(hand);
-        let before = item.clone();
-        let item_id = item.item.id;
-        player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
-
-        let entity = &player.get_entity();
-        let world = entity.world.load_full();
-        let block = world.get_block(&position);
-
-        let event = PlayerInteractEvent::new(
-            player,
-            InteractAction::RightClickBlock,
-            block,
-            Some(position),
-        );
-
-        send_cancellable_blocking! {{
-            server;
-            event;
-            'cancelled: {
-                let state_id = world.get_block_state_id(&position);
-                player.try_send_client_packet(&CBlockUpdate::new(
-                    position,
-                    VarInt(i32::from(state_id.as_u16())),
-                ));
-                return Ok(());
-            }
-        }}
-
-        let equipment_slot = if matches!(hand, Hand::Right) {
-            EquipmentSlot::MAIN_HAND
-        } else {
-            EquipmentSlot::OFF_HAND
-        };
-
+        let before = &snapshot.stack;
+        let mut item = before.clone();
         let slot_index = if matches!(hand, Hand::Right) {
             inventory.get_selected_slot() as usize
         } else {
@@ -120,21 +78,15 @@ impl JavaClient {
         let sneaking = player.get_entity().is_sneaking();
 
         // Code based on the java class ServerPlayerInteractionManager
-        if !(sneaking && (!held_item_empty || !off_hand_item_empty)) {
-            let result = Self::call_use_item_on(
-                player,
-                &position,
-                &cursor_pos,
-                face,
-                &mut item,
-                &equipment_slot,
-                &world,
-                block,
-                server,
-            );
+        if !(sneaking
+            && (!inventory.held_item().is_empty() || !inventory.off_hand_item().is_empty()))
+        {
+            let result = server
+                .block_registry
+                .use_clicked_block(player, server, world, block, &placement, &mut item);
             if result.consumes_action() {
-                trigger_item_used_on_block_advancement(player, &world, &position, block, &before);
-                sync_used_hand_item(player, hand, slot_index, &before, item);
+                trigger_item_used_on_block_advancement(player, world, &position, block, before);
+                sync_used_hand_item(player, hand, slot_index, before, item);
 
                 if matches!(result, BlockActionResult::SuccessServer) {
                     player.swing_hand(hand, true);
@@ -157,12 +109,6 @@ impl JavaClient {
             // Check if the item is a block, because not every item can be placed :D
             let item_id = item.item.id;
             if let Some(block) = Block::from_item_id(item_id) {
-                let placement = BlockPlacement {
-                    clicked_pos: position,
-                    clicked_face: face,
-                    cursor_pos,
-                    hand,
-                };
                 should_try_decrement = Self::run_is_block_place(player, block, server, &placement)?;
             }
         }
@@ -175,70 +121,17 @@ impl JavaClient {
             }
         }
 
-        if item_result.consumes_action() || !item.are_equal(&before) {
-            trigger_item_used_on_block_advancement(player, &world, &position, block, &before);
+        if item_result.consumes_action() || !item.are_equal(before) {
+            trigger_item_used_on_block_advancement(player, world, &position, block, before);
         }
 
         if matches!(item_result, BlockActionResult::SuccessServer) {
             player.swing_hand(hand, true);
         }
 
-        sync_used_hand_item(player, hand, slot_index, &before, item);
+        sync_used_hand_item(player, hand, slot_index, before, item);
 
         Ok(())
-    }
-
-    #[expect(clippy::too_many_arguments)]
-    fn call_use_item_on(
-        player: &Arc<Player>,
-        position: &BlockPos,
-        cursor_pos: &Vector3<f32>,
-        face: BlockDirection,
-        held_item: &mut ItemStack,
-        equipment_slot: &EquipmentSlot,
-        world: &Arc<World>,
-        block: &Block,
-        server: &Arc<Server>,
-    ) -> BlockActionResult {
-        let result = server.block_registry.use_with_item(
-            block,
-            player,
-            position,
-            &BlockHitResult {
-                face: &face,
-                cursor_pos,
-            },
-            held_item,
-            equipment_slot,
-            server,
-            world,
-        );
-
-        if result.consumes_action() {
-            return result;
-        }
-
-        if matches!(result, BlockActionResult::PassToDefaultBlockAction)
-            && equipment_slot == &EquipmentSlot::MAIN_HAND
-        {
-            let result = server.block_registry.on_use(
-                block,
-                player,
-                position,
-                &BlockHitResult {
-                    face: &face,
-                    cursor_pos,
-                },
-                server,
-                world,
-            );
-
-            if result.consumes_action() {
-                return result;
-            }
-        }
-
-        BlockActionResult::Pass
     }
 
     fn run_is_block_place(

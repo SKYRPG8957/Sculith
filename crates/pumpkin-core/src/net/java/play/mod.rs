@@ -9,7 +9,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tracing::{Level, debug, error, info, trace, warn};
 
-use crate::block::BlockHitResult;
 use crate::block::registry::BlockActionResult;
 use crate::block::{self};
 use crate::entity::EntityBase;

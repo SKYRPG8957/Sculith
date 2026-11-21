@@ -54,7 +54,6 @@ use pumpkin_util::{GameMode, Hand, math::position::BlockPos, text::TextComponent
 use pumpkin_inventory::Inventory;
 
 use crate::{
-    block::{BlockHitResult, registry::BlockActionResult},
     entity::{EntityBase, player::Player},
     net::{DisconnectReason, bedrock::BedrockClient},
     plugin::player::{

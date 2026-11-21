@@ -1115,6 +1115,35 @@ impl BlockRegistry {
         BlockActionResult::Pass
     }
 
+    pub(crate) fn use_clicked_block(
+        &self,
+        player: &Arc<Player>,
+        server: &Server,
+        world: &Arc<World>,
+        block: &Block,
+        placement: &BlockPlacement,
+        held_item: &mut ItemStack,
+    ) -> BlockActionResult {
+        let hit = BlockHitResult {
+            face: &placement.clicked_face,
+            cursor_pos: &placement.cursor_pos,
+        };
+        let position = &placement.clicked_pos;
+        let main_hand = placement.hand == pumpkin_util::Hand::Right;
+        let equipment = if main_hand {
+            EquipmentSlot::MAIN_HAND
+        } else {
+            EquipmentSlot::OFF_HAND
+        };
+        let result = self.use_with_item(
+            block, player, position, &hit, held_item, &equipment, server, world,
+        );
+        if main_hand && matches!(result, BlockActionResult::PassToDefaultBlockAction) {
+            return self.on_use(block, player, position, &hit, server, world);
+        }
+        result
+    }
+
     pub fn get_screen_handler_factory(
         &self,
         block: &Block,

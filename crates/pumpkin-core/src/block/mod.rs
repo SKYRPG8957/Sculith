@@ -340,7 +340,7 @@ pub struct OnSyncedBlockEventArgs<'a> {
     pub data: u8,
 }
 
-/// The player's block hit and held hand for a placement attempt.
+/// The player's block hit and held hand when using a block or placing an item.
 pub struct BlockPlacement {
     pub clicked_pos: BlockPos,
     pub clicked_face: BlockDirection,

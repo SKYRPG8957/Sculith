@@ -1,13 +1,18 @@
 use std::sync::Arc;
 
-use pumpkin_data::{data_component_impl::EquipmentSlot, item_stack::ItemStack};
+use pumpkin_data::{Block, data_component_impl::EquipmentSlot, item_stack::ItemStack};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer, java::client::play::CSetPlayerInventory,
 };
 use pumpkin_util::{GameMode, Hand};
 
-use crate::world::World;
+use crate::{
+    block::BlockPlacement,
+    plugin::player::player_interact_event::{InteractAction, PlayerInteractEvent},
+    server::Server,
+    world::World,
+};
 
 use super::Player;
 
@@ -28,6 +33,49 @@ impl ItemUseSnapshot {
             mode: player.gamemode.load(),
             world: player.world(),
         }
+    }
+
+    pub(crate) const fn world(&self) -> &Arc<World> {
+        &self.world
+    }
+
+    /// Checks the clicked block and held item after the interaction callback.
+    pub(crate) fn block_interaction(
+        &self,
+        player: &Arc<Player>,
+        server: &Arc<Server>,
+        placement: &BlockPlacement,
+    ) -> Option<&'static Block> {
+        let position = placement.clicked_pos;
+        let adjacent = position.offset(placement.clicked_face.to_offset());
+        let (block, state) = self.world.get_block_and_state_id(&position);
+        let accepted = if server.plugin_manager.has_handlers::<PlayerInteractEvent>() {
+            let adjacent_state = self.world.get_block_state_id(&adjacent);
+            let mut event = PlayerInteractEvent::new(
+                player,
+                InteractAction::RightClickBlock,
+                block,
+                Some(position),
+            );
+            server.plugin_manager.fire_blocking(server, &mut event);
+            !event.cancelled
+                && self.world.get_block_state_id(&position) == state
+                && self.world.get_block_state_id(&adjacent) == adjacent_state
+        } else {
+            true
+        };
+
+        let in_reach = player.can_interact_with_block_at(&position, 1.0);
+        if accepted && in_reach && self.unchanged(player) {
+            return Some(block);
+        }
+
+        if in_reach && Arc::ptr_eq(&self.world, &player.world()) {
+            player.reset_block_change(position);
+            player.reset_block_change(adjacent);
+        }
+        self.correct(player);
+        None
     }
 
     pub(crate) fn unchanged(&self, player: &Player) -> bool {

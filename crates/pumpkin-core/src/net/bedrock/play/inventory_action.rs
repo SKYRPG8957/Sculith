@@ -37,55 +37,62 @@ impl BedrockClient {
         match data {
             TransactionData::Normal(_) | TransactionData::Mismatch(_) => {}
             TransactionData::UseItem(data) => {
-                let face = match data.block_face {
-                    0 => BlockDirection::Down,
-                    2 => BlockDirection::North,
-                    3 => BlockDirection::South,
-                    4 => BlockDirection::West,
-                    5 => BlockDirection::East,
-                    _ => BlockDirection::Up,
-                };
                 let world = player.world();
                 let Some(server) = world.server.upgrade() else {
                     return;
                 };
 
-                if player.gamemode.load() == GameMode::Spectator {
-                    let block = world.get_block(&data.block_position);
-                    if let Some(factory) = server.block_registry.get_screen_handler_factory(
-                        block,
-                        player,
-                        &data.block_position,
-                        &server,
-                        &world,
-                    ) {
-                        player.open_handled_screen(factory.as_ref(), Some(data.block_position));
-                    }
-                    return;
-                }
-
                 if data.action_type.0 == 0 {
-                    // Click block
-                    let block = world.get_block(&data.block_position);
-                    let mut held_item = player.inventory().held_item();
+                    let Some(face) = BlockDirection::from_index(data.block_face) else {
+                        return;
+                    };
+                    let placement = BlockPlacement {
+                        clicked_pos: data.block_position,
+                        clicked_face: face,
+                        cursor_pos: data.click_position,
+                        hand: Hand::Right,
+                    };
+                    let snapshot = ItemUseSnapshot::new(player, Hand::Right);
+                    let before_use = &snapshot.stack;
+                    if before_use.item.id == Item::FISHING_ROD.id
+                        && data.trigger_type == SIMULATION_TICK_TRIGGER
+                    {
+                        return;
+                    }
+                    let Some(block) = snapshot.block_interaction(player, &server, &placement)
+                    else {
+                        return;
+                    };
+                    let world = snapshot.world();
+                    if player.gamemode.load() == GameMode::Spectator {
+                        if let Some(factory) = server.block_registry.get_screen_handler_factory(
+                            block,
+                            player,
+                            &placement.clicked_pos,
+                            &server,
+                            world,
+                        ) {
+                            player
+                                .open_handled_screen(factory.as_ref(), Some(placement.clicked_pos));
+                        }
+                        return;
+                    }
 
-                    let before_use = held_item.clone();
-                    let result = server.block_registry.use_with_item(
-                        block,
-                        player,
-                        &data.block_position,
-                        &BlockHitResult {
-                            face: &face,
-                            cursor_pos: &data.click_position,
-                        },
-                        &mut held_item,
-                        &EquipmentSlot::MAIN_HAND,
-                        &server,
-                        &world,
-                    );
-
-                    if result.consumes_action() {
-                        if !held_item.are_equal(&before_use) {
+                    let mut held_item = before_use.clone();
+                    if (!player.get_entity().is_sneaking() || held_item.is_empty())
+                        && server
+                            .block_registry
+                            .use_clicked_block(
+                                player,
+                                &server,
+                                world,
+                                block,
+                                &placement,
+                                &mut held_item,
+                            )
+                            .consumes_action()
+                    {
+                        if !held_item.are_equal(before_use) {
                             if before_use.is_damageable() && held_item.is_empty() {
                                 player.increment_stat(
                                     pumpkin_data::statistic::StatisticCategory::Broken,
@@ -107,44 +114,9 @@ impl BedrockClient {
                         return;
                     }
 
-                    if matches!(result, BlockActionResult::PassToDefaultBlockAction) {
-                        let result = server.block_registry.on_use(
-                            block,
-                            player,
-                            &data.block_position,
-                            &BlockHitResult {
-                                face: &face,
-                                cursor_pos: &data.click_position,
-                            },
-                            &server,
-                            &world,
-                        );
-
-                        if result.consumes_action() {
-                            return;
-                        }
-                    }
-
                     // Cast or reel if the targeted block does not handle the interaction.
                     if held_item.item.id == Item::FISHING_ROD.id {
-                        if data.trigger_type == SIMULATION_TICK_TRIGGER {
-                            return;
-                        }
-                        let snapshot = ItemUseSnapshot::new(player, Hand::Right);
-                        let mut event = PlayerInteractEvent::new(
-                            player,
-                            InteractAction::RightClickBlock,
-                            block,
-                            Some(data.block_position),
-                        );
-                        server.plugin_manager.fire_blocking(&server, &mut event);
-                        if event.cancelled || !snapshot.unchanged(player) {
-                            snapshot.correct(player);
-                            return;
-                        }
-                        server
-                            .item_registry
-                            .on_use(&snapshot.stack, player, Hand::Right);
+                        server.item_registry.on_use(before_use, player, Hand::Right);
                         return;
                     }
 
@@ -170,13 +142,6 @@ impl BedrockClient {
                         if should_try_block_placement(&item_result) {
                             let item_id = stack.item.id;
                             if let Some(placed_block) = pumpkin_data::Block::from_item_id(item_id) {
-                                let placement = BlockPlacement {
-                                    clicked_pos: data.block_position,
-                                    clicked_face: face,
-                                    cursor_pos: data.click_position,
-                                    hand: Hand::Right,
-                                };
-
                                 if let Ok(Some(_)) = server.block_registry.place_block(
                                     player,
                                     placed_block,
