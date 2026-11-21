@@ -316,6 +316,7 @@ use pumpkin_util::text::hover::HoverEvent;
 use pumpkin_util::{Difficulty, GameMode, Hand};
 use pumpkin_world::biome;
 use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
+use pumpkin_world::world::BlockFlags;
 
 use crate::block;
 use crate::block::blocks::straw_bed::StrawBedBlock;
@@ -5933,64 +5934,60 @@ impl Player {
     pub fn break_block(self: &Arc<Self>, position: &BlockPos) -> bool {
         let world = self.world();
         let (block, state) = world.get_block_and_state(position);
+        let gamemode = self.gamemode.load();
+        if state.is_air()
+            || self.cannot_mine_block(world.server.upgrade().as_deref(), block, gamemode)
+        {
+            return false;
+        }
+        self.commit_block_break(&world, position, state, gamemode)
+    }
+
+    /// Commits a break after the caller checks the current player's mining permissions.
+    pub(crate) fn commit_block_break(
+        self: &Arc<Self>,
+        world: &Arc<World>,
+        position: &BlockPos,
+        state: &BlockState,
+        gamemode: GameMode,
+    ) -> bool {
         if state.is_air() {
             return false;
         }
 
-        let held = self.inventory().held_item();
-        let gamemode = self.gamemode.load();
-        let server = world.server.upgrade();
-        if self.cannot_mine_block(server.as_deref(), block, gamemode) {
+        let block = Block::from_state_id(state.id);
+        let tool = (gamemode != GameMode::Creative).then(|| self.inventory().held_item());
+        let harvest = tool
+            .as_ref()
+            .is_some_and(|tool| !state.tool_required() || tool.is_correct_for_drops(block));
+        let mut flags = BlockFlags::NOTIFY_ALL;
+        flags.set(BlockFlags::SKIP_DROPS, !harvest);
+        if world.break_block(position, Some(self), flags).is_none() {
             return false;
         }
 
-        if gamemode == GameMode::Creative {
-            let new_state = world.break_block(
-                position,
-                Some(self),
-                pumpkin_world::world::BlockFlags::NOTIFY_ALL
-                    | pumpkin_world::world::BlockFlags::SKIP_DROPS,
-            );
-            if new_state.is_some() {
-                if let Some(server) = &server {
-                    server
-                        .block_registry
-                        .broken(&world, block, self, position, server, state);
-                }
-                return true;
-            }
-            return false;
+        if let Some(server) = world.server.upgrade() {
+            server
+                .block_registry
+                .broken(world, block, self, position, &server, state);
         }
-
-        let block_drop = self.can_harvest(state, block);
-        let flags = if block_drop {
-            pumpkin_world::world::BlockFlags::NOTIFY_ALL
-        } else {
-            pumpkin_world::world::BlockFlags::SKIP_DROPS
-                | pumpkin_world::world::BlockFlags::NOTIFY_ALL
-        };
-
-        let new_state = world.break_block(position, Some(self), flags);
-        if new_state.is_some() {
-            if let Some(server) = &server {
-                server
-                    .block_registry
-                    .broken(&world, block, self, position, server, state);
-            }
+        if let Some(tool) = tool {
             self.apply_tool_damage_for_block_break(state);
-            if block_drop {
+            if harvest {
                 self.add_exhaustion(MINE_BLOCK_EXHAUSTION);
             }
-            let item_id = held.item.id;
-            self.increment_stat(statistics::StatisticCategory::Used, item_id as i32, 1);
             self.increment_stat(
-                statistics::StatisticCategory::Mined,
-                block.id.as_u16() as i32,
+                statistics::StatisticCategory::Used,
+                i32::from(tool.item.id),
                 1,
             );
-            return true;
+            self.increment_stat(
+                statistics::StatisticCategory::Mined,
+                i32::from(block.id.as_u16()),
+                1,
+            );
         }
-        false
+        true
     }
 
     /// Checks shared by both dig actions: Pumpkin's item behaviour hook and the vanilla

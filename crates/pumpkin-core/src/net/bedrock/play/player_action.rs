@@ -1,29 +1,39 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use pumpkin_data::{BlockState, BlockStateId};
 
 impl BedrockClient {
-    #[expect(clippy::match_same_arms)]
-    #[expect(clippy::too_many_lines)]
     pub fn handle_player_action(
         &self,
         player: &Arc<Player>,
         server: &Arc<Server>,
         packet: &SPlayerAction,
     ) {
+        self.apply_player_action(player, server, packet.action, packet.block_position);
+    }
+
+    #[expect(clippy::match_same_arms)]
+    #[expect(clippy::too_many_lines)]
+    pub(super) fn apply_player_action(
+        &self,
+        player: &Arc<Player>,
+        server: &Arc<Server>,
+        action: PlayerAction,
+        location: BlockPos,
+    ) {
         if !player.has_client_loaded()
             || ((player.living_entity.dead.load(Ordering::Relaxed)
                 || player.living_entity.health.load() <= 0.0)
-                && !matches!(packet.action, PlayerAction::Respawn))
+                && !matches!(action, PlayerAction::Respawn))
         {
             return;
         }
         player.update_last_action_time();
 
-        match packet.action {
+        match action {
             PlayerAction::StartDestroyBlock
             | PlayerAction::CreativeDestroyBlock
             | PlayerAction::ContinueDestroyBlock => {
-                let location = packet.block_position;
                 if !player.can_interact_with_block_at(&location, 1.0) {
                     return;
                 }
@@ -42,16 +52,17 @@ impl BedrockClient {
                     player.stop_mining();
                 }
 
-                if player.gamemode.load() == GameMode::Creative {
-                    let new_state = world.break_block(
-                        &location,
-                        Some(player),
-                        BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
-                    );
-                    if new_state.is_some() {
-                        server
-                            .block_registry
-                            .broken(&world, block, player, &location, server, state);
+                let gamemode = player.gamemode.load();
+                if player.cannot_mine_block(Some(server), block, gamemode) {
+                    player.stop_mining();
+                    self.sync_mining_block(location, state.id);
+                    return;
+                }
+
+                if gamemode == GameMode::Creative {
+                    player.stop_mining();
+                    if !player.commit_block_break(&world, &location, state, gamemode) {
+                        self.sync_mining_block(location, world.get_block_state_id(&location));
                     }
                 } else if !state.is_air() {
                     let starts_breaking = !player.mining.load(Ordering::Relaxed)
@@ -69,37 +80,8 @@ impl BedrockClient {
                     if speed >= 1.0 {
                         player.stop_mining();
                         let broken_state = world.get_block_state(&location);
-                        let can_harvest = player.can_harvest(broken_state, block);
-                        let flags = if can_harvest {
-                            BlockFlags::NOTIFY_ALL
-                        } else {
-                            BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
-                        };
-                        let new_state = world.break_block(&location, Some(player), flags);
-                        if new_state.is_some() {
-                            server.block_registry.broken(
-                                &world,
-                                block,
-                                player,
-                                &location,
-                                server,
-                                broken_state,
-                            );
-                            player.apply_tool_damage_for_block_break(broken_state);
-                            if can_harvest {
-                                player.add_exhaustion(MINE_BLOCK_EXHAUSTION);
-                            }
-                            let item_id = player.inventory().held_item().item.id;
-                            player.increment_stat(
-                                pumpkin_data::statistic::StatisticCategory::Used,
-                                item_id as i32,
-                                1,
-                            );
-                            player.increment_stat(
-                                pumpkin_data::statistic::StatisticCategory::Mined,
-                                block.id.as_u16() as i32,
-                                1,
-                            );
+                        if !player.commit_block_break(&world, &location, broken_state, gamemode) {
+                            self.sync_mining_block(location, world.get_block_state_id(&location));
                         }
                     } else {
                         let mut mining_pos = player
@@ -147,7 +129,6 @@ impl BedrockClient {
                 }
             }
             action @ (PlayerAction::PredictDestroyBlock | PlayerAction::StopDestroyBlock) => {
-                let location = packet.block_position;
                 if !player.can_interact_with_block_at(&location, 1.0) {
                     return;
                 }
@@ -156,7 +137,13 @@ impl BedrockClient {
                 let world = entity.world.load_full();
 
                 let (block, state) = world.get_block_and_state(&location);
-                if player.gamemode.load() != GameMode::Creative && !state.is_air() {
+                let gamemode = player.gamemode.load();
+                if gamemode != GameMode::Creative && !state.is_air() {
+                    if player.cannot_mine_block(Some(server), block, gamemode) {
+                        player.stop_mining();
+                        self.sync_mining_block(location, state.id);
+                        return;
+                    }
                     let speed = crate::block::calc_block_breaking(player, state, block);
                     let elapsed = player.tick_counter.load(Ordering::Relaxed)
                         - player.start_mining_time.load(Ordering::Relaxed)
@@ -171,36 +158,11 @@ impl BedrockClient {
                         && speed * elapsed as f32 >= MIN_PREDICTED_BREAK_PROGRESS
                     {
                         player.stop_mining();
-
-                        let can_harvest = player.can_harvest(state, block);
-                        let flags = if can_harvest {
-                            BlockFlags::NOTIFY_ALL
-                        } else {
-                            BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
-                        };
-                        if world.break_block(&location, Some(player), flags).is_some() {
-                            server
-                                .block_registry
-                                .broken(&world, block, player, &location, server, state);
-                            player.apply_tool_damage_for_block_break(state);
-                            if can_harvest {
-                                player.add_exhaustion(MINE_BLOCK_EXHAUSTION);
-                            }
-                            let item_id = player.inventory().held_item().item.id;
-                            player.increment_stat(
-                                pumpkin_data::statistic::StatisticCategory::Used,
-                                item_id as i32,
-                                1,
-                            );
-                            player.increment_stat(
-                                pumpkin_data::statistic::StatisticCategory::Mined,
-                                block.id.as_u16() as i32,
-                                1,
-                            );
+                        if !player.commit_block_break(&world, &location, state, gamemode) {
+                            self.sync_mining_block(location, world.get_block_state_id(&location));
                         }
                     } else {
-                        let runtime_id = pumpkin_data::BlockState::to_be_network_id(state.id);
-                        self.try_enqueue_client_packet(&CUpdateBlock::new(location, runtime_id));
+                        self.sync_mining_block(location, state.id);
                         if matches!(action, PlayerAction::StopDestroyBlock) {
                             player.stop_mining();
                         } else {
@@ -281,5 +243,12 @@ impl BedrockClient {
             // TODO
             _ => {}
         }
+    }
+
+    fn sync_mining_block(&self, position: BlockPos, state: BlockStateId) {
+        self.try_enqueue_client_packet(&CUpdateBlock::new(
+            position,
+            BlockState::to_be_network_id(state),
+        ));
     }
 }

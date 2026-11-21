@@ -82,17 +82,7 @@ impl JavaClient {
                     // TODO: do validation
                     // TODO: Config
                     if gamemode == GameMode::Creative {
-                        // Block break & play sound
-                        let new_state = world.break_block(
-                            &position,
-                            Some(player),
-                            BlockFlags::NOTIFY_ALL | BlockFlags::SKIP_DROPS,
-                        );
-                        if new_state.is_some() {
-                            server
-                                .block_registry
-                                .broken(&world, block, player, &position, server, state);
-                        }
+                        player.commit_block_break(&world, &position, state, gamemode);
                         self.sync_block_state_to_client(&world, position);
                         self.update_sequence(player_action.sequence.0);
                         return;
@@ -109,34 +99,7 @@ impl JavaClient {
                         // Instant break
                         if speed >= 1.0 {
                             let broken_state = world.get_block_state(&position);
-                            let can_harvest = player.can_harvest(broken_state, block);
-                            let flags = if can_harvest {
-                                BlockFlags::NOTIFY_ALL
-                            } else {
-                                BlockFlags::SKIP_DROPS | BlockFlags::NOTIFY_ALL
-                            };
-                            let new_state = world.break_block(&position, Some(player), flags);
-                            if new_state.is_some() {
-                                server.block_registry.broken(
-                                    &world,
-                                    block,
-                                    player,
-                                    &position,
-                                    server,
-                                    broken_state,
-                                );
-                                player.apply_tool_damage_for_block_break(broken_state);
-                                if can_harvest {
-                                    player.add_exhaustion(MINE_BLOCK_EXHAUSTION);
-                                }
-                                let item_id = player.inventory().held_item().item.id;
-                                player.increment_stat(StatisticCategory::Used, item_id as i32, 1);
-                                player.increment_stat(
-                                    StatisticCategory::Mined,
-                                    block.id.as_u16() as i32,
-                                    1,
-                                );
-                            }
+                            player.commit_block_break(&world, &position, broken_state, gamemode);
                             self.sync_block_state_to_client(&world, position);
                         } else {
                             player.mining.store(true, Ordering::Relaxed);
@@ -239,7 +202,7 @@ impl JavaClient {
 
                     if gamemode == GameMode::Creative {
                         player.stop_mining();
-                        player.break_block(&location);
+                        player.commit_block_break(&world, &location, state, gamemode);
                         self.sync_block_state_to_client(&world, location);
                         self.update_sequence(player_action.sequence.0);
                         return;
@@ -251,7 +214,7 @@ impl JavaClient {
                             + 1) as f32;
                     if progress >= FINISHED_DIGGING_PROGRESS_THRESHOLD {
                         player.stop_mining();
-                        player.break_block(&location);
+                        player.commit_block_break(&world, &location, state, gamemode);
                         self.sync_block_state_to_client(&world, location);
                     } else {
                         // Vanilla `hasDelayedDestroy`: a finish can arrive before the server

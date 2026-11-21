@@ -8,16 +8,6 @@ impl BedrockClient {
         server: &Arc<Server>,
         packet: &pumpkin_protocol::bedrock::server::player_auth_input::PlayerBlockAction,
     ) {
-        self.handle_player_action(
-            player,
-            server,
-            &SPlayerAction {
-                player_runtime_id: VarULong(0), // Unused
-                action: packet.action,
-                block_position: packet.block_pos,
-                result_pos: BlockPos::ZERO,
-                face: packet.face,
-            },
-        );
+        self.apply_player_action(player, server, packet.action, packet.block_pos);
     }
 }
