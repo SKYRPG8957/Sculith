@@ -33,11 +33,46 @@ use std::sync::{
 
 use super::{Entity, EntityBase, living::LivingEntity, player::Player};
 use crate::block::blocks::bubble_column::SURFACE_UPWARD_ACCELERATION;
+use crate::plugin::api::events::entity::{
+    item_despawn::ItemDespawnEvent, item_merge::ItemMergeEvent,
+};
+use crate::server::TickDeadline;
+use crate::world::RegionId;
 use crate::world::entity_islands::{self, AuditedReach};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ItemTimerOwner {
+    World,
+    Region(RegionId),
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ItemTimerStep {
+    World(Option<TickDeadline>),
+    Region,
+}
+
+#[derive(Default)]
+struct ItemClock {
+    last: Option<(ItemTimerOwner, std::time::Instant)>,
+}
+
+impl ItemClock {
+    fn claim(&mut self, owner: ItemTimerOwner, deadline: TickDeadline) -> bool {
+        if let Some((previous, at)) = self.last
+            && (deadline.at <= at || (previous != owner && deadline.at - at < deadline.period))
+        {
+            return false;
+        }
+        self.last = Some((owner, deadline.at));
+        true
+    }
+}
 
 pub struct ItemEntity {
     entity: Entity,
     item_age: AtomicU32,
+    clock: Mutex<ItemClock>,
     thrower: crossbeam::atomic::AtomicCell<Option<uuid::Uuid>>,
     // These cannot be atomic values because we mutate their state based on what they are; we run
     // into the ABA problem
@@ -112,6 +147,7 @@ impl ItemEntity {
             entity,
             item_stack: Mutex::new(item_stack),
             item_age: AtomicU32::new(0),
+            clock: Mutex::default(),
             thrower: crossbeam::atomic::AtomicCell::new(None),
             pickup_delay: AtomicU8::new(Self::DEFAULT_PICKUP_DELAY),
             health: AtomicF32::new(5.0),
@@ -135,6 +171,7 @@ impl ItemEntity {
             entity,
             item_stack: Mutex::new(item_stack),
             item_age: AtomicU32::new(0),
+            clock: Mutex::default(),
             thrower: crossbeam::atomic::AtomicCell::new(None),
             pickup_delay: AtomicU8::new(pickup_delay), // Vanilla pickup delay is 10 ticks
             health: AtomicF32::new(5.0),
@@ -151,6 +188,7 @@ impl ItemEntity {
             entity,
             item_stack: Mutex::new(ItemStack::new(1, &pumpkin_data::item::Item::AIR)),
             item_age: AtomicU32::new(0),
+            clock: Mutex::default(),
             thrower: crossbeam::atomic::AtomicCell::new(None),
             pickup_delay: AtomicU8::new(0),
             health: AtomicF32::new(5.0),
@@ -353,13 +391,23 @@ impl ItemEntity {
         drop(stack2);
 
         // `is_mergeable` already excluded never-despawn and never-pickup items.
-        target.pickup_delay.fetch_max(
-            source.pickup_delay.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        target
-            .item_age
-            .fetch_min(source.item_age.load(Ordering::Relaxed), Ordering::Relaxed);
+        {
+            let _low_clock = low
+                .clock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _high_clock = high
+                .clock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            target.pickup_delay.fetch_max(
+                source.pickup_delay.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+            target
+                .item_age
+                .fetch_min(source.item_age.load(Ordering::Relaxed), Ordering::Relaxed)
+        };
 
         target.on_count_changed();
         if source_empty {
@@ -430,6 +478,97 @@ impl ItemEntity {
                 Some(val.saturating_sub(1))
             })
             .ok();
+    }
+
+    pub(crate) fn timers_unobserved(server: &Server) -> bool {
+        !server.plugin_manager.has_handlers::<ItemDespawnEvent>()
+            && !server.plugin_manager.has_handlers::<ItemMergeEvent>()
+    }
+
+    pub(crate) fn advance_regional_timers(
+        &self,
+        owner: RegionId,
+        deadline: TickDeadline,
+        still_owned: impl FnOnce() -> bool,
+    ) {
+        let Ok(stack) = self.item_stack.try_lock() else {
+            return;
+        };
+        let Ok(mut clock) = self.clock.try_lock() else {
+            return;
+        };
+        if stack.is_empty()
+            || !still_owned()
+            || !clock.claim(ItemTimerOwner::Region(owner), deadline)
+        {
+            return;
+        }
+
+        self.decrement_pickup_delay();
+        if !self.never_despawn.load(Relaxed) {
+            let age = self.item_age.load(Relaxed);
+            if age < LIFETIME {
+                self.item_age.store(age + 1, Relaxed);
+            }
+        }
+    }
+
+    pub(crate) fn tick_with_time(
+        &self,
+        caller: &dyn EntityBase,
+        server: &Server,
+        time: ItemTimerStep,
+    ) {
+        let entity = &self.entity;
+        if self
+            .item_stack
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+        {
+            entity.remove();
+            return;
+        }
+
+        // Vanilla `super.tick()`: `xo/yo/zo`, fluids, fire, portals and the void.
+        entity.tick(caller, server);
+        if entity.removed.load(Ordering::SeqCst) {
+            return;
+        }
+
+        let advance_time = match time {
+            ItemTimerStep::Region => false,
+            ItemTimerStep::World(deadline) => {
+                let mut clock = self
+                    .clock
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some(deadline) = deadline {
+                    clock.claim(ItemTimerOwner::World, deadline)
+                } else {
+                    clock.last = None;
+                    true
+                }
+            }
+        };
+        if advance_time {
+            self.decrement_pickup_delay();
+        }
+
+        let original_velo = entity.velocity.load();
+        entity
+            .velocity
+            .store(self.apply_fluid_drag_or_gravity(original_velo));
+        self.update_no_physics_and_push_out();
+
+        let move_velo = entity.velocity.load(); // In case push_out_of_blocks modifies it
+        if self.should_tick_move(move_velo) {
+            self.move_and_apply_friction(caller, move_velo);
+        }
+
+        if self.process_age_and_merge(advance_time) {
+            self.mark_needs_sync(caller, original_velo);
+        }
     }
 
     fn apply_fluid_drag_or_gravity(&self, mut velo: Vector3<f64>) -> Vector3<f64> {
@@ -516,19 +655,22 @@ impl ItemEntity {
         entity.velocity.store(velo);
     }
 
-    fn process_age_and_merge(&self) -> bool {
+    fn process_age_and_merge(&self, advance_time: bool) -> bool {
         if self.never_despawn.load(Ordering::Relaxed) {
             return true;
         }
 
         let entity = &self.entity;
-        let age = self.item_age.fetch_add(1, Ordering::Relaxed) + 1;
+        let age = if advance_time {
+            self.item_age.fetch_add(1, Ordering::Relaxed) + 1
+        } else {
+            self.item_age.load(Relaxed)
+        };
 
         if age >= LIFETIME {
             let entity_id = entity.entity_id;
             let world = entity.world.load_full();
-            let mut despawn_event =
-                crate::plugin::api::events::entity::item_despawn::ItemDespawnEvent::new(entity_id);
+            let mut despawn_event = ItemDespawnEvent::new(entity_id);
             if let Some(server) = world.server.upgrade() {
                 server
                     .plugin_manager
@@ -618,41 +760,7 @@ impl EntityBase for ItemEntity {
     }
 
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
-        let entity = &self.entity;
-        if self
-            .item_stack
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
-        {
-            entity.remove();
-            return;
-        }
-
-        // Vanilla `super.tick()`: `xo/yo/zo`, fluids, fire, portals and the void.
-        entity.tick(caller, server);
-        if entity.removed.load(Ordering::SeqCst) {
-            return;
-        }
-
-        self.decrement_pickup_delay();
-
-        let original_velo = entity.velocity.load();
-        entity
-            .velocity
-            .store(self.apply_fluid_drag_or_gravity(original_velo));
-
-        self.update_no_physics_and_push_out();
-
-        let move_velo = entity.velocity.load(); // In case push_out_of_blocks modifies it
-
-        if self.should_tick_move(move_velo) {
-            self.move_and_apply_friction(caller, move_velo);
-        }
-
-        if self.process_age_and_merge() {
-            self.mark_needs_sync(caller, original_velo);
-        }
+        self.tick_with_time(caller, server, ItemTimerStep::World(None));
     }
 
     fn init_data_tracker(&self) {
@@ -842,6 +950,10 @@ impl EntityBase for ItemEntity {
         item.write_item_stack(&mut item_compound);
         nbt.put_compound("Item", item_compound);
 
+        let _clock = self
+            .clock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         nbt.put_short("Age", self.item_age.load(Ordering::Relaxed) as i16);
         nbt.put_short(
             "PickupDelay",
@@ -867,6 +979,10 @@ impl EntityBase for ItemEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = stack;
         }
 
+        let _clock = self
+            .clock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Vanilla stores Age as a short
         self.item_age
             .store(nbt.get_short("Age").unwrap_or(0) as u32, Ordering::Relaxed);
@@ -941,13 +1057,37 @@ impl EntityBase for ItemEntity {
 
 #[cfg(test)]
 mod tests {
-    use super::ItemEntity;
+    use super::{ItemClock, ItemEntity, ItemTimerOwner, TickDeadline};
     use pumpkin_data::data_component_impl::{CustomDataImpl, CustomNameImpl};
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
     use pumpkin_data::{Enchantment, damage::DamageType};
     use pumpkin_nbt::compound::NbtCompound;
     use pumpkin_util::text::TextComponent;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn item_clock_rejects_overlapping_deadlines_on_handoff() {
+        let start = Instant::now();
+        let period = Duration::from_millis(50);
+        let step = |ms| TickDeadline {
+            at: start + Duration::from_millis(ms),
+            period,
+        };
+        let mut clock = ItemClock::default();
+        let old = ItemTimerOwner::Region(2);
+        let new = ItemTimerOwner::Region(4);
+
+        assert!(clock.claim(ItemTimerOwner::World, step(0)));
+        assert!(!clock.claim(old, step(20)));
+        assert!(clock.claim(old, step(70)));
+        assert!(!clock.claim(old, step(70)));
+        assert!(!clock.claim(new, step(100)));
+        assert!(clock.claim(new, step(150)));
+        assert!(!clock.claim(old, step(120)));
+        assert!(!clock.claim(ItemTimerOwner::World, step(180)));
+        assert!(clock.claim(ItemTimerOwner::World, step(200)));
+    }
 
     #[test]
     fn different_counts_merge_up_to_max_stack() {

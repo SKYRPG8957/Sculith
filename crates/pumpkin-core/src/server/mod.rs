@@ -74,12 +74,13 @@ mod world_scheduler;
 enum WorldStep {
     NetworkOnly,
     Coordinated,
-    RegionalDeadlines,
+    RegionalDeadlines(TickDeadline),
 }
 
 pub(crate) use block_edits::BlockEdits;
 pub use block_edits::{BlockEditReceipt, BlockEditStatus};
 pub use recipe::RecipeManager;
+pub(crate) use region_scheduler::TickDeadline;
 pub(crate) use transfer_checkpoint::StorageTransferError;
 
 use crate::data::advancement_data::AdvancementManager;
@@ -1483,7 +1484,9 @@ impl Server {
         world.flush_regional_campfire_outputs();
         match mode {
             WorldStep::Coordinated => world.tick(self),
-            WorldStep::RegionalDeadlines => world.tick_with_region_deadlines(self),
+            WorldStep::RegionalDeadlines(deadline) => {
+                world.tick_with_region_deadlines(self, deadline);
+            }
             WorldStep::NetworkOnly => {
                 // Players can move while frozen. Resume from a fresh simulation extent.
                 world.invalidate_region_layout();

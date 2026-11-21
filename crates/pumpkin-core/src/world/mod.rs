@@ -44,6 +44,8 @@ pub mod raid;
 pub mod random_sequences;
 mod regional_campfires;
 use regional_campfires::RegionalCampfireOutputs;
+mod regional_items;
+use regional_items::RegionalItemTimers;
 pub mod stopwatches;
 mod tick_regions;
 pub(crate) use tick_regions::{RegionChunks, RegionId, RegionLayout};
@@ -56,7 +58,10 @@ use crate::block::blocks::redstone::{redstone_lamp::RedstoneLamp, target_block::
 use crate::block::fluid::water::FlowingWater;
 use crate::plugin::api::events::block::block_physics::BlockPhysicsEvent;
 use crate::world::chunker::is_within_chebyshev_distance;
-use crate::{block::BlockEvent, entity::item::ItemEntity};
+use crate::{
+    block::BlockEvent,
+    entity::item::{ItemEntity, ItemTimerStep},
+};
 use crate::{
     block::{
         registry::{BlockRegistry, RegionalBlockTick},
@@ -72,7 +77,7 @@ use crate::{
         block::block_break::BlockBreakEvent,
         player::{player_join::PlayerJoinEvent, player_leave::PlayerLeaveEvent},
     },
-    server::Server,
+    server::{Server, TickDeadline},
 };
 use active_chunks::{ActiveChunkTracker, ActivePlayerArea};
 use arc_swap::ArcSwap;
@@ -294,6 +299,7 @@ pub struct World {
     pub(crate) region_activity: Arc<tokio::sync::RwLock<()>>,
     entity_chunk_changes: entity_chunks::EntityChunkChanges,
     regional_campfire_outputs: RegionalCampfireOutputs,
+    regional_item_timers: RwLock<Arc<RegionalItemTimers>>,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
@@ -470,6 +476,7 @@ impl World {
             region_activity: Arc::default(),
             entity_chunk_changes: entity_chunks::EntityChunkChanges::default(),
             regional_campfire_outputs: RegionalCampfireOutputs::default(),
+            regional_item_timers: RwLock::default(),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
             server,
             block_entities: DashMap::new(),
@@ -1703,15 +1710,20 @@ impl World {
     }
 
     pub fn tick(self: &Arc<Self>, server: &Arc<Server>) {
-        self.tick_simulation(server, true);
+        self.tick_simulation(server, None);
     }
 
-    pub(crate) fn tick_with_region_deadlines(self: &Arc<Self>, server: &Arc<Server>) {
-        self.tick_simulation(server, false);
+    pub(crate) fn tick_with_region_deadlines(
+        self: &Arc<Self>,
+        server: &Arc<Server>,
+        deadline: TickDeadline,
+    ) {
+        self.tick_simulation(server, Some(deadline));
     }
 
     #[expect(clippy::too_many_lines)]
-    fn tick_simulation(self: &Arc<Self>, server: &Arc<Server>, coordinated: bool) {
+    fn tick_simulation(self: &Arc<Self>, server: &Arc<Server>, deadline: Option<TickDeadline>) {
+        let coordinated = deadline.is_none();
         let start = std::time::Instant::now();
 
         self.flush_block_updates();
@@ -1788,6 +1800,7 @@ impl World {
                 Some((entity, entity_chunk))
             })
             .collect();
+        let item_timers = self.assign_regional_item_timers(server, &tickable, !coordinated);
 
         // Entities that can affect each other tick in list order; separate islands run in
         // parallel.
@@ -1862,7 +1875,17 @@ impl World {
             if base.has_vehicle() {
                 base.velocity.store(Vector3::default());
             }
-            entity.tick(entity.as_ref(), server_ref);
+            if let Some(item) = (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ItemEntity>()
+            {
+                let time = if item_timers.contains(base.entity_id) {
+                    ItemTimerStep::Region
+                } else {
+                    ItemTimerStep::World(deadline)
+                };
+                item.tick_with_time(entity.as_ref(), server_ref, time);
+            } else {
+                entity.tick(entity.as_ref(), server_ref);
+            }
         };
         if let Some(islands) = islands {
             islands
@@ -2351,10 +2374,17 @@ impl World {
     pub(crate) fn invalidate_region_layout(&self) {
         if !self.region_layout.load().is_empty() {
             self.region_layout.store(Arc::default());
+            self.clear_regional_item_timers();
         }
     }
 
-    pub(crate) fn advance_region_time(self: &Arc<Self>, owner: RegionId, chunks: &RegionChunks) {
+    #[expect(clippy::too_many_lines, reason = "orders regional work in one step")]
+    pub(crate) fn advance_region_time(
+        self: &Arc<Self>,
+        owner: RegionId,
+        chunks: &RegionChunks,
+        deadline: TickDeadline,
+    ) {
         let current = self.region_layout.load();
         let same_extent = current
             .chunks(owner)
@@ -2370,15 +2400,17 @@ impl World {
         if inhabited && same_extent {
             self.apply_regional_block_edits(&owns);
         }
-        let regional_campfires = (inhabited && same_extent)
+        let region_server = (inhabited && same_extent)
             .then(|| self.server.upgrade())
-            .flatten()
+            .flatten();
+        let regional_campfires = region_server
+            .as_ref()
             .filter(|server| CampfireBlockEntity::timers_unobserved(server));
         for &pos in chunks.iter() {
             if !same_extent && current.owner(pos) != Some(owner) {
                 continue;
             }
-            if let Some(server) = &regional_campfires {
+            if let Some(server) = regional_campfires {
                 self.advance_regional_campfires(server, pos, &owns);
             }
             if self.level.chunks_with_scheduled_ticks.contains(&pos) {
@@ -2451,6 +2483,9 @@ impl World {
             }
         }
         if inhabited && same_extent {
+            if let Some(server) = &region_server {
+                self.advance_regional_item_timers(server, owner, deadline, &owns);
+            }
             self.flush_regional_block_updates(&owns);
         }
     }
@@ -7790,7 +7825,7 @@ impl World {
         &self,
         checkpoint_chunks: FxHashSet<Vector2<i32>>,
     ) -> Result<(), String> {
-        let snapshot = self.entity_chunk_changes.snapshot.lock().await;
+        let snapshot = self.entity_chunk_changes.snapshot.write().await;
         let entities = self.entities.load_full();
         self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
             .await;

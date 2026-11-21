@@ -12,6 +12,12 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::world::{RegionChunks, RegionId, RegionLayout};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct TickDeadline {
+    pub(crate) at: Instant,
+    pub(crate) period: Duration,
+}
+
 pub(super) fn next_deadline(deadline: Instant, now: Instant, period: Duration) -> Instant {
     // Drop missed starts instead of queuing a backlog when an owner is late.
     if now.duration_since(deadline) >= period {
@@ -93,7 +99,7 @@ impl RegionSchedule {
         layout: Arc<RegionLayout>,
         now: Instant,
         period: Duration,
-        mut dispatch: impl FnMut(RegionId, RegionChunks, RegionPermit) -> bool,
+        mut dispatch: impl FnMut(RegionId, RegionChunks, TickDeadline, RegionPermit) -> bool,
     ) -> Option<Instant> {
         self.in_flight
             .retain(|flight| !flight.finished.load(Ordering::Acquire));
@@ -111,7 +117,16 @@ impl RegionSchedule {
                 }
                 let chunks = clock.chunks.clone();
                 let finished = Arc::new(AtomicBool::new(false));
-                if !dispatch(owner, chunks.clone(), RegionPermit(finished.clone())) {
+                let deadline = TickDeadline {
+                    at: clock.deadline,
+                    period,
+                };
+                if !dispatch(
+                    owner,
+                    chunks.clone(),
+                    deadline,
+                    RegionPermit(finished.clone()),
+                ) {
                     continue;
                 }
                 clock.waiting.push(finished.clone());
@@ -161,7 +176,7 @@ mod tests {
         let (release, pause) = mpsc::sync_channel::<()>(1);
         let (progress, observed) = mpsc::channel();
         let mut pause = Some(pause);
-        let mut dispatch = |owner, _chunks, permit| {
+        let mut dispatch = |owner, _chunks, _deadline, permit| {
             let progress = progress.clone();
             let pause = if owner == 0 { pause.take() } else { None };
             let count = if owner == 0 {
@@ -203,7 +218,7 @@ mod tests {
             layout(&[(0, &[0, 1]), (1, &[100])]),
             start,
             period,
-            |owner, _, permit| {
+            |owner, _, _, permit| {
                 if owner == 0 {
                     slow = Some(permit);
                 }
@@ -221,7 +236,7 @@ mod tests {
         let split = layout(&[(0, &[0]), (2, &[1, 2]), (1, &[100])]);
         for (periods, layout) in [(3, merged), (4, split.clone())] {
             let now = start + period * periods;
-            let next = schedule.poll(layout, now, period, |owner, _, _| {
+            let next = schedule.poll(layout, now, period, |owner, _, _, _| {
                 turns.push(owner);
                 true
             });
@@ -231,7 +246,7 @@ mod tests {
         }
         drop(slow.take());
         let late = start + period * 4;
-        schedule.poll(split, late, period, |owner, _, _| {
+        schedule.poll(split, late, period, |owner, _, _, _| {
             turns.push(owner);
             true
         });

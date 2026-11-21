@@ -21,7 +21,7 @@ use super::{World, entity_save_records, merge_entity_records};
 pub(super) struct EntityChunkChanges {
     pending: Mutex<FxHashSet<Vector2<i32>>>,
     // Manual entity snapshots and residency transitions share the saved cache.
-    pub(super) snapshot: tokio::sync::Mutex<()>,
+    pub(super) snapshot: tokio::sync::RwLock<()>,
 }
 
 type ChunkActor = (Vector2<i32>, Arc<dyn EntityBase>);
@@ -69,7 +69,7 @@ impl World {
     /// Drains work after movement, using the current cache and watchers for each position.
     /// Only this phase changes entity residency for the normal chunk loader.
     pub(crate) fn apply_entity_chunk_changes(self: &Arc<Self>) {
-        let Ok(snapshot) = self.entity_chunk_changes.snapshot.try_lock() else {
+        let Ok(snapshot) = self.entity_chunk_changes.snapshot.try_write() else {
             return;
         };
         let pending = {

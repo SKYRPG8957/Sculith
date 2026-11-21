@@ -105,7 +105,7 @@ impl World {
         let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
             return;
         };
-        let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_lock() else {
+        let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
             return;
         };
         let Ok(mut pending) = self.regional_campfire_outputs.0.try_lock() else {

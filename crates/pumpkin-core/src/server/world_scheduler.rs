@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use super::{
     Server, WorldStep,
-    region_scheduler::{RegionSchedule, next_deadline},
+    region_scheduler::{RegionSchedule, TickDeadline, next_deadline},
 };
 
 struct WorldClock {
@@ -129,11 +129,7 @@ impl WorldScheduler {
         let now = Instant::now();
         let worlds = server.worlds.load();
         self.poll_number = self.poll_number.wrapping_add(1);
-        let mode = if server.tick_rate_manager.is_frozen() {
-            WorldStep::NetworkOnly
-        } else {
-            WorldStep::RegionalDeadlines
-        };
+        let frozen = server.tick_rate_manager.is_frozen();
         let mut next = None;
         for world in worlds.iter() {
             let clock = self
@@ -141,12 +137,12 @@ impl WorldScheduler {
                 .entry(world.uuid)
                 .or_insert_with(|| WorldClock::new(now));
             clock.last_seen = self.poll_number;
-            if mode == WorldStep::RegionalDeadlines {
+            if !frozen {
                 let region_deadline = clock.regions.poll(
                     world.region_layout.load_full(),
                     now,
                     period,
-                    |owner, chunks, permit| {
+                    |owner, chunks, deadline, permit| {
                         let Ok(activity) = world.region_activity.clone().try_read_owned() else {
                             return false;
                         };
@@ -155,7 +151,7 @@ impl WorldScheduler {
                             let _activity = activity;
                             let _permit = permit;
                             if !server.stop_token.is_cancelled() {
-                                world.advance_region_time(owner, &chunks);
+                                world.advance_region_time(owner, &chunks, deadline);
                                 tracing::trace!(world = %world.uuid, region = owner, "Regional chunk time step finished");
                             }
                         });
@@ -167,6 +163,14 @@ impl WorldScheduler {
             if clock.next_tick <= now {
                 let Some(ownership) = world.try_simulation() else {
                     continue;
+                };
+                let mode = if frozen {
+                    WorldStep::NetworkOnly
+                } else {
+                    WorldStep::RegionalDeadlines(TickDeadline {
+                        at: clock.next_tick,
+                        period,
+                    })
                 };
                 let sync_time = clock.advance(now, period);
                 let world = world.clone();

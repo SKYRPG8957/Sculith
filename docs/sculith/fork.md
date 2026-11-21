@@ -151,6 +151,15 @@ block actor at its next publication step. Coordinated ticks and cooking or
 entity-spawn listeners keep their existing world-owned execution. A save or
 entity chunk retirement can defer a regional completion until its next deadline.
 
+Dropped items in active loaded chunks take their lifetime and pickup delay
+steps from the region owner. The world publishes the assignment from the
+entity's current chunk, and a regional job checks that assignment and
+residency before touching the counters. After a change of owner, the item
+keeps its most recent deadline so two close deadlines cannot advance it twice.
+Motion, collisions, pickup, merging and expired-item removal still use the
+world step. Merge and despawn event handlers use the world clock, as do
+coordinated steps and sprints. Saved items retain their remaining timers.
+
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
 use the region tick numbers at the world boundary and advance each chunk
@@ -167,7 +176,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 27.
+Native plugins use ABI 28.
 
 ## Shared resource delivery
 
