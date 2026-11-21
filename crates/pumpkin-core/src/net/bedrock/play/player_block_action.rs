@@ -8,6 +8,14 @@ impl BedrockClient {
         server: &Arc<Server>,
         packet: &pumpkin_protocol::bedrock::server::player_auth_input::PlayerBlockAction,
     ) {
-        self.apply_player_action(player, server, packet.action, packet.block_pos);
+        let mut spin_attack_prediction = None;
+        self.apply_player_action(
+            player,
+            server,
+            packet.action,
+            packet.block_pos,
+            &mut spin_attack_prediction,
+        );
+        self.reconcile_spin_attack_prediction(player, spin_attack_prediction);
     }
 }

@@ -138,6 +138,7 @@ const MAX_VERTICAL_POSITION: f64 = 2.0E7;
 const WATER_PUSH_SPEED: f64 = 0.014;
 const FAST_LAVA_PUSH_SPEED: f64 = 0.007;
 const LAVA_PUSH_SPEED: f64 = 0.002_333_333;
+const FLUID_CONTACT_INSET: f64 = 0.001;
 
 /// Speed range of `moveTowardsClosestSpace`.
 const PUSH_OUT_MIN_SPEED: f64 = 0.1;
@@ -3104,7 +3105,7 @@ impl Entity {
         let mut fluid_height: [f64; 2] = [0.0, 0.0];
 
         let entity_box = self.bounding_box.load();
-        let bounding_box = entity_box.expand(-0.001, -0.001, -0.001);
+        let bounding_box = entity_box.contract_all(FLUID_CONTACT_INSET);
 
         let min = bounding_box.min_block_pos();
 
@@ -4119,10 +4120,35 @@ impl Entity {
     }
 
     pub fn is_in_water_or_rain(&self) -> bool {
+        self.is_in_water() || self.is_in_rain(&self.world.load())
+    }
+
+    /// Item input can arrive after a move and before the next fluid simulation tick.
+    pub(crate) fn is_in_water_or_rain_at_position(&self) -> bool {
         let world = self.world.load();
+        let bounds = self.bounding_box.load().contract_all(FLUID_CONTACT_INSET);
+        let min = bounds.min_block_pos().0;
+        let max = bounds.max_block_pos().0;
+        for x in min.x..=max.x {
+            for y in min.y..=max.y {
+                for z in min.z..=max.z {
+                    let pos = BlockPos::new(x, y, z);
+                    let (fluid, state) = world.get_fluid_and_fluid_state(&pos);
+                    if fluid.matches_type(&Fluid::WATER)
+                        && f64::from(y) + f64::from(world.get_fluid_height(&pos, fluid, &state))
+                            >= bounds.min.y
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        self.is_in_rain(&world)
+    }
+
+    fn is_in_rain(&self, world: &World) -> bool {
         let pos = self.block_pos.load();
-        self.is_in_water()
-            || world.is_raining_at(&pos)
+        world.is_raining_at(&pos)
             || world.is_raining_at(&BlockPos::new(
                 pos.0.x,
                 self.bounding_box.load().max.y.floor() as i32,

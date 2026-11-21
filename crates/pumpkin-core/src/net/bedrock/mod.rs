@@ -1364,12 +1364,25 @@ impl BedrockClient {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     pub fn handle_play_packet(
         self: &Arc<Self>,
         player: &Arc<Player>,
         server: &Arc<Server>,
         packet: &RawPacket,
+    ) -> Result<(), Error> {
+        let mut spin_attack_prediction = None;
+        self.handle_queued_play_packet(player, server, packet, &mut spin_attack_prediction)?;
+        self.reconcile_spin_attack_prediction(player, spin_attack_prediction);
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn handle_queued_play_packet(
+        self: &Arc<Self>,
+        player: &Arc<Player>,
+        server: &Arc<Server>,
+        packet: &RawPacket,
+        spin_attack_prediction: &mut Option<bool>,
     ) -> Result<(), Error> {
         let payload = &packet.payload[..];
         let reader = &mut &payload[..];
@@ -1405,7 +1418,7 @@ impl BedrockClient {
             }
             SPlayerAuthInput::PACKET_ID => {
                 let packet = SPlayerAuthInput::read(reader)?;
-                self.handle_player_auth_input(player, packet, server);
+                self.apply_player_auth_input(player, packet, server, spin_attack_prediction);
             }
             SRequestChunkRadius::PACKET_ID => {
                 let packet = SRequestChunkRadius::read(reader)?;
@@ -1472,7 +1485,13 @@ impl BedrockClient {
             }
             SPlayerAction::PACKET_ID => {
                 let packet = SPlayerAction::read(reader)?;
-                self.handle_player_action(player, server, &packet);
+                self.apply_player_action(
+                    player,
+                    server,
+                    packet.action,
+                    packet.block_position,
+                    spin_attack_prediction,
+                );
             }
             SRespawn::PACKET_ID => {
                 let packet = SRespawn::read(reader)?;

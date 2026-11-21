@@ -1,6 +1,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_data::entity::EntityPose;
+use pumpkin_protocol::bedrock::client::set_actor_data::{
+    CSetActorData, MetadataValue, PropertySyncData, SyncedActorDataList, entity_data_key,
+};
 use pumpkin_protocol::bedrock::server::player_auth_input::{InputMode, InteractionModel};
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
@@ -13,6 +15,18 @@ impl BedrockClient {
         player: &Arc<Player>,
         packet: SPlayerAuthInput,
         server: &Arc<Server>,
+    ) {
+        let mut spin_attack_prediction = None;
+        self.apply_player_auth_input(player, packet, server, &mut spin_attack_prediction);
+        self.reconcile_spin_attack_prediction(player, spin_attack_prediction);
+    }
+
+    pub(in crate::net::bedrock) fn apply_player_auth_input(
+        &self,
+        player: &Arc<Player>,
+        packet: SPlayerAuthInput,
+        server: &Arc<Server>,
+        spin_attack_prediction: &mut Option<bool>,
     ) {
         if player.living_entity.dead.load(Ordering::Relaxed)
             || player.living_entity.health.load() <= 0.0
@@ -54,10 +68,10 @@ impl BedrockClient {
             player.apply_sprint_input(server, false);
         }
 
-        if flags.get(InputData::StartSpinAttack as usize) {
-            entity.set_pose(EntityPose::SpinAttack);
-        } else if flags.get(InputData::StopSpinAttack as usize) {
-            player.update_player_pose();
+        if flags.get(InputData::StopSpinAttack as usize) {
+            *spin_attack_prediction = Some(false);
+        } else if flags.get(InputData::StartSpinAttack as usize) {
+            *spin_attack_prediction = Some(true);
         }
 
         if flags.get(InputData::StartFlying as usize) {
@@ -122,13 +136,45 @@ impl BedrockClient {
 
         if let Some(block_actions) = packet.block_actions {
             for action in &block_actions {
-                self.handle_player_block_action(player, server, action);
+                self.apply_player_action(
+                    player,
+                    server,
+                    action.action,
+                    action.block_pos,
+                    spin_attack_prediction,
+                );
             }
         }
     }
 }
 
 impl BedrockClient {
+    pub(crate) fn reconcile_spin_attack_prediction(
+        &self,
+        player: &Player,
+        spin_attack_prediction: Option<bool>,
+    ) {
+        let Some(predicted) = spin_attack_prediction else {
+            return;
+        };
+        if player.living_entity.is_auto_spin_attack() == predicted {
+            return;
+        }
+
+        let entity = player.get_entity();
+        let mut actor_data = SyncedActorDataList::new();
+        actor_data.set(
+            entity_data_key::FLAGS,
+            MetadataValue::Int64(entity.bedrock_flags.load(Ordering::Relaxed)),
+        );
+        self.try_enqueue_client_packet(&CSetActorData {
+            target_runtime_id: VarULong(entity.entity_id as u64),
+            actor_data,
+            synced_properties: PropertySyncData::default(),
+            tick: VarULong(0),
+        });
+    }
+
     /// Client state at this input, which push motions build on.
     fn store_input_state(&self, packet: &SPlayerAuthInput) {
         self.input_tick.store(packet.tick.0, Ordering::Relaxed);

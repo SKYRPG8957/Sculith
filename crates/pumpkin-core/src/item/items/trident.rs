@@ -163,7 +163,7 @@ impl ItemBehaviour for TridentItem {
             return;
         }
         if EnchantmentHelper::modify_trident_spin_attack_strength(&stack, 0.0) > 0.0
-            && !player.get_entity().is_in_water_or_rain()
+            && !player.get_entity().is_in_water_or_rain_at_position()
         {
             return;
         }
@@ -204,7 +204,8 @@ impl ItemBehaviour for TridentItem {
 
         let riptide_strength = EnchantmentHelper::modify_trident_spin_attack_strength(&stack, 0.0);
         if riptide_strength > 0.0
-            && (!player.get_entity().is_in_water_or_rain() || player.get_entity().has_vehicle())
+            && (!player.get_entity().is_in_water_or_rain_at_position()
+                || player.get_entity().has_vehicle())
         {
             player.living_entity.clear_active_hand();
             return;

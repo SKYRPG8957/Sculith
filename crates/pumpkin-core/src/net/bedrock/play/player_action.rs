@@ -9,17 +9,26 @@ impl BedrockClient {
         server: &Arc<Server>,
         packet: &SPlayerAction,
     ) {
-        self.apply_player_action(player, server, packet.action, packet.block_position);
+        let mut spin_attack_prediction = None;
+        self.apply_player_action(
+            player,
+            server,
+            packet.action,
+            packet.block_position,
+            &mut spin_attack_prediction,
+        );
+        self.reconcile_spin_attack_prediction(player, spin_attack_prediction);
     }
 
     #[expect(clippy::match_same_arms)]
     #[expect(clippy::too_many_lines)]
-    pub(super) fn apply_player_action(
+    pub(in crate::net::bedrock) fn apply_player_action(
         &self,
         player: &Arc<Player>,
         server: &Arc<Server>,
         action: PlayerAction,
         location: BlockPos,
+        spin_attack_prediction: &mut Option<bool>,
     ) {
         if !player.has_client_loaded()
             || ((player.living_entity.dead.load(Ordering::Relaxed)
@@ -201,13 +210,8 @@ impl BedrockClient {
             PlayerAction::StartSwimming | PlayerAction::StopSwimming => {
                 player.apply_bedrock_swim_input(matches!(action, PlayerAction::StartSwimming));
             }
-            PlayerAction::StartSpinAttack => {
-                player
-                    .get_entity()
-                    .set_pose(pumpkin_data::entity::EntityPose::SpinAttack);
-            }
-            PlayerAction::StopSpinAttack => {
-                player.update_player_pose();
+            PlayerAction::StartSpinAttack | PlayerAction::StopSpinAttack => {
+                *spin_attack_prediction = Some(matches!(action, PlayerAction::StartSpinAttack));
             }
             PlayerAction::StartSprinting => {
                 player.apply_sprint_input(server, true);

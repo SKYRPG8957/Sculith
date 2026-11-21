@@ -3240,6 +3240,7 @@ impl Player {
         };
 
         let mut count = 0;
+        let mut spin_attack_prediction = None;
 
         while let Some(mut packet) = self.inbound_packets.pop() {
             if self.client.closed() {
@@ -3291,8 +3292,12 @@ impl Player {
                         false
                     };
                     if !cancelled
-                        && let Err(err) =
-                            client.handle_play_packet(&player_arc, &server_arc, &packet)
+                        && let Err(err) = client.handle_queued_play_packet(
+                            &player_arc,
+                            &server_arc,
+                            &packet,
+                            &mut spin_attack_prediction,
+                        )
                     {
                         tracing::error!("Failed to handle Bedrock play packet: {err}");
                     }
@@ -3303,6 +3308,13 @@ impl Player {
             if count >= MAX_PACKETS_PER_TICK {
                 break;
             }
+        }
+
+        // A trident release can follow its predicted start in the same packet drain.
+        if spin_attack_prediction.is_some()
+            && let ClientPlatform::Bedrock(client) = self.client.as_ref()
+        {
+            client.reconcile_spin_attack_prediction(self, spin_attack_prediction);
         }
     }
 
