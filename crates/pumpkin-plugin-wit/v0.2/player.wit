@@ -860,6 +860,9 @@ interface player {
         get-world: func () -> %world;
         /// Returns the player's current game mode.
         get-gamemode: func () -> game-mode;
+
+        /// Reports whether the client confirmed loading the world. Clients without a load acknowledgement are ready on join.
+        is-client-ready: func() -> bool;
         /// Changes the player's game mode. Returns true if successful.
         set-gamemode: async func (mode: game-mode) -> bool;
         /// Returns the player's locale (e.g., \"en_us\").

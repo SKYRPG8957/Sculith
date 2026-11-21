@@ -1319,6 +1319,13 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
             .map_err(|_| wasmtime::Error::msg("failed to add world resource"))
     }
 
+    fn is_client_ready(&mut self, player: Resource<Player>) -> wasmtime::Result<bool> {
+        Ok(self
+            .get(&player)?
+            .client_loaded
+            .load(std::sync::atomic::Ordering::Relaxed))
+    }
+
     fn get_gamemode(
         &mut self,
         player: Resource<Player>,
