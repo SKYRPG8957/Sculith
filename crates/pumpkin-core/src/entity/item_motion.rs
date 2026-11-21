@@ -1,5 +1,5 @@
 use std::sync::{
-    Mutex, PoisonError,
+    Arc, Mutex, PoisonError,
     atomic::Ordering::{Relaxed, SeqCst},
 };
 
@@ -163,6 +163,14 @@ impl ItemEntity {
             return;
         };
         if vehicle.is_some() || !passengers.is_empty() || portal.is_some() {
+            return;
+        }
+        // The shared-index path may run beside other bounds writers. Only this item's
+        // owner is pinned exclusively, using the usual bounds-then-index lock order.
+        let Ok(bounds_owner) = entity.bounding_box.index.try_write() else {
+            return;
+        };
+        if !std::ptr::eq(bounds_owner.as_ptr(), Arc::as_ptr(&world.entity_index)) {
             return;
         }
 

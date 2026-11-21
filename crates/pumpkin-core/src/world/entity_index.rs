@@ -62,6 +62,16 @@ impl CellRange {
     fn contains(self, cell: Cell) -> bool {
         (0..3).all(|axis| self.min[axis] <= cell[axis] && cell[axis] <= self.max[axis])
     }
+
+    fn indexed_members(
+        self,
+        cells: &FxHashMap<Cell, Vec<usize>>,
+    ) -> impl Iterator<Item = usize> + '_ {
+        self.cells()
+            .filter_map(|cell| cells.get(&cell))
+            .flatten()
+            .copied()
+    }
 }
 
 #[derive(Default)]
@@ -446,6 +456,7 @@ impl EntityIndex {
     }
 
     /// Pins both current indices while committing an isolated movement.
+    /// The caller holds the item's bounds owner exclusively and publishes the bounds in `apply`.
     pub fn try_move_isolated_item(
         &self,
         world: &World,
@@ -456,7 +467,43 @@ impl EntityIndex {
     ) {
         let entities = world.entities.load_full();
         let players = world.players.load_full();
-        // Even same-cell movement updates bounds through the read locks.
+        let registries_unchanged = || {
+            Arc::ptr_eq(&entities, &world.entities.load())
+                && Arc::ptr_eq(&players, &world.players.load())
+        };
+        let (Ok(player_index), Ok(index)) = (self.players.try_read(), self.inner.try_read()) else {
+            return;
+        };
+        if !index.matches(&entities) || !player_index.matches(&players) {
+            return;
+        }
+        let Some(&own_slot) = index.slots.get(&entity_id) else {
+            return;
+        };
+        let next_range = Index::entity_range(&bounds);
+        if let Some(swept_range) = Index::entity_range(&swept)
+            && next_range.is_some()
+            && next_range == index.ranges[own_slot]
+            && index.oversized.is_empty()
+            && player_index.oversized.is_empty()
+            && swept_range
+                .indexed_members(&index.cells)
+                .all(|slot| slot == own_slot)
+            && swept_range
+                .indexed_members(&player_index.cells)
+                .next()
+                .is_none()
+        {
+            // A same-cell bounds update cannot introduce a new candidate while membership is pinned.
+            if registries_unchanged() && apply() {
+                index.bounds[own_slot].store(bounds);
+            }
+            return;
+        }
+        drop(index);
+        drop(player_index);
+
+        // Nearby candidates can change their exact bounds under a shared membership lock.
         let (Ok(player_index), Ok(mut index)) = (self.players.try_write(), self.inner.try_write())
         else {
             return;
@@ -478,12 +525,7 @@ impl EntityIndex {
         {
             return;
         }
-        if !Arc::ptr_eq(&entities, &world.entities.load())
-            || !Arc::ptr_eq(&players, &world.players.load())
-        {
-            return;
-        }
-        if apply() {
+        if registries_unchanged() && apply() {
             index.update(entity_id, &bounds);
         }
     }
@@ -525,10 +567,14 @@ impl EntityIndex {
 mod tests {
     use super::*;
     use crate::entity::{
-        Entity, ai::test_support::world, interaction::InteractionEntity, passive::cow::CowEntity,
+        Entity, ai::test_support::world, interaction::InteractionEntity, item::ItemEntity,
+        passive::cow::CowEntity,
     };
-    use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::vector3::Vector3;
+    use crate::server::TickDeadline;
+    use pumpkin_data::{entity::EntityType, item::Item, item_stack::ItemStack};
+    use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+    use pumpkin_world::chunk::ChunkData;
+    use std::time::{Duration, Instant};
 
     fn ids(world: &super::super::World, area: &BoundingBox) -> Vec<i32> {
         world
@@ -536,6 +582,78 @@ mod tests {
             .iter()
             .map(|entity| entity.get_entity().entity_id)
             .collect()
+    }
+
+    #[tokio::test]
+    async fn isolated_items_can_move_while_both_indices_have_readers()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let items = [-10.0, 102.0].map(|x| {
+            let position = Vector3::new(x, 66.0, 2.0);
+            let chunk = BlockPos::floored_v(position).chunk_position();
+            world
+                .level
+                .loaded_chunks
+                .insert(chunk, ChunkData::empty_sync(chunk.x, chunk.y));
+            Arc::new(ItemEntity::new_with_velocity(
+                Entity::new(world.clone(), position, &EntityType::ITEM),
+                ItemStack::new(1, &Item::STONE),
+                Vector3::new(0.3, -0.2, 0.0),
+                ItemEntity::DEFAULT_PICKUP_DELAY,
+            ))
+        });
+        world
+            .entities
+            .store(Arc::new(vec![items[0].clone(), items[1].clone()]));
+        let old_bounds = items
+            .each_ref()
+            .map(|item| item.get_entity().bounding_box.load());
+        assert_eq!(
+            ids(&world, &old_bounds[0]),
+            [items[0].get_entity().entity_id]
+        );
+        assert!(world.get_players_at_box(&old_bounds[0]).is_empty());
+
+        // The old exclusive path could not move either item with these readers active.
+        let entities = world
+            .entity_index
+            .inner
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let players = world
+            .entity_index
+            .players
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        let started = std::sync::Barrier::new(items.len());
+        std::thread::scope(|threads| {
+            for (id, item) in items.iter().enumerate() {
+                let world = &world;
+                let started = &started;
+                threads.spawn(move || {
+                    let chunk = item.get_entity().chunk_pos.load();
+                    started.wait();
+                    item.try_regional_motion(world, chunk, id, deadline, &|pos| pos == chunk);
+                });
+            }
+        });
+        drop(players);
+        drop(entities);
+
+        for (item, old) in items.iter().zip(old_bounds) {
+            let entity = item.get_entity();
+            let moved = entity.bounding_box.load();
+            assert!(moved.min.x > old.max.x);
+            assert!(ids(&world, &old).is_empty());
+            assert_eq!(ids(&world, &moved), [entity.entity_id]);
+        }
+        world.level.shutdown().await;
+        Ok(())
     }
 
     #[tokio::test]
