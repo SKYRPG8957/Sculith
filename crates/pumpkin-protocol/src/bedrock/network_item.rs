@@ -17,6 +17,9 @@ mod components;
 
 pub use components::potion_contents_from_bedrock;
 
+// Empty NBT, followed by two empty block filter lists.
+const EMPTY_USER_DATA_LEN: usize = size_of::<i16>() + 2 * size_of::<i32>();
+
 /// Describes a network item stack transmitted over the wire in Bedrock packets.
 ///
 /// Contains the item runtime ID, count, aux/metadata value, block runtime state,
@@ -151,7 +154,7 @@ impl NetworkItemDescriptor {
             return VarUInt(0).write(writer);
         }
 
-        let mut buf = Vec::with_capacity(10);
+        let mut buf = Vec::with_capacity(EMPTY_USER_DATA_LEN);
         self.write_user_data_buffer(&mut buf)?;
         VarUInt(buf.len() as u32).write(writer)?;
         writer.write_all(&buf)
@@ -384,23 +387,34 @@ impl PacketRead for NetworkItemStackDescriptor {
     }
 }
 
-impl From<&ItemStack> for NetworkItemStackDescriptor {
-    fn from(stack: &ItemStack) -> Self {
-        let item = NetworkItemDescriptor::from(stack);
+impl NetworkItemStackDescriptor {
+    fn from_descriptor(item: &NetworkItemDescriptor, net_id: NonZero<i32>) -> Self {
         if item.id.0 == 0 {
             return Self::default();
         }
-        let mut extra_data = Vec::with_capacity(10);
-        item.write_user_data_buffer(&mut extra_data)
-            .expect("server-generated item data can be serialized to a buffer");
+        let mut extra_data = Vec::with_capacity(EMPTY_USER_DATA_LEN);
+        if item.write_user_data_buffer(&mut extra_data).is_err() {
+            // Keep the inventory slot and discard the partial user data.
+            extra_data.clear();
+            extra_data.resize(EMPTY_USER_DATA_LEN, 0);
+            if item.id.0 == i32::from(BedrockItem::SHIELD.id) {
+                extra_data.extend_from_slice(&item.shield_blocking_tick.to_le_bytes());
+            }
+        }
         Self {
             id: item.id.0 as i16,
             stack_size: item.stack_size,
             aux_value: item.aux_value,
             block_runtime_id: VarUInt(item.block_runtime_id.0 as u32),
             extra_data,
-            net_id: Some(stack.uid),
+            net_id: Some(net_id),
         }
+    }
+}
+
+impl From<&ItemStack> for NetworkItemStackDescriptor {
+    fn from(stack: &ItemStack) -> Self {
+        Self::from_descriptor(&NetworkItemDescriptor::from(stack), stack.uid)
     }
 }
 
@@ -804,6 +818,31 @@ mod tests {
                 .collect();
             assert_eq!(entries, [(0, 4), (17, 3)]);
         }
+    }
+
+    #[test]
+    fn stack_descriptor_keeps_item_with_unencodable_user_data() {
+        let stack = ItemStack::new(1, &Item::SHIELD);
+        let mut item = NetworkItemDescriptor::from(&stack);
+        item.shield_blocking_tick = 314;
+        let mut tags = pumpkin_nbt::NbtCompound::new();
+        tags.put_string("invalid", "a".repeat(usize::from(u16::MAX) + 1));
+        item.nbt_data = tags.into();
+
+        let descriptor = NetworkItemStackDescriptor::from_descriptor(&item, stack.uid);
+        let mut bytes = Vec::new();
+        descriptor.write(&mut bytes).unwrap();
+        let decoded = NetworkItemDescriptor::read(&mut bytes.as_slice()).unwrap();
+        assert_eq!(decoded.id, VarInt(i32::from(BedrockItem::SHIELD.id)));
+        assert_eq!(decoded.stack_size, 1);
+        assert!(decoded.nbt_data.is_empty());
+        assert_eq!(decoded.shield_blocking_tick, 314);
+        assert_eq!(
+            NetworkItemStackDescriptor::read(&mut bytes.as_slice())
+                .unwrap()
+                .net_id,
+            Some(stack.uid),
+        );
     }
 
     #[test]

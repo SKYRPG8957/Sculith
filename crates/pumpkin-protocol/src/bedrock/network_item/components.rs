@@ -58,7 +58,7 @@ const POTIONS: [Option<&Potion>; 47] = [
     Some(&Potion::INFESTED),
 ];
 
-fn uses_potion_aux(id: i16) -> bool {
+const fn uses_potion_aux(id: i16) -> bool {
     id == BedrockItem::POTION.id
         || id == BedrockItem::SPLASH_POTION.id
         || id == BedrockItem::LINGERING_POTION.id
@@ -78,6 +78,7 @@ pub(super) fn potion_aux(stack: &ItemStack, bedrock_id: i16) -> Option<u32> {
 }
 
 /// Restores shared potion contents from a server-provided Bedrock creative entry.
+#[must_use]
 pub fn potion_contents_from_bedrock(id: i16, aux: u32) -> Option<PotionContentsImpl> {
     if !uses_potion_aux(id) {
         return None;
