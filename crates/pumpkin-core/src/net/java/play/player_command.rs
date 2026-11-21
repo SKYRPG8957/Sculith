@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::entity::player::PlayerInput;
 
 impl JavaClient {
     pub fn handle_player_command(
@@ -35,13 +36,7 @@ impl JavaClient {
             }
             // <= 1.21.5
             Action::StartSneaking | Action::StopSneaking => {
-                self.handle_player_input(
-                    player,
-                    &SPlayerInput {
-                        input: SPlayerInput::SNEAK,
-                    },
-                    server,
-                );
+                player.apply_player_input(server, PlayerInput::SNEAK);
             }
         }
     }

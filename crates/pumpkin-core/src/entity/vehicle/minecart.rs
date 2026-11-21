@@ -10,12 +10,15 @@ mod tnt;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use pumpkin_protocol::java::server::play::SPlayerInput;
 use rand::RngExt;
 
 use crate::entity::projectile::abstract_arrow::is_abstract_arrow;
 use crate::{
-    entity::{Entity, EntityBase, living::LivingEntity, player::Player},
+    entity::{
+        Entity, EntityBase,
+        living::LivingEntity,
+        player::{Player, PlayerInput},
+    },
     server::Server,
 };
 use pumpkin_data::Block;
@@ -321,21 +324,21 @@ impl EntityBase for MinecartEntity {
         let mut velocity = self.vehicle.entity.velocity.load();
 
         let mut has_driver = false;
-        let mut driver_input = 0;
+        let mut driver_input = PlayerInput::empty();
         let mut driver_yaw = 0.0f32;
 
         if let Ok(passengers) = self.vehicle.entity.passengers.try_lock()
             && let Some(passenger) = passengers.first()
             && let Some(player) = passenger.get_player()
         {
-            driver_input = player.last_input.load(Ordering::Relaxed);
+            driver_input = player.player_input();
             driver_yaw = player.get_entity().yaw.load();
             has_driver = true;
         }
 
         if has_driver && is_on_rails {
-            let forward = driver_input & SPlayerInput::FORWARD != 0;
-            let backward = driver_input & SPlayerInput::BACKWARD != 0;
+            let forward = driver_input.contains(PlayerInput::FORWARD);
+            let backward = driver_input.contains(PlayerInput::BACKWARD);
 
             let mut force_dir = Vector3::new(0.0, 0.0, 0.0);
             if forward {

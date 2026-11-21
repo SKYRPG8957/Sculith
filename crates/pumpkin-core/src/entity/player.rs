@@ -10,6 +10,7 @@ mod shoulders;
 pub mod statistics;
 pub(crate) mod world_transfer;
 
+pub(crate) use client_move::PlayerInput;
 pub use client_move::{ClientMove, ClientMoveOutcome};
 pub(crate) use item_use::ItemUseSnapshot;
 
@@ -743,6 +744,7 @@ pub struct Player {
     pub delayed_destroy_pos: Mutex<BlockPos>,
     /// Start tick of the delayed destroy.
     pub delayed_tick_start: AtomicI32,
+    /// Control mask exposed to native plugins.
     pub last_input: AtomicI8,
     /// A counter for teleport IDs used to track pending teleports.
     pub teleport_id_count: AtomicI32,

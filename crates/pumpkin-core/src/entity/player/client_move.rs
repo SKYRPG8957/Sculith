@@ -7,7 +7,6 @@ use pumpkin_protocol::java::client::play::{
     CEntityPositionSync, CHeadRot, CPlayerPosition, CSetCamera, CUpdateEntityPos,
     CUpdateEntityPosRot, CUpdateEntityRot,
 };
-use pumpkin_protocol::java::server::play::SPlayerInput;
 use pumpkin_util::GameMode;
 use pumpkin_util::math::{vector3::Vector3, wrap_degrees};
 use pumpkin_util::text::TextComponent;
@@ -24,6 +23,20 @@ use crate::world::chunker;
 
 use super::Player;
 use super::statistics::StatisticCategory;
+
+bitflags::bitflags! {
+    /// Player controls with the established native plugin and input event encoding.
+    #[derive(Clone, Copy)]
+    pub(crate) struct PlayerInput: i8 {
+        const FORWARD = 1 << 0;
+        const BACKWARD = 1 << 1;
+        const LEFT = 1 << 2;
+        const RIGHT = 1 << 3;
+        const JUMP = 1 << 4;
+        const SNEAK = 1 << 5;
+        const SPRINT = 1 << 6;
+    }
+}
 
 /// One client move this tick, from Java `ServerboundMovePlayerPacket` or Bedrock `PlayerAuthInput`.
 #[derive(Clone, Copy)]
@@ -56,12 +69,20 @@ impl Player {
         (degrees * 256.0 / 360.0).rem_euclid(256.0) as u8
     }
 
-    /// Vanilla `ServerGamePacketListenerImpl.handlePlayerInput`
+    /// Applies the input mask exposed by the native plugin API.
     pub fn apply_client_input(&self, server: &Arc<Server>, input: i8) {
+        self.apply_player_input(server, PlayerInput::from_bits_retain(input));
+    }
+
+    pub(crate) fn player_input(&self) -> PlayerInput {
+        PlayerInput::from_bits_retain(self.last_input.load(Ordering::Relaxed))
+    }
+
+    pub(crate) fn apply_player_input(&self, server: &Arc<Server>, input: PlayerInput) {
         let Some(player) = self.world().get_player_by_uuid(self.gameprofile.id) else {
             return;
         };
-        let mut input_event = PlayerInputEvent::new(player.clone(), format!("{input:b}"));
+        let mut input_event = PlayerInputEvent::new(player.clone(), format!("{:b}", input.bits()));
         server
             .plugin_manager
             .fire_blocking(server, &mut input_event);
@@ -69,9 +90,9 @@ impl Player {
             return;
         }
 
-        self.last_input.store(input, Ordering::Relaxed);
+        self.last_input.store(input.bits(), Ordering::Relaxed);
 
-        let sneak = input & SPlayerInput::SNEAK != 0;
+        let sneak = input.contains(PlayerInput::SNEAK);
         if sneak
             && self.gamemode.load() == GameMode::Spectator
             && self.camera_target_id.load().is_some()

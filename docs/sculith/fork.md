@@ -22,6 +22,11 @@ it has no release, artifact-upload, container-push or automatic publication job.
 The upstream Docker downloader and compose file are removed because they ran
 upstream release binaries. This branch currently supports source builds.
 
+Bedrock mouse, classic touch and analog controls decode into the engine's
+`PlayerInput` flags. Java inputs use the same engine entry point. Sneaking
+and minecart controls read those flags. The native plugin input field and Wasm
+input event use the established input mask encoding.
+
 ## Verification
 
 - Upstream Linux debug build passed on Rust 1.100.0.

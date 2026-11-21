@@ -2,11 +2,10 @@
 use super::*;
 use pumpkin_data::entity::EntityPose;
 use pumpkin_protocol::bedrock::server::player_auth_input::{InputMode, InteractionModel};
-use pumpkin_protocol::java::server::play::SPlayerInput;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
 
-use crate::entity::player::ClientMove;
+use crate::entity::player::{ClientMove, PlayerInput};
 
 impl BedrockClient {
     pub fn handle_player_auth_input(
@@ -42,7 +41,7 @@ impl BedrockClient {
 
         let sneaking = sneaking_from_auth(player, flags);
         let was_sneaking = entity.is_sneaking();
-        player.apply_client_input(server, java_input_from_auth(&packet, sneaking));
+        player.apply_player_input(server, player_input_from_auth(&packet, sneaking));
         if entity.is_sneaking() != was_sneaking {
             player.update_bedrock_shield_sneaking();
         }
@@ -235,7 +234,7 @@ fn sneaking_from_auth(
     }
 }
 
-fn java_input_from_auth(packet: &SPlayerAuthInput, sneaking: bool) -> i8 {
+fn player_input_from_auth(packet: &SPlayerAuthInput, sneaking: bool) -> PlayerInput {
     let flags = &packet.input_data;
     let mouse = packet.input_mode.0 == InputMode::Mouse as u32;
     let classic_touch = packet.input_mode.0 == InputMode::Touch as u32
@@ -246,31 +245,22 @@ fn java_input_from_auth(packet: &SPlayerAuthInput, sneaking: bool) -> i8 {
         analog_move(packet.analog_move)
     };
 
-    let mut input = 0i8;
-    if up {
-        input |= SPlayerInput::FORWARD;
-    }
-    if down {
-        input |= SPlayerInput::BACKWARD;
-    }
-    if left {
-        input |= SPlayerInput::LEFT;
-    }
-    if right {
-        input |= SPlayerInput::RIGHT;
-    }
-    if flags.get(InputData::JumpCurrentRaw as usize)
-        || flags.get(InputData::JumpDown as usize)
-        || flags.get(InputData::AutoJumpingInWater as usize)
-    {
-        input |= SPlayerInput::JUMP;
-    }
-    if sneaking {
-        input |= SPlayerInput::SNEAK;
-    }
-    if flags.get(InputData::SprintDown as usize) {
-        input |= SPlayerInput::SPRINT;
-    }
+    let mut input = PlayerInput::empty();
+    input.set(PlayerInput::FORWARD, up);
+    input.set(PlayerInput::BACKWARD, down);
+    input.set(PlayerInput::LEFT, left);
+    input.set(PlayerInput::RIGHT, right);
+    input.set(
+        PlayerInput::JUMP,
+        flags.get(InputData::JumpCurrentRaw as usize)
+            || flags.get(InputData::JumpDown as usize)
+            || flags.get(InputData::AutoJumpingInWater as usize),
+    );
+    input.set(PlayerInput::SNEAK, sneaking);
+    input.set(
+        PlayerInput::SPRINT,
+        flags.get(InputData::SprintDown as usize),
+    );
     input
 }
 
