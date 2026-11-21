@@ -5,6 +5,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use rtc_ice::mdns::MulticastDnsMode;
 use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, trace, warn};
 use webrtc::{
@@ -208,15 +209,22 @@ async fn build_peer(
     direct_ip: bool,
     advertised_ip: Option<IpAddr>,
 ) -> Result<Arc<dyn PeerConnection>, String> {
-    let ice_bind_addr = if direct_ip {
-        // Direct connections are relayed through the router's loopback socket.
-        // Binding every interface would make the inner ICE source differ from
-        // the loopback route registered after SDP generation.
-        SocketAddr::new(state.ice_router.internal_addr().ip(), 0)
+    let loopback_peer = handler.address.ip().is_loopback();
+    let listen_ip = state.ice_local_addr.ip();
+    let ice_bind_ip = if direct_ip || (loopback_peer && listen_ip.is_unspecified()) {
+        // Direct ICE is relayed by the loopback router. For local LAN clients,
+        // bind explicitly as wildcard ICE gathering skips loopback interfaces.
+        state.ice_router.internal_addr().ip()
     } else {
-        SocketAddr::new(state.ice_local_addr.ip(), 0)
+        listen_ip
     };
     let mut setting_engine_builder = SettingEngineBuilder::default();
+    if direct_ip || loopback_peer {
+        // The router rewrites direct offers to a numeric address. Local peers
+        // use loopback, even on hosts with no multicast-capable interface.
+        setting_engine_builder =
+            setting_engine_builder.with_multicast_dns_mode(MulticastDnsMode::Disabled);
+    }
     if direct_ip && let Some(external_ip) = advertised_ip {
         setting_engine_builder = setting_engine_builder
             .with_nat_1to1_ips(vec![external_ip.to_string()], RTCIceCandidateType::Host);
@@ -238,7 +246,7 @@ async fn build_peer(
                 .with_configuration(configuration)
                 .with_setting_engine(setting_engine)
                 .with_handler(handler)
-                .with_udp_addrs(vec![ice_bind_addr])
+                .with_udp_addrs(vec![SocketAddr::new(ice_bind_ip, 0)])
                 .build(),
         )
         .await

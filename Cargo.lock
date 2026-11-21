@@ -3085,6 +3085,7 @@ dependencies = [
  "rayon",
  "reqwest",
  "rsa",
+ "rtc-ice",
  "rustc-hash",
  "rustls",
  "rustyline",
