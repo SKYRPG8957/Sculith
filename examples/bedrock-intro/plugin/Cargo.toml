@@ -1,0 +1,15 @@
+[package]
+name = "sculith-intro"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pumpkin-plugin-api = { path = "../../../crates/pumpkin-plugin-api" }
+serde_json = "1"
+tracing = "0.1"
+
+[workspace]
