@@ -1,7 +1,10 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::{entity::player::ItemUseSnapshot, item::registry::should_try_block_placement};
+use pumpkin_data::item::Item;
 use pumpkin_protocol::bedrock::server::inventory_transaction::HandSlot;
+
+const SIMULATION_TICK_TRIGGER: u8 = 2;
 
 impl BedrockClient {
     fn correct_rejected_food_use(&self, player: &Player) {
@@ -121,6 +124,29 @@ impl BedrockClient {
                         }
                     }
 
+                    // Cast or reel if the targeted block does not handle the interaction.
+                    if held_item.item.id == Item::FISHING_ROD.id {
+                        if data.trigger_type == SIMULATION_TICK_TRIGGER {
+                            return;
+                        }
+                        let snapshot = ItemUseSnapshot::new(player, Hand::Right);
+                        let mut event = PlayerInteractEvent::new(
+                            player,
+                            InteractAction::RightClickBlock,
+                            block,
+                            Some(data.block_position),
+                        );
+                        server.plugin_manager.fire_blocking(&server, &mut event);
+                        if event.cancelled || !snapshot.unchanged(player) {
+                            snapshot.correct(player);
+                            return;
+                        }
+                        server
+                            .item_registry
+                            .on_use(&snapshot.stack, player, Hand::Right);
+                        return;
+                    }
+
                     let mut stack = held_item;
                     if !stack.is_empty() {
                         let item_id = stack.item.id;
@@ -188,6 +214,11 @@ impl BedrockClient {
                         HandSlot::Offhand => Hand::Left,
                     };
                     let snapshot = ItemUseSnapshot::new(player, hand);
+                    if snapshot.stack.item.id == Item::FISHING_ROD.id
+                        && data.trigger_type == SIMULATION_TICK_TRIGGER
+                    {
+                        return;
+                    }
                     let mut held = snapshot.stack.clone();
 
                     let mut event = PlayerInteractEvent::new(
