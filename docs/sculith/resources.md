@@ -24,6 +24,14 @@ The mapping names the resources to expose to vanilla Java. For example:
   "textures": [
     { "bedrock": "textures/blocks/stone.png", "java": "minecraft:block/stone" }
   ],
+  "bitmap_fonts": [
+    {
+      "bedrock": "textures/ui/intro.png",
+      "java": "sculith:intro/page",
+      "ascent": 7,
+      "chars": ["\uE100", "\uE101"]
+    }
+  ],
   "sounds": [
     { "bedrock": "example.bell", "java": "example:bell", "file": "sounds/bell.ogg" }
   ],
@@ -52,8 +60,11 @@ separate external pack URLs remain available through the edition-specific config
 
 The supported conversion is explicit PNG texture overrides, single-clip Ogg Vorbis
 sounds, and static cuboid entity geometry with a direct texture and render
-controller. Java 26.3 uses pack format 97.1. These are converted assets: registering
-an asset alone does not spawn a model, play a sound, or create a plugin interface.
+controller. Java 26.3 uses pack format 97.1.
+`bitmap_fonts` generates a Java font from a Bedrock PNG divided into the rows
+and columns in `chars`. The tile height becomes the glyph height. A Java
+dialog text component selects the font using the mapping's Java ID.
+Explicit texture overrides can also target `minecraft:gui/sprites/dialog/`.
 Arbitrary Bedrock UI JSON, behavior packs, scripts, animation and Molang are not
 converted. Unsupported mapped features fail validation. Unmapped native assets
 remain in the Bedrock archive and are not automatically translated for Java.

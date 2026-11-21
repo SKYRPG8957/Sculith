@@ -51,12 +51,24 @@ pub struct TextureMap {
     /// Bitmap fonts compiled from an authored form. Each name selects sculith/fonts/<name>.json.
     #[serde(default)]
     pub form_fonts: Vec<String>,
+    /// Project a Bedrock UI image as a grid of Java bitmap glyphs.
+    #[serde(default)]
+    pub bitmap_fonts: Vec<BitmapFontMapping>,
     #[serde(default)]
     pub textures: Vec<TextureMapping>,
     #[serde(default)]
     pub sounds: Vec<SoundMapping>,
     #[serde(default)]
     pub models: Vec<ModelMapping>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BitmapFontMapping {
+    pub bedrock: String,
+    pub java: String,
+    pub ascent: i32,
+    pub chars: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,6 +197,7 @@ fn convert_with_mapping(
     ensure!(
         mapping.companion_forms
             || !mapping.form_fonts.is_empty()
+            || !mapping.bitmap_fonts.is_empty()
             || !mapping.textures.is_empty()
             || !mapping.sounds.is_empty()
             || !mapping.models.is_empty(),
@@ -208,15 +221,7 @@ fn convert_with_mapping(
             "duplicate Java target: {}",
             entry.java
         );
-        ensure!(
-            entry.bedrock.starts_with("textures/")
-                && Path::new(&entry.bedrock)
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("png")),
-            "Bedrock textures must be PNG files under textures/"
-        );
-        let source = confined(&root, &entry.bedrock)?;
-        let bytes = read_bounded(&source, MAX_TEXTURE_BYTES)?;
+        let bytes = read_texture(&root, &entry.bedrock)?;
         total_bytes += bytes.len();
         ensure!(
             total_bytes <= MAX_TOTAL_BYTES,
@@ -242,9 +247,15 @@ fn convert_with_mapping(
         fs::write(directory.join("server_form.json"), bytes)?;
     }
 
-    ensure!(mapping.form_fonts.len() <= 32, "too many form fonts");
+    ensure!(
+        mapping.form_fonts.len() + mapping.bitmap_fonts.len() <= 32,
+        "too many form fonts"
+    );
     for name in &mapping.form_fonts {
         install_form_font(&root, stage.path(), name, &mut targets)?;
+    }
+    for font in &mapping.bitmap_fonts {
+        install_bitmap_font(&root, stage.path(), font, &mut targets, &mut total_bytes)?;
     }
     sounds::convert(&root, &mapping.sounds, stage.path(), &mut total_bytes)?;
 
@@ -258,14 +269,19 @@ fn convert_with_mapping(
         converted_textures: mapping.textures.len(),
         converted_sounds: mapping.sounds.clone(),
         converted_models: mapping.models.clone(),
-        scope: if !mapping.form_fonts.is_empty() {
+        scope: if !mapping.form_fonts.is_empty() || !mapping.bitmap_fonts.is_empty() {
             "mapped textures, bitmap form fonts, sounds and static models for stock Java"
         } else if mapping.companion_forms {
             "mapped textures, sounds, static models and an authored Bedrock form for Sculith Companion"
         } else {
             "explicit PNG overrides, single-clip Vorbis sounds and static cuboid models"
         }.into(),
-        form_fonts: mapping.form_fonts.clone(),
+        form_fonts: mapping
+            .form_fonts
+            .iter()
+            .cloned()
+            .chain(mapping.bitmap_fonts.iter().map(|font| font.java.clone()))
+            .collect(),
         limitations: vec![
             "Only explicitly mapped PNG, OGG and static geometry definitions are converted; unmapped assets are not included.".into(),
             "PNG overrides target existing textures; custom sound events and presentation-only item models are registered by the pack.".into(),
@@ -345,8 +361,9 @@ fn java_texture_path(id: &str) -> Result<String> {
     ensure!(
         texture.starts_with("block/")
             || texture.starts_with("item/")
-            || (namespace == "sculith" && texture.starts_with("ui/")),
-        "expected a block/, item/ or sculith:ui/ texture"
+            || (namespace == "sculith" && texture.starts_with("ui/"))
+            || (namespace == "minecraft" && texture.starts_with("gui/sprites/dialog/")),
+        "expected a block/, item/, sculith:ui/ or minecraft:gui/sprites/dialog/ texture"
     );
     ensure!(
         !Path::new(texture)
@@ -367,6 +384,77 @@ fn java_texture_path(id: &str) -> Result<String> {
         bail!("invalid Java texture path");
     }
     Ok(format!("assets/{namespace}/textures/{texture}.png"))
+}
+
+fn read_texture(root: &Path, path: &str) -> Result<Vec<u8>> {
+    ensure!(
+        path.starts_with("textures/")
+            && Path::new(path)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("png")),
+        "Bedrock textures must be PNG files under textures/"
+    );
+    read_bounded(&confined(root, path)?, MAX_TEXTURE_BYTES)
+}
+
+fn install_bitmap_font(
+    root: &Path,
+    stage: &Path,
+    font: &BitmapFontMapping,
+    targets: &mut HashSet<String>,
+    total_bytes: &mut usize,
+) -> Result<()> {
+    validate_resource_id(&font.java).map_err(anyhow::Error::msg)?;
+    let (namespace, name) = font.java.split_once(':').context("invalid form font ID")?;
+    let target = format!("assets/{namespace}/font/{name}.json");
+    let texture = format!("assets/{namespace}/textures/font/{name}.png");
+    ensure!(
+        targets.insert(target.clone()) && targets.insert(texture.clone()),
+        "duplicate bitmap font: {}",
+        font.java
+    );
+    let bytes = read_texture(root, &font.bedrock)?;
+    let (width, height) =
+        validate_png(&bytes).with_context(|| format!("invalid PNG: {}", font.bedrock))?;
+    let rows = u32::try_from(font.chars.len())?;
+    let columns = u32::try_from(font.chars.first().map_or(0, |row| row.chars().count()))?;
+    ensure!(
+        rows > 0
+            && columns > 0
+            && width.is_multiple_of(columns)
+            && height.is_multiple_of(rows)
+            && font
+                .chars
+                .iter()
+                .all(|row| row.chars().count() == columns as usize),
+        "bitmap font {} must describe a rectangular grid matching its PNG",
+        font.java
+    );
+    let glyph_height = height / rows;
+    ensure!(
+        (-4096..=i32::try_from(glyph_height)?).contains(&font.ascent),
+        "bitmap font {} ascent exceeds its glyph height",
+        font.java
+    );
+    *total_bytes += bytes.len();
+    ensure!(
+        *total_bytes <= MAX_TOTAL_BYTES,
+        "texture pack exceeds 256 MiB"
+    );
+    let document = serde_json::json!({"providers": [{
+        "type": "bitmap",
+        "file": format!("{namespace}:font/{name}.png"),
+        "height": glyph_height,
+        "ascent": font.ascent,
+        "chars": &font.chars,
+    }]});
+    let target = stage.join(target);
+    let texture = stage.join(texture);
+    fs::create_dir_all(target.parent().context("missing font parent")?)?;
+    fs::create_dir_all(texture.parent().context("missing font texture parent")?)?;
+    fs::write(texture, bytes)?;
+    fs::write(target, serde_json::to_vec(&document)?)?;
+    Ok(())
 }
 
 fn install_form_font(
@@ -419,11 +507,12 @@ fn install_form_font(
     Ok(())
 }
 
-fn validate_png(bytes: &[u8]) -> Result<()> {
+fn validate_png(bytes: &[u8]) -> Result<(u32, u32)> {
     let decoder = png::Decoder::new(Cursor::new(bytes));
     let mut reader = decoder.read_info()?;
+    let (width, height) = (reader.info().width, reader.info().height);
     ensure!(
-        reader.info().width <= 4096 && reader.info().height <= 4096,
+        width <= 4096 && height <= 4096,
         "PNG dimensions exceed 4096x4096"
     );
     let size = reader
@@ -436,7 +525,7 @@ fn validate_png(bytes: &[u8]) -> Result<()> {
         "APNG animation is unsupported"
     );
     reader.finish()?;
-    Ok(())
+    Ok((width, height))
 }
 
 fn validate_resource_id(id: &str) -> Result<(), String> {
@@ -561,6 +650,58 @@ mod tests {
         assert_eq!(
             fs::read(dir.path().join("java/assets/sculith/font/guild.json")).unwrap(),
             font
+        );
+    }
+
+    #[test]
+    fn converts_bitmap_glyphs_and_dialog_sprites() {
+        let dir = fixture();
+        let mapping = dir.path().join("map.json");
+        let mut data = serde_json::json!({
+            "bitmap_fonts": [{
+                "bedrock": "textures/blocks/stone.png",
+                "java": "sculith:intro/engine",
+                "ascent": 1,
+                "chars": ["\u{e100}", "\u{e101}"],
+            }],
+            "textures": [{
+                "bedrock": "textures/blocks/stone.png",
+                "java": "minecraft:gui/sprites/dialog/warning_button",
+            }],
+        });
+        fs::write(&mapping, data.to_string()).unwrap();
+        assert!(
+            run(&dir)
+                .unwrap_err()
+                .to_string()
+                .contains("rectangular grid")
+        );
+        assert!(!dir.path().join("java").exists());
+        data["bitmap_fonts"][0]["chars"] = serde_json::json!(["\u{e100}"]);
+        fs::write(mapping, data.to_string()).unwrap();
+        assert_eq!(run(&dir).unwrap().form_fonts, ["sculith:intro/engine"]);
+        let java = dir.path().join("java/assets");
+        let font: serde_json::Value =
+            read_json(&java.join("sculith/font/intro/engine.json")).unwrap();
+        assert_eq!(
+            font["providers"],
+            serde_json::json!([{
+                "type": "bitmap",
+                "file": "sculith:font/intro/engine.png",
+                "height": 1,
+                "ascent": 1,
+                "chars": ["\u{e100}"],
+            }])
+        );
+        let atlas = fs::read(dir.path().join("bedrock/textures/blocks/stone.png")).unwrap();
+        assert_eq!(
+            fs::read(java.join("sculith/textures/font/intro/engine.png")).unwrap(),
+            atlas
+        );
+        assert_eq!(
+            fs::read(java.join("minecraft/textures/gui/sprites/dialog/warning_button.png"))
+                .unwrap(),
+            atlas
         );
     }
 
