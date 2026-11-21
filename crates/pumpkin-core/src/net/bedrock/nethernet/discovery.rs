@@ -17,19 +17,19 @@ use pumpkin_protocol::{
 };
 use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
 use sha2::{Digest, Sha256};
-use tokio::{
-    net::UdpSocket,
-    sync::{Mutex, mpsc},
-};
+use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, trace, warn};
 use webrtc::peer_connection::RTCIceCandidateInit;
 
-use super::{peer::negotiate, state::NetherNetState};
+use super::{ice_socket::IceSocket, peer::negotiate, state::NetherNetState};
 use crate::server::Server;
 
 const DISCOVERY_PORT: u16 = 7551;
 const CHECKSUM_SIZE: usize = 32;
 const HEADER_SIZE: usize = 18;
+const MESSAGE_HEADER_SIZE: usize = 12;
+// The client caps both declared lengths but sends the entire encrypted SDP.
+const MAX_DECLARED_MESSAGE_LENGTH: usize = 1140;
 const REQUEST_PACKET: u16 = 0;
 const RESPONSE_PACKET: u16 = 1;
 const MESSAGE_PACKET: u16 = 2;
@@ -41,10 +41,21 @@ static KEY: LazyLock<[u8; 32]> =
     LazyLock::new(|| Sha256::digest(0xdeadbeefu64.to_le_bytes()).into());
 
 pub struct NetherNetDiscovery {
-    socket: Arc<UdpSocket>,
+    socket: IceSocket,
     network_id: u64,
     advertisement_id: u64,
-    candidates: Arc<Mutex<HashMap<ConnectionKey, mpsc::UnboundedSender<RTCIceCandidateInit>>>>,
+}
+
+pub(super) struct LanSignal {
+    pub socket: IceSocket,
+    pub address: SocketAddr,
+    pub sender_id: u64,
+    pub data: String,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct LanSignaling {
+    candidates: Arc<Mutex<HashMap<ConnectionKey, mpsc::Sender<RTCIceCandidateInit>>>>,
 }
 
 impl NetherNetDiscovery {
@@ -53,18 +64,18 @@ impl NetherNetDiscovery {
             IpAddr::V4(ip) => ip,
             IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
         };
-        let socket = UdpSocket::bind((ip, DISCOVERY_PORT)).await?;
+        let socket = IceSocket::bind(SocketAddr::from((ip, DISCOVERY_PORT))).await?;
         Ok(Self {
-            socket: Arc::new(socket),
+            socket,
             network_id,
             advertisement_id: rand::random(),
-            candidates: Arc::default(),
         })
     }
 
     pub(super) async fn receive(
         &self,
         state: &NetherNetState,
+        signaling: &LanSignaling,
         buffer: &mut [u8],
     ) -> Result<(), Error> {
         let (length, address) = self.socket.recv_from(buffer).await?;
@@ -88,7 +99,17 @@ impl NetherNetDiscovery {
                         .map_or(data.as_str(), |(signal, _)| signal),
                     "Received NetherNet LAN signal from {address}"
                 );
-                self.handle_signal(state, address, sender_id, data).await;
+                signaling
+                    .handle(
+                        state,
+                        LanSignal {
+                            socket: self.socket.clone(),
+                            address,
+                            sender_id,
+                            data,
+                        },
+                    )
+                    .await;
             }
             Some(Packet::Message {
                 sender_id,
@@ -119,17 +140,43 @@ impl NetherNetDiscovery {
         Ok(())
     }
 
-    async fn handle_signal(
-        &self,
-        state: &NetherNetState,
-        address: SocketAddr,
-        sender_id: u64,
-        data: String,
+    pub fn local_addr(&self) -> Result<SocketAddr, Error> {
+        self.socket.local_addr()
+    }
+}
+
+impl LanSignaling {
+    pub(super) async fn receive_game_port(
+        self,
+        state: NetherNetState,
+        mut incoming: mpsc::Receiver<LanSignal>,
     ) {
+        loop {
+            tokio::select! {
+                () = state.stop_token.cancelled() => break,
+                signal = incoming.recv() => {
+                    let Some(signal) = signal else { break };
+                    self.handle(&state, signal).await;
+                }
+            }
+        }
+    }
+
+    pub(super) async fn handle(&self, state: &NetherNetState, signal: LanSignal) {
+        let LanSignal {
+            socket,
+            address,
+            sender_id,
+            data,
+        } = signal;
+        let Some(server) = state.server.upgrade() else {
+            return;
+        };
+        let network_id = server.server_guid;
         if data.eq_ignore_ascii_case("ping") {
             trace!(%address, sender_id, "Responding to NetherNet LAN Ping signal");
-            if let Ok(response) = encode_message(self.network_id, sender_id, "Pong")
-                && let Err(error) = self.socket.send_to(&response, address).await
+            if let Ok(response) = encode_message(network_id, sender_id, "Pong")
+                && let Err(error) = socket.send_to(&response, address).await
             {
                 warn!("Failed to send NetherNet LAN Pong signal to {address}: {error}");
             }
@@ -151,14 +198,12 @@ impl NetherNetDiscovery {
         match signal_type {
             "CONNECTREQUEST" => {
                 trace!(%address, sender_id, connection_id, "Accepted NetherNet LAN connection request");
-                let (candidate_sender, candidate_receiver) = mpsc::unbounded_channel();
+                let (candidate_sender, candidate_receiver) = mpsc::channel(64);
                 self.candidates.lock().await.insert(key, candidate_sender);
 
                 let state = state.clone();
-                let socket = self.socket.clone();
                 let candidates = self.candidates.clone();
                 let offer = data.to_owned();
-                let network_id = self.network_id;
                 tokio::spawn(async move {
                     let signal = match Box::pin(negotiate(
                         &state,
@@ -200,7 +245,7 @@ impl NetherNetDiscovery {
                         ..Default::default()
                     });
                 if let Some(sender) = self.candidates.lock().await.get(&key) {
-                    let _ = sender.send(candidate);
+                    let _ = sender.try_send(candidate);
                     trace!(%address, sender_id, connection_id, "Forwarded NetherNet LAN ICE candidate");
                 } else {
                     trace!(%address, sender_id, connection_id, "Ignored NetherNet LAN ICE candidate for unknown connection");
@@ -208,10 +253,6 @@ impl NetherNetDiscovery {
             }
             signal_type => debug!("Ignoring NetherNet LAN signal {signal_type}"),
         }
-    }
-
-    pub fn local_addr(&self) -> Result<SocketAddr, Error> {
-        self.socket.local_addr()
     }
 }
 
@@ -250,21 +291,28 @@ pub(super) fn decode_packet(data: &[u8]) -> Option<Packet> {
     mac.verify_slice(data.get(..CHECKSUM_SIZE)?).ok()?;
 
     let declared_length = usize::from(u16::from_le_bytes(payload.get(..2)?.try_into().ok()?));
-    if ![payload.len(), payload.len() - 2].contains(&declared_length)
-        || payload.get(12..20)? != [0; 8]
-    {
+    if payload.get(12..20)? != [0; 8] {
         return None;
     }
     let packet_id = u16::from_le_bytes(payload.get(2..4)?.try_into().ok()?);
     let sender_id = u64::from_le_bytes(payload.get(4..12)?.try_into().ok()?);
     let body = payload.get(20..)?;
     match packet_id {
-        REQUEST_PACKET if body.is_empty() => Some(Packet::Request),
+        REQUEST_PACKET
+            if body.is_empty() && [payload.len(), HEADER_SIZE].contains(&declared_length) =>
+        {
+            Some(Packet::Request)
+        }
         MESSAGE_PACKET => {
             let recipient_id = u64::from_le_bytes(body.get(..8)?.try_into().ok()?);
             let length = u32::from_le_bytes(body.get(8..12)?.try_into().ok()?) as usize;
-            let data = body.get(12..12usize.checked_add(length)?)?;
-            if body.len() != 12 + length {
+            let data = body.get(MESSAGE_HEADER_SIZE..)?;
+            let maximum = data.len().min(MAX_DECLARED_MESSAGE_LENGTH);
+            if ![data.len(), maximum].contains(&length) {
+                return None;
+            }
+            let declared_with_header = 2 + HEADER_SIZE + MESSAGE_HEADER_SIZE + length;
+            if ![declared_with_header, declared_with_header - 2].contains(&declared_length) {
                 return None;
             }
             Some(Packet::Message {
@@ -332,7 +380,7 @@ fn encode_response(
     let mut body = Vec::with_capacity(size_of::<u32>() + application_data.len());
     body.extend_from_slice(&application_length.to_le_bytes());
     body.extend_from_slice(application_data.as_bytes());
-    encode_packet(RESPONSE_PACKET, network_id, &body)
+    encode_packet(RESPONSE_PACKET, network_id, &body, body.len())
 }
 
 pub(super) fn encode_message(
@@ -340,20 +388,35 @@ pub(super) fn encode_message(
     recipient_id: u64,
     data: &str,
 ) -> Result<Vec<u8>, Error> {
-    let length = u32::try_from(data.len())
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "NetherNet signal is too long"))?;
-    let mut body = Vec::with_capacity(size_of::<u64>() + size_of::<u32>() + data.len());
+    let length = data.len().min(MAX_DECLARED_MESSAGE_LENGTH);
+    let mut body = Vec::with_capacity(MESSAGE_HEADER_SIZE + data.len());
     body.extend_from_slice(&recipient_id.to_le_bytes());
-    body.extend_from_slice(&length.to_le_bytes());
+    body.extend_from_slice(&(length as u32).to_le_bytes());
     body.extend_from_slice(data.as_bytes());
-    encode_packet(MESSAGE_PACKET, network_id, &body)
+    encode_packet(
+        MESSAGE_PACKET,
+        network_id,
+        &body,
+        MESSAGE_HEADER_SIZE + length,
+    )
 }
 
-fn encode_packet(packet_id: u16, network_id: u64, body: &[u8]) -> Result<Vec<u8>, Error> {
-    let packet_length = u16::try_from(size_of::<u16>() + HEADER_SIZE + body.len())
-        .map_err(|_| Error::new(ErrorKind::InvalidInput, "NetherNet packet is too long"))?;
-    let mut payload = Vec::with_capacity(usize::from(packet_length) + 16);
-    payload.extend_from_slice(&packet_length.to_le_bytes());
+fn encode_packet(
+    packet_id: u16,
+    network_id: u64,
+    body: &[u8],
+    declared_body_length: usize,
+) -> Result<Vec<u8>, Error> {
+    let actual_length = size_of::<u16>() + HEADER_SIZE + body.len();
+    if actual_length > usize::from(u16::MAX) {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "NetherNet packet is too long",
+        ));
+    }
+    let declared_length = (size_of::<u16>() + HEADER_SIZE + declared_body_length) as u16;
+    let mut payload = Vec::with_capacity(actual_length + 16);
+    payload.extend_from_slice(&declared_length.to_le_bytes());
     payload.extend_from_slice(&packet_id.to_le_bytes());
     payload.extend_from_slice(&network_id.to_le_bytes());
     payload.extend_from_slice(&[0; 8]);
@@ -481,6 +544,27 @@ mod tests {
                 sender_id: 99,
                 recipient_id: 42,
                 data: "CONNECTREQUEST 7 offer".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn reads_the_full_sdp_when_the_client_caps_both_udp_lengths() {
+        let signal = format!("CONNECTREQUEST 32 {}", "a=ice-candidate:abc\r\n".repeat(96));
+        let message = encode_message(2, 3, &signal).unwrap();
+        let mut payload = message[CHECKSUM_SIZE..].to_vec();
+        decrypt(&mut payload).unwrap();
+        assert_eq!(u16::from_le_bytes(payload[..2].try_into().unwrap()), 1172);
+        assert_eq!(
+            u32::from_le_bytes(payload[28..32].try_into().unwrap()),
+            1140
+        );
+        assert_eq!(
+            decode_packet(&message),
+            Some(Packet::Message {
+                sender_id: 2,
+                recipient_id: 3,
+                data: signal,
             })
         );
     }

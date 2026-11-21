@@ -28,7 +28,7 @@ pub(super) async fn negotiate(
     state: &NetherNetState,
     address: SocketAddr,
     offer: &str,
-    candidates: Option<mpsc::UnboundedReceiver<RTCIceCandidateInit>>,
+    candidates: Option<mpsc::Receiver<RTCIceCandidateInit>>,
 ) -> Result<(String, Arc<NetherNetSession>), String> {
     Box::pin(negotiate_inner(state, address, offer, candidates, None)).await
 }
@@ -50,7 +50,7 @@ async fn negotiate_inner(
     state: &NetherNetState,
     address: SocketAddr,
     offer: &str,
-    candidates: Option<mpsc::UnboundedReceiver<RTCIceCandidateInit>>,
+    candidates: Option<mpsc::Receiver<RTCIceCandidateInit>>,
     advertised_ip: Option<IpAddr>,
 ) -> Result<(String, Arc<NetherNetSession>), String> {
     let signaling = if candidates.is_some() { "LAN" } else { "HTTP" };

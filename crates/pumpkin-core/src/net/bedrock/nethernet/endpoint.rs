@@ -25,7 +25,9 @@ use crate::server::Server;
 use super::ice_socket::IceSocket;
 use super::state::NetherNetState;
 use super::{
-    discovery::NetherNetDiscovery, ice_router::IceRouter, peer::negotiate_direct,
+    discovery::{LanSignaling, NetherNetDiscovery},
+    ice_router::IceRouter,
+    peer::negotiate_direct,
     session::IncomingSession,
 };
 
@@ -48,12 +50,14 @@ impl NetherNetListener {
         let address = config.address;
         let listener = TcpListener::bind(address).await?;
         let local_addr = listener.local_addr()?;
+        let (lan_signals, lan_signal_rx) = mpsc::channel(128);
         let ice_router = Arc::new(
             IceRouter::bind(
                 ice_socket,
                 Arc::downgrade(server),
                 server.server_guid,
                 server.stop_token.clone(),
+                lan_signals,
             )
             .await?,
         );
@@ -82,6 +86,13 @@ impl NetherNetListener {
             .layer(DefaultBodyLimit::max(MAX_SDP_SIZE))
             .with_state(state.clone());
 
+        let signaling = LanSignaling::default();
+        tokio::spawn(
+            signaling
+                .clone()
+                .receive_game_port(state.clone(), lan_signal_rx),
+        );
+
         match NetherNetDiscovery::bind(local_addr, server.server_guid).await {
             Ok(discovery) => {
                 if let Ok(address) = discovery.local_addr() {
@@ -93,7 +104,7 @@ impl NetherNetListener {
                     loop {
                         tokio::select! {
                             () = state.stop_token.cancelled() => break,
-                            result = discovery.receive(&state, &mut buffer) => {
+                            result = discovery.receive(&state, &signaling, &mut buffer) => {
                                 if let Err(error) = result {
                                     debug!("NetherNet LAN discovery packet failed: {error}");
                                 }

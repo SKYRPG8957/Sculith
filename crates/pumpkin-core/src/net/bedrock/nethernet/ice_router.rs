@@ -13,7 +13,7 @@ use tracing::trace;
 use webrtc::runtime::RecvMeta;
 
 use super::discovery::{
-    Packet as DiscoveryPacket, decode_packet, encode_discovery_response, encode_message,
+    LanSignal, Packet as DiscoveryPacket, decode_packet, encode_discovery_response, encode_message,
 };
 use super::ice_socket::IceSocket;
 use crate::server::Server;
@@ -34,6 +34,12 @@ enum Command {
 struct Route {
     ufrag: String,
     remote: Option<SocketAddr>,
+}
+
+struct DiscoveryIngress {
+    server: Weak<Server>,
+    network_id: u64,
+    signals: mpsc::Sender<LanSignal>,
 }
 
 /// Routes every direct-IP peer through Sculith's one public Bedrock UDP socket.
@@ -66,6 +72,7 @@ impl IceRouter {
         server: Weak<Server>,
         server_guid: u64,
         stop: CancellationToken,
+        signals: mpsc::Sender<LanSignal>,
     ) -> Result<Self, Error> {
         let public_addr = public.local_addr()?;
         let public = public.into_std()?;
@@ -115,8 +122,11 @@ impl IceRouter {
                     public,
                     internal,
                     receiver,
-                    server,
-                    server_guid,
+                    DiscoveryIngress {
+                        server,
+                        network_id: server_guid,
+                        signals,
+                    },
                     stop,
                     direct,
                 ));
@@ -193,8 +203,7 @@ async fn run(
     public: IceSocket,
     internal: Arc<UdpSocket>,
     mut commands: mpsc::UnboundedReceiver<Command>,
-    server: Weak<Server>,
-    server_guid: u64,
+    discovery: DiscoveryIngress,
     stop: CancellationToken,
     direct: Arc<DirectUdp>,
 ) {
@@ -264,15 +273,7 @@ async fn run(
                         trace!(%remote, %destination, %error, "Inbound ICE relay failed");
                     }
                 } else {
-                    handle_unroutable(
-                        packet,
-                        remote,
-                        &public,
-                        &server,
-                        server_guid,
-                        advertisement_id,
-                    )
-                    .await;
+                    handle_unroutable(packet, remote, &public, &discovery, advertisement_id).await;
                 }
             }
         }
@@ -283,8 +284,7 @@ async fn handle_unroutable(
     packet: &[u8],
     remote: SocketAddr,
     public: &IceSocket,
-    server: &Weak<Server>,
-    server_guid: u64,
+    discovery: &DiscoveryIngress,
     advertisement_id: u64,
 ) {
     let Some(discovery_packet) = decode_packet(packet) else {
@@ -293,9 +293,9 @@ async fn handle_unroutable(
     };
     match discovery_packet {
         DiscoveryPacket::Request => {
-            if let Some(server) = server.upgrade()
+            if let Some(server) = discovery.server.upgrade()
                 && let Ok(response) =
-                    encode_discovery_response(&server, server_guid, advertisement_id)
+                    encode_discovery_response(&server, discovery.network_id, advertisement_id)
             {
                 trace!(%remote, "Received NetherNet discovery request on ICE UDP socket");
                 let _ = public.send_to(&response, remote).await;
@@ -305,10 +305,19 @@ async fn handle_unroutable(
             sender_id,
             recipient_id,
             data,
-        } if recipient_id == server_guid && data.eq_ignore_ascii_case("ping") => {
-            trace!(%remote, sender_id, "Received NetherNet Ping signal on ICE UDP socket");
-            if let Ok(response) = encode_message(server_guid, sender_id, "Pong") {
-                let _ = public.send_to(&response, remote).await;
+        } if recipient_id == discovery.network_id => {
+            if data.eq_ignore_ascii_case("ping") {
+                trace!(%remote, sender_id, "Received NetherNet Ping signal on ICE UDP socket");
+                if let Ok(response) = encode_message(discovery.network_id, sender_id, "Pong") {
+                    let _ = public.send_to(&response, remote).await;
+                }
+            } else {
+                let _ = discovery.signals.try_send(LanSignal {
+                    socket: public.clone(),
+                    address: remote,
+                    sender_id,
+                    data,
+                });
             }
         }
         DiscoveryPacket::Message { .. } => {}
@@ -431,7 +440,8 @@ mod tests {
         let public = IceSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
             .await
             .unwrap();
-        let router = IceRouter::bind(public, Weak::new(), 1, CancellationToken::new())
+        let (signals, _receiver) = mpsc::channel(1);
+        let router = IceRouter::bind(public, Weak::new(), 1, CancellationToken::new(), signals)
             .await
             .unwrap();
         let public = router.public_addr();
@@ -486,7 +496,8 @@ mod tests {
                 .unwrap();
         }
         let public = IceSocket::bind(loopback).await.unwrap();
-        let router = IceRouter::bind(public, Weak::new(), 1, CancellationToken::new())
+        let (signals, _receiver) = mpsc::channel(1);
+        let router = IceRouter::bind(public, Weak::new(), 1, CancellationToken::new(), signals)
             .await
             .unwrap();
         let _registration = router
