@@ -9,7 +9,7 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::{BedrockManifest, ConversionReport};
+use crate::{BedrockManifest, ConversionReport, TextureMap};
 
 pub const MAX_PACK_BYTES: usize = 32 * 1_048_576;
 const MAX_FILES: usize = 512;
@@ -42,7 +42,7 @@ pub enum PackEdit {
 #[derive(Clone)]
 pub struct PackSource {
     files: BTreeMap<String, Arc<[u8]>>,
-    mapping: Arc<[u8]>,
+    mapping: Arc<TextureMap>,
 }
 
 impl PackSource {
@@ -51,9 +51,10 @@ impl PackSource {
             .canonicalize()
             .context("missing Bedrock pack source")?;
         ensure!(root.is_dir(), "Bedrock pack source must be a directory");
+        let mapping = Arc::new(crate::read_json(mapping)?);
         Ok(Self {
             files: snapshot(&root)?,
-            mapping: crate::read_bounded(mapping, 1_048_576)?.into(),
+            mapping,
         })
     }
 
@@ -100,7 +101,8 @@ impl PackSource {
             .get("manifest.json")
             .context("missing manifest.json")?;
         ensure!(manifest_bytes.len() <= 1_048_576, "manifest exceeds 1 MiB");
-        let manifest: BedrockManifest = serde_json::from_slice(manifest_bytes)?;
+        let manifest: BedrockManifest = crate::parse_json(manifest_bytes)
+            .context("invalid JSON in Bedrock pack manifest.json")?;
         let original = Uuid::parse_str(&manifest.header.uuid)?;
         ensure!(
             manifest.header.name.len() <= 256,
@@ -117,7 +119,7 @@ impl PackSource {
         let stage = tempfile::tempdir()?;
         let frozen = stage.path().join("bedrock");
         fs::create_dir(&frozen)?;
-        let mut normalized: Value = serde_json::from_slice(manifest_bytes)?;
+        let mut normalized: Value = crate::parse_json(manifest_bytes)?;
         ensure!(
             normalized
                 .get("dependencies")
@@ -162,10 +164,8 @@ impl PackSource {
             fs::create_dir_all(path.parent().context("missing member parent")?)?;
             fs::write(path, bytes)?;
         }
-        let frozen_mapping = stage.path().join("mapping.json");
-        fs::write(&frozen_mapping, &self.mapping)?;
         let java_root = stage.path().join("java");
-        let report = crate::convert(&frozen, &frozen_mapping, &java_root, 97, 1)?;
+        let report = crate::convert_with_mapping(&frozen, &self.mapping, &java_root, 97, 1)?;
         let bedrock = archive(&native)?;
         let java = archive(&snapshot(&java_root)?)?;
         let java_id = content_uuid(original, &java.sha256);
@@ -422,6 +422,32 @@ mod tests {
             content_uuid(Uuid::NAMESPACE_DNS, b"www.example.com").to_string(),
             "2ed6657d-e927-568b-95e1-2665a8aea6a2"
         );
+    }
+
+    #[test]
+    fn bom_in_mapping_keeps_the_same_archives() {
+        let root = source();
+        let mapping = root.parent().unwrap().join("textures.json");
+        let original = Bundle::prepare(&root, &mapping).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let authored = dir.path().join("my-mapping.json");
+        let mut bytes = b"\xef\xbb\xbf".to_vec();
+        bytes.extend(fs::read(&mapping).unwrap());
+        fs::write(&authored, bytes).unwrap();
+        let converted = Bundle::prepare(&root, &authored).unwrap();
+        assert_eq!(original.java.bytes, converted.java.bytes);
+        assert_eq!(original.bedrock.bytes, converted.bedrock.bytes);
+    }
+
+    #[test]
+    fn malformed_mapping_reports_the_authored_path_and_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let authored = dir.path().join("my-mapping.json");
+        fs::write(&authored, "{\n  \"models\": [}\n").unwrap();
+        let error = Bundle::prepare(&source(), &authored).err().unwrap();
+        let message = format!("{error:#}");
+        assert!(message.contains(&format!("invalid JSON in {}", authored.display())));
+        assert!(message.contains("line 2 column"));
     }
 
     #[test]

@@ -129,7 +129,10 @@ pub async fn prepare(
 }
 
 fn invalid_pack(error: impl std::fmt::Display) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("shared resource pack: {error:#}"),
+    )
 }
 
 fn actor_identifiers(models: &[sculith_packs::ModelMapping]) -> io::Result<Bytes> {

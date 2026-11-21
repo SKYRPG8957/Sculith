@@ -109,13 +109,29 @@ pub struct ConversionReport {
 
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let data = read_bounded(path, MAX_JSON_BYTES)?;
-    serde_json::from_slice(&data).with_context(|| format!("invalid JSON in {}", path.display()))
+    parse_json(&data).with_context(|| format!("invalid JSON in {}", path.display()))
 }
 
-#[expect(clippy::too_many_lines, reason = "one bounded conversion transaction")]
+fn parse_json<T: DeserializeOwned>(data: &[u8]) -> serde_json::Result<T> {
+    let data = data.strip_prefix(b"\xef\xbb\xbf").unwrap_or(data);
+    serde_json::from_slice(data)
+}
+
 pub fn convert(
     input: &Path,
     mapping: &Path,
+    output: &Path,
+    pack_format: u32,
+    pack_format_minor: u32,
+) -> Result<ConversionReport> {
+    let mapping = read_json(mapping)?;
+    convert_with_mapping(input, &mapping, output, pack_format, pack_format_minor)
+}
+
+#[expect(clippy::too_many_lines, reason = "one bounded conversion transaction")]
+fn convert_with_mapping(
+    input: &Path,
+    mapping: &TextureMap,
     output: &Path,
     pack_format: u32,
     pack_format_minor: u32,
@@ -166,7 +182,6 @@ pub fn convert(
         manifest.modules.iter().all(|m| m.kind == "resources"),
         "only resource packs can be converted; behavior/script modules are unsupported"
     );
-    let mapping: TextureMap = read_json(mapping)?;
     ensure!(
         mapping.companion_forms
             || !mapping.form_fonts.is_empty()
@@ -241,8 +256,8 @@ pub fn convert(
         java_pack_format_minor: pack_format_minor,
         companion_forms: mapping.companion_forms,
         converted_textures: mapping.textures.len(),
-        converted_sounds: mapping.sounds,
-        converted_models: mapping.models,
+        converted_sounds: mapping.sounds.clone(),
+        converted_models: mapping.models.clone(),
         scope: if !mapping.form_fonts.is_empty() {
             "mapped textures, bitmap form fonts, sounds and static models for stock Java"
         } else if mapping.companion_forms {
@@ -250,7 +265,7 @@ pub fn convert(
         } else {
             "explicit PNG overrides, single-clip Vorbis sounds and static cuboid models"
         }.into(),
-        form_fonts: mapping.form_fonts,
+        form_fonts: mapping.form_fonts.clone(),
         limitations: vec![
             "Only explicitly mapped PNG, OGG and static geometry definitions are converted; unmapped assets are not included.".into(),
             "PNG overrides target existing textures; custom sound events and presentation-only item models are registered by the pack.".into(),

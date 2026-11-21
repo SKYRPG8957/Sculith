@@ -301,7 +301,7 @@ fn resolve_some<T: Future, D, F: FnOnce(D) -> T>(
 /// Why [`PumpkinServer::new`] failed, returned to the caller instead of exiting the process.
 #[derive(thiserror::Error, Debug)]
 pub enum ServerSetupError {
-    #[error("Failed to initialize world storage: {0}")]
+    #[error("Failed to initialize server: {0}")]
     WorldInfo(#[from] WorldInfoError),
     #[error("Failed to bind the Java listener on {address}: {source}")]
     JavaBind {
