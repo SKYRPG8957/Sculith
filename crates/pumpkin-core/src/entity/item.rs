@@ -606,7 +606,7 @@ impl ItemEntity {
         self.update_no_physics_and_push_out();
 
         let move_velo = entity.velocity.load(); // In case push_out_of_blocks modifies it
-        if self.should_tick_move(move_velo) {
+        if self.should_tick_move(move_velo, entity.tick_count.load(Relaxed)) {
             self.move_and_apply_friction(caller, move_velo);
         }
 
@@ -681,17 +681,12 @@ impl ItemEntity {
     }
 
     /// a resting item only moves every 4th `tickCount`, offset by its id.
-    fn should_tick_move(&self, move_velo: Vector3<f64>) -> bool {
+    pub(super) fn should_tick_move(&self, move_velo: Vector3<f64>, tick_count: i32) -> bool {
         let entity = &self.entity;
 
         !entity.on_ground.load(Ordering::SeqCst)
             || move_velo.horizontal_length_squared() > 1.0e-5
-            || entity
-                .tick_count
-                .load(Ordering::Relaxed)
-                .wrapping_add(entity.entity_id)
-                % 4
-                == 0
+            || tick_count.wrapping_add(entity.entity_id) % 4 == 0
     }
 
     fn move_and_apply_friction(&self, caller: &dyn EntityBase, move_velo: Vector3<f64>) {
@@ -700,25 +695,28 @@ impl ItemEntity {
         entity.move_entity(caller, move_velo);
         entity.tick_block_collisions(caller);
 
-        // air drag
-        let air_drag = Self::AIR_DRAG;
-        let mut friction = air_drag;
         let on_ground = entity.on_ground.load(Ordering::SeqCst);
+        let velocity = entity.velocity.load();
+        let slipperiness =
+            on_ground.then(|| entity.get_block_with_y_offset(0.999_999).1.slipperiness);
+        entity
+            .velocity
+            .store(Self::velocity_after_motion(velocity, slipperiness));
+    }
 
-        let mut velo = entity.velocity.load();
-        if on_ground {
-            let block_affecting_velo = entity.get_block_with_y_offset(0.999_999).1;
-            friction *= f64::from(block_affecting_velo.slipperiness);
-        }
-
-        velo = velo.multiply(friction, air_drag, friction);
+    pub(super) fn velocity_after_motion(
+        velocity: Vector3<f64>,
+        slipperiness: Option<f32>,
+    ) -> Vector3<f64> {
+        let air_drag = Self::AIR_DRAG;
+        let friction = air_drag * slipperiness.map_or(1.0, f64::from);
+        let mut velocity = velocity.multiply(friction, air_drag, friction);
 
         // a landing item bounces back up with half its speed
-        if on_ground && velo.y < 0.0 {
-            velo.y *= -0.5;
+        if slipperiness.is_some() && velocity.y < 0.0 {
+            velocity.y *= -0.5;
         }
-
-        entity.velocity.store(velo);
+        velocity
     }
 
     fn process_age_and_merge(&self, advance_time: bool) -> bool {

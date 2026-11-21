@@ -1266,34 +1266,11 @@ impl Level {
         destination: BlockPos,
         apply: impl FnOnce(&'static Biome) -> R,
     ) -> Option<R> {
-        let (chunk_pos, relative) = destination.chunk_and_chunk_relative_position();
+        let chunk_pos = destination.chunk_position();
         if min.chunk_position() != chunk_pos || max.chunk_position() != chunk_pos {
             return None;
         }
-        let TryResult::Present(chunk) = self.loaded_chunks.try_get(&chunk_pos) else {
-            return None;
-        };
-        let sections = &chunk.section;
-        let blocks = sections.block_sections.try_read()?;
-        for position in BlockPos::iterate(min, max) {
-            let (_, local) = position.chunk_and_chunk_relative_position();
-            if !sections
-                .read_block_from_palettes(&blocks, local)?
-                .to_state()
-                .is_air()
-            {
-                return None;
-            }
-        }
-        let biomes = sections.biome_sections.try_read()?;
-        let id = sections.read_rough_biome_from_palettes(
-            &biomes,
-            relative.x as usize,
-            relative.y,
-            relative.z as usize,
-        );
-        let biome = Biome::from_id(id.unwrap_or(0)).unwrap_or(&Biome::THE_VOID);
-        Some(apply(biome))
+        self.try_with_clear_regional_path(min, max, destination, |_| true, apply)
     }
 
     /// Pins an all-air sweep across at most four chunks and the destination biome.
@@ -1307,16 +1284,35 @@ impl Level {
         owns: impl Fn(Vector2<i32>) -> bool,
         apply: impl FnOnce(&'static Biome) -> R,
     ) -> Option<R> {
+        self.try_with_regional_path(
+            min,
+            max,
+            owns,
+            |read| {
+                for position in BlockPos::iterate(min, max) {
+                    if !read(position)?.to_state().is_air() {
+                        return None;
+                    }
+                }
+                Some((destination, ()))
+            },
+            |(), biome| apply(biome),
+        )
+    }
+
+    /// Pins loaded block palettes, prepares movement, and reads the actual destination biome.
+    /// The region permit must cover every chunk accepted by `owns` until this returns.
+    /// Callbacks must not wait for work that uses the pinned chunks or palettes.
+    pub fn try_with_regional_path<T, R>(
+        &self,
+        min: BlockPos,
+        max: BlockPos,
+        owns: impl Fn(Vector2<i32>) -> bool,
+        prepare: impl FnOnce(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> Option<(BlockPos, T)>,
+        apply: impl FnOnce(T, &'static Biome) -> R,
+    ) -> Option<R> {
         let first = min.chunk_position();
         let last = max.chunk_position();
-        if first == last {
-            if !owns(first) {
-                return None;
-            }
-            return self.try_with_clear_chunk_path(min, max, destination, |biome| {
-                owns(first).then(|| apply(biome))
-            })?;
-        }
         if last.x - first.x > 1 || last.y - first.y > 1 {
             return None;
         }
@@ -1340,18 +1336,13 @@ impl Level {
             *slot = Some((*chunk.key(), sections, sections.block_sections.try_read()?));
         }
         let palette_for = |pos| palettes.iter().flatten().find(|(chunk, ..)| *chunk == pos);
-        for position in BlockPos::iterate(min, max) {
+        let read = |position: BlockPos| {
             let (pos, local) = position.chunk_and_chunk_relative_position();
             let (_, sections, blocks) = palette_for(pos)?;
-            if !sections
-                .read_block_from_palettes(blocks, local)?
-                .to_state()
-                .is_air()
-            {
-                return None;
-            }
-        }
+            sections.read_block_from_palettes(blocks, local)
+        };
 
+        let (destination, prepared) = prepare(&read)?;
         let (chunk, local) = destination.chunk_and_chunk_relative_position();
         let (_, sections, _blocks) = palette_for(chunk)?;
         let biomes = sections.biome_sections.try_read()?;
@@ -1366,7 +1357,7 @@ impl Level {
             .iter()
             .flatten()
             .all(|(pos, ..)| owns(*pos))
-            .then(|| apply(biome))
+            .then(|| apply(prepared, biome))
     }
 
     pub fn read_entity_chunk_sync<R, F: Fn(&SyncEntityChunk) -> R>(
@@ -1608,6 +1599,47 @@ mod tests {
         drop(busy);
 
         assert_eq!(read(true), Some(level.get_rough_biome(&destination).id));
+        level.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn regional_path_uses_the_resolved_destination_and_rechecks_ownership() {
+        let folder = TempDir::new().unwrap();
+        let level = Level::from_root_folder(
+            &LevelConfig::default(),
+            folder.path().to_path_buf(),
+            0,
+            Dimension::OVERWORLD,
+        );
+        let chunk = ChunkData::empty_sync(0, 0);
+        let upper = BlockPos::new(2, 64, 2);
+        let lower = BlockPos::new(2, 63, 2);
+        let floor = BlockPos::new(2, 62, 2);
+        chunk.set_block_absolute_y(2, 62, 2, Block::STONE.default_state.id);
+        for (pos, biome) in [(upper, &Biome::PLAINS), (lower, &Biome::DESERT)] {
+            let index = ((pos.0.y - chunk.section.min_y) >> 2) as usize;
+            chunk.section.set_relative_biome(0, index, 0, biome.id);
+        }
+        level.loaded_chunks.insert(upper.chunk_position(), chunk);
+
+        let owns = Cell::new(true);
+        let run = |retain| {
+            owns.set(true);
+            level.try_with_regional_path(
+                floor,
+                upper,
+                |_| owns.get(),
+                |read| {
+                    assert_eq!(read(floor), Some(Block::STONE.default_state.id));
+                    assert_eq!(read(BlockPos::new(16, 63, 2)), None);
+                    owns.set(retain);
+                    Some((lower, floor))
+                },
+                |support, biome| (support, biome.id),
+            )
+        };
+        assert_eq!(run(true), Some((floor, Biome::DESERT.id)));
+        assert_eq!(run(false), None);
         level.shutdown().await;
     }
 

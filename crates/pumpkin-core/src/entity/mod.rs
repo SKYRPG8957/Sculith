@@ -2669,7 +2669,6 @@ impl Entity {
     }
 
     /// Vanilla `collide` without writing state.
-    #[expect(clippy::float_cmp)]
     pub(crate) fn collide(&self, movement: Vector3<f64>, caller: &dyn EntityBase) -> Collision {
         let bounding_box = self.bounding_box.load();
 
@@ -2677,7 +2676,16 @@ impl Entity {
             .world
             .load()
             .get_block_collisions(bounding_box.stretch(movement), caller);
+        Self::collide_with_block_shapes(bounding_box, movement, &collisions, block_positions)
+    }
 
+    #[expect(clippy::float_cmp)]
+    fn collide_with_block_shapes(
+        bounding_box: BoundingBox,
+        movement: Vector3<f64>,
+        collisions: &[BoundingBox],
+        block_positions: Vec<(usize, BlockPos)>,
+    ) -> Collision {
         if collisions.is_empty() {
             return Collision::free(movement);
         }
@@ -2736,7 +2744,7 @@ impl Entity {
 
             let mut max_time = 1.0;
 
-            for inert_box in &collisions {
+            for inert_box in collisions {
                 if let Some(collision_time) = bounding_box.calculate_collision_time(
                     inert_box,
                     adjusted_movement,

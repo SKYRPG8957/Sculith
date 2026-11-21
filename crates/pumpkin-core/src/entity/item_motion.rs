@@ -1,6 +1,12 @@
-use std::sync::{Mutex, PoisonError, atomic::Ordering::Relaxed};
+use std::sync::{
+    Mutex, PoisonError,
+    atomic::Ordering::{Relaxed, SeqCst},
+};
 
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
+use pumpkin_data::{BlockStateId, biome::Biome, fluid::Fluid};
+use pumpkin_util::math::{
+    boundingbox::BoundingBox, position::BlockPos, vector2::Vector2, vector3::Vector3,
+};
 
 use crate::{
     server::TickDeadline,
@@ -8,7 +14,7 @@ use crate::{
 };
 
 use super::{
-    Entity,
+    Collision, Entity,
     item::{ItemClock, ItemEntity, ItemTimerOwner},
 };
 
@@ -16,6 +22,42 @@ use super::{
 pub(super) struct ItemMotion {
     clock: ItemClock,
     world_users: usize,
+}
+
+struct ItemMotionUpdate {
+    position: Vector3<f64>,
+    bounds: BoundingBox,
+    collision: Option<Collision>,
+    velocity: Vector3<f64>,
+}
+
+impl ItemMotionUpdate {
+    fn apply(self, entity: &Entity, biome: &'static Biome) {
+        entity.update_last_pos();
+        entity.tick_count.fetch_add(1, Relaxed);
+        entity.first_tick.store(false, Relaxed);
+        entity
+            .was_in_powder_snow
+            .store(entity.is_in_powder_snow.swap(false, Relaxed), Relaxed);
+        entity.water_height.store(0.0);
+        entity.lava_height.store(0.0);
+        if let Some(collision) = self.collision {
+            entity
+                .on_ground
+                .store(collision.supporting.is_some(), SeqCst);
+            entity.supporting_block_pos.store(collision.supporting);
+            entity
+                .horizontal_collision
+                .store(collision.horizontal, Relaxed);
+            entity.vertical_collision.store(collision.vertical, Relaxed);
+            entity.set_pos_with(
+                self.position,
+                || entity.bounding_box.value.store(self.bounds),
+                |_| biome,
+            );
+        }
+        entity.velocity.store(self.velocity);
+    }
 }
 
 pub struct ItemWorldAccess<'a>(&'a Mutex<ItemMotion>);
@@ -103,7 +145,6 @@ impl ItemEntity {
         if entity.is_removed()
             || !std::ptr::eq(entity.world.load().as_ref(), world)
             || entity.chunk_pos.load() != chunk
-            || entity.on_ground.load(Relaxed)
             || entity.no_physics.load(Relaxed)
             || entity.is_on_fire()
             || entity.touching_water.load(Relaxed)
@@ -125,65 +166,153 @@ impl ItemEntity {
             return;
         }
 
+        self.try_apply_regional_motion(world, owns, || {
+            owns(chunk) && motion.clock.claim(clock_owner, deadline)
+        });
+    }
+
+    fn try_apply_regional_motion(
+        &self,
+        world: &World,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+        claim: impl FnOnce() -> bool,
+    ) {
+        let entity = self.get_entity();
         let original_velocity = entity.velocity.load();
-        let movement = self.apply_fluid_drag_or_gravity(original_velocity);
+        let velocity = self.apply_fluid_drag_or_gravity(original_velocity);
+        let next_tick = entity.tick_count.load(Relaxed).wrapping_add(1);
+        let moves = self.should_tick_move(velocity, next_tick);
         // A short sweep bounds palette work even when an outside velocity is applied.
-        let distance_squared = movement.length_squared();
-        if !(0.0 < distance_squared && distance_squared <= 1.0) {
+        let distance_squared = velocity.length_squared();
+        if !((0.0..=1.0).contains(&distance_squared) && (!moves || distance_squared > 0.0)) {
             return;
         }
-        let position = entity.pos.load() + movement;
-        if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+        let movement = if moves { velocity } else { Vector3::default() };
+        let origin = entity.pos.load();
+        let attempted_position = origin + movement;
+        if !attempted_position.x.is_finite()
+            || !attempted_position.y.is_finite()
+            || !attempted_position.z.is_finite()
+        {
             return;
         }
-        let destination = BlockPos::floored_v(position);
-        let next_bounds = Entity::make_bounding_box(
-            entity.entity_type,
-            position,
-            &entity.entity_dimension.load(),
-        );
-        let swept = entity
-            .bounding_box
-            .load()
-            .stretch(movement)
-            .minmax(&next_bounds);
+        let bounds = entity.bounding_box.load();
+        let dimensions = entity.entity_dimension.load();
+        let attempted_bounds =
+            Entity::make_bounding_box(entity.entity_type, attempted_position, &dimensions);
+        let swept = bounds.stretch(movement).minmax(&attempted_bounds);
         let min = BlockPos::floored_v(swept.min.add_raw(0.0, -COLLISION_LOOK_BELOW, 0.0));
         let max = swept.max_block_pos();
-        world
-            .level
-            .try_with_clear_regional_path(min, max, destination, owns, |biome| {
+        world.level.try_with_regional_path(
+            min,
+            max,
+            owns,
+            |read| {
+                let (collision, slipperiness) =
+                    regional_item_collision(world, bounds, movement, min, max, read)?;
+                let position = origin + collision.movement;
+                let next_bounds = if position == origin {
+                    bounds
+                } else if position == attempted_position {
+                    attempted_bounds
+                } else {
+                    Entity::make_bounding_box(entity.entity_type, position, &dimensions)
+                };
+                let velocity = if moves {
+                    regional_item_velocity(movement, &collision, slipperiness)
+                } else {
+                    velocity
+                };
+                let step = ItemMotionUpdate {
+                    position,
+                    bounds: next_bounds,
+                    collision: moves.then_some(collision),
+                    velocity,
+                };
+                Some((BlockPos::floored_v(position), step))
+            },
+            |step, biome| {
                 world.entity_index.try_move_isolated_item(
                     world,
                     entity.entity_id,
                     // Match the pickup reach in the world phase, which also covers merge distance.
                     swept.expand(1.0, 0.5, 1.0),
-                    next_bounds,
+                    step.bounds,
                     || {
-                        if !owns(chunk) {
+                        if !claim() {
                             return false;
                         }
-                        motion.clock.claim(clock_owner, deadline);
-                        entity.update_last_pos();
-                        entity.tick_count.fetch_add(1, Relaxed);
-                        entity.first_tick.store(false, Relaxed);
-                        entity
-                            .was_in_powder_snow
-                            .store(entity.is_in_powder_snow.swap(false, Relaxed), Relaxed);
-                        entity.water_height.store(0.0);
-                        entity.lava_height.store(0.0);
-                        entity.supporting_block_pos.store(None);
-                        entity.horizontal_collision.store(false, Relaxed);
-                        entity.vertical_collision.store(false, Relaxed);
-                        entity.set_pos_with(
-                            position,
-                            || entity.bounding_box.value.store(next_bounds),
-                            |_| biome,
-                        );
-                        entity.velocity.store(movement * Self::AIR_DRAG);
+                        step.apply(entity, biome);
                         self.mark_velocity_change(original_velocity, false);
                         true
                     },
                 );
-            });
+            },
+        );
     }
+}
+
+/// Air and inert full blocks below the item need no fluid, contact or fall callbacks.
+#[expect(clippy::float_cmp)]
+fn regional_item_collision(
+    world: &World,
+    bounds: BoundingBox,
+    movement: Vector3<f64>,
+    min: BlockPos,
+    max: BlockPos,
+    read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+) -> Option<(Collision, Option<f32>)> {
+    let mut shapes = Vec::new();
+    let mut positions = Vec::new();
+    let swept = bounds.stretch(movement);
+    for position in BlockPos::iterate(min, max) {
+        let id = read(position)?;
+        let state = id.to_state();
+        if state.is_air() {
+            continue;
+        }
+        let floor = BoundingBox::from_block(&position);
+        let block = id.to_block();
+        if floor.max.y > bounds.min.y
+            || block.get_speed_factor() != 1.0
+            || block.bounce_restitution != 0.0
+            || world.block_registry.get_pumpkin_block(block.id).is_some()
+            || World::get_fluid_from_state_id(id).id != Fluid::EMPTY.id
+        {
+            return None;
+        }
+        let mut block_shapes = state.get_block_collision_shapes_at(&position);
+        let shape = block_shapes.next()?.at_pos(position);
+        if shape.min != floor.min || shape.max != floor.max || block_shapes.next().is_some() {
+            return None;
+        }
+        if shape.intersects(&swept) {
+            shapes.push(shape);
+            positions.push((shapes.len(), position));
+        }
+    }
+    let collision = Entity::collide_with_block_shapes(bounds, movement, &shapes, positions);
+    let destination = bounds.shift(collision.movement);
+    if shapes.iter().any(|shape| shape.intersects(&destination)) {
+        return None;
+    }
+    let slipperiness = match collision.supporting {
+        Some(floor) => Some(read(floor)?.to_block().slipperiness),
+        None => None,
+    };
+    Some((collision, slipperiness))
+}
+
+#[expect(clippy::float_cmp)]
+fn regional_item_velocity(
+    movement: Vector3<f64>,
+    collision: &Collision,
+    slipperiness: Option<f32>,
+) -> Vector3<f64> {
+    let mut velocity = collision.movement;
+    if movement.y != velocity.y {
+        // The default full-block fall handler stops Y velocity without changing X or Z.
+        velocity.y = 0.0;
+    }
+    ItemEntity::velocity_after_motion(velocity, slipperiness)
 }
