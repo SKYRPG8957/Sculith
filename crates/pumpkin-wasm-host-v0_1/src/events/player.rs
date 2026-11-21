@@ -900,25 +900,29 @@ impl ToFromWasmEvent for PlayerInteractEntityEvent {
         })
     }
 
-    fn from_wasm_event(event: Event, state: &mut PluginHostState) -> Self {
-        match event {
-            Event::PlayerInteractEntityEvent(data) => {
-                let player = consume_player(state, &data.player);
-                let target = player
-                    .world()
-                    .get_entity_by_id(data.entity_id)
-                    .expect("entity not found");
-                Self {
-                    player,
-                    target,
-                    action: from_wasm_entity_interaction_action(data.action),
-                    target_position: None,
-                    sneaking: data.sneaking,
-                    cancelled: data.cancelled,
-                }
-            }
-            _ => panic!("unexpected event type"),
+    fn apply_wasm_event(&mut self, event: Event, state: &mut PluginHostState) {
+        let Event::PlayerInteractEntityEvent(data) = event else {
+            cleanup_event(&event, state);
+            self.cancelled = true;
+            return;
+        };
+        let player = consume_player(state, &data.player);
+        let Some(target) = player.world().get_entity_by_id(data.entity_id) else {
+            self.cancelled = true;
+            return;
+        };
+        if !Arc::ptr_eq(&self.target, &target) {
+            self.target_position = None;
         }
+        self.player = player;
+        self.target = target;
+        self.action = from_wasm_entity_interaction_action(data.action);
+        self.sneaking = data.sneaking;
+        self.cancelled = data.cancelled;
+    }
+
+    fn from_wasm_event(_event: Event, _state: &mut PluginHostState) -> Self {
+        panic!("applying an entity interaction requires the original event")
     }
 }
 

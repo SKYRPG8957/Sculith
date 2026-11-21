@@ -195,7 +195,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 30.
+Native plugins use ABI 31.
 
 ## Shared resource delivery
 

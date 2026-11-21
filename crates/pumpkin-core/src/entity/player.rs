@@ -1673,6 +1673,50 @@ impl Player {
         true
     }
 
+    /// Rechecks a client's direct attack after its interaction callbacks complete.
+    pub(crate) fn attack_from_client(
+        &self,
+        server: &Server,
+        world: &Arc<World>,
+        victim: &Arc<dyn EntityBase>,
+    ) {
+        let target = victim.get_entity();
+        if target.entity_id == self.entity_id()
+            || target.is_removed()
+            || self.is_spectator()
+            || self.living_entity.is_dead_or_dying()
+            || victim.is_spectator()
+            || victim
+                .get_living_entity()
+                .is_some_and(LivingEntity::is_dead_or_dying)
+            || !Arc::ptr_eq(world, &self.world())
+            || !Arc::ptr_eq(world, &target.world.load())
+            || !self.can_interact_with_entity(victim.as_ref(), 1.0)
+            || world
+                .get_entity_by_id(target.entity_id)
+                .is_none_or(|current| !Arc::ptr_eq(&current, victim))
+        {
+            return;
+        }
+
+        if let Some(player) = victim.get_player() {
+            let config = &server.advanced_config.pvp;
+            if !config.enabled {
+                return;
+            }
+            if config.protect_creative && player.gamemode.load() == GameMode::Creative {
+                world.play_sound(
+                    Sound::EntityPlayerAttackNodamage,
+                    SoundCategory::Players,
+                    &player.position(),
+                );
+                return;
+            }
+        }
+
+        self.attack(victim);
+    }
+
     #[expect(clippy::too_many_lines)]
     pub fn attack(&self, victim: &Arc<dyn EntityBase>) {
         let world = self.world();

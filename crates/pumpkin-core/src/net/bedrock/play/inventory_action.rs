@@ -369,7 +369,7 @@ impl BedrockClient {
                         }
                         player.inventory().set_held_item(stack);
                     }
-                    ActionType::Attack => player.attack(&event.target),
+                    ActionType::Attack => player.attack_from_client(&server, &world, &event.target),
                 }
             }
             TransactionData::ReleaseItem(_data) => {
