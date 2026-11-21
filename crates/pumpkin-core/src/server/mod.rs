@@ -219,6 +219,33 @@ pub struct Server {
 }
 
 impl Server {
+    pub(crate) async fn bedrock_auth_keys(
+        &self,
+    ) -> Result<&(String, pumpkin_auth::jwt::Jwks), pumpkin_auth::jwt::AuthError> {
+        let auth = &self.advanced_config.networking.bedrock.authentication;
+        self.bedrock_oidc_keys
+            .get_or_try_init(|| async {
+                if !auth.enabled {
+                    return Err(pumpkin_auth::jwt::AuthError::PublicKeyBuild(
+                        "Bedrock OIDC authentication is disabled".into(),
+                    ));
+                }
+                let (issuer, jwks) = pumpkin_auth::jwt::fetch_oidc_jwks(
+                    auth.url.as_deref(),
+                    auth.connect_timeout,
+                    auth.read_timeout,
+                )
+                .await?;
+                if jwks.keys.is_empty() {
+                    return Err(pumpkin_auth::jwt::AuthError::PublicKeyBuild(
+                        "Bedrock OIDC provider returned no signing keys".into(),
+                    ));
+                }
+                Ok((issuer, jwks))
+            })
+            .await
+    }
+
     #[expect(clippy::too_many_lines)]
     pub async fn new(
         basic_config: BasicConfiguration,
@@ -486,26 +513,9 @@ impl Server {
         {
             let server_clone = server.clone();
             server.spawn_task(async move {
-                let auth = server_clone
-                    .advanced_config
-                    .networking
-                    .bedrock
-                    .authentication
-                    .clone();
-                let keys = match pumpkin_auth::jwt::fetch_oidc_jwks(
-                    auth.url.as_deref(),
-                    auth.connect_timeout,
-                    auth.read_timeout,
-                )
-                .await
-                {
-                    Ok(keys) => keys,
-                    Err(error) => {
-                        error!("Failed to fetch Bedrock OIDC keys: {error}");
-                        (String::new(), pumpkin_auth::jwt::Jwks { keys: Vec::new() })
-                    }
-                };
-                let _ = server_clone.bedrock_oidc_keys.set(keys);
+                if let Err(error) = server_clone.bedrock_auth_keys().await {
+                    warn!("Failed to fetch Bedrock OIDC keys: {error}");
+                }
             });
         }
 

@@ -82,14 +82,11 @@ async fn verify_oidc_token_path(
             let _ = tx.send(res);
         });
     } else {
-        let (issuer, jwks) =
-            server
-                .bedrock_oidc_keys
-                .get()
-                .cloned()
-                .ok_or(LoginError::ChainValidationFailed(
-                    AuthError::PublicKeyBuild("OIDC keys not initialized".into()),
-                ))?;
+        let (issuer, jwks) = server
+            .bedrock_auth_keys()
+            .await
+            .map_err(LoginError::ChainValidationFailed)?
+            .clone();
 
         server.compute_pool.spawn(move || {
             let res = pumpkin_auth::jwt::verify_oidc_token(&token, &issuer, &jwks)

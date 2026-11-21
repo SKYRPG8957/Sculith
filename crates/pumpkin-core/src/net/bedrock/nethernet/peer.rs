@@ -59,14 +59,20 @@ async fn negotiate_inner(
     let (offer, client_public_key) = {
         let offer = offer.to_string();
         let require_identity = direct_ip && state.require_client_identity;
+        let server = state.server.upgrade();
         let oidc_verifier = if require_identity {
+            if !offer.lines().any(|line| line.starts_with("a=identity:")) {
+                return Err("SDP offer is missing its identity assertion".to_string());
+            }
+            let server = server.as_ref().ok_or("Bedrock server is stopping")?;
             Some(
-                state
-                    .oidc_verifier
-                    .as_ref()
-                    .and_then(|cell| cell.get())
-                    .cloned()
-                    .ok_or_else(|| "Bedrock authentication keys are not ready".to_owned())?,
+                server
+                    .bedrock_auth_keys()
+                    .await
+                    .map_err(|error| {
+                        format!("Could not load Bedrock authentication keys: {error}")
+                    })?
+                    .clone(),
             )
         } else {
             state
@@ -76,7 +82,7 @@ async fn negotiate_inner(
                 .cloned()
         };
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let compute_pool = state.server.upgrade().map(|s| s.compute_pool.clone());
+        let compute_pool = server.map(|s| s.compute_pool.clone());
         let compute_task = move || {
             let res = authenticate_client_offer(&offer, require_identity, oidc_verifier.as_ref());
             let _ = tx.send(res);
