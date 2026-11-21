@@ -1237,13 +1237,24 @@ impl Level {
 
     /// Reads a block without waiting for a loaded chunk or palette lock.
     pub fn try_read_block_state(&self, position: BlockPos) -> Option<BlockStateId> {
+        self.try_with_block_state(position, |_, state| state)
+    }
+
+    /// Pins the loaded chunk and its block palette while using the state. The callback
+    /// must not acquire either lock again or wait for work using them.
+    pub fn try_with_block_state<R>(
+        &self,
+        position: BlockPos,
+        read: impl FnOnce(&ChunkData, BlockStateId) -> R,
+    ) -> Option<R> {
         let (pos, relative) = position.chunk_and_chunk_relative_position();
         let TryResult::Present(chunk) = self.loaded_chunks.try_get(&pos) else {
             return None;
         };
         let sections = &chunk.section;
         let palettes = sections.block_sections.try_read()?;
-        sections.read_block_from_palettes(&palettes, relative)
+        let state = sections.read_block_from_palettes(&palettes, relative)?;
+        Some(read(chunk.value(), state))
     }
 
     pub fn read_entity_chunk_sync<R, F: Fn(&SyncEntityChunk) -> R>(

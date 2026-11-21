@@ -143,6 +143,12 @@ that already got that state in the same connection epoch skips the duplicate.
 Packet observers and translated clients use the world publication path. The
 Java chunk sender checks terrain revisions before reusing or queuing an encoding.
 
+Loaded campfires in active regions advance their cooking or cooling counters
+on the region clock while the actor and block state are pinned. A completed
+slot waits at the recipe limit for the world to spawn its item and publish its
+block actor. Coordinated ticks and campfires with cooking event listeners run
+the existing world tick. Saved items and recipe counters are captured together.
+
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
 use the region tick numbers at the world boundary and advance each chunk

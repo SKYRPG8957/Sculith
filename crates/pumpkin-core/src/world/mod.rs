@@ -1,6 +1,6 @@
-use crate::block::entities::{BlockEntity, block_entity_from_nbt};
+use crate::block::entities::{BlockEntity, block_entity_from_nbt, campfire::CampfireBlockEntity};
 use crossbeam::channel::Receiver;
-use dashmap::DashMap;
+use dashmap::{DashMap, try_result::TryResult};
 use pumpkin_data::chunk::Biome;
 use pumpkin_data::item::{BedrockItem, BedrockItemVersion};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
@@ -1913,9 +1913,17 @@ impl World {
         let block_entity_count = block_entities.len();
 
         let t_be = std::time::Instant::now();
+        let regional_campfires = !coordinated && CampfireBlockEntity::timers_unobserved(server);
         block_entities.par_chunks(16).for_each(|batch| {
             for be in batch {
-                be.tick(self);
+                if regional_campfires
+                    && let Some(campfire) =
+                        (be.as_ref() as &dyn std::any::Any).downcast_ref::<CampfireBlockEntity>()
+                {
+                    campfire.finish_regional_cooking(self);
+                } else {
+                    be.tick(self);
+                }
             }
         });
         // Drained after all ticks, so changes (hopper -> chest) land in the same tick.
@@ -2354,9 +2362,18 @@ impl World {
         if inhabited && same_extent {
             self.apply_regional_block_edits(&owns);
         }
+        let regional_campfires = inhabited
+            && same_extent
+            && self
+                .server
+                .upgrade()
+                .is_some_and(|server| CampfireBlockEntity::timers_unobserved(&server));
         for &pos in chunks.iter() {
             if !same_extent && current.owner(pos) != Some(owner) {
                 continue;
+            }
+            if regional_campfires {
+                self.advance_regional_campfires(pos, &owns);
             }
             if self.level.chunks_with_scheduled_ticks.contains(&pos) {
                 let Some(chunk) = self.level.loaded_chunks.get_mut(&pos) else {
@@ -2429,6 +2446,29 @@ impl World {
         }
         if inhabited && same_extent {
             self.flush_regional_block_updates(&owns);
+        }
+    }
+
+    fn advance_regional_campfires(&self, pos: Vector2<i32>, owns: &impl Fn(Vector2<i32>) -> bool) {
+        let TryResult::Present(entities) = self.block_entities.try_get(&pos) else {
+            return;
+        };
+        for entity in entities.values() {
+            let Some(campfire) =
+                (entity.as_ref() as &dyn std::any::Any).downcast_ref::<CampfireBlockEntity>()
+            else {
+                continue;
+            };
+            if campfire.position.chunk_position() != pos {
+                continue;
+            }
+            // Keep the live actor and its palette pinned for this timer step.
+            self.level
+                .try_with_block_state(campfire.position, |chunk, state| {
+                    if owns(pos) && campfire.advance_regional_timers(state) {
+                        chunk.mark_dirty(true);
+                    }
+                });
         }
     }
 
