@@ -761,13 +761,11 @@ impl SpearItem {
         }
         if user.get_player().is_some()
             && let Some(other) = target.get_player()
+            && other
+                .pvp_restriction(&entity.world.load(), &server.advanced_config.pvp)
+                .is_some()
         {
-            let config = &server.advanced_config.pvp;
-            if !config.enabled
-                || (config.protect_creative && other.gamemode.load() == GameMode::Creative)
-            {
-                return false;
-            }
+            return false;
         }
         user.get_entity().root_vehicle_id() != entity.root_vehicle_id()
     }

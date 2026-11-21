@@ -32,6 +32,7 @@ use arc_swap::ArcSwap;
 use crossbeam::atomic::AtomicCell;
 use crossbeam::channel::Receiver;
 use crossbeam::queue::SegQueue;
+use pumpkin_config::PVPConfig;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::player::ender_chest_inventory::EnderChestInventory;
@@ -916,6 +917,11 @@ fn decode_skin_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     Some((width, height, rgba))
 }
 
+pub(crate) enum PvpRestriction {
+    Disabled,
+    Creative,
+}
+
 impl Player {
     pub const FULL_SLEEP_TICKS: u8 = 100;
     pub const SLEEP_TIMER_RESET_TICKS: u8 = 110;
@@ -1673,6 +1679,18 @@ impl Player {
         true
     }
 
+    /// Returns the player damage restriction from the server and world settings.
+    pub(crate) fn pvp_restriction(
+        &self,
+        world: &World,
+        config: &PVPConfig,
+    ) -> Option<PvpRestriction> {
+        if !config.enabled || !world.level_info.load().game_rules.pvp {
+            return Some(PvpRestriction::Disabled);
+        }
+        (config.protect_creative && self.is_creative()).then_some(PvpRestriction::Creative)
+    }
+
     /// Rechecks a client's direct attack after its interaction callbacks complete.
     pub(crate) fn attack_from_client(
         &self,
@@ -1700,17 +1718,17 @@ impl Player {
         }
 
         if let Some(player) = victim.get_player() {
-            let config = &server.advanced_config.pvp;
-            if !config.enabled {
-                return;
-            }
-            if config.protect_creative && player.gamemode.load() == GameMode::Creative {
-                world.play_sound(
-                    Sound::EntityPlayerAttackNodamage,
-                    SoundCategory::Players,
-                    &player.position(),
-                );
-                return;
+            match player.pvp_restriction(world, &server.advanced_config.pvp) {
+                Some(PvpRestriction::Disabled) => return,
+                Some(PvpRestriction::Creative) => {
+                    world.play_sound(
+                        Sound::EntityPlayerAttackNodamage,
+                        SoundCategory::Players,
+                        &player.position(),
+                    );
+                    return;
+                }
+                None => {}
             }
         }
 
@@ -5369,6 +5387,25 @@ impl Player {
                 .has_tag(&pumpkin_data::tag::DamageType::MINECRAFT_BYPASSES_INVULNERABILITY)
         {
             return false;
+        }
+        let attacking_player = cause.or(source).and_then(EntityBase::get_player);
+        let projectile_owner = source.and_then(EntityBase::get_projectile_owner);
+        if attacking_player.is_some() || projectile_owner.is_some() {
+            let world = self.world();
+            if let Some(server) = world.server.upgrade()
+                && self
+                    .pvp_restriction(&world, &server.advanced_config.pvp)
+                    .is_some()
+                && attacking_player.map_or_else(
+                    || {
+                        projectile_owner
+                            .is_some_and(|owner| owner.has_other_player_profile(&server, self))
+                    },
+                    |player| player.gameprofile.id != self.gameprofile.id,
+                )
+            {
+                return false;
+            }
         }
         if !self.get_entity().is_invulnerable_to(&damage_type, cause)
             && !self.living_entity.is_dead_or_dying()

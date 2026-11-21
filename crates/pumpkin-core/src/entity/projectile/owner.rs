@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase};
+use crate::server::Server;
 use crate::world::World;
 use crate::world::game_event::GameEventContext;
 use pumpkin_data::game_event::GameEvent;
@@ -213,6 +214,19 @@ impl ProjectileOwner {
                 .owner
                 .get(world)
                 .is_none_or(|owner| !owner.get_entity().is_passenger_of_same_vehicle(entity))
+    }
+
+    /// Recognizes a known player even if they logged out after firing.
+    pub(crate) fn has_other_player_profile(&self, server: &Server, target: &Player) -> bool {
+        self.uuid().is_some_and(|owner| {
+            owner != target.gameprofile.id
+                && server
+                    .data
+                    .user_cache
+                    .read()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .contains_uuid(owner)
+        })
     }
 
     pub fn write_nbt(&self, nbt: &mut NbtCompound) {

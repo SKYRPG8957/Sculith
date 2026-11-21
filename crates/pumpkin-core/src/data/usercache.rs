@@ -115,6 +115,10 @@ impl UserCache {
         None
     }
 
+    pub(crate) fn contains_uuid(&self, uuid: Uuid) -> bool {
+        self.profiles_by_uuid.contains_key(&uuid)
+    }
+
     pub fn get_by_uuid(&mut self, uuid: Uuid) -> Option<UserCacheEntry> {
         let mut entry = self.profiles_by_uuid.get(&uuid).cloned()?;
         entry.last_access = self.next_operation();

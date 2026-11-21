@@ -180,11 +180,24 @@ pub fn count_down_despawn<A: AbstractArrow + ?Sized>(arrow: &A) {
 /// The owner rule plus the entities a piercing arrow already went through.
 pub fn can_hit_entity<A: AbstractArrow + ?Sized>(arrow: &A, other: &dyn EntityBase) -> bool {
     let world = arrow.get_entity().world.load();
-    if other.get_player().is_some()
-        && let Some(owner) = arrow.owner().get_player(&world)
-        && !(owner.as_ref() as &dyn EntityBase).do_teams_allow_damage(other)
-    {
-        return false;
+    if let Some(target) = other.get_player() {
+        let owner = arrow.owner().get_player(&world);
+        if owner.as_ref().is_some_and(|player| {
+            !(player.as_ref() as &dyn EntityBase).do_teams_allow_damage(other)
+        }) {
+            return false;
+        }
+        if let Some(server) = world.server.upgrade()
+            && target
+                .pvp_restriction(&world, &server.advanced_config.pvp)
+                .is_some()
+            && owner.as_ref().map_or_else(
+                || arrow.owner().has_other_player_profile(&server, target),
+                |owner| owner.gameprofile.id != target.gameprofile.id,
+            )
+        {
+            return false;
+        }
     }
     other.can_be_hit_by_projectile()
         && arrow.owner().can_hit(&world, other.get_entity())

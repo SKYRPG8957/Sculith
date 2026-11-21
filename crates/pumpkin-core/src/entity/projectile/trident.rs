@@ -461,13 +461,7 @@ impl AbstractArrow for TridentEntity {
         if self.dealt_damage.load(Ordering::Relaxed) {
             return Vec::new();
         }
-        let world = self.entity.world.load();
-        let owner_is_player = self.owner.get_player(&world).is_some();
-        let pvp_enabled = world.level_info.load().game_rules.pvp;
         get_entity_hit_result(&self.entity, from, to, |other| {
-            if owner_is_player && other.get_player().is_some() && !pvp_enabled {
-                return false;
-            }
             abstract_arrow::can_hit_entity(self, other)
         })
         .into_iter()
