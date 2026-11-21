@@ -2383,12 +2383,9 @@ impl Entity {
             let origin = self.chunk_pos.load();
             let destination = BlockPos::floored_v(new_position).chunk_position();
             if origin != destination {
-                self.world.load().move_item_between_regions(
-                    self,
-                    origin,
-                    destination,
-                    commit_position,
-                );
+                self.world
+                    .load()
+                    .move_item_across_chunks(self, commit_position);
                 return;
             }
         }

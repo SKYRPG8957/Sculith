@@ -37,6 +37,10 @@ impl RegionLayout {
         self.active.regions.is_empty() && self.inactive.is_empty()
     }
 
+    pub(super) fn shares_active_regions(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.active, &other.active)
+    }
+
     pub(crate) fn owner(&self, pos: Vector2<i32>) -> Option<RegionId> {
         self.active.owners.get(&pos).copied().or_else(|| {
             self.inactive

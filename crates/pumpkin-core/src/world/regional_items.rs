@@ -27,6 +27,11 @@ impl RegionalItemTimers {
         self.assigned.contains_key(&entity_id)
     }
 
+    fn assign(&mut self, owner: RegionId, actor: Arc<dyn EntityBase>) {
+        self.assigned.insert(actor.get_entity().entity_id, owner);
+        self.by_region.entry(owner).or_default().push(actor);
+    }
+
     fn unassign(&mut self, entity_id: i32) -> Option<Arc<dyn EntityBase>> {
         let owner = self.assigned.remove(&entity_id)?;
         let Entry::Occupied(mut entry) = self.by_region.entry(owner) else {
@@ -45,6 +50,43 @@ impl RegionalItemTimers {
 }
 
 impl World {
+    pub(super) fn publish_region_layout(&self, layout: &Arc<RegionLayout>) {
+        let previous = self.region_layout.load();
+        if Arc::ptr_eq(&previous, layout) {
+            return;
+        }
+        if previous.shares_active_regions(layout) {
+            self.region_layout.store(layout.clone());
+            return;
+        }
+
+        let mut published = self
+            .regional_item_timers
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        if published.enabled {
+            let mut reassigned = RegionalItemTimers {
+                enabled: true,
+                ..Default::default()
+            };
+            for actor in published.by_region.values().flatten() {
+                let base = actor.get_entity();
+                if !base.is_removed()
+                    && std::ptr::eq(base.world.load().as_ref(), self)
+                    && let Some(owner) = layout.owner(base.chunk_pos.load())
+                    && owner != RegionLayout::INACTIVE
+                {
+                    reassigned.assign(owner, actor.clone());
+                }
+            }
+            if reassigned.assigned != published.assigned {
+                *published = Arc::new(reassigned);
+            }
+        }
+        // A dispatched owner reads the matching item plan when it acquires its permit.
+        self.region_layout.store(layout.clone());
+    }
+
     pub(super) fn assign_regional_item_timers(
         &self,
         server: &Server,
@@ -99,22 +141,9 @@ impl World {
         published.clone()
     }
 
-    pub(crate) fn move_item_between_regions(
-        &self,
-        entity: &Entity,
-        origin: Vector2<i32>,
-        destination: Vector2<i32>,
-        commit_position: impl FnOnce(),
-    ) {
-        let layout = self.region_layout.load();
-        if layout.owner(origin) == layout.owner(destination) {
-            commit_position();
-            return;
-        }
-        drop(layout);
-
-        // A regional job holds a read permit while it touches the item. Keep
-        // position and ownership in the same handoff under the write permit.
+    pub(crate) fn move_item_across_chunks(&self, entity: &Entity, commit_position: impl FnOnce()) {
+        // A move can overlap a change of layout. Hold the same permit used to
+        // publish that layout until the position and assignment agree.
         let mut published = self
             .regional_item_timers
             .write()
@@ -143,12 +172,11 @@ impl World {
                 previous.or_else(|| self.entity_index.by_id(&self.entities.load_full(), id))
             && std::ptr::eq(actor.get_entity(), entity)
         {
-            timers.assigned.insert(id, owner);
-            timers.by_region.entry(owner).or_default().push(actor);
+            timers.assign(owner, actor);
         }
     }
 
-    pub(super) fn clear_regional_item_timers(&self) {
+    pub(super) fn reset_region_layout(&self) {
         let mut published = self
             .regional_item_timers
             .write()
@@ -156,6 +184,7 @@ impl World {
         if published.enabled {
             *published = Arc::default();
         }
+        self.region_layout.store(Arc::default());
     }
 
     pub(super) fn advance_regional_item_timers(

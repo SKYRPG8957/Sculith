@@ -2238,10 +2238,10 @@ impl World {
                     let plan = tracker
                         .tick_regions
                         .schedule_ticks(&active, scheduled, coordinated);
-                    let layout = tracker.tick_regions.layout();
-                    if !Arc::ptr_eq(&self.region_layout.load(), layout) {
-                        self.region_layout.store(layout.clone());
-                    }
+                    let layout = tracker.tick_regions.layout().clone();
+                    drop(active);
+                    drop(tracker);
+                    self.publish_region_layout(&layout);
                     plan
                 });
 
@@ -2374,8 +2374,7 @@ impl World {
 
     pub(crate) fn invalidate_region_layout(&self) {
         if !self.region_layout.load().is_empty() {
-            self.region_layout.store(Arc::default());
-            self.clear_regional_item_timers();
+            self.reset_region_layout();
         }
     }
 
