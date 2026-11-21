@@ -1,6 +1,5 @@
 use crate::entity::player::Player;
 use base64::{Engine as _, engine::general_purpose};
-use core::error;
 use pumpkin_config::BasicConfiguration;
 use pumpkin_data::packet::{CURRENT_MC_VERSION, LOWEST_SUPPORTED_MC_VERSION};
 use pumpkin_protocol::{
@@ -8,31 +7,41 @@ use pumpkin_protocol::{
     java::client::{config::CPluginMessage, status::CStatusResponse},
 };
 use pumpkin_util::text::TextComponent;
-use std::{fs, path::Path};
-use tracing::{debug, info, warn};
+use std::{
+    fs,
+    io::{self, Cursor},
+    path::Path,
+};
+use tracing::warn;
 use uuid::Uuid;
 
-const DEFAULT_ICON: &[u8] = include_bytes!("../../../../assets/default_icon.png");
+const DEFAULT_ICON_PATH: &str = "server-icon.png";
 const MAX_SAMPLE_PLAYERS: usize = 12;
 
-fn load_icon_from_file<P: AsRef<Path>>(path: P) -> Result<String, Box<dyn error::Error>> {
-    let buf = fs::read(path)?;
-    if buf.len() >= 24 {
-        let width = u32::from_be_bytes([buf[16], buf[17], buf[18], buf[19]]);
-        let height = u32::from_be_bytes([buf[20], buf[21], buf[22], buf[23]]);
-
-        if width != 64 || height != 64 {
-            return Err("Invalid favicon dimensions (must be 64x64)".into());
-        }
+fn load_icon_from_file(path: &Path) -> io::Result<String> {
+    if !path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a PNG file",
+        ));
     }
-    Ok(load_icon_from_bytes(&buf))
-}
-
-fn load_icon_from_bytes(png_data: &[u8]) -> String {
-    assert!(!png_data.is_empty(), "PNG data is empty");
+    let buf = fs::read(path)?;
+    let reader = png::Decoder::new(Cursor::new(&buf))
+        .read_info()
+        .map_err(io::Error::other)?;
+    let info = reader.info();
+    if info.width != 64 || info.height != 64 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "icon dimensions must be 64x64",
+        ));
+    }
     let mut result = "data:image/png;base64,".to_owned();
-    general_purpose::STANDARD.encode_string(png_data, &mut result);
-    result
+    general_purpose::STANDARD.encode_string(&buf, &mut result);
+    Ok(result)
 }
 
 pub struct CachedStatus {
@@ -52,7 +61,7 @@ impl Default for CachedBranding {
 }
 
 impl CachedBranding {
-    const BRAND: &'static str = "Pumpkin";
+    const BRAND: &'static str = "Sculith";
     const BRAND_BYTES: &'static [u8] = &{
         let brand = Self::BRAND.as_bytes();
         let len = brand.len();
@@ -159,45 +168,20 @@ impl CachedStatus {
         max_players: u32,
     ) -> StatusResponse {
         let favicon = if config.use_favicon {
-            config.favicon_path.as_ref().map_or_else(
-                || {
-                    debug!("Loading default icon");
-
-                    // Attempt to load default icon
-                    Some(load_icon_from_bytes(DEFAULT_ICON))
-                },
-                |icon_path| {
-                    if !std::path::Path::new(icon_path)
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
-                    {
-                        warn!("Favicon is not a PNG-image, using default.");
-                        return Some(load_icon_from_bytes(DEFAULT_ICON));
-                    }
-                    debug!("Attempting to load server favicon from '{icon_path}'");
-
-                    match load_icon_from_file(icon_path) {
-                        Ok(icon) => Some(icon),
-                        Err(e) => {
-                            let error_message = e.downcast_ref::<std::io::Error>().map_or_else(
-                                || format!("other error: {e}; using default."),
-                                |io_err| {
-                                    if io_err.kind() == std::io::ErrorKind::NotFound {
-                                        "not found; using default.".to_string()
-                                    } else {
-                                        format!("I/O error: {io_err}; using default.")
-                                    }
-                                },
-                            );
-                            warn!("Failed to load favicon from '{icon_path}': {error_message}");
-
-                            Some(load_icon_from_bytes(DEFAULT_ICON))
-                        }
-                    }
-                },
-            )
+            let path = config.favicon_path.as_deref().unwrap_or(DEFAULT_ICON_PATH);
+            match load_icon_from_file(Path::new(path)) {
+                Ok(icon) => Some(icon),
+                Err(error)
+                    if error.kind() == io::ErrorKind::NotFound && config.favicon_path.is_none() =>
+                {
+                    None
+                }
+                Err(error) => {
+                    warn!("Failed to load server icon from '{path}': {error}");
+                    None
+                }
+            }
         } else {
-            info!("Favicon usage is disabled.");
             None
         };
 
@@ -226,10 +210,6 @@ impl CachedStatus {
 
 impl Default for CachedStatus {
     fn default() -> Self {
-        Self::new(
-            &BasicConfiguration::default(),
-            "A blazingly fast Pumpkin server!",
-            1000,
-        )
+        Self::new(&BasicConfiguration::default(), "Sculith", 1000)
     }
 }

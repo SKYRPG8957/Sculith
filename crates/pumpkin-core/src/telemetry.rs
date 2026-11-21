@@ -865,13 +865,17 @@ pub fn start_telemetry_with_config(server: Arc<Server>, config: &TelemetryConfig
         tracing::trace!("Telemetry is disabled in configuration.");
         return;
     }
+    if config.endpoint.trim().is_empty() {
+        tracing::warn!("Telemetry is enabled but its endpoint is empty.");
+        return;
+    }
 
     tracing::info!(
         "Anonymous server telemetry is enabled. Sending periodic heartbeats to {}",
         config.endpoint
     );
 
-    let user_agent = format!("Pumpkin-Server/{}", env!("CARGO_PKG_VERSION"));
+    let user_agent = format!("Sculith-Server/{}", env!("CARGO_PKG_VERSION"));
     let http_client = match pumpkin_auth::client_builder()
         .timeout(Duration::from_secs(10))
         .user_agent(&user_agent)

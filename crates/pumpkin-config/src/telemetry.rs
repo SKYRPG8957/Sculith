@@ -20,7 +20,7 @@ impl Default for TelemetryConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            endpoint: "https://telemetry.pumpkinmc.org/v1/heartbeat".to_string(),
+            endpoint: String::new(),
             interval_secs: 300,
             public: false,
             server_name: None,
@@ -41,10 +41,7 @@ mod tests {
     fn telemetry_default() {
         let default_config = TelemetryConfig::default();
         assert!(!default_config.enabled);
-        assert_eq!(
-            default_config.endpoint,
-            "https://telemetry.pumpkinmc.org/v1/heartbeat"
-        );
+        assert!(default_config.endpoint.is_empty());
         assert_eq!(default_config.interval_secs, 300);
         assert!(!default_config.public);
         assert_eq!(default_config.server_name, None);

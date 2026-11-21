@@ -23,6 +23,9 @@ Bedrock uses NetherNet on TCP/UDP 19132. Enable Java in `[networking.java]` to l
 on by default. Plugins use the upstream Rust/Wasm API; Sculith's previous
 prototype plugins need to be ported.
 
+Place a 64×64 PNG named `server-icon.png` in the server directory to set the
+Java server list icon.
+
 Shared resources and their Rust plugin APIs are opt-in. See the
 [resource guide](docs/sculith/resources.md) for sounds, forms and static models.
 Protocol plugins can use the [packet events](docs/sculith/packets.md).
