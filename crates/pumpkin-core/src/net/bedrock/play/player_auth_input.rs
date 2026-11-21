@@ -54,14 +54,6 @@ impl BedrockClient {
             player.apply_sprint_input(server, false);
         }
 
-        if flags.get(InputData::StartSwimming as usize) {
-            entity.set_swimming(true);
-            player.update_player_pose();
-        } else if flags.get(InputData::StopSwimming as usize) {
-            entity.set_swimming(false);
-            player.update_player_pose();
-        }
-
         if flags.get(InputData::StartCrawling as usize) {
             entity.set_pose(EntityPose::Swimming);
         } else if flags.get(InputData::StopCrawling as usize) {
@@ -99,6 +91,13 @@ impl BedrockClient {
                 horizontal_collision,
             },
         );
+
+        // Use the committed position so a swim can start in the same input that enters water.
+        if flags.get(InputData::StopSwimming as usize) {
+            player.apply_bedrock_swim_input(false);
+        } else if flags.get(InputData::StartSwimming as usize) {
+            player.apply_bedrock_swim_input(true);
+        }
 
         if let Some(vehicle) = entity.get_vehicle() {
             vehicle.set_paddle_state(

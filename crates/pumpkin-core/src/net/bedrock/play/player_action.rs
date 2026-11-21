@@ -198,13 +198,8 @@ impl BedrockClient {
                     matches!(action, PlayerAction::StartGliding),
                 );
             }
-            PlayerAction::StartSwimming => {
-                player.get_entity().set_swimming(true);
-                player.update_player_pose();
-            }
-            PlayerAction::StopSwimming => {
-                player.get_entity().set_swimming(false);
-                player.update_player_pose();
+            PlayerAction::StartSwimming | PlayerAction::StopSwimming => {
+                player.apply_bedrock_swim_input(matches!(action, PlayerAction::StartSwimming));
             }
             PlayerAction::StartSpinAttack => {
                 player

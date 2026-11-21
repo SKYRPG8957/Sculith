@@ -34,6 +34,7 @@ use crossbeam::channel::Receiver;
 use crossbeam::queue::SegQueue;
 use pumpkin_config::PVPConfig;
 use pumpkin_data::dimension::Dimension;
+use pumpkin_data::fluid::Fluid;
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::player::ender_chest_inventory::EnderChestInventory;
 use pumpkin_protocol::RawPacket;
@@ -49,7 +50,7 @@ use pumpkin_protocol::bedrock::client::{
     common::BuildPlatform,
     move_player::CMovePlayer as CBedrockMovePlayer,
     player_list::{CPlayerList, PlayerListEntry},
-    set_actor_data::PropertySyncData,
+    set_actor_data::{PropertySyncData, entity_data_flag},
     update_attributes::{
         AttributeData as BedrockAttribute, CUpdateAttributes as CBedrockAttributes,
     },
@@ -2623,11 +2624,48 @@ impl Player {
             && self.get_entity().is_swimming()
     }
 
+    pub(crate) fn apply_bedrock_swim_input(&self, swimming: bool) {
+        let entity = self.get_entity();
+        let was_swimming = entity.is_swimming();
+        entity.set_swimming(swimming && self.can_swim_bedrock());
+        if self.can_fit_pose(EntityPose::Swimming) {
+            self.apply_player_pose();
+        }
+        let actual = entity.is_swimming();
+        if actual == was_swimming && actual != swimming {
+            // Restore the server's flag when the client predicted an invalid or vetoed change.
+            entity.set_bedrock_flag(entity_data_flag::SWIMMING, actual);
+        }
+    }
+
+    fn can_swim_bedrock(&self) -> bool {
+        let entity = self.get_entity();
+        if self.is_flying() || self.gamemode.load() == GameMode::Spectator || entity.has_vehicle() {
+            return false;
+        }
+
+        // The fluid cache is updated by the entity tick, after movement input.
+        let position = entity.pos.load();
+        let feet = BlockPos::floored_v(position);
+        let world = entity.world.load();
+        let (fluid, state) = world.get_fluid_and_fluid_state(&feet);
+        fluid.matches_type(&Fluid::WATER)
+            && position.y
+                < f64::from(feet.0.y) + f64::from(world.get_fluid_height(&feet, fluid, &state))
+    }
+
     pub fn update_swimming(&self) {
+        let entity = self.get_entity();
+        if matches!(self.client.as_ref(), ClientPlatform::Bedrock(_)) {
+            if entity.is_swimming() && !self.can_swim_bedrock() {
+                entity.set_swimming(false);
+            }
+            return;
+        }
+
         if self.is_flying() {
-            self.get_entity().set_swimming(false);
+            entity.set_swimming(false);
         } else {
-            let entity = self.get_entity();
             let is_sprinting = entity.is_sprinting();
             let in_water = entity.is_in_water();
             let is_passenger = entity.has_vehicle();
@@ -2698,6 +2736,10 @@ impl Player {
         }
 
         self.update_swimming();
+        self.apply_player_pose();
+    }
+
+    fn apply_player_pose(&self) {
         let desired_pose = self.get_desired_pose();
         let actual_pose = if self.gamemode.load() == GameMode::Spectator
             || self.get_entity().has_vehicle()
