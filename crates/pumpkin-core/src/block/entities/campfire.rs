@@ -1,16 +1,19 @@
 use super::BlockEntity;
-use crate::entity::Entity;
 use crate::entity::item::ItemEntity;
+use crate::entity::{Entity, EntityBase};
 use crate::plugin::api::events::block::{
     block_cook::BlockCookEvent, campfire_start::CampfireStartEvent,
 };
+use crate::plugin::api::events::entity::entity_spawn::EntitySpawnEvent;
 use crate::server::Server;
 use crate::world::World;
 use pumpkin_data::block_properties::CampfireLikeProperties;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::recipes::{CookingRecipeKind, get_cooking_recipe_with_ingredient};
+use pumpkin_data::recipes::{
+    CookingRecipeKind, RecipeResultStruct, get_cooking_recipe_with_ingredient,
+};
 use pumpkin_data::{Block, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
@@ -25,6 +28,7 @@ pub struct CampfireBlockEntity {
     pub items: [Arc<Mutex<ItemStack>>; Self::SLOT_COUNT],
     pub cooking_times: [Mutex<i32>; Self::SLOT_COUNT],
     pub cooking_total_times: [Mutex<i32>; Self::SLOT_COUNT],
+    cooking_owner: Mutex<()>,
 }
 
 impl BlockEntity for CampfireBlockEntity {
@@ -154,6 +158,7 @@ impl CampfireBlockEntity {
             items: std::array::from_fn(|_| Arc::new(Mutex::new(ItemStack::EMPTY.clone()))),
             cooking_times: std::array::from_fn(|_| Mutex::new(0)),
             cooking_total_times: std::array::from_fn(|_| Mutex::new(0)),
+            cooking_owner: Mutex::new(()),
         }
     }
 
@@ -162,15 +167,25 @@ impl CampfireBlockEntity {
             && !server.plugin_manager.has_handlers::<BlockCookEvent>()
     }
 
+    pub(crate) fn outputs_unobserved(server: &Server) -> bool {
+        !server.plugin_manager.has_handlers::<EntitySpawnEvent>()
+    }
+
     fn lit_in(state: BlockStateId) -> Option<bool> {
         let block = state.to_block();
         (block == &Block::CAMPFIRE || block == &Block::SOUL_CAMPFIRE)
             .then(|| CampfireLikeProperties::from_state_id(state).lit)
     }
 
-    /// Advance under the region's pinned palette. The world consumes completed
-    /// slots and publishes their item entities and block actor data.
-    pub(crate) fn advance_regional_timers(&self, state: BlockStateId) -> bool {
+    /// Advances against the pinned palette and reports ready recipes without consuming them.
+    pub(crate) fn advance_regional_timers(
+        &self,
+        state: BlockStateId,
+        mut ready: impl FnMut(usize, &'static Item, &'static RecipeResultStruct),
+    ) -> bool {
+        let Ok(_owner) = self.cooking_owner.try_lock() else {
+            return false;
+        };
         let Some(lit) = Self::lit_in(state) else {
             return false;
         };
@@ -210,8 +225,44 @@ impl CampfireBlockEntity {
                 *progress += 1;
                 changed = true;
             }
+            if *total > 0 && *progress >= *total {
+                ready(slot, stack.item, &recipe.result);
+            }
         }
         changed
+    }
+
+    /// Commits a prepared item only while this slot still holds a finished recipe.
+    pub(crate) fn finish_regional_slot(
+        &self,
+        state: BlockStateId,
+        slot: usize,
+        ingredient: &'static Item,
+        commit: impl FnOnce(),
+    ) -> bool {
+        if Self::lit_in(state) != Some(true) {
+            return false;
+        }
+        let Ok(_owner) = self.cooking_owner.try_lock() else {
+            return false;
+        };
+        let Ok(mut stack) = self.items[slot].try_lock() else {
+            return false;
+        };
+        let Ok(mut total) = self.cooking_total_times[slot].try_lock() else {
+            return false;
+        };
+        let Ok(mut progress) = self.cooking_times[slot].try_lock() else {
+            return false;
+        };
+        if stack.is_empty() || stack.item.id != ingredient.id || *total <= 0 || *progress < *total {
+            return false;
+        }
+        commit();
+        *stack = ItemStack::EMPTY.clone();
+        *total = 0;
+        *progress = 0;
+        true
     }
 
     pub(crate) fn finish_regional_cooking(&self, world: &Arc<World>) {
@@ -219,6 +270,9 @@ impl CampfireBlockEntity {
     }
 
     fn tick_cooking(&self, world: &Arc<World>, advance_clock: bool) {
+        let Ok(_owner) = self.cooking_owner.try_lock() else {
+            return;
+        };
         let Some(lit) = Self::lit_in(world.get_block_state(&self.position).id) else {
             return;
         };
@@ -300,7 +354,7 @@ impl CampfireBlockEntity {
                 }
                 result = event.result;
             }
-            Self::spawn_cooked_item(world, self.position, result);
+            world.spawn_entity(Self::cooked_item(world, self.position, result));
 
             let mut stored = self.items[slot]
                 .lock()
@@ -406,14 +460,18 @@ impl CampfireBlockEntity {
         });
     }
 
-    fn spawn_cooked_item(world: &Arc<World>, position: BlockPos, stack: ItemStack) {
+    pub(crate) fn cooked_item(
+        world: &Arc<World>,
+        position: BlockPos,
+        stack: ItemStack,
+    ) -> Arc<dyn EntityBase> {
         let spawn_position = Vector3::new(
             f64::from(position.0.x) + 0.5 + rng().random_range(-0.35..0.35),
             f64::from(position.0.y) + 1.01,
             f64::from(position.0.z) + 0.5 + rng().random_range(-0.35..0.35),
         );
         let entity = Entity::new(world.clone(), spawn_position, &EntityType::ITEM);
-        world.spawn_entity(Arc::new(ItemEntity::new(entity, stack)));
+        Arc::new(ItemEntity::new(entity, stack))
     }
 }
 
@@ -448,7 +506,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn regional_campfire_keeps_finished_recipe_until_world_can_spawn_it() {
+    fn regional_campfire_revalidates_and_consumes_a_finished_slot_once() {
         let fire = CampfireBlockEntity::new(BlockPos::new(5, 65, 5));
         *fire.items[0].lock().unwrap() = ItemStack::new(1, &Item::BEEF);
         *fire.cooking_total_times[0].lock().unwrap() = 3;
@@ -457,21 +515,48 @@ mod tests {
         settings.lit = true;
         let lit = settings.to_state_id(&Block::CAMPFIRE);
 
+        let ready_count = std::cell::Cell::new(0);
+        let ready = |slot, ingredient, result: &RecipeResultStruct| {
+            assert_eq!(slot, 0);
+            assert_eq!(ingredient, &Item::BEEF);
+            assert_eq!(result.id, "minecraft:cooked_beef");
+            ready_count.set(ready_count.get() + 1);
+        };
+
         // A busy slot leaves its count unchanged.
         let held = fire.items[0].lock().unwrap();
-        assert!(!fire.advance_regional_timers(lit));
+        assert!(!fire.advance_regional_timers(lit, ready));
+        assert_eq!(ready_count.get(), 0);
         drop(held);
-        assert!(fire.advance_regional_timers(lit));
-        assert!(!fire.advance_regional_timers(lit));
-        assert!(!fire.advance_regional_timers(Block::STONE.default_state.id));
+        assert!(fire.advance_regional_timers(lit, ready));
+        assert!(!fire.advance_regional_timers(lit, ready));
+        assert!(!fire.advance_regional_timers(Block::STONE.default_state.id, ready));
+        assert_eq!(ready_count.get(), 2);
         let saved = fire.chunk_data_nbt().unwrap();
         assert_eq!(saved.get_int_array("CookingTimes").unwrap(), &[3, 0, 0, 0]);
         assert_eq!(saved.get_list("Items").unwrap().len(), 1);
 
-        let reloaded = CampfireBlockEntity::from_nbt(&saved, fire.position);
-        assert!(!reloaded.advance_regional_timers(lit));
         settings.lit = false;
-        assert!(reloaded.advance_regional_timers(settings.to_state_id(&Block::CAMPFIRE)));
+        let unlit = settings.to_state_id(&Block::CAMPFIRE);
+        let commits = std::cell::Cell::new(0);
+        let commit = || commits.set(commits.get() + 1);
+        assert!(!fire.finish_regional_slot(unlit, 0, &Item::BEEF, commit));
+        assert!(!fire.finish_regional_slot(lit, 0, &Item::PORKCHOP, commit));
+        assert!(fire.finish_regional_slot(lit, 0, &Item::BEEF, commit));
+        assert!(!fire.finish_regional_slot(lit, 0, &Item::BEEF, commit));
+        assert_eq!(commits.get(), 1);
+        let cooked = fire.chunk_data_nbt().unwrap();
+        assert_eq!(cooked.get_int_array("CookingTimes").unwrap(), &[0, 0, 0, 0]);
+        assert_eq!(
+            cooked.get_int_array("CookingTotalTimes").unwrap(),
+            &[0, 0, 0, 0]
+        );
+        assert!(cooked.get_list("Items").unwrap().is_empty());
+
+        let reloaded = CampfireBlockEntity::from_nbt(&saved, fire.position);
+        assert!(!reloaded.advance_regional_timers(lit, ready));
+        assert!(reloaded.advance_regional_timers(unlit, ready));
+        assert_eq!(ready_count.get(), 3);
         assert_eq!(*reloaded.cooking_times[0].lock().unwrap(), 1);
     }
 

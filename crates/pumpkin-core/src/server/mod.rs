@@ -752,12 +752,26 @@ impl Server {
         // A disconnected command sender must leave the writer running until recovery is safe.
         self.spawn_task(async move {
             let _save = server.storage_checkpoint.saves.lock().await;
+            let _regional = server
+                .storage_checkpoint
+                .regional_entity_changes
+                .write()
+                .await;
             server.management_hub.broadcast_server_saving();
             let covered = server.storage_checkpoint.save(&server).await?;
             server.finish_save(covered).await
         })
         .await
         .map_err(|err| format!("World checkpoint task failed: {err}"))?
+    }
+
+    pub(crate) fn try_regional_entity_save_guard(
+        &self,
+    ) -> Option<tokio::sync::RwLockReadGuard<'_, ()>> {
+        self.storage_checkpoint
+            .regional_entity_changes
+            .try_read()
+            .ok()
     }
 
     async fn finish_save(
@@ -1466,6 +1480,7 @@ impl Server {
             world.synchronize_local_time();
         }
         world.apply_block_edits();
+        world.flush_regional_campfire_outputs();
         match mode {
             WorldStep::Coordinated => world.tick(self),
             WorldStep::RegionalDeadlines => world.tick_with_region_deadlines(self),
@@ -1483,6 +1498,7 @@ impl Server {
             }
         }
         world.apply_entity_chunk_changes();
+        world.flush_regional_campfire_outputs();
         world.flush_block_updates();
     }
 

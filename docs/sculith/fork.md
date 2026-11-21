@@ -144,10 +144,12 @@ Packet observers and translated clients use the world publication path. The
 Java chunk sender checks terrain revisions before reusing or queuing an encoding.
 
 Loaded campfires in active regions advance their cooking or cooling counters
-on the region clock while the actor and block state are pinned. A completed
-slot waits at the recipe limit for the world to spawn its item and publish its
-block actor. Coordinated ticks and campfires with cooking event listeners run
-the existing world tick. Saved items and recipe counters are captured together.
+on the region clock while the actor and block state are pinned. The region
+validates a ready slot again before exchanging its ingredient for one live item
+entity. The world pairs the new item with clients and publishes the changed
+block actor at its next publication step. Coordinated ticks and cooking or
+entity-spawn listeners keep their existing world-owned execution. A save or
+entity chunk retirement can defer a regional completion until its next deadline.
 
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
@@ -165,7 +167,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 26.
+Native plugins use ABI 27.
 
 ## Shared resource delivery
 

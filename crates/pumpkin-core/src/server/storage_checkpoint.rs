@@ -36,6 +36,9 @@ pub(super) type SavedChunks = BTreeMap<PathBuf, FxHashSet<Vector2<i32>>>;
 pub(super) struct StorageCheckpoint {
     request: Mutex<Option<oneshot::Sender<Result<Capture, String>>>>,
     pub(super) saves: tokio::sync::Mutex<()>,
+    // Keeps regional item creation out of the interval between the terrain and
+    // entity captures of an explicit save.
+    pub(super) regional_entity_changes: tokio::sync::RwLock<()>,
     pub(super) transfers: TransferCheckpoints,
 }
 
