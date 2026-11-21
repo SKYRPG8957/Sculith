@@ -1211,25 +1211,29 @@ impl Server {
     ///
     /// This function does not handle the actual mob spawn options update, which is a TODO item for future implementation.
     pub fn set_difficulty(&self, difficulty: Difficulty, force_update: bool) {
-        let current_info = self.level_info.load();
-        if current_info.difficulty_locked && !force_update {
-            return;
-        }
-
         let new_difficulty = if self.basic_config.hardcore {
             Difficulty::Hard
         } else {
             difficulty
         };
 
-        let mut new_info = (**current_info).clone();
-
-        new_info.difficulty = new_difficulty;
-        let locked = new_info.difficulty_locked;
-        self.level_info.store(Arc::new(new_info));
+        let previous = self.level_info.rcu(|current| {
+            if current.difficulty_locked && !force_update {
+                return Arc::clone(current);
+            }
+            let mut updated = (**current).clone();
+            updated.difficulty = new_difficulty;
+            Arc::new(updated)
+        });
+        let locked = previous.difficulty_locked;
+        if locked && !force_update {
+            return;
+        }
 
         for world in self.worlds.load().iter() {
-            world.set_difficulty(new_difficulty);
+            if !Arc::ptr_eq(&world.level_info, &self.level_info) {
+                world.set_difficulty(new_difficulty);
+            }
             world.broadcast_editioned(
                 &CChangeDifficulty::new(new_difficulty as u8, locked),
                 &pumpkin_protocol::bedrock::client::CSetDifficulty {
@@ -1241,11 +1245,12 @@ impl Server {
 
     /// Sets the difficulty lock status of the server and broadcasts the update to all players.
     pub fn set_difficulty_locked(&self, locked: bool) {
-        let current_info = self.level_info.load();
-        let mut new_info = (**current_info).clone();
-        new_info.difficulty_locked = locked;
-        let difficulty = new_info.difficulty;
-        self.level_info.store(Arc::new(new_info));
+        let previous = self.level_info.rcu(|current| {
+            let mut updated = (**current).clone();
+            updated.difficulty_locked = locked;
+            updated
+        });
+        let difficulty = previous.difficulty;
 
         for world in self.worlds.load().iter() {
             world.broadcast_editioned(

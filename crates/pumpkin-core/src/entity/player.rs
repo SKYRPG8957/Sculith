@@ -1685,7 +1685,7 @@ impl Player {
         world: &World,
         config: &PVPConfig,
     ) -> Option<PvpRestriction> {
-        if !config.enabled || !world.level_info.load().game_rules.pvp {
+        if !world.pvp_enabled(config) {
             return Some(PvpRestriction::Disabled);
         }
         (config.protect_creative && self.is_creative()).then_some(PvpRestriction::Creative)
@@ -3947,7 +3947,7 @@ impl Player {
         let Ok(sender) = self.chunk_sender.try_lock() else {
             return;
         };
-        if sender.ready_chunks_count() <= 4 || self.bedrock_spawned.swap(true, Ordering::Relaxed) {
+        if sender.ready_chunks_count() <= 4 || self.bedrock_spawned.swap(true, Ordering::SeqCst) {
             return;
         }
         let Ok(data) = bedrock_client.serialize_packet(&CPlayStatus::PlayerSpawn) else {
@@ -3964,6 +3964,7 @@ impl Player {
         // for the acknowledgement received from the client.
         self.client_loaded_timeout.store(0, Ordering::Relaxed);
         drop(sender);
+        self.world().sync_bedrock_pvp_after_spawn(bedrock_client);
         self.send_health();
         if self.living_entity.health.load() <= 0.0 {
             self.send_bedrock_respawn_state(RespawnState::SearchingForSpawn);

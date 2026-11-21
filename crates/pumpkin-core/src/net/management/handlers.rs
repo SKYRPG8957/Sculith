@@ -1406,7 +1406,7 @@ fn update_gamerule(
                         "Stated type mismatches with actual type of gamerule \"{rule}\""
                     )))
                 })?;
-            for world in server.worlds.load().iter() {
+            if let Some(world) = server.worlds.load().first() {
                 world.set_game_rule(rule, GameRuleValue::Int(int_val));
             }
             Ok(TypedGameRule {
@@ -1424,7 +1424,7 @@ fn update_gamerule(
                         "Stated type mismatches with actual type of gamerule \"{rule}\""
                     )))
                 })?;
-            for world in server.worlds.load().iter() {
+            if let Some(world) = server.worlds.load().first() {
                 world.set_game_rule(rule, GameRuleValue::Bool(bool_val));
             }
             Ok(TypedGameRule {
