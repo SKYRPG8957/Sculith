@@ -500,6 +500,14 @@ impl ItemEntity {
             && !server.plugin_manager.has_handlers::<ItemMergeEvent>()
     }
 
+    /// The item starts taking timer steps on the deadline after its creation.
+    pub(crate) fn start_regional_timer(&self, owner: RegionId, deadline: TickDeadline) {
+        self.clock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .claim(ItemTimerOwner::Region(owner), deadline);
+    }
+
     pub(crate) fn advance_regional_timers(
         &self,
         owner: RegionId,

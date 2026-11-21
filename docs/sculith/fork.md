@@ -146,7 +146,9 @@ Java chunk sender checks terrain revisions before reusing or queuing an encoding
 Loaded campfires in active regions advance their cooking or cooling counters
 on the region clock while the actor and block state are pinned. The region
 validates a ready slot again before exchanging its ingredient for one live item
-entity. The world pairs the new item with clients and publishes the changed
+entity. The drop starts its lifetime and pickup delay on the next deadline of
+its region when plugins do not observe item despawns or merges. The world pairs
+the new item with clients and publishes the changed
 block actor at its next publication step. Coordinated ticks and cooking or
 entity-spawn listeners keep their existing world-owned execution. A save or
 entity chunk retirement can defer a regional completion until its next deadline.

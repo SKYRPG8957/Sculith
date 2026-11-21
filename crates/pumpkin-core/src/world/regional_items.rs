@@ -27,7 +27,8 @@ impl RegionalItemTimers {
         self.assigned.contains_key(&entity_id)
     }
 
-    fn assign(&mut self, owner: RegionId, actor: Arc<dyn EntityBase>) {
+    pub(super) fn assign(&mut self, owner: RegionId, actor: Arc<dyn EntityBase>) {
+        self.enabled = true;
         self.assigned.insert(actor.get_entity().entity_id, owner);
         self.by_region.entry(owner).or_default().push(actor);
     }
@@ -92,12 +93,8 @@ impl World {
         server: &Server,
         tickable: &[(&Arc<dyn EntityBase>, Vector2<i32>)],
         regional: bool,
+        previous: &Arc<RegionalItemTimers>,
     ) -> Arc<RegionalItemTimers> {
-        let previous = self
-            .regional_item_timers
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
         let mut next = RegionalItemTimers {
             enabled: regional && ItemEntity::timers_unobserved(server),
             ..Default::default()
@@ -134,8 +131,8 @@ impl World {
             .regional_item_timers
             .write()
             .unwrap_or_else(PoisonError::into_inner);
-        // A movement may have assigned a new owner while this plan was built.
-        if !next.enabled || Arc::ptr_eq(&published, &previous) {
+        // A spawn or movement may have updated the assignments during the scan.
+        if !next.enabled || Arc::ptr_eq(&published, previous) {
             *published = Arc::new(next);
         }
         published.clone()

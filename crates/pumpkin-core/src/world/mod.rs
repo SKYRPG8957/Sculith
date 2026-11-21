@@ -1778,6 +1778,12 @@ impl World {
         }
         let player_elapsed = t_players.elapsed();
 
+        // A scan based on an earlier entity list must keep any new regional drops.
+        let previous_item_timers = self
+            .regional_item_timers
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         let entities_to_tick = self.entities.load();
         let entity_count = entities_to_tick.len();
         let active_chunks = self
@@ -1801,7 +1807,13 @@ impl World {
                 Some((entity, entity_chunk))
             })
             .collect();
-        let item_timers = self.assign_regional_item_timers(server, &tickable, !coordinated);
+        let item_timers = self.assign_regional_item_timers(
+            server,
+            &tickable,
+            !coordinated,
+            &previous_item_timers,
+        );
+        drop(previous_item_timers);
 
         // Entities that can affect each other tick in list order; separate islands run in
         // parallel.
@@ -2411,7 +2423,7 @@ impl World {
                 continue;
             }
             if let Some(server) = regional_campfires {
-                self.advance_regional_campfires(server, pos, &owns);
+                self.advance_regional_campfires(server, pos, owner, deadline, &owns);
             }
             if self.level.chunks_with_scheduled_ticks.contains(&pos) {
                 let Some(chunk) = self.level.loaded_chunks.get_mut(&pos) else {

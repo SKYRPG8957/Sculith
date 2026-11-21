@@ -11,11 +11,11 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     block::entities::{BlockEntity, campfire::CampfireBlockEntity},
-    entity::EntityBase,
-    server::Server,
+    entity::{EntityBase, item::ItemEntity},
+    server::{Server, TickDeadline},
 };
 
-use super::World;
+use super::{RegionId, World};
 
 struct ReadyRecipe {
     position: BlockPos,
@@ -39,6 +39,8 @@ impl World {
         self: &Arc<Self>,
         server: &Server,
         pos: Vector2<i32>,
+        owner: RegionId,
+        deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
         let TryResult::Present(entities) = self.block_entities.try_get(&pos) else {
@@ -79,7 +81,7 @@ impl World {
             if !owns(pos) {
                 break;
             }
-            self.try_commit_campfire_output(server, pos, recipe, owns);
+            self.try_commit_campfire_output(server, pos, recipe, owner, deadline, owns);
         }
     }
 
@@ -88,6 +90,8 @@ impl World {
         server: &Server,
         pos: Vector2<i32>,
         recipe: ReadyRecipe,
+        owner: RegionId,
+        deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
         let Some(result) = Item::from_registry_key(recipe.result.id) else {
@@ -107,6 +111,15 @@ impl World {
         };
         let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
             return;
+        };
+        // Take the assignment permit before pinning the terrain, as item moves do.
+        let mut item_timers = if ItemEntity::timers_unobserved(server) {
+            let Ok(timers) = self.regional_item_timers.try_write() else {
+                return;
+            };
+            Some(timers)
+        } else {
+            None
         };
         let Ok(mut pending) = self.regional_campfire_outputs.0.try_lock() else {
             return;
@@ -129,6 +142,13 @@ impl World {
                     && CampfireBlockEntity::timers_unobserved(server)
                     && CampfireBlockEntity::outputs_unobserved(server)
                     && fire.finish_regional_slot(state, recipe.slot, recipe.ingredient, || {
+                        if let Some(timers) = item_timers.as_mut()
+                            && ItemEntity::timers_unobserved(server)
+                        {
+                            item.start_regional_timer(owner, deadline);
+                            Arc::make_mut(timers).assign(owner, item.clone());
+                        }
+                        let item: Arc<dyn EntityBase> = item;
                         self.append_live_entity(&item);
                         pending.push(CookedDrop {
                             position: recipe.position,

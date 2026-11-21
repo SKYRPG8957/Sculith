@@ -1,6 +1,6 @@
 use super::BlockEntity;
+use crate::entity::Entity;
 use crate::entity::item::ItemEntity;
-use crate::entity::{Entity, EntityBase};
 use crate::plugin::api::events::block::{
     block_cook::BlockCookEvent, campfire_start::CampfireStartEvent,
 };
@@ -464,7 +464,7 @@ impl CampfireBlockEntity {
         world: &Arc<World>,
         position: BlockPos,
         stack: ItemStack,
-    ) -> Arc<dyn EntityBase> {
+    ) -> Arc<ItemEntity> {
         let spawn_position = Vector3::new(
             f64::from(position.0.x) + 0.5 + rng().random_range(-0.35..0.35),
             f64::from(position.0.y) + 1.01,
