@@ -339,6 +339,29 @@ impl PartialEq for World {
 
 impl Eq for World {}
 
+pub(crate) struct PlayerSpawnTransform {
+    position: Vector3<f64>,
+    yaw: f32,
+    pitch: f32,
+}
+
+impl PlayerSpawnTransform {
+    fn capture(player: &Player) -> Self {
+        let entity = player.get_entity();
+        Self {
+            position: entity.pos.load(),
+            yaw: entity.yaw.load(),
+            pitch: entity.pitch.load(),
+        }
+    }
+
+    pub(crate) fn apply(self, player: &Player) {
+        let entity = player.get_entity();
+        entity.set_pos(self.position);
+        entity.set_rotation(self.yaw, self.pitch);
+    }
+}
+
 impl World {
     const TAB_LIST_ADD_FLAGS: u8 = PlayerInfoFlags::ADD_PLAYER.bits()
         | PlayerInfoFlags::UPDATE_LISTED.bits()
@@ -1743,16 +1766,16 @@ impl World {
         self.process_player_packets(&players, commands, !coordinated);
         players
             .par_iter()
-            .filter(|player| player.can_tick_in(self))
+            .filter(|player| player.can_simulate_in(self))
             .for_each(|player| player.tick(server));
         self.encoded_chunk_cache.clear();
         // The networking-only tick never enters world simulation.
-        for player in players.iter().filter(|player| player.can_tick_in(self)) {
+        for player in players.iter().filter(|player| player.can_simulate_in(self)) {
             player.push_entities();
         }
         // One player after another, before entities move, like vanilla `doTick` after the
         // level tick
-        for player in players.iter().filter(|player| player.can_tick_in(self)) {
+        for player in players.iter().filter(|player| player.can_simulate_in(self)) {
             touch_entities(self, player);
         }
         let player_elapsed = t_players.elapsed();
@@ -3356,39 +3379,63 @@ impl World {
     /// Gets the y position of the first non air block from the top down
     pub fn get_top_block(&self, position: Vector2<i32>) -> i32 {
         let chunk_pos = Vector2::new(position.x >> 4, position.y >> 4);
+        self.loaded_top_block(position, chunk_pos)
+            .unwrap_or(self.dimension.min_y)
+    }
+
+    fn loaded_top_block(&self, position: Vector2<i32>, chunk_pos: Vector2<i32>) -> Option<i32> {
         let relative_x = (position.x & 15) as usize;
         let relative_z = (position.y & 15) as usize;
 
-        self.level
-            .read_chunk_sync(&chunk_pos, |chunk| {
-                let height = chunk
-                    .heightmap
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .get(
-                        ChunkHeightmapType::WorldSurface,
-                        position.x,
-                        position.y,
-                        self.dimension.min_y,
-                    );
+        self.level.read_chunk_sync(&chunk_pos, |chunk| {
+            let height = chunk
+                .heightmap
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(
+                    ChunkHeightmapType::WorldSurface,
+                    position.x,
+                    position.y,
+                    self.dimension.min_y,
+                );
 
-                if height >= self.dimension.min_y {
-                    return height;
-                }
+            if height >= self.dimension.min_y {
+                return height;
+            }
 
-                for y in (self.dimension.min_y..self.dimension.min_y + self.dimension.height).rev()
+            for y in (self.dimension.min_y..self.dimension.min_y + self.dimension.height).rev() {
+                if let Some(block_id) = chunk
+                    .section
+                    .get_block_absolute_y(relative_x, y, relative_z)
+                    && !is_air(block_id)
                 {
-                    if let Some(block_id) = chunk
-                        .section
-                        .get_block_absolute_y(relative_x, y, relative_z)
-                        && !is_air(block_id)
-                    {
-                        return y;
-                    }
+                    return y;
                 }
-                self.dimension.min_y
-            })
-            .unwrap_or(self.dimension.min_y)
+            }
+            self.dimension.min_y
+        })
+    }
+
+    /// Resolves a first placement while the world owner can read the current spawn terrain.
+    pub(crate) fn initial_player_spawn(&self) -> Result<PlayerSpawnTransform, Vector2<i32>> {
+        let info = self.level_info.load();
+        let spawn = Vector2::new(info.spawn_x, info.spawn_z);
+        let chunk_pos = Vector2::new(spawn.x >> 4, spawn.y >> 4);
+        let top = self.loaded_top_block(spawn, chunk_pos).ok_or(chunk_pos)?;
+        let y = if top > self.dimension.min_y {
+            top + 1
+        } else {
+            info.spawn_y
+        };
+        Ok(PlayerSpawnTransform {
+            position: Vector3::new(
+                f64::from(spawn.x) + 0.5,
+                f64::from(y),
+                f64::from(spawn.y) + 0.5,
+            ),
+            yaw: info.spawn_yaw,
+            pitch: info.spawn_pitch,
+        })
     }
 
     pub fn get_heightmap_height(&self, height_map: ChunkHeightmapType, x: i32, z: i32) -> i32 {
@@ -3416,7 +3463,13 @@ impl World {
             Vec<CreativeItemEntryPayload>,
         )> = std::sync::OnceLock::new();
 
-        let level_info = server.level_info.load();
+        let Some(client) = player.client.bedrock() else {
+            return;
+        };
+        client.send_packet(&CJigsawStructureData).await;
+        client.send_packet(&CVoxelShapes).await;
+
+        let level_info = self.level_info.load();
         let (rain_level, lightning_level) = {
             let weather = self
                 .weather
@@ -3425,36 +3478,11 @@ impl World {
             (weather.rain_level, weather.thunder_level)
         };
         let runtime_id = player.entity_id() as u64;
-        let (position, yaw, pitch) = if player.has_played_before.load(Ordering::Relaxed) {
-            let position = player.position();
-            let yaw = player.get_entity().yaw.load(); //info.spawn_angle;
-            let pitch = player.get_entity().pitch.load();
-
-            (position, yaw, pitch)
-        } else {
-            let spawn_position = Vector2::new(level_info.spawn_x, level_info.spawn_z);
-            let chunk_pos = Vector2::new(level_info.spawn_x >> 4, level_info.spawn_z >> 4);
-            self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
-            let top = self.get_top_block(spawn_position);
-            let pos_y = if top > self.dimension.min_y {
-                top + 1
-            } else {
-                level_info.spawn_y
-            };
-
-            let position = Vector3::new(
-                f64::from(level_info.spawn_x) + 0.5,
-                f64::from(pos_y),
-                f64::from(level_info.spawn_z) + 0.5,
-            );
-            (position, level_info.spawn_yaw, level_info.spawn_pitch)
-        };
-
-        // Keep the server-side transform aligned with the StartGame position. In
-        // particular, this ensures an early disconnect persists the real spawn.
-        player.living_entity.entity.set_pos(position);
-        player.living_entity.entity.set_rotation(yaw, pitch);
-        player.living_entity.entity.last_pos.store(position);
+        let PlayerSpawnTransform {
+            position,
+            yaw,
+            pitch,
+        } = PlayerSpawnTransform::capture(&player);
 
         // Todo make the data less spread
         let level_settings = LevelSettings {
@@ -3535,10 +3563,6 @@ impl World {
         let level_name = level_info.level_name.clone();
         drop(level_info);
 
-        let Some(client) = player.client.bedrock() else {
-            return;
-        };
-
         let start_game = CStartGame {
             entity_id: VarLong(runtime_id as _),
             runtime_entity_id: VarULong(runtime_id),
@@ -3580,8 +3604,6 @@ impl World {
                 owner_id: String::new(),
             },
         };
-        client.send_packet(&CJigsawStructureData).await;
-        client.send_packet(&CVoxelShapes).await;
         if let Ok(data) = client.serialize_packet(&start_game) {
             client.send_game_packet(data).await;
         }
@@ -3854,6 +3876,7 @@ impl World {
         self.pair_new_player_with_tracked_entities(&player);
 
         player.has_played_before.store(true, Ordering::Relaxed);
+        player.initial_spawn_complete.store(true, Ordering::Release);
 
         // 3. Trigger Join Event and Broadcast Join Message
         let msg_comp = TextComponent::translate_cross(
@@ -4121,41 +4144,12 @@ impl World {
             client.send_packet(&packet).await;
         }
 
-        let (position, yaw, pitch) = if player.has_played_before.load(Ordering::Relaxed) {
-            let position = player.position();
-            let yaw = player.get_entity().yaw.load(); //info.spawn_angle;
-            let pitch = player.get_entity().pitch.load();
-
-            (position, yaw, pitch)
-        } else {
-            let info = &self.level_info.load();
-            let spawn_position = Vector2::new(info.spawn_x, info.spawn_z);
-            let chunk_pos = Vector2::new(info.spawn_x >> 4, info.spawn_z >> 4);
-            self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
-            let top = self.get_top_block(spawn_position);
-            let pos_y = if top > self.dimension.min_y {
-                top + 1
-            } else {
-                info.spawn_y
-            };
-
-            let position = Vector3::new(
-                f64::from(info.spawn_x) + 0.5,
-                f64::from(pos_y),
-                f64::from(info.spawn_z) + 0.5,
-            );
-            (position, info.spawn_yaw, info.spawn_pitch)
-        };
-
         // Load chunks around the real spawn position before teleporting the client there.
-        player.living_entity.entity.set_pos(position);
-        player.living_entity.entity.set_rotation(yaw, pitch);
-        player.living_entity.entity.last_pos.store(position);
         chunker::update_position(player);
         self.send_center_chunk(player).await;
 
         debug!("Sending player teleport to {}", player.gameprofile.name);
-        player.request_teleport(position, yaw, pitch);
+        player.send_initial_java_position(server).await;
 
         // Vanilla pairs after the teleport; range, watched section and chunk readiness need the spawn position.
         self.pair_new_player_with_tracked_entities(player);
@@ -4349,6 +4343,7 @@ impl World {
         }
 
         player.has_played_before.store(true, Ordering::Relaxed);
+        player.initial_spawn_complete.store(true, Ordering::Release);
         player.on_screen_handler_opened(&player.player_screen_handler);
 
         player.send_active_effects();

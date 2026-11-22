@@ -935,12 +935,15 @@ impl Server {
             gamemode,
         );
 
-        if let Some(mut nbt_data) = nbt {
+        let initial_position = if let Some(mut nbt_data) = nbt {
             player.read_nbt(&mut nbt_data);
             // The data file itself proves this is a returning player. Older Bedrock
             // sessions could persist HasPlayedBefore as false and mask a valid Pos.
             player.has_played_before.store(true, Ordering::Relaxed);
-        }
+            None
+        } else {
+            Some(player.position())
+        };
 
         // Wrap in Arc after data is loaded
         let player = Arc::new(player);
@@ -974,7 +977,7 @@ impl Server {
             &mut PlayerLoginEvent::new(player.clone(), TextComponent::text("You have been kicked from the server"));
             'after: {
                 player.screen_handler_sync_handler.store_player(player.clone());
-                if let Err(rejection) = self.request_player_admission(&world, &player).await {
+                if let Err(rejection) = self.request_player_admission(&world, &player, initial_position).await {
                     let (reason, message) = rejection.disconnect();
                     player.kick(reason, &message);
                     player.client.clear_player();
@@ -1577,7 +1580,7 @@ impl Server {
                 world.process_player_packets(&players, Some(commands), false);
                 players
                     .par_iter()
-                    .filter(|player| player.can_tick_in(world))
+                    .filter(|player| player.can_simulate_in(world))
                     .for_each(|player| player.tick(self));
             }
         }

@@ -265,6 +265,10 @@ impl Player {
             && std::ptr::eq(self.living_entity.entity.world.load().as_ref(), world)
     }
 
+    pub(crate) fn can_simulate_in(&self, world: &World) -> bool {
+        self.initial_spawn_complete.load(Ordering::Acquire) && self.can_tick_in(world)
+    }
+
     /// Schedules a change of world for this connection.
     ///
     /// Tick hooks can return immediately and observe completion through `PlayerChangedWorldEvent`.

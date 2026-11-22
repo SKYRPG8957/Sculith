@@ -797,6 +797,7 @@ pub struct Player {
     pub held_chunk_tickets: Mutex<HeldChunkTickets>,
     pub chunk_send_epoch: AtomicU32,
     pub has_played_before: AtomicBool,
+    pub(crate) initial_spawn_complete: AtomicBool,
     root_vehicle_uuid: AtomicCell<Option<Uuid>>,
     pub chat_session: Arc<Mutex<ChatSession>>,
     pub signature_cache: Mutex<MessageCache>,
@@ -1148,6 +1149,7 @@ impl Player {
             last_food_saturation: AtomicBool::new(true),
             subscribed_debug_sample: AtomicBool::new(false),
             has_played_before: AtomicBool::new(false),
+            initial_spawn_complete: AtomicBool::new(false),
             root_vehicle_uuid: AtomicCell::new(None),
             chat_session: Arc::new(Mutex::new(ChatSession::default())), // Placeholder value until the player actually sets their session id
             signature_cache: Mutex::new(MessageCache::default()),
@@ -5172,6 +5174,21 @@ impl Player {
     fn send_committed_world_position(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
         self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
         self.send_teleport_position(position, yaw, pitch);
+    }
+
+    pub(crate) async fn send_initial_java_position(self: &Arc<Self>, server: &Arc<Server>) {
+        if self
+            .teleport_destination_allowed(server, self.position())
+            .await
+            && !self.client.closed()
+        {
+            let entity = self.get_entity();
+            self.send_committed_world_position(
+                entity.pos.load(),
+                entity.yaw.load(),
+                entity.pitch.load(),
+            );
+        }
     }
 
     fn send_teleport_position(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {

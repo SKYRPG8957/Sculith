@@ -270,6 +270,7 @@ pub struct BedrockClient {
     pub blob_cache: std::sync::Mutex<blob_cache::BlobCache>,
     shared_pack: ArcSwapOption<crate::resource_pack::SharedPack>,
     pub streaming_packs: std::sync::Mutex<HashMap<String, BedrockStreamingPack>>,
+    initial_spawn_started: AtomicBool,
     /// Stops producers and wakes the writer to drain its FIFO.
     closing: CloseSignal,
     activity: Arc<ClientActivity>,
@@ -337,6 +338,7 @@ impl BedrockClient {
             blob_cache: std::sync::Mutex::new(blob_cache::BlobCache::new()),
             shared_pack: ArcSwapOption::empty(),
             streaming_packs: std::sync::Mutex::new(HashMap::new()),
+            initial_spawn_started: AtomicBool::new(false),
             closing: CloseSignal::default(),
             activity: Arc::new(ClientActivity {
                 last_seen: AtomicCell::new(Instant::now()),

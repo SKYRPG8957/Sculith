@@ -82,6 +82,11 @@ Conditional plugin block edits compare the expected block in its loaded chunk.
 Transfers reserve the source and destination before changing a player's membership.
 Java and Bedrock logins prepare the player before queuing registration on the target
 world. Registration checks the live connection and membership while holding that owner.
+It resolves a new player's starting position from the world's loaded spawn terrain.
+If the chunk is missing, the connection loads it and retries registration. Both
+protocols then use the player's authoritative position for their first spawn.
+While that spawn is being sent, the session can process network input. Player
+ticks and contact with other actors begin after the spawn setup completes.
 Closed connections detach and clean up their inventory on the owning world. Leave
 callbacks run between those steps. Saving uses the resulting player snapshot, and
 the account can load again when the disconnect save finishes.
@@ -201,7 +206,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 34.
+Native plugins use ABI 35.
 
 ## Shared resource delivery
 

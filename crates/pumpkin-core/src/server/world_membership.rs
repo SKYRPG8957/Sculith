@@ -1,9 +1,12 @@
 use std::sync::{Arc, PoisonError};
 
 use pumpkin_data::translation;
+use pumpkin_util::math::vector2::Vector2;
+use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::text::TextComponent;
 use tokio::sync::oneshot;
 
+use crate::entity::EntityBase;
 use crate::entity::player::Player;
 use crate::entity::player::world_transfer::{WorldTransfer, WorldTransferReservation};
 use crate::net::DisconnectReason;
@@ -37,11 +40,17 @@ impl JoinRejection {
 
 pub(super) type DeparturePhase = Box<dyn FnOnce(&Server, &Arc<World>) + Send>;
 
+pub(super) enum PlayerAdmission {
+    Registered,
+    LoadSpawnChunk(Vector2<i32>),
+}
+
 pub(super) enum WorldMembershipChange {
     Join {
         world: Arc<World>,
         player: Arc<Player>,
-        completion: oneshot::Sender<Result<(), JoinRejection>>,
+        initial_position: Option<Vector3<f64>>,
+        completion: oneshot::Sender<Result<PlayerAdmission, JoinRejection>>,
     },
     Transfer(Box<WorldTransfer>),
     Depart {
@@ -69,12 +78,13 @@ impl WorldMembershipChange {
             Self::Join {
                 world,
                 player,
+                initial_position,
                 completion,
             } => {
                 let _owner = reservation;
                 if !completion.is_closed() {
-                    let result = server.commit_player_admission(&world, &player);
-                    let registered = result.is_ok();
+                    let result = server.commit_player_admission(&world, &player, initial_position);
+                    let registered = matches!(result, Ok(PlayerAdmission::Registered));
                     if completion.send(result).is_err() && registered {
                         world.detach_player(&player);
                     }
@@ -94,21 +104,33 @@ impl Server {
         &self,
         world: &Arc<World>,
         player: &Arc<Player>,
+        initial_position: Option<Vector3<f64>>,
     ) -> Result<(), JoinRejection> {
-        let (completion, committed) = oneshot::channel();
-        self.submit_membership_change(WorldMembershipChange::Join {
-            world: world.clone(),
-            player: player.clone(),
-            completion,
-        });
-        committed.await.unwrap_or(Err(JoinRejection::Unavailable))
+        loop {
+            let (completion, committed) = oneshot::channel();
+            self.submit_membership_change(WorldMembershipChange::Join {
+                world: world.clone(),
+                player: player.clone(),
+                initial_position,
+                completion,
+            });
+            match committed.await.unwrap_or(Err(JoinRejection::Unavailable))? {
+                PlayerAdmission::Registered => return Ok(()),
+                PlayerAdmission::LoadSpawnChunk(chunk) => {
+                    // Generation can wait for I/O and workers. The owner rechecks the
+                    // current spawn and active session when the chunk is available.
+                    world.level.get_or_fetch_chunk(chunk, |_| ()).await;
+                }
+            }
+        }
     }
 
     fn commit_player_admission(
         &self,
         world: &Arc<World>,
         player: &Arc<Player>,
-    ) -> Result<(), JoinRejection> {
+        initial_position: Option<Vector3<f64>>,
+    ) -> Result<PlayerAdmission, JoinRejection> {
         let closed = self
             .admission_closed
             .write()
@@ -119,6 +141,7 @@ impl Server {
             || player.client.closed()
             || !Arc::ptr_eq(world, &player.world())
             || !worlds.iter().any(|online| Arc::ptr_eq(online, world))
+            || !world.is_open()
         {
             return Err(JoinRejection::Unavailable);
         }
@@ -134,8 +157,24 @@ impl Server {
         }) {
             return Err(JoinRejection::Duplicate);
         }
+        // A login listener can position the new player before admission. Keep
+        // that decision as well as positions restored from a player file.
+        if let Some(initial_position) = initial_position
+            && !player
+                .has_played_before
+                .load(std::sync::atomic::Ordering::Relaxed)
+            && initial_position == player.position()
+        {
+            match world.initial_player_spawn() {
+                Ok(spawn) => spawn.apply(player),
+                Err(chunk) => return Ok(PlayerAdmission::LoadSpawnChunk(chunk)),
+            }
+        }
+        let entity = player.get_entity();
+        entity.last_pos.store(entity.pos.load());
         world
             .add_player(player)
-            .map_err(|_| JoinRejection::Unavailable)
+            .map_err(|_| JoinRejection::Unavailable)?;
+        Ok(PlayerAdmission::Registered)
     }
 }

@@ -89,9 +89,14 @@ impl BedrockClient {
                 debug!("Bedrock: SResourcePackResponse::STATUS_COMPLETED");
                 let player = self.player.load_full();
                 if let Some(player) = player.as_ref() {
-                    if shared.is_some() && self.shared_pack.swap(None).is_none() {
+                    if self.is_closed()
+                        || self
+                            .initial_spawn_started
+                            .swap(true, std::sync::atomic::Ordering::AcqRel)
+                    {
                         return;
                     }
+                    self.shared_pack.store(None);
                     self.streaming_packs
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
