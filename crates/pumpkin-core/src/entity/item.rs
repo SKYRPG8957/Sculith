@@ -31,7 +31,12 @@ use std::sync::{
     },
 };
 
-use super::{Entity, EntityBase, living::LivingEntity, player::Player};
+use super::{
+    Entity, EntityBase,
+    drop_motion::{DropClock, DropTickOwner},
+    living::LivingEntity,
+    player::Player,
+};
 use crate::block::blocks::bubble_column::SURFACE_UPWARD_ACCELERATION;
 use crate::plugin::api::events::entity::{
     item_despawn::ItemDespawnEvent, item_merge::ItemMergeEvent,
@@ -39,12 +44,6 @@ use crate::plugin::api::events::entity::{
 use crate::server::TickDeadline;
 use crate::world::RegionId;
 use crate::world::entity_islands::{self, AuditedReach};
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum ItemTimerOwner {
-    World,
-    Region(RegionId),
-}
 
 #[derive(Clone, Copy)]
 pub(crate) enum ItemTimerStep {
@@ -58,31 +57,10 @@ pub(crate) enum RegionalItemStep {
     Expired,
 }
 
-#[derive(Default)]
-pub(super) struct ItemClock {
-    last: Option<(ItemTimerOwner, std::time::Instant)>,
-}
-
-impl ItemClock {
-    pub(super) fn can_claim(&self, owner: ItemTimerOwner, deadline: TickDeadline) -> bool {
-        self.last.is_none_or(|(previous, at)| {
-            deadline.at > at && (previous == owner || deadline.at - at >= deadline.period)
-        })
-    }
-
-    pub(super) fn claim(&mut self, owner: ItemTimerOwner, deadline: TickDeadline) -> bool {
-        if !self.can_claim(owner, deadline) {
-            return false;
-        }
-        self.last = Some((owner, deadline.at));
-        true
-    }
-}
-
 pub struct ItemEntity {
     entity: Entity,
     item_age: AtomicU32,
-    clock: Mutex<ItemClock>,
+    clock: Mutex<DropClock>,
     thrower: crossbeam::atomic::AtomicCell<Option<uuid::Uuid>>,
     // These cannot be atomic values because we mutate their state based on what they are; we run
     // into the ABA problem
@@ -294,7 +272,7 @@ impl ItemEntity {
 
     #[expect(clippy::too_many_lines)]
     fn try_merge_with(&self, other: &Self) {
-        let _motion = other.entity.hold_item_motion();
+        let _motion = other.entity.hold_drop_motion();
         if !self
             .entity
             .bounding_box
@@ -511,7 +489,7 @@ impl ItemEntity {
         self.clock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .claim(ItemTimerOwner::Region(owner), deadline);
+            .claim(DropTickOwner::Region(owner), deadline);
     }
 
     pub(crate) fn advance_regional_timers(
@@ -528,7 +506,7 @@ impl ItemEntity {
         };
         if stack.is_empty()
             || !still_owned()
-            || !clock.claim(ItemTimerOwner::Region(owner), deadline)
+            || !clock.claim(DropTickOwner::Region(owner), deadline)
         {
             return RegionalItemStep::Skipped;
         }
@@ -546,7 +524,7 @@ impl ItemEntity {
         RegionalItemStep::Advanced
     }
 
-    pub(super) fn has_expired(&self) -> bool {
+    pub(crate) fn has_expired(&self) -> bool {
         !self.never_despawn.load(Relaxed) && self.item_age.load(Relaxed) >= LIFETIME
     }
 
@@ -557,7 +535,7 @@ impl ItemEntity {
         time: ItemTimerStep,
         deadline: Option<TickDeadline>,
     ) {
-        let (_permit, advance_motion) = self.entity.begin_item_world_tick(deadline);
+        let (_permit, advance_motion) = self.entity.begin_drop_world_tick(deadline);
         if self.entity.is_removed() {
             return;
         }
@@ -624,9 +602,9 @@ impl ItemEntity {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if let Some(deadline) = deadline {
-                    clock.claim(ItemTimerOwner::World, deadline)
+                    clock.claim(DropTickOwner::World, deadline)
                 } else {
-                    clock.last = None;
+                    *clock = DropClock::default();
                     true
                 }
             }
@@ -829,7 +807,7 @@ impl EntityBase for ItemEntity {
     }
 
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
-        let _motion = self.entity.hold_item_motion();
+        let _motion = self.entity.hold_drop_motion();
         if !self.entity.is_removed() {
             self.tick_with_time(caller, server, ItemTimerStep::World(None));
         }
@@ -858,7 +836,7 @@ impl EntityBase for ItemEntity {
     ) -> bool {
         // Vanilla `ItemEntity.hurtServer`.
         let entity = &self.entity;
-        let _motion = entity.hold_item_motion();
+        let _motion = entity.hold_drop_motion();
         if entity.is_removed() || entity.is_invulnerable_to(&damage_type, cause) {
             return false;
         }
@@ -919,7 +897,7 @@ impl EntityBase for ItemEntity {
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
-        let _motion = self.entity.hold_item_motion();
+        let _motion = self.entity.hold_drop_motion();
         if self.entity.is_removed() || self.pickup_delay.load(Ordering::Relaxed) > 0 {
             return;
         }
@@ -1131,7 +1109,7 @@ impl EntityBase for ItemEntity {
 
 #[cfg(test)]
 mod tests {
-    use super::{ItemClock, ItemEntity, ItemTimerOwner, TickDeadline};
+    use super::{DropClock, DropTickOwner, ItemEntity, TickDeadline};
     use pumpkin_data::data_component_impl::{CustomDataImpl, CustomNameImpl};
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
@@ -1148,19 +1126,19 @@ mod tests {
             at: start + Duration::from_millis(ms),
             period,
         };
-        let mut clock = ItemClock::default();
-        let old = ItemTimerOwner::Region(2);
-        let new = ItemTimerOwner::Region(4);
+        let mut clock = DropClock::default();
+        let old = DropTickOwner::Region(2);
+        let new = DropTickOwner::Region(4);
 
-        assert!(clock.claim(ItemTimerOwner::World, step(0)));
+        assert!(clock.claim(DropTickOwner::World, step(0)));
         assert!(!clock.claim(old, step(20)));
         assert!(clock.claim(old, step(70)));
         assert!(!clock.claim(old, step(70)));
         assert!(!clock.claim(new, step(100)));
         assert!(clock.claim(new, step(150)));
         assert!(!clock.claim(old, step(120)));
-        assert!(!clock.claim(ItemTimerOwner::World, step(180)));
-        assert!(clock.claim(ItemTimerOwner::World, step(200)));
+        assert!(!clock.claim(DropTickOwner::World, step(180)));
+        assert!(clock.claim(DropTickOwner::World, step(200)));
     }
 
     #[test]

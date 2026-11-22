@@ -200,7 +200,7 @@ impl TrackedEntity {
     /// Vanilla `ServerEntity.sendChanges`. Non-player entities only.
     pub fn send_changes(&self, world: &World) {
         let entity = self.entity.get_entity();
-        let _motion = entity.hold_item_motion();
+        let _motion = entity.hold_drop_motion();
         if entity.is_removed() {
             return;
         }
@@ -549,7 +549,7 @@ impl TrackedEntity {
                 }
                 // An item cannot expire on a region while its spawn is being queued.
                 let base = self.entity.get_entity();
-                let _pairing = base.hold_item_motion();
+                let _pairing = base.hold_drop_motion();
                 if base.is_removed() {
                     self.remove_player(player);
                     return;
@@ -1012,7 +1012,7 @@ impl TrackedEntity {
         }
     }
 
-    fn try_publish_item_expiry(
+    fn try_publish_drop_expiry(
         &self,
         world: &World,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
@@ -1071,8 +1071,9 @@ impl TrackedEntity {
             viewers.snapshot.take();
             tracing::trace!(
                 entity = self.entity_id,
+                actor_type = self.entity.get_entity().entity_type.resource_name,
                 sent,
-                "Published regional item expiry"
+                "Published regional drop expiry"
             );
         }
     }
@@ -1378,7 +1379,7 @@ impl EntityTracker {
         }
     }
 
-    pub(super) fn try_publish_regional_item_expiries(
+    pub(super) fn try_publish_regional_drop_expiries(
         &self,
         world: &World,
         server: &Server,
@@ -1394,7 +1395,7 @@ impl EntityTracker {
             };
             let tracked = entry.value().clone();
             drop(entry);
-            tracked.try_publish_item_expiry(world, &mut java_recipients);
+            tracked.try_publish_drop_expiry(world, &mut java_recipients);
         }
         // The world may still have Java's ordinary tick flush suspended.
         // Release this batch once per connection after queueing its removals.

@@ -245,8 +245,10 @@ impl World {
         };
         let mut activated = 0;
         for pos in candidates {
-            let item_clock = ItemEntity::timers_unobserved(server).then_some((owner, deadline));
-            if owns(pos) && self.try_activate_regional_chunk(pos, item_clock, owns) {
+            let item_timers = ItemEntity::timers_unobserved(server);
+            if owns(pos)
+                && self.try_activate_regional_chunk(pos, owner, deadline, item_timers, owns)
+            {
                 activated += 1;
                 if activated == REGIONAL_CHUNKS_PER_STEP {
                     break;
@@ -258,7 +260,9 @@ impl World {
     fn try_activate_regional_chunk(
         self: &Arc<Self>,
         pos: Vector2<i32>,
-        item_clock: Option<(RegionId, TickDeadline)>,
+        owner: RegionId,
+        deadline: TickDeadline,
+        item_timers: bool,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> bool {
         let Some(chunk) = self.level.try_with_watched_entity_chunk(pos, Arc::clone) else {
@@ -277,6 +281,10 @@ impl World {
         else {
             return false;
         };
+        let schedules_drop = |entity: &dyn EntityBase| {
+            let kind = entity.get_entity().entity_type;
+            kind == &EntityType::EXPERIENCE_ORB || item_timers && kind == &EntityType::ITEM
+        };
         let mut actors = Vec::with_capacity(records.len());
         for (record, position) in records.iter().zip(positions) {
             let Some(entity) = load_entity_from_nbt(record, position, self) else {
@@ -286,23 +294,26 @@ impl World {
                 return false;
             }
             init_loaded_actor(entity.as_ref());
-            if let Some((owner, deadline)) = item_clock
+            if item_timers
                 && let Some(item) =
                     (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ItemEntity>()
             {
                 item.start_regional_timer(owner, deadline);
+            } else if entity.get_entity().entity_type == &EntityType::EXPERIENCE_ORB {
+                entity
+                    .get_entity()
+                    .start_regional_drop_motion(owner, deadline);
             }
             actors.push((pos, entity));
         }
 
         // Publish restored drops with their assignment before a world tick can
         // pick them up in its entity scan. Moves take the same assignment lock.
-        let mut item_plan = if item_clock.is_some()
-            && actors
-                .iter()
-                .any(|(_, entity)| entity.get_entity().entity_type == &EntityType::ITEM)
+        let mut drop_plan = if actors
+            .iter()
+            .any(|(_, entity)| schedules_drop(entity.as_ref()))
         {
-            let Ok(plan) = self.regional_item_timers.try_write() else {
+            let Ok(plan) = self.regional_drops.try_write() else {
                 return false;
             };
             Some(plan)
@@ -329,9 +340,9 @@ impl World {
                 return false;
             }
             let added = self.register_chunk_actors(&actors);
-            if let (Some(plan), Some((owner, _))) = (item_plan.as_mut(), item_clock) {
+            if let Some(plan) = drop_plan.as_mut() {
                 for (_, actor) in &added {
-                    if actor.get_entity().entity_type == &EntityType::ITEM {
+                    if schedules_drop(actor.as_ref()) {
                         Arc::make_mut(plan).assign(owner, actor.clone());
                     }
                 }
@@ -591,16 +602,20 @@ mod tests {
 
         let snapshot = world.entity_chunk_changes.snapshot.try_write().unwrap();
         let owns = |chunk| chunk == pos;
-        assert!(!world.try_activate_regional_chunk(pos, None, &owns));
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        assert!(!world.try_activate_regional_chunk(pos, 0, deadline, false, &owns));
         world.level.mark_chunks_as_newly_watched(&[pos]);
-        assert!(!world.try_activate_regional_chunk(pos, None, &|_| false));
+        assert!(!world.try_activate_regional_chunk(pos, 0, deadline, false, &|_| false));
         let reservation = world.reserve_entity_registration(uuid).unwrap();
-        assert!(!world.try_activate_regional_chunk(pos, None, &owns));
+        assert!(!world.try_activate_regional_chunk(pos, 0, deadline, false, &owns));
         assert_eq!(saved.data.lock().unwrap().len(), 1);
         assert!(world.get_entity_by_uuid(uuid).is_none());
         drop(reservation);
-        assert!(world.try_activate_regional_chunk(pos, None, &owns));
-        assert!(!world.try_activate_regional_chunk(pos, None, &owns));
+        assert!(world.try_activate_regional_chunk(pos, 0, deadline, false, &owns));
+        assert!(!world.try_activate_regional_chunk(pos, 0, deadline, false, &owns));
         drop(snapshot);
 
         let actor = world.get_entity_by_uuid(uuid).unwrap();
@@ -617,10 +632,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_regional_restore_starts_a_drops_timer_on_the_next_deadline() {
+    async fn a_regional_restore_starts_drop_steps_on_the_next_deadline() {
+        use crate::entity::experience_orb::ExperienceOrbEntity;
+
         let folder = tempfile::tempdir().unwrap();
         let world = world(&folder);
         let pos = Vector2::new(10, 0);
+        world.level.get_or_fetch_chunk(pos, |_| ()).await;
         world.level.spawn_entity_generation(pos);
         let saved = world.level.get_entity_chunk_sync(&pos).unwrap();
         let item = ItemEntity::new(
@@ -633,7 +651,15 @@ mod tests {
         );
         let mut record = NbtCompound::new();
         item.write_nbt(&mut record);
-        saved.data.lock().unwrap().push(record);
+        let orb_position = Vector3::new(168.5, 64.0, 8.5);
+        let orb = ExperienceOrbEntity::new(
+            Entity::new(world.clone(), orb_position, &EntityType::EXPERIENCE_ORB),
+            17,
+        );
+        let mut orb_record = NbtCompound::new();
+        orb.write_nbt(&mut orb_record);
+        orb_record.put_short("Age", 5_999);
+        saved.data.lock().unwrap().extend([record, orb_record]);
         world.level.mark_chunks_as_newly_watched(&[pos]);
         world.queue_entity_chunk_changes([pos]);
 
@@ -643,9 +669,8 @@ mod tests {
         };
         let snapshot = world.entity_chunk_changes.snapshot.try_write().unwrap();
         let owner = 5;
-        assert!(
-            world.try_activate_regional_chunk(pos, Some((owner, deadline)), &|chunk| chunk == pos)
-        );
+        let owns = |chunk| chunk == pos;
+        assert!(world.try_activate_regional_chunk(pos, owner, deadline, true, &owns));
         drop(snapshot);
 
         let restored = world
@@ -655,7 +680,7 @@ mod tests {
             .downcast_ref::<ItemEntity>()
             .unwrap();
         let id = restored.get_entity().entity_id;
-        assert!(world.regional_item_timers.read().unwrap().contains(id));
+        assert!(world.regional_drops.read().unwrap().contains(id));
         assert!(!world.entity_tracker.has_entity_with_id(id));
         let next = TickDeadline {
             at: deadline.at + deadline.period,
@@ -669,6 +694,28 @@ mod tests {
             restored.advance_regional_timers(owner, next, || true),
             RegionalItemStep::Advanced
         ));
+        let restored_orb = world
+            .get_entity_by_uuid(orb.get_entity().entity_uuid)
+            .unwrap();
+        let restored_orb = restored_orb
+            .cast_any()
+            .downcast_ref::<ExperienceOrbEntity>()
+            .unwrap();
+        let orb_id = restored_orb.get_entity().entity_id;
+        assert!(world.regional_drops.read().unwrap().contains(orb_id));
+        assert!(!world.entity_tracker.has_entity_with_id(orb_id));
+        restored_orb.try_regional_orb_tick(&world, pos, owner, deadline, &owns);
+        assert_eq!(restored_orb.get_entity().pos.load(), orb_position);
+        restored_orb.try_regional_orb_tick(&world, pos, owner, next, &owns);
+        restored_orb.try_regional_orb_tick(&world, pos, owner, next, &owns);
+        assert_eq!(
+            restored_orb.get_entity().pos.load(),
+            orb_position.add_raw(0.0, -0.03, 0.0)
+        );
+        let mut record = NbtCompound::new();
+        restored_orb.write_nbt(&mut record);
+        assert_eq!(record.get_short("Age"), Some(6_000));
+        assert_eq!(record.get_short("Value"), Some(17));
         world.level.shutdown().await;
     }
 

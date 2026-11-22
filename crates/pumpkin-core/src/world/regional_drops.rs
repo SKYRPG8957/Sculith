@@ -5,12 +5,14 @@ use std::{
 };
 
 use dashmap::try_result::TryResult;
+use pumpkin_data::entity::EntityType;
 use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     entity::{
         Entity, EntityBase,
+        experience_orb::ExperienceOrbEntity,
         item::{ItemEntity, RegionalItemStep},
     },
     server::{Server, TickDeadline},
@@ -18,21 +20,42 @@ use crate::{
 
 use super::{RegionId, RegionLayout, World, regional_campfires::RegionalEntityUpdate};
 
+bitflags::bitflags! {
+    #[derive(Clone, Copy, Default, PartialEq, Eq)]
+    struct DropKinds: u8 {
+        const ITEM = 1;
+        const EXPERIENCE = 2;
+    }
+}
+
+impl DropKinds {
+    fn of(base: &Entity) -> Self {
+        if base.entity_type == &EntityType::ITEM {
+            Self::ITEM
+        } else if base.entity_type == &EntityType::EXPERIENCE_ORB {
+            Self::EXPERIENCE
+        } else {
+            Self::empty()
+        }
+    }
+}
+
 #[derive(Clone, Default)]
-pub(super) struct RegionalItemTimers {
-    enabled: bool,
+pub(super) struct RegionalDrops {
+    kinds: DropKinds,
     by_region: FxHashMap<RegionId, Vec<Arc<dyn EntityBase>>>,
     assigned: FxHashMap<i32, RegionId>,
 }
 
-impl RegionalItemTimers {
+impl RegionalDrops {
     pub(super) fn contains(&self, entity_id: i32) -> bool {
         self.assigned.contains_key(&entity_id)
     }
 
     pub(super) fn assign(&mut self, owner: RegionId, actor: Arc<dyn EntityBase>) {
-        self.enabled = true;
-        self.assigned.insert(actor.get_entity().entity_id, owner);
+        let base = actor.get_entity();
+        self.kinds |= DropKinds::of(base);
+        self.assigned.insert(base.entity_id, owner);
         self.by_region.entry(owner).or_default().push(actor);
     }
 
@@ -65,12 +88,12 @@ impl World {
         }
 
         let mut published = self
-            .regional_item_timers
+            .regional_drops
             .write()
             .unwrap_or_else(PoisonError::into_inner);
-        if published.enabled {
-            let mut reassigned = RegionalItemTimers {
-                enabled: true,
+        if !published.kinds.is_empty() {
+            let mut reassigned = RegionalDrops {
+                kinds: published.kinds,
                 ..Default::default()
             };
             for actor in published.by_region.values().flatten() {
@@ -87,28 +110,28 @@ impl World {
                 *published = Arc::new(reassigned);
             }
         }
-        // A dispatched owner reads the matching item plan when it acquires its permit.
+        // A dispatched owner reads the matching drop plan when it acquires its permit.
         self.region_layout.store(layout.clone());
         drop(published);
         previous.transfer_regional_inputs(layout);
     }
 
-    pub(super) fn assign_regional_item_timers(
+    pub(super) fn assign_regional_drops(
         &self,
         server: &Server,
         tickable: &[(&Arc<dyn EntityBase>, Vector2<i32>)],
         regional: bool,
-        previous: &Arc<RegionalItemTimers>,
-    ) -> Arc<RegionalItemTimers> {
-        let mut next = RegionalItemTimers {
-            enabled: regional && ItemEntity::timers_unobserved(server),
-            ..Default::default()
-        };
-        if next.enabled {
+        previous: &Arc<RegionalDrops>,
+    ) -> Arc<RegionalDrops> {
+        let mut next = RegionalDrops::default();
+        if regional {
+            next.kinds.insert(DropKinds::EXPERIENCE);
+            next.kinds
+                .set(DropKinds::ITEM, ItemEntity::timers_unobserved(server));
             let layout = self.region_layout.load();
             for &(entity, _) in tickable {
                 let base = entity.get_entity();
-                if (entity.as_ref() as &dyn Any).is::<ItemEntity>()
+                if next.kinds.intersects(DropKinds::of(base))
                     && let Some(owner) = layout.owner(base.chunk_pos.load())
                     && owner != RegionLayout::INACTIVE
                 {
@@ -116,10 +139,10 @@ impl World {
                 }
             }
         }
-        if next.enabled == previous.enabled && next.assigned == previous.assigned {
+        if next.kinds == previous.kinds && next.assigned == previous.assigned {
             // A running region can keep its snapshot across an ordinary world tick.
             return self
-                .regional_item_timers
+                .regional_drops
                 .read()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone();
@@ -133,25 +156,25 @@ impl World {
             }
         }
         let mut published = self
-            .regional_item_timers
+            .regional_drops
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         // A spawn or movement may have updated the assignments during the scan.
-        if !next.enabled || Arc::ptr_eq(&published, previous) {
+        if !regional || Arc::ptr_eq(&published, previous) {
             *published = Arc::new(next);
         }
         published.clone()
     }
 
-    pub(crate) fn move_item_across_chunks(&self, entity: &Entity, commit_position: impl FnOnce()) {
+    pub(crate) fn move_drop_across_chunks(&self, entity: &Entity, commit_position: impl FnOnce()) {
         // A move can overlap a change of layout. Hold the same permit used to
         // publish that layout until the position and assignment agree.
         let mut published = self
-            .regional_item_timers
+            .regional_drops
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         commit_position();
-        if !published.enabled
+        if !published.kinds.intersects(DropKinds::of(entity))
             || entity.is_removed()
             || !std::ptr::eq(entity.world.load().as_ref(), self)
         {
@@ -180,10 +203,10 @@ impl World {
 
     pub(super) fn reset_region_layout(&self) {
         let mut published = self
-            .regional_item_timers
+            .regional_drops
             .write()
             .unwrap_or_else(PoisonError::into_inner);
-        if published.enabled {
+        if !published.kinds.is_empty() {
             *published = Arc::default();
         }
         let empty = Arc::<RegionLayout>::default();
@@ -192,17 +215,14 @@ impl World {
         previous.transfer_regional_inputs(&empty);
     }
 
-    pub(super) fn advance_regional_item_timers(
+    pub(super) fn advance_regional_drops(
         &self,
         server: &Server,
         owner: RegionId,
         deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
-        if !ItemEntity::timers_unobserved(server) {
-            return;
-        }
-        let Ok(published) = self.regional_item_timers.try_read() else {
+        let Ok(published) = self.regional_drops.try_read() else {
             return;
         };
         let plan = published.clone();
@@ -210,56 +230,65 @@ impl World {
         let Some(actors) = plan.by_region.get(&owner) else {
             return;
         };
+        let item_timers = ItemEntity::timers_unobserved(server);
+        let native = server.plugin_manager.try_without_native_code();
         let mut expired = Vec::new();
         for actor in actors {
-            let Some(item) = (actor.as_ref() as &dyn Any).downcast_ref::<ItemEntity>() else {
-                continue;
-            };
-            let base = item.get_entity();
+            let base = actor.get_entity();
             let chunk = base.chunk_pos.load();
-            if !owns(chunk) {
+            if base.is_removed() || !owns(chunk) {
                 continue;
             }
             // Pin residency and the current assignment through timers and motion.
             let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
                 break;
             };
-            let Ok(published) = self.regional_item_timers.try_read() else {
+            let Ok(published) = self.regional_drops.try_read() else {
                 break;
             };
             if published.assigned.get(&base.entity_id) != Some(&owner) {
                 continue;
             }
-            let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&chunk) else {
-                continue;
-            };
-            let step = item.advance_regional_timers(owner, deadline, || {
-                !base.is_removed()
-                    && std::ptr::eq(base.world.load().as_ref(), self)
-                    && base.chunk_pos.load() == chunk
-                    && owns(chunk)
-            });
-            drop(loaded);
-            match step {
-                RegionalItemStep::Advanced => {
-                    if let Some(_native) = server.plugin_manager.try_without_native_code() {
+            let actor_data = actor.as_ref() as &dyn Any;
+            if item_timers && let Some(item) = actor_data.downcast_ref::<ItemEntity>() {
+                let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&chunk) else {
+                    continue;
+                };
+                let step = item.advance_regional_timers(owner, deadline, || {
+                    !base.is_removed()
+                        && std::ptr::eq(base.world.load().as_ref(), self)
+                        && base.chunk_pos.load() == chunk
+                        && owns(chunk)
+                });
+                drop(loaded);
+                match step {
+                    RegionalItemStep::Advanced if native.is_some() => {
                         item.try_regional_motion(self, chunk, owner, deadline, owns);
                     }
+                    RegionalItemStep::Expired => expired.push(actor),
+                    _ => {}
                 }
-                RegionalItemStep::Expired => expired.push((actor, item)),
-                RegionalItemStep::Skipped => {}
+            } else if native.is_some()
+                && let Some(orb) = actor_data.downcast_ref::<ExperienceOrbEntity>()
+                && let Some(_checkpoint) = server.try_regional_entity_save_guard()
+            {
+                orb.try_regional_orb_tick(self, chunk, owner, deadline, owns);
+                if orb.has_expired() {
+                    expired.push(actor);
+                }
             }
         }
+        drop(native);
         if !expired.is_empty() {
-            self.expire_regional_items(server, owner, &expired, owns);
+            self.expire_regional_drops(server, owner, &expired, owns);
         }
     }
 
-    fn expire_regional_items(
+    fn expire_regional_drops(
         &self,
         server: &Server,
         owner: RegionId,
-        items: &[(&Arc<dyn EntityBase>, &ItemEntity)],
+        actors: &[&Arc<dyn EntityBase>],
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
         let Some(_native) = server.plugin_manager.try_without_native_code() else {
@@ -271,7 +300,7 @@ impl World {
         let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
             return;
         };
-        let Ok(published) = self.regional_item_timers.try_read() else {
+        let Ok(published) = self.regional_drops.try_read() else {
             return;
         };
         let Ok(mut pending) = self.regional_entity_updates.0.try_lock() else {
@@ -279,8 +308,8 @@ impl World {
         };
 
         let mut discarded = FxHashSet::default();
-        for &(actor, item) in items {
-            let base = item.get_entity();
+        for &actor in actors {
+            let base = actor.get_entity();
             let chunk = base.chunk_pos.load();
             if published.assigned.get(&base.entity_id) != Some(&owner) || !owns(chunk) {
                 continue;
@@ -288,10 +317,16 @@ impl World {
             let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk) else {
                 continue;
             };
-            item.try_regional_expiry(|| {
+            base.try_regional_drop_expiry(|| {
+                let actor_data = actor.as_ref() as &dyn Any;
+                let expired = actor_data.downcast_ref::<ItemEntity>().is_some_and(|item| {
+                    item.has_expired() && ItemEntity::timers_unobserved(server)
+                }) || actor_data
+                    .downcast_ref::<ExperienceOrbEntity>()
+                    .is_some_and(ExperienceOrbEntity::has_expired);
                 if base.chunk_pos.load() == chunk
                     && std::ptr::eq(base.world.load().as_ref(), self)
-                    && ItemEntity::timers_unobserved(server)
+                    && expired
                     && base.mark_discarded()
                 {
                     discarded.insert(base.entity_id);
@@ -310,7 +345,7 @@ impl World {
                     .collect::<Vec<_>>()
             });
             self.entity_tracker
-                .try_publish_regional_item_expiries(self, server, discarded);
+                .try_publish_regional_drop_expiries(self, server, discarded);
         }
     }
 }
@@ -382,8 +417,8 @@ mod tests {
         };
         let local = spawn(home);
         let crossing = spawn(origin);
-        let previous = world.regional_item_timers.read().unwrap().clone();
-        world.assign_regional_item_timers(
+        let previous = world.regional_drops.read().unwrap().clone();
+        world.assign_regional_drops(
             &server,
             &[(&local, home), (&crossing, origin)],
             true,
@@ -395,14 +430,14 @@ mod tests {
             at: Instant::now(),
             period: Duration::from_millis(50),
         };
-        world.advance_regional_item_timers(&server, 0, deadline, &|chunk| {
+        world.advance_regional_drops(&server, 0, deadline, &|chunk| {
             // Place the handoff after the running job has read its actor list.
             if !moved.replace(true) {
                 crossing.get_entity().set_pos(position(destination));
             }
             layout.owner(chunk) == Some(0)
         });
-        let current = world.regional_item_timers.read().unwrap().clone();
+        let current = world.regional_drops.read().unwrap().clone();
         assert_eq!(current.assigned[&crossing.get_entity().entity_id], 2);
         let mut data = NbtCompound::new();
         local.write_nbt(&mut data);

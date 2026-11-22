@@ -216,6 +216,16 @@ and expiry because native plugins can write live actor fields. Merge and despawn
 handlers use the world clock, as do coordinated steps and sprints. Saved items
 retain their remaining timers and last position.
 
+Experience orbs use the same region assignments and motion deadlines. An
+airborne orb with no follow target can advance a short path through loaded
+air if its region owns the sweep and the player index has no collector in
+range. The step applies gravity, drag and age together. The world handles
+nearby players, collisions, fluids and coordinated ticks. An expired orb can
+leave the registry and notify both editions on its region, using the shared
+drop removal path. Orb records keep their age and experience value across
+chunk retirement and restart. A restored orb starts on the next regional
+deadline.
+
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
 use the region tick numbers at the world boundary and advance each chunk

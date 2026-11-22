@@ -44,9 +44,9 @@ pub mod raid;
 pub mod random_sequences;
 mod regional_campfires;
 use regional_campfires::RegionalEntityUpdates;
+mod regional_drops;
 mod regional_input;
-mod regional_items;
-use regional_items::RegionalItemTimers;
+use regional_drops::RegionalDrops;
 pub mod stopwatches;
 mod tick_regions;
 pub(crate) use tick_regions::{RegionChunks, RegionId, RegionLayout};
@@ -61,6 +61,7 @@ use crate::plugin::api::events::block::block_physics::BlockPhysicsEvent;
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{
     block::BlockEvent,
+    entity::experience_orb::ExperienceOrbEntity,
     entity::item::{ItemEntity, ItemTimerStep},
 };
 use crate::{
@@ -300,7 +301,7 @@ pub struct World {
     pub(crate) region_activity: Arc<tokio::sync::RwLock<()>>,
     entity_chunk_changes: entity_chunks::EntityChunkChanges,
     regional_entity_updates: RegionalEntityUpdates,
-    regional_item_timers: RwLock<Arc<RegionalItemTimers>>,
+    regional_drops: RwLock<Arc<RegionalDrops>>,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
@@ -500,7 +501,7 @@ impl World {
             region_activity: Arc::default(),
             entity_chunk_changes: entity_chunks::EntityChunkChanges::default(),
             regional_entity_updates: RegionalEntityUpdates::default(),
-            regional_item_timers: RwLock::default(),
+            regional_drops: RwLock::default(),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
             server,
             block_entities: DashMap::new(),
@@ -1776,7 +1777,7 @@ impl World {
 
         // A scan based on an earlier entity list must keep any new regional drops.
         let previous_item_timers = self
-            .regional_item_timers
+            .regional_drops
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
@@ -1803,12 +1804,8 @@ impl World {
                 Some((entity, entity_chunk))
             })
             .collect();
-        let item_timers = self.assign_regional_item_timers(
-            server,
-            &tickable,
-            !coordinated,
-            &previous_item_timers,
-        );
+        let item_timers =
+            self.assign_regional_drops(server, &tickable, !coordinated, &previous_item_timers);
         drop(previous_item_timers);
 
         // Entities that can affect each other tick in list order; separate islands run in
@@ -1874,6 +1871,7 @@ impl World {
         let first_order = self.level.reserve_entity_tick_orders(tickable.len());
 
         let server_ref = server.as_ref();
+        let regional_item_timers = ItemEntity::timers_unobserved(server_ref);
         let tick_entity = |index: usize| {
             let (entity, _) = &tickable[index];
             order::set_entity_order(Some(first_order + index as u64 * order::ORDERS_PER_ENTITY));
@@ -1881,12 +1879,17 @@ impl World {
             let base = entity.get_entity();
             if let Some(item) = (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ItemEntity>()
             {
-                let time = if item_timers.contains(base.entity_id) {
+                let time = if regional_item_timers && item_timers.contains(base.entity_id) {
                     ItemTimerStep::Region
                 } else {
                     ItemTimerStep::World(deadline)
                 };
                 item.tick_from_world(entity.as_ref(), server_ref, time, deadline);
+            } else if base.entity_type == &EntityType::EXPERIENCE_ORB
+                && let Some(orb) =
+                    (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ExperienceOrbEntity>()
+            {
+                orb.tick_from_world(entity.as_ref(), server_ref, deadline);
             } else {
                 base.tick_count.fetch_add(1, Relaxed);
                 // Vanilla `rideTick`: a rider starts its tick without motion.
@@ -2498,7 +2501,7 @@ impl World {
         }
         if inhabited && same_extent {
             if let Some(server) = &region_server {
-                self.advance_regional_item_timers(server, owner, deadline, &owns);
+                self.advance_regional_drops(server, owner, deadline, &owns);
             }
             self.flush_regional_block_updates(&owns);
         }
@@ -5361,7 +5364,7 @@ impl World {
         let registered = self.get_entity_by_id(entity.get_entity().entity_id);
         let entity = registered.as_deref().unwrap_or(entity);
         let base_entity = entity.get_entity();
-        let _motion = base_entity.hold_item_motion();
+        let _motion = base_entity.hold_drop_motion();
         if !base_entity.mark_discarded() {
             return;
         }

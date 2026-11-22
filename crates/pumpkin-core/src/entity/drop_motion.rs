@@ -13,25 +13,49 @@ use crate::{
     world::{COLLISION_LOOK_BELOW, RegionId, World},
 };
 
-use super::{
-    Collision, Entity,
-    item::{ItemClock, ItemEntity, ItemTimerOwner},
-};
+use super::{Collision, Entity, EntityBase, experience_orb::ExperienceOrbEntity, item::ItemEntity};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum DropTickOwner {
+    World,
+    Region(RegionId),
+}
 
 #[derive(Default)]
-pub(super) struct ItemMotion {
-    clock: ItemClock,
+pub(super) struct DropClock {
+    last: Option<(DropTickOwner, std::time::Instant)>,
+}
+
+impl DropClock {
+    fn can_claim(&self, owner: DropTickOwner, deadline: TickDeadline) -> bool {
+        self.last.is_none_or(|(previous, at)| {
+            deadline.at > at && (previous == owner || deadline.at - at >= deadline.period)
+        })
+    }
+
+    pub(super) fn claim(&mut self, owner: DropTickOwner, deadline: TickDeadline) -> bool {
+        if !self.can_claim(owner, deadline) {
+            return false;
+        }
+        self.last = Some((owner, deadline.at));
+        true
+    }
+}
+
+#[derive(Default)]
+pub(super) struct DropMotion {
+    clock: DropClock,
     world_users: usize,
 }
 
-struct ItemMotionUpdate {
+struct DropMotionUpdate {
     position: Vector3<f64>,
     bounds: BoundingBox,
     collision: Option<Collision>,
     velocity: Vector3<f64>,
 }
 
-impl ItemMotionUpdate {
+impl DropMotionUpdate {
     fn apply(self, entity: &Entity, biome: &'static Biome) {
         entity.update_last_pos();
         entity.tick_count.fetch_add(1, Relaxed);
@@ -60,9 +84,9 @@ impl ItemMotionUpdate {
     }
 }
 
-pub struct ItemWorldAccess<'a>(&'a Mutex<ItemMotion>);
+pub struct DropWorldAccess<'a>(&'a Mutex<DropMotion>);
 
-impl Drop for ItemWorldAccess<'_> {
+impl Drop for DropWorldAccess<'_> {
     fn drop(&mut self) {
         self.0
             .lock()
@@ -73,48 +97,53 @@ impl Drop for ItemWorldAccess<'_> {
 
 impl Entity {
     /// Prevents a regional move while a world operation may touch the actor.
-    pub(crate) fn hold_item_motion(&self) -> Option<ItemWorldAccess<'_>> {
-        let motion = self.item_motion.as_deref()?;
+    pub(crate) fn hold_drop_motion(&self) -> Option<DropWorldAccess<'_>> {
+        let motion = self.drop_motion.as_deref()?;
         motion
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .world_users += 1;
-        Some(ItemWorldAccess(motion))
+        Some(DropWorldAccess(motion))
     }
 
-    pub(super) fn begin_item_world_tick(
+    pub(super) fn begin_drop_world_tick(
         &self,
         deadline: Option<TickDeadline>,
-    ) -> (Option<ItemWorldAccess<'_>>, bool) {
-        let Some(motion) = self.item_motion.as_deref() else {
+    ) -> (Option<DropWorldAccess<'_>>, bool) {
+        let Some(motion) = self.drop_motion.as_deref() else {
             return (None, true);
         };
         let mut state = motion.lock().unwrap_or_else(PoisonError::into_inner);
         state.world_users += 1;
         let advance = if let Some(deadline) = deadline {
-            state.clock.claim(ItemTimerOwner::World, deadline)
+            state.clock.claim(DropTickOwner::World, deadline)
         } else {
-            state.clock = ItemClock::default();
+            state.clock = DropClock::default();
             true
         };
-        (Some(ItemWorldAccess(motion)), advance)
+        (Some(DropWorldAccess(motion)), advance)
     }
-}
 
-impl ItemEntity {
-    pub(crate) fn try_regional_expiry(&self, discard: impl FnOnce()) {
-        let entity = self.get_entity();
-        let Some(motion) = entity.item_motion.as_deref() else {
+    pub(crate) fn start_regional_drop_motion(&self, owner: RegionId, deadline: TickDeadline) {
+        if let Some(motion) = self.drop_motion.as_deref() {
+            motion
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clock
+                .claim(DropTickOwner::Region(owner), deadline);
+        }
+    }
+    pub(crate) fn try_regional_drop_expiry(&self, discard: impl FnOnce()) {
+        let Some(motion) = self.drop_motion.as_deref() else {
             return;
         };
         let Ok(motion) = motion.try_lock() else {
             return;
         };
-        if motion.world_users != 0 || !self.has_expired() {
+        if motion.world_users != 0 {
             return;
         }
-        let (Ok(vehicle), Ok(passengers)) =
-            (entity.vehicle.try_lock(), entity.passengers.try_lock())
+        let (Ok(vehicle), Ok(passengers)) = (self.vehicle.try_lock(), self.passengers.try_lock())
         else {
             return;
         };
@@ -123,6 +152,62 @@ impl ItemEntity {
         }
     }
 
+    fn with_regional_drop_motion(
+        &self,
+        world: &World,
+        chunk: Vector2<i32>,
+        owner: RegionId,
+        deadline: TickDeadline,
+        advance: impl FnOnce(&mut DropClock),
+    ) {
+        let Some(motion) = self.drop_motion.as_deref() else {
+            return;
+        };
+        let Ok(mut motion) = motion.try_lock() else {
+            return;
+        };
+        let clock_owner = DropTickOwner::Region(owner);
+        if motion.world_users != 0 || !motion.clock.can_claim(clock_owner, deadline) {
+            return;
+        }
+        if self.is_removed()
+            || !std::ptr::eq(self.world.load().as_ref(), world)
+            || self.chunk_pos.load() != chunk
+            || self.no_physics.load(Relaxed)
+            || self.is_on_fire()
+            || self.fire_ticks.load(Relaxed) > 0
+            || self.touching_water.load(Relaxed)
+            || self.touching_lava.load(Relaxed)
+            || self.portal_cooldown.load(Relaxed) != 0
+            || self.riding_cooldown.load(Relaxed) != 0
+            || self.movement_multiplier.load() != Vector3::default()
+        {
+            return;
+        }
+        let (Ok(vehicle), Ok(passengers), Ok(portal)) = (
+            self.vehicle.try_lock(),
+            self.passengers.try_lock(),
+            self.portal_manager.try_lock(),
+        ) else {
+            return;
+        };
+        if vehicle.is_some() || !passengers.is_empty() || portal.is_some() {
+            return;
+        }
+        // The shared-index path may run beside other bounds writers. Only this actor's
+        // owner is pinned exclusively, using the usual bounds-then-index lock order.
+        let Ok(bounds_owner) = self.bounding_box.index.try_write() else {
+            return;
+        };
+        if !std::ptr::eq(bounds_owner.as_ptr(), Arc::as_ptr(&world.entity_index)) {
+            return;
+        }
+
+        advance(&mut motion.clock);
+    }
+}
+
+impl ItemEntity {
     pub(crate) fn try_regional_motion(
         &self,
         world: &World,
@@ -131,52 +216,12 @@ impl ItemEntity {
         deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
-        let entity = self.get_entity();
-        let Some(motion) = entity.item_motion.as_deref() else {
-            return;
-        };
-        let Ok(mut motion) = motion.try_lock() else {
-            return;
-        };
-        let clock_owner = ItemTimerOwner::Region(owner);
-        if motion.world_users != 0 || !motion.clock.can_claim(clock_owner, deadline) {
-            return;
-        }
-        if entity.is_removed()
-            || !std::ptr::eq(entity.world.load().as_ref(), world)
-            || entity.chunk_pos.load() != chunk
-            || entity.no_physics.load(Relaxed)
-            || entity.is_on_fire()
-            || entity.touching_water.load(Relaxed)
-            || entity.touching_lava.load(Relaxed)
-            || entity.portal_cooldown.load(Relaxed) != 0
-            || entity.riding_cooldown.load(Relaxed) != 0
-            || entity.movement_multiplier.load() != Vector3::default()
-        {
-            return;
-        }
-        let (Ok(vehicle), Ok(passengers), Ok(portal)) = (
-            entity.vehicle.try_lock(),
-            entity.passengers.try_lock(),
-            entity.portal_manager.try_lock(),
-        ) else {
-            return;
-        };
-        if vehicle.is_some() || !passengers.is_empty() || portal.is_some() {
-            return;
-        }
-        // The shared-index path may run beside other bounds writers. Only this item's
-        // owner is pinned exclusively, using the usual bounds-then-index lock order.
-        let Ok(bounds_owner) = entity.bounding_box.index.try_write() else {
-            return;
-        };
-        if !std::ptr::eq(bounds_owner.as_ptr(), Arc::as_ptr(&world.entity_index)) {
-            return;
-        }
-
-        self.try_apply_regional_motion(world, owns, || {
-            owns(chunk) && motion.clock.claim(clock_owner, deadline)
-        });
+        self.get_entity()
+            .with_regional_drop_motion(world, chunk, owner, deadline, |clock| {
+                self.try_apply_regional_motion(world, owns, || {
+                    owns(chunk) && clock.claim(DropTickOwner::Region(owner), deadline)
+                });
+            });
     }
 
     fn try_apply_regional_motion(
@@ -231,7 +276,7 @@ impl ItemEntity {
                 } else {
                     velocity
                 };
-                let step = ItemMotionUpdate {
+                let step = DropMotionUpdate {
                     position,
                     bounds: next_bounds,
                     collision: moves.then_some(collision),
@@ -240,11 +285,13 @@ impl ItemEntity {
                 Some((BlockPos::floored_v(position), step))
             },
             |step, biome| {
-                world.entity_index.try_move_isolated_item(
+                // Match the pickup reach in the world phase, which also covers merge distance.
+                let area = swept.expand(1.0, 0.5, 1.0);
+                world.entity_index.try_move_isolated_drop(
                     world,
                     entity.entity_id,
-                    // Match the pickup reach in the world phase, which also covers merge distance.
-                    swept.expand(1.0, 0.5, 1.0),
+                    area,
+                    area,
                     step.bounds,
                     || {
                         if !claim() {
@@ -257,6 +304,75 @@ impl ItemEntity {
                 );
             },
         );
+    }
+}
+
+impl ExperienceOrbEntity {
+    pub(crate) fn try_regional_orb_tick(
+        &self,
+        world: &World,
+        chunk: Vector2<i32>,
+        owner: RegionId,
+        deadline: TickDeadline,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) {
+        let entity = self.get_entity();
+        entity.with_regional_drop_motion(world, chunk, owner, deadline, |clock| {
+            if self.has_expired() || self.has_follow_target() || entity.on_ground.load(Relaxed) {
+                return;
+            }
+            let movement = entity
+                .velocity
+                .load()
+                .add_raw(0.0, -self.get_gravity(), 0.0);
+            let distance_squared = movement.length_squared();
+            if !(distance_squared > 0.0 && distance_squared <= 1.0) {
+                return;
+            }
+            let position = entity.pos.load() + movement;
+            let bounds = Entity::make_bounding_box(
+                entity.entity_type,
+                position,
+                &entity.entity_dimension.load(),
+            );
+            let swept = entity.bounding_box.load().minmax(&bounds);
+            let min = BlockPos::floored_v(swept.min.add_raw(0.0, -COLLISION_LOOK_BELOW, 0.0));
+            let max = swept.max_block_pos();
+            let destination = BlockPos::floored_v(position);
+            world
+                .level
+                .try_with_clear_regional_path(min, max, destination, owns, |biome| {
+                    let radius = Self::FOLLOW_RANGE;
+                    world.entity_index.try_move_isolated_drop(
+                        world,
+                        entity.entity_id,
+                        swept,
+                        swept.expand(radius, radius, radius),
+                        bounds,
+                        || {
+                            if !owns(chunk) || !clock.claim(DropTickOwner::Region(owner), deadline)
+                            {
+                                return false;
+                            }
+                            DropMotionUpdate {
+                                position,
+                                bounds,
+                                collision: Some(Collision::free(movement)),
+                                velocity: movement * f64::from(Self::AIR_DRAG),
+                            }
+                            .apply(entity, biome);
+                            let age = self.advance_age();
+                            tracing::trace!(
+                                entity = entity.entity_id,
+                                region = owner,
+                                age,
+                                "Advanced experience orb on its region"
+                            );
+                            true
+                        },
+                    );
+                });
+        });
     }
 }
 

@@ -480,12 +480,13 @@ impl EntityIndex {
     }
 
     /// Pins both current indices while committing an isolated movement.
-    /// The caller holds the item's bounds owner exclusively and publishes the bounds in `apply`.
-    pub fn try_move_isolated_item(
+    /// The caller holds the actor's bounds owner exclusively and publishes the bounds in `apply`.
+    pub fn try_move_isolated_drop(
         &self,
         world: &World,
         entity_id: i32,
         swept: BoundingBox,
+        player_clearance: BoundingBox,
         bounds: BoundingBox,
         apply: impl FnOnce() -> bool,
     ) {
@@ -511,6 +512,7 @@ impl EntityIndex {
         };
         let next_range = Index::entity_range(&bounds);
         if let Some(swept_range) = Index::entity_range(&swept)
+            && let Some(player_range) = Index::entity_range(&player_clearance)
             && next_range.is_some()
             && next_range == index.ranges[own_slot]
             && index.oversized.is_empty()
@@ -518,7 +520,7 @@ impl EntityIndex {
             && swept_range
                 .indexed_members(&index.cells)
                 .all(|slot| slot == own_slot)
-            && swept_range
+            && player_range
                 .indexed_members(&player_index.cells)
                 .next()
                 .is_none()
@@ -548,9 +550,9 @@ impl EntityIndex {
             .into_iter()
             .any(|slot| slot != own_slot && index.intersects(slot, &swept))
             || player_index
-                .candidates(&swept)
+                .candidates(&player_clearance)
                 .into_iter()
-                .any(|slot| player_index.intersects(slot, &swept))
+                .any(|slot| player_index.intersects(slot, &player_clearance))
         {
             return;
         }

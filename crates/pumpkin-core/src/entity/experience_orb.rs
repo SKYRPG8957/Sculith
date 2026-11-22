@@ -13,7 +13,7 @@ use pumpkin_util::math::{
 
 use crate::{
     block::blocks::bubble_column::SURFACE_UPWARD_ACCELERATION,
-    server::Server,
+    server::{Server, TickDeadline},
     world::{
         World,
         entity_islands::{self, AuditedReach},
@@ -24,21 +24,23 @@ use super::{Entity, EntityBase, living::LivingEntity, player::Player, weak_slot:
 
 pub struct ExperienceOrbEntity {
     entity: Entity,
-    amount: u32,
+    amount: AtomicU32,
     health: AtomicI32,
     orb_age: AtomicU32,
     following_player: WeakSlot<Player>,
 }
 
 impl ExperienceOrbEntity {
-    const AIR_DRAG: f32 = 0.98;
+    pub(super) const AIR_DRAG: f32 = 0.98;
+    pub(super) const FOLLOW_RANGE: f64 = 8.0;
     const DEFAULT_HEALTH: i32 = 5;
+    const LIFETIME: u32 = 6_000;
 
     pub fn new(entity: Entity, amount: u32) -> Self {
         entity.yaw.store(rand::random::<f32>() * 360.0);
         Self {
             entity,
-            amount,
+            amount: AtomicU32::new(amount),
             health: AtomicI32::new(Self::DEFAULT_HEALTH),
             orb_age: AtomicU32::new(0),
             following_player: WeakSlot::new(),
@@ -132,12 +134,17 @@ impl ExperienceOrbEntity {
         let pos = entity.pos.load();
         let lost = self.following_player.get().is_none_or(|player| {
             player.is_spectator()
-                || player.get_entity().pos.load().squared_distance_to_vec(&pos) > 64.0
+                || player.get_entity().pos.load().squared_distance_to_vec(&pos)
+                    > Self::FOLLOW_RANGE * Self::FOLLOW_RANGE
         });
         if lost {
-            let nearest = entity.world.load().get_nearest_player(pos, 8.0, |player| {
-                !player.is_spectator() && !player.living_entity.is_dead_or_dying()
-            });
+            let nearest =
+                entity
+                    .world
+                    .load()
+                    .get_nearest_player(pos, Self::FOLLOW_RANGE, |player| {
+                        !player.is_spectator() && !player.living_entity.is_dead_or_dying()
+                    });
             match nearest {
                 Some(player) => self.following_player.set(&player),
                 None => self.following_player.clear(),
@@ -153,11 +160,45 @@ impl ExperienceOrbEntity {
             .load()
             .add_raw(0.0, target.get_eye_height() / 2.0, 0.0);
         let delta = target_pos.sub(&pos);
-        let power = 1.0 - delta.length() / 8.0;
+        let power = 1.0 - delta.length() / Self::FOLLOW_RANGE;
         entity
             .velocity
             .store(entity.velocity.load() + delta.normalize() * (power * power * 0.1));
         entity.velocity_dirty.store(true, Ordering::SeqCst);
+    }
+
+    pub(super) fn has_follow_target(&self) -> bool {
+        self.following_player.get().is_some()
+    }
+
+    pub(crate) fn has_expired(&self) -> bool {
+        self.orb_age.load(Ordering::Relaxed) > Self::LIFETIME
+    }
+
+    pub(super) fn advance_age(&self) -> u32 {
+        self.orb_age.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    pub(crate) fn tick_from_world(
+        &self,
+        caller: &dyn EntityBase,
+        server: &Server,
+        deadline: Option<TickDeadline>,
+    ) {
+        let entity = &self.entity;
+        let (_permit, advance) = entity.begin_drop_world_tick(deadline);
+        if entity.is_removed() {
+            return;
+        }
+        if self.has_expired() {
+            entity.remove();
+        } else if advance {
+            entity.tick_count.fetch_add(1, Ordering::Relaxed);
+            if entity.has_vehicle() {
+                entity.velocity.store(Vector3::default());
+            }
+            self.tick(caller, server);
+        }
     }
 
     const fn round_to_orb_size(value: u32) -> u32 {
@@ -262,14 +303,31 @@ impl EntityBase for ExperienceOrbEntity {
 
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put_short("Health", self.health.load(Ordering::Relaxed) as i16);
+        nbt.put_short("Age", self.orb_age.load(Ordering::Relaxed) as i16);
+        let value = self.amount.load(Ordering::Relaxed);
+        if let Ok(short) = i16::try_from(value) {
+            nbt.put_short("Value", short);
+        } else {
+            nbt.put_long("Value", i64::from(value));
+        }
     }
 
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
+        let _motion = self.entity.hold_drop_motion();
         self.health.store(
             nbt.get_short("Health")
                 .map_or(Self::DEFAULT_HEALTH, i32::from),
             Ordering::Relaxed,
         );
+        if let Some(age) = orb_nbt_integer(nbt, "Age") {
+            let age = age.clamp(0, i64::from(Self::LIFETIME + 1)) as u32;
+            self.orb_age.store(age, Ordering::Relaxed);
+        }
+        if let Some(value) =
+            orb_nbt_integer(nbt, "Value").and_then(|value| u32::try_from(value).ok())
+        {
+            self.amount.store(value, Ordering::Relaxed);
+        }
     }
 
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
@@ -313,8 +371,7 @@ impl EntityBase for ExperienceOrbEntity {
         }
         entity.velocity.store(velocity);
 
-        let age = self.orb_age.fetch_add(1, Ordering::Relaxed);
-        if age >= 6000 {
+        if self.advance_age() > Self::LIFETIME {
             entity.remove();
         }
     }
@@ -336,7 +393,8 @@ impl EntityBase for ExperienceOrbEntity {
         _source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        if self.entity.is_invulnerable_to(&damage_type, cause) {
+        let _motion = self.entity.hold_drop_motion();
+        if self.entity.is_removed() || self.entity.is_invulnerable_to(&damage_type, cause) {
             return false;
         }
 
@@ -377,10 +435,11 @@ impl EntityBase for ExperienceOrbEntity {
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
-        if player.begin_experience_pickup() {
+        let _motion = self.entity.hold_drop_motion();
+        if !self.entity.is_removed() && !self.has_expired() && player.begin_experience_pickup() {
             player.living_entity.pickup(&self.entity, 1);
             self.entity.remove();
-            let amount = self.amount as i32;
+            let amount = self.amount.load(Ordering::Relaxed) as i32;
             let remaining = player.apply_mending_from_xp(amount);
             if remaining > 0 {
                 player.add_experience_points(remaining);
@@ -398,6 +457,13 @@ impl EntityBase for ExperienceOrbEntity {
     fn cast_any(&self) -> &dyn std::any::Any {
         self
     }
+}
+
+fn orb_nbt_integer(nbt: &NbtCompound, name: &str) -> Option<i64> {
+    nbt.get_short(name)
+        .map(i64::from)
+        .or_else(|| nbt.get_int(name).map(i64::from))
+        .or_else(|| nbt.get_long(name))
 }
 
 #[cfg(test)]
