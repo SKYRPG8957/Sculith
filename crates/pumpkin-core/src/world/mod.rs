@@ -3461,7 +3461,7 @@ impl World {
             seed: self.level.seed.0,
             spawn_biome_type: 0,
             custom_biome_name: String::new(),
-            dimension: VarInt(0),
+            dimension: VarInt(crate::entity::player::bedrock_dimension_id(&self.dimension)),
             generator_type: VarInt(1),
             world_gamemode: server
                 .defaultgamemode

@@ -70,6 +70,15 @@ pub struct WorldTransferReservation {
     _destination: Option<OwnedMutexGuard<()>>,
 }
 
+impl WorldTransferReservation {
+    pub(crate) const fn for_one_world(owner: OwnedMutexGuard<()>) -> Self {
+        Self {
+            _source: owner,
+            _destination: None,
+        }
+    }
+}
+
 impl WorldTransfer {
     pub(crate) fn try_reserve_worlds(&self) -> Option<WorldTransferReservation> {
         let source = self.source.try_simulation()?;
@@ -108,11 +117,13 @@ impl WorldTransfer {
             return None;
         }
 
+        let login_admission = server.player_admission_state();
         let admission = destination
             .player_admission
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !*admission
+        if *login_admission
+            || !*admission
             || destination.players.load().iter().any(|other| {
                 other.gameprofile.id == player.gameprofile.id && !Arc::ptr_eq(other, player)
             })
@@ -177,6 +188,7 @@ impl WorldTransfer {
             respawn.clear_invalid_spawn(player);
         }
         drop(admission);
+        drop(login_admission);
         if let Some(anchor) = anchor {
             anchor.notify(destination);
         }

@@ -25,7 +25,7 @@ use crate::world::World;
 use super::world_transfer::{PendingWorldChange, WorldPosition, can_wait_for_world_change};
 use super::{CalculatedRespawnPoint, GameMode, Player, RespawnPoint};
 
-pub(super) fn bedrock_dimension_id(dimension: &Dimension) -> i32 {
+pub fn bedrock_dimension_id(dimension: &Dimension) -> i32 {
     match dimension.minecraft_name {
         "minecraft:the_nether" => 1,
         "minecraft:the_end" => 2,

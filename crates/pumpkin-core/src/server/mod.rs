@@ -21,6 +21,7 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use connection_cache::{CachedBranding, CachedStatus};
+use crossbeam::queue::SegQueue;
 use key_store::KeyStore;
 use pumpkin_config::world::WorldPreset;
 use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
@@ -73,6 +74,7 @@ mod storage_checkpoint;
 pub mod tick_rate_manager;
 pub mod ticker;
 mod transfer_checkpoint;
+mod world_membership;
 mod world_scheduler;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -88,6 +90,7 @@ use player_commands::PlayerCommands;
 pub use recipe::RecipeManager;
 pub(crate) use region_scheduler::TickDeadline;
 pub(crate) use transfer_checkpoint::StorageTransferError;
+use world_membership::WorldMembershipChange;
 
 use crate::data::advancement_data::AdvancementManager;
 
@@ -213,7 +216,7 @@ pub struct Server {
     /// process-wide stop reaches it, while an integrated server can stop without ending the
     /// process.
     pub stop_token: CancellationToken,
-    /// Set once shutdown closes admission, so the shutdown kick pass sees every admitted player.
+    /// Serializes login commits against transfers and the closing of admission.
     admission_closed: std::sync::RwLock<bool>,
     /// Stores the latest available Pumpkin release if the startup update checker found a newer version.
     pub available_update: std::sync::OnceLock<crate::update_checker::GitHubRelease>,
@@ -221,7 +224,7 @@ pub struct Server {
     // world stuff which maybe should be put into a struct
     pub level_info: Arc<ArcSwap<LevelData>>,
     world_info_writer: Arc<dyn WorldInfoWriter>,
-    world_transfers: crossbeam::queue::SegQueue<WorldTransfer>,
+    world_membership: SegQueue<WorldMembershipChange>,
 }
 
 impl Server {
@@ -497,7 +500,7 @@ impl Server {
             player_idle_timeout: AtomicI32::new(0),
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
-            world_transfers: crossbeam::queue::SegQueue::new(),
+            world_membership: SegQueue::new(),
             level_info,
             management_hub,
             save_metadata_lock: tokio::sync::Mutex::new(()),
@@ -968,8 +971,8 @@ impl Server {
             &mut PlayerLoginEvent::new(player.clone(), TextComponent::text("You have been kicked from the server"));
             'after: {
                 player.screen_handler_sync_handler.store_player(player.clone());
-                if !self.admit_player(&world, &player) {
-                    player.kick(DisconnectReason::Shutdown, &TextComponent::text("Server stopped"));
+                if let Err(rejection) = self.request_player_admission(&world, &player).await {
+                    rejection.kick(&player);
                     player.client.clear_player();
                     return None;
                 }
@@ -1037,15 +1040,6 @@ impl Server {
             .remove_player(player);
     }
 
-    /// Adds player to `world` unless shutdown already closed admission.
-    fn admit_player(&self, world: &World, player: &Arc<Player>) -> bool {
-        let closed = self
-            .admission_closed
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        !*closed && world.add_player(player).is_ok()
-    }
-
     /// Refuses all later joins. Returns once every join in progress is in a world
     pub fn close_admission(&self) {
         *self
@@ -1055,27 +1049,37 @@ impl Server {
     }
 
     pub(crate) fn submit_world_transfer(&self, transfer: WorldTransfer) {
-        let closed = self
-            .admission_closed
+        self.submit_membership_change(WorldMembershipChange::Transfer(Box::new(transfer)));
+    }
+
+    pub(crate) fn player_admission_state(&self) -> std::sync::RwLockReadGuard<'_, bool> {
+        self.admission_closed
             .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn submit_membership_change(&self, change: WorldMembershipChange) {
+        let closed = self.player_admission_state();
         if !*closed && !self.stop_token.is_cancelled() {
-            self.world_transfers.push(transfer);
+            self.world_membership.push(change);
         }
     }
 
-    fn for_each_ready_transfer(
+    fn for_each_ready_membership_change(
         &self,
-        mut apply: impl FnMut(WorldTransfer, WorldTransferReservation),
+        mut apply: impl FnMut(WorldMembershipChange, WorldTransferReservation),
     ) {
-        for _ in 0..self.world_transfers.len().min(32) {
-            let Some(transfer) = self.world_transfers.pop() else {
+        for _ in 0..self.world_membership.len().min(32) {
+            let Some(change) = self.world_membership.pop() else {
                 break;
             };
-            if let Some(ownership) = transfer.try_reserve_worlds() {
-                apply(transfer, ownership);
+            if change.abandoned() {
+                continue;
+            }
+            if let Some(ownership) = change.try_reserve_worlds() {
+                apply(change, ownership);
             } else {
-                self.world_transfers.push(transfer);
+                self.world_membership.push(change);
             }
         }
     }
@@ -1083,7 +1087,7 @@ impl Server {
     pub(super) fn cancel_pending_simulation_changes(&self) {
         // Stop admission first so no request can be left waiting after the ticker exits.
         self.close_admission();
-        while self.world_transfers.pop().is_some() {}
+        while self.world_membership.pop().is_some() {}
         for world in self.worlds.load().iter() {
             // Let a regional claim publish its receipt before dropping unstarted requests.
             let _regions = self.runtime.block_on(world.region_activity.write());
@@ -1478,7 +1482,9 @@ impl Server {
         commands: &PlayerCommands,
         autosave: impl FnOnce(&Self) + Send,
     ) {
-        self.for_each_ready_transfer(|transfer, reservation| transfer.apply(self, reservation));
+        self.for_each_ready_membership_change(|change, reservation| {
+            change.apply(self, reservation);
+        });
         self.simulation_pool.install(|| {
             if self.tick_rate_manager.runs_normally() || self.tick_rate_manager.is_sprinting() {
                 self.tick_worlds_with_player_commands(commands);

@@ -80,6 +80,8 @@ can process packets, run simulation and synchronize their own clocks.
 
 Conditional plugin block edits compare the expected block in its loaded chunk.
 Transfers reserve the source and destination before changing a player's membership.
+Java and Bedrock logins prepare the player before queuing registration on the target
+world. Registration checks the live connection and membership while holding that owner.
 Automatic inventory checkpoints capture the worlds that contributed to the
 batch. Shutdown drains world jobs before kicking players and saving.
 
@@ -196,7 +198,7 @@ registers the saved actors once, and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
 against these residency changes. This lifecycle uses the world boundary.
-Native plugins use ABI 31.
+Native plugins use ABI 33.
 
 ## Shared resource delivery
 

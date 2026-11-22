@@ -167,7 +167,7 @@ impl Ticker {
                 worlds.tick_coordinated(server);
             } else {
                 worlds.maintain(server);
-                worlds.dispatch_transfers(server);
+                worlds.dispatch_membership_changes(server);
                 let _ = worlds.poll(server, period);
             }
 
@@ -327,7 +327,7 @@ fn wait_until_next_tick(
             && !server.tick_rate_manager.is_stepping_forward()
         {
             server.storage_checkpoint.transfers.finish_tick(server);
-            worlds.dispatch_transfers(server);
+            worlds.dispatch_membership_changes(server);
             if let Some(world_wait) = worlds.poll(server, period) {
                 wait = wait.min(world_wait);
             }

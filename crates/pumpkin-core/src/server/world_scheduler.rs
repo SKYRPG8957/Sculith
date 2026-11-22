@@ -143,10 +143,10 @@ impl WorldScheduler {
         }
     }
 
-    pub(super) fn dispatch_transfers(&self, server: &Arc<Server>) {
-        server.for_each_ready_transfer(|transfer, reservation| {
+    pub(super) fn dispatch_membership_changes(&self, server: &Arc<Server>) {
+        server.for_each_ready_membership_change(|change, reservation| {
             self.jobs
-                .spawn(server, move |server| transfer.apply(server, reservation));
+                .spawn(server, move |server| change.apply(server, reservation));
         });
     }
 

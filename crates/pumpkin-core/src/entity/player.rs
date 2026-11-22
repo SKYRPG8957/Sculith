@@ -6,6 +6,7 @@ pub mod forms;
 mod item_use;
 mod picking;
 mod respawn;
+pub(crate) use respawn::bedrock_dimension_id;
 mod shoulders;
 pub mod statistics;
 pub(crate) mod world_transfer;
