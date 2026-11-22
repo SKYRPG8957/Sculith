@@ -457,6 +457,44 @@ impl PlayerInventory {
         }
     }
 
+    /// Replaces a slot only when its logical contents match the supplied snapshot.
+    #[must_use]
+    pub fn replace_slot_if_equal(
+        &self,
+        slot: usize,
+        expected: &ItemStack,
+        replacement: ItemStack,
+    ) -> bool {
+        let matches = |current: &ItemStack| {
+            if expected.is_empty() {
+                current.is_empty()
+            } else {
+                current.are_equal(expected)
+            }
+        };
+        if slot < Self::MAIN_SIZE {
+            let mut inventory = self
+                .main_inventory
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let current = &mut inventory[slot];
+            if matches(current) {
+                *current = replacement;
+                return true;
+            }
+        } else if let Some(slot) = self.equipment_slots.get(&slot) {
+            let mut equipment = self
+                .entity_equipment
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if matches(&equipment.get(slot)) {
+                equipment.put(slot, replacement);
+                return true;
+            }
+        }
+        false
+    }
+
     /// Gives a stack to the player or drops it if inventory is full.
     pub fn offer_or_drop_stack(&self, stack: ItemStack, player: &dyn InventoryPlayer) {
         self.offer(stack, true, player);

@@ -65,6 +65,7 @@ pub(crate) mod debug_profiler;
 pub mod enchantment;
 mod key_store;
 pub(crate) mod player_commands;
+mod player_inventory_edits;
 mod player_session;
 pub mod recipe;
 mod region_scheduler;
@@ -88,10 +89,11 @@ enum WorldStep {
 pub(crate) use block_edits::BlockEdits;
 pub use block_edits::{BlockEditReceipt, BlockEditStatus};
 use player_commands::PlayerCommands;
+pub use player_inventory_edits::{PlayerInventoryEditReceipt, PlayerInventoryEditStatus};
 pub use recipe::RecipeManager;
 pub(crate) use region_scheduler::TickDeadline;
 pub(crate) use transfer_checkpoint::StorageTransferError;
-use world_membership::WorldMembershipChange;
+use world_membership::WorldOperation;
 
 use crate::data::advancement_data::AdvancementManager;
 
@@ -226,7 +228,7 @@ pub struct Server {
     // world stuff which maybe should be put into a struct
     pub level_info: Arc<ArcSwap<LevelData>>,
     world_info_writer: Arc<dyn WorldInfoWriter>,
-    world_membership: SegQueue<WorldMembershipChange>,
+    world_operations: SegQueue<WorldOperation>,
 }
 
 impl Server {
@@ -503,7 +505,7 @@ impl Server {
             player_idle_timeout: AtomicI32::new(0),
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
-            world_membership: SegQueue::new(),
+            world_operations: SegQueue::new(),
             level_info,
             management_hub,
             save_metadata_lock: tokio::sync::Mutex::new(()),
@@ -1056,7 +1058,7 @@ impl Server {
     }
 
     pub(crate) fn submit_world_transfer(&self, transfer: WorldTransfer) {
-        self.submit_membership_change(WorldMembershipChange::Transfer(Box::new(transfer)));
+        self.submit_world_operation(WorldOperation::Transfer(Box::new(transfer)));
     }
 
     pub(crate) fn player_admission_state(&self) -> std::sync::RwLockReadGuard<'_, bool> {
@@ -1065,19 +1067,19 @@ impl Server {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn submit_membership_change(&self, change: WorldMembershipChange) {
+    fn submit_world_operation(&self, change: WorldOperation) {
         let closed = self.player_admission_state();
         if !*closed && !self.stop_token.is_cancelled() {
-            self.world_membership.push(change);
+            self.world_operations.push(change);
         }
     }
 
-    fn for_each_ready_membership_change(
+    fn for_each_ready_world_operation(
         &self,
-        mut apply: impl FnMut(WorldMembershipChange, WorldTransferReservation),
+        mut apply: impl FnMut(WorldOperation, WorldTransferReservation),
     ) {
-        for _ in 0..self.world_membership.len().min(32) {
-            let Some(change) = self.world_membership.pop() else {
+        for _ in 0..self.world_operations.len().min(32) {
+            let Some(change) = self.world_operations.pop() else {
                 break;
             };
             if change.abandoned() {
@@ -1086,7 +1088,7 @@ impl Server {
             if let Some(ownership) = change.try_reserve_worlds() {
                 apply(change, ownership);
             } else {
-                self.world_membership.push(change);
+                self.world_operations.push(change);
             }
         }
     }
@@ -1094,7 +1096,7 @@ impl Server {
     pub(super) fn cancel_pending_simulation_changes(&self) {
         // Stop admission first so no request can be left waiting after the ticker exits.
         self.close_admission();
-        while self.world_membership.pop().is_some() {}
+        while self.world_operations.pop().is_some() {}
         for world in self.worlds.load().iter() {
             // Let a regional claim publish its receipt before dropping unstarted requests.
             let _regions = self.runtime.block_on(world.region_activity.write());
@@ -1489,7 +1491,7 @@ impl Server {
         commands: &PlayerCommands,
         autosave: impl FnOnce(&Self) + Send,
     ) {
-        self.for_each_ready_membership_change(|change, reservation| {
+        self.for_each_ready_world_operation(|change, reservation| {
             change.apply(self, reservation);
         });
         self.simulation_pool.install(|| {

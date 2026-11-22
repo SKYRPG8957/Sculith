@@ -171,7 +171,8 @@ pub use team::{PlayerTeamExt, ScoreboardTeamExt, Team, TeamSettingsBuilder};
 pub use wit::pumpkin::plugin::attributes::{Attribute, AttributeModifier, ModifierOperation};
 pub use wit::pumpkin::plugin::item_stack::{ItemAttributeModifier, ItemStack};
 pub use wit::pumpkin::plugin::player::{
-    BedrockMinecraftVersion, BedrockPlayer, JavaMinecraftVersion, JavaPlayer, Player,
+    BedrockMinecraftVersion, BedrockPlayer, InventoryEdit, InventoryEditStatus,
+    JavaMinecraftVersion, JavaPlayer, Player,
 };
 pub use wit::pumpkin::plugin::scoreboard::{CollisionRule, NametagVisibility, TeamSettings};
 pub use wit::pumpkin::plugin::server::Dimension;

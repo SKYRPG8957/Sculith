@@ -833,6 +833,19 @@ interface player {
         log-to-console: bool,
     }
 
+    /// Result of a conditional inventory edit submitted to the player's world.
+    enum inventory-edit-status {
+        pending,
+        applied,
+        stale,
+        unavailable,
+    }
+
+    /// Polls one submitted edit. A completed result is retained.
+    resource inventory-edit {
+        status: func() -> inventory-edit-status;
+    }
+
     /// A handle to a player on the server.
     resource player {
         /// Opens a shared simple, modal or custom form on either edition.
@@ -1093,6 +1106,12 @@ interface player {
         set-item-in-hand: func (hand: hand, stack: option<item-stack>);
         /// Sets the item in the specified inventory slot.
         set-inventory-item: func (slot: u8, stack: option<item-stack>);
+
+        /// Replaces the slot on the world owner if the expected contents still match.
+        /// An absent stack means an empty slot. Teleport, respawn, and disconnect can make the edit stale.
+        /// Returns none when the slot or connection is invalid or the queue cannot accept work.
+        /// Dropping the receipt leaves the accepted edit queued.
+        schedule-inventory-edit: func(slot: u8, expected: option<item-stack>, replacement: option<item-stack>) -> option<inventory-edit>;
 
         // Ender Chest Inventory
 

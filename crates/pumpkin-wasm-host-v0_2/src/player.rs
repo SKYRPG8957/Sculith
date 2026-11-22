@@ -17,7 +17,7 @@ use crate::{
         self,
         plugin::{
             damage_types::DamageType as WitDamageType,
-            player::{Player, PlayerSkin, SkinParts},
+            player::{InventoryEdit, InventoryEditStatus, Player, PlayerSkin, SkinParts},
             statistics::{
                 CustomStatistic as WitCustomStatistic, StatisticCategory as WitStatisticCategory,
             },
@@ -1141,6 +1141,23 @@ use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use pumpkin_protocol::java::client::play::CSetContainerSlot;
 
 use crate::pumpkin::plugin::item_stack::ItemStack as WitHostItemStack;
+
+impl pumpkin::plugin::player::HostInventoryEdit for PluginHostState {
+    fn status(&mut self, edit: Resource<InventoryEdit>) -> wasmtime::Result<InventoryEditStatus> {
+        use pumpkin_core::server::PlayerInventoryEditStatus as Status;
+
+        Ok(match self.get_mut(&edit)?.status() {
+            Status::Pending => InventoryEditStatus::Pending,
+            Status::Applied => InventoryEditStatus::Applied,
+            Status::Stale => InventoryEditStatus::Stale,
+            Status::Unavailable => InventoryEditStatus::Unavailable,
+        })
+    }
+
+    fn drop(&mut self, edit: Resource<InventoryEdit>) -> wasmtime::Result<()> {
+        self.drop(edit)
+    }
+}
 
 impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     fn get_inventory(
@@ -3093,6 +3110,32 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         player.sync_hand_slot(slot as usize, stack);
 
         Ok(())
+    }
+
+    async fn schedule_inventory_edit(
+        accessor: &Accessor<PluginHostState, Self>,
+        player: Resource<Player>,
+        slot: u8,
+        expected: Option<Resource<WitHostItemStack>>,
+        replacement: Option<Resource<WitHostItemStack>>,
+    ) -> wasmtime::Result<Option<Resource<InventoryEdit>>> {
+        use pumpkin_data::item_stack::ItemStack;
+
+        let expected = if let Some(expected) = expected {
+            accessor.take_res(expected)?.lock().await.clone()
+        } else {
+            ItemStack::EMPTY.clone()
+        };
+        let replacement = if let Some(replacement) = replacement {
+            accessor.take_res(replacement)?.lock().await.clone()
+        } else {
+            ItemStack::EMPTY.clone()
+        };
+        accessor
+            .get_res(&player)?
+            .schedule_inventory_edit(slot, expected, replacement)
+            .map(|edit| accessor.add_res(edit))
+            .transpose()
     }
 
     async fn damage_item_in_slot(

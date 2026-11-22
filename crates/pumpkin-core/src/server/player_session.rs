@@ -11,7 +11,7 @@ use crate::net::{ClientPlatform, GameProfile, PlayerConfig};
 use crate::world::World;
 
 use super::Server;
-use super::world_membership::{JoinRejection, WorldMembershipChange};
+use super::world_membership::{JoinRejection, WorldOperation};
 
 /// Keeps the same account from loading data while its previous connection is saving.
 pub struct NetworkPlayerSession {
@@ -147,7 +147,7 @@ impl Server {
         let work = Arc::new(Mutex::new(Some(action)));
         let scheduled = work.clone();
         let (done, result) = oneshot::channel();
-        self.submit_membership_change(WorldMembershipChange::Depart {
+        self.submit_world_operation(WorldOperation::Depart {
             world: world.clone(),
             phase: Box::new(move |server, world| {
                 let action = scheduled

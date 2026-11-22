@@ -79,6 +79,9 @@ mod resource_with {
     impl FromResource for plugin::player::Player {
         type Internal = Arc<Player>;
     }
+    impl FromResource for plugin::player::InventoryEdit {
+        type Internal = pumpkin_core::server::PlayerInventoryEditReceipt;
+    }
     impl FromResource for plugin::player::JavaPlayer {
         type Internal = Arc<Player>;
     }

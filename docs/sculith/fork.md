@@ -79,6 +79,10 @@ parallel work. A busy world skips expired deadlines while other ready worlds
 can process packets, run simulation and synchronize their own clocks.
 
 Conditional plugin block edits compare the expected block in its loaded chunk.
+Rust and Wasm plugins can also queue a conditional player inventory edit with
+`schedule_inventory_edit`. Before writing the slot, the owner checks the active
+connection, intervening teleports or respawns, and the item type, count and
+components. A plugin can poll the receipt from a callback or a later tick.
 Transfers reserve the source and destination before changing a player's membership.
 Java and Bedrock logins prepare the player before queuing registration on the target
 world. Registration checks the live connection and membership while holding that owner.

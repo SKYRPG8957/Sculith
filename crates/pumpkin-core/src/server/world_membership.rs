@@ -15,6 +15,7 @@ use crate::net::DisconnectReason;
 use crate::world::World;
 
 use super::Server;
+use super::player_inventory_edits::PlayerInventoryEdit;
 
 pub(super) enum JoinRejection {
     Unavailable,
@@ -47,7 +48,7 @@ pub(super) enum PlayerAdmission {
     LoadSpawnChunk(Vector2<i32>),
 }
 
-pub(super) enum WorldMembershipChange {
+pub(super) enum WorldOperation {
     Join {
         world: Arc<World>,
         player: Arc<Player>,
@@ -66,13 +67,14 @@ pub(super) enum WorldMembershipChange {
         phase: ArrivalPhase,
         completion: oneshot::Sender<bool>,
     },
+    InventoryEdit(Box<PlayerInventoryEdit>),
     Depart {
         world: Arc<World>,
         phase: DeparturePhase,
     },
 }
 
-impl WorldMembershipChange {
+impl WorldOperation {
     pub(super) fn abandoned(&self) -> bool {
         match self {
             Self::Join {
@@ -85,7 +87,7 @@ impl WorldMembershipChange {
                 completion, player, ..
             } => completion.is_closed() || player.client.closed(),
             Self::Transfer(transfer) => transfer.abandoned(),
-            Self::Depart { .. } => false,
+            Self::Depart { .. } | Self::InventoryEdit(_) => false,
         }
     }
 
@@ -98,6 +100,10 @@ impl WorldMembershipChange {
                 .try_simulation()
                 .map(WorldTransferReservation::for_one_world),
             Self::Transfer(transfer) => transfer.try_reserve_worlds(),
+            Self::InventoryEdit(edit) => edit
+                .world
+                .try_simulation()
+                .map(WorldTransferReservation::for_one_world),
         }
     }
 
@@ -146,6 +152,10 @@ impl WorldMembershipChange {
                 let _owner = reservation;
                 phase(server, &world);
             }
+            Self::InventoryEdit(edit) => {
+                let _owner = reservation;
+                edit.apply(server);
+            }
         }
     }
 }
@@ -157,7 +167,7 @@ impl Server {
             return false;
         }
         let (completion, published) = oneshot::channel();
-        self.submit_membership_change(WorldMembershipChange::PublishInitial {
+        self.submit_world_operation(WorldOperation::PublishInitial {
             world: owner,
             player: player.clone(),
             completion,
@@ -172,7 +182,7 @@ impl Server {
         phase: ArrivalPhase,
     ) -> bool {
         let (completion, applied) = oneshot::channel();
-        self.submit_membership_change(WorldMembershipChange::Arrival {
+        self.submit_world_operation(WorldOperation::Arrival {
             world: world.clone(),
             player: player.clone(),
             phase,
@@ -189,7 +199,7 @@ impl Server {
     ) -> Result<(), JoinRejection> {
         loop {
             let (completion, committed) = oneshot::channel();
-            self.submit_membership_change(WorldMembershipChange::Join {
+            self.submit_world_operation(WorldOperation::Join {
                 world: world.clone(),
                 player: player.clone(),
                 initial_position,
