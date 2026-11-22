@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 
 use bytes::BufMut;
 use crossbeam::atomic::AtomicCell;
-use dashmap::DashMap;
+use dashmap::{DashMap, try_result::TryResult};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::bedrock::client::CSetActorMotion;
@@ -39,6 +39,8 @@ use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase};
 use crate::net::ClientPlatform;
 use crate::net::java::JavaClient;
+use crate::plugin::server::packet::PacketSentEvent;
+use crate::server::Server;
 use crate::world::World;
 use crate::world::chunker::get_view_distance;
 
@@ -545,15 +547,25 @@ impl TrackedEntity {
                 {
                     return;
                 }
-                let inserted = self
-                    .seen_by
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(player.gameprofile.id, player.clone());
-                if inserted {
-                    if matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
+                // An item cannot expire on a region while its spawn is being queued.
+                let base = self.entity.get_entity();
+                let _pairing = base.hold_item_motion();
+                if base.is_removed() {
+                    self.remove_player(player);
+                    return;
+                }
+                let inserted = {
+                    let mut viewers = self
+                        .seen_by
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let inserted = viewers.insert(player.gameprofile.id, player.clone());
+                    if inserted && matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
                         self.bedrock_watchers.fetch_add(1, Relaxed);
                     }
+                    inserted
+                };
+                if inserted {
                     self.add_pairing(player);
                 }
                 return;
@@ -974,13 +986,13 @@ impl TrackedEntity {
     }
 
     pub fn broadcast_removed(&self, _world: &World) {
-        let had_bedrock = self.bedrock_watchers.swap(0, Relaxed) > 0;
-        let seen_by = {
+        let (seen_by, had_bedrock) = {
             let mut guard = self
                 .seen_by
                 .write()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            std::mem::take(&mut *guard).players
+            let had_bedrock = self.bedrock_watchers.swap(0, Relaxed) > 0;
+            (std::mem::take(&mut *guard).players, had_bedrock)
         };
         if seen_by.is_empty() {
             return;
@@ -1000,32 +1012,84 @@ impl TrackedEntity {
         }
     }
 
+    fn try_publish_item_expiry(
+        &self,
+        world: &World,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
+        let Ok(mut viewers) = self.seen_by.try_write() else {
+            return;
+        };
+        let mut java = None;
+        let mut bedrock = None;
+        let ids = [self.entity_id.into()];
+        let mut sent = 0;
+        // Successful recipients leave this set. The world drains remaining
+        // viewers through the usual translated/observed broadcast.
+        viewers.players.retain(|_, player| {
+            if !player.can_simulate_in(world) {
+                return true;
+            }
+            let queued = match player.client.as_ref() {
+                ClientPlatform::Java(client) if client.version.load() == CURRENT_MC_VERSION => {
+                    let data = java.get_or_insert_with(|| {
+                        JavaClient::serialize_packet_for_version(
+                            &CRemoveEntities::new(&ids),
+                            CURRENT_MC_VERSION,
+                        )
+                    });
+                    let queued = data
+                        .as_ref()
+                        .is_ok_and(|data| client.try_enqueue_packet_data_unobserved(data.clone()));
+                    if queued {
+                        java_recipients
+                            .entry(client.id)
+                            .or_insert_with(|| player.client.clone());
+                    }
+                    queued
+                }
+                ClientPlatform::Bedrock(client) if client.is_current_protocol() => {
+                    let data = bedrock.get_or_insert_with(|| {
+                        client.serialize_packet(&CRemoveActor::new(VarLong(i64::from(
+                            self.entity_id,
+                        ))))
+                    });
+                    let queued = data
+                        .as_ref()
+                        .is_ok_and(|data| client.try_enqueue_packet_data_unobserved(data.clone()));
+                    if queued {
+                        self.bedrock_watchers.fetch_sub(1, Relaxed);
+                    }
+                    queued
+                }
+                _ => false,
+            };
+            sent += usize::from(queued);
+            !queued
+        });
+        if sent != 0 {
+            viewers.snapshot.take();
+            tracing::trace!(
+                entity = self.entity_id,
+                sent,
+                "Published regional item expiry"
+            );
+        }
+    }
+
     /// Vanilla `TrackedEntity.removePlayer`: despawn on the client, only if it was paired.
     pub fn remove_player(&self, player: &Player) {
-        if !self
-            .seen_by
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .players
-            .contains_key(&player.gameprofile.id)
-        {
-            return;
-        }
-        let removed = self
-            .seen_by
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&player.gameprofile.id);
-        if removed {
-            if matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
-                self.bedrock_watchers.fetch_sub(1, Relaxed);
-            }
+        if self.remove_viewer(player) {
             self.remove_pairing(player);
         }
     }
 
     /// Forgets the player as a viewer without a removal packet; the client already dropped it.
     pub fn forget_player(&self, player: &Player) {
+        self.remove_viewer(player);
+    }
+
+    fn remove_viewer(&self, player: &Player) -> bool {
         if !self
             .seen_by
             .read()
@@ -1033,16 +1097,17 @@ impl TrackedEntity {
             .players
             .contains_key(&player.gameprofile.id)
         {
-            return;
+            return false;
         }
-        let removed = self
+        let mut viewers = self
             .seen_by
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&player.gameprofile.id);
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let removed = viewers.remove(&player.gameprofile.id);
         if removed && matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
             self.bedrock_watchers.fetch_sub(1, Relaxed);
         }
+        removed
     }
 
     fn viewers(&self) -> Arc<[Arc<Player>]> {
@@ -1310,6 +1375,33 @@ impl EntityTracker {
 
         if let Some((_, tracked)) = self.entity_map.remove(&entity_id) {
             tracked.broadcast_removed(world);
+        }
+    }
+
+    pub(super) fn try_publish_regional_item_expiries(
+        &self,
+        world: &World,
+        server: &Server,
+        ids: FxHashSet<i32>,
+    ) {
+        if server.plugin_manager.has_handlers::<PacketSentEvent>() {
+            return;
+        }
+        let mut java_recipients = FxHashMap::default();
+        for id in ids {
+            let TryResult::Present(entry) = self.entity_map.try_get(&id) else {
+                continue;
+            };
+            let tracked = entry.value().clone();
+            drop(entry);
+            tracked.try_publish_item_expiry(world, &mut java_recipients);
+        }
+        // The world may still have Java's ordinary tick flush suspended.
+        // Release this batch once per connection after queueing its removals.
+        for recipient in java_recipients.into_values() {
+            if let ClientPlatform::Java(client) = recipient.as_ref() {
+                client.flush_channel();
+            }
         }
     }
 

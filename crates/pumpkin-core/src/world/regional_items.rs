@@ -300,7 +300,8 @@ impl World {
             });
         }
         if !discarded.is_empty() {
-            // One registry update for the batch. Packet callbacks stay on the world owner.
+            // One registry update for the batch. Flush the viewers we can serve
+            // without callbacks before the world drains their queued cleanup.
             self.entities.rcu(|current| {
                 current
                     .iter()
@@ -308,6 +309,8 @@ impl World {
                     .cloned()
                     .collect::<Vec<_>>()
             });
+            self.entity_tracker
+                .try_publish_regional_item_expiries(self, server, discarded);
         }
     }
 }

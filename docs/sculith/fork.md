@@ -206,7 +206,10 @@ terrain and spatial indices through the update, including when the item crosses
 a chunk boundary. The separate motion deadline prevents a repeated step.
 An expired unmounted drop can be removed from the live registry by its region.
 The commit excludes concurrent actor interactions and shares the entity-save
-guard. The world publishes removal packets on its next publication step.
+guard. A region can publish the removal to current-protocol Bedrock and Java
+viewers once their spawn has been queued. Java flushes once per viewer for
+the region's expiry batch. The tracker retains connections
+that still need the world's translated or plugin-observed publication.
 Movement outside the region, ground and fluid contact, pickup and merging
 are handled by the world. Native library loading disables regional item motion
 and expiry because native plugins can write live actor fields. Merge and despawn event
