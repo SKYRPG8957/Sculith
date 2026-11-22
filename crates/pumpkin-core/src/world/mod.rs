@@ -77,7 +77,7 @@ use crate::{
         block::block_break::BlockBreakEvent,
         player::{player_join::PlayerJoinEvent, player_leave::PlayerLeaveEvent},
     },
-    server::{Server, TickDeadline},
+    server::{Server, TickDeadline, player_commands::PlayerCommands},
 };
 use active_chunks::{ActiveChunkTracker, ActivePlayerArea};
 use arc_swap::ArcSwap;
@@ -1660,11 +1660,15 @@ impl World {
         self.play_sound_expect(player, sound, category, &new_vec);
     }
 
-    pub(crate) fn process_player_packets(&self, players: &[Arc<Player>]) {
+    pub(crate) fn process_player_packets(
+        &self,
+        players: &[Arc<Player>],
+        commands: Option<&PlayerCommands>,
+    ) {
         // Different players' screens can mutate the same inventory.
         for player in players {
             if player.can_tick_in(self) {
-                player.process_inbound_packets();
+                player.process_inbound_packets_with_commands(commands);
             }
         }
     }
@@ -1681,19 +1685,16 @@ impl World {
     }
 
     pub fn tick(self: &Arc<Self>, server: &Arc<Server>) {
-        self.tick_simulation(server, None);
-    }
-
-    pub(crate) fn tick_with_region_deadlines(
-        self: &Arc<Self>,
-        server: &Arc<Server>,
-        deadline: TickDeadline,
-    ) {
-        self.tick_simulation(server, Some(deadline));
+        self.tick_simulation(server, None, None);
     }
 
     #[expect(clippy::too_many_lines)]
-    fn tick_simulation(self: &Arc<Self>, server: &Arc<Server>, deadline: Option<TickDeadline>) {
+    pub(crate) fn tick_simulation(
+        self: &Arc<Self>,
+        server: &Arc<Server>,
+        deadline: Option<TickDeadline>,
+        commands: Option<&PlayerCommands>,
+    ) {
         let coordinated = deadline.is_none();
         let start = std::time::Instant::now();
 
@@ -1731,7 +1732,7 @@ impl World {
 
         let t_players = std::time::Instant::now();
         // Vanilla handles all packets before any player ticks
-        self.process_player_packets(&players);
+        self.process_player_packets(&players, commands);
         players
             .par_iter()
             .filter(|player| player.can_tick_in(self))

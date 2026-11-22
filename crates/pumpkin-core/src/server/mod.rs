@@ -62,6 +62,7 @@ mod connection_cache;
 pub(crate) mod debug_profiler;
 pub mod enchantment;
 mod key_store;
+pub(crate) mod player_commands;
 pub mod recipe;
 mod region_scheduler;
 pub mod scheduler;
@@ -82,6 +83,7 @@ enum WorldStep {
 
 pub(crate) use block_edits::BlockEdits;
 pub use block_edits::{BlockEditReceipt, BlockEditStatus};
+use player_commands::PlayerCommands;
 pub use recipe::RecipeManager;
 pub(crate) use region_scheduler::TickDeadline;
 pub(crate) use transfer_checkpoint::StorageTransferError;
@@ -1464,29 +1466,48 @@ impl Server {
 
     /// A coordinated tick used by the server-wide step, sprint and legacy tick hooks.
     pub fn tick(self: &Arc<Self>) {
+        let commands = PlayerCommands::default();
+        self.tick_with_player_commands(&commands);
+        commands.run_all(self);
+    }
+
+    fn tick_with_player_commands(self: &Arc<Self>, commands: &PlayerCommands) {
         self.for_each_ready_transfer(|transfer, reservation| transfer.apply(self, reservation));
         self.simulation_pool.install(|| {
             if self.tick_rate_manager.runs_normally() || self.tick_rate_manager.is_sprinting() {
-                self.tick_worlds();
+                self.tick_worlds_with_player_commands(commands);
             } else {
                 self.sync_game_time();
-                self.tick_players_and_network();
+                self.tick_network_with_player_commands(commands);
             }
         });
+        commands.run_pending(self);
         self.storage_checkpoint.capture_at_tick_boundary(self, true);
     }
 
     /// Runs networking without advancing the worlds' simulation clocks.
     pub fn tick_players_and_network(self: &Arc<Self>) {
+        let commands = PlayerCommands::default();
+        self.tick_network_with_player_commands(&commands);
+        commands.run_all(self);
+    }
+
+    fn tick_network_with_player_commands(self: &Arc<Self>, commands: &PlayerCommands) {
         for world in self.worlds.load().iter() {
             if let Some(ownership) = world.try_simulation() {
-                self.tick_owned_world(world, ownership, WorldStep::NetworkOnly, false);
+                self.tick_owned_world(world, ownership, WorldStep::NetworkOnly, false, commands);
             }
         }
     }
 
     /// Runs the coordinated game tick used by legacy global hooks and operations.
     pub fn tick_worlds(self: &Arc<Self>) {
+        let commands = PlayerCommands::default();
+        self.tick_worlds_with_player_commands(&commands);
+        commands.run_all(self);
+    }
+
+    fn tick_worlds_with_player_commands(self: &Arc<Self>, commands: &PlayerCommands) {
         let source = crate::command::CommandSender::Console
             .into_source(self)
             .with_silent();
@@ -1501,7 +1522,7 @@ impl Server {
         let worlds = self.worlds.load();
         worlds.par_iter().for_each(|world| {
             if let Some(ownership) = world.try_simulation() {
-                self.tick_owned_world(world, ownership, WorldStep::Coordinated, false);
+                self.tick_owned_world(world, ownership, WorldStep::Coordinated, false, commands);
             }
         });
         self.player_data_storage.tick(self);
@@ -1513,6 +1534,7 @@ impl Server {
         _ownership: tokio::sync::OwnedMutexGuard<()>,
         mode: WorldStep,
         sync_time: bool,
+        commands: &PlayerCommands,
     ) {
         if self.stop_token.is_cancelled() || !world.is_open() {
             return;
@@ -1524,9 +1546,9 @@ impl Server {
         world.apply_block_edits();
         world.flush_regional_entity_updates();
         match mode {
-            WorldStep::Coordinated => world.tick(self),
+            WorldStep::Coordinated => world.tick_simulation(self, None, Some(commands)),
             WorldStep::RegionalDeadlines(deadline) => {
-                world.tick_with_region_deadlines(self, deadline);
+                world.tick_simulation(self, Some(deadline), Some(commands));
             }
             WorldStep::NetworkOnly => {
                 // Players can move while frozen. Resume from a fresh simulation extent.
@@ -1534,7 +1556,7 @@ impl Server {
                 world.flush_block_updates();
                 world.flush_synced_block_events();
                 let players = world.players.load();
-                world.process_player_packets(&players);
+                world.process_player_packets(&players, Some(commands));
                 players
                     .par_iter()
                     .filter(|player| player.can_tick_in(world))

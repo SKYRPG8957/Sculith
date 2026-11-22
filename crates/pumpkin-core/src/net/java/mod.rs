@@ -83,7 +83,13 @@ use crate::net::{
 use crate::plugin::api::events::world::chunk_send::ChunkSend;
 use crate::plugin::player::player_custom_payload::PlayerCustomPayloadEvent;
 use crate::plugin::server::packet::PacketSentEvent;
-use crate::{error::PumpkinError, server::Server};
+use crate::{
+    error::PumpkinError,
+    server::{
+        Server,
+        player_commands::{PlayerCommands, submit_player_command},
+    },
+};
 
 /// Packet id followed by its payload, as the outgoing writer expects it.
 fn frame_packet(packet_id: i32, payload: &[u8]) -> Option<Bytes> {
@@ -838,12 +844,22 @@ impl JavaClient {
         self.close_token.is_cancelled()
     }
 
-    #[expect(clippy::too_many_lines)]
     pub fn handle_play_packet(
         &self,
         player: &Arc<Player>,
         server: &Arc<Server>,
         packet: &RawPacket,
+    ) -> Result<(), Box<dyn PumpkinError>> {
+        self.handle_queued_play_packet(player, server, packet, None)
+    }
+
+    #[expect(clippy::too_many_lines)]
+    pub(crate) fn handle_queued_play_packet(
+        &self,
+        player: &Arc<Player>,
+        server: &Arc<Server>,
+        packet: &RawPacket,
+        commands: Option<&PlayerCommands>,
     ) -> Result<(), Box<dyn PumpkinError>> {
         // The multiversion plugin has converted older clients' packets to 26.3 by now.
         let version = CURRENT_MC_VERSION;
@@ -887,43 +903,24 @@ impl JavaClient {
             }
             id if id == SChatCommand::to_id(version) => {
                 let packet = SChatCommand::read(&mut payload, &version)?;
-                let cmd = packet.command.to_string();
-                let client_platform = player.client.clone();
-                let player_c = player.clone();
-                let server_c = server.clone();
-                server.spawn_task(async move {
-                    if let ClientPlatform::Java(client) = client_platform.as_ref() {
-                        let packet = SChatCommand { command: &cmd };
-                        client
-                            .handle_chat_command(&player_c, &server_c, &packet)
-                            .await;
-                    }
-                });
+                submit_player_command(server, player, packet.command, commands);
             }
             id if id == SChatCommandSigned::to_id(version) => {
                 let mut signed_payload = payload;
-                let cmd =
+                let command =
                     if let Ok(signed) = SChatCommandSigned::read(&mut signed_payload, &version) {
-                        signed.command.to_string()
+                        signed.command
                     } else {
-                        SChatCommand::read(&mut payload, &version)?
-                            .command
-                            .to_string()
+                        SChatCommand::read(&mut payload, &version)?.command
                     };
-                let client_platform = player.client.clone();
-                let player_c = player.clone();
-                let server_c = server.clone();
-                server.spawn_task(async move {
-                    if let ClientPlatform::Java(client) = client_platform.as_ref() {
-                        let packet = SChatCommand { command: &cmd };
-                        client
-                            .handle_chat_command(&player_c, &server_c, &packet)
-                            .await;
-                    }
-                });
+                submit_player_command(server, player, command, commands);
             }
             id if id == SChatMessage::to_id(version) => {
                 let packet = SChatMessage::read(&mut payload, &version)?;
+                if let Some((commands, text)) = commands.zip(packet.message.strip_prefix('/')) {
+                    commands.submit(server, player, text);
+                    return Ok(());
+                }
                 let msg = packet.message.to_string();
                 let signature = packet.signature.map(<[u8]>::to_vec);
                 let ack = packet.acknowledged.to_vec();

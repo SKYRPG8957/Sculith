@@ -106,6 +106,7 @@ impl Ticker {
 
         loop {
             run_console_commands(server, &worlds, commands.as_mut());
+            worlds.run_player_commands(server);
             if server.stop_token.is_cancelled() {
                 break;
             }
@@ -157,13 +158,13 @@ impl Ticker {
 
             if sprinting {
                 manager.start_sprint_tick_work();
-                server.tick();
+                worlds.tick_coordinated(server);
 
                 if manager.end_sprint_tick_work() {
                     manager.finish_tick_sprint(server);
                 }
             } else if coordinated {
-                server.tick();
+                worlds.tick_coordinated(server);
             } else {
                 worlds.maintain(server);
                 worlds.dispatch_transfers(server);

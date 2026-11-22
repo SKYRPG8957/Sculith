@@ -14,7 +14,7 @@ use rustc_hash::FxHashMap;
 use uuid::Uuid;
 
 use super::{
-    Server, WorldStep,
+    PlayerCommands, Server, WorldStep,
     region_scheduler::{RegionSchedule, TickDeadline, next_deadline},
 };
 
@@ -51,6 +51,7 @@ struct RunningJobs {
     ticker: Thread,
     pending: AtomicUsize,
     longest_nanos: AtomicI64,
+    player_commands: PlayerCommands,
 }
 
 struct Job(Arc<RunningJobs>);
@@ -77,6 +78,7 @@ impl WorldScheduler {
                 ticker: thread::current(),
                 pending: AtomicUsize::new(0),
                 longest_nanos: AtomicI64::new(0),
+                player_commands: PlayerCommands::default(),
             }),
         }
     }
@@ -94,6 +96,17 @@ impl WorldScheduler {
 
     pub(super) fn reset_clocks(&mut self) {
         self.clocks.clear();
+    }
+
+    pub(super) fn run_player_commands(&self, server: &Arc<Server>) {
+        if !server.stop_token.is_cancelled() && self.jobs.player_commands.has_pending() {
+            self.wait_idle();
+            self.jobs.player_commands.run_pending(server);
+        }
+    }
+
+    pub(super) fn tick_coordinated(&self, server: &Arc<Server>) {
+        server.tick_with_player_commands(&self.jobs.player_commands);
     }
 
     pub(super) fn take_longest_tick(&self) -> i64 {
@@ -174,8 +187,15 @@ impl WorldScheduler {
                 };
                 let sync_time = clock.advance(now, period);
                 let world = world.clone();
+                let jobs = self.jobs.clone();
                 self.jobs.spawn(server, move |server| {
-                    server.tick_owned_world(&world, ownership, mode, sync_time);
+                    server.tick_owned_world(
+                        &world,
+                        ownership,
+                        mode,
+                        sync_time,
+                        &jobs.player_commands,
+                    );
                 });
             }
             next = Some(next.map_or(clock.next_tick, |earliest: Instant| {

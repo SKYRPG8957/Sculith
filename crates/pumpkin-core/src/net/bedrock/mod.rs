@@ -87,7 +87,10 @@ use crate::{
             BedrockConnectionPacketReceivedEvent, BedrockConnectionPacketSentEvent, PacketSentEvent,
         },
     },
-    server::Server,
+    server::{
+        Server,
+        player_commands::{PlayerCommands, submit_player_command},
+    },
 };
 use arc_swap::{ArcSwap, ArcSwapOption};
 use pumpkin_protocol::{bedrock::server::login::ClientData, codec::var_uint::VarUInt};
@@ -1380,7 +1383,7 @@ impl BedrockClient {
         packet: &RawPacket,
     ) -> Result<(), Error> {
         let mut spin_attack_prediction = None;
-        self.handle_queued_play_packet(player, server, packet, &mut spin_attack_prediction)?;
+        self.handle_queued_play_packet(player, server, packet, &mut spin_attack_prediction, None)?;
         self.reconcile_spin_attack_prediction(player, spin_attack_prediction);
         Ok(())
     }
@@ -1392,6 +1395,7 @@ impl BedrockClient {
         server: &Arc<Server>,
         packet: &RawPacket,
         spin_attack_prediction: &mut Option<bool>,
+        commands: Option<&PlayerCommands>,
     ) -> Result<(), Error> {
         let payload = &packet.payload[..];
         let reader = &mut &payload[..];
@@ -1460,12 +1464,8 @@ impl BedrockClient {
             }
             SCommandRequest::PACKET_ID => {
                 let req = SCommandRequest::read(reader)?;
-                let client = self.clone();
-                let player_c = player.clone();
-                let server_c = server.clone();
-                player.spawn_task(async move {
-                    client.handle_chat_command(&player_c, &server_c, req).await;
-                });
+                let command = req.command.strip_prefix('/').unwrap_or(&req.command);
+                submit_player_command(server, player, command, commands);
             }
             SSetLocalPlayerAsInitialized::PACKET_ID => {
                 self.handle_set_local_player_as_initialized(
