@@ -1,4 +1,5 @@
 use pumpkin_protocol::{bedrock::client::set_time::CSetTime, java::client::play::CUpdateTime};
+use pumpkin_world::world_info::clock::WorldClockSnapshot;
 
 use super::World;
 
@@ -81,6 +82,30 @@ pub struct LevelTime {
     pub partial_tick: f32,
     pub rate: f32,
     pub paused: bool,
+}
+
+impl From<WorldClockSnapshot> for LevelTime {
+    fn from(saved: WorldClockSnapshot) -> Self {
+        Self {
+            time_of_day: saved.time_of_day,
+            world_age: saved.world_age,
+            partial_tick: saved.partial_tick,
+            rate: saved.rate,
+            paused: saved.paused,
+        }
+    }
+}
+
+impl From<&LevelTime> for WorldClockSnapshot {
+    fn from(time: &LevelTime) -> Self {
+        Self {
+            time_of_day: time.time_of_day,
+            world_age: time.world_age,
+            partial_tick: time.partial_tick,
+            rate: time.rate,
+            paused: time.paused,
+        }
+    }
 }
 
 impl Default for LevelTime {

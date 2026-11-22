@@ -972,7 +972,7 @@ impl GenerationSchedule {
                 }
             }
         }
-        self.queue_chunk_writes(chunks, Vec::new());
+        self.queue_chunk_writes(chunks, Vec::new(), None);
     }
 
     fn save_all_chunk(&mut self, save_proto_chunk: bool, requests: Vec<SaveRequest>) {
@@ -1017,17 +1017,24 @@ impl GenerationSchedule {
             );
         }
 
+        let clock = requests.iter().rev().find_map(|request| request.clock);
         self.queue_chunk_writes(
             chunks,
             requests
                 .into_iter()
-                .map(|request| request.completion)
+                .filter_map(|request| request.completion)
                 .collect(),
+            clock,
         );
     }
 
-    fn queue_chunk_writes(&self, chunks: Vec<(ChunkPos, Chunk)>, completions: Vec<SaveCompletion>) {
-        if chunks.is_empty() && completions.is_empty() {
+    fn queue_chunk_writes(
+        &self,
+        chunks: Vec<(ChunkPos, Chunk)>,
+        completions: Vec<SaveCompletion>,
+        clock: Option<crate::world_info::clock::WorldClockSnapshot>,
+    ) {
+        if chunks.is_empty() && completions.is_empty() && clock.is_none() {
             return;
         }
 
@@ -1046,6 +1053,7 @@ impl GenerationSchedule {
             .blocking_send(ChunkWriteBatch {
                 chunks,
                 completions,
+                clock,
             })
             .is_err()
         {

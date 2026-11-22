@@ -29,7 +29,7 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_util::permission::PermissionManager;
 use pumpkin_util::text::color::NamedColor;
 use pumpkin_world::generation::generator::GeneratorInit;
-use pumpkin_world::level::Level;
+use pumpkin_world::level::{Level, LevelFolder};
 use pumpkin_world::world::WorldPortalExt;
 use tracing::{debug, error, info, warn};
 
@@ -42,6 +42,8 @@ use pumpkin_world::data::checkpoint::CheckpointFence;
 use pumpkin_world::world_info::anvil::{
     AnvilLevelInfo, LEVEL_DAT_BACKUP_FILE_NAME, LEVEL_DAT_FILE_NAME,
 };
+use pumpkin_world::world_info::clock::WorldClockSnapshot;
+use pumpkin_world::world_info::data_files::read_world_clocks;
 use pumpkin_world::world_info::{
     GeneratorSettings, LevelData, WorldInfoError, WorldInfoReader, WorldInfoWriter,
 };
@@ -280,6 +282,21 @@ impl Server {
         );
 
         let world_path = basic_config.get_world_path();
+        let mut dimensions = vec![Dimension::OVERWORLD];
+        if basic_config.allow_nether {
+            dimensions.push(Dimension::THE_NETHER);
+        }
+        if basic_config.allow_end {
+            dimensions.push(Dimension::THE_END);
+        }
+        // Validate every clock before level startup can convert terrain or write metadata.
+        let clocks = dimensions
+            .iter()
+            .map(|dim| {
+                let folder = LevelFolder::for_dimension(world_path.clone(), dim);
+                WorldClockSnapshot::read(&folder.dim_folder)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let block_registry = super::block::registry::default_registry();
 
@@ -389,7 +406,6 @@ impl Server {
             }
         }
 
-        let seed = level_info.world_gen_settings.seed;
         let level_info = Arc::new(ArcSwap::new(Arc::new(level_info)));
 
         let listing = std::sync::Mutex::new(CachedStatus::new(
@@ -409,16 +425,6 @@ impl Server {
 
         let tick_rate_manager = Arc::new(ServerTickRateManager::new(basic_config.tps));
 
-        let dimensions = {
-            let mut dimensions = vec![Dimension::OVERWORLD];
-            if basic_config.allow_nether {
-                dimensions.push(Dimension::THE_NETHER);
-            }
-            if basic_config.allow_end {
-                dimensions.push(Dimension::THE_END);
-            }
-            dimensions
-        };
         info!(
             "Enabled dimensions: {:?}",
             dimensions
@@ -471,7 +477,7 @@ impl Server {
             worlds: ArcSwap::from_pointee(vec![]),
             dimensions,
             command_dispatcher,
-            block_registry: block_registry.clone(),
+            block_registry,
             item_registry: super::item::items::default_registry(),
             key_store: OnceCell::new(),
             bedrock_oidc_keys: Arc::new(OnceCell::new()),
@@ -556,32 +562,32 @@ impl Server {
             });
         }
 
+        let legacy_clocks = read_world_clocks(&world_path);
         let mut worlds_vec = Vec::new();
-        for dim in &server.dimensions {
+        for (dim, clock) in server.dimensions.iter().zip(clocks) {
             info!(
                 "Loading {}",
                 TextComponent::text(dim.minecraft_name.to_string())
                     .color_named(NamedColor::DarkGreen)
                     .to_pretty_console()
             );
-            let config = Arc::new(server.advanced_config.world.clone());
-            let level = Level::with_checkpoint_fence(
-                &config,
-                world_path.clone(),
-                seed,
-                dim.clone(),
-                server.player_data_storage.checkpoint.clone(),
-            );
-            let world = Arc::new(World::load(
-                level.clone(),
-                server.level_info.clone(),
-                dim.clone(),
-                block_registry.clone(),
-                Arc::downgrade(&server),
-            ));
-            let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(world.clone()));
-            level.world_portal.store(Arc::new(Some(portal)));
-            worlds_vec.push(world);
+            let clock = clock.unwrap_or_else(|| {
+                let time_of_day = legacy_clocks.clocks.get(dim.minecraft_name).map_or_else(
+                    || {
+                        if dim.minecraft_name == Dimension::OVERWORLD.minecraft_name {
+                            server.level_info.load().day_time
+                        } else {
+                            0
+                        }
+                    },
+                    |clock| clock.total_ticks,
+                );
+                WorldClockSnapshot {
+                    time_of_day,
+                    ..WorldClockSnapshot::default()
+                }
+            });
+            worlds_vec.push(server.open_world(world_path.clone(), dim.clone(), clock));
         }
 
         for world in &worlds_vec {
@@ -640,7 +646,22 @@ impl Server {
             })
     }
 
+    /// Opens a plugin world.
+    ///
+    /// # Panics
+    /// Panics if its saved clock cannot be read. Use [`Self::try_create_world`]
+    /// to handle a storage error.
+    #[expect(clippy::expect_used)]
     pub fn create_world(self: &Arc<Self>, name: String, dimension: Dimension) -> Arc<World> {
+        self.try_create_world(name, dimension)
+            .expect("Failed to create world")
+    }
+
+    pub fn try_create_world(
+        self: &Arc<Self>,
+        name: String,
+        dimension: Dimension,
+    ) -> Result<Arc<World>, WorldInfoError> {
         {
             let worlds = self.worlds.load();
             let world = worlds
@@ -648,29 +669,24 @@ impl Server {
                 .find(|w| w.get_world_name() == name && w.dimension == dimension)
                 .cloned();
             if let Some(world) = world {
-                return world;
+                return Ok(world);
             }
         }
 
         let world_path = self.basic_config.get_world_path().join(name);
-        let registry = self.block_registry.clone();
-        let l_info = self.level_info.clone();
-        let weak = Arc::downgrade(self);
-        let config = Arc::new(self.advanced_config.world.clone());
-        let seed = self.level_info.load().world_gen_settings.seed;
-
-        let level = Level::with_checkpoint_fence(
-            &config,
-            world_path,
-            seed,
-            dimension.clone(),
-            self.player_data_storage.checkpoint.clone(),
-        );
-        let world: World = World::load(level.clone(), l_info, dimension, registry, weak);
-        let world = Arc::new(world);
+        let folder = LevelFolder::for_dimension(world_path.clone(), &dimension);
+        let clock = WorldClockSnapshot::read(&folder.dim_folder)?.unwrap_or_else(|| {
+            let legacy = read_world_clocks(&world_path);
+            WorldClockSnapshot {
+                time_of_day: legacy
+                    .clocks
+                    .get(dimension.minecraft_name)
+                    .map_or(0, |clock| clock.total_ticks),
+                ..WorldClockSnapshot::default()
+            }
+        });
+        let world = self.open_world(world_path, dimension, clock);
         let _initializing = world.try_simulation();
-        let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(world.clone()));
-        level.world_portal.store(Arc::new(Some(portal)));
         self.worlds.rcu(|worlds| {
             let mut new_worlds = (**worlds).clone();
             new_worlds.push(world.clone());
@@ -679,6 +695,33 @@ impl Server {
         let mut event =
             crate::plugin::api::events::world::world_init::WorldInitEvent::new(world.clone());
         self.plugin_manager.fire_blocking(self, &mut event);
+        Ok(world)
+    }
+
+    fn open_world(
+        self: &Arc<Self>,
+        world_path: std::path::PathBuf,
+        dimension: Dimension,
+        clock: WorldClockSnapshot,
+    ) -> Arc<World> {
+        let level = Level::with_checkpoint_fence(
+            &self.advanced_config.world,
+            world_path,
+            self.level_info.load().world_gen_settings.seed,
+            dimension.clone(),
+            self.player_data_storage.checkpoint.clone(),
+        );
+        let mut world = World::load(
+            level.clone(),
+            self.level_info.clone(),
+            dimension,
+            self.block_registry.clone(),
+            Arc::downgrade(self),
+        );
+        world.level_time = std::sync::Mutex::new(clock.into());
+        let world = Arc::new(world);
+        let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(world.clone()));
+        level.world_portal.store(Arc::new(Some(portal)));
         world
     }
 
@@ -713,7 +756,10 @@ impl Server {
     }
 
     pub fn save_world_info(&self) -> Result<(), WorldInfoError> {
-        let level_data = self.level_info.load();
+        let mut level_data = (**self.level_info.load()).clone();
+        if let Some(world) = self.worlds.load().first() {
+            level_data.day_time = world.get_time_of_day();
+        }
         self.world_info_writer
             .write_world_info(&level_data, &self.basic_config.get_world_path())
     }
@@ -1122,13 +1168,7 @@ impl Server {
         for world in self.worlds.load().iter() {
             world.shutdown().await;
         }
-        let level_data = self.level_info.load();
-        // then lets save the world info
-
-        if let Err(err) = self
-            .world_info_writer
-            .write_world_info(&level_data, &self.basic_config.get_world_path())
-        {
+        if let Err(err) = self.save_world_info() {
             error!("Failed to save level.dat: {err}");
         }
         info!("Completed worlds");

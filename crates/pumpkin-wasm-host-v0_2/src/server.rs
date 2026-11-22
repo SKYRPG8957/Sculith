@@ -549,7 +549,10 @@ impl pumpkin::plugin::server::HostServerWithStore<PluginHostState> for HasSelf<P
             Dimension::Nether => pumpkin_data::dimension::Dimension::THE_NETHER,
             Dimension::End => pumpkin_data::dimension::Dimension::THE_END,
         };
-        let world = run_blocking(accessor, move || server.create_world(name, internal_dim)).await?;
+        let world = run_blocking(accessor, move || {
+            server.try_create_world(name, internal_dim)
+        })
+        .await??;
 
         accessor
             .add_res(world)

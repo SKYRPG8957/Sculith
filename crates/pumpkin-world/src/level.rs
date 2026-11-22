@@ -150,8 +150,9 @@ pub type EntitySaver = LevelFileIO<ChunkEntityData>;
 pub(crate) type SaveCompletion = oneshot::Sender<Result<(), String>>;
 
 pub(crate) struct SaveRequest {
-    pub completion: SaveCompletion,
+    pub completion: Option<SaveCompletion>,
     pub checkpoint_chunks: FxHashSet<Vector2<i32>>,
+    pub clock: Option<crate::world_info::clock::WorldClockSnapshot>,
 }
 
 /// The `Level` module provides functionality for working with chunks within or outside a Minecraft world.
@@ -258,6 +259,33 @@ impl LevelFolder {
             dim_folder,
         }
     }
+
+    #[must_use]
+    pub fn for_dimension(root_folder: PathBuf, dimension: &Dimension) -> Self {
+        let (namespace, name) = dimension
+            .minecraft_name
+            .split_once(':')
+            .unwrap_or(("minecraft", dimension.minecraft_name));
+        let canonical = root_folder.join("dimensions").join(namespace).join(name);
+        let dim_folder = if canonical.exists() {
+            canonical
+        } else if dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name
+            && root_folder.join("region").exists()
+        {
+            root_folder.clone()
+        } else if dimension.minecraft_name == Dimension::THE_NETHER.minecraft_name
+            && root_folder.join("DIM-1").join("region").exists()
+        {
+            root_folder.join("DIM-1")
+        } else if dimension.minecraft_name == Dimension::THE_END.minecraft_name
+            && root_folder.join("DIM1").join("region").exists()
+        {
+            root_folder.join("DIM1")
+        } else {
+            canonical
+        };
+        Self::new(root_folder, dim_folder)
+    }
 }
 
 impl Level {
@@ -280,34 +308,8 @@ impl Level {
         dimension: Dimension,
         checkpoint_fence: Arc<CheckpointFence>,
     ) -> Arc<Self> {
-        let (namespace, name) = match dimension.minecraft_name.split_once(':') {
-            Some((ns, n)) => (ns, n),
-            None => ("minecraft", dimension.minecraft_name),
-        };
-
         // 26.2 canonical layout: root_folder/dimensions/<namespace>/<name>
-        let canonical_dim_folder = root_folder.join("dimensions").join(namespace).join(name);
-
-        // Check if canonical 26.2 folder exists, or fall back to pre-26.2 legacy folders
-        let dim_folder = if canonical_dim_folder.exists() {
-            canonical_dim_folder
-        } else if dimension.minecraft_name == Dimension::OVERWORLD.minecraft_name
-            && root_folder.join("region").exists()
-        {
-            root_folder.clone()
-        } else if dimension.minecraft_name == Dimension::THE_NETHER.minecraft_name
-            && root_folder.join("DIM-1").join("region").exists()
-        {
-            root_folder.join("DIM-1")
-        } else if dimension.minecraft_name == Dimension::THE_END.minecraft_name
-            && root_folder.join("DIM1").join("region").exists()
-        {
-            root_folder.join("DIM1")
-        } else {
-            canonical_dim_folder
-        };
-
-        let level_folder = Arc::new(LevelFolder::new(root_folder, dim_folder));
+        let level_folder = Arc::new(LevelFolder::for_dimension(root_folder, &dimension));
         let _ = std::fs::create_dir_all(&level_folder.region_folder);
         let _ = std::fs::create_dir_all(&level_folder.entities_folder);
         let _ = std::fs::create_dir_all(&level_folder.poi_folder);
@@ -509,6 +511,13 @@ impl Level {
     }
 
     pub async fn shutdown(&self) {
+        self.shutdown_with_clock(None).await;
+    }
+
+    pub async fn shutdown_with_clock(
+        &self,
+        clock: Option<crate::world_info::clock::WorldClockSnapshot>,
+    ) {
         let world_id = self.level_folder.root_folder.display();
         info!("Saving level ({})...", world_id);
         self.cancel_token.cancel();
@@ -581,6 +590,14 @@ impl Level {
         if let Err(err) = self.entity_saver.flush_all().await {
             error!("Failed to flush entity data for {world_id}: {err}");
         }
+
+        // The scheduler and its writer have stopped, so an older pending save
+        // cannot overwrite the last clock captured on the world owner.
+        if let Some(clock) = clock
+            && let Err(err) = self.persist_clock(clock).await
+        {
+            error!("{err}");
+        }
     }
 
     pub(crate) async fn checkpoint_access(&self) -> Option<tokio::sync::OwnedRwLockReadGuard<()>> {
@@ -598,22 +615,62 @@ impl Level {
         &self,
         checkpoint_chunks: FxHashSet<Vector2<i32>>,
     ) -> Result<(), String> {
+        self.queue_region_save(checkpoint_chunks, None).await
+    }
+
+    /// Queues a terrain save and its clock in the same writer order. Enqueue
+    /// while the caller holds the clock, then await the receipt without it.
+    pub fn queue_region_save(
+        &self,
+        checkpoint_chunks: FxHashSet<Vector2<i32>>,
+        clock: Option<crate::world_info::clock::WorldClockSnapshot>,
+    ) -> impl Future<Output = Result<(), String>> + use<'_> {
         let (send, receive) = oneshot::channel();
-        self.manual_saves
+        let queued = self
+            .manual_saves
             .send(SaveRequest {
-                completion: send,
+                completion: Some(send),
                 checkpoint_chunks,
+                clock,
             })
-            .map_err(|_| "Region scheduler stopped".to_string())?;
+            .map_err(|_| "Region scheduler stopped".to_string());
         self.should_save.store(true, Ordering::Release);
         self.level_channel.notify();
 
-        select! {
-            biased;
-            received = receive => received.map_err(|_| "Region writer stopped".to_string())?,
-            () = self.checkpoint_fence.pending() => Err("A world checkpoint is awaiting recovery".to_string()),
-            () = self.cancel_token.cancelled() => Err("Level is shutting down".to_string()),
+        async move {
+            queued?;
+            select! {
+                biased;
+                received = receive => received.map_err(|_| "Region writer stopped".to_string())?,
+                () = self.checkpoint_fence.pending() => Err("A world checkpoint is awaiting recovery".to_string()),
+                () = self.cancel_token.cancelled() => Err("Level is shutting down".to_string()),
+            }
         }
+    }
+
+    pub fn queue_autosave(&self, clock: crate::world_info::clock::WorldClockSnapshot) {
+        // Coalesce while the scheduler is busy, just as the periodic terrain save does.
+        if !self.should_save.swap(true, Ordering::AcqRel) {
+            let _ = self.manual_saves.send(SaveRequest {
+                completion: None,
+                checkpoint_chunks: FxHashSet::default(),
+                clock: Some(clock),
+            });
+            // The scheduler may have taken the flag before the request arrived.
+            self.should_save.store(true, Ordering::Release);
+            self.level_channel.notify();
+        }
+    }
+
+    pub(crate) async fn persist_clock(
+        &self,
+        clock: crate::world_info::clock::WorldClockSnapshot,
+    ) -> Result<(), String> {
+        let folder = self.level_folder.clone();
+        crate::chunk::io::run_blocking(move || clock.write(&folder.dim_folder))
+            .await
+            .map_err(|err| format!("World clock writer stopped: {err}"))?
+            .map_err(|err| format!("Failed to save world clock: {err}"))
     }
 
     pub(crate) async fn flush_regions(&self) -> Result<(), String> {

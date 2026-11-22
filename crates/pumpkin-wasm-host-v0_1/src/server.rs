@@ -594,8 +594,10 @@ impl pumpkin::plugin::server::HostServerWithStore<PluginHostState> for HasSelf<P
         };
         let world = plugin
             .store
-            .pump_blocking(&mut host, move || server.create_world(name, internal_dim))
-            .await?;
+            .pump_blocking(&mut host, move || {
+                server.try_create_world(name, internal_dim)
+            })
+            .await??;
 
         host.get()
             .add(world)

@@ -9,6 +9,7 @@ use thiserror::Error;
 use tracing::warn;
 
 pub mod anvil;
+pub mod clock;
 pub mod data_files;
 
 // Constraint: disk biome palette serialization changed in 1.21.5

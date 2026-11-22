@@ -115,6 +115,13 @@ command tree and uses the same permission checks and parser as other commands.
 Plugin-extended routes, command or permission hooks, packet send hooks and
 commands queued behind coordinated work use the coordinated boundary.
 
+Each dimension saves its elapsed ticks, time of day, fractional tick, clock
+rate and pause state in `.sculith-world-clock.json` beside its terrain. The
+level writer publishes the snapshot during autosaves and explicit saves.
+Shutdown writes the world's final clock after its pending writes have drained.
+Existing worlds without a snapshot start from the matching Anvil clock when
+present. Invalid or unsupported snapshots prevent opening the world.
+
 The active-chunk tracker groups connected chunks into regions for scheduled
 block and fluid work. Overlapping regions reuse owner IDs, with the largest
 overlaps taking priority.

@@ -190,6 +190,7 @@ const REGION_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) struct ChunkWriteBatch {
     pub chunks: Vec<(ChunkPos, Chunk)>,
     pub completions: Vec<SaveCompletion>,
+    pub clock: Option<crate::world_info::clock::WorldClockSnapshot>,
 }
 
 pub(crate) async fn io_write_work(
@@ -201,7 +202,7 @@ pub(crate) async fn io_write_work(
     loop {
         // Don't check cancel_token here (keep saving chunks)
         let received = tokio::time::timeout(REGION_FLUSH_INTERVAL, recv.recv()).await;
-        let Some(_access) = level.checkpoint_access().await else {
+        let Some(access) = level.checkpoint_access().await else {
             break;
         };
         if last_flush.elapsed() >= REGION_FLUSH_INTERVAL {
@@ -211,6 +212,7 @@ pub(crate) async fn io_write_work(
         let ChunkWriteBatch {
             chunks: data,
             completions,
+            clock,
         } = match received {
             Ok(Some(data)) => data,
             Ok(None) => break,
@@ -277,11 +279,21 @@ pub(crate) async fn io_write_work(
         }
         lock.1.notify_waiters();
 
-        if !completions.is_empty() {
-            let result = save_result.and(level.flush_regions().await);
-            for completion in completions {
-                let _ = completion.send(result.clone());
+        let mut result = if completions.is_empty() {
+            save_result
+        } else {
+            save_result.and(level.flush_regions().await)
+        };
+        drop(access);
+        if let Some(clock) = clock {
+            let clock_result = level.persist_clock(clock).await;
+            if let Err(err) = &clock_result {
+                error!("{err}");
             }
+            result = result.and(clock_result);
+        }
+        for completion in completions {
+            let _ = completion.send(result.clone());
         }
 
         if upgrade_failed {

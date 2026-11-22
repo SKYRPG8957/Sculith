@@ -170,6 +170,7 @@ use pumpkin_util::{
     random::{RandomImpl, get_seed, xoroshiro128::Xoroshiro},
 };
 use pumpkin_world::world::{GetBlockError, WorldPortalExt};
+use pumpkin_world::world_info::clock::WorldClockSnapshot;
 use pumpkin_world::{
     CURRENT_BEDROCK_MC_VERSION, biome,
     chunk::{io::Dirtiable, palette::bedrock_water_state},
@@ -740,7 +741,13 @@ impl World {
             error!("Failed to save portal POI: {e}");
         }
 
-        self.level.shutdown().await;
+        let clock = WorldClockSnapshot::from(
+            &*self
+                .level_time
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        self.level.shutdown_with_clock(Some(clock)).await;
     }
 
     /// Writes `entities` into the saved data of the chunks they are in. A live chunk is
@@ -2169,8 +2176,8 @@ impl World {
             if self.level.autosave_ticks > 0 && self.level.save_enabled.load(Relaxed) {
                 let autosave = self.level.autosave_ticks as i64;
                 if autosave > 0 && level_time.world_age % autosave == 0 {
-                    self.level.should_save.store(true, Relaxed);
-                    self.level.level_channel.notify();
+                    self.level
+                        .queue_autosave(WorldClockSnapshot::from(&*level_time));
                 }
             }
             (level_time.is_night(), level_time.time_of_day)
@@ -7798,7 +7805,15 @@ impl World {
             }
         };
 
-        let regions_result = self.level.save_regions(checkpoint_chunks).await;
+        let save = {
+            let time = self
+                .level_time
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.level
+                .queue_region_save(checkpoint_chunks, Some(WorldClockSnapshot::from(&*time)))
+        };
+        let regions_result = save.await;
         drop(snapshot);
         portal_result.and(custom_data_result).and(regions_result)?;
 
