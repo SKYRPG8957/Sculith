@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use crate::entity::player::Player;
 
+/// A play packet received from a client. Nonblocking Bedrock observers run from
+/// a bounded connection queue after blocking filters have produced this snapshot.
 #[cancellable]
 #[derive(Event, Clone)]
 pub struct PacketReceivedEvent {

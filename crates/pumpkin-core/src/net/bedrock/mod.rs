@@ -70,6 +70,7 @@ mod close_signal;
 pub mod distant_terrain;
 pub mod level_chunk;
 pub mod login;
+mod packet_observers;
 pub mod versions;
 use self::close_signal::CloseSignal;
 use self::level_chunk::CLevelChunk;
@@ -211,6 +212,7 @@ struct CursorDrag {
 struct ClientActivity {
     last_seen: AtomicCell<Instant>,
     horse_jump: std::sync::Mutex<horse_jump::HorseJumpInput>,
+    packet_observers: std::sync::OnceLock<packet_observers::PacketObservers>,
 }
 
 pub struct BedrockClient {
@@ -343,6 +345,7 @@ impl BedrockClient {
             activity: Arc::new(ClientActivity {
                 last_seen: AtomicCell::new(Instant::now()),
                 horse_jump: std::sync::Mutex::default(),
+                packet_observers: std::sync::OnceLock::new(),
             }),
             incoming_game_packet_send: incoming_send,
             incoming_game_packet_recv: Mutex::new(Some(incoming_recv)),

@@ -8,6 +8,13 @@ cancel delivery. Outgoing edits now apply to current clients as well as clients
 admitted by a protocol translator. An unchanged result retains the original
 encoded buffer. Injected packets are not echoed back to current-client observers.
 
+Nonblocking Bedrock receive handlers observe packet snapshots after blocking
+filters have finished. Each connection delivers these snapshots in order in a
+bounded queue. The input path keeps processing while observers wait. A full
+queue, a closed or moved session, or a change of registered handlers can discard
+waiting notifications. Blocking handlers apply cancellation and replacement
+before the world processes the packet.
+
 Native handlers and the experimental Wasm v0.2 host also support extra outgoing
 packets. These are queued after the original, or on their own when it is cancelled.
 Stable Wasm v0.1 retains its existing record and supports ID, payload and

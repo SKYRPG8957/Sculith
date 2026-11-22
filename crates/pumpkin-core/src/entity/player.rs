@@ -3257,7 +3257,7 @@ impl Player {
         let mut count = 0;
         let mut spin_attack_prediction = None;
 
-        while let Some(mut packet) = self.inbound_packets.pop() {
+        while let Some(packet) = self.inbound_packets.pop() {
             if self.client.closed() {
                 break;
             }
@@ -3289,29 +3289,8 @@ impl Player {
                     }
                 }
                 ClientPlatform::Bedrock(client) => {
-                    let cancelled = if server_arc
-                        .plugin_manager
-                        .has_handlers::<crate::plugin::server::packet::PacketReceivedEvent>(
-                    ) {
-                        let mut event = crate::plugin::server::packet::PacketReceivedEvent::new(
-                            player_arc.clone(),
-                            packet.id,
-                            packet.payload.clone(),
-                        );
-                        server_arc
-                            .plugin_manager
-                            .fire_blocking(&server_arc, &mut event);
-                        if !event.cancelled {
-                            packet = RawPacket {
-                                id: event.packet_id,
-                                payload: event.payload,
-                            };
-                        }
-                        event.cancelled
-                    } else {
-                        false
-                    };
-                    if !cancelled
+                    if let Some(packet) =
+                        client.filter_play_packet(&server_arc, &player_arc, packet)
                         && let Err(err) = client.handle_queued_play_packet(
                             &player_arc,
                             &server_arc,

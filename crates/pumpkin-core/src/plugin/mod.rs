@@ -1275,22 +1275,45 @@ impl PluginManager {
             return;
         }
 
-        // Process blocking handlers first
-        for handler in handlers {
-            if handler.is_blocking() {
-                handler.handle_blocking_dyn(server, event).await;
-            }
+        Self::dispatch_blocking_handlers(server, handlers, event).await;
+        Self::dispatch_observers(server, handlers, event).await;
+    }
+
+    async fn dispatch_blocking_handlers(
+        server: &Arc<Server>,
+        handlers: &[Arc<dyn DynEventHandler>],
+        event: &mut (dyn Payload + Send + Sync),
+    ) {
+        for handler in handlers.iter().filter(|handler| handler.is_blocking()) {
+            handler.handle_blocking_dyn(server, event).await;
         }
+    }
 
-        // Run non-blocking handlers concurrently
-        let non_blocking: Vec<_> = handlers
-            .iter()
-            .filter(|h| !h.is_blocking())
-            .map(|h| h.handle_dyn(server, event))
-            .collect();
+    pub(crate) async fn dispatch_observers(
+        server: &Arc<Server>,
+        handlers: &[Arc<dyn DynEventHandler>],
+        event: &(dyn Payload + Send + Sync),
+    ) {
+        join_all(
+            handlers
+                .iter()
+                .filter(|handler| !handler.is_blocking())
+                .map(|handler| handler.handle_dyn(server, event)),
+        )
+        .await;
+    }
 
-        if !non_blocking.is_empty() {
-            futures::future::join_all(non_blocking).await;
+    /// Applies listeners that can replace or cancel a Bedrock input packet.
+    pub(crate) fn apply_packet_filters(
+        server: &Arc<Server>,
+        handlers: &[Arc<dyn DynEventHandler>],
+        event: &mut server::packet::PacketReceivedEvent,
+    ) {
+        if handlers.iter().any(|handler| handler.is_blocking()) {
+            Self::wait_for_handlers(
+                server,
+                Self::dispatch_blocking_handlers(server, handlers, event),
+            );
         }
     }
 
@@ -1323,16 +1346,14 @@ impl PluginManager {
             return;
         }
 
+        Self::wait_for_handlers(server, self.fire_dyn(server, event_name, event));
+    }
+
+    fn wait_for_handlers(server: &Server, callbacks: impl Future<Output = ()>) {
         if tokio::runtime::Handle::try_current().is_ok() {
-            tokio::task::block_in_place(|| {
-                server
-                    .runtime
-                    .block_on(self.fire_dyn(server, event_name, event));
-            });
+            tokio::task::block_in_place(|| server.runtime.block_on(callbacks));
         } else {
-            server
-                .runtime
-                .block_on(self.fire_dyn(server, event_name, event));
+            server.runtime.block_on(callbacks);
         }
     }
 
