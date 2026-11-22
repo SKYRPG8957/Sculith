@@ -44,6 +44,15 @@ impl BedrockClient {
     }
 
     pub fn handle_network_stack_latency(&self, player: &Player, packet: NetworkStackLatency) {
+        self.apply_network_stack_latency(player, packet, true);
+    }
+
+    pub(in crate::net::bedrock) fn apply_network_stack_latency(
+        &self,
+        player: &Player,
+        packet: NetworkStackLatency,
+        observe: bool,
+    ) {
         let send_time = {
             let mut pending = self
                 .pending_latencies
@@ -66,7 +75,12 @@ impl BedrockClient {
             return;
         }
         if !packet.from_server {
-            self.try_enqueue_client_packet(&packet);
+            match self.serialize_packet(&packet) {
+                Ok(data) => {
+                    self.try_enqueue_packet_data_inner(data, observe);
+                }
+                Err(err) => tracing::error!("Failed to serialize Bedrock packet: {err}"),
+            }
         }
     }
 }

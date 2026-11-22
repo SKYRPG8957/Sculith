@@ -3243,7 +3243,15 @@ impl Player {
             }
         }
 
-        if self.inbound_packets.is_empty() {
+        let mut bedrock_head = if let Some(client) = self.client.bedrock() {
+            let Some(head) = client.try_inbound_head() else {
+                return;
+            };
+            Some(head)
+        } else {
+            None
+        };
+        if bedrock_head.as_deref().is_none_or(Option::is_none) && self.inbound_packets.is_empty() {
             return;
         }
 
@@ -3257,7 +3265,11 @@ impl Player {
         let mut count = 0;
         let mut spin_attack_prediction = None;
 
-        while let Some(packet) = self.inbound_packets.pop() {
+        while let Some(packet) = bedrock_head
+            .as_deref_mut()
+            .and_then(Option::take)
+            .or_else(|| self.inbound_packets.pop())
+        {
             if self.client.closed() {
                 break;
             }

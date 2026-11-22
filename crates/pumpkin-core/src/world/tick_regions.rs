@@ -4,6 +4,8 @@ use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::level::{ScheduledTickGroup, ScheduledTickStep};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use super::regional_input::RegionalInput;
+
 pub type RegionId = usize;
 pub type RegionChunks = Arc<[Vector2<i32>]>;
 
@@ -17,16 +19,35 @@ pub struct RegionLayout {
 #[derive(Default)]
 struct ActiveRegions {
     owners: FxHashMap<Vector2<i32>, RegionId>,
-    regions: FxHashMap<RegionId, RegionChunks>,
+    regions: FxHashMap<RegionId, Arc<ActiveRegion>>,
+}
+
+struct ActiveRegion {
+    chunks: RegionChunks,
+    input: RegionalInput,
+}
+
+impl ActiveRegion {
+    fn new(chunks: RegionChunks) -> Self {
+        Self {
+            chunks,
+            input: RegionalInput::default(),
+        }
+    }
 }
 
 impl RegionLayout {
     pub(crate) const INACTIVE: RegionId = RegionId::MAX;
 
+    #[cfg(test)]
     pub(crate) fn from_active(
         owners: FxHashMap<Vector2<i32>, RegionId>,
         regions: FxHashMap<RegionId, RegionChunks>,
     ) -> Self {
+        let regions = regions
+            .into_iter()
+            .map(|(id, chunks)| (id, Arc::new(ActiveRegion::new(chunks))))
+            .collect();
         Self {
             active: Arc::new(ActiveRegions { owners, regions }),
             inactive: RegionChunks::default(),
@@ -54,14 +75,18 @@ impl RegionLayout {
         if owner == Self::INACTIVE {
             return (!self.inactive.is_empty()).then_some(&self.inactive);
         }
-        self.active.regions.get(&owner)
+        self.active.regions.get(&owner).map(|region| &region.chunks)
+    }
+
+    pub(super) fn input(&self, owner: RegionId) -> Option<&RegionalInput> {
+        self.active.regions.get(&owner).map(|region| &region.input)
     }
 
     pub(crate) fn regions(&self) -> impl Iterator<Item = (RegionId, &RegionChunks)> {
         self.active
             .regions
             .iter()
-            .map(|(&id, chunks)| (id, chunks))
+            .map(|(&id, region)| (id, &region.chunks))
             .chain(
                 self.chunks(Self::INACTIVE)
                     .map(|chunks| (Self::INACTIVE, chunks)),
@@ -199,7 +224,7 @@ impl TickRegions {
         }
 
         self.next_ticks.clear();
-        let mut region_chunks = FxHashMap::default();
+        let mut regions = FxHashMap::default();
         let component_owners: Vec<_> = components
             .into_iter()
             .map(|component| {
@@ -211,24 +236,28 @@ impl TickRegions {
                 self.next_ticks.insert(owner, component.next_tick);
                 let count = component.chunks.len();
                 // In-flight jobs use extent identity to retain their write authority.
-                let chunks = self
+                let region = self
                     .layout
-                    .chunks(owner)
-                    .filter(|chunks| {
-                        chunks.len() == count && component.overlaps.get(&owner) == Some(&count)
+                    .active
+                    .regions
+                    .get(&owner)
+                    .filter(|region| {
+                        region.chunks.len() == count
+                            && component.overlaps.get(&owner) == Some(&count)
                     })
                     .cloned()
-                    .unwrap_or_else(|| component.chunks.into());
-                region_chunks.insert(owner, chunks);
+                    .unwrap_or_else(|| Arc::new(ActiveRegion::new(component.chunks.into())));
+                regions.insert(owner, region);
                 owner
             })
             .collect();
         for owner in owners.values_mut() {
             *owner = component_owners[*owner];
         }
-        let mut layout = RegionLayout::from_active(owners, region_chunks);
-        layout.inactive = self.layout.inactive.clone();
-        self.layout = Arc::new(layout);
+        self.layout = Arc::new(RegionLayout {
+            active: Arc::new(ActiveRegions { owners, regions }),
+            inactive: self.layout.inactive.clone(),
+        });
         let regions = self.next_ticks.len();
         if previous != regions {
             tracing::trace!(
@@ -312,6 +341,10 @@ mod tests {
             assert!(Arc::ptr_eq(extent, merged.chunks(owner).unwrap()));
             assert!(Arc::ptr_eq(extent, split.chunks(owner).unwrap()));
         }
+        assert!(std::ptr::eq(
+            separate.input(distant_owner).unwrap(),
+            split.input(distant_owner).unwrap(),
+        ));
         let original = separate.chunks(west_owner).unwrap();
         let combined = merged.chunks(west_owner).unwrap();
         let restored = split.chunks(west_owner).unwrap();

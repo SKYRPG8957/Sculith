@@ -44,6 +44,7 @@ pub mod raid;
 pub mod random_sequences;
 mod regional_campfires;
 use regional_campfires::RegionalEntityUpdates;
+mod regional_input;
 mod regional_items;
 use regional_items::RegionalItemTimers;
 pub mod stopwatches;
@@ -2414,6 +2415,11 @@ impl World {
         let region_server = (inhabited && same_extent)
             .then(|| self.server.upgrade())
             .flatten();
+        if let Some(server) = &region_server
+            && let Some(input) = current.input(owner)
+        {
+            input.drain(self, server, &owns);
+        }
         let regional_campfires = region_server
             .as_ref()
             .filter(|server| CampfireBlockEntity::timers_unobserved(server));

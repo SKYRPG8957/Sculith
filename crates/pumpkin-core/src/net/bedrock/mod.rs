@@ -71,6 +71,7 @@ pub mod distant_terrain;
 pub mod level_chunk;
 pub mod login;
 mod packet_observers;
+mod play_ingress;
 pub mod versions;
 use self::close_signal::CloseSignal;
 use self::level_chunk::CLevelChunk;
@@ -213,6 +214,7 @@ struct ClientActivity {
     last_seen: AtomicCell<Instant>,
     horse_jump: std::sync::Mutex<horse_jump::HorseJumpInput>,
     packet_observers: std::sync::OnceLock<packet_observers::PacketObservers>,
+    inbound_head: std::sync::Mutex<Option<RawPacket>>,
 }
 
 pub struct BedrockClient {
@@ -346,6 +348,7 @@ impl BedrockClient {
                 last_seen: AtomicCell::new(Instant::now()),
                 horse_jump: std::sync::Mutex::default(),
                 packet_observers: std::sync::OnceLock::new(),
+                inbound_head: std::sync::Mutex::default(),
             }),
             incoming_game_packet_send: incoming_send,
             incoming_game_packet_recv: Mutex::new(Some(incoming_recv)),
@@ -1377,7 +1380,7 @@ impl BedrockClient {
 
     pub async fn progress_player_packets(self: &Arc<Self>, player: &Arc<Player>) {
         while let Some(packet) = self.get_packet().await {
-            player.inbound_packets.push(packet);
+            self.enqueue_play_input(player, packet);
         }
     }
 
@@ -1580,6 +1583,10 @@ impl BedrockClient {
     }
 
     pub fn handle_client_cache_blob_status(&self, packet: SClientCacheBlobStatus) {
+        self.apply_client_cache_blob_status(packet, true);
+    }
+
+    fn apply_client_cache_blob_status(&self, packet: SClientCacheBlobStatus, observe: bool) {
         let missing_blobs = {
             let mut cache = self
                 .blob_cache
@@ -1605,7 +1612,9 @@ impl BedrockClient {
         if !missing_blobs.is_empty() {
             let packet = CClientCacheMissResponse { missing_blobs };
             match blob_cache::share_blob_reply(packet) {
-                Ok(frame) => self.try_enqueue_packet(frame),
+                Ok(frame) => {
+                    self.try_enqueue_packet_data_inner(frame, observe);
+                }
                 Err(error) => error!("Failed to serialize Bedrock packet: {error}"),
             }
         }
