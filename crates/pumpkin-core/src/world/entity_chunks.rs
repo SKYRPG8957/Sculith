@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex, PoisonError, atomic::Ordering::Relaxed};
 
+use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use pumpkin_world::{
@@ -14,13 +15,15 @@ use uuid::Uuid;
 use crate::{
     entity::{
         Entity, EntityBase,
+        item::ItemEntity,
         r#type::{load_entity_from_nbt, self_and_passengers},
     },
-    server::Server,
+    server::{Server, TickDeadline},
 };
 
 use super::{
-    World, entity_save_records, merge_entity_records, regional_campfires::RegionalEntityUpdate,
+    RegionId, World, entity_save_records, merge_entity_records,
+    regional_campfires::RegionalEntityUpdate,
 };
 
 const REGIONAL_CHUNKS_PER_STEP: usize = 4;
@@ -201,6 +204,8 @@ impl World {
     pub(super) fn activate_regional_entity_chunks(
         self: &Arc<Self>,
         server: &Server,
+        owner: RegionId,
+        deadline: TickDeadline,
         extent: &[Vector2<i32>],
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
@@ -230,7 +235,8 @@ impl World {
         };
         let mut activated = 0;
         for pos in candidates {
-            if owns(pos) && self.try_activate_regional_chunk(pos, owns) {
+            let item_clock = ItemEntity::timers_unobserved(server).then_some((owner, deadline));
+            if owns(pos) && self.try_activate_regional_chunk(pos, item_clock, owns) {
                 activated += 1;
                 if activated == REGIONAL_CHUNKS_PER_STEP {
                     break;
@@ -242,6 +248,7 @@ impl World {
     fn try_activate_regional_chunk(
         self: &Arc<Self>,
         pos: Vector2<i32>,
+        item_clock: Option<(RegionId, TickDeadline)>,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> bool {
         let Some(chunk) = self.level.try_with_watched_entity_chunk(pos, Arc::clone) else {
@@ -269,9 +276,29 @@ impl World {
                 return false;
             }
             init_loaded_actor(entity.as_ref());
+            if let Some((owner, deadline)) = item_clock
+                && let Some(item) =
+                    (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ItemEntity>()
+            {
+                item.start_regional_timer(owner, deadline);
+            }
             actors.push((pos, entity));
         }
 
+        // Publish restored drops with their assignment before a world tick can
+        // pick them up in its entity scan. Moves take the same assignment lock.
+        let mut item_plan = if item_clock.is_some()
+            && actors
+                .iter()
+                .any(|(_, entity)| entity.get_entity().entity_type == &EntityType::ITEM)
+        {
+            let Ok(plan) = self.regional_item_timers.try_write() else {
+                return false;
+            };
+            Some(plan)
+        } else {
+            None
+        };
         let Ok(registering) = self.entity_index.registering.try_lock() else {
             return false;
         };
@@ -292,6 +319,13 @@ impl World {
                 return false;
             }
             let added = self.register_chunk_actors(&actors);
+            if let (Some(plan), Some((owner, _))) = (item_plan.as_mut(), item_clock) {
+                for (_, actor) in &added {
+                    if actor.get_entity().entity_type == &EntityType::ITEM {
+                        Arc::make_mut(plan).assign(owner, actor.clone());
+                    }
+                }
+            }
             records.clear();
             chunk.live.store(true, Relaxed);
             if !added.is_empty() {
@@ -377,10 +411,12 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_data::entity::EntityType;
+    use pumpkin_data::{item::Item, item_stack::ItemStack};
+    use std::time::{Duration, Instant};
 
     use crate::entity::{
-        ai::test_support::world, decoration::armor_stand::ArmorStandEntity, passive::cow::CowEntity,
+        ai::test_support::world, decoration::armor_stand::ArmorStandEntity, item::RegionalItemStep,
+        passive::cow::CowEntity,
     };
 
     #[tokio::test]
@@ -404,16 +440,16 @@ mod tests {
 
         let snapshot = world.entity_chunk_changes.snapshot.try_write().unwrap();
         let owns = |chunk| chunk == pos;
-        assert!(!world.try_activate_regional_chunk(pos, &owns));
+        assert!(!world.try_activate_regional_chunk(pos, None, &owns));
         world.level.mark_chunks_as_newly_watched(&[pos]);
-        assert!(!world.try_activate_regional_chunk(pos, &|_| false));
+        assert!(!world.try_activate_regional_chunk(pos, None, &|_| false));
         let reservation = world.reserve_entity_registration(uuid).unwrap();
-        assert!(!world.try_activate_regional_chunk(pos, &owns));
+        assert!(!world.try_activate_regional_chunk(pos, None, &owns));
         assert_eq!(saved.data.lock().unwrap().len(), 1);
         assert!(world.get_entity_by_uuid(uuid).is_none());
         drop(reservation);
-        assert!(world.try_activate_regional_chunk(pos, &owns));
-        assert!(!world.try_activate_regional_chunk(pos, &owns));
+        assert!(world.try_activate_regional_chunk(pos, None, &owns));
+        assert!(!world.try_activate_regional_chunk(pos, None, &owns));
         drop(snapshot);
 
         let actor = world.get_entity_by_uuid(uuid).unwrap();
@@ -426,6 +462,62 @@ mod tests {
         world.apply_entity_chunk_changes();
         assert!(world.entity_tracker.has_entity_with_id(id));
         assert_eq!(world.entities.load().len(), 1);
+        world.level.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_regional_restore_starts_a_drops_timer_on_the_next_deadline() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = world(&folder);
+        let pos = Vector2::new(10, 0);
+        world.level.spawn_entity_generation(pos);
+        let saved = world.level.get_entity_chunk_sync(&pos).unwrap();
+        let item = ItemEntity::new(
+            Entity::new(
+                world.clone(),
+                Vector3::new(160.5, 64.0, 8.5),
+                &EntityType::ITEM,
+            ),
+            ItemStack::new(1, &Item::STONE),
+        );
+        let mut record = NbtCompound::new();
+        item.write_nbt(&mut record);
+        saved.data.lock().unwrap().push(record);
+        world.level.mark_chunks_as_newly_watched(&[pos]);
+        world.queue_entity_chunk_changes([pos]);
+
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        let snapshot = world.entity_chunk_changes.snapshot.try_write().unwrap();
+        let owner = 5;
+        assert!(
+            world.try_activate_regional_chunk(pos, Some((owner, deadline)), &|chunk| chunk == pos)
+        );
+        drop(snapshot);
+
+        let restored = world
+            .get_entity_by_uuid(item.get_entity().entity_uuid)
+            .unwrap();
+        let restored = (restored.as_ref() as &dyn std::any::Any)
+            .downcast_ref::<ItemEntity>()
+            .unwrap();
+        let id = restored.get_entity().entity_id;
+        assert!(world.regional_item_timers.read().unwrap().contains(id));
+        assert!(!world.entity_tracker.has_entity_with_id(id));
+        let next = TickDeadline {
+            at: deadline.at + deadline.period,
+            ..deadline
+        };
+        assert!(matches!(
+            restored.advance_regional_timers(owner, deadline, || true),
+            RegionalItemStep::Skipped
+        ));
+        assert!(matches!(
+            restored.advance_regional_timers(owner, next, || true),
+            RegionalItemStep::Advanced
+        ));
         world.level.shutdown().await;
     }
 

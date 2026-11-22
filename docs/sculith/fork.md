@@ -266,6 +266,11 @@ Readers share one disk request for a chunk and return its position. An active
 region can register ready armor stands, dropped items, experience orbs and
 markers in small batches. It validates the current owner, pinned watchers,
 cached chunk and entity UUID registrations before consuming saved records.
+An eligible drop joins the current region's timer plan with its saved age
+and pickup delay. Its first timer step uses the next regional deadline.
+The timer assignment follows a subsequent move to another region, even while
+the world is waiting to pair the restored drop with clients. Item merge and
+despawn observers keep timer execution on the world owner.
 Actors with passengers or team memberships use world processing. The world
 pairs loaded actors with clients and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
