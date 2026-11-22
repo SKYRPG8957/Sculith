@@ -8,7 +8,7 @@ use crate::{
     server::Server,
 };
 
-use super::World;
+use super::{RegionChunks, World};
 
 /// Ready connections for an active extent; the ordered packets stay with the player.
 #[derive(Default)]
@@ -25,6 +25,7 @@ impl RegionalInput {
         &self,
         world: &World,
         server: &Server,
+        extent: &RegionChunks,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
         let Ok(mut queue) = self.0.try_lock() else {
@@ -41,8 +42,8 @@ impl RegionalInput {
         for (id, player) in ready {
             if let Some(player) = player.upgrade()
                 && let Some(client) = player.client.bedrock()
-                && client.drain_regional_input(&player, server, || {
-                    player.can_simulate_in(world) && owns(player.get_entity().chunk_pos.load())
+                && client.drain_regional_input(&player, server, extent, |position| {
+                    player.can_simulate_in(world) && owns(position)
                 })
             {
                 self.offer(id, &player);

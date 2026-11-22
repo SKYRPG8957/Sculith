@@ -2418,7 +2418,7 @@ impl World {
         if let Some(server) = &region_server
             && let Some(input) = current.input(owner)
         {
-            input.drain(self, server, &owns);
+            input.drain(self, server, chunks, &owns);
         }
         let regional_campfires = region_server
             .as_ref()

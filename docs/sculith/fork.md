@@ -222,10 +222,12 @@ tick number and splitting passes that number to each successor.
 An active region can consume the front of a native Bedrock player's input queue
 for latency and chunk cache acknowledgments. A ready connection is routed by its
 current chunk and checked again when the regional job claims a packet. The world
-and region share an ordered drain for that connection. The first packet requiring
-the world stays at the front for the world to drain. Packet hooks and protocol
-translation use the world path. Other scheduled callbacks, gameplay input,
-entity AI and entity chunk residency use world phases.
+and region share an ordered drain for that connection. At the head of the queue,
+the region can also decode one native Bedrock movement packet within its current
+extent. The world rechecks that extent and the packet after receive hooks before
+using the decoded input. Boundary crossings, updated payloads and translated
+clients go through the ordinary world decoder. Gameplay effects, other scheduled
+callbacks, entity AI and entity chunk residency use world phases.
 
 Player movement registers the new view before entity chunk readers run.
 Readers share one disk request for a chunk and return its position to the

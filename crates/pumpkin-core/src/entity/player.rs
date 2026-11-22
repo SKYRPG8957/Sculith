@@ -3232,26 +3232,23 @@ impl Player {
     ) {
         const MAX_PACKETS_PER_TICK: usize = 64;
 
+        let client = match self.client.as_ref() {
+            ClientPlatform::Java(client) => client,
+            ClientPlatform::Bedrock(client) => {
+                client.drain_world_input(self, commands, MAX_PACKETS_PER_TICK);
+                return;
+            }
+        };
         // Player::tick runs after the world's block-update flush. Acknowledge the previous tick's
         // predictions here so Java clients receive the authoritative block states before resolving
         // those predictions. Sending the ACK from the packet loop would make doors and other
         // predicted blocks briefly revert because their updates are not flushed until the next tick.
-        if let ClientPlatform::Java(client) = self.client.as_ref() {
-            let seq = client.packet_sequence.swap(-1, Ordering::Relaxed);
-            if seq != -1 {
-                client.try_send_packet(&CAcknowledgeBlockChange::new(seq.into()));
-            }
+        let seq = client.packet_sequence.swap(-1, Ordering::Relaxed);
+        if seq != -1 {
+            client.try_send_packet(&CAcknowledgeBlockChange::new(seq.into()));
         }
 
-        let mut bedrock_head = if let Some(client) = self.client.bedrock() {
-            let Some(head) = client.try_inbound_head() else {
-                return;
-            };
-            Some(head)
-        } else {
-            None
-        };
-        if bedrock_head.as_deref().is_none_or(Option::is_none) && self.inbound_packets.is_empty() {
+        if self.inbound_packets.is_empty() {
             return;
         }
 
@@ -3262,71 +3259,33 @@ impl Player {
             return;
         };
 
-        let mut count = 0;
-        let mut spin_attack_prediction = None;
-
-        while let Some(packet) = bedrock_head
-            .as_deref_mut()
-            .and_then(Option::take)
-            .or_else(|| self.inbound_packets.pop())
-        {
-            if self.client.closed() {
+        for _ in 0..MAX_PACKETS_PER_TICK {
+            let Some(packet) = self.inbound_packets.pop() else {
+                break;
+            };
+            if client.is_closed() {
                 break;
             }
-
-            match self.client.as_ref() {
-                ClientPlatform::Java(client) => {
-                    if let Err(e) = client.handle_queued_play_packet(
-                        &player_arc,
-                        &server_arc,
-                        &packet,
-                        commands,
-                    ) {
-                        if e.is_kick() {
-                            if let Some(kick_reason) = e.client_kick_reason() {
-                                client.try_kick(&TextComponent::text(kick_reason));
-                            } else {
-                                client.try_kick(&TextComponent::text(format!(
-                                    "Error while handling incoming packet {e}"
-                                )));
-                            }
-                        }
-                        log_at_level!(
-                            e.severity(),
-                            "Failed to handle play packet id {} (payload {} bytes): {}",
-                            packet.id,
-                            packet.payload.len(),
-                            e
-                        );
+            if let Err(e) =
+                client.handle_queued_play_packet(&player_arc, &server_arc, &packet, commands)
+            {
+                if e.is_kick() {
+                    if let Some(kick_reason) = e.client_kick_reason() {
+                        client.try_kick(&TextComponent::text(kick_reason));
+                    } else {
+                        client.try_kick(&TextComponent::text(format!(
+                            "Error while handling incoming packet {e}"
+                        )));
                     }
                 }
-                ClientPlatform::Bedrock(client) => {
-                    if let Some(packet) =
-                        client.filter_play_packet(&server_arc, &player_arc, packet)
-                        && let Err(err) = client.handle_queued_play_packet(
-                            &player_arc,
-                            &server_arc,
-                            &packet,
-                            &mut spin_attack_prediction,
-                            commands,
-                        )
-                    {
-                        tracing::error!("Failed to handle Bedrock play packet: {err}");
-                    }
-                }
+                log_at_level!(
+                    e.severity(),
+                    "Failed to handle play packet id {} (payload {} bytes): {}",
+                    packet.id,
+                    packet.payload.len(),
+                    e
+                );
             }
-
-            count += 1;
-            if count >= MAX_PACKETS_PER_TICK {
-                break;
-            }
-        }
-
-        // A trident release can follow its predicted start in the same packet drain.
-        if spin_attack_prediction.is_some()
-            && let ClientPlatform::Bedrock(client) = self.client.as_ref()
-        {
-            client.reconcile_spin_attack_prediction(self, spin_attack_prediction);
         }
     }
 

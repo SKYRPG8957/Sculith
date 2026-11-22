@@ -214,7 +214,7 @@ struct ClientActivity {
     last_seen: AtomicCell<Instant>,
     horse_jump: std::sync::Mutex<horse_jump::HorseJumpInput>,
     packet_observers: std::sync::OnceLock<packet_observers::PacketObservers>,
-    inbound_head: std::sync::Mutex<Option<RawPacket>>,
+    inbound_head: std::sync::Mutex<Option<play_ingress::QueuedPlayInput>>,
 }
 
 pub struct BedrockClient {
