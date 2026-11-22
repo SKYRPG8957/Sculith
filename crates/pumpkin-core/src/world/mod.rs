@@ -5143,26 +5143,30 @@ impl World {
         }
         self.notify_player_departure(player);
         if fire_event {
-            let msg_comp = TextComponent::translate_cross(
-                translation::java::MULTIPLAYER_PLAYER_LEFT,
-                translation::bedrock::MULTIPLAYER_PLAYER_LEFT,
-                [TextComponent::text(player.gameprofile.name.clone())],
-            )
-            .color_named(NamedColor::Yellow);
-            let mut event = PlayerLeaveEvent::new(player.clone(), msg_comp);
-
-            if let Some(server) = self.server.upgrade() {
-                server.plugin_manager.fire(&server, &mut event).await;
-
-                if !event.cancelled {
-                    for player in self.players.load().iter() {
-                        player.send_system_message(&event.leave_message);
-                    }
-                    info!("{}", event.leave_message.to_pretty_console());
-                }
-            }
+            self.send_player_leave(player).await;
         }
         Some(player.clone())
+    }
+
+    pub(crate) async fn send_player_leave(&self, player: &Arc<Player>) {
+        let msg_comp = TextComponent::translate_cross(
+            translation::java::MULTIPLAYER_PLAYER_LEFT,
+            translation::bedrock::MULTIPLAYER_PLAYER_LEFT,
+            [TextComponent::text(player.gameprofile.name.clone())],
+        )
+        .color_named(NamedColor::Yellow);
+        let mut event = PlayerLeaveEvent::new(player.clone(), msg_comp);
+
+        if let Some(server) = self.server.upgrade() {
+            server.plugin_manager.fire(&server, &mut event).await;
+
+            if !event.cancelled {
+                for player in self.players.load().iter() {
+                    player.send_system_message(&event.leave_message);
+                }
+                info!("{}", event.leave_message.to_pretty_console());
+            }
+        }
     }
 
     /// Removes the exact session from the world before its departure is sent to viewers.

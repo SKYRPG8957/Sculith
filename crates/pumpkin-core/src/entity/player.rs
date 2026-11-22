@@ -1552,6 +1552,13 @@ impl Player {
 
     /// Removes the [`Player`] out of the current [`World`].
     pub async fn remove(self: &Arc<Self>) {
+        self.prepare_world_departure();
+        let world = self.world();
+        world.remove_player(self, true).await;
+        self.release_departure_world(&world);
+    }
+
+    pub(crate) fn prepare_world_departure(&self) {
         if !self
             .current_screen_handler
             .lock()
@@ -1577,10 +1584,10 @@ impl Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .increment_custom(statistics::CustomStatistic::LeaveGame, 1);
-        let world = self.world();
-        world.remove_player(self, true).await;
+    }
 
-        let unwatched = self.release_world_watchers(&world);
+    pub(crate) fn release_departure_world(&self, world: &World) {
+        let unwatched = self.release_world_watchers(world);
         self.clean_up_chunk_tickets(&world.level);
         if let Ok(mut sender) = self.chunk_sender.lock() {
             sender.reset();
@@ -1592,11 +1599,9 @@ impl Player {
         debug!(
             "Removed player id {} from world {} ({} chunks remain cached)",
             self.gameprofile.name,
-            self.world().get_world_name(),
+            world.get_world_name(),
             level.loaded_chunk_count(),
         );
-
-        //self.world().level.list_cached();
     }
 
     pub(crate) fn try_restore_vehicle(self: &Arc<Self>, vehicle: &Arc<dyn EntityBase>) {

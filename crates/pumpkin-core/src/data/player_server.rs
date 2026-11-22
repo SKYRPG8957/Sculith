@@ -60,14 +60,17 @@ impl ServerPlayerData {
     ///
     /// A Result indicating success or the error that occurred.
     pub async fn handle_player_leave(&self, player: &Arc<Player>) -> Result<(), PlayerDataError> {
+        Self::close_leave_inventory(player);
+        self.extract_data_and_save_player(player).await
+    }
+
+    pub(crate) fn close_leave_inventory(player: &Player) {
         player
             .player_screen_handler
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .on_closed(player.as_ref());
+            .on_closed(player);
         player.on_handled_screen_closed();
-
-        self.extract_data_and_save_player(player).await
     }
 
     /// Performs periodic maintenance tasks.
@@ -212,6 +215,13 @@ impl ServerPlayerData {
         &self,
         player: &Player,
     ) -> Result<(), PlayerDataError> {
+        self.save_player_snapshot(|| Self::capture(player)).await
+    }
+
+    pub(crate) async fn save_player_snapshot(
+        &self,
+        capture: impl FnOnce() -> (Uuid, NbtCompound),
+    ) -> Result<(), PlayerDataError> {
         if !self.storage.is_save_enabled() {
             return Ok(());
         }
@@ -222,7 +232,7 @@ impl ServerPlayerData {
             .read_ready()
             .await
             .ok_or_else(unresolved_checkpoint)?;
-        let snapshots = vec![Self::capture(player)];
+        let snapshots = vec![capture()];
         Self::finish_write(self.write_batch(&Handle::current(), order, access, snapshots)).await
     }
 

@@ -65,6 +65,7 @@ pub(crate) mod debug_profiler;
 pub mod enchantment;
 mod key_store;
 pub(crate) mod player_commands;
+mod player_session;
 pub mod recipe;
 mod region_scheduler;
 pub mod scheduler;
@@ -218,6 +219,7 @@ pub struct Server {
     pub stop_token: CancellationToken,
     /// Serializes login commits against transfers and the closing of admission.
     admission_closed: std::sync::RwLock<bool>,
+    network_sessions: Arc<std::sync::Mutex<rustc_hash::FxHashSet<uuid::Uuid>>>,
     /// Stores the latest available Pumpkin release if the startup update checker found a newer version.
     pub available_update: std::sync::OnceLock<crate::update_checker::GitHubRelease>,
 
@@ -492,6 +494,7 @@ impl Server {
             tasks: TaskTracker::new(),
             stop_token: crate::STOP_INTERRUPT.child_token(),
             admission_closed: std::sync::RwLock::new(false),
+            network_sessions: Arc::default(),
             runtime: tokio::runtime::Handle::current(),
             simulation_pool,
             compute_pool,
@@ -972,7 +975,8 @@ impl Server {
             'after: {
                 player.screen_handler_sync_handler.store_player(player.clone());
                 if let Err(rejection) = self.request_player_admission(&world, &player).await {
-                    rejection.kick(&player);
+                    let (reason, message) = rejection.disconnect();
+                    player.kick(reason, &message);
                     player.client.clear_player();
                     return None;
                 }

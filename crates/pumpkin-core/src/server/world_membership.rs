@@ -17,17 +17,15 @@ pub(super) enum JoinRejection {
 }
 
 impl JoinRejection {
-    pub(super) fn kick(self, player: &Player) {
+    pub(super) fn disconnect(self) -> (DisconnectReason, TextComponent) {
         match self {
-            Self::Unavailable => {
-                player.kick(
-                    DisconnectReason::Shutdown,
-                    &TextComponent::text("Server stopped"),
-                );
-            }
-            Self::Duplicate => player.kick(
+            Self::Unavailable => (
+                DisconnectReason::Shutdown,
+                TextComponent::text("Server stopped"),
+            ),
+            Self::Duplicate => (
                 DisconnectReason::LoggedInOtherLocation,
-                &TextComponent::translate_cross(
+                TextComponent::translate_cross(
                     translation::java::MULTIPLAYER_DISCONNECT_DUPLICATE_LOGIN,
                     translation::bedrock::DISCONNECTIONSCREEN_LOGGEDINOTHERLOCATION,
                     [],
@@ -37,6 +35,8 @@ impl JoinRejection {
     }
 }
 
+pub(super) type DeparturePhase = Box<dyn FnOnce(&Server, &Arc<World>) + Send>;
+
 pub(super) enum WorldMembershipChange {
     Join {
         world: Arc<World>,
@@ -44,6 +44,10 @@ pub(super) enum WorldMembershipChange {
         completion: oneshot::Sender<Result<(), JoinRejection>>,
     },
     Transfer(Box<WorldTransfer>),
+    Depart {
+        world: Arc<World>,
+        phase: DeparturePhase,
+    },
 }
 
 impl WorldMembershipChange {
@@ -53,7 +57,7 @@ impl WorldMembershipChange {
 
     pub(super) fn try_reserve_worlds(&self) -> Option<WorldTransferReservation> {
         match self {
-            Self::Join { world, .. } => world
+            Self::Join { world, .. } | Self::Depart { world, .. } => world
                 .try_simulation()
                 .map(WorldTransferReservation::for_one_world),
             Self::Transfer(transfer) => transfer.try_reserve_worlds(),
@@ -77,6 +81,10 @@ impl WorldMembershipChange {
                 }
             }
             Self::Transfer(transfer) => transfer.apply(server, reservation),
+            Self::Depart { world, phase } => {
+                let _owner = reservation;
+                phase(server, &world);
+            }
         }
     }
 }

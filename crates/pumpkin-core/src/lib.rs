@@ -248,12 +248,8 @@ pub async fn serve_java_connection(server: Arc<Server>, mut pending: PendingConn
                 JavaClient::from_pending(pending, profile.clone(), config.clone());
             java_client.start_outgoing_packet_task();
 
-            if let Some((player, world)) = server
-                .add_player(
-                    Arc::new(ClientPlatform::Java(java_client)),
-                    profile,
-                    Some(config),
-                )
+            if let Some((player, world, _session)) = server
+                .add_network_player(Arc::new(ClientPlatform::Java(java_client)), profile, config)
                 .await
             {
                 if let ClientPlatform::Java(client) = player.client.as_ref() {
@@ -270,18 +266,7 @@ pub async fn serve_java_connection(server: Arc<Server>, mut pending: PendingConn
                     client.close();
                     client.await_tasks().await;
                 }
-                player.remove().await;
-                server.remove_player(&player);
-                if let Err(e) = server
-                    .player_data_storage
-                    .handle_player_leave(&player)
-                    .await
-                {
-                    error!("Failed to save player data on disconnect: {e}");
-                }
-                if let Err(e) = server.advancement_manager.save_player(&player).await {
-                    error!("Failed to save player advancement on disconnect: {e}");
-                }
+                server.finish_player_connection(&player).await;
             }
         }
     }
@@ -802,26 +787,18 @@ impl PumpkinServer {
                     client.await_tasks().await;
                 }
                 PacketHandlerResult::ReadyToPlay(profile, config) => {
-                    if let Some((player, _world)) = server
-                        .add_player(
+                    if let Some((player, _world, _session)) = server
+                        .add_network_player(
                             Arc::new(ClientPlatform::Bedrock(client.clone())),
                             profile,
-                            Some(config),
+                            config,
                         )
                         .await
                     {
                         client.progress_player_packets(&player).await;
                         client.close().await;
                         client.await_tasks().await;
-                        player.remove().await;
-                        server.remove_player(&player);
-                        if let Err(error) = server
-                            .player_data_storage
-                            .handle_player_leave(&player)
-                            .await
-                        {
-                            error!("Failed to save player data on disconnect: {error}");
-                        }
+                        server.finish_player_connection(&player).await;
                     }
                 }
             }

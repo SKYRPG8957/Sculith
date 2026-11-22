@@ -260,7 +260,8 @@ impl Player {
     }
 
     pub(crate) fn can_tick_in(&self, world: &World) -> bool {
-        self.world_change.load() != WorldChange::Arriving
+        !self.client.closed()
+            && self.world_change.load() != WorldChange::Arriving
             && std::ptr::eq(self.living_entity.entity.world.load().as_ref(), world)
     }
 
