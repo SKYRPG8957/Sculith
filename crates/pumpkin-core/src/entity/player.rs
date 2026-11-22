@@ -3223,19 +3223,20 @@ impl Player {
     }
 
     pub fn process_inbound_packets(&self) {
-        self.process_inbound_packets_with_commands(None);
+        self.process_inbound_packets_with_commands(None, None);
     }
 
     pub(crate) fn process_inbound_packets_with_commands(
         &self,
         commands: Option<PlayerCommandIngress<'_>>,
+        world_owner: Option<&Arc<World>>,
     ) {
         const MAX_PACKETS_PER_TICK: usize = 64;
 
         let client = match self.client.as_ref() {
             ClientPlatform::Java(client) => client,
             ClientPlatform::Bedrock(client) => {
-                client.drain_world_input(self, commands, MAX_PACKETS_PER_TICK);
+                client.drain_world_input(self, commands, world_owner, MAX_PACKETS_PER_TICK);
                 return;
             }
         };

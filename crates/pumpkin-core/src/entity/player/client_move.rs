@@ -11,7 +11,7 @@ use pumpkin_util::GameMode;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
 use pumpkin_util::text::TextComponent;
 
-use crate::entity::EntityBase;
+use crate::entity::{Entity, EntityBase};
 use crate::net::{ClientPlatform, DisconnectReason};
 use crate::plugin::player::player_input::PlayerInputEvent;
 use crate::plugin::player::player_move::PlayerMoveEvent;
@@ -19,7 +19,7 @@ use crate::plugin::player::player_toggle_flight_event::PlayerToggleFlightEvent;
 use crate::plugin::player::player_toggle_sneak_event::PlayerToggleSneakEvent;
 use crate::plugin::player::player_toggle_sprint_event::PlayerToggleSprintEvent;
 use crate::server::Server;
-use crate::world::chunker;
+use crate::world::{RegionChunks, chunker};
 
 use super::Player;
 use super::statistics::StatisticCategory;
@@ -328,11 +328,20 @@ impl Player {
 
     /// Vanilla `handlePlayerPositionChange`. Does not write `Entity.velocity`; that stays server
     /// owned (`deltaMovement`). Client motion this tick is `Entity.movement`.
-    #[allow(clippy::too_many_lines)]
     pub fn apply_client_move(
         &self,
         server: &Arc<Server>,
         requested: ClientMove,
+    ) -> ClientMoveOutcome {
+        self.apply_client_move_with_extent(server, requested, None)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn apply_client_move_with_extent(
+        &self,
+        server: &Arc<Server>,
+        requested: ClientMove,
+        extent: Option<&RegionChunks>,
     ) -> ClientMoveOutcome {
         if !self.has_client_loaded() {
             return ClientMoveOutcome::Ignored;
@@ -419,7 +428,11 @@ impl Player {
 
         let pos = target.unwrap_or(last_pos);
         let was_on_ground = entity.on_ground.load(Ordering::Relaxed);
-        entity.set_pos(pos);
+        if !extent
+            .is_some_and(|extent| self.try_set_regional_position(server, extent, last_pos, pos))
+        {
+            entity.set_pos(pos);
+        }
 
         let delta = Vector3::new(pos.x - last_pos.x, pos.y - last_pos.y, pos.z - last_pos.z);
         let distance = last_pos.squared_distance_to_vec(&pos).sqrt();
@@ -483,6 +496,75 @@ impl Player {
         self.progress_motion(delta);
 
         ClientMoveOutcome::Applied
+    }
+
+    fn try_set_regional_position(
+        &self,
+        server: &Server,
+        extent: &RegionChunks,
+        from: Vector3<f64>,
+        to: Vector3<f64>,
+    ) -> bool {
+        if from == to || ![to.x, to.y, to.z].into_iter().all(f64::is_finite) {
+            return false;
+        }
+        let Some(_native) = server.plugin_manager.try_without_native_code() else {
+            return false;
+        };
+        let entity = self.get_entity();
+        let world = self.world();
+        let origin = entity.chunk_pos.load();
+        let Some(owner) = world.region_layout.load().owner(origin) else {
+            return false;
+        };
+        let owns = |chunk| {
+            let layout = world.region_layout.load();
+            layout.owner(chunk) == Some(owner)
+                && layout
+                    .chunks(owner)
+                    .is_some_and(|live| Arc::ptr_eq(live, extent))
+        };
+        let Ok(bounds_owner) = entity.bounding_box.index.try_write() else {
+            return false;
+        };
+        if !std::ptr::eq(bounds_owner.as_ptr(), Arc::as_ptr(&world.entity_index)) {
+            return false;
+        }
+        let bounds =
+            Entity::make_bounding_box(entity.entity_type, to, &entity.entity_dimension.load());
+        let swept = entity.bounding_box.load().minmax(&bounds);
+        let destination = BlockPos::floored_v(to);
+        // Reuse the normal position fields without reacquiring the pinned chunk or index.
+        let committed = world.level.try_with_regional_path(
+            BlockPos::floored_v(swept.min),
+            swept.max_block_pos(),
+            owns,
+            |_| Some((destination, ())),
+            |(), biome| {
+                world
+                    .entity_index
+                    .try_move_regional_player(&world, self, bounds, || {
+                        if !self.can_simulate_in(&world)
+                            || entity.is_removed()
+                            || entity.pos.load() != from
+                            || entity.chunk_pos.load() != origin
+                            || !owns(origin)
+                        {
+                            return false;
+                        }
+                        entity.set_pos_with(
+                            to,
+                            || entity.bounding_box.value.store(bounds),
+                            |_| biome,
+                        );
+                        true
+                    })
+            },
+        ) == Some(true);
+        if committed {
+            tracing::trace!(player = %self.gameprofile.name, region = owner, position = ?to, "Committed player position in its region");
+        }
+        committed
     }
 
     fn look_changed(&self, requested: ClientMove) -> bool {

@@ -558,6 +558,34 @@ impl EntityIndex {
         }
     }
 
+    pub(crate) fn try_move_regional_player(
+        &self,
+        world: &World,
+        player: &Player,
+        bounds: BoundingBox,
+        apply: impl FnOnce() -> bool,
+    ) -> bool {
+        let Ok(mut index) = self.players.try_write() else {
+            return false;
+        };
+        let players = world.players.load_full();
+        if !index.matches(&players) {
+            index.rebuild(&players);
+        }
+        let entity_id = player.get_entity().entity_id;
+        let Some(&slot) = index.slots.get(&entity_id) else {
+            return false;
+        };
+        if !std::ptr::eq(players[slot].as_ref(), player)
+            || !Arc::ptr_eq(&players, &world.players.load())
+            || !apply()
+        {
+            return false;
+        }
+        index.update(entity_id, &bounds);
+        true
+    }
+
     pub fn set_player_bounds(
         &self,
         entity_id: i32,

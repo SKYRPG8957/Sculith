@@ -225,9 +225,13 @@ current chunk and checked again when the regional job claims a packet. The world
 and region share an ordered drain for that connection. At the head of the queue,
 the region can also decode one native Bedrock movement packet within its current
 extent. The world rechecks that extent and the packet after receive hooks before
-using the decoded input. Boundary crossings, updated payloads and translated
-clients go through the ordinary world decoder. Gameplay effects, other scheduled
-callbacks, entity AI and entity chunk residency use world phases.
+using the decoded input. During the ordered world move, it can commit the position
+with the swept chunk extent, destination biome and player spatial index pinned.
+The check uses the final target after the movement hook. A path outside the
+current extent or a busy chunk or index uses the ordinary position setter.
+Boundary crossings, updated payloads and translated clients go through the
+ordinary world decoder. Movement effects, other scheduled callbacks, entity AI
+and entity chunk residency use world phases.
 
 Player movement registers the new view before entity chunk readers run.
 Readers share one disk request for a chunk and return its position to the

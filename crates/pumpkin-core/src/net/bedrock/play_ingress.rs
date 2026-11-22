@@ -17,7 +17,7 @@ use crate::{
     entity::{EntityBase, player::Player},
     plugin::server::packet::{PacketReceivedEvent, PacketSentEvent},
     server::{Server, player_commands::PlayerCommandIngress},
-    world::RegionChunks,
+    world::{RegionChunks, World},
 };
 
 use super::BedrockClient;
@@ -37,15 +37,16 @@ struct PreparedMovement {
 }
 
 impl PreparedMovement {
-    fn still_owned(&self, player: &Player) -> bool {
+    fn owned_extent(&self, player: &Player) -> Option<RegionChunks> {
+        let extent = self.extent.upgrade()?;
         let world = player.world();
         let layout = world.region_layout.load();
-        player.can_simulate_in(&world)
+        (player.can_simulate_in(&world)
             && layout
                 .owner(player.get_entity().chunk_pos.load())
                 .and_then(|owner| layout.chunks(owner))
-                .zip(self.extent.upgrade())
-                .is_some_and(|(current, prepared)| Arc::ptr_eq(current, &prepared))
+                .is_some_and(|current| Arc::ptr_eq(current, &extent)))
+        .then_some(extent)
     }
 }
 
@@ -63,6 +64,7 @@ impl BedrockClient {
         self: &Arc<Self>,
         player: &Player,
         commands: Option<PlayerCommandIngress<'_>>,
+        world_owner: Option<&Arc<World>>,
         budget: usize,
     ) {
         // Keep the region and world from consuming the same connection concurrently.
@@ -73,6 +75,7 @@ impl BedrockClient {
             return;
         }
         let world = player.world();
+        let owned = world_owner.is_some_and(|owner| Arc::ptr_eq(owner, &world));
         let Some(player) = world
             .get_player_by_uuid(player.gameprofile.id)
             .filter(|registered| std::ptr::eq(registered.as_ref(), player))
@@ -103,7 +106,7 @@ impl BedrockClient {
                 && packet.id == SPlayerAuthInput::PACKET_ID
                 && std::ptr::eq(packet.payload.as_ref(), original.as_ref())
                 && self.is_current_protocol()
-                && movement.still_owned(&player)
+                && let Some(extent) = movement.owned_extent(&player)
             {
                 tracing::trace!(
                     player = %player.gameprofile.name,
@@ -115,6 +118,7 @@ impl BedrockClient {
                     movement.input,
                     &server,
                     &mut spin_attack_prediction,
+                    owned.then_some(&extent),
                 );
             } else if let Err(err) = self.handle_queued_play_packet(
                 &player,

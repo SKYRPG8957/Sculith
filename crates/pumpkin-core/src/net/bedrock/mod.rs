@@ -1439,7 +1439,7 @@ impl BedrockClient {
             }
             SPlayerAuthInput::PACKET_ID => {
                 let packet = SPlayerAuthInput::read(reader)?;
-                self.apply_player_auth_input(player, packet, server, spin_attack_prediction);
+                self.apply_player_auth_input(player, packet, server, spin_attack_prediction, None);
             }
             SRequestChunkRadius::PACKET_ID => {
                 let packet = SRequestChunkRadius::read(reader)?;

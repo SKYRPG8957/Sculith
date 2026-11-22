@@ -13,6 +13,7 @@ use pumpkin_util::math::vector3::Vector3;
 use crate::entity::EntityBase;
 use crate::entity::player::{ClientMove, ClientMoveOutcome, PlayerInput};
 use crate::entity::vehicle::boat::BEDROCK_YAW_OFFSET;
+use crate::world::RegionChunks;
 
 impl BedrockClient {
     pub fn handle_player_auth_input(
@@ -22,7 +23,7 @@ impl BedrockClient {
         server: &Arc<Server>,
     ) {
         let mut spin_attack_prediction = None;
-        self.apply_player_auth_input(player, packet, server, &mut spin_attack_prediction);
+        self.apply_player_auth_input(player, packet, server, &mut spin_attack_prediction, None);
         self.reconcile_spin_attack_prediction(player, spin_attack_prediction);
     }
 
@@ -32,6 +33,7 @@ impl BedrockClient {
         packet: SPlayerAuthInput,
         server: &Arc<Server>,
         spin_attack_prediction: &mut Option<bool>,
+        extent: Option<&RegionChunks>,
     ) {
         if player.living_entity.dead.load(Ordering::Relaxed)
             || player.living_entity.health.load() <= 0.0
@@ -98,17 +100,15 @@ impl BedrockClient {
         // A ridden input can still carry the vehicle's coordinates on the dismount tick.
         let position = (!was_riding && !flags.get(InputData::ClientPredictedVehicle as usize))
             .then(|| player.feet_from_bedrock_pos(packet.position.to_f64()));
-        let outcome = player.apply_client_move(
-            server,
-            ClientMove {
-                position,
-                yaw: Some(packet.yaw),
-                pitch: Some(packet.pitch),
-                head_yaw: Some(packet.head_yaw),
-                on_ground,
-                horizontal_collision,
-            },
-        );
+        let movement = ClientMove {
+            position,
+            yaw: Some(packet.yaw),
+            pitch: Some(packet.pitch),
+            head_yaw: Some(packet.head_yaw),
+            on_ground,
+            horizontal_collision,
+        };
+        let outcome = player.apply_client_move_with_extent(server, movement, extent);
 
         // Use the committed position so a swim can start in the same input that enters water.
         if flags.get(InputData::StopSwimming as usize) {

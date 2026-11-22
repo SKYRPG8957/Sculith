@@ -1688,16 +1688,14 @@ impl World {
         commands: Option<&PlayerCommands>,
         allow_owner_commands: bool,
     ) {
+        let world_owner = allow_owner_commands.then_some(self);
         let commands = commands.map(
-            |queue| crate::server::player_commands::PlayerCommandIngress {
-                queue,
-                world_owner: allow_owner_commands.then_some(self),
-            },
+            |queue| crate::server::player_commands::PlayerCommandIngress { queue, world_owner },
         );
         // Different players' screens can mutate the same inventory.
         for player in players {
             if player.can_tick_in(self) {
-                player.process_inbound_packets_with_commands(commands);
+                player.process_inbound_packets_with_commands(commands, world_owner);
             }
         }
     }
