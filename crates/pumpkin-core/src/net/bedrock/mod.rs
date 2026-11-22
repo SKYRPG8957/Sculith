@@ -66,6 +66,7 @@ use tokio::{
 use tokio_util::task::TaskTracker;
 
 pub mod blob_cache;
+mod chunk_delivery;
 mod close_signal;
 pub mod distant_terrain;
 mod experience_pickup;
@@ -218,6 +219,9 @@ struct ClientActivity {
     packet_observers: std::sync::OnceLock<packet_observers::PacketObservers>,
     inbound_head: std::sync::Mutex<Option<play_ingress::QueuedPlayInput>>,
     regional_work: std::sync::Mutex<()>,
+    chunk_view_revision: AtomicU64,
+    published_chunk_view: AtomicU64,
+    last_chunk_step: AtomicCell<Option<Instant>>,
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
     mining: std::sync::Mutex<Option<mining::MiningClock>>,
 }
@@ -355,6 +359,9 @@ impl BedrockClient {
                 packet_observers: std::sync::OnceLock::new(),
                 inbound_head: std::sync::Mutex::default(),
                 regional_work: std::sync::Mutex::default(),
+                chunk_view_revision: AtomicU64::new(0),
+                published_chunk_view: AtomicU64::new(0),
+                last_chunk_step: AtomicCell::new(None),
                 experience_pickup: AtomicCell::new(None),
                 mining: std::sync::Mutex::default(),
             }),

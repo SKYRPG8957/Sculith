@@ -72,6 +72,11 @@ fn bedrock_view(old: Cylindrical, pos: BlockPos, distance: NonZero<u8>) -> Cylin
     Cylindrical::new(actual, retained_radius)
 }
 
+pub(crate) fn bedrock_view_is_current(player: &Player, published: Cylindrical) -> bool {
+    let pos = player.get_entity().block_pos.load();
+    bedrock_view(published, pos, get_view_distance(player)) == published
+}
+
 fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actual: Vector2<i32>) {
     use pumpkin_world::chunk_system::ChunkLoading;
     let mut held = player
@@ -160,6 +165,10 @@ pub fn update_position(player: &Arc<Player>) {
     if *registered == Some(new_cylindrical) {
         return;
     }
+    let publication = player
+        .client
+        .bedrock()
+        .map(|client| (client, client.begin_chunk_view()));
     let (loading_chunks, unloading_chunks) = registered.map_or_else(
         || (new_cylindrical.all_chunks_within().collect(), Vec::new()),
         |old| {
@@ -174,12 +183,13 @@ pub fn update_position(player: &Arc<Player>) {
     drop(registered);
 
     let new_chunk_center = new_cylindrical.center;
-    match player.client.as_ref() {
+    let publisher_queued = match player.client.as_ref() {
         ClientPlatform::Java(java_client) => {
             java_client.try_send_packet(&CCenterChunk {
                 chunk_x: new_chunk_center.x.into(),
                 chunk_z: new_chunk_center.y.into(),
             });
+            false
         }
         ClientPlatform::Bedrock(bedrock_client) => {
             let origin = if new_cylindrical.view_distance == distance {
@@ -191,14 +201,14 @@ pub fn update_position(player: &Arc<Player>) {
                     new_chunk_center.y * 16 + 8,
                 )
             };
-            if let Ok(data) = bedrock_client.serialize_packet(&CNetworkChunkPublisherUpdate::new(
-                origin,
-                u32::from(new_cylindrical.view_distance.get()) * 16,
-            )) {
-                bedrock_client.try_enqueue_packet(data);
-            }
+            bedrock_client
+                .serialize_packet(&CNetworkChunkPublisherUpdate::new(
+                    origin,
+                    u32::from(new_cylindrical.view_distance.get()) * 16,
+                ))
+                .is_ok_and(|data| bedrock_client.try_enqueue_packet_data(data))
         }
-    }
+    };
     {
         let mut sender = player
             .chunk_sender
@@ -209,6 +219,9 @@ pub fn update_position(player: &Arc<Player>) {
         }
         for pos in &loading_chunks {
             sender.enqueue_chunk(*pos);
+        }
+        if publisher_queued && let Some((client, revision)) = publication {
+            client.publish_chunk_view(revision);
         }
     }
     world.queue_entity_chunk_changes(clean);

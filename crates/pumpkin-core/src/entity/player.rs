@@ -1,4 +1,5 @@
 pub mod advancement;
+mod chunk_delivery;
 pub mod client_move;
 pub mod client_push;
 mod creative;
@@ -341,7 +342,6 @@ use crate::plugin::player::player_gamemode_change::PlayerGamemodeChangeEvent;
 use crate::plugin::player::player_permission_check::PlayerPermissionCheckEvent;
 use crate::plugin::player::player_teleport::PlayerTeleportEvent;
 use crate::plugin::server::packet::PacketSentEvent;
-use crate::plugin::world::chunk_send::ChunkSend;
 use crate::server::{
     Server, StorageTransferError, TickDeadline, player_commands::PlayerCommandIngress,
 };
@@ -1656,6 +1656,9 @@ impl Player {
         old_level: &Arc<pumpkin_world::level::Level>,
         new_world: &Arc<crate::world::World>,
     ) {
+        if let Some(client) = self.client.bedrock() {
+            client.begin_chunk_view();
+        }
         self.clean_up_chunk_tickets(old_level);
         if let Ok(mut listener) = self.chunk_listener.lock() {
             *listener = new_world.level.chunk_listener.add_global_chunk_listener();
@@ -3389,98 +3392,7 @@ impl Player {
             }
         }
 
-        let world = self.world();
-        let player_chunk = self.get_entity().chunk_pos.load();
-        let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
-        let version = match self.client.as_ref() {
-            ClientPlatform::Java(java_client) => java_client.version.load(),
-            ClientPlatform::Bedrock(_) => JavaMinecraftVersion::V_1_20_2,
-        };
-
-        let view_distance = self.watched_section.load().view_distance;
-        let prepared_batch = self.chunk_sender.try_lock().ok().and_then(|mut sender| {
-            // Share terrain work during a join surge. Every player still gets the
-            // same near-first chunks out to their full requested radius.
-            let max_chunks = match self.client.as_ref() {
-                ClientPlatform::Bedrock(_) if sender.has_pending_bedrock_delivery() => 0,
-                ClientPlatform::Bedrock(_) => (256usize / world.players.load().len().max(1)).max(1),
-                ClientPlatform::Java(_) => usize::MAX,
-            };
-            sender.prepare_batch(
-                &world.level,
-                player_chunk,
-                view_distance,
-                epoch,
-                version,
-                max_chunks,
-            )
-        });
-
-        if let Some(batch) = prepared_batch {
-            match self.client.as_ref() {
-                ClientPlatform::Java(_) => {
-                    let mut batch = batch;
-                    let cancelled = match world.server.upgrade() {
-                        Some(server) if server.plugin_manager.has_handlers::<ChunkSend>() => {
-                            ChunkSend::retain_blocking(&server, &world, &mut batch.chunks)
-                        }
-                        _ => Vec::new(),
-                    };
-                    let encoded = crate::net::ChunkSender::encode_batch_shared(
-                        &batch,
-                        &world.encoded_chunk_cache,
-                    );
-                    let current_epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
-                    let sent = self.chunk_sender.try_lock().map_or_else(
-                        |_| Vec::new(),
-                        |mut sender| {
-                            sender.cancel_pending(&batch, current_epoch, &cancelled);
-                            sender.commit_batch(&batch, &encoded, &self.client, current_epoch)
-                        },
-                    );
-                    self.pair_entities_in_chunks(&world, &sent);
-                }
-                ClientPlatform::Bedrock(bedrock) => {
-                    let current_epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
-                    let chunks = self.chunk_sender.try_lock().map_or_else(
-                        |_| Vec::new(),
-                        |mut sender| sender.commit_bedrock_batch(&batch, current_epoch),
-                    );
-                    if !chunks.is_empty() {
-                        let bedrock = bedrock.clone();
-                        let world = world.clone();
-                        let uuid = self.gameprofile.id;
-                        self.spawn_task(async move {
-                            let (deliveries, chunks): (Vec<_>, Vec<_>) = chunks
-                                .into_iter()
-                                .map(|c| ((c.position, c.delivery_token), c.chunk))
-                                .unzip();
-                            let outcome = bedrock.send_chunks(&chunks, Some(current_epoch)).await;
-                            let (deliveries, dropped): (Vec<_>, Vec<_>) = deliveries
-                                .into_iter()
-                                .partition(|(pos, _)| outcome.sent.contains(pos));
-                            let dropped: Vec<_> = dropped
-                                .into_iter()
-                                .map(|(pos, token)| (pos, token, outcome.failure(pos)))
-                                .collect();
-                            if let Some(player) = world.get_player_by_uuid(uuid) {
-                                // dispatcher sets a reset or a re-enqueue since then holds a newer token.
-                                let mut sender = player
-                                    .chunk_sender
-                                    .lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                let mut ready = sender.fail_delivery(&dropped);
-                                ready.extend(sender.mark_delivered(&deliveries));
-                                drop(sender);
-                                player.pair_entities_in_chunks(&world, &ready);
-                                player.try_bedrock_spawn();
-                            }
-                        });
-                    }
-                }
-            }
-        }
-
+        self.tick_chunk_delivery(server, deadline);
         self.try_bedrock_spawn();
         self.tick_counter.fetch_add(1, Ordering::Relaxed);
         self.living_entity

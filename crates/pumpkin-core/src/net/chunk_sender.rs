@@ -346,6 +346,12 @@ impl ChunkSender {
         !self.awaiting_delivery.is_empty()
     }
 
+    pub(crate) fn has_bedrock_chunk_work(&self) -> bool {
+        self.has_pending_bedrock_delivery()
+            || !self.pending_chunks.is_empty()
+            || !self.parked_chunks.is_empty()
+    }
+
     /// Records a chunk sent outside the batch path as held.
     pub fn mark_sent_out_of_band(&mut self, pos: Vector2<i32>) {
         self.pending_chunks.remove(&pos);
@@ -397,7 +403,7 @@ impl ChunkSender {
 
     fn collect_sorted_candidates(
         &self,
-        level: &Level,
+        loaded: impl Fn(Vector2<i32>) -> Option<SyncChunk>,
         center: Vector2<i32>,
         view_distance: NonZero<u8>,
         max_chunks: usize,
@@ -419,10 +425,10 @@ impl ChunkSender {
                     break;
                 }
 
-                if let Some(chunk) = level.loaded_chunks.get(&pos) {
+                if let Some(chunk) = loaded(pos) {
                     ready.push(PreparedChunk {
                         position: pos,
-                        chunk: chunk.value().clone(),
+                        chunk,
                     });
                 }
             }
@@ -436,11 +442,11 @@ impl ChunkSender {
 
                 let pos = Vector2::new(center.x + i32::from(dx), center.y + i32::from(dy));
                 if self.pending_chunks.contains(&pos)
-                    && let Some(chunk) = level.loaded_chunks.get(&pos)
+                    && let Some(chunk) = loaded(pos)
                 {
                     ready.push(PreparedChunk {
                         position: pos,
-                        chunk: chunk.value().clone(),
+                        chunk,
                     });
                 }
             }
@@ -451,10 +457,10 @@ impl ChunkSender {
                     if ready.len() >= quota_limit {
                         break;
                     }
-                    if let Some(chunk) = level.loaded_chunks.get(&pos) {
+                    if let Some(chunk) = loaded(pos) {
                         ready.push(PreparedChunk {
                             position: pos,
-                            chunk: chunk.value().clone(),
+                            chunk,
                         });
                     }
                 }
@@ -472,6 +478,57 @@ impl ChunkSender {
         epoch: u32,
         version: JavaMinecraftVersion,
         max_chunks: usize,
+    ) -> Option<PreparedBatch> {
+        self.prepare_batch_with(
+            player_chunk,
+            view_distance,
+            epoch,
+            version,
+            max_chunks,
+            |pos| {
+                level
+                    .loaded_chunks
+                    .get(&pos)
+                    .map(|chunk| chunk.value().clone())
+            },
+        )
+    }
+
+    pub(crate) fn prepare_regional_bedrock_batch(
+        &mut self,
+        level: &Level,
+        player_chunk: Vector2<i32>,
+        view: Cylindrical,
+        epoch: u32,
+        max_chunks: usize,
+    ) -> Option<PreparedBatch> {
+        self.prepare_batch_with(
+            player_chunk,
+            view.view_distance,
+            epoch,
+            JavaMinecraftVersion::V_1_20_2,
+            max_chunks,
+            |pos| {
+                if !view.is_within_distance(pos.x, pos.y) {
+                    return None;
+                }
+                level
+                    .loaded_chunks
+                    .try_get(&pos)
+                    .try_unwrap()
+                    .map(|chunk| chunk.value().clone())
+            },
+        )
+    }
+
+    fn prepare_batch_with(
+        &mut self,
+        player_chunk: Vector2<i32>,
+        view_distance: NonZero<u8>,
+        epoch: u32,
+        version: JavaMinecraftVersion,
+        max_chunks: usize,
+        loaded: impl Fn(Vector2<i32>) -> Option<SyncChunk>,
     ) -> Option<PreparedBatch> {
         self.batch_tick += 1;
         self.release_parked();
@@ -491,7 +548,7 @@ impl ChunkSender {
         }
 
         let candidates =
-            self.collect_sorted_candidates(level, player_chunk, view_distance, max_chunks);
+            self.collect_sorted_candidates(loaded, player_chunk, view_distance, max_chunks);
         if candidates.is_empty() {
             return None;
         }

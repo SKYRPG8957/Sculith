@@ -370,6 +370,29 @@ mod tests {
         player.reset_mining();
     }
 
+    fn verify_chunk_delivery_clock(client: &BedrockClient) {
+        assert!(!client.chunk_view_published());
+        let previous = client.begin_chunk_view();
+        let current = client.begin_chunk_view();
+        client.publish_chunk_view(previous);
+        assert!(!client.chunk_view_published());
+        client.publish_chunk_view(current);
+        client.publish_chunk_view(previous);
+        assert!(client.chunk_view_published());
+
+        let at = Instant::now();
+        let step = TickDeadline {
+            at,
+            period: TICK_PERIOD,
+        };
+        assert!(client.claim_chunk_step(Some(step)));
+        assert!(!client.claim_chunk_step(Some(step)));
+        assert!(client.claim_chunk_step(Some(TickDeadline {
+            at: at + TICK_PERIOD,
+            ..step
+        })));
+    }
+
     #[tokio::test]
     #[expect(
         clippy::too_many_lines,
@@ -493,6 +516,7 @@ mod tests {
         check();
         verify_pickup_timer_handoff(&world, &player, east, west);
         verify_mining_clock(&world, &server, &player, &client, west).await;
+        verify_chunk_delivery_clock(&client);
 
         world.players.store(Arc::default());
         client.close().await;

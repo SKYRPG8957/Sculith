@@ -16,6 +16,7 @@ bitflags::bitflags! {
         const INPUT = 1;
         const EXPERIENCE_PICKUP = 2;
         const MINING = 4;
+        const TERRAIN = 8;
     }
 }
 
@@ -66,7 +67,7 @@ impl RegionalInput {
 
     pub(super) fn drain(
         &self,
-        world: &World,
+        world: &Arc<World>,
         server: &Server,
         extent: &RegionChunks,
         deadline: TickDeadline,
@@ -108,6 +109,19 @@ impl RegionalInput {
                 && client.advance_regional_mining(world, &player, deadline, owns)
             {
                 pending |= RegionalWork::MINING;
+            }
+            let owns_player = || owns(player.get_entity().chunk_pos.load());
+            if work.contains(RegionalWork::TERRAIN)
+                && player.can_dispatch_regional_terrain(client, server)
+                && (!owns_player()
+                    || player.tick_bedrock_chunk_delivery(
+                        world,
+                        client,
+                        Some(deadline),
+                        Some(&owns_player),
+                    ))
+            {
+                pending |= RegionalWork::TERRAIN;
             }
             if !pending.is_empty() {
                 // The owner can change after this job takes its ready list.
@@ -181,6 +195,10 @@ impl World {
 
     pub(crate) fn offer_regional_experience_pickup(&self, id: u64, player: &Arc<Player>) -> bool {
         self.offer_regional_work(id, player, RegionalWork::EXPERIENCE_PICKUP)
+    }
+
+    pub(crate) fn offer_regional_terrain(&self, id: u64, player: &Arc<Player>) -> bool {
+        self.offer_regional_work(id, player, RegionalWork::TERRAIN)
     }
 
     pub(crate) fn offer_regional_mining(

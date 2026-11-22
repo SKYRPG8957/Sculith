@@ -240,6 +240,13 @@ claimed work and the handoff use the same per-connection guard. The player
 carries the ordered packets and timer deadlines across the move, so the
 destination can process them while the previous region is waiting.
 
+Once a native Bedrock player has spawned, its region can dispatch ready
+chunks from the existing sender. A view becomes eligible after the publisher
+packet is queued and the sender has installed the new view. Regional and
+world dispatch share the sender's quota, deadline, and delivery tokens.
+Encoding and network credit stay in the existing workers. A view change,
+initial spawn, coordinated step, or chunk/packet hook uses world dispatch.
+
 After a native Bedrock player gathers an experience orb, the current region
 can advance that player's pickup delay. Pending work follows the player across
 region changes. Deadlines prevent an overlapping world or region step from
