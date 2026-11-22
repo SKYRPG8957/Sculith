@@ -3,6 +3,7 @@ use pumpkin_data::attributes::Attributes;
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
+use pumpkin_protocol::bedrock::client::add_actor::SyncedAttribute;
 use rustc_hash::FxHashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
@@ -235,6 +236,61 @@ pub fn apply_attributes(living: &LivingEntity, packed: &[NbtTag]) {
     }
 }
 
+pub(super) fn bedrock_horse_spawn_attributes(living: &LivingEntity) -> Vec<SyncedAttribute> {
+    [
+        &Attributes::MAX_HEALTH,
+        &Attributes::MOVEMENT_SPEED,
+        &Attributes::JUMP_STRENGTH,
+    ]
+    .into_iter()
+    .filter_map(|attribute| {
+        bedrock_attribute(living, attribute, living.get_attribute_value(attribute))
+    })
+    .collect()
+}
+
+fn bedrock_attribute(
+    living: &LivingEntity,
+    attribute: &Attributes,
+    effective_value: f64,
+) -> Option<SyncedAttribute> {
+    let name = match attribute.id {
+        id if id == Attributes::MOVEMENT_SPEED.id => "minecraft:movement",
+        id if id == Attributes::MAX_HEALTH.id => "minecraft:health",
+        id if id == Attributes::MAX_ABSORPTION.id => "minecraft:absorption",
+        id if id == Attributes::ATTACK_DAMAGE.id => "minecraft:attack_damage",
+        id if id == Attributes::KNOCKBACK_RESISTANCE.id => "minecraft:knockback_resistance",
+        id if id == Attributes::LUCK.id => "minecraft:luck",
+        id if id == Attributes::FOLLOW_RANGE.id => "minecraft:follow_range",
+        id if id == Attributes::JUMP_STRENGTH.id => "minecraft:horse.jump_strength",
+        _ => return None,
+    };
+
+    let value = effective_value as f32;
+    let is_horse = living.entity.entity_type == &EntityType::HORSE;
+    let (min_value, current_value, max_value) =
+        if is_horse && attribute.id == Attributes::MAX_HEALTH.id {
+            (0.0, living.health.load().max(0.0).min(value), value)
+        } else if is_horse
+            && (attribute.id == Attributes::MOVEMENT_SPEED.id
+                || attribute.id == Attributes::JUMP_STRENGTH.id)
+        {
+            (0.0, value, f32::MAX)
+        } else {
+            (
+                attribute.min_value as f32,
+                value,
+                attribute.max_value as f32,
+            )
+        };
+    Some(SyncedAttribute {
+        attribute_name: name.to_string(),
+        min_value,
+        current_value,
+        max_value,
+    })
+}
+
 /// Send updates for multiple attributes in a single packet for the given living entity.
 pub fn send_attribute_updates_for_living(
     living: &crate::entity::living::LivingEntity,
@@ -251,6 +307,7 @@ pub fn send_attribute_updates_for_living(
 
     let mut je_properties: Vec<JeProperty> = Vec::with_capacity(attributes.len());
     let mut be_attributes: Vec<BeAttribute> = Vec::with_capacity(attributes.len());
+    let is_horse = living.entity.entity_type == &EntityType::HORSE;
 
     for attribute in attributes {
         let base_value = living.get_attribute_base(&attribute);
@@ -282,29 +339,22 @@ pub fn send_attribute_updates_for_living(
             ));
         }
 
-        let name = match attribute.id {
-            id if id == Attributes::MOVEMENT_SPEED.id => "minecraft:movement".to_string(),
-            id if id == Attributes::MAX_HEALTH.id => "minecraft:health".to_string(),
-            id if id == Attributes::MAX_ABSORPTION.id => "minecraft:absorption".to_string(),
-            id if id == Attributes::ATTACK_DAMAGE.id => "minecraft:attack_damage".to_string(),
-            id if id == Attributes::KNOCKBACK_RESISTANCE.id => {
-                "minecraft:knockback_resistance".to_string()
-            }
-            id if id == Attributes::LUCK.id => "minecraft:luck".to_string(),
-            id if id == Attributes::FOLLOW_RANGE.id => "minecraft:follow_range".to_string(),
-            id if id == Attributes::JUMP_STRENGTH.id => "minecraft:horse.jump_strength".to_string(),
-            // Java-only attributes must not be sent under unsupported Bedrock names.
-            _ => continue,
+        let Some(value) = bedrock_attribute(living, &attribute, effective_value) else {
+            continue;
         };
 
         let be_attribute = BeAttribute {
-            min_value: attribute.min_value as f32,
-            max_value: attribute.max_value as f32,
-            current_value: effective_value as f32,
-            default_min_value: attribute.min_value as f32,
-            default_max_value: attribute.max_value as f32,
-            default_value: base_value as f32,
-            name,
+            min_value: value.min_value,
+            max_value: value.max_value,
+            current_value: value.current_value,
+            default_min_value: value.min_value,
+            default_max_value: value.max_value,
+            default_value: if is_horse && attribute.id == Attributes::MAX_HEALTH.id {
+                value.max_value
+            } else {
+                base_value as f32
+            },
+            name: value.attribute_name,
             // Bedrock receives the already-computed effective value above. Do not advertise
             // modifier entries until their payload is encoded as well.
             modifiers: Vec::new(),
@@ -314,6 +364,17 @@ pub fn send_attribute_updates_for_living(
     }
 
     let world = living.entity.world.load();
+    if is_horse && !be_attributes.is_empty() {
+        // Only peers with this actor can use the live update. Spawn includes its own snapshot.
+        world.send_to_tracking_players_bedrock(
+            &living.entity,
+            &BePacket {
+                target_runtime_id: VarULong(living.entity.entity_id as u64),
+                attribute_list: std::mem::take(&mut be_attributes),
+                tick: VarULong(0),
+            },
+        );
+    }
     match (!je_properties.is_empty(), !be_attributes.is_empty()) {
         (false, false) => {}
         (true, false) => {

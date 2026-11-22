@@ -905,6 +905,12 @@ pub trait EntityBase: Send + Sync + std::any::Any {
             metadata.merge(mob_metadata);
         }
         let [pitch, yaw, head_yaw, body_yaw] = entity.bedrock_rotation();
+        let attributes_list = if entity.entity_type == &EntityType::HORSE {
+            self.get_living_entity()
+                .map_or_else(Vec::new, attributes::bedrock_horse_spawn_attributes)
+        } else {
+            Vec::new()
+        };
         let packet = CAddActor {
             target_actor_id: VarLong(runtime_id as i64),
             target_runtime_id: VarULong(runtime_id),
@@ -914,7 +920,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
             rotation: Vector2::new(pitch, yaw),
             y_head_rotation: head_yaw,
             y_body_rotation: body_yaw,
-            attributes_list: Vec::new(),
+            attributes_list,
             actor_data: metadata,
             // TODO: Bedrock `climate_variant` property for pig/cow/chicken (`TemperatureVariantAnimal`)
             // empty -> client picks its own variant.
