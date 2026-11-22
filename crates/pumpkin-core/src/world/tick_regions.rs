@@ -209,14 +209,26 @@ impl TickRegions {
                     owner
                 });
                 self.next_ticks.insert(owner, component.next_tick);
-                region_chunks.insert(owner, component.chunks.into());
+                let count = component.chunks.len();
+                // In-flight jobs use extent identity to retain their write authority.
+                let chunks = self
+                    .layout
+                    .chunks(owner)
+                    .filter(|chunks| {
+                        chunks.len() == count && component.overlaps.get(&owner) == Some(&count)
+                    })
+                    .cloned()
+                    .unwrap_or_else(|| component.chunks.into());
+                region_chunks.insert(owner, chunks);
                 owner
             })
             .collect();
         for owner in owners.values_mut() {
             *owner = component_owners[*owner];
         }
-        self.layout = Arc::new(RegionLayout::from_active(owners, region_chunks));
+        let mut layout = RegionLayout::from_active(owners, region_chunks);
+        layout.inactive = self.layout.inactive.clone();
+        self.layout = Arc::new(layout);
         let regions = self.next_ticks.len();
         if previous != regions {
             tracing::trace!(
@@ -264,6 +276,48 @@ mod tests {
                 .values()
                 .all(|&owner| owner == original_owner)
         );
+    }
+
+    #[test]
+    fn unrelated_extents_survive_a_merge_and_split() {
+        let west = Vector2::new(-1, 0);
+        let west_edge = Vector2::new(-2, 0);
+        let bridge = Vector2::new(0, 0);
+        let east = Vector2::new(1, 0);
+        let distant = Vector2::new(20, 0);
+        let inactive = Vector2::new(40, 0);
+        let mut active = FxHashSet::from_iter([west, west_edge, east, distant]);
+        let mut regions = TickRegions::default();
+        regions.active_chunks_changed();
+        regions.schedule_ticks(&active, vec![inactive], true);
+        let separate = regions.layout().clone();
+        let west_owner = separate.owner(west).unwrap();
+        let distant_owner = separate.owner(distant).unwrap();
+
+        active.insert(bridge);
+        regions.active_chunks_changed();
+        regions.schedule_ticks(&active, vec![inactive], true);
+        let merged = regions.layout().clone();
+        assert_eq!(merged.owner(east), Some(west_owner));
+
+        active.remove(&bridge);
+        regions.active_chunks_changed();
+        regions.schedule_ticks(&active, vec![inactive], true);
+        let split = regions.layout();
+        assert_eq!(split.owner(west), Some(west_owner));
+        assert_ne!(split.owner(east), Some(west_owner));
+
+        for owner in [distant_owner, RegionLayout::INACTIVE] {
+            let extent = separate.chunks(owner).unwrap();
+            assert!(Arc::ptr_eq(extent, merged.chunks(owner).unwrap()));
+            assert!(Arc::ptr_eq(extent, split.chunks(owner).unwrap()));
+        }
+        let original = separate.chunks(west_owner).unwrap();
+        let combined = merged.chunks(west_owner).unwrap();
+        let restored = split.chunks(west_owner).unwrap();
+        assert!(!Arc::ptr_eq(original, combined));
+        assert!(!Arc::ptr_eq(combined, restored));
+        assert!(!Arc::ptr_eq(original, restored));
     }
 
     #[test]

@@ -222,8 +222,8 @@ impl World {
             let Ok(published) = self.regional_item_timers.try_read() else {
                 break;
             };
-            if !Arc::ptr_eq(&published, &plan) {
-                break;
+            if published.assigned.get(&base.entity_id) != Some(&owner) {
+                continue;
             }
             let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&chunk) else {
                 continue;
@@ -304,5 +304,104 @@ impl World {
                     .collect::<Vec<_>>()
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        cell::Cell,
+        time::{Duration, Instant},
+    };
+
+    use pumpkin_config::{
+        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
+    };
+    use pumpkin_data::{entity::EntityType, item::Item, item_stack::ItemStack};
+    use pumpkin_nbt::NbtCompound;
+    use pumpkin_util::math::vector3::Vector3;
+
+    use crate::data::VanillaData;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn a_handoff_in_another_region_preserves_the_running_item_step() {
+        let folder = tempfile::tempdir().unwrap();
+        let basic = BasicConfiguration {
+            default_level_name: folder.path().join("world").to_string_lossy().into_owned(),
+            allow_chat_reports: false,
+            allow_nether: false,
+            allow_end: false,
+            ..Default::default()
+        };
+        let mut advanced = AdvancedConfiguration::default();
+        advanced.world.generator = WorldPreset::Flat;
+        advanced.networking.bedrock.online_mode = false;
+        let server = Server::new(
+            basic,
+            advanced,
+            TelemetryConfig::default(),
+            VanillaData::default(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        let world = server.worlds.load()[0].clone();
+        let home = Vector2::new(0, 0);
+        let origin = Vector2::new(10, 0);
+        let destination = Vector2::new(20, 0);
+        let layout = Arc::new(RegionLayout::from_active(
+            FxHashMap::from_iter([(home, 0), (origin, 1), (destination, 2)]),
+            FxHashMap::from_iter([
+                (0, [home].into()),
+                (1, [origin].into()),
+                (2, [destination].into()),
+            ]),
+        ));
+        world.publish_region_layout(&layout);
+        world.level.get_or_fetch_chunk(home, |_| ()).await;
+
+        let position =
+            |chunk: Vector2<i32>| Vector3::new(f64::from(chunk.x) * 16.0 + 8.0, 80.0, 8.0);
+        let spawn = |chunk| -> Arc<dyn EntityBase> {
+            let item = Arc::new(ItemEntity::new(
+                Entity::new(world.clone(), position(chunk), &EntityType::ITEM),
+                ItemStack::new(1, &Item::STONE),
+            ));
+            world.add_entity_silent(item.clone());
+            item
+        };
+        let local = spawn(home);
+        let crossing = spawn(origin);
+        let previous = world.regional_item_timers.read().unwrap().clone();
+        world.assign_regional_item_timers(
+            &server,
+            &[(&local, home), (&crossing, origin)],
+            true,
+            &previous,
+        );
+
+        let moved = Cell::new(false);
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        world.advance_regional_item_timers(&server, 0, deadline, &|chunk| {
+            // Place the handoff after the running job has read its actor list.
+            if !moved.replace(true) {
+                crossing.get_entity().set_pos(position(destination));
+            }
+            layout.owner(chunk) == Some(0)
+        });
+        let current = world.regional_item_timers.read().unwrap().clone();
+        assert_eq!(current.assigned[&crossing.get_entity().entity_id], 2);
+        let mut data = NbtCompound::new();
+        local.write_nbt(&mut data);
+        assert_eq!(
+            data.get_short("PickupDelay"),
+            Some(i16::from(ItemEntity::DEFAULT_PICKUP_DELAY - 1))
+        );
+        server.shutdown().await;
     }
 }

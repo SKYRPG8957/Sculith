@@ -132,6 +132,7 @@ timers outside active regions share a deadline for timer work. Inhabited
 time contributes to local difficulty. Each chunk carries its remaining
 delays when it changes owners. After a merge or split, new jobs inherit the
 latest relevant deadline and wait only for jobs whose chunk extents overlap.
+Jobs with unchanged chunk membership keep their existing write authority.
 A late owner drops missed starts and cannot accumulate a queue of catch-up
 ticks.
 
@@ -196,9 +197,9 @@ steps from the region owner. The world publishes the assignment from the
 entity's current chunk. A movement between owners updates position and
 assignment together so the destination region can take over before the next
 world tick. A merge or split reassigns the already scheduled items when the
-new chunk ownership is published. A regional job checks assignment and
-residency before touching the counters. The item keeps its most recent
-deadline across the handoff so two close deadlines cannot advance it twice.
+new chunk ownership is published. A regional job checks each item's current
+assignment and residency before touching its counters. The item keeps its most
+recent deadline across the handoff so two close deadlines cannot advance it twice.
 An isolated airborne item can also move on the region clock while its swept
 bounds touch only air in loaded chunks of the same owner. The owner pins the
 terrain and spatial indices through the update, including when the item crosses
