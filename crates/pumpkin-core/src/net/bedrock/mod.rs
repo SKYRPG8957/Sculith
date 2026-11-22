@@ -89,7 +89,7 @@ use crate::{
     },
     server::{
         Server,
-        player_commands::{PlayerCommands, submit_player_command},
+        player_commands::{PlayerCommandIngress, submit_inbound_player_command},
     },
 };
 use arc_swap::{ArcSwap, ArcSwapOption};
@@ -1395,7 +1395,7 @@ impl BedrockClient {
         server: &Arc<Server>,
         packet: &RawPacket,
         spin_attack_prediction: &mut Option<bool>,
-        commands: Option<&PlayerCommands>,
+        commands: Option<PlayerCommandIngress<'_>>,
     ) -> Result<(), Error> {
         let payload = &packet.payload[..];
         let reader = &mut &payload[..];
@@ -1465,7 +1465,7 @@ impl BedrockClient {
             SCommandRequest::PACKET_ID => {
                 let req = SCommandRequest::read(reader)?;
                 let command = req.command.strip_prefix('/').unwrap_or(&req.command);
-                submit_player_command(server, player, command, commands);
+                submit_inbound_player_command(server, player, command, commands);
             }
             SSetLocalPlayerAsInitialized::PACKET_ID => {
                 self.handle_set_local_player_as_initialized(

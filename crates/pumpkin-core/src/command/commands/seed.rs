@@ -1,5 +1,6 @@
 use crate::command::argument_builder::{ArgumentBuilder, command};
 use crate::command::context::command_context::CommandContext;
+use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use pumpkin_data::translation;
@@ -9,28 +10,39 @@ use pumpkin_util::text::click::ClickEvent;
 use pumpkin_util::text::hover::HoverEvent;
 use pumpkin_util::text::{TextComponent, color::NamedColor};
 use std::borrow::Cow;
+use std::sync::LazyLock;
 
 const DESCRIPTION: &str = "Displays the world seed.";
 const PERMISSION: &str = "minecraft:command.seed";
 
 struct SeedCommandExecutor;
 
+pub(super) static SEED_COMMAND: LazyLock<CommandDetachedNode> = LazyLock::new(|| {
+    command("seed", DESCRIPTION)
+        .requires(PERMISSION)
+        .executes(SeedCommandExecutor)
+        .build()
+});
+
 fn create_copy_on_click_text(content: String) -> TextComponent {
+    // A Bedrock text packet flattens translation parameters to strings.
     TextComponent::translate_cross(
         translation::java::COMMANDS_SEED_SUCCESS,
         translation::bedrock::COMMANDS_SEED_SUCCESS,
-        [TextComponent::wrap_in_square_brackets(
-            TextComponent::text(content.clone())
-                .hover_event(HoverEvent::show_text(TextComponent::translate_cross(
-                    translation::java::CHAT_COPY_CLICK,
-                    translation::java::CHAT_COPY_CLICK,
-                    [],
-                )))
-                .click_event(ClickEvent::CopyToClipboard {
-                    value: Cow::from(content),
-                })
-                .color_named(NamedColor::Green),
-        )],
+        [TextComponent::text("[")
+            .add_child(
+                TextComponent::text(content.clone())
+                    .hover_event(HoverEvent::show_text(TextComponent::translate_cross(
+                        translation::java::CHAT_COPY_CLICK,
+                        translation::java::CHAT_COPY_CLICK,
+                        [],
+                    )))
+                    .click_event(ClickEvent::CopyToClipboard {
+                        value: Cow::from(content),
+                    })
+                    .color_named(NamedColor::Green),
+            )
+            .add_text("]")],
     )
 }
 
@@ -57,9 +69,5 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
         PermissionDefault::Op(PermissionLvl::Two),
     ));
 
-    dispatcher.register(
-        command("seed", DESCRIPTION)
-            .requires(PERMISSION)
-            .executes(SeedCommandExecutor),
-    );
+    dispatcher.register(SEED_COMMAND.clone());
 }

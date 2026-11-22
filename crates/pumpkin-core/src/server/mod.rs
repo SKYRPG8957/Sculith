@@ -1564,7 +1564,7 @@ impl Server {
                 world.flush_block_updates();
                 world.flush_synced_block_events();
                 let players = world.players.load();
-                world.process_player_packets(&players, Some(commands));
+                world.process_player_packets(&players, Some(commands), false);
                 players
                     .par_iter()
                     .filter(|player| player.can_tick_in(world))

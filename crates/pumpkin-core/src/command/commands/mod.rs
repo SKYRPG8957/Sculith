@@ -97,6 +97,9 @@ mod whitelist;
 pub(crate) use whitelist::kick_non_whitelisted_players;
 mod worldborder;
 
+mod world_reads;
+pub(crate) use world_reads::is_world_read;
+
 #[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn default_dispatcher(
@@ -108,6 +111,7 @@ pub fn default_dispatcher(
     register_permissions(registry);
 
     let mut dispatcher = CommandDispatcher::new();
+    dispatcher.consumer = world_reads::DEFAULT_CONSUMER.clone();
 
     say::register(&mut dispatcher, registry);
     banlist::register(&mut dispatcher, registry);

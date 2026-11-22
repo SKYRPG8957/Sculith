@@ -1662,10 +1662,17 @@ impl World {
     }
 
     pub(crate) fn process_player_packets(
-        &self,
+        self: &Arc<Self>,
         players: &[Arc<Player>],
         commands: Option<&PlayerCommands>,
+        allow_owner_reads: bool,
     ) {
+        let commands = commands.map(
+            |queue| crate::server::player_commands::PlayerCommandIngress {
+                queue,
+                read_owner: allow_owner_reads.then_some(self),
+            },
+        );
         // Different players' screens can mutate the same inventory.
         for player in players {
             if player.can_tick_in(self) {
@@ -1733,7 +1740,7 @@ impl World {
 
         let t_players = std::time::Instant::now();
         // Vanilla handles all packets before any player ticks
-        self.process_player_packets(&players, commands);
+        self.process_player_packets(&players, commands, !coordinated);
         players
             .par_iter()
             .filter(|player| player.can_tick_in(self))

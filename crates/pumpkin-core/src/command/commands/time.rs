@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use pumpkin_data::translation;
 use pumpkin_util::PermissionLvl;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
@@ -9,6 +11,7 @@ use crate::command::argument_types::identifier::IdentifierArgumentType;
 use crate::command::argument_types::registry_id::RegistryIdArgumentType;
 use crate::command::argument_types::time::TimeArgumentType;
 use crate::command::context::command_context::CommandContext;
+use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use pumpkin_util::identifier::Identifier;
@@ -343,13 +346,7 @@ macro_rules! build_branches {
     }};
 }
 
-pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
-    registry.register_permission_or_panic(Permission::new(
-        PERMISSION,
-        DESCRIPTION,
-        PermissionDefault::Op(PermissionLvl::Two),
-    ));
-
+pub(super) static TIME_COMMAND: LazyLock<CommandDetachedNode> = LazyLock::new(|| {
     let of_clock_node = literal("of").then(build_branches!(
         argument(
             "clock",
@@ -358,8 +355,17 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
         true
     ));
 
-    let time_cmd = build_branches!(command("time", DESCRIPTION).requires(PERMISSION), false)
-        .then(of_clock_node);
+    build_branches!(command("time", DESCRIPTION).requires(PERMISSION), false)
+        .then(of_clock_node)
+        .build()
+});
 
-    dispatcher.register(time_cmd);
+pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
+    registry.register_permission_or_panic(Permission::new(
+        PERMISSION,
+        DESCRIPTION,
+        PermissionDefault::Op(PermissionLvl::Two),
+    ));
+
+    dispatcher.register(TIME_COMMAND.clone());
 }

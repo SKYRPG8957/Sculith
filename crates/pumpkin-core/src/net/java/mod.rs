@@ -87,7 +87,7 @@ use crate::{
     error::PumpkinError,
     server::{
         Server,
-        player_commands::{PlayerCommands, submit_player_command},
+        player_commands::{PlayerCommandIngress, submit_inbound_player_command},
     },
 };
 
@@ -859,7 +859,7 @@ impl JavaClient {
         player: &Arc<Player>,
         server: &Arc<Server>,
         packet: &RawPacket,
-        commands: Option<&PlayerCommands>,
+        commands: Option<PlayerCommandIngress<'_>>,
     ) -> Result<(), Box<dyn PumpkinError>> {
         // The multiversion plugin has converted older clients' packets to 26.3 by now.
         let version = CURRENT_MC_VERSION;
@@ -903,7 +903,7 @@ impl JavaClient {
             }
             id if id == SChatCommand::to_id(version) => {
                 let packet = SChatCommand::read(&mut payload, &version)?;
-                submit_player_command(server, player, packet.command, commands);
+                submit_inbound_player_command(server, player, packet.command, commands);
             }
             id if id == SChatCommandSigned::to_id(version) => {
                 let mut signed_payload = payload;
@@ -913,12 +913,12 @@ impl JavaClient {
                     } else {
                         SChatCommand::read(&mut payload, &version)?.command
                     };
-                submit_player_command(server, player, command, commands);
+                submit_inbound_player_command(server, player, command, commands);
             }
             id if id == SChatMessage::to_id(version) => {
                 let packet = SChatMessage::read(&mut payload, &version)?;
                 if let Some((commands, text)) = commands.zip(packet.message.strip_prefix('/')) {
-                    commands.submit(server, player, text);
+                    submit_inbound_player_command(server, player, text, Some(commands));
                     return Ok(());
                 }
                 let msg = packet.message.to_string();

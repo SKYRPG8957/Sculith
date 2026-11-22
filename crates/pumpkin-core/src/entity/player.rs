@@ -338,7 +338,7 @@ use crate::plugin::player::player_permission_check::PlayerPermissionCheckEvent;
 use crate::plugin::player::player_teleport::PlayerTeleportEvent;
 use crate::plugin::server::packet::PacketSentEvent;
 use crate::plugin::world::chunk_send::ChunkSend;
-use crate::server::{Server, StorageTransferError, player_commands::PlayerCommands};
+use crate::server::{Server, StorageTransferError, player_commands::PlayerCommandIngress};
 use crate::world::{BlockBreakingProgress, World};
 use bytes::Bytes;
 
@@ -3218,7 +3218,10 @@ impl Player {
         self.process_inbound_packets_with_commands(None);
     }
 
-    pub(crate) fn process_inbound_packets_with_commands(&self, commands: Option<&PlayerCommands>) {
+    pub(crate) fn process_inbound_packets_with_commands(
+        &self,
+        commands: Option<PlayerCommandIngress<'_>>,
+    ) {
         const MAX_PACKETS_PER_TICK: usize = 64;
 
         // Player::tick runs after the world's block-update flush. Acknowledge the previous tick's
