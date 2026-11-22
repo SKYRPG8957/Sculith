@@ -1,14 +1,14 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use pumpkin_data::translation;
+use pumpkin_data::{Block, translation};
 use pumpkin_protocol::bedrock::client::CMovePlayer;
 use pumpkin_protocol::java::client::play::{
     CEntityPositionSync, CHeadRot, CPlayerPosition, CSetCamera, CUpdateEntityPos,
     CUpdateEntityPosRot, CUpdateEntityRot,
 };
 use pumpkin_util::GameMode;
-use pumpkin_util::math::{vector3::Vector3, wrap_degrees};
+use pumpkin_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
 use pumpkin_util::text::TextComponent;
 
 use crate::entity::EntityBase;
@@ -233,6 +233,96 @@ impl Player {
             ClientPlatform::Bedrock(client) => {
                 self.send_bedrock_teleport(client);
             }
+        }
+    }
+
+    pub(crate) fn controlled_vehicle(&self) -> Option<Arc<dyn EntityBase>> {
+        let vehicle = self.get_entity().get_vehicle()?;
+        let base = vehicle.get_entity();
+        if base.is_removed()
+            || base.has_vehicle()
+            || !Arc::ptr_eq(&base.world.load(), &self.world())
+            || !self.has_client_loaded()
+            || self.is_movement_locked()
+            || self.living_entity.is_dead_or_dying()
+            || self
+                .awaiting_teleport
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some()
+        {
+            return None;
+        }
+        vehicle
+            .get_controlling_passenger()
+            .is_some_and(|rider| rider.get_entity().entity_id == self.entity_id())
+            .then_some(vehicle)
+    }
+
+    /// Applies the controlling rider's accepted movement to the shared vehicle and its riders.
+    pub(crate) fn apply_client_vehicle_move(
+        self: &Arc<Self>,
+        vehicle: &dyn EntityBase,
+        position: Vector3<f64>,
+        yaw: f32,
+        pitch: f32,
+        on_ground: bool,
+    ) {
+        if ![position.x, position.y, position.z]
+            .into_iter()
+            .all(f64::is_finite)
+            || !yaw.is_finite()
+            || !pitch.is_finite()
+        {
+            self.kick_invalid_movement();
+            return;
+        }
+        let position = Vector3::new(
+            Self::clamp_horizontal(position.x),
+            Self::clamp_vertical(position.y),
+            Self::clamp_horizontal(position.z),
+        );
+        let previous = self.get_entity().pos.load();
+        let base = vehicle.get_entity();
+        let motion = position - base.pos.load();
+        base.set_pos(position);
+        base.set_rotation(wrap_degrees(yaw), wrap_degrees(pitch));
+        base.on_ground.store(on_ground, Ordering::Relaxed);
+        base.emit_client_movement(vehicle, motion);
+        if let Some(living) = vehicle.get_living_entity() {
+            living.fall(vehicle, motion.y, on_ground);
+        }
+
+        self.update_vehicle_lava_advancement(base, position);
+        crate::entity::position_riders(vehicle);
+        let cm = (previous
+            .squared_distance_to_vec(&self.get_entity().pos.load())
+            .sqrt()
+            * 100.0)
+            .round() as i32;
+        if cm > 0 {
+            let stat = self.get_movement_statistic();
+            self.increment_stat(StatisticCategory::Custom, stat as i32, cm);
+        }
+        chunker::update_position(self);
+    }
+
+    fn update_vehicle_lava_advancement(&self, vehicle: &crate::entity::Entity, pos: Vector3<f64>) {
+        let world = self.world();
+        let block = pos.to_block_pos();
+        let below = BlockPos::new(block.0.x, block.0.y - 1, block.0.z);
+        if world.get_block(&block) == &Block::LAVA || world.get_block(&below) == &Block::LAVA {
+            let start = self.entered_lava_pos.load().unwrap_or(pos);
+            self.entered_lava_pos.store(Some(start));
+            self.trigger_advancement(
+                super::advancement::trigger::AdvancementTrigger::RideEntityInLava {
+                    distance_horizontal: (pos.x - start.x).hypot(pos.z - start.z),
+                    dimension: world.dimension.minecraft_name.to_string(),
+                    vehicle_type: Some(format!("minecraft:{}", vehicle.entity_type.resource_name)),
+                },
+            );
+        } else {
+            self.entered_lava_pos.store(None);
         }
     }
 

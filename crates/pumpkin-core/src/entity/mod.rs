@@ -238,6 +238,12 @@ pub const fn entity_type_to_bedrock_identifier(entity_type: &EntityType) -> &'st
         "minecraft:eye_of_ender_signal"
     } else if entity_type.id == EntityType::ZOMBIE_VILLAGER.id {
         "minecraft:zombie_villager_v2"
+    } else if entity_type.boat.is_some() {
+        if vehicle::boat::is_chest_boat(entity_type) {
+            "minecraft:chest_boat"
+        } else {
+            "minecraft:boat"
+        }
     } else {
         entity_type.resource_name
     }
@@ -896,15 +902,16 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         {
             metadata.merge(mob_metadata);
         }
+        let [pitch, yaw, head_yaw, body_yaw] = entity.bedrock_rotation();
         let packet = CAddActor {
             target_actor_id: VarLong(runtime_id as i64),
             target_runtime_id: VarULong(runtime_id),
             actor_type: identifier.to_string(),
             position: self.bedrock_pos().to_f32_lossy(),
             velocity: entity.velocity.load().to_f32_lossy(),
-            rotation: Vector2::new(entity.pitch.load(), entity.yaw.load()),
-            y_head_rotation: entity.head_yaw.load(),
-            y_body_rotation: entity.body_yaw.load(),
+            rotation: Vector2::new(pitch, yaw),
+            y_head_rotation: head_yaw,
+            y_body_rotation: body_yaw,
             attributes_list: Vec::new(),
             actor_data: metadata,
             // TODO: Bedrock `climate_variant` property for pig/cow/chicken (`TemperatureVariantAnimal`)
@@ -1481,7 +1488,15 @@ pub fn position_riders(vehicle: &dyn EntityBase) {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
     for passenger in passengers {
+        let rider = passenger.get_entity();
+        let previous_chunk = rider.chunk_pos.load();
         position_rider(vehicle, passenger.as_ref());
+        if previous_chunk != rider.chunk_pos.load()
+            && let Some(player) = passenger.get_player()
+            && let Some(player) = player.world().get_player_by_id(rider.entity_id)
+        {
+            crate::world::chunker::update_position(&player);
+        }
         position_riders(passenger.as_ref());
     }
 }
@@ -2030,6 +2045,20 @@ impl Entity {
             entity_data_key::FLAGS_TWO,
             MetadataValue::Int64(self.bedrock_flags_two.load(Relaxed)),
         );
+    }
+
+    pub(crate) fn bedrock_rotation(&self) -> [f32; 4] {
+        let yaw = self.yaw.load();
+        if self.entity_type.boat.is_some() {
+            let hull_yaw = yaw + vehicle::boat::BEDROCK_YAW_OFFSET;
+            return [0.0, hull_yaw, hull_yaw, hull_yaw];
+        }
+        [
+            self.pitch.load(),
+            yaw,
+            self.head_yaw.load(),
+            self.body_yaw.load(),
+        ]
     }
 
     pub fn bedrock_metadata(&self) -> SyncedActorDataList {
@@ -5640,6 +5669,7 @@ impl Entity {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         if let Some(player) = passenger.get_player() {
+            player.entered_lava_pos.store(None);
             let other_passenger_type = passengers
                 .first()
                 .map(|p| format!("minecraft:{}", p.get_entity().entity_type.resource_name));
@@ -5755,10 +5785,10 @@ impl Entity {
             .passengers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(index) = passengers
+        let index = passengers
             .iter()
-            .position(|passenger| passenger.get_entity().entity_id == passenger_id)
-        {
+            .position(|passenger| passenger.get_entity().entity_id == passenger_id);
+        if let Some(index) = index {
             let passenger = passengers.remove(index);
             *passenger
                 .get_entity()
@@ -5784,11 +5814,35 @@ impl Entity {
             },
         };
 
-        self.world.load().broadcast_to_chunk_editioned(
+        let world = self.world.load();
+        world.broadcast_to_chunk_editioned(
             self.chunk_pos.load(),
             &CSetPassengers::new(VarInt(self.entity_id), &passenger_ids),
             &be_unlink,
         );
+        if index == Some(0) {
+            self.promote_bedrock_boat_rider(&world, &passenger_ids);
+        }
+    }
+
+    fn promote_bedrock_boat_rider(&self, world: &World, passengers: &[VarInt]) {
+        if self.entity_type.boat.is_some()
+            && let Some(rider) = passengers.first()
+        {
+            world.broadcast_to_chunk_bedrock(
+                self.chunk_pos.load(),
+                &pumpkin_protocol::bedrock::client::CSetActorLink {
+                    link: pumpkin_protocol::bedrock::client::common::ActorLink {
+                        ridden_unique_id: VarLong(i64::from(self.entity_id)),
+                        rider_unique_id: VarLong(i64::from(rider.0)),
+                        link_type: 1,
+                        immediate: true,
+                        rider_initiated: false,
+                        vehicle_angular_velocity: 0.0,
+                    },
+                },
+            );
+        }
     }
 
     pub fn remove_passenger_sync(&self, passenger_id: i32) {
@@ -5827,29 +5881,29 @@ impl Entity {
             return;
         }
 
-        let (removed_passenger, passenger_ids) = {
+        let (removed_passenger, passenger_ids, front_seat_removed) = {
             let mut passengers = self
                 .passengers
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let removed_passenger = passengers
+            let index = passengers
                 .iter()
-                .position(|p| p.get_entity().entity_id == passenger_id)
-                .map(|idx| {
-                    let passenger = passengers.remove(idx);
-                    *passenger
-                        .get_entity()
-                        .vehicle
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-                    passenger
-                });
+                .position(|p| p.get_entity().entity_id == passenger_id);
+            let removed_passenger = index.map(|idx| {
+                let passenger = passengers.remove(idx);
+                *passenger
+                    .get_entity()
+                    .vehicle
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+                passenger
+            });
 
             let passenger_ids: Vec<VarInt> = passengers
                 .iter()
                 .map(|p| VarInt(p.get_entity().entity_id))
                 .collect();
-            (removed_passenger, passenger_ids)
+            (removed_passenger, passenger_ids, index == Some(0))
         };
 
         let chunk_pos = self.chunk_pos.load();
@@ -5917,6 +5971,9 @@ impl Entity {
                 );
             } else {
                 world.broadcast_to_chunk_editioned(chunk_pos, &passengers_packet, &be_unlink);
+            }
+            if front_seat_removed {
+                self.promote_bedrock_boat_rider(&world, &passenger_ids);
             }
 
             if !reposition {

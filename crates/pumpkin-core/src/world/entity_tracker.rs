@@ -139,6 +139,7 @@ impl TrackedEntity {
         let pos = base.pos.load();
         let on_ground = base.on_ground.load(Relaxed);
         let bedrock_pos = entity.bedrock_pos();
+        let bedrock_rot = Self::bedrock_move_rotation(base);
         let rot = [
             pack_degrees(base.pitch.load()),
             pack_degrees(base.yaw.load()),
@@ -166,7 +167,7 @@ impl TrackedEntity {
             was_on_ground: AtomicBool::new(on_ground),
             was_riding: AtomicBool::new(false),
             bedrock_pos: AtomicCell::new(bedrock_pos),
-            bedrock_rot: AtomicCell::new(rot),
+            bedrock_rot: AtomicCell::new(bedrock_rot),
         }
     }
 
@@ -363,11 +364,7 @@ impl TrackedEntity {
     /// Bedrock -> every tick, only changed fields.
     fn send_bedrock_move(&self, entity: &Entity, world: &World) {
         let pos = self.entity.bedrock_pos();
-        let rot = [
-            pack_degrees(entity.pitch.load()),
-            pack_degrees(entity.yaw.load()),
-            pack_degrees(entity.head_yaw.load()),
-        ];
+        let rot = Self::bedrock_move_rotation(entity);
         let last_pos = self.bedrock_pos.load();
         let last_rot = self.bedrock_rot.load();
 
@@ -427,6 +424,11 @@ impl TrackedEntity {
             ),
             world,
         );
+    }
+
+    fn bedrock_move_rotation(entity: &Entity) -> [u8; 3] {
+        let [pitch, yaw, head_yaw, _] = entity.bedrock_rotation();
+        [pitch, yaw, head_yaw].map(pack_degrees)
     }
 
     fn collect_indirect_passengers(

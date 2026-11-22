@@ -1,13 +1,17 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use pumpkin_protocol::bedrock::client::CMoveActorAbsolute;
 use pumpkin_protocol::bedrock::client::set_actor_data::{
     CSetActorData, MetadataValue, PropertySyncData, SyncedActorDataList, entity_data_key,
 };
 use pumpkin_protocol::bedrock::server::player_auth_input::{InputMode, InteractionModel};
+use pumpkin_util::math::pack_degrees;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
 
-use crate::entity::player::{ClientMove, PlayerInput};
+use crate::entity::EntityBase;
+use crate::entity::player::{ClientMove, ClientMoveOutcome, PlayerInput};
+use crate::entity::vehicle::boat::BEDROCK_YAW_OFFSET;
 
 impl BedrockClient {
     pub fn handle_player_auth_input(
@@ -44,11 +48,12 @@ impl BedrockClient {
 
         let entity = player.get_entity();
         let flags = &packet.input_data;
+        let was_riding = entity.has_vehicle();
         // Like Geyser: the motion this tick started with was downward. Landing can already
         // have cleared the end delta (gliding into the ground).
         let on_ground = flags.get(InputData::VerticalCollision as usize)
             && self.client_delta.load().y < 0.0
-            && !entity.has_vehicle();
+            && !was_riding;
         let horizontal_collision = flags.get(InputData::HorizontalCollision as usize);
 
         self.store_input_state(&packet);
@@ -87,11 +92,13 @@ impl BedrockClient {
             player.apply_bedrock_glide_input(server, true);
         }
 
-        let new_pos = player.feet_from_bedrock_pos(packet.position.to_f64());
-        player.apply_client_move(
+        // A ridden input can still carry the vehicle's coordinates on the dismount tick.
+        let position = (!was_riding && !flags.get(InputData::ClientPredictedVehicle as usize))
+            .then(|| player.feet_from_bedrock_pos(packet.position.to_f64()));
+        let outcome = player.apply_client_move(
             server,
             ClientMove {
-                position: Some(new_pos),
+                position,
                 yaw: Some(packet.yaw),
                 pitch: Some(packet.pitch),
                 head_yaw: Some(packet.head_yaw),
@@ -113,11 +120,8 @@ impl BedrockClient {
             player.apply_bedrock_crawl_input(true);
         }
 
-        if let Some(vehicle) = entity.get_vehicle() {
-            vehicle.set_paddle_state(
-                flags.get(InputData::PaddlingLeft as usize),
-                flags.get(InputData::PaddlingRight as usize),
-            );
+        if outcome == ClientMoveOutcome::Applied {
+            self.apply_boat_input(player, &packet);
         }
 
         if let Some(interaction) = packet.item_interaction {
@@ -149,6 +153,95 @@ impl BedrockClient {
 }
 
 impl BedrockClient {
+    fn apply_boat_input(&self, player: &Arc<Player>, packet: &SPlayerAuthInput) {
+        const MAX_STEP_SQUARED: f64 = 100.0;
+        const GROUND_PROBE_DEPTH: f64 = 0.001;
+
+        let flags = &packet.input_data;
+        if !flags.get(InputData::ClientPredictedVehicle as usize) {
+            return;
+        }
+        let Some(vehicle) = player.controlled_vehicle() else {
+            return;
+        };
+        let base = vehicle.get_entity();
+        if base.entity_type.boat.is_none()
+            || packet.vehicle_unique_id.map(|id| id.0) != Some(i64::from(base.entity_id))
+        {
+            return;
+        }
+        let Some(rotation) = packet.vehicle_rotation else {
+            return;
+        };
+
+        let before = base.pos.load();
+        let target = vehicle.feet_from_bedrock_pos(packet.position.to_f64());
+        let motion = target - before;
+        let distance_squared = motion.length_squared();
+        let world = player.world();
+        let bounds = base.bounding_box.load();
+        if !distance_squared.is_finite()
+            || distance_squared > MAX_STEP_SQUARED
+            || !rotation.x.is_finite()
+            || !rotation.y.is_finite()
+            || !world
+                .worldborder
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .collision_shape_contains(&bounds.shift(motion))
+        {
+            self.correct_boat_prediction(vehicle.as_ref());
+            return;
+        }
+
+        let collision = base.collide(motion, vehicle.as_ref());
+        let on_ground = collision.supporting.is_some()
+            || (motion.y <= 0.0
+                && !world.is_space_empty(bounds.shift(collision.movement.add_raw(
+                    0.0,
+                    -GROUND_PROBE_DEPTH,
+                    0.0,
+                ))));
+        base.horizontal_collision
+            .store(collision.horizontal, Ordering::Relaxed);
+        base.vertical_collision
+            .store(collision.vertical, Ordering::Relaxed);
+        player.apply_client_vehicle_move(
+            vehicle.as_ref(),
+            before + collision.movement,
+            rotation.y - BEDROCK_YAW_OFFSET,
+            rotation.x,
+            on_ground,
+        );
+
+        // Bedrock labels the paddles from the opposite side of the hull.
+        let forward = flags.get(InputData::Up as usize);
+        vehicle.set_paddle_state(
+            forward || flags.get(InputData::PaddlingRight as usize),
+            forward || flags.get(InputData::PaddlingLeft as usize),
+        );
+        if collision.horizontal || collision.vertical {
+            self.correct_boat_prediction(vehicle.as_ref());
+        }
+    }
+
+    fn correct_boat_prediction(&self, boat: &dyn EntityBase) {
+        let base = boat.get_entity();
+        let [pitch, yaw, head_yaw, _] = base.bedrock_rotation();
+        let mut header = CMoveActorAbsolute::FLAG_TELEPORT | CMoveActorAbsolute::FLAG_FORCE_MOVE;
+        if base.on_ground.load(Ordering::Relaxed) {
+            header |= CMoveActorAbsolute::FLAG_ON_GROUND;
+        }
+        self.try_enqueue_client_packet(&CMoveActorAbsolute {
+            actor_runtime_id: VarULong(base.entity_id as u64),
+            header,
+            position: boat.bedrock_pos().to_f32_lossy(),
+            rotation_x: pack_degrees(pitch),
+            rotation_y: pack_degrees(yaw),
+            rotation_y_head: pack_degrees(head_yaw),
+        });
+    }
+
     pub(crate) fn reconcile_spin_attack_prediction(
         &self,
         player: &Player,

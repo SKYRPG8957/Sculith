@@ -18,6 +18,9 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::translation;
 use pumpkin_inventory::Inventory;
 use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_protocol::bedrock::client::set_actor_data::{
+    MetadataValue, SyncedActorDataList, entity_data_flag, entity_data_key,
+};
 use pumpkin_protocol::java::client::play::Metadata;
 use pumpkin_util::GameMode;
 use pumpkin_util::math::vector3::Vector3;
@@ -29,6 +32,14 @@ const FRONT_SEAT_OFFSET: f32 = 0.2;
 const BACK_SEAT_OFFSET: f32 = -0.6;
 const ANIMAL_SEAT_SHIFT: f32 = 0.2;
 const CHEST_BOAT_CONTAINER_SIZE: usize = 27;
+const BEDROCK_HEIGHT_OFFSET: f64 = 0.375;
+pub(crate) const BEDROCK_YAW_OFFSET: f32 = 90.0;
+// Bedrock 1.26.63.1 sends this metadata for regular and chest boats.
+const BEDROCK_BUOYANCY: &str = concat!(
+    r#"{"apply_gravity":true,"base_buoyancy":1.0,"big_wave_probability":0.02999999932944775,"big_wave_speed":10.0,"#,
+    r#""can_auto_step_from_liquid":false,"drag_down_on_buoyancy_removed":0.0,"#,
+    r#""liquid_blocks":["minecraft:water","minecraft:flowing_water"],"movement_type":"waves"}"#,
+);
 
 #[must_use]
 pub const fn is_chest_boat(entity_type: &EntityType) -> bool {
@@ -57,6 +68,10 @@ impl BoatEntity {
     #[must_use]
     pub fn new(mut entity: Entity) -> Self {
         entity.blocks_building = true;
+        entity.bedrock_flags_two.fetch_or(
+            1i64 << (entity_data_flag::COLLIDABLE - 64),
+            Ordering::Relaxed,
+        );
         let inventory = is_chest_boat(entity.entity_type)
             .then(|| Arc::new(MinecartInventory::new(CHEST_BOAT_CONTAINER_SIZE)));
         Self {
@@ -120,6 +135,36 @@ impl BoatEntity {
 }
 
 impl EntityBase for BoatEntity {
+    fn bedrock_y_offset(&self) -> f64 {
+        BEDROCK_HEIGHT_OFFSET
+    }
+
+    fn entity_bedrock_spawn_metadata(&self) -> Option<SyncedActorDataList> {
+        let variant = match self.get_entity().entity_type.resource_name {
+            "spruce_boat" | "spruce_chest_boat" => 1,
+            "birch_boat" | "birch_chest_boat" => 2,
+            "jungle_boat" | "jungle_chest_boat" => 3,
+            "acacia_boat" | "acacia_chest_boat" => 4,
+            "dark_oak_boat" | "dark_oak_chest_boat" => 5,
+            "mangrove_boat" | "mangrove_chest_boat" => 6,
+            "bamboo_raft" | "bamboo_chest_raft" => 7,
+            "cherry_boat" | "cherry_chest_boat" => 8,
+            "pale_oak_boat" | "pale_oak_chest_boat" => 9,
+            "poplar_boat" | "poplar_chest_boat" => 10,
+            _ => 0,
+        };
+        let mut metadata = SyncedActorDataList::new();
+        metadata.set(entity_data_key::VARIANT, MetadataValue::Int(variant));
+        metadata.set(entity_data_key::WIDTH, MetadataValue::Float(1.4));
+        metadata.set(entity_data_key::HEIGHT, MetadataValue::Float(0.455));
+        metadata.set(entity_data_key::IS_BUOYANT, MetadataValue::Byte(1));
+        metadata.set(
+            entity_data_key::BUOYANCY_DATA,
+            MetadataValue::String(BEDROCK_BUOYANCY.to_owned()),
+        );
+        Some(metadata)
+    }
+
     fn passenger_attachment_point(
         &self,
         passenger: &dyn EntityBase,
@@ -203,6 +248,12 @@ impl EntityBase for BoatEntity {
 
     fn tick(&self, _caller: &dyn EntityBase, _server: &Server) {
         self.vehicle.tick();
+        if (self.left_paddle_moving.load(Ordering::Relaxed)
+            || self.right_paddle_moving.load(Ordering::Relaxed))
+            && self.get_controlling_passenger().is_none()
+        {
+            self.set_paddles(false, false);
+        }
 
         let underwater = self.ticks_underwater.load();
         if self.vehicle.entity.touching_water.load(Ordering::Relaxed) {
