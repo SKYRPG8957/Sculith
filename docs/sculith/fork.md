@@ -87,6 +87,10 @@ If the chunk is missing, the connection loads it and retries registration. Both
 protocols then use the player's authoritative position for their first spawn.
 While that spawn is being sent, the session can process network input. Player
 ticks and contact with other actors begin after the spawn setup completes.
+The world then validates the registered connection before publishing its roster
+entry and pairing its actor. A dimension transfer queued during connection
+setup waits for this publication and, on Bedrock, the spawn status packet.
+Pending transfers are discarded if the connection closes.
 Closed connections detach and clean up their inventory on the owning world. Leave
 callbacks run between those steps. Saving uses the resulting player snapshot, and
 the account can load again when the disconnect save finishes.

@@ -4044,19 +4044,18 @@ impl Player {
         let Ok(sender) = self.chunk_sender.try_lock() else {
             return;
         };
-        if sender.ready_chunks_count() <= 4 || self.bedrock_spawned.swap(true, Ordering::SeqCst) {
+        if sender.ready_chunks_count() <= 4 || self.bedrock_spawned.load(Ordering::Relaxed) {
             return;
         }
         let Ok(data) = bedrock_client.serialize_packet(&CPlayStatus::PlayerSpawn) else {
             // Encoder busy -> a later tick tries again
-            self.bedrock_spawned.store(false, Ordering::Relaxed);
             return;
         };
         if !bedrock_client.try_enqueue_packet_data(data) {
             // Dropped -> a later tick tries again
-            self.bedrock_spawned.store(false, Ordering::Relaxed);
             return;
         }
+        self.bedrock_spawned.store(true, Ordering::Release);
         // Gameplay can proceed once the spawn is queued. Keep client_loaded
         // for the acknowledgement received from the client.
         self.client_loaded_timeout.store(0, Ordering::Relaxed);

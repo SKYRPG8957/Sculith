@@ -502,7 +502,11 @@ impl TrackedEntity {
         effective_range: u32,
         chunk_changed: bool,
     ) {
-        if self.entity.get_entity().is_removed() || !self.entity.has_client_representation() {
+        if !player.initial_spawn_complete.load(Ordering::Acquire)
+            || player.client.closed()
+            || self.entity.get_entity().is_removed()
+            || !self.entity.has_client_representation()
+        {
             self.remove_player(player);
             return;
         }

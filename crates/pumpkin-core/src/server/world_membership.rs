@@ -52,6 +52,11 @@ pub(super) enum WorldMembershipChange {
         initial_position: Option<Vector3<f64>>,
         completion: oneshot::Sender<Result<PlayerAdmission, JoinRejection>>,
     },
+    PublishInitial {
+        world: Arc<World>,
+        player: Arc<Player>,
+        completion: oneshot::Sender<bool>,
+    },
     Transfer(Box<WorldTransfer>),
     Depart {
         world: Arc<World>,
@@ -61,12 +66,23 @@ pub(super) enum WorldMembershipChange {
 
 impl WorldMembershipChange {
     pub(super) fn abandoned(&self) -> bool {
-        matches!(self, Self::Join { completion, player, .. } if completion.is_closed() || player.client.closed())
+        match self {
+            Self::Join {
+                completion, player, ..
+            } => completion.is_closed() || player.client.closed(),
+            Self::PublishInitial {
+                completion, player, ..
+            } => completion.is_closed() || player.client.closed(),
+            Self::Transfer(transfer) => transfer.abandoned(),
+            Self::Depart { .. } => false,
+        }
     }
 
     pub(super) fn try_reserve_worlds(&self) -> Option<WorldTransferReservation> {
         match self {
-            Self::Join { world, .. } | Self::Depart { world, .. } => world
+            Self::Join { world, .. }
+            | Self::PublishInitial { world, .. }
+            | Self::Depart { world, .. } => world
                 .try_simulation()
                 .map(WorldTransferReservation::for_one_world),
             Self::Transfer(transfer) => transfer.try_reserve_worlds(),
@@ -91,6 +107,17 @@ impl WorldMembershipChange {
                 }
             }
             Self::Transfer(transfer) => transfer.apply(server, reservation),
+            Self::PublishInitial {
+                world,
+                player,
+                completion,
+            } => {
+                let _owner = reservation;
+                let published = !completion.is_closed()
+                    && !server.stop_token.is_cancelled()
+                    && world.commit_initial_player(&player);
+                let _ = completion.send(published);
+            }
             Self::Depart { world, phase } => {
                 let _owner = reservation;
                 phase(server, &world);
@@ -100,6 +127,20 @@ impl WorldMembershipChange {
 }
 
 impl Server {
+    pub(crate) async fn publish_initial_player(&self, world: &World, player: &Arc<Player>) -> bool {
+        let owner = player.world();
+        if !std::ptr::eq(owner.as_ref(), world) {
+            return false;
+        }
+        let (completion, published) = oneshot::channel();
+        self.submit_membership_change(WorldMembershipChange::PublishInitial {
+            world: owner,
+            player: player.clone(),
+            completion,
+        });
+        published.await.unwrap_or(false)
+    }
+
     pub(super) async fn request_player_admission(
         &self,
         world: &Arc<World>,

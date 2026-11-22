@@ -80,7 +80,14 @@ impl WorldTransferReservation {
 }
 
 impl WorldTransfer {
+    pub(crate) fn abandoned(&self) -> bool {
+        self.completion.is_closed() || self.player.client.closed()
+    }
+
     pub(crate) fn try_reserve_worlds(&self) -> Option<WorldTransferReservation> {
+        if !self.player.ready_for_world_transfer() {
+            return None;
+        }
         let source = self.source.try_simulation()?;
         let destination = if Arc::ptr_eq(&self.source, &self.destination.world) {
             None
@@ -101,9 +108,8 @@ impl WorldTransfer {
 
     fn rebind_player(&self, server: &Server) -> Option<AppliedWorldChange> {
         let player = &self.player;
-        if self.completion.is_closed()
+        if self.abandoned()
             || server.stop_token.is_cancelled()
-            || player.client.closed()
             || player.world_change.load() != WorldChange::Preparing
             || !Arc::ptr_eq(&player.world(), &self.source)
         {
@@ -207,6 +213,11 @@ pub(super) fn can_wait_for_world_change(server: &Server) -> bool {
 }
 
 impl Player {
+    fn ready_for_world_transfer(&self) -> bool {
+        self.initial_spawn_complete.load(Ordering::Acquire)
+            && (self.client.bedrock().is_none() || self.bedrock_spawned.load(Ordering::Acquire))
+    }
+
     pub(super) async fn apply_world_change(
         self: &Arc<Self>,
         server: &Server,
@@ -290,12 +301,13 @@ impl Player {
         yaw: Option<f32>,
         pitch: Option<f32>,
     ) {
-        let wait = self
-            .world()
-            .server
-            .upgrade()
-            .as_deref()
-            .is_some_and(can_wait_for_world_change);
+        let wait = self.ready_for_world_transfer()
+            && self
+                .world()
+                .server
+                .upgrade()
+                .as_deref()
+                .is_some_and(can_wait_for_world_change);
         if let Some(task) = self.start_world_teleport(destination, position, yaw, pitch)
             && wait
         {
