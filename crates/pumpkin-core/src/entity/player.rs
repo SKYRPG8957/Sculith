@@ -5136,16 +5136,7 @@ impl Player {
     /// Teleports the Bedrock client to the current position. It has no teleport id and
     /// confirms by reaching the position.
     pub fn send_bedrock_teleport(&self, client: &crate::net::bedrock::BedrockClient) {
-        client
-            .teleport_unconfirmed_inputs
-            .store(0, Ordering::Relaxed);
-        let packet = self.bedrock_move_packet(
-            CBedrockMovePlayer::MODE_TELEPORT,
-            false,
-            client.input_tick.load(Ordering::Relaxed),
-        );
-        client.teleport_sent_pos.store(packet.position);
-        client.try_enqueue_client_packet(&packet);
+        client.send_teleport(self);
     }
 
     pub fn block_interaction_range(&self) -> f64 {

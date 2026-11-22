@@ -186,9 +186,6 @@ impl BedrockClient {
         let Ok(mut head) = self.activity.inbound_head.try_lock() else {
             return true;
         };
-        if head.is_some() {
-            return false;
-        }
         for _ in 0..REGIONAL_PACKET_BUDGET {
             if !owns(player.get_entity().chunk_pos.load()) {
                 return true;
@@ -199,16 +196,30 @@ impl BedrockClient {
             {
                 return false;
             }
-            let Some(packet) = player.inbound_packets.pop() else {
+            let was_waiting = head.is_some();
+            let Some(queued) = head.take().or_else(|| {
+                player.inbound_packets.pop().map(|packet| QueuedPlayInput {
+                    packet,
+                    movement: None,
+                })
+            }) else {
                 return false;
             };
             // Keep the first world-owned packet ahead of everything behind it.
-            if !Self::is_regional_reply(packet.id) {
-                let payload = Self::can_prepare_movement(&packet).then(|| packet.payload.clone());
-                *head = Some(QueuedPlayInput {
-                    packet,
-                    movement: None,
-                });
+            if !Self::is_regional_reply(queued.packet.id) {
+                let movement = Self::can_prepare_movement(&queued.packet);
+                if movement
+                    && self.try_regional_teleport_input(player, &queued.packet.payload, || {
+                        owns(player.get_entity().chunk_pos.load())
+                    })
+                {
+                    continue;
+                }
+                let payload = (movement && !was_waiting).then(|| queued.packet.payload.clone());
+                *head = Some(queued);
+                if was_waiting {
+                    return false;
+                }
                 // The world can take the raw packet while the region decodes its copy.
                 drop(head);
                 if let Some(payload) = payload
@@ -227,6 +238,7 @@ impl BedrockClient {
                 }
                 return false;
             }
+            let packet = queued.packet;
             let reader = &mut packet.payload.as_ref();
             let result = if packet.id == NetworkStackLatency::PACKET_ID {
                 NetworkStackLatency::read(reader)
@@ -253,7 +265,10 @@ mod tests {
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
     use pumpkin_data::Block;
-    use pumpkin_protocol::serial::PacketWrite;
+    use pumpkin_protocol::{
+        codec::{var_int::VarInt, var_uint::VarUInt, var_ulong::VarULong},
+        serial::PacketWrite,
+    };
     use pumpkin_util::{GameMode, math::vector3::Vector3};
     use pumpkin_world::world::BlockFlags;
     use std::{
@@ -393,6 +408,63 @@ mod tests {
         })));
     }
 
+    fn verify_teleport_acknowledgement(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        chunk: Vector2<i32>,
+    ) {
+        let enqueue = |position: Vector3<f32>| {
+            let mut payload = Vec::new();
+            for value in [0.0, 0.0, position.x, position.y, position.z, 0.0, 0.0, 0.0] {
+                value.write(&mut payload).unwrap();
+            }
+            for _ in 0..3 {
+                VarUInt(0).write(&mut payload).unwrap();
+            }
+            VarInt(0).write(&mut payload).unwrap();
+            payload.extend([0; 8]);
+            VarULong(7).write(&mut payload).unwrap();
+            payload.extend([0; 12]);
+            payload.extend([0; 5]);
+            payload.extend([0; 28]);
+            client.enqueue_play_input(
+                player,
+                RawPacket {
+                    id: SPlayerAuthInput::PACKET_ID,
+                    payload: payload.into(),
+                },
+            );
+        };
+        let advance = || tick_region(world, chunk, Instant::now());
+
+        enqueue(player.bedrock_pos().to_f32_lossy());
+        advance();
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+
+        let destination = Vector3::new(9.5, 100.0, 8.0);
+        player.request_teleport(destination, 0.0, 0.0);
+        player.set_client_loaded(false);
+        enqueue(client.teleport_sent_pos.load());
+        advance();
+        assert!(player.awaiting_teleport.lock().unwrap().is_none());
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        assert_eq!(client.teleport_unconfirmed_inputs.load(Relaxed), 1);
+        assert_eq!(client.input_tick.load(Relaxed), 0);
+        assert_eq!(player.get_entity().pos.load(), destination);
+        assert!(player.has_client_loaded());
+
+        player.request_teleport(Vector3::new(10.0, 100.0, 8.0), 0.0, 0.0);
+        let sent_id = client.activity.sent_teleport_id.load().unwrap();
+        // Start a newer teleport before its packet has been queued.
+        let next = (VarInt(sent_id.wrapping_add(1)), destination);
+        *player.awaiting_teleport.lock().unwrap() = Some(next);
+        enqueue(client.teleport_sent_pos.load());
+        advance();
+        assert_eq!(*player.awaiting_teleport.lock().unwrap(), Some(next));
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+    }
+
     #[tokio::test]
     #[expect(
         clippy::too_many_lines,
@@ -517,6 +589,7 @@ mod tests {
         verify_pickup_timer_handoff(&world, &player, east, west);
         verify_mining_clock(&world, &server, &player, &client, west).await;
         verify_chunk_delivery_clock(&client);
+        verify_teleport_acknowledgement(&world, &player, &client, west);
 
         world.players.store(Arc::default());
         client.close().await;

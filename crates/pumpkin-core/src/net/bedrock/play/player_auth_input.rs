@@ -1,11 +1,12 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use pumpkin_data::entity::EntityType;
-use pumpkin_protocol::bedrock::client::CMoveActorAbsolute;
 use pumpkin_protocol::bedrock::client::set_actor_data::{
     CSetActorData, MetadataValue, PropertySyncData, SyncedActorDataList, entity_data_key,
 };
+use pumpkin_protocol::bedrock::client::{CMoveActorAbsolute, CMovePlayer};
 use pumpkin_protocol::bedrock::server::player_auth_input::{InputMode, InteractionModel};
+use pumpkin_protocol::serial::PacketRead;
 use pumpkin_util::math::pack_degrees;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
@@ -14,6 +15,8 @@ use crate::entity::EntityBase;
 use crate::entity::player::{ClientMove, ClientMoveOutcome, PlayerInput};
 use crate::entity::vehicle::boat::BEDROCK_YAW_OFFSET;
 use crate::world::RegionChunks;
+
+const TELEPORT_RESEND_INPUTS: u32 = 20;
 
 impl BedrockClient {
     pub fn handle_player_auth_input(
@@ -320,13 +323,117 @@ impl BedrockClient {
         self.client_delta.store(packet.delta.to_f64());
     }
 
+    pub(crate) fn send_teleport(&self, player: &Player) {
+        if self.is_closed() {
+            return;
+        }
+        let (id, packet) = {
+            let pending = player
+                .awaiting_teleport
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let packet = player.bedrock_move_packet(
+                CMovePlayer::MODE_TELEPORT,
+                false,
+                self.input_tick.load(Ordering::Relaxed),
+            );
+            self.activity.sent_teleport_id.store(None);
+            self.teleport_unconfirmed_inputs.store(0, Ordering::Relaxed);
+            self.teleport_sent_pos.store(packet.position);
+            (pending.map(|(id, _)| id.0), packet)
+        };
+        let data = match self.serialize_packet(&packet) {
+            Ok(data) => data,
+            Err(err) => {
+                tracing::error!("Failed to serialize Bedrock teleport: {err}");
+                return;
+            }
+        };
+        let (outgoing, extras) = self.translate_outgoing(data.clone(), true);
+        let Some(outgoing) = outgoing else {
+            self.queue_extra_packets(extras);
+            return;
+        };
+        let unchanged = outgoing == data;
+        if self.queue_translated_packet(outgoing, extras) && unchanged && id.is_some() {
+            // Packet hooks run without the pending-state lock and can schedule a new teleport.
+            let pending = player
+                .awaiting_teleport
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if pending.map(|(id, _)| id.0) == id && self.teleport_sent_pos.load() == packet.position
+            {
+                self.activity.sent_teleport_id.store(id);
+            }
+        }
+    }
+
+    fn reached_teleport_position(&self, position: Vector3<f32>) -> bool {
+        const TELEPORT_ERROR: f32 = 0.1;
+        // Compare with the f32 position actually sent.
+        let target = self.teleport_sent_pos.load();
+        (position.x - target.x).abs() < TELEPORT_ERROR
+            && (position.y - target.y).abs() < TELEPORT_ERROR
+            && (position.z - target.z).abs() < TELEPORT_ERROR
+    }
+
+    pub(in crate::net::bedrock) fn try_regional_teleport_input(
+        &self,
+        player: &Player,
+        mut payload: &[u8],
+        owns_player: impl FnOnce() -> bool,
+    ) -> bool {
+        let Some(sent_id) = self.activity.sent_teleport_id.load() else {
+            return false;
+        };
+        let Ok(mut pending) = player.awaiting_teleport.try_lock() else {
+            return false;
+        };
+        if !pending.is_some_and(|(id, _)| id.0 == sent_id)
+            || self.activity.sent_teleport_id.load() != Some(sent_id)
+            || player.living_entity.dead.load(Ordering::Relaxed)
+            || player.living_entity.health.load() <= 0.0
+        {
+            return false;
+        }
+        let Ok(input) = SPlayerAuthInput::read(&mut payload) else {
+            return false;
+        };
+        if !payload.is_empty() || !owns_player() {
+            return false;
+        }
+        let reached = self.reached_teleport_position(input.position);
+        if reached {
+            *pending = None;
+            self.activity.sent_teleport_id.store(None);
+            player.set_client_loaded(true);
+        } else {
+            // A resend queues a new authoritative packet on the world path.
+            let missed = self.teleport_unconfirmed_inputs.load(Ordering::Relaxed);
+            if missed >= TELEPORT_RESEND_INPUTS - 1 {
+                return false;
+            }
+            self.teleport_unconfirmed_inputs
+                .store(missed + 1, Ordering::Relaxed);
+        }
+        drop(pending);
+        player.get_entity().movement.store(Vector3::default());
+        self.reset_horse_jump();
+        if reached {
+            tracing::trace!(
+                player = %player.gameprofile.name,
+                teleport_id = sent_id,
+                input_tick = input.tick.0,
+                "Confirmed Bedrock teleport on its region"
+            );
+        }
+        true
+    }
+
     /// Inputs are ignored until the client reaches a pending teleport, so stale
     /// positions (e.g. the death spot before a respawn) never count as movement or a fall.
     /// Returns true while still waiting.
     fn await_teleport(&self, player: &Arc<Player>, packet: &SPlayerAuthInput) -> bool {
-        const TELEPORT_ERROR: f32 = 0.1;
-        const RESEND_INPUTS: u32 = 20;
-
         let mut awaiting = player
             .awaiting_teleport
             .lock()
@@ -334,14 +441,9 @@ impl BedrockClient {
         if awaiting.is_none() {
             return false;
         }
-        // The f32 position actually sent, a f64 target can sit between two f32 values.
-        let target = self.teleport_sent_pos.load();
-        let position = packet.position;
-        if (position.x - target.x).abs() < TELEPORT_ERROR
-            && (position.y - target.y).abs() < TELEPORT_ERROR
-            && (position.z - target.z).abs() < TELEPORT_ERROR
-        {
+        if self.reached_teleport_position(packet.position) {
             *awaiting = None;
+            self.activity.sent_teleport_id.store(None);
             drop(awaiting);
             // Bedrock sends no `PlayerLoaded` after a respawn, reaching the spawn stands in
             player.set_client_loaded(true);
@@ -349,7 +451,7 @@ impl BedrockClient {
             .teleport_unconfirmed_inputs
             .fetch_add(1, Ordering::Relaxed)
             + 1
-            >= RESEND_INPUTS
+            >= TELEPORT_RESEND_INPUTS
         {
             drop(awaiting);
             player.send_bedrock_teleport(self);

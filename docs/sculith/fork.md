@@ -223,8 +223,12 @@ once per requested world tick. Merging inherits the highest coordinated
 tick number and splitting passes that number to each successor.
 
 An active region can consume the front of a native Bedrock player's input queue
-for latency and chunk cache acknowledgments. A ready connection is routed by its
-current chunk and checked again when the regional job claims a packet. A merge
+for latency, chunk cache and teleport acknowledgments. A teleport is confirmed
+against the wire position and the pending ID recorded after queuing the packet.
+The region consumes stale coordinates while that teleport is pending. A resend
+and packets with receive or send hooks use the world input path. A ready
+connection is routed by its current chunk and checked again when the regional
+job claims a packet. A merge
 or split forwards pending connections to their current owners. The world and
 region share the same ordered drain for that connection. At the head of the queue,
 the region can also decode one native Bedrock movement packet within its current
