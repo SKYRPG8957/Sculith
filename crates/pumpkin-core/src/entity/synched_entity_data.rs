@@ -156,20 +156,41 @@ impl SynchedEntityData {
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Self::pack_values(items.values().filter(|item| item.dirty), *version)
+    }
+
+    /// Takes one publication batch and records whether it contains the watched value.
+    pub(super) fn take_dirty_for_version(
+        &self,
+        version: JavaMinecraftVersion,
+        watched: TrackedData,
+    ) -> (Option<Box<[u8]>>, bool) {
+        let mut items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let watched_dirty = items.get(&watched).is_some_and(|item| item.dirty);
+        let bytes = Self::pack_values(items.values().filter(|item| item.dirty), version);
+        self.clear_items(&mut items);
+        (bytes, watched_dirty)
+    }
+
+    fn pack_values<'a>(
+        items: impl Iterator<Item = &'a DataItem>,
+        version: JavaMinecraftVersion,
+    ) -> Option<Box<[u8]>> {
         let mut buf = Vec::new();
         let mut has_any = false;
 
-        for item in items.values() {
-            if item.dirty {
-                let before_len = buf.len();
-                if item
-                    .serializer
-                    .write(item.tracked.id, item.tracked.r#type, &mut buf, version)
-                    .is_ok()
-                    && buf.len() > before_len
-                {
-                    has_any = true;
-                }
+        for item in items {
+            let before_len = buf.len();
+            if item
+                .serializer
+                .write(item.tracked.id, item.tracked.r#type, &mut buf, &version)
+                .is_ok()
+                && buf.len() > before_len
+            {
+                has_any = true;
             }
         }
 
@@ -187,6 +208,10 @@ impl SynchedEntityData {
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.clear_items(&mut items);
+    }
+
+    fn clear_items(&self, items: &mut HashMap<TrackedData, DataItem>) {
         for item in items.values_mut() {
             item.dirty = false;
         }
@@ -203,29 +228,7 @@ impl SynchedEntityData {
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut buf = Vec::new();
-        let mut has_any = false;
-
-        for item in items.values() {
-            if !item.is_default {
-                let before_len = buf.len();
-                if item
-                    .serializer
-                    .write(item.tracked.id, item.tracked.r#type, &mut buf, version)
-                    .is_ok()
-                    && buf.len() > before_len
-                {
-                    has_any = true;
-                }
-            }
-        }
-
-        if !has_any {
-            return None;
-        }
-
-        buf.put_u8(255);
-        Some(buf.into_boxed_slice())
+        Self::pack_values(items.values().filter(|item| !item.is_default), *version)
     }
 }
 

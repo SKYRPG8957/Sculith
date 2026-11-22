@@ -3222,6 +3222,9 @@ impl LivingEntity {
 
         for hand in Hand::all() {
             let stack = self.get_stack_in_hand(caller, hand);
+            if stack.is_empty() {
+                continue;
+            }
             let Some(death_protection) = stack.get_data_component::<DeathProtectionImpl>().cloned()
             else {
                 continue;
@@ -3286,7 +3289,7 @@ impl LivingEntity {
             self.entity.world.load().send_entity_status(
                 &self.entity,
                 EntityStatus::ProtectedFromDeath,
-                ActorEventID::InstantDeath,
+                ActorEventID::TalismanActivate,
             );
             return true;
         }
@@ -3865,10 +3868,14 @@ impl LivingEntity {
         // Vanilla LivingEntity.readAdditionalSaveData defaults to the mob's own max health,
         // not a flat 20; a hoglin (40 max) or iron golem (100 max) with no saved Health would
         // otherwise be silently reset to 20 here.
-        self.health.store(
-            nbt.get_numeric_float("Health")
-                .unwrap_or_else(|| self.get_max_health()),
-        );
+        let health = nbt
+            .get_numeric_float("Health")
+            .unwrap_or_else(|| self.get_max_health());
+        self.health.store(health);
+        if self.entity.entity_type == &EntityType::HORSE {
+            self.entity
+                .set_synced_data(tracked_data::living_entity::DATA_HEALTH_ID, health);
+        }
         if let Some(death_time) = nbt.get_short("DeathTime") {
             self.death_time.store(death_time as u8, Relaxed);
         }

@@ -4666,24 +4666,47 @@ impl Entity {
         }
 
         let world = self.world.load();
+        let tracked = (self.entity_type != &EntityType::PLAYER)
+            .then(|| world.entity_tracker.get_tracked_entity(self.entity_id))
+            .flatten();
 
         // Unwatched, skip the player scan.
-        if self.entity_type != &EntityType::PLAYER
-            && world
-                .entity_tracker
-                .get_tracked_entity(self.entity_id)
-                .is_some_and(|tracked| !tracked.has_viewers())
+        if tracked
+            .as_ref()
+            .is_some_and(|tracked| !tracked.has_viewers())
         {
             self.synched_data.clear_dirty();
             return;
         }
 
         let version = CURRENT_MC_VERSION;
-        if let Some(buf) = self.synched_data.pack_dirty_for_version(&version) {
+        let is_horse = self.entity_type == &EntityType::HORSE;
+        let (bytes, health_changed) = if is_horse {
+            // Edits made by packet callbacks belong to the next publication.
+            self.synched_data
+                .take_dirty_for_version(version, tracked_data::living_entity::DATA_HEALTH_ID)
+        } else {
+            (self.synched_data.pack_dirty_for_version(&version), false)
+        };
+        let bedrock_health = tracked
+            .as_ref()
+            .filter(|tracked| health_changed && tracked.has_bedrock_watchers())
+            .and_then(|tracked| {
+                tracked
+                    .entity
+                    .get_living_entity()
+                    .map(|living| (tracked, attributes::bedrock_horse_health_update(living)))
+            });
+        if let Some(buf) = bytes {
             let packet = CSetEntityMetadata::new(self.entity_id.into(), buf);
             self.send_java_metadata_packet(&world, &packet);
         }
-        self.synched_data.clear_dirty();
+        if !is_horse {
+            self.synched_data.clear_dirty();
+        }
+        if let Some((tracked, packet)) = bedrock_health {
+            tracked.send_to_tracking_players_bedrock(&packet, &world);
+        }
     }
 
     /// Resends every non-default synced value of this entity to its viewers, the entity

@@ -4,6 +4,10 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::bedrock::client::add_actor::SyncedAttribute;
+use pumpkin_protocol::bedrock::client::update_attributes::{
+    AttributeData as BedrockAttribute, CUpdateAttributes as BedrockAttributeUpdate,
+};
+use pumpkin_protocol::codec::var_ulong::VarULong;
 use rustc_hash::FxHashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
@@ -268,27 +272,58 @@ fn bedrock_attribute(
 
     let value = effective_value as f32;
     let is_horse = living.entity.entity_type == &EntityType::HORSE;
-    let (min_value, current_value, max_value) =
-        if is_horse && attribute.id == Attributes::MAX_HEALTH.id {
-            (0.0, living.health.load().max(0.0).min(value), value)
-        } else if is_horse
-            && (attribute.id == Attributes::MOVEMENT_SPEED.id
-                || attribute.id == Attributes::JUMP_STRENGTH.id)
-        {
-            (0.0, value, f32::MAX)
-        } else {
-            (
-                attribute.min_value as f32,
-                value,
-                attribute.max_value as f32,
-            )
-        };
+    if is_horse && attribute.id == Attributes::MAX_HEALTH.id {
+        return Some(bedrock_health_attribute(living, value));
+    }
+    let max_value = if is_horse
+        && (attribute.id == Attributes::MOVEMENT_SPEED.id
+            || attribute.id == Attributes::JUMP_STRENGTH.id)
+    {
+        f32::MAX
+    } else {
+        attribute.max_value as f32
+    };
     Some(SyncedAttribute {
         attribute_name: name.to_string(),
-        min_value,
-        current_value,
+        min_value: attribute.min_value as f32,
+        current_value: value,
         max_value,
     })
+}
+
+fn bedrock_health_attribute(living: &LivingEntity, max_health: f32) -> SyncedAttribute {
+    SyncedAttribute {
+        attribute_name: "minecraft:health".to_string(),
+        min_value: 0.0,
+        current_value: living.health.load().max(0.0).min(max_health),
+        max_value: max_health,
+    }
+}
+
+fn bedrock_attribute_update(value: SyncedAttribute, default_value: f32) -> BedrockAttribute {
+    BedrockAttribute {
+        min_value: value.min_value,
+        max_value: value.max_value,
+        current_value: value.current_value,
+        default_min_value: value.min_value,
+        default_max_value: value.max_value,
+        default_value,
+        name: value.attribute_name,
+        // Bedrock receives the effective value above, with modifiers already applied.
+        modifiers: Vec::new(),
+    }
+}
+
+pub(super) fn bedrock_horse_health_update(living: &LivingEntity) -> BedrockAttributeUpdate {
+    let max_health = living.get_max_health();
+    BedrockAttributeUpdate {
+        target_runtime_id: VarULong(living.entity_id() as u64),
+        attribute_list: vec![bedrock_attribute_update(
+            bedrock_health_attribute(living, max_health),
+            max_health,
+        )],
+        tick: VarULong(0),
+    }
 }
 
 /// Send updates for multiple attributes in a single packet for the given living entity.
@@ -296,17 +331,13 @@ pub fn send_attribute_updates_for_living(
     living: &crate::entity::living::LivingEntity,
     attributes: Vec<Attributes>,
 ) {
-    use pumpkin_protocol::bedrock::client::update_attributes::{
-        AttributeData as BeAttribute, CUpdateAttributes as BePacket,
-    };
     use pumpkin_protocol::codec::var_int::VarInt;
-    use pumpkin_protocol::codec::var_ulong::VarULong;
     use pumpkin_protocol::java::client::play::AttributeModifier as JeAttrMod;
     use pumpkin_protocol::java::client::play::CUpdateAttributes as JePacket;
     use pumpkin_protocol::java::client::play::Property as JeProperty;
 
     let mut je_properties: Vec<JeProperty> = Vec::with_capacity(attributes.len());
-    let mut be_attributes: Vec<BeAttribute> = Vec::with_capacity(attributes.len());
+    let mut be_attributes: Vec<BedrockAttribute> = Vec::with_capacity(attributes.len());
     let is_horse = living.entity.entity_type == &EntityType::HORSE;
 
     for attribute in attributes {
@@ -343,24 +374,12 @@ pub fn send_attribute_updates_for_living(
             continue;
         };
 
-        let be_attribute = BeAttribute {
-            min_value: value.min_value,
-            max_value: value.max_value,
-            current_value: value.current_value,
-            default_min_value: value.min_value,
-            default_max_value: value.max_value,
-            default_value: if is_horse && attribute.id == Attributes::MAX_HEALTH.id {
-                value.max_value
-            } else {
-                base_value as f32
-            },
-            name: value.attribute_name,
-            // Bedrock receives the already-computed effective value above. Do not advertise
-            // modifier entries until their payload is encoded as well.
-            modifiers: Vec::new(),
+        let default_value = if is_horse && attribute.id == Attributes::MAX_HEALTH.id {
+            value.max_value
+        } else {
+            base_value as f32
         };
-
-        be_attributes.push(be_attribute);
+        be_attributes.push(bedrock_attribute_update(value, default_value));
     }
 
     let world = living.entity.world.load();
@@ -368,7 +387,7 @@ pub fn send_attribute_updates_for_living(
         // Only peers with this actor can use the live update. Spawn includes its own snapshot.
         world.send_to_tracking_players_bedrock(
             &living.entity,
-            &BePacket {
+            &BedrockAttributeUpdate {
                 target_runtime_id: VarULong(living.entity.entity_id as u64),
                 attribute_list: std::mem::take(&mut be_attributes),
                 tick: VarULong(0),
@@ -383,7 +402,7 @@ pub fn send_attribute_updates_for_living(
         }
         (false, true) => {
             let runtime_id = living.entity.entity_id as u64;
-            let be_packet = BePacket {
+            let be_packet = BedrockAttributeUpdate {
                 target_runtime_id: VarULong(runtime_id),
                 attribute_list: be_attributes,
                 tick: VarULong(0),
@@ -393,7 +412,7 @@ pub fn send_attribute_updates_for_living(
         (true, true) => {
             let je_packet = JePacket::new(living.entity.entity_id.into(), je_properties);
             let runtime_id = living.entity.entity_id as u64;
-            let be_packet = BePacket {
+            let be_packet = BedrockAttributeUpdate {
                 target_runtime_id: VarULong(runtime_id),
                 attribute_list: be_attributes,
                 tick: VarULong(0),
