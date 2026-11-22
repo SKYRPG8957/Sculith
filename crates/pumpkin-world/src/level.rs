@@ -1431,9 +1431,10 @@ impl Level {
     }
 
     /// Conditionally writes one block within the caller's current region extent.
-    /// `None` defers the edit, while `Some(false)` reports a missing or changed block.
+    /// `None` defers the edit, while `Some(false)` reports an unloaded or changed target.
     pub fn try_apply_regional_block_edit(
         &self,
+        expected_chunk: &SyncChunk,
         position: BlockPos,
         expected: BlockStateId,
         replacement: BlockStateId,
@@ -1444,14 +1445,19 @@ impl Level {
         if !owns(pos) {
             return None;
         }
-        let chunk = match self.loaded_chunks.try_get(&pos) {
-            TryResult::Present(chunk) => chunk.value().clone(),
-            TryResult::Absent => return Some(false),
+        match self.loaded_chunks.try_get(&pos) {
+            TryResult::Present(chunk) if Arc::ptr_eq(chunk.value(), expected_chunk) => {}
+            TryResult::Present(_) | TryResult::Absent => return Some(false),
             TryResult::Locked => return None,
-        };
-        apply_regional_chunk_tick(&self.loaded_chunks, &chunk, owns, |chunk, read, commit| {
-            chunk.try_apply_block_edit(position, expected, replacement, read, commit, &validate)
-        })
+        }
+        apply_regional_chunk_tick(
+            &self.loaded_chunks,
+            expected_chunk,
+            owns,
+            |chunk, read, commit| {
+                chunk.try_apply_block_edit(position, expected, replacement, read, commit, &validate)
+            },
+        )
     }
 
     /// Commits scheduled water movement and its follow-up timers in a loaded chunk.

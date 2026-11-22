@@ -176,7 +176,7 @@ use pumpkin_world::{
 };
 use pumpkin_world::{chunk::ChunkData, chunk_system::ChunkPos, world::BlockAccessor};
 use pumpkin_world::{
-    level::{Level, apply_regional_block_properties},
+    level::{Level, SyncChunk, apply_regional_block_properties},
     tick::{TickPriority, order},
 };
 pub use pumpkin_world::{world::BlockFlags, world_info::LevelData};
@@ -5559,7 +5559,7 @@ impl World {
             return Block::AIR.default_state.id;
         }
         let replaced_block_state_id = self
-            .write_block_state_if(position, block_state_id, |_| true)
+            .write_block_state_if(position, block_state_id, |_, _| true)
             .unwrap_or(Block::AIR.default_state.id);
         self.on_block_state_set(position, replaced_block_state_id, block_state_id, flags)
     }
@@ -5578,7 +5578,7 @@ impl World {
             return None;
         }
         let replaced_block_state_id =
-            self.write_block_state_if(position, block_state_id, condition)?;
+            self.write_block_state_if(position, block_state_id, |_, state| condition(state))?;
         Some(self.on_block_state_set(position, replaced_block_state_id, block_state_id, flags))
     }
 
@@ -5587,7 +5587,7 @@ impl World {
         &self,
         position: &BlockPos,
         block_state_id: BlockStateId,
-        condition: impl Fn(BlockStateId) -> bool,
+        condition: impl Fn(&SyncChunk, BlockStateId) -> bool,
     ) -> Option<BlockStateId> {
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
         self.level
@@ -5597,7 +5597,7 @@ impl World {
                     relative.y,
                     relative.z as usize,
                     block_state_id,
-                    &condition,
+                    |state| condition(chunk, state),
                 )?;
                 // Mark chunk dirty if it isn't already
                 if replaced_block_state_id != block_state_id && !chunk.is_dirty() {

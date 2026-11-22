@@ -42,7 +42,7 @@ pub(super) struct RespawnAnchor {
 impl RespawnAnchor {
     pub(super) fn consume(&self, world: &World) -> bool {
         world
-            .write_block_state_if(&self.position, self.spent, |current| {
+            .write_block_state_if(&self.position, self.spent, |_, current| {
                 current == self.charged
             })
             .is_some()

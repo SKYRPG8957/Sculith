@@ -2,12 +2,17 @@
 
 use std::{
     collections::VecDeque,
-    sync::{Arc, Mutex, PoisonError},
+    sync::{Arc, Mutex, PoisonError, Weak},
 };
 
 use pumpkin_data::{BlockDirection, BlockStateId};
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
-use pumpkin_world::{lighting::LightEngine, world::BlockFlags};
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
+use pumpkin_world::{
+    chunk::{CHUNK_WIDTH, ChunkData},
+    level::SyncChunk,
+    lighting::LightEngine,
+    world::BlockFlags,
+};
 use rustc_hash::FxHashSet;
 use tokio::sync::oneshot;
 
@@ -54,46 +59,43 @@ pub struct BlockEdits {
 }
 
 struct BlockEdit {
-    position: BlockPos,
-    expected: BlockStateId,
-    replacement: BlockStateId,
-    flags: BlockFlags,
+    request: BlockEditRequest,
     result: oneshot::Sender<BlockEditStatus>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct BlockEditRequest {
     position: BlockPos,
+    chunk: Weak<ChunkData>,
     expected: BlockStateId,
     replacement: BlockStateId,
     flags: BlockFlags,
 }
 
-impl BlockEdit {
-    fn apply(&self, world: &Arc<World>) -> BlockEditStatus {
-        world
-            .set_block_state_if(&self.position, self.replacement, self.flags, |current| {
-                current == self.expected
-            })
-            .map_or(BlockEditStatus::Stale, |_| BlockEditStatus::Applied)
-    }
-
-    const fn request(&self) -> BlockEditRequest {
-        BlockEditRequest {
-            position: self.position,
-            expected: self.expected,
-            replacement: self.replacement,
-            flags: self.flags,
-        }
-    }
-}
-
 impl BlockEditRequest {
+    fn apply(&self, world: &Arc<World>) -> BlockEditStatus {
+        let Some(chunk) = self.chunk.upgrade() else {
+            return BlockEditStatus::Stale;
+        };
+        let Some(previous) =
+            world.write_block_state_if(&self.position, self.replacement, |live, state| {
+                Arc::ptr_eq(&chunk, live) && state == self.expected
+            })
+        else {
+            return BlockEditStatus::Stale;
+        };
+        world.on_block_state_set(&self.position, previous, self.replacement, self.flags);
+        BlockEditStatus::Applied
+    }
+
     fn try_apply_in_region(
-        self,
+        &self,
         world: &World,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<BlockEditStatus> {
+        let Some(chunk) = self.chunk.upgrade() else {
+            return Some(BlockEditStatus::Stale);
+        };
         if self
             .flags
             .intersects(BlockFlags::NOTIFY_NEIGHBORS | BlockFlags::MOVED | BlockFlags::FORCE_STATE)
@@ -113,6 +115,7 @@ impl BlockEditRequest {
         }
 
         let applied = world.level.try_apply_regional_block_edit(
+            &chunk,
             self.position,
             self.expected,
             self.replacement,
@@ -151,12 +154,15 @@ impl BlockEdits {
             .take_while(|edit| {
                 !self
                     .claimed_chunks
-                    .contains(&edit.position.chunk_position())
+                    .contains(&edit.request.position.chunk_position())
             })
             .count();
         let batch: Vec<_> = self.pending.drain(..count).collect();
-        self.claimed_chunks
-            .extend(batch.iter().map(|edit| edit.position.chunk_position()));
+        self.claimed_chunks.extend(
+            batch
+                .iter()
+                .map(|edit| edit.request.position.chunk_position()),
+        );
         batch
     }
 
@@ -167,9 +173,9 @@ impl BlockEdits {
         let requests: Vec<_> = self
             .pending
             .iter()
-            .filter(|edit| belongs(edit.position.chunk_position()))
+            .filter(|edit| belongs(edit.request.position.chunk_position()))
             .take(BLOCK_EDITS_PER_TICK)
-            .map(BlockEdit::request)
+            .map(|edit| edit.request.clone())
             .collect();
         self.claimed_chunks
             .extend(requests.iter().map(|edit| edit.position.chunk_position()));
@@ -187,7 +193,7 @@ impl BlockEdits {
             if let Some(index) = self
                 .pending
                 .iter()
-                .position(|edit| edit.position == request.position)
+                .position(|edit| edit.request.position == request.position)
                 && let Some(edit) = self.pending.remove(index)
             {
                 let _ = edit.result.send(status);
@@ -206,7 +212,7 @@ impl BlockEdits {
 fn run_regional_edits(
     queue: &Mutex<BlockEdits>,
     belongs: &impl Fn(Vector2<i32>) -> bool,
-    apply: impl FnMut(BlockEditRequest) -> Option<BlockEditStatus>,
+    apply: impl FnMut(&BlockEditRequest) -> Option<BlockEditStatus>,
 ) {
     let requests = {
         let Ok(mut edits) = queue.try_lock() else {
@@ -219,7 +225,7 @@ fn run_regional_edits(
     }
 
     // Keep a deferred request and its successors in the same order for the next owner.
-    let completed: Vec<_> = requests.iter().copied().map_while(apply).collect();
+    let completed: Vec<_> = requests.iter().map_while(apply).collect();
     queue
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -227,20 +233,7 @@ fn run_regional_edits(
 }
 
 impl World {
-    /// Queues a conditional edit for a later simulation boundary. The owner applies it only
-    /// while the same world and chunk are loaded and the expected state is still current.
-    /// Returns `None` when the position is invalid, the queue is full, or admission is closed.
-    /// Dropping the receipt leaves an accepted edit queued.
-    pub fn schedule_block_edit(
-        self: &Arc<Self>,
-        position: BlockPos,
-        expected: BlockStateId,
-        replacement: BlockStateId,
-        flags: BlockFlags,
-    ) -> Option<BlockEditReceipt> {
-        if !self.is_in_build_limit(position) {
-            return None;
-        }
+    fn with_block_edit_admission<R>(&self, write: impl FnOnce() -> R) -> Option<R> {
         let server = self.server.upgrade()?;
         let closed = server
             .admission_closed
@@ -253,29 +246,79 @@ impl World {
             .player_admission
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if !*world_admission {
+        (*world_admission).then(write)
+    }
+
+    /// Writes a local block through an existing chunk handle without running block callbacks.
+    /// The loaded map pins the same instance for the duration of the write.
+    pub fn set_loaded_chunk_block_state(
+        &self,
+        chunk: &SyncChunk,
+        relative: Vector3<i32>,
+        state: BlockStateId,
+    ) -> Result<(), &'static str> {
+        const WIDTH: i32 = CHUNK_WIDTH as i32;
+        if !(0..WIDTH).contains(&relative.x) || !(0..WIDTH).contains(&relative.z) {
+            return Err("Block position is outside the chunk");
+        }
+        let x = chunk.x.checked_mul(WIDTH).ok_or("Invalid chunk origin")? + relative.x;
+        let z = chunk.z.checked_mul(WIDTH).ok_or("Invalid chunk origin")? + relative.z;
+        let position = BlockPos::new(x, relative.y, z);
+        if !self.is_in_build_limit(position) {
+            return Err("Block position is outside the world build limit");
+        }
+        self.with_block_edit_admission(|| {
+            let previous = self
+                .write_block_state_if(&position, state, |live, _| Arc::ptr_eq(chunk, live))
+                .ok_or("Chunk unloaded")?;
+            if previous != state {
+                self.register_block_change(position, state);
+            }
+            Ok(())
+        })
+        .ok_or("World unavailable")?
+    }
+
+    /// Queues a conditional edit for a later simulation boundary. The owner applies it only
+    /// while the chunk loaded at submission is current and the expected state still matches.
+    /// Returns `None` when the position is invalid, the queue is full, or admission is closed.
+    /// Dropping the receipt leaves an accepted edit queued.
+    pub fn schedule_block_edit(
+        self: &Arc<Self>,
+        position: BlockPos,
+        expected: BlockStateId,
+        replacement: BlockStateId,
+        flags: BlockFlags,
+    ) -> Option<BlockEditReceipt> {
+        if !self.is_in_build_limit(position) {
             return None;
         }
-        let mut queue = self
-            .block_edits
-            .get_or_init(Mutex::default)
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if queue.pending.len() >= BLOCK_EDIT_QUEUE_CAPACITY {
-            return None;
-        }
-        let (result, receiver) = oneshot::channel();
-        queue.pending.push_back(BlockEdit {
+        let request = BlockEditRequest {
             position,
+            chunk: self
+                .level
+                .read_chunk_sync(&position.chunk_position(), Arc::downgrade)
+                .unwrap_or_default(),
             expected,
             replacement,
             flags,
-            result,
-        });
-        Some(BlockEditReceipt {
-            result: receiver,
-            status: BlockEditStatus::Pending,
-        })
+        };
+        self.with_block_edit_admission(|| {
+            let mut queue = self
+                .block_edits
+                .get_or_init(Mutex::default)
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if queue.pending.len() >= BLOCK_EDIT_QUEUE_CAPACITY {
+                return None;
+            }
+            let (result, receiver) = oneshot::channel();
+            queue.pending.push_back(BlockEdit { request, result });
+            Some(BlockEditReceipt {
+                result: receiver,
+                status: BlockEditStatus::Pending,
+            })
+        })?
     }
     /// The world owns callbacks and any edits not yet picked up by a region.
     pub(crate) fn apply_block_edits(self: &Arc<Self>) {
@@ -291,8 +334,8 @@ impl World {
         }
         let mut chunks = Vec::with_capacity(batch.len());
         for edit in batch {
-            chunks.push(edit.position.chunk_position());
-            let status = edit.apply(self);
+            chunks.push(edit.request.position.chunk_position());
+            let status = edit.request.apply(self);
             let _ = edit.result.send(status);
         }
         queue
@@ -332,10 +375,13 @@ mod tests {
     fn submit(edits: &mut BlockEdits, x: i32) -> oneshot::Receiver<BlockEditStatus> {
         let (result, receipt) = oneshot::channel();
         edits.pending.push_back(BlockEdit {
-            position: BlockPos::new(x, 90, 4),
-            expected: BlockStateId::AIR,
-            replacement: BlockStateId::AIR,
-            flags: BlockFlags::NOTIFY_LISTENERS,
+            request: BlockEditRequest {
+                position: BlockPos::new(x, 90, 4),
+                chunk: Weak::new(),
+                expected: BlockStateId::AIR,
+                replacement: BlockStateId::AIR,
+                flags: BlockFlags::NOTIFY_LISTENERS,
+            },
             result,
         });
         receipt
@@ -387,7 +433,10 @@ mod tests {
         assert_eq!(late.try_recv(), Err(oneshot::error::TryRecvError::Empty));
         let batch = queue.into_inner().unwrap().claim_world();
         assert_eq!(
-            batch.iter().map(|edit| edit.position).collect::<Vec<_>>(),
+            batch
+                .iter()
+                .map(|edit| edit.request.position)
+                .collect::<Vec<_>>(),
             [BlockPos::new(17, 90, 4), BlockPos::new(1, 90, 4)],
         );
     }

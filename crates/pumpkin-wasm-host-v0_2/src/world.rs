@@ -4,7 +4,7 @@ use crate::LockIgnorePoison;
 use pumpkin_data::block_properties::NoteblockInstrument as InternalNoteblockInstrument;
 use pumpkin_data::block_state::PistonBehavior;
 use pumpkin_data::{BlockDirection as InternalBlockDirection, BlockId, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::chunk::ChunkHeightmapType;
 use pumpkin_world::chunk::io::Dirtiable;
 use pumpkin_world::world::BlockFlags;
@@ -2160,17 +2160,9 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
             return Err(wasmtime::Error::msg("Invalid BlockStateId"));
         };
 
-        let replaced =
-            chunk_data.set_block_absolute_y(pos.x as usize, pos.y, pos.z as usize, state);
-
-        if replaced != state {
-            chunk_data.mark_dirty(true);
-            let absolute_pos =
-                BlockPos::new(chunk_data.x * 16 + pos.x, pos.y, chunk_data.z * 16 + pos.z);
-            world.register_block_change(absolute_pos, state);
-        }
-
-        Ok(())
+        world
+            .set_loaded_chunk_block_state(&chunk_data, Vector3::new(pos.x, pos.y, pos.z), state)
+            .map_err(wasmtime::Error::msg)
     }
 
     fn get_biome(
