@@ -638,7 +638,10 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         let world = world(&folder);
         let pos = Vector2::new(10, 0);
-        world.level.get_or_fetch_chunk(pos, |_| ()).await;
+        world.level.loaded_chunks.insert(
+            pos,
+            pumpkin_world::chunk::ChunkData::empty_sync(pos.x, pos.y),
+        );
         world.level.spawn_entity_generation(pos);
         let saved = world.level.get_entity_chunk_sync(&pos).unwrap();
         let item = ItemEntity::new(
