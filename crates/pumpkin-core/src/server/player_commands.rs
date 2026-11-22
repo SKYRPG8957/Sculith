@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use pumpkin_util::text::TextComponent;
 
-use crate::command::{commands::is_world_read, dispatcher::CommandDispatcher};
+use crate::command::{commands::is_world_command, dispatcher::CommandDispatcher};
 use crate::entity::player::{Player, SpamType};
 use crate::plugin::{
     player::{
@@ -33,7 +33,7 @@ pub struct PlayerCommands {
 #[derive(Clone, Copy)]
 pub struct PlayerCommandIngress<'a> {
     pub(crate) queue: &'a PlayerCommands,
-    pub(crate) read_owner: Option<&'a Arc<World>>,
+    pub(crate) world_owner: Option<&'a Arc<World>>,
 }
 
 impl PlayerCommands {
@@ -42,7 +42,7 @@ impl PlayerCommands {
         server: &Arc<Server>,
         player: &Arc<Player>,
         text: &str,
-        read_owner: Option<&Arc<World>>,
+        world_owner: Option<&Arc<World>>,
     ) {
         if server.stop_token.is_cancelled() || !accept_command(server, player) {
             return;
@@ -50,9 +50,9 @@ impl PlayerCommands {
 
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
         // Earlier coordinated commands keep their order. A later one must wait for this owner.
-        if let Some(world) = read_owner
+        if let Some(world) = world_owner
             && pending.is_empty()
-            && let Some(dispatcher) = world_read_dispatcher(server, text)
+            && let Some(dispatcher) = world_command_dispatcher(server, text)
         {
             drop(pending);
             if is_current(player, world) {
@@ -122,10 +122,10 @@ impl PlayerCommands {
     }
 }
 
-fn world_read_dispatcher(server: &Server, text: &str) -> Option<Arc<CommandDispatcher>> {
+fn world_command_dispatcher(server: &Server, text: &str) -> Option<Arc<CommandDispatcher>> {
     let dispatcher = server.command_dispatcher.load_full();
     let plugins = &server.plugin_manager;
-    (is_world_read(&dispatcher, text)
+    (is_world_command(&dispatcher, text)
         && !plugins.has_handlers::<PlayerCommandSendEvent>()
         && !plugins.has_handlers::<PlayerPermissionCheckEvent>()
         && !plugins.has_handlers::<PacketSentEvent>())
@@ -171,7 +171,7 @@ pub fn submit_inbound_player_command(
     if let Some(ingress) = ingress {
         ingress
             .queue
-            .submit(server, player, text, ingress.read_owner);
+            .submit(server, player, text, ingress.world_owner);
     } else {
         submit_player_command(server, player, text, None);
     }
@@ -198,10 +198,10 @@ fn dispatch(
     player: &Arc<Player>,
     dispatcher: &CommandDispatcher,
     text: &str,
-    read_owner: Option<&Arc<World>>,
+    world_owner: Option<&Arc<World>>,
 ) {
     let source = player.get_command_source(server);
-    if read_owner.is_some_and(|world| !Arc::ptr_eq(world, source.world())) {
+    if world_owner.is_some_and(|world| !Arc::ptr_eq(world, source.world())) {
         return;
     }
     dispatcher.handle_command(&source, text);

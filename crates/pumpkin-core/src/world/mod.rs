@@ -1678,12 +1678,12 @@ impl World {
         self: &Arc<Self>,
         players: &[Arc<Player>],
         commands: Option<&PlayerCommands>,
-        allow_owner_reads: bool,
+        allow_owner_commands: bool,
     ) {
         let commands = commands.map(
             |queue| crate::server::player_commands::PlayerCommandIngress {
                 queue,
-                read_owner: allow_owner_reads.then_some(self),
+                world_owner: allow_owner_commands.then_some(self),
             },
         );
         // Different players' screens can mutate the same inventory.

@@ -108,6 +108,13 @@ number of ticks. Explicit checkpoints coordinate the worlds for capture.
 Periodic player saves capture ready worlds and retry busy owners at later
 boundaries. The captures share the existing ordered asynchronous writer.
 
+During independent ticks, players can run built-in `/seed` and `/time` on
+the owner of their current world. Time changes update that world's clock and
+publish it to its Bedrock and Java clients. Admission checks the registered
+command tree and uses the same permission checks and parser as other commands.
+Plugin-extended routes, command or permission hooks, packet send hooks and
+commands queued behind coordinated work use the coordinated boundary.
+
 The active-chunk tracker groups connected chunks into regions for scheduled
 block and fluid work. Overlapping regions reuse owner IDs, with the largest
 overlaps taking priority.
