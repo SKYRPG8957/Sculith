@@ -691,7 +691,6 @@ impl Server {
             .try_simulation()
             .ok_or_else(|| format!("World '{name}' is processing simulation work"))?;
         world_to_unload.close_player_admission(name)?;
-        world_to_unload.cancel_block_edits();
         world_to_unload.shutdown().await;
         world_to_unload.unload().await;
 
@@ -1085,6 +1084,8 @@ impl Server {
         self.close_admission();
         while self.world_transfers.pop().is_some() {}
         for world in self.worlds.load().iter() {
+            // Let a regional claim publish its receipt before dropping unstarted requests.
+            let _regions = self.runtime.block_on(world.region_activity.write());
             world.cancel_block_edits();
         }
     }

@@ -50,7 +50,7 @@ impl BlockEditReceipt {
 #[derive(Default)]
 pub struct BlockEdits {
     pending: VecDeque<BlockEdit>,
-    world_claimed: FxHashSet<Vector2<i32>>,
+    claimed_chunks: FxHashSet<Vector2<i32>>,
 }
 
 struct BlockEdit {
@@ -59,6 +59,14 @@ struct BlockEdit {
     replacement: BlockStateId,
     flags: BlockFlags,
     result: oneshot::Sender<BlockEditStatus>,
+}
+
+#[derive(Clone, Copy)]
+struct BlockEditRequest {
+    position: BlockPos,
+    expected: BlockStateId,
+    replacement: BlockStateId,
+    flags: BlockFlags,
 }
 
 impl BlockEdit {
@@ -70,8 +78,19 @@ impl BlockEdit {
             .map_or(BlockEditStatus::Stale, |_| BlockEditStatus::Applied)
     }
 
+    const fn request(&self) -> BlockEditRequest {
+        BlockEditRequest {
+            position: self.position,
+            expected: self.expected,
+            replacement: self.replacement,
+            flags: self.flags,
+        }
+    }
+}
+
+impl BlockEditRequest {
     fn try_apply_in_region(
-        &self,
+        self,
         world: &World,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<BlockEditStatus> {
@@ -120,6 +139,91 @@ impl BlockEdit {
         }
         Some(BlockEditStatus::Applied)
     }
+}
+
+impl BlockEdits {
+    fn claim_world(&mut self) -> Vec<BlockEdit> {
+        // A regional claim leaves its place in the FIFO until the commit is reported.
+        let count = self
+            .pending
+            .iter()
+            .take(BLOCK_EDITS_PER_TICK)
+            .take_while(|edit| {
+                !self
+                    .claimed_chunks
+                    .contains(&edit.position.chunk_position())
+            })
+            .count();
+        let batch: Vec<_> = self.pending.drain(..count).collect();
+        self.claimed_chunks
+            .extend(batch.iter().map(|edit| edit.position.chunk_position()));
+        batch
+    }
+
+    fn claim_region(&mut self, belongs: &impl Fn(Vector2<i32>) -> bool) -> Vec<BlockEditRequest> {
+        if self.claimed_chunks.iter().copied().any(belongs) {
+            return Vec::new();
+        }
+        let requests: Vec<_> = self
+            .pending
+            .iter()
+            .filter(|edit| belongs(edit.position.chunk_position()))
+            .take(BLOCK_EDITS_PER_TICK)
+            .map(BlockEdit::request)
+            .collect();
+        self.claimed_chunks
+            .extend(requests.iter().map(|edit| edit.position.chunk_position()));
+        requests
+    }
+
+    fn finish_region(
+        &mut self,
+        requests: &[BlockEditRequest],
+        results: impl IntoIterator<Item = BlockEditStatus>,
+    ) {
+        // Each position's oldest entry belongs to this batch until its claim is released.
+        // Completion uses that original position even if the region layout already changed.
+        for (request, status) in requests.iter().zip(results) {
+            if let Some(index) = self
+                .pending
+                .iter()
+                .position(|edit| edit.position == request.position)
+                && let Some(edit) = self.pending.remove(index)
+            {
+                let _ = edit.result.send(status);
+            }
+        }
+        self.release(requests.iter().map(|edit| edit.position.chunk_position()));
+    }
+
+    fn release(&mut self, chunks: impl IntoIterator<Item = Vector2<i32>>) {
+        for chunk in chunks {
+            self.claimed_chunks.remove(&chunk);
+        }
+    }
+}
+
+fn run_regional_edits(
+    queue: &Mutex<BlockEdits>,
+    belongs: &impl Fn(Vector2<i32>) -> bool,
+    apply: impl FnMut(BlockEditRequest) -> Option<BlockEditStatus>,
+) {
+    let requests = {
+        let Ok(mut edits) = queue.try_lock() else {
+            return;
+        };
+        edits.claim_region(belongs)
+    };
+    if requests.is_empty() {
+        return;
+    }
+
+    // Keep a deferred request and its successors in the same order for the next owner.
+    let completed: Vec<_> = requests.iter().copied().map_while(apply).collect();
+    queue
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .finish_region(&requests, completed);
 }
 
 impl World {
@@ -180,56 +284,32 @@ impl World {
         };
         let batch = {
             let mut edits = queue.lock().unwrap_or_else(PoisonError::into_inner);
-            let count = edits.pending.len().min(BLOCK_EDITS_PER_TICK);
-            if count == 0 {
-                return;
-            }
-            let batch: Vec<_> = edits.pending.drain(..count).collect();
-            edits
-                .world_claimed
-                .extend(batch.iter().map(|edit| edit.position.chunk_position()));
-            batch
+            edits.claim_world()
         };
+        if batch.is_empty() {
+            return;
+        }
+        let mut chunks = Vec::with_capacity(batch.len());
         for edit in batch {
+            chunks.push(edit.position.chunk_position());
             let status = edit.apply(self);
             let _ = edit.result.send(status);
         }
         queue
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .world_claimed
-            .clear();
+            .release(chunks);
     }
 
-    pub(crate) fn apply_regional_block_edits(&self, owns: &impl Fn(Vector2<i32>) -> bool) {
+    pub(crate) fn apply_regional_block_edits(
+        &self,
+        belongs: &impl Fn(Vector2<i32>) -> bool,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) {
         let Some(queue) = self.block_edits.get() else {
             return;
         };
-        let Ok(mut edits) = queue.try_lock() else {
-            return;
-        };
-        if edits.world_claimed.iter().copied().any(owns) {
-            return;
-        }
-        let mut index = 0;
-        let mut applied = 0;
-        while applied < BLOCK_EDITS_PER_TICK {
-            let Some(edit) = edits.pending.get(index) else {
-                break;
-            };
-            if !owns(edit.position.chunk_position()) {
-                index += 1;
-                continue;
-            }
-            // A deferred edit still runs before later requests in its region.
-            let Some(status) = edit.try_apply_in_region(self, owns) else {
-                break;
-            };
-            if let Some(edit) = edits.pending.remove(index) {
-                let _ = edit.result.send(status);
-            }
-            applied += 1;
-        }
+        run_regional_edits(queue, belongs, |edit| edit.try_apply_in_region(self, owns));
     }
 
     pub(crate) fn cancel_block_edits(&self) {
@@ -240,5 +320,75 @@ impl World {
                 .pending
                 .clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::mpsc, thread, time::Duration};
+
+    use super::*;
+
+    fn submit(edits: &mut BlockEdits, x: i32) -> oneshot::Receiver<BlockEditStatus> {
+        let (result, receipt) = oneshot::channel();
+        edits.pending.push_back(BlockEdit {
+            position: BlockPos::new(x, 90, 4),
+            expected: BlockStateId::AIR,
+            replacement: BlockStateId::AIR,
+            flags: BlockFlags::NOTIFY_LISTENERS,
+            result,
+        });
+        receipt
+    }
+
+    #[test]
+    fn region_claim_leaves_the_queue_available_and_defers_in_place() {
+        let mut edits = BlockEdits::default();
+        let mut first = submit(&mut edits, 1);
+        let mut east = submit(&mut edits, 160);
+        let mut deferred = submit(&mut edits, 17);
+        let queue = Mutex::new(edits);
+        let (begun, wait_for_claim) = mpsc::channel();
+        let (resume, wait_for_resume) = mpsc::channel();
+        let timeout = Duration::from_secs(5);
+
+        let mut late = thread::scope(|scope| {
+            let shared_queue = &queue;
+            scope.spawn(move || {
+                run_regional_edits(shared_queue, &|chunk| chunk.x < 2, |edit| {
+                    (edit.position == BlockPos::new(1, 90, 4)).then(|| {
+                        begun.send(()).unwrap();
+                        wait_for_resume.recv_timeout(timeout).unwrap();
+                        BlockEditStatus::Applied
+                    })
+                });
+            });
+            wait_for_claim.recv_timeout(timeout).unwrap();
+
+            let late = {
+                let mut edits = queue.try_lock().unwrap();
+                assert!(edits.claim_world().is_empty());
+                submit(&mut edits, 1)
+            };
+            run_regional_edits(&queue, &|chunk| chunk.x == 10, |_| {
+                Some(BlockEditStatus::Applied)
+            });
+            assert_eq!(east.try_recv(), Ok(BlockEditStatus::Applied));
+            assert_eq!(first.try_recv(), Err(oneshot::error::TryRecvError::Empty));
+            resume.send(()).unwrap();
+            late
+        });
+
+        assert_eq!(first.try_recv(), Ok(BlockEditStatus::Applied));
+        assert_eq!(
+            deferred.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        );
+        assert_eq!(late.try_recv(), Err(oneshot::error::TryRecvError::Empty));
+        let batch = queue.into_inner().unwrap().claim_world();
+        assert_eq!(
+            batch.iter().map(|edit| edit.position).collect::<Vec<_>>(),
+            [BlockPos::new(17, 90, 4), BlockPos::new(1, 90, 4)],
+        );
     }
 }

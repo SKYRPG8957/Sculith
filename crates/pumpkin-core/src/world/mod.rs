@@ -693,6 +693,7 @@ impl World {
     pub async fn shutdown(&self) {
         let _region_shutdown = self.region_activity.write().await;
         self.invalidate_region_layout();
+        self.cancel_block_edits();
         let entities = self.entities.load_full();
         self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())
             .await;
@@ -2381,7 +2382,7 @@ impl World {
                 && layout.owner(pos) == Some(owner)
         };
         if inhabited && same_extent {
-            self.apply_regional_block_edits(&owns);
+            self.apply_regional_block_edits(&|pos| current.owner(pos) == Some(owner), &owns);
         }
         let region_server = (inhabited && same_extent)
             .then(|| self.server.upgrade())
