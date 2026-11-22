@@ -261,6 +261,48 @@ mod tests {
         server::TickDeadline,
     };
 
+    const TICK_PERIOD: Duration = Duration::from_millis(50);
+
+    fn tick_region(world: &Arc<World>, pos: Vector2<i32>, at: Instant) {
+        let layout = world.region_layout.load();
+        let owner = layout.owner(pos).unwrap();
+        world.advance_region_time(
+            owner,
+            layout.chunks(owner).unwrap(),
+            TickDeadline {
+                at,
+                period: TICK_PERIOD,
+            },
+        );
+    }
+
+    fn verify_pickup_timer_handoff(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        origin: Vector2<i32>,
+        destination: Vector2<i32>,
+    ) {
+        let before_pickup = Instant::now();
+        assert!(player.begin_experience_pickup());
+        let delay = || *player.experience_pick_up_delay.lock().unwrap();
+        tick_region(world, origin, before_pickup);
+        assert_eq!(delay(), 2);
+
+        let first = Instant::now() + TICK_PERIOD;
+        tick_region(world, origin, first);
+        assert_eq!(delay(), 1);
+        assert!(!player.begin_experience_pickup());
+
+        let next = first + TICK_PERIOD;
+        player.get_entity().set_pos(Vector3::new(8.0, 100.0, 8.0));
+        tick_region(world, origin, next);
+        tick_region(world, destination, first);
+        assert_eq!(delay(), 1);
+        tick_region(world, destination, next);
+        assert_eq!(delay(), 0);
+        assert!(player.begin_experience_pickup());
+    }
+
     #[tokio::test]
     #[expect(
         clippy::too_many_lines,
@@ -330,18 +372,7 @@ mod tests {
             let layout = world.region_layout.load();
             assert_eq!(layout.owner(west) == layout.owner(east), joined);
         };
-        let advance = |pos| {
-            let layout = world.region_layout.load();
-            let owner = layout.owner(pos).unwrap();
-            world.advance_region_time(
-                owner,
-                layout.chunks(owner).unwrap(),
-                TickDeadline {
-                    at: Instant::now(),
-                    period: Duration::from_millis(50),
-                },
-            );
-        };
+        let advance = |pos| tick_region(&world, pos, Instant::now());
         let offer = |timestamp| {
             player.ping.store(0, Relaxed);
             client.send_latency_probe();
@@ -388,6 +419,7 @@ mod tests {
         assert_eq!(pending_with_lock, 1);
         advance(east);
         check();
+        verify_pickup_timer_handoff(&world, &player, east, west);
 
         world.players.store(Arc::default());
         client.close().await;

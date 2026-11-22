@@ -5,12 +5,20 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     entity::{EntityBase, player::Player},
-    server::Server,
+    server::{Server, TickDeadline},
 };
 
 use super::{RegionChunks, RegionLayout, World};
 
-type ReadyConnections = FxHashMap<u64, Weak<Player>>;
+bitflags::bitflags! {
+    #[derive(Clone, Copy)]
+    struct RegionalWork: u8 {
+        const INPUT = 1;
+        const EXPERIENCE_PICKUP = 2;
+    }
+}
+
+type ReadyConnections = FxHashMap<u64, (Weak<Player>, RegionalWork)>;
 
 /// Ready connections for an active extent; the ordered packets stay with the player.
 pub(super) struct RegionalInput(Mutex<Option<ReadyConnections>>);
@@ -26,16 +34,19 @@ impl RegionalInput {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn offer(&self, id: u64, player: &Arc<Player>) -> bool {
+    fn offer(&self, id: u64, player: &Arc<Player>, work: RegionalWork) -> bool {
         let mut queue = self.ready();
         let Some(ready) = queue.as_mut() else {
             return false;
         };
-        ready.entry(id).or_insert_with(|| Arc::downgrade(player));
+        ready
+            .entry(id)
+            .and_modify(|(_, waiting)| *waiting |= work)
+            .or_insert_with(|| (Arc::downgrade(player), work));
         true
     }
 
-    pub(super) fn retire(&self) -> ReadyConnections {
+    fn retire(&self) -> ReadyConnections {
         self.ready().take().unwrap_or_default()
     }
 
@@ -51,6 +62,7 @@ impl RegionalInput {
         world: &World,
         server: &Server,
         extent: &RegionChunks,
+        deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
         let ready = self.take_ready();
@@ -60,15 +72,30 @@ impl RegionalInput {
         let Some(_native) = server.plugin_manager.try_without_native_code() else {
             return;
         };
-        for (id, player) in ready {
-            if let Some(player) = player.upgrade()
-                && let Some(client) = player.client.bedrock()
-                && client.drain_regional_input(&player, server, extent, |position| {
-                    player.can_simulate_in(world) && owns(position)
+        for (id, (player, work)) in ready {
+            let Some(player) = player.upgrade() else {
+                continue;
+            };
+            let Some(client) = player.client.bedrock() else {
+                continue;
+            };
+            let owns = |position| player.can_simulate_in(world) && owns(position);
+            let mut pending = RegionalWork::empty();
+            if work.contains(RegionalWork::INPUT)
+                && client.drain_regional_input(&player, server, extent, owns)
+            {
+                pending |= RegionalWork::INPUT;
+            }
+            if work.contains(RegionalWork::EXPERIENCE_PICKUP)
+                && client.advance_regional_experience_pickup(&player, deadline, || {
+                    owns(player.get_entity().chunk_pos.load())
                 })
             {
+                pending |= RegionalWork::EXPERIENCE_PICKUP;
+            }
+            if !pending.is_empty() {
                 // The owner can change after this job takes its ready list.
-                player.world().offer_regional_input(id, &player);
+                player.world().offer_regional_work(id, &player, pending);
             }
         }
     }
@@ -79,9 +106,9 @@ impl RegionLayout {
         // Existing jobs can still return ready connections after retirement. They
         // look up the current extent in the same way as a newly arrived packet.
         for retired in self.replaced_inputs(next) {
-            for (id, player) in retired.retire() {
+            for (id, (player, work)) in retired.retire() {
                 if let Some(player) = player.upgrade() {
-                    player.world().offer_regional_input(id, &player);
+                    player.world().offer_regional_work(id, &player, work);
                 }
             }
         }
@@ -90,8 +117,16 @@ impl RegionLayout {
 
 impl World {
     pub(crate) fn offer_regional_input(&self, id: u64, player: &Arc<Player>) {
+        self.offer_regional_work(id, player, RegionalWork::INPUT);
+    }
+
+    pub(crate) fn offer_regional_experience_pickup(&self, id: u64, player: &Arc<Player>) -> bool {
+        self.offer_regional_work(id, player, RegionalWork::EXPERIENCE_PICKUP)
+    }
+
+    fn offer_regional_work(&self, id: u64, player: &Arc<Player>, work: RegionalWork) -> bool {
         if !player.can_simulate_in(self) {
-            return;
+            return false;
         }
         loop {
             let layout = self.region_layout.load();
@@ -99,10 +134,10 @@ impl World {
                 .owner(player.get_entity().chunk_pos.load())
                 .and_then(|owner| layout.input(owner))
             else {
-                return;
+                return false;
             };
-            if input.offer(id, player) {
-                return;
+            if input.offer(id, player, work) {
+                return true;
             }
             // The publisher installed the new layout before closing this queue.
         }

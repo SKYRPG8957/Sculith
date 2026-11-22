@@ -83,7 +83,7 @@ mod world_scheduler;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WorldStep {
-    NetworkOnly,
+    NetworkOnly(Option<TickDeadline>),
     Coordinated,
     RegionalDeadlines(TickDeadline),
 }
@@ -1558,7 +1558,13 @@ impl Server {
     fn tick_network_with_player_commands(self: &Arc<Self>, commands: &PlayerCommands) {
         for world in self.worlds.load().iter() {
             if let Some(ownership) = world.try_simulation() {
-                self.tick_owned_world(world, ownership, WorldStep::NetworkOnly, false, commands);
+                self.tick_owned_world(
+                    world,
+                    ownership,
+                    WorldStep::NetworkOnly(None),
+                    false,
+                    commands,
+                );
             }
         }
     }
@@ -1613,7 +1619,7 @@ impl Server {
             WorldStep::RegionalDeadlines(deadline) => {
                 world.tick_simulation(self, Some(deadline), Some(commands));
             }
-            WorldStep::NetworkOnly => {
+            WorldStep::NetworkOnly(deadline) => {
                 // Players can move while frozen. Resume from a fresh simulation extent.
                 world.invalidate_region_layout();
                 world.flush_block_updates();
@@ -1623,7 +1629,7 @@ impl Server {
                 players
                     .par_iter()
                     .filter(|player| player.can_simulate_in(world))
-                    .for_each(|player| player.tick(self));
+                    .for_each(|player| player.tick_with_deadline(self, deadline));
             }
         }
         world.apply_entity_chunk_changes();

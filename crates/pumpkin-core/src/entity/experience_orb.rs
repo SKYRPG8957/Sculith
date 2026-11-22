@@ -377,15 +377,7 @@ impl EntityBase for ExperienceOrbEntity {
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
-        let can_pickup = if let Ok(mut delay) = player.experience_pick_up_delay.try_lock()
-            && *delay == 0
-        {
-            *delay = 2;
-            true
-        } else {
-            false
-        };
-        if can_pickup {
+        if player.begin_experience_pickup() {
             player.living_entity.pickup(&self.entity, 1);
             self.entity.remove();
             let amount = self.amount as i32;

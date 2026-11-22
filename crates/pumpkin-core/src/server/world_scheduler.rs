@@ -199,13 +199,14 @@ impl WorldScheduler {
                 let Some(ownership) = world.try_simulation() else {
                     continue;
                 };
+                let deadline = TickDeadline {
+                    at: clock.next_tick,
+                    period,
+                };
                 let mode = if frozen {
-                    WorldStep::NetworkOnly
+                    WorldStep::NetworkOnly(Some(deadline))
                 } else {
-                    WorldStep::RegionalDeadlines(TickDeadline {
-                        at: clock.next_tick,
-                        period,
-                    })
+                    WorldStep::RegionalDeadlines(deadline)
                 };
                 let sync_time = clock.advance(now, period);
                 let world = world.clone();

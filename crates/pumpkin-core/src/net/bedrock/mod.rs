@@ -68,6 +68,7 @@ use tokio_util::task::TaskTracker;
 pub mod blob_cache;
 mod close_signal;
 pub mod distant_terrain;
+mod experience_pickup;
 pub mod level_chunk;
 pub mod login;
 mod packet_observers;
@@ -215,6 +216,7 @@ struct ClientActivity {
     horse_jump: std::sync::Mutex<horse_jump::HorseJumpInput>,
     packet_observers: std::sync::OnceLock<packet_observers::PacketObservers>,
     inbound_head: std::sync::Mutex<Option<play_ingress::QueuedPlayInput>>,
+    experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
 }
 
 pub struct BedrockClient {
@@ -349,6 +351,7 @@ impl BedrockClient {
                 horse_jump: std::sync::Mutex::default(),
                 packet_observers: std::sync::OnceLock::new(),
                 inbound_head: std::sync::Mutex::default(),
+                experience_pickup: AtomicCell::new(None),
             }),
             incoming_game_packet_send: incoming_send,
             incoming_game_packet_recv: Mutex::new(Some(incoming_recv)),

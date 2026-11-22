@@ -1763,7 +1763,7 @@ impl World {
         players
             .par_iter()
             .filter(|player| player.can_simulate_in(self))
-            .for_each(|player| player.tick(server));
+            .for_each(|player| player.tick_with_deadline(server, deadline));
         self.encoded_chunk_cache.clear();
         // The networking-only tick never enters world simulation.
         for player in players.iter().filter(|player| player.can_simulate_in(self)) {
@@ -2416,7 +2416,7 @@ impl World {
         if let Some(server) = &region_server
             && let Some(input) = current.input(owner)
         {
-            input.drain(self, server, chunks, &owns);
+            input.drain(self, server, chunks, deadline, &owns);
         }
         let regional_campfires = region_server
             .as_ref()

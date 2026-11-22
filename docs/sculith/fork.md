@@ -234,6 +234,13 @@ Boundary crossings, updated payloads and translated clients go through the
 ordinary world decoder. Movement effects, other scheduled callbacks, entity AI
 and entity chunk residency use world phases.
 
+After a native Bedrock player gathers an experience orb, the current region
+can advance that player's pickup delay. Pending work follows the player across
+region changes. Deadlines prevent an overlapping world or region step from
+advancing the same delay again. Orb contact, mending, and awarding experience
+run in the world phase. Coordinated steps and players without an eligible
+region use world processing.
+
 Player movement registers the new view before entity chunk readers run.
 Readers share one disk request for a chunk and return its position to the
 world. At the end of the owned world step, the world checks current watchers,

@@ -2,6 +2,7 @@ pub mod advancement;
 pub mod client_move;
 pub mod client_push;
 mod creative;
+mod experience_pickup;
 pub mod forms;
 mod item_use;
 mod picking;
@@ -339,7 +340,9 @@ use crate::plugin::player::player_permission_check::PlayerPermissionCheckEvent;
 use crate::plugin::player::player_teleport::PlayerTeleportEvent;
 use crate::plugin::server::packet::PacketSentEvent;
 use crate::plugin::world::chunk_send::ChunkSend;
-use crate::server::{Server, StorageTransferError, player_commands::PlayerCommandIngress};
+use crate::server::{
+    Server, StorageTransferError, TickDeadline, player_commands::PlayerCommandIngress,
+};
 use crate::world::{BlockBreakingProgress, World};
 use bytes::Bytes;
 
@@ -3291,8 +3294,12 @@ impl Player {
     }
 
     /// Inbound packets go first, for all players, so every tick sees this tick's moves.
-    #[expect(clippy::too_many_lines)]
     pub fn tick<'a>(&'a self, server: &'a Server) {
+        self.tick_with_deadline(server, None);
+    }
+
+    #[expect(clippy::too_many_lines)]
+    pub(crate) fn tick_with_deadline(&self, server: &Server, deadline: Option<TickDeadline>) {
         if let ClientPlatform::Bedrock(client) = self.client.as_ref() {
             client.tick_network_latency(self);
         }
@@ -3364,11 +3371,7 @@ impl Player {
             }
         }
 
-        if let Ok(mut xp) = self.experience_pick_up_delay.try_lock()
-            && *xp > 0
-        {
-            *xp -= 1;
-        }
+        self.tick_experience_pickup(server, deadline);
         self.warden_spawn_tracker
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
