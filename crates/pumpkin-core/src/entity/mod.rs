@@ -4096,11 +4096,21 @@ impl Entity {
 
     /// Sets the `Entity` yaw & pitch rotation
     pub fn set_rotation(&self, yaw: f32, pitch: f32) {
-        // TODO
-        self.yaw.store(yaw);
+        // Serialize world and plugin writes with a regional player pose commit.
+        let _player_bounds = (self.entity_type == &EntityType::PLAYER).then(|| {
+            self.bounding_box
+                .index
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        });
         // Java players have no separate head-yaw packet from the client- look yaw is also head yaw.
         // Bedrock `MovePlayer` / `MoveActorDelta` need this field, not only `yaw`.
-        self.head_yaw.store(yaw);
+        self.set_rotation_with_head(yaw, pitch, yaw);
+    }
+
+    fn set_rotation_with_head(&self, yaw: f32, pitch: f32, head_yaw: f32) {
+        self.yaw.store(yaw);
+        self.head_yaw.store(head_yaw);
         self.set_pitch(pitch);
     }
 

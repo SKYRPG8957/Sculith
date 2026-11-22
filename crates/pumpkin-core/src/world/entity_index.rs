@@ -559,29 +559,23 @@ impl EntityIndex {
         }
     }
 
-    pub(crate) fn try_move_regional_player(
+    pub(crate) fn try_move_regional_player<T>(
         &self,
         world: &World,
         player: &Player,
         bounds: BoundingBox,
         clear_area: Option<BoundingBox>,
-        apply: impl FnOnce() -> bool,
-    ) -> bool {
-        let Ok(mut index) = self.players.try_write() else {
-            return false;
-        };
+        apply: impl FnOnce() -> Option<T>,
+    ) -> Option<T> {
+        let mut index = self.players.try_write().ok()?;
         let players = world.players.load_full();
         if !index.matches(&players) {
             index.rebuild(&players);
         }
         let entity_id = player.get_entity().entity_id;
-        let Some(&slot) = index.slots.get(&entity_id) else {
-            return false;
-        };
+        let &slot = index.slots.get(&entity_id)?;
         let active_actors = if let Some(area) = clear_area {
-            let Ok(mut actors) = self.inner.try_write() else {
-                return false;
-            };
+            let mut actors = self.inner.try_write().ok()?;
             let entities = world.entities.load_full();
             if !actors.matches(&entities) {
                 actors.rebuild(&entities);
@@ -595,7 +589,7 @@ impl EntityIndex {
                     .into_iter()
                     .any(|candidate| candidate != slot && index.intersects(candidate, &area))
             {
-                return false;
+                return None;
             }
             Some((entities, actors))
         } else {
@@ -606,12 +600,12 @@ impl EntityIndex {
             || active_actors
                 .as_ref()
                 .is_some_and(|(entities, _)| !Arc::ptr_eq(entities, &world.entities.load()))
-            || !apply()
         {
-            return false;
+            return None;
         }
+        let result = apply()?;
         index.update(entity_id, &bounds);
-        true
+        Some(result)
     }
 
     pub fn set_player_bounds(

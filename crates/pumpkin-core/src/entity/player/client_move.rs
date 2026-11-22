@@ -64,12 +64,13 @@ pub(crate) struct CommittedPlayerMove {
     from: Vector3<f64>,
     to: Vector3<f64>,
     movement: ClientMove,
+    publication: MovePublication,
 }
 
 #[derive(Clone, Copy)]
 enum MovePublication {
     Delta,
-    Absolute,
+    Absolute { rotation_changed: bool },
 }
 
 impl Player {
@@ -445,7 +446,8 @@ impl Player {
         let pos = target.unwrap_or(last_pos);
         let was_on_ground = entity.on_ground.load(Ordering::Relaxed);
         if !extent.is_some_and(|extent| {
-            self.try_set_regional_position(server, extent, last_pos, pos, None)
+            self.try_update_regional_pose(server, extent, last_pos, pos, None)
+                .is_some()
         }) {
             entity.set_pos(pos);
         }
@@ -492,8 +494,14 @@ impl Player {
         }
 
         let pos_changed = delta.length_squared() > 0.0;
-        let rot_changed = self.look_changed(requested);
-        self.apply_look(requested);
+        let rot_changed = match publication {
+            MovePublication::Delta => {
+                let changed = self.look_changed(requested);
+                self.apply_look(requested);
+                changed
+            }
+            MovePublication::Absolute { rotation_changed } => rotation_changed,
+        };
 
         if pos_changed || rot_changed {
             self.broadcast_client_move(
@@ -557,11 +565,10 @@ impl Player {
             || !movement.on_ground && !self.is_flying()
             || difference.y.abs() > 0.000_02
             || difference.horizontal_length_squared() > 1.0
-            || BlockPos::floored_v(to).chunk_position() != entity.chunk_pos.load()
             || to.x != Self::clamp_horizontal(to.x)
             || to.z != Self::clamp_horizontal(to.z)
             || to.y != Self::clamp_vertical(to.y)
-            || self.look_changed(movement)
+            || from == to && !self.look_changed(movement)
             || server.plugin_manager.has_handlers::<PlayerMoveEvent>()
             || server.plugin_manager.has_handlers::<PlayerInputEvent>()
             || server
@@ -580,15 +587,17 @@ impl Player {
         let world = self.world().uuid;
         let teleport = self.teleport_id_count.load(Ordering::Relaxed);
         let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
-        self.try_set_regional_position(server, extent, from, to, Some(movement.on_ground))
-            .then_some(CommittedPlayerMove {
-                world,
-                teleport,
-                epoch,
-                from,
-                to,
-                movement,
-            })
+        let publication =
+            self.try_update_regional_pose(server, extent, from, to, Some(movement))?;
+        Some(CommittedPlayerMove {
+            world,
+            teleport,
+            epoch,
+            from,
+            to,
+            movement,
+            publication,
+        })
     }
 
     pub(crate) fn finish_regional_client_move(&self, committed: &CommittedPlayerMove) {
@@ -602,31 +611,29 @@ impl Player {
                 committed.to,
                 committed.movement,
                 committed.movement.on_ground,
-                MovePublication::Absolute,
+                committed.publication,
             );
         }
     }
 
-    fn try_set_regional_position(
+    /// With a current-protocol regional input, commit position and look under the player's
+    /// bounds guard. A world-owned move already handles look in its normal effects.
+    fn try_update_regional_pose(
         &self,
         server: &Server,
         extent: &RegionChunks,
         from: Vector3<f64>,
         to: Vector3<f64>,
-        clear_path: Option<bool>,
-    ) -> bool {
-        if from == to || ![to.x, to.y, to.z].into_iter().all(f64::is_finite) {
-            return false;
+        movement: Option<ClientMove>,
+    ) -> Option<MovePublication> {
+        if ![to.x, to.y, to.z].into_iter().all(f64::is_finite) || from == to && movement.is_none() {
+            return None;
         }
-        let Some(_native) = server.plugin_manager.try_without_native_code() else {
-            return false;
-        };
+        let _native = server.plugin_manager.try_without_native_code()?;
         let entity = self.get_entity();
         let world = self.world();
         let origin = entity.chunk_pos.load();
-        let Some(owner) = world.region_layout.load().owner(origin) else {
-            return false;
-        };
+        let owner = world.region_layout.load().owner(origin)?;
         let owns = |chunk| {
             let layout = world.region_layout.load();
             layout.owner(chunk) == Some(owner)
@@ -634,68 +641,78 @@ impl Player {
                     .chunks(owner)
                     .is_some_and(|live| Arc::ptr_eq(live, extent))
         };
-        let Ok(bounds_owner) = entity.bounding_box.index.try_write() else {
-            return false;
-        };
-        if !std::ptr::eq(bounds_owner.as_ptr(), Arc::as_ptr(&world.entity_index)) {
-            return false;
+        let bounds_owner = entity.bounding_box.index.try_write().ok()?;
+        if !std::ptr::eq(bounds_owner.as_ptr(), Arc::as_ptr(&world.entity_index))
+            || (movement.is_some() && entity.pose.load() != EntityPose::Standing)
+        {
+            return None;
         }
+        let owns_player = || {
+            self.can_simulate_in(&world)
+                && !entity.is_removed()
+                && entity.pos.load() == from
+                && entity.chunk_pos.load() == origin
+                && owns(origin)
+        };
+        let commit_look = |movement| {
+            let rotation_changed = self.look_changed(movement);
+            self.apply_look(movement);
+            MovePublication::Absolute { rotation_changed }
+        };
+        if from == to {
+            return movement.filter(|_| owns_player()).map(commit_look);
+        }
+
         let bounds =
             Entity::make_bounding_box(entity.entity_type, to, &entity.entity_dimension.load());
         let swept = entity.bounding_box.load().minmax(&bounds);
-        if clear_path.is_some() && entity.pose.load() != EntityPose::Standing {
-            return false;
-        }
         let destination = BlockPos::floored_v(to);
         let mut first = BlockPos::floored_v(swept.min);
         let last = swept.max_block_pos();
-        let floor = clear_path
-            .filter(|grounded| *grounded)
+        let floor = movement
+            .filter(|input| input.on_ground)
             .map(|_| from.y.round() as i32 - 1);
         if let Some(floor) = floor {
             if (from.y - f64::from(floor + 1)).abs() > 0.000_02 {
-                return false;
+                return None;
             }
             first.0.y = floor;
         }
         // Reuse the normal position fields without reacquiring the pinned chunk or index.
-        let committed = world.level.try_with_regional_path(
-            first,
-            last,
-            owns,
-            |read| {
-                (clear_path.is_none() || clear_movement_path(first, last, floor, read))
-                    .then_some((destination, ()))
-            },
-            |(), biome| {
-                world.entity_index.try_move_regional_player(
-                    &world,
-                    self,
-                    bounds,
-                    clear_path.map(|_| swept.expand(1.0, 0.5, 1.0)),
-                    || {
-                        if !self.can_simulate_in(&world)
-                            || entity.is_removed()
-                            || entity.pos.load() != from
-                            || entity.chunk_pos.load() != origin
-                            || !owns(origin)
-                        {
-                            return false;
-                        }
-                        entity.set_pos_with(
-                            to,
-                            || entity.bounding_box.value.store(bounds),
-                            |_| biome,
-                        );
-                        true
-                    },
-                )
-            },
-        ) == Some(true);
-        if committed {
-            tracing::trace!(player = %self.gameprofile.name, region = owner, position = ?to, "Committed player position in its region");
-        }
-        committed
+        world
+            .level
+            .try_with_regional_path(
+                first,
+                last,
+                owns,
+                |read| {
+                    (movement.is_none() || clear_movement_path(first, last, floor, read))
+                        .then_some((destination, ()))
+                },
+                |(), biome| {
+                    world.entity_index.try_move_regional_player(
+                        &world,
+                        self,
+                        bounds,
+                        movement.map(|_| swept.expand(1.0, 0.5, 1.0)),
+                        || {
+                            if !owns_player() {
+                                return None;
+                            }
+                            entity.set_pos_with(
+                                to,
+                                || entity.bounding_box.value.store(bounds),
+                                |_| biome,
+                            );
+                            Some(movement.map_or(MovePublication::Delta, commit_look))
+                        },
+                    )
+                },
+            )
+            .flatten()
+            .inspect(|_| {
+                tracing::trace!(player = %self.gameprofile.name, region = owner, position = ?to, "Committed player position in its region");
+            })
     }
 
     fn look_changed(&self, requested: ClientMove) -> bool {
@@ -725,20 +742,17 @@ impl Player {
 
     fn apply_look(&self, requested: ClientMove) {
         let entity = self.get_entity();
-        match (requested.yaw, requested.pitch) {
-            (Some(yaw), Some(pitch)) => {
-                entity.set_rotation(wrap_degrees(yaw) % 360.0, wrap_degrees(pitch));
-            }
-            (Some(yaw), None) => {
-                entity.set_rotation(wrap_degrees(yaw) % 360.0, entity.pitch.load());
-            }
-            (None, Some(pitch)) => {
-                entity.set_rotation(entity.yaw.load(), wrap_degrees(pitch));
-            }
-            (None, None) => {}
-        }
-        if let Some(head_yaw) = requested.head_yaw {
-            entity.head_yaw.store(wrap_degrees(head_yaw) % 360.0);
+        let head_yaw = requested.head_yaw.map(|yaw| wrap_degrees(yaw) % 360.0);
+        if requested.yaw.is_some() || requested.pitch.is_some() {
+            let yaw = requested
+                .yaw
+                .map_or_else(|| entity.yaw.load(), |yaw| wrap_degrees(yaw) % 360.0);
+            let pitch = requested
+                .pitch
+                .map_or_else(|| entity.pitch.load(), wrap_degrees);
+            entity.set_rotation_with_head(yaw, pitch, head_yaw.unwrap_or(yaw));
+        } else if let Some(head_yaw) = head_yaw {
+            entity.head_yaw.store(head_yaw);
         }
     }
 
@@ -771,7 +785,7 @@ impl Player {
         let delta = pos - last_pos;
 
         let long_move = delta.length_squared() >= 64.0;
-        if pos_changed && (long_move || matches!(publication, MovePublication::Absolute)) {
+        if pos_changed && (long_move || matches!(publication, MovePublication::Absolute { .. })) {
             let mode = if long_move {
                 CMovePlayer::MODE_TELEPORT
             } else {

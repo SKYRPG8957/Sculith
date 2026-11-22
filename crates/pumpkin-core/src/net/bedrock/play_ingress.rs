@@ -194,7 +194,7 @@ impl BedrockClient {
         })
     }
 
-    fn prepare_level_move(
+    fn prepare_regional_move(
         &self,
         player: &Player,
         server: &Server,
@@ -276,7 +276,7 @@ impl BedrockClient {
                 if movement
                     && !was_waiting
                     && let Some(prepared) =
-                        self.prepare_level_move(player, server, extent, &queued.packet, &owns)
+                        self.prepare_regional_move(player, server, extent, &queued.packet, &owns)
                 {
                     queued.movement = Some(prepared);
                     *head = Some(queued);

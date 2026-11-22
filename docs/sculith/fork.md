@@ -237,17 +237,19 @@ using the decoded input. During the ordered world move, it can commit the positi
 with the swept chunk extent, destination biome and player spatial index pinned.
 The check uses the final target after the movement hook. A path outside the
 current extent or a busy chunk or index uses the ordinary position setter.
-Boundary crossings, updated payloads and translated clients go through the
-ordinary world decoder. Movement effects, other scheduled callbacks, entity AI
-and entity chunk residency use world phases.
+Crossings between owners, updated payloads and translated clients go through
+the ordinary world decoder. Movement effects, other scheduled callbacks,
+entity AI and entity chunk residency use world phases.
 
-A native Bedrock input can also commit a short level move on its region before
-the world processes the connection. The pose, controls, facing and grounded
-state must stay stable. The region pins the swept terrain and spatial indices.
-It requires an air path, a full dry supporting floor for a walk, and clearance
-from nearby actors. The move stays at the head of the connection's queue until
-the world has run its effects and sent the resulting position. Java receives
-an absolute position so a viewer paired after the commit does not add the
+A native Bedrock input can also commit a short level move and its look on
+the region before the world processes the connection. The pose, controls and
+grounded state must stay stable. For positional movement, the extent must own
+each swept chunk. The region pins the terrain and spatial indices and checks
+for an air path, a full dry floor for a walk, and clearance from nearby
+actors. A turn in place updates the rotation without a terrain collision
+check. The input stays at the head of the connection's queue until the world
+has run its effects and sent the resulting pose. Java receives an absolute
+position for a move so a viewer paired after the commit does not add the
 same displacement twice. An intervening teleport invalidates the pending
 publication.
 
