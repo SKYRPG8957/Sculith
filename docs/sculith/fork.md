@@ -226,6 +226,12 @@ drop removal path. Orb records keep their age and experience value across
 chunk retirement and restart. A restored orb starts on the next regional
 deadline.
 
+An eligible item or orb that moves inside its paired chunk can also publish
+its pose on the region. Current-protocol viewers must already have the actor
+and the chunk. A partial send requires a full pose before deltas resume.
+The world handles pairing at chunk boundaries, translated clients and
+packet observers through its usual tracker.
+
 Freeze pauses timer advancement and lets the first resumed world tick
 refresh membership after player movement. Coordinated steps and sprints
 use the region tick numbers at the world boundary and advance each chunk

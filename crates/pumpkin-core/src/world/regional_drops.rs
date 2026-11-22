@@ -18,7 +18,10 @@ use crate::{
     server::{Server, TickDeadline},
 };
 
-use super::{RegionId, RegionLayout, World, regional_campfires::RegionalEntityUpdate};
+use super::{
+    RegionId, RegionLayout, World, entity_tracker::EntityTracker,
+    regional_campfires::RegionalEntityUpdate,
+};
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -233,6 +236,7 @@ impl World {
         let item_timers = ItemEntity::timers_unobserved(server);
         let native = server.plugin_manager.try_without_native_code();
         let mut expired = Vec::new();
+        let mut java_recipients = FxHashMap::default();
         for actor in actors {
             let base = actor.get_entity();
             let chunk = base.chunk_pos.load();
@@ -249,6 +253,16 @@ impl World {
             if published.assigned.get(&base.entity_id) != Some(&owner) {
                 continue;
             }
+            let publish = || {
+                if owns(base.chunk_pos.load()) {
+                    self.entity_tracker.try_publish_regional_drop_move(
+                        self,
+                        server,
+                        actor,
+                        &mut java_recipients,
+                    );
+                }
+            };
             let actor_data = actor.as_ref() as &dyn Any;
             if item_timers && let Some(item) = actor_data.downcast_ref::<ItemEntity>() {
                 let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&chunk) else {
@@ -263,7 +277,7 @@ impl World {
                 drop(loaded);
                 match step {
                     RegionalItemStep::Advanced if native.is_some() => {
-                        item.try_regional_motion(self, chunk, owner, deadline, owns);
+                        item.try_regional_motion(self, chunk, owner, deadline, owns, publish);
                     }
                     RegionalItemStep::Expired => expired.push(actor),
                     _ => {}
@@ -272,12 +286,13 @@ impl World {
                 && let Some(orb) = actor_data.downcast_ref::<ExperienceOrbEntity>()
                 && let Some(_checkpoint) = server.try_regional_entity_save_guard()
             {
-                orb.try_regional_orb_tick(self, chunk, owner, deadline, owns);
+                orb.try_regional_orb_tick(self, chunk, owner, deadline, owns, publish);
                 if orb.has_expired() {
                     expired.push(actor);
                 }
             }
         }
+        EntityTracker::flush_regional_drop_packets(java_recipients);
         drop(native);
         if !expired.is_empty() {
             self.expire_regional_drops(server, owner, &expired, owns);

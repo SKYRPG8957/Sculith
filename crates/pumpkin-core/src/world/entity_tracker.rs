@@ -44,6 +44,13 @@ use crate::server::Server;
 use crate::world::World;
 use crate::world::chunker::get_view_distance;
 
+const MIN_MOVE_DISTANCE_SQUARED: f32 = 7.629_394_5e-6;
+const BEDROCK_POSITION_FIELDS: u16 =
+    MOVE_ACTOR_DELTA_FLAG_HAS_X | MOVE_ACTOR_DELTA_FLAG_HAS_Y | MOVE_ACTOR_DELTA_FLAG_HAS_Z;
+const BEDROCK_ROTATION_FIELDS: u16 = MOVE_ACTOR_DELTA_FLAG_HAS_PITCH
+    | MOVE_ACTOR_DELTA_FLAG_HAS_YAW
+    | MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW;
+
 /// Vanilla `VecDeltaCodec.encode`: Java `Math.round` on the 1/4096
 fn encode_pos(value: f64) -> i64 {
     (value * 4096.0 + 0.5).floor() as i64
@@ -108,6 +115,46 @@ impl Viewers {
     }
 }
 
+#[derive(Default)]
+struct RegionalMoveDelivery {
+    viewers: usize,
+    queued: usize,
+}
+
+impl RegionalMoveDelivery {
+    fn reconcile(self, needs_sync: &AtomicBool, update: impl FnOnce()) {
+        if self.queued == 0 {
+            return;
+        }
+        // A partial send leaves two baselines. Queue a full pose before sending more deltas.
+        let complete = self.queued == self.viewers;
+        needs_sync.store(!complete, Relaxed);
+        if complete {
+            update();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_partial_regional_move_keeps_the_baseline_until_a_full_send() {
+        let needs_sync = AtomicBool::new(false);
+        let mut baseline = 0;
+        for (position, queued, pending, expected) in
+            [(1, 1, true, 0), (2, 0, true, 0), (3, 2, false, 3)]
+        {
+            RegionalMoveDelivery { viewers: 2, queued }.reconcile(&needs_sync, || {
+                baseline = position;
+            });
+            assert_eq!(needs_sync.load(Relaxed), pending);
+            assert_eq!(baseline, expected);
+        }
+    }
+}
+
 pub struct TrackedEntity {
     pub entity: Arc<dyn EntityBase>,
     pub entity_id: i32,
@@ -123,9 +170,11 @@ pub struct TrackedEntity {
     teleport_delay: AtomicU32,
     was_on_ground: AtomicBool,
     was_riding: AtomicBool,
+    java_pose_needs_sync: AtomicBool,
     bedrock_pos: AtomicCell<Vector3<f64>>,
     /// Packed pitch, yaw, head yaw.
     bedrock_rot: AtomicCell<[u8; 3]>,
+    bedrock_pose_needs_sync: AtomicBool,
 }
 
 impl TrackedEntity {
@@ -168,8 +217,10 @@ impl TrackedEntity {
             teleport_delay: AtomicU32::new(0),
             was_on_ground: AtomicBool::new(on_ground),
             was_riding: AtomicBool::new(false),
+            java_pose_needs_sync: AtomicBool::new(false),
             bedrock_pos: AtomicCell::new(bedrock_pos),
             bedrock_rot: AtomicCell::new(bedrock_rot),
+            bedrock_pose_needs_sync: AtomicBool::new(false),
         }
     }
 
@@ -211,6 +262,7 @@ impl TrackedEntity {
         if tick.is_multiple_of(self.update_interval.max(1))
             || needs_sync
             || entity.synched_data.is_dirty()
+            || self.java_pose_needs_sync.load(Relaxed)
         {
             let yaw = pack_degrees(entity.yaw.load());
             let pitch = pack_degrees(entity.pitch.load());
@@ -273,8 +325,9 @@ impl TrackedEntity {
     ) -> Option<MoveSync> {
         let teleport_delay = self.teleport_delay.fetch_add(1, Relaxed) + 1;
         let base = entity.last_sent_pos.load();
-        let send_pos = (pos - base).length_squared() >= f64::from(7.629_394_5e-6f32)
+        let send_pos = (pos - base).length_squared() >= f64::from(MIN_MOVE_DISTANCE_SQUARED)
             || tick.is_multiple_of(60);
+        let force_absolute = self.java_pose_needs_sync.swap(false, Relaxed);
         let delta = match (
             i16::try_from(encode_pos(pos.x) - encode_pos(base.x)),
             i16::try_from(encode_pos(pos.y) - encode_pos(base.y)),
@@ -293,7 +346,8 @@ impl TrackedEntity {
 
         match delta {
             Some(delta)
-                if teleport_delay <= 400
+                if !force_absolute
+                    && teleport_delay <= 400
                     && !self.was_riding.load(Relaxed)
                     && self.was_on_ground.load(Relaxed) == on_ground =>
             {
@@ -349,18 +403,41 @@ impl TrackedEntity {
                 &CUpdateEntityPosRot::new(id, delta, yaw, pitch, on_ground),
                 world,
             ),
-            MoveSync::Absolute => self.send_to_tracking_players(
-                &CEntityPositionSync::new(
-                    id,
-                    entity.pos.load(),
-                    entity.velocity.load(),
-                    entity.yaw.load(),
-                    entity.pitch.load(),
-                    on_ground,
-                ),
-                world,
-            ),
+            MoveSync::Absolute => self.send_to_tracking_players(&self.absolute_move(entity), world),
         }
+    }
+
+    fn absolute_move(&self, entity: &Entity) -> CEntityPositionSync {
+        CEntityPositionSync::new(
+            VarInt(self.entity_id),
+            entity.pos.load(),
+            entity.velocity.load(),
+            entity.yaw.load(),
+            entity.pitch.load(),
+            entity.on_ground.load(Relaxed),
+        )
+    }
+
+    fn bedrock_move_packet(
+        &self,
+        entity: &Entity,
+        pos: Vector3<f64>,
+        rot: [u8; 3],
+        mut flags: u16,
+    ) -> CMoveActorDelta {
+        if entity.on_ground.load(Relaxed) {
+            flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
+        }
+        CMoveActorDelta::new(
+            VarULong(self.entity_id as u64),
+            flags,
+            pos.x as f32,
+            pos.y as f32,
+            pos.z as f32,
+            rot[0],
+            rot[1],
+            rot[2],
+        )
     }
 
     /// Bedrock -> every tick, only changed fields.
@@ -370,8 +447,13 @@ impl TrackedEntity {
         let last_pos = self.bedrock_pos.load();
         let last_rot = self.bedrock_rot.load();
 
-        let mut flags = 0;
-        if !self.entity.is_passenger() {
+        let passenger = self.entity.is_passenger();
+        let mut flags = if !passenger && self.bedrock_pose_needs_sync.swap(false, Relaxed) {
+            BEDROCK_POSITION_FIELDS | BEDROCK_ROTATION_FIELDS
+        } else {
+            0
+        };
+        if !passenger {
             for (now, last, flag) in [
                 (pos.x, last_pos.x, MOVE_ACTOR_DELTA_FLAG_HAS_X),
                 (pos.y, last_pos.y, MOVE_ACTOR_DELTA_FLAG_HAS_Y),
@@ -398,32 +480,15 @@ impl TrackedEntity {
             return;
         }
 
-        if flags
-            & (MOVE_ACTOR_DELTA_FLAG_HAS_X
-                | MOVE_ACTOR_DELTA_FLAG_HAS_Y
-                | MOVE_ACTOR_DELTA_FLAG_HAS_Z)
-            != 0
-        {
+        if flags & BEDROCK_POSITION_FIELDS != 0 {
             self.bedrock_pos.store(pos);
         }
         self.bedrock_rot.store(rot);
         if !self.has_bedrock_watchers() {
             return;
         }
-        if entity.on_ground.load(Relaxed) {
-            flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
-        }
         self.send_to_tracking_players_bedrock(
-            &CMoveActorDelta::new(
-                VarULong(self.entity_id as u64),
-                flags,
-                pos.x as f32,
-                pos.y as f32,
-                pos.z as f32,
-                rot[0],
-                rot[1],
-                rot[2],
-            ),
+            &self.bedrock_move_packet(entity, pos, rot, flags),
             world,
         );
     }
@@ -547,11 +612,14 @@ impl TrackedEntity {
                 {
                     return;
                 }
-                // An item cannot expire on a region while its spawn is being queued.
+                // A drop stays at the checked chunk while its spawn is queued.
                 let base = self.entity.get_entity();
-                let _pairing = base.hold_drop_motion();
+                let pairing = base.hold_drop_motion();
                 if base.is_removed() {
                     self.remove_player(player);
+                    return;
+                }
+                if pairing.is_some() && base.chunk_pos.load() != entity_chunk {
                     return;
                 }
                 let inserted = {
@@ -1012,6 +1080,128 @@ impl TrackedEntity {
         }
     }
 
+    /// The region holds the drop motion guard and its current chunk assignment.
+    fn try_publish_drop_move(
+        &self,
+        world: &World,
+        entity: &Entity,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
+        let chunk = entity.chunk_pos.load();
+        let section = self.last_section_pos.load();
+        if (section.x, section.z) != (chunk.x, chunk.y) {
+            return;
+        }
+        let Ok(viewers) = self.seen_by.try_read() else {
+            return;
+        };
+        let pos = entity.pos.load();
+        let send_java = entity
+            .tick_count
+            .load(Relaxed)
+            .cast_unsigned()
+            .is_multiple_of(self.update_interval.max(1))
+            && (self.java_pose_needs_sync.load(Relaxed)
+                || (pos - entity.last_sent_pos.load()).length_squared()
+                    >= f64::from(MIN_MOVE_DISTANCE_SQUARED));
+        let bedrock_pos = self.entity.bedrock_pos();
+        let send_bedrock = self.has_bedrock_watchers()
+            && (self.bedrock_pose_needs_sync.load(Relaxed)
+                || bedrock_pos.to_f32_lossy() != self.bedrock_pos.load().to_f32_lossy());
+        if !send_java && !send_bedrock {
+            return;
+        }
+
+        let bedrock_rot = Self::bedrock_move_rotation(entity);
+        let mut java_packet = None;
+        let mut bedrock_packet = None;
+        let mut java = RegionalMoveDelivery::default();
+        let mut bedrock = RegionalMoveDelivery::default();
+        for player in viewers.players.values() {
+            let ready_chunk = || {
+                let sender = player.chunk_sender.try_lock().ok()?;
+                (player.can_simulate_in(world)
+                    && player
+                        .watched_section
+                        .load()
+                        .is_within_distance(chunk.x, chunk.y)
+                    && sender.is_chunk_ready(&chunk))
+                .then_some(sender)
+            };
+            match player.client.as_ref() {
+                ClientPlatform::Java(client) if send_java => {
+                    java.viewers += 1;
+                    if client.version.load() != CURRENT_MC_VERSION {
+                        continue;
+                    }
+                    let Some(_chunk) = ready_chunk() else {
+                        continue;
+                    };
+                    let data = java_packet.get_or_insert_with(|| {
+                        JavaClient::serialize_packet_for_version(
+                            &self.absolute_move(entity),
+                            CURRENT_MC_VERSION,
+                        )
+                    });
+                    if data
+                        .as_ref()
+                        .is_ok_and(|data| client.try_enqueue_packet_data_unobserved(data.clone()))
+                    {
+                        java.queued += 1;
+                        java_recipients
+                            .entry(client.id)
+                            .or_insert_with(|| player.client.clone());
+                    }
+                }
+                ClientPlatform::Bedrock(client) if send_bedrock => {
+                    bedrock.viewers += 1;
+                    if !client.is_current_protocol() {
+                        continue;
+                    }
+                    let Some(_chunk) = ready_chunk() else {
+                        continue;
+                    };
+                    // Each included coordinate carries the full position on that axis.
+                    let data = bedrock_packet.get_or_insert_with(|| {
+                        client.serialize_packet(&self.bedrock_move_packet(
+                            entity,
+                            bedrock_pos,
+                            bedrock_rot,
+                            BEDROCK_POSITION_FIELDS | BEDROCK_ROTATION_FIELDS,
+                        ))
+                    });
+                    bedrock.queued +=
+                        usize::from(data.as_ref().is_ok_and(|data| {
+                            client.try_enqueue_packet_data_unobserved(data.clone())
+                        }));
+                }
+                _ => {}
+            }
+        }
+
+        java.reconcile(&self.java_pose_needs_sync, || {
+            self.update_regional_java_baseline(entity, pos);
+        });
+        bedrock.reconcile(&self.bedrock_pose_needs_sync, || {
+            self.bedrock_pos.store(bedrock_pos);
+            self.bedrock_rot.store(bedrock_rot);
+        });
+    }
+
+    fn update_regional_java_baseline(&self, entity: &Entity, pos: Vector3<f64>) {
+        entity.last_sent_pos.store(pos);
+        entity
+            .last_sent_yaw
+            .store(pack_degrees(entity.yaw.load()), Relaxed);
+        entity
+            .last_sent_pitch
+            .store(pack_degrees(entity.pitch.load()), Relaxed);
+        self.was_on_ground
+            .store(entity.on_ground.load(Relaxed), Relaxed);
+        self.was_riding.store(false, Relaxed);
+        self.teleport_delay.store(0, Relaxed);
+    }
+
     fn try_publish_drop_expiry(
         &self,
         world: &World,
@@ -1397,8 +1587,35 @@ impl EntityTracker {
             drop(entry);
             tracked.try_publish_drop_expiry(world, &mut java_recipients);
         }
+        Self::flush_regional_drop_packets(java_recipients);
+    }
+
+    pub(super) fn try_publish_regional_drop_move(
+        &self,
+        world: &World,
+        server: &Server,
+        actor: &Arc<dyn EntityBase>,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
+        if server.plugin_manager.has_handlers::<PacketSentEvent>() {
+            return;
+        }
+        let entity = actor.get_entity();
+        let TryResult::Present(entry) = self.entity_map.try_get(&entity.entity_id) else {
+            return;
+        };
+        let tracked = entry.value().clone();
+        drop(entry);
+        if Arc::ptr_eq(&tracked.entity, actor) {
+            tracked.try_publish_drop_move(world, entity, java_recipients);
+        }
+    }
+
+    pub(super) fn flush_regional_drop_packets(
+        java_recipients: FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
         // The world may still have Java's ordinary tick flush suspended.
-        // Release this batch once per connection after queueing its removals.
+        // Release this batch once per connection.
         for recipient in java_recipients.into_values() {
             if let ClientPlatform::Java(client) = recipient.as_ref() {
                 client.flush_channel();

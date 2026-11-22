@@ -707,10 +707,13 @@ mod tests {
         let orb_id = restored_orb.get_entity().entity_id;
         assert!(world.regional_drops.read().unwrap().contains(orb_id));
         assert!(!world.entity_tracker.has_entity_with_id(orb_id));
-        restored_orb.try_regional_orb_tick(&world, pos, owner, deadline, &owns);
+        let mut moved = 0;
+        let mut publish = || moved += 1;
+        restored_orb.try_regional_orb_tick(&world, pos, owner, deadline, &owns, &mut publish);
         assert_eq!(restored_orb.get_entity().pos.load(), orb_position);
-        restored_orb.try_regional_orb_tick(&world, pos, owner, next, &owns);
-        restored_orb.try_regional_orb_tick(&world, pos, owner, next, &owns);
+        restored_orb.try_regional_orb_tick(&world, pos, owner, next, &owns, &mut publish);
+        restored_orb.try_regional_orb_tick(&world, pos, owner, next, &owns, &mut publish);
+        assert_eq!(moved, 1);
         assert_eq!(
             restored_orb.get_entity().pos.load(),
             orb_position.add_raw(0.0, -0.03, 0.0)

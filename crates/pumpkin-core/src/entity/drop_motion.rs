@@ -159,6 +159,7 @@ impl Entity {
         owner: RegionId,
         deadline: TickDeadline,
         advance: impl FnOnce(&mut DropClock),
+        publish: impl FnOnce(),
     ) {
         let Some(motion) = self.drop_motion.as_deref() else {
             return;
@@ -203,7 +204,13 @@ impl Entity {
             return;
         }
 
+        let previous = self.pos.load();
         advance(&mut motion.clock);
+        drop(bounds_owner);
+        if self.pos.load() != previous {
+            // Keep the world from sending from an older baseline while this pose is queued.
+            publish();
+        }
     }
 }
 
@@ -215,13 +222,20 @@ impl ItemEntity {
         owner: RegionId,
         deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
+        publish: impl FnOnce(),
     ) {
-        self.get_entity()
-            .with_regional_drop_motion(world, chunk, owner, deadline, |clock| {
+        self.get_entity().with_regional_drop_motion(
+            world,
+            chunk,
+            owner,
+            deadline,
+            |clock| {
                 self.try_apply_regional_motion(world, owns, || {
                     owns(chunk) && clock.claim(DropTickOwner::Region(owner), deadline)
                 });
-            });
+            },
+            publish,
+        );
     }
 
     fn try_apply_regional_motion(
@@ -315,9 +329,10 @@ impl ExperienceOrbEntity {
         owner: RegionId,
         deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
+        publish: impl FnOnce(),
     ) {
         let entity = self.get_entity();
-        entity.with_regional_drop_motion(world, chunk, owner, deadline, |clock| {
+        let advance = |clock: &mut DropClock| {
             if self.has_expired() || self.has_follow_target() || entity.on_ground.load(Relaxed) {
                 return;
             }
@@ -372,7 +387,8 @@ impl ExperienceOrbEntity {
                         },
                     );
                 });
-        });
+        };
+        entity.with_regional_drop_motion(world, chunk, owner, deadline, advance, publish);
     }
 }
 
