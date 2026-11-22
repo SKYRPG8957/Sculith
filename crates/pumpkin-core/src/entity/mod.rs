@@ -238,6 +238,8 @@ pub const fn entity_type_to_bedrock_identifier(entity_type: &EntityType) -> &'st
         "minecraft:eye_of_ender_signal"
     } else if entity_type.id == EntityType::ZOMBIE_VILLAGER.id {
         "minecraft:zombie_villager_v2"
+    } else if entity_type.id == EntityType::HORSE.id {
+        "minecraft:horse"
     } else if entity_type.boat.is_some() {
         if vehicle::boat::is_chest_boat(entity_type) {
             "minecraft:chest_boat"

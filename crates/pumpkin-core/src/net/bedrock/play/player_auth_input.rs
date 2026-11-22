@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use pumpkin_data::entity::EntityType;
 use pumpkin_protocol::bedrock::client::CMoveActorAbsolute;
 use pumpkin_protocol::bedrock::client::set_actor_data::{
     CSetActorData, MetadataValue, PropertySyncData, SyncedActorDataList, entity_data_key,
@@ -121,7 +122,7 @@ impl BedrockClient {
         }
 
         if outcome == ClientMoveOutcome::Applied {
-            self.apply_boat_input(player, &packet);
+            self.apply_vehicle_input(player, &packet);
         }
 
         if let Some(interaction) = packet.item_interaction {
@@ -153,7 +154,7 @@ impl BedrockClient {
 }
 
 impl BedrockClient {
-    fn apply_boat_input(&self, player: &Arc<Player>, packet: &SPlayerAuthInput) {
+    fn apply_vehicle_input(&self, player: &Arc<Player>, packet: &SPlayerAuthInput) {
         const MAX_STEP_SQUARED: f64 = 100.0;
         const GROUND_PROBE_DEPTH: f64 = 0.001;
 
@@ -165,7 +166,8 @@ impl BedrockClient {
             return;
         };
         let base = vehicle.get_entity();
-        if base.entity_type.boat.is_none()
+        let is_boat = base.entity_type.boat.is_some();
+        if (!is_boat && base.entity_type != &EntityType::HORSE)
             || packet.vehicle_unique_id.map(|id| id.0) != Some(i64::from(base.entity_id))
         {
             return;
@@ -190,7 +192,7 @@ impl BedrockClient {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .collision_shape_contains(&bounds.shift(motion))
         {
-            self.correct_boat_prediction(vehicle.as_ref());
+            self.correct_vehicle_prediction(vehicle.as_ref());
             return;
         }
 
@@ -206,27 +208,34 @@ impl BedrockClient {
             .store(collision.horizontal, Ordering::Relaxed);
         base.vertical_collision
             .store(collision.vertical, Ordering::Relaxed);
+        let yaw = if is_boat {
+            rotation.y - BEDROCK_YAW_OFFSET
+        } else {
+            rotation.y
+        };
         player.apply_client_vehicle_move(
             vehicle.as_ref(),
             before + collision.movement,
-            rotation.y - BEDROCK_YAW_OFFSET,
+            yaw,
             rotation.x,
             on_ground,
         );
 
-        // Bedrock labels the paddles from the opposite side of the hull.
-        let forward = flags.get(InputData::Up as usize);
-        vehicle.set_paddle_state(
-            forward || flags.get(InputData::PaddlingRight as usize),
-            forward || flags.get(InputData::PaddlingLeft as usize),
-        );
+        if is_boat {
+            // Bedrock labels the paddles from the opposite side of the hull.
+            let forward = flags.get(InputData::Up as usize);
+            vehicle.set_paddle_state(
+                forward || flags.get(InputData::PaddlingRight as usize),
+                forward || flags.get(InputData::PaddlingLeft as usize),
+            );
+        }
         if collision.horizontal || collision.vertical {
-            self.correct_boat_prediction(vehicle.as_ref());
+            self.correct_vehicle_prediction(vehicle.as_ref());
         }
     }
 
-    fn correct_boat_prediction(&self, boat: &dyn EntityBase) {
-        let base = boat.get_entity();
+    fn correct_vehicle_prediction(&self, vehicle: &dyn EntityBase) {
+        let base = vehicle.get_entity();
         let [pitch, yaw, head_yaw, _] = base.bedrock_rotation();
         let mut header = CMoveActorAbsolute::FLAG_TELEPORT | CMoveActorAbsolute::FLAG_FORCE_MOVE;
         if base.on_ground.load(Ordering::Relaxed) {
@@ -235,7 +244,7 @@ impl BedrockClient {
         self.try_enqueue_client_packet(&CMoveActorAbsolute {
             actor_runtime_id: VarULong(base.entity_id as u64),
             header,
-            position: boat.bedrock_pos().to_f32_lossy(),
+            position: vehicle.bedrock_pos().to_f32_lossy(),
             rotation_x: pack_degrees(pitch),
             rotation_y: pack_degrees(yaw),
             rotation_y_head: pack_degrees(head_yaw),
