@@ -718,7 +718,14 @@ mod tests {
                 threads.spawn(move || {
                     let chunk = item.get_entity().chunk_pos.load();
                     started.wait();
-                    item.try_regional_motion(world, chunk, id, deadline, &|pos| pos == chunk);
+                    item.try_regional_motion(
+                        world,
+                        chunk,
+                        id,
+                        deadline,
+                        &|pos| pos == chunk,
+                        || {},
+                    );
                 });
             }
         });
@@ -770,7 +777,11 @@ mod tests {
             at: Instant::now(),
             period: Duration::from_millis(50),
         };
-        item.try_regional_motion(&world, chunk, 0, deadline, &|pos| pos == chunk);
+        let mut published = false;
+        item.try_regional_motion(&world, chunk, 0, deadline, &|pos| pos == chunk, || {
+            published = true;
+        });
+        assert!(!published);
         assert_eq!(entity.pos.load(), start);
         let current = {
             let index = world
@@ -785,7 +796,10 @@ mod tests {
         // A regional expiry can replace the registry without a coordinated world tick.
         world.entities.store(Arc::new(vec![item.clone()]));
         world.players.store(Arc::default());
-        item.try_regional_motion(&world, chunk, 0, deadline, &|pos| pos == chunk);
+        item.try_regional_motion(&world, chunk, 0, deadline, &|pos| pos == chunk, || {
+            published = true;
+        });
+        assert!(published);
         let moved = entity.bounding_box.load();
         assert!(moved.min.x > original.max.x);
         assert!(ids(&world, &original).is_empty());

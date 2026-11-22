@@ -135,26 +135,6 @@ impl RegionalMoveDelivery {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_partial_regional_move_keeps_the_baseline_until_a_full_send() {
-        let needs_sync = AtomicBool::new(false);
-        let mut baseline = 0;
-        for (position, queued, pending, expected) in
-            [(1, 1, true, 0), (2, 0, true, 0), (3, 2, false, 3)]
-        {
-            RegionalMoveDelivery { viewers: 2, queued }.reconcile(&needs_sync, || {
-                baseline = position;
-            });
-            assert_eq!(needs_sync.load(Relaxed), pending);
-            assert_eq!(baseline, expected);
-        }
-    }
-}
-
 pub struct TrackedEntity {
     pub entity: Arc<dyn EntityBase>,
     pub entity_id: i32,
@@ -1703,5 +1683,25 @@ impl EntityTracker {
                 tracked.entity.get_entity().send_dirty_entity_data();
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_partial_regional_move_keeps_the_baseline_until_a_full_send() {
+        let needs_sync = AtomicBool::new(false);
+        let mut baseline = 0;
+        for (position, queued, pending, expected) in
+            [(1, 1, true, 0), (2, 0, true, 0), (3, 2, false, 3)]
+        {
+            RegionalMoveDelivery { viewers: 2, queued }.reconcile(&needs_sync, || {
+                baseline = position;
+            });
+            assert_eq!(needs_sync.load(Relaxed), pending);
+            assert_eq!(baseline, expected);
+        }
     }
 }
