@@ -42,6 +42,7 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_data::{Block, BlockId, BlockState};
 use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_protocol::bedrock::client::set_actor_data::entity_data_flag;
 use pumpkin_util::Difficulty;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
@@ -421,6 +422,10 @@ impl MobEntity {
 
     pub fn set_no_ai(&self, no_ai: bool) {
         self.set_mob_flag(Self::AI_DISABLED_FLAG, no_ai);
+        let entity = &self.living_entity.entity;
+        if entity.entity_type == &EntityType::HORSE {
+            entity.update_bedrock_base_flags(1i64 << entity_data_flag::NO_AI, no_ai);
+        }
     }
 
     pub fn is_no_ai(&self) -> bool {

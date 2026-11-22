@@ -257,6 +257,11 @@ impl Mob for HorseEntity {
     }
 
     fn mob_read_nbt(&self, nbt: &NbtCompound) {
+        let living = &self.mob_entity.living_entity;
+        // The tame flag update below will send the complete Bedrock flag word.
+        if living.update_bedrock_horse_control() {
+            living.reset_mounted_horse_jumps();
+        }
         self.read_horse_nbt(nbt);
         if let Some(variant) = nbt.get_int("Variant") {
             self.set_variant(variant);

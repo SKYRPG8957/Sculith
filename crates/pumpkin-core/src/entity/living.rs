@@ -29,7 +29,7 @@ use crate::entity::attributes::ModifierOperation;
 use crate::entity::attributes::{AttributeInstance, apply_attributes, pack_attributes};
 use crate::entity::breath::DROWNING_INTERVAL;
 use crate::entity::combat::{CombatRules, CombatTracker, FallLocation, knockback_after_resistance};
-use crate::entity::mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE;
+use crate::entity::mob::equipment::{DEFAULT_EQUIPMENT_DROP_CHANCE, is_equippable_in_slot};
 use crate::entity::mob::neutral::find_by_uuid;
 use crate::entity::player::Player;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
@@ -56,6 +56,9 @@ use pumpkin_data::{damage::DamageType, sound::Sound};
 use pumpkin_inventory::entity_equipment::EntityEquipment;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
+use pumpkin_protocol::bedrock::client::set_actor_data::{
+    CSetActorData, PropertySyncData, entity_data_flag, entity_data_key,
+};
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::{
     CHurtAnimation, CSwingArm, CTakeItemEntity, CUpdateMobEffect,
@@ -651,6 +654,7 @@ impl LivingEntity {
                 .any(|(slot, _)| *slot == EquipmentSlot::SADDLE)
         {
             self.reset_mounted_horse_jumps();
+            self.send_bedrock_horse_control();
         }
         self.apply_and_send_equipment_attribute_modifiers(equipment);
 
@@ -717,7 +721,49 @@ impl LivingEntity {
         }
     }
 
-    fn reset_mounted_horse_jumps(&self) {
+    pub(super) fn update_bedrock_horse_control(&self) -> bool {
+        const CONTROL_FLAGS: i64 = (1i64 << entity_data_flag::SADDLED)
+            | (1i64 << entity_data_flag::KEYBOARD_CONTROLLED)
+            | (1i64 << entity_data_flag::POWER_JUMP);
+        let equipment = self
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let saddled = equipment
+            .equipment
+            .get(&EquipmentSlot::SADDLE)
+            .is_some_and(|saddle| {
+                !saddle.is_empty()
+                    && is_equippable_in_slot(
+                        self.entity.entity_type,
+                        saddle,
+                        &EquipmentSlot::SADDLE,
+                    )
+            });
+        self.entity
+            .update_bedrock_base_flags(CONTROL_FLAGS, saddled)
+    }
+
+    fn send_bedrock_horse_control(&self) {
+        if !self.update_bedrock_horse_control() {
+            return;
+        }
+        let mut actor_data = self.entity.bedrock_metadata();
+        actor_data
+            .0
+            .retain(|&key, _| matches!(key, entity_data_key::FLAGS | entity_data_key::FLAGS_TWO));
+        self.entity.world.load().send_to_tracking_players_bedrock(
+            &self.entity,
+            &CSetActorData {
+                target_runtime_id: VarULong(self.entity_id() as u64),
+                actor_data,
+                synced_properties: PropertySyncData::default(),
+                tick: VarULong(0),
+            },
+        );
+    }
+
+    pub(super) fn reset_mounted_horse_jumps(&self) {
         let reset = |player: &Player| {
             if let crate::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
                 client.reset_horse_jump();

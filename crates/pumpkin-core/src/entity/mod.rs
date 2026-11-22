@@ -2042,6 +2042,16 @@ impl Entity {
         }
     }
 
+    /// Updates related flags in the first Bedrock flag word together.
+    fn update_bedrock_base_flags(&self, mask: i64, enabled: bool) -> bool {
+        self.init_bedrock_flags();
+        if enabled {
+            self.bedrock_flags.fetch_or(mask, Relaxed) & mask != mask
+        } else {
+            self.bedrock_flags.fetch_and(!mask, Relaxed) & mask != 0
+        }
+    }
+
     fn write_bedrock_flags_two(&self, metadata: &mut SyncedActorDataList) {
         metadata.set(
             entity_data_key::FLAGS_TWO,
