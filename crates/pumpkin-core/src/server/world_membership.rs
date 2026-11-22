@@ -8,7 +8,9 @@ use tokio::sync::oneshot;
 
 use crate::entity::EntityBase;
 use crate::entity::player::Player;
-use crate::entity::player::world_transfer::{WorldTransfer, WorldTransferReservation};
+use crate::entity::player::world_transfer::{
+    ArrivalPhase, WorldTransfer, WorldTransferReservation,
+};
 use crate::net::DisconnectReason;
 use crate::world::World;
 
@@ -58,6 +60,12 @@ pub(super) enum WorldMembershipChange {
         completion: oneshot::Sender<bool>,
     },
     Transfer(Box<WorldTransfer>),
+    Arrival {
+        world: Arc<World>,
+        player: Arc<Player>,
+        phase: ArrivalPhase,
+        completion: oneshot::Sender<bool>,
+    },
     Depart {
         world: Arc<World>,
         phase: DeparturePhase,
@@ -72,6 +80,9 @@ impl WorldMembershipChange {
             } => completion.is_closed() || player.client.closed(),
             Self::PublishInitial {
                 completion, player, ..
+            }
+            | Self::Arrival {
+                completion, player, ..
             } => completion.is_closed() || player.client.closed(),
             Self::Transfer(transfer) => transfer.abandoned(),
             Self::Depart { .. } => false,
@@ -82,6 +93,7 @@ impl WorldMembershipChange {
         match self {
             Self::Join { world, .. }
             | Self::PublishInitial { world, .. }
+            | Self::Arrival { world, .. }
             | Self::Depart { world, .. } => world
                 .try_simulation()
                 .map(WorldTransferReservation::for_one_world),
@@ -118,6 +130,18 @@ impl WorldMembershipChange {
                     && world.commit_initial_player(&player);
                 let _ = completion.send(published);
             }
+            Self::Arrival {
+                world,
+                player,
+                phase,
+                completion,
+            } => {
+                let _owner = reservation;
+                let applied = !completion.is_closed()
+                    && !server.stop_token.is_cancelled()
+                    && player.apply_arrival_phase(server, &world, phase);
+                let _ = completion.send(applied);
+            }
             Self::Depart { world, phase } => {
                 let _owner = reservation;
                 phase(server, &world);
@@ -139,6 +163,22 @@ impl Server {
             completion,
         });
         published.await.unwrap_or(false)
+    }
+
+    pub(crate) async fn run_player_arrival(
+        &self,
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        phase: ArrivalPhase,
+    ) -> bool {
+        let (completion, applied) = oneshot::channel();
+        self.submit_membership_change(WorldMembershipChange::Arrival {
+            world: world.clone(),
+            player: player.clone(),
+            phase,
+            completion,
+        });
+        applied.await.unwrap_or(false)
     }
 
     pub(super) async fn request_player_admission(

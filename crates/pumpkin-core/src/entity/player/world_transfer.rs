@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use pumpkin_inventory::screen_handler::InventoryPlayer;
+use pumpkin_protocol::java::client::play::CSetSelectedSlot;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
 use tokio::sync::{OwnedMutexGuard, oneshot};
@@ -18,6 +20,21 @@ pub(super) enum WorldChange {
     Idle,
     Preparing,
     Arriving,
+}
+
+// Wire handshakes and the initial chunk can wait outside simulation. Each
+// continuation must reacquire the owner and validate the original session.
+#[derive(Clone, Copy)]
+pub enum ArrivalPhase {
+    PrepareTeleport,
+    PrepareRespawn {
+        same_world: bool,
+        keep_inventory: bool,
+    },
+    FinishTeleport,
+    FinishRespawn {
+        death: bool,
+    },
 }
 
 pub struct PendingWorldChange {
@@ -244,6 +261,63 @@ impl Player {
             .await;
         }
         !self.client.closed()
+    }
+
+    pub(crate) fn apply_arrival_phase(
+        self: &Arc<Self>,
+        server: &Server,
+        world: &World,
+        phase: ArrivalPhase,
+    ) -> bool {
+        if self.client.closed()
+            || self.world_change.load() != WorldChange::Arriving
+            || !std::ptr::eq(self.world().as_ref(), world)
+            || !world.is_open()
+            || !world
+                .players
+                .load()
+                .iter()
+                .any(|player| Arc::ptr_eq(player, self))
+        {
+            return false;
+        }
+
+        match phase {
+            ArrivalPhase::PrepareTeleport => {
+                self.send_permission_lvl_update();
+                world.add_arriving_player(self);
+                self.send_abilities_update();
+                self.enqueue_set_held_item_packet(&CSetSelectedSlot::new(
+                    self.get_inventory().get_selected_slot() as i8,
+                ));
+                self.on_screen_handler_opened(&self.player_screen_handler);
+                self.send_health();
+                world.send_world_info(self);
+            }
+            ArrivalPhase::PrepareRespawn {
+                same_world,
+                keep_inventory,
+            } => {
+                self.prepare_respawn_in_world(world, same_world, keep_inventory);
+                world.send_world_info(self);
+            }
+            ArrivalPhase::FinishTeleport => self.send_arriving_position(),
+            ArrivalPhase::FinishRespawn { death } => {
+                self.send_arriving_position();
+                world.refresh_java_player_for_bedrock(self);
+                self.complete_respawn_in_world(server, death);
+            }
+        }
+        true
+    }
+
+    fn send_arriving_position(&self) {
+        let entity = self.get_entity();
+        self.send_committed_world_position(
+            entity.pos.load(),
+            entity.yaw.load(),
+            entity.pitch.load(),
+        );
     }
 
     pub(crate) fn reserve_world_change(

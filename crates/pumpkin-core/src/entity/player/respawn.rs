@@ -22,7 +22,9 @@ use crate::plugin::player::{
 use crate::server::Server;
 use crate::world::World;
 
-use super::world_transfer::{PendingWorldChange, WorldPosition, can_wait_for_world_change};
+use super::world_transfer::{
+    ArrivalPhase, PendingWorldChange, WorldPosition, can_wait_for_world_change,
+};
 use super::{CalculatedRespawnPoint, GameMode, Player, RespawnPoint};
 
 pub fn bedrock_dimension_id(dimension: &Dimension) -> i32 {
@@ -395,7 +397,6 @@ impl Player {
         .await;
     }
 
-    #[expect(clippy::too_many_lines)]
     async fn finish_respawn(
         self: &Arc<Self>,
         server: &Arc<Server>,
@@ -419,6 +420,9 @@ impl Player {
             request.keeps_data(),
         );
         server.plugin_manager.fire(server, &mut event).await;
+        if self.client.closed() {
+            return;
+        }
 
         if notify_invalid {
             self.send_client_packet(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
@@ -470,6 +474,37 @@ impl Player {
         )
         .await;
 
+        if !server
+            .run_player_arrival(
+                world,
+                self,
+                ArrivalPhase::PrepareRespawn {
+                    same_world: Arc::ptr_eq(source, world),
+                    keep_inventory,
+                },
+            )
+            .await
+        {
+            return;
+        }
+        world.send_center_chunk(self).await;
+        server
+            .run_player_arrival(
+                world,
+                self,
+                ArrivalPhase::FinishRespawn {
+                    death: matches!(request, RespawnRequest::Death),
+                },
+            )
+            .await;
+    }
+
+    pub(super) fn prepare_respawn_in_world(
+        self: &Arc<Self>,
+        world: &World,
+        same_world: bool,
+        keep_inventory: bool,
+    ) {
         self.living_entity.reset_state();
         self.hunger_manager.restart();
         self.send_permission_lvl_update();
@@ -478,7 +513,7 @@ impl Player {
             self.inventory.clear();
         }
 
-        if Arc::ptr_eq(source, world) {
+        if same_world {
             world
                 .entity_tracker
                 .respawn_entity(&(self.clone() as Arc<dyn EntityBase>), world);
@@ -486,12 +521,10 @@ impl Player {
             world.add_arriving_player(self);
             world.entity_tracker.repair_respawned_player(self, world);
         }
-        world.send_world_info(self);
-        world.send_center_chunk(self).await;
-        self.send_committed_world_position(position, yaw, pitch);
-        world.refresh_java_player_for_bedrock(self).await;
+    }
 
-        if matches!(request, RespawnRequest::Death) && self.client.java().is_some() {
+    pub(super) fn complete_respawn_in_world(self: &Arc<Self>, server: &Server, death: bool) {
+        if death && self.client.java().is_some() {
             if server.basic_config.hardcore {
                 self.set_gamemode(GameMode::Spectator);
             }

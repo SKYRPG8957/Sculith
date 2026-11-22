@@ -4453,7 +4453,7 @@ impl World {
         }
     }
 
-    pub(crate) async fn refresh_java_player_for_bedrock(&self, subject: &Player) {
+    pub(crate) fn refresh_java_player_for_bedrock(&self, subject: &Player) {
         if !matches!(subject.client.as_ref(), ClientPlatform::Java(_)) {
             return;
         }
@@ -4468,9 +4468,9 @@ impl World {
             if tracked.is_seen_by(&recipient.gameprofile.id)
                 && let ClientPlatform::Bedrock(client) = recipient.client.as_ref()
             {
-                client.send_packet(&remove).await;
-                client.send_packet(&player_list).await;
-                client.send_packet(&add_player).await;
+                client.try_enqueue_client_packet(&remove);
+                client.try_enqueue_client_packet(&player_list);
+                client.try_enqueue_client_packet(&add_player);
             }
         }
     }

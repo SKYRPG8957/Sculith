@@ -5085,24 +5085,15 @@ impl Player {
                     }
                 }
 
-                self.send_permission_lvl_update();
-
-                new_world.add_arriving_player(self);
-
-                self.send_abilities_update();
-
-                self.enqueue_set_held_item_packet(&CSetSelectedSlot::new(
-                    self.get_inventory().get_selected_slot() as i8,
-                ));
-
-                self.on_screen_handler_opened(&self.player_screen_handler);
-
-                self.send_health();
-
-                new_world.send_world_info(self);
+                if !server.run_player_arrival(&new_world, self, world_transfer::ArrivalPhase::PrepareTeleport).await {
+                    return;
+                }
                 new_world.send_center_chunk(self).await;
-
-                self.send_committed_world_position(position, yaw, pitch);
+                if !server.run_player_arrival(&new_world, self, world_transfer::ArrivalPhase::FinishTeleport).await
+                    || self.client.closed()
+                {
+                    return;
+                }
 
                 drop(change);
                 let mut changed_world_event = crate::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent {
