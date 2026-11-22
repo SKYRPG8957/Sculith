@@ -564,6 +564,7 @@ impl EntityIndex {
         world: &World,
         player: &Player,
         bounds: BoundingBox,
+        clear_area: Option<BoundingBox>,
         apply: impl FnOnce() -> bool,
     ) -> bool {
         let Ok(mut index) = self.players.try_write() else {
@@ -577,8 +578,34 @@ impl EntityIndex {
         let Some(&slot) = index.slots.get(&entity_id) else {
             return false;
         };
+        let active_actors = if let Some(area) = clear_area {
+            let Ok(mut actors) = self.inner.try_write() else {
+                return false;
+            };
+            let entities = world.entities.load_full();
+            if !actors.matches(&entities) {
+                actors.rebuild(&entities);
+            }
+            if actors
+                .candidates(&area, |_| true)
+                .into_iter()
+                .any(|candidate| actors.intersects(candidate, &area))
+                || index
+                    .candidates(&area)
+                    .into_iter()
+                    .any(|candidate| candidate != slot && index.intersects(candidate, &area))
+            {
+                return false;
+            }
+            Some((entities, actors))
+        } else {
+            None
+        };
         if !std::ptr::eq(players[slot].as_ref(), player)
             || !Arc::ptr_eq(&players, &world.players.load())
+            || active_actors
+                .as_ref()
+                .is_some_and(|(entities, _)| !Arc::ptr_eq(entities, &world.entities.load()))
             || !apply()
         {
             return false;

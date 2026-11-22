@@ -12,13 +12,75 @@ use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
 
 use crate::entity::EntityBase;
-use crate::entity::player::{ClientMove, ClientMoveOutcome, PlayerInput};
+use crate::entity::player::{
+    ClientMove, ClientMoveOutcome, PlayerInput, client_move::CommittedPlayerMove,
+};
 use crate::entity::vehicle::boat::BEDROCK_YAW_OFFSET;
 use crate::world::RegionChunks;
 
 const TELEPORT_RESEND_INPUTS: u32 = 20;
 
 impl BedrockClient {
+    pub(in crate::net::bedrock) fn try_commit_regional_auth_move(
+        &self,
+        player: &Player,
+        server: &Server,
+        extent: &RegionChunks,
+        packet: &SPlayerAuthInput,
+    ) -> Option<CommittedPlayerMove> {
+        let flags = &packet.input_data;
+        let needs_world = [
+            InputData::HandledTeleport,
+            InputData::ClientPredictedVehicle,
+            InputData::StartSprinting,
+            InputData::StopSprinting,
+            InputData::StartSneaking,
+            InputData::StopSneaking,
+            InputData::StartFlying,
+            InputData::StopFlying,
+            InputData::StartGliding,
+            InputData::StopGliding,
+            InputData::StartSwimming,
+            InputData::StopSwimming,
+            InputData::StartCrawling,
+            InputData::StopCrawling,
+            InputData::StartSpinAttack,
+            InputData::StopSpinAttack,
+            InputData::HorizontalCollision,
+        ];
+        if packet.item_interaction.is_some()
+            || packet.item_stack_request.is_some()
+            || packet.block_actions.is_some()
+            || needs_world.into_iter().any(|flag| flags.get(flag as usize))
+            || ![
+                packet.yaw,
+                packet.pitch,
+                packet.head_yaw,
+                packet.delta.x,
+                packet.delta.y,
+                packet.delta.z,
+            ]
+            .into_iter()
+            .all(f32::is_finite)
+            || player.get_entity().is_sneaking()
+            || player_input_from_auth(packet, false).bits() != player.player_input().bits()
+        {
+            return None;
+        }
+        let movement = ClientMove {
+            position: Some(player.feet_from_bedrock_pos(packet.position.to_f64())),
+            yaw: Some(packet.yaw),
+            pitch: Some(packet.pitch),
+            head_yaw: Some(packet.head_yaw),
+            on_ground: flags.get(InputData::VerticalCollision as usize)
+                && self.client_delta.load().y < 0.0,
+            horizontal_collision: false,
+        };
+        let committed = player.try_commit_regional_client_move(server, extent, movement)?;
+        self.store_input_state(packet);
+        Some(committed)
+    }
+
     pub fn handle_player_auth_input(
         &self,
         player: &Arc<Player>,

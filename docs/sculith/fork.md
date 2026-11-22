@@ -241,6 +241,16 @@ Boundary crossings, updated payloads and translated clients go through the
 ordinary world decoder. Movement effects, other scheduled callbacks, entity AI
 and entity chunk residency use world phases.
 
+A native Bedrock input can also commit a short level move on its region before
+the world processes the connection. The pose, controls, facing and grounded
+state must stay stable. The region pins the swept terrain and spatial indices.
+It requires an air path, a full dry supporting floor for a walk, and clearance
+from nearby actors. The move stays at the head of the connection's queue until
+the world has run its effects and sent the resulting position. Java receives
+an absolute position so a viewer paired after the commit does not add the
+same displacement twice. An intervening teleport invalidates the pending
+publication.
+
 When a native Bedrock player moves between active regions, the destination
 receives that connection's ready work at the position change. Previously
 claimed work and the handoff use the same per-connection guard. The player

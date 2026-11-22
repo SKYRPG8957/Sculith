@@ -5050,17 +5050,19 @@ impl Player {
             }
         }
 
+        let teleport_id = self.begin_teleport(position);
         self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
         let entity = self.get_entity();
         entity.set_pos(position);
         entity.set_rotation(yaw, pitch);
-        self.send_teleport_position(position, yaw, pitch);
+        self.send_teleport_position(teleport_id, position, yaw, pitch);
     }
 
     /// Synchronizes a position already applied at the simulation boundary.
     fn send_committed_world_position(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
+        let teleport_id = self.begin_teleport(position);
         self.chunk_send_epoch.fetch_add(1, Ordering::Relaxed);
-        self.send_teleport_position(position, yaw, pitch);
+        self.send_teleport_position(teleport_id, position, yaw, pitch);
     }
 
     pub(crate) async fn send_initial_java_position(self: &Arc<Self>, server: &Arc<Server>) {
@@ -5078,12 +5080,14 @@ impl Player {
         }
     }
 
-    fn send_teleport_position(&self, position: Vector3<f64>, yaw: f32, pitch: f32) {
-        let teleport_id = self
-            .teleport_id_count
-            .fetch_add(1, Ordering::Relaxed)
-            .wrapping_add(1);
-        // Moves are ignored until the client confirms (teleport confirmation was added in 1.9).
+    fn begin_teleport(&self, position: Vector3<f64>) -> VarInt {
+        let teleport_id = VarInt(
+            self.teleport_id_count
+                .fetch_add(1, Ordering::Relaxed)
+                .wrapping_add(1),
+        );
+        // Reserve the teleport before changing position so a region cannot
+        // replace the destination between the commit and its wire publication.
         if !matches!(
             self.client.as_ref(),
             ClientPlatform::Java(c) if c.version.load() < JavaMinecraftVersion::V_1_9
@@ -5091,13 +5095,22 @@ impl Player {
             *self
                 .awaiting_teleport
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                Some((teleport_id.into(), position));
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((teleport_id, position));
         }
+        teleport_id
+    }
+
+    fn send_teleport_position(
+        &self,
+        teleport_id: VarInt,
+        position: Vector3<f64>,
+        yaw: f32,
+        pitch: f32,
+    ) {
         match self.client.as_ref() {
             ClientPlatform::Java(client) => {
                 let packet = CPlayerPosition::new(
-                    teleport_id.into(),
+                    teleport_id,
                     position,
                     Vector3::new(0.0, 0.0, 0.0),
                     yaw,

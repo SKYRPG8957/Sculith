@@ -1773,6 +1773,14 @@ impl EntityBoundingBox {
             .index
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.store_with_index(&index, bounds);
+    }
+
+    fn store_with_index(
+        &self,
+        index: &std::sync::Weak<crate::world::EntityIndex>,
+        bounds: BoundingBox,
+    ) {
         if let Some(index) = index.upgrade() {
             if self.is_player {
                 index.set_player_bounds(self.entity_id, &self.value, bounds);
@@ -2420,14 +2428,26 @@ impl Entity {
     pub fn set_pos(&self, new_position: Vector3<f64>) {
         let item_motion = self.hold_item_motion();
         let commit_position = || {
+            // A regional player move pins the same index before changing any position fields.
+            let player_index = (self.entity_type == &EntityType::PLAYER).then(|| {
+                self.bounding_box
+                    .index
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+            });
             self.set_pos_with(
                 new_position,
                 || {
-                    self.bounding_box.store(Self::make_bounding_box(
+                    let bounds = Self::make_bounding_box(
                         self.entity_type,
                         new_position,
                         &self.entity_dimension.load(),
-                    ));
+                    );
+                    if let Some(index) = &player_index {
+                        self.bounding_box.store_with_index(index, bounds);
+                    } else {
+                        self.bounding_box.store(bounds);
+                    }
                 },
                 |position| self.world.load().level.get_rough_biome(&position),
             );
@@ -4800,13 +4820,21 @@ impl Entity {
 
     fn refresh_dimensions_into(&self, metadata: &mut SyncedActorDataList) {
         let dimensions = self.get_dimensions(self.pose.load());
-        let old = self.entity_dimension.swap(dimensions);
-        // Vanilla `reapplyPosition`: the box is rebuilt even at the same size
-        self.bounding_box.store(Self::make_bounding_box(
-            self.entity_type,
-            self.pos.load(),
-            &dimensions,
-        ));
+        let old = {
+            // Read the origin under the index guard so a regional move cannot leave a stale box.
+            let index = self
+                .bounding_box
+                .index
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let old = self.entity_dimension.swap(dimensions);
+            // Vanilla reapplyPosition rebuilds the box even at the same size.
+            self.bounding_box.store_with_index(
+                &index,
+                Self::make_bounding_box(self.entity_type, self.pos.load(), &dimensions),
+            );
+            old
+        };
         metadata.set(
             entity_data_key::WIDTH,
             MetadataValue::Float(dimensions.width),

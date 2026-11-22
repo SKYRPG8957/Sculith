@@ -1,4 +1,4 @@
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Weak, atomic::Ordering::Relaxed};
 
 use pumpkin_protocol::{
     RawPacket,
@@ -14,7 +14,10 @@ use pumpkin_protocol::{
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 
 use crate::{
-    entity::{EntityBase, player::Player},
+    entity::{
+        EntityBase,
+        player::{Player, client_move::CommittedPlayerMove},
+    },
     plugin::server::packet::{PacketReceivedEvent, PacketSentEvent},
     server::{Server, player_commands::PlayerCommandIngress},
     world::{RegionChunks, World},
@@ -34,6 +37,8 @@ pub(super) struct QueuedPlayInput {
 struct PreparedMovement {
     extent: Weak<[Vector2<i32>]>,
     input: SPlayerAuthInput,
+    fully_read: bool,
+    committed: Option<CommittedPlayerMove>,
 }
 
 impl PreparedMovement {
@@ -91,16 +96,27 @@ impl BedrockClient {
         };
         let mut spin_attack_prediction = None;
         for _ in 0..budget {
-            let Some(QueuedPlayInput { packet, movement }) = head.take().or_else(|| {
+            let Some(QueuedPlayInput {
+                packet,
+                mut movement,
+            }) = head.take().or_else(|| {
                 player.inbound_packets.pop().map(|packet| QueuedPlayInput {
                     packet,
                     movement: None,
                 })
-            }) else {
+            })
+            else {
                 break;
             };
             if self.is_closed() {
                 break;
+            }
+            if let Some(committed) = movement
+                .as_mut()
+                .and_then(|movement| movement.committed.take())
+            {
+                player.finish_regional_client_move(&committed);
+                continue;
             }
             let original = movement.as_ref().map(|_| packet.payload.clone());
             let Some(packet) = self.filter_play_packet(&server, &player, packet) else {
@@ -173,7 +189,41 @@ impl BedrockClient {
         Some(PreparedMovement {
             extent: Arc::downgrade(extent),
             input,
+            fully_read: payload.is_empty(),
+            committed: None,
         })
+    }
+
+    fn prepare_level_move(
+        &self,
+        player: &Player,
+        server: &Server,
+        extent: &RegionChunks,
+        packet: &RawPacket,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<PreparedMovement> {
+        if !player.get_entity().on_ground.load(Relaxed) && !player.is_flying() {
+            return None;
+        }
+        let mut prepared = Self::prepare_movement(player, &packet.payload, extent, owns)?;
+        if prepared.fully_read {
+            prepared.committed =
+                self.try_commit_regional_auth_move(player, server, extent, &prepared.input);
+        }
+        if prepared.committed.is_some() {
+            tracing::trace!(
+                player = %player.gameprofile.name,
+                input_tick = prepared.input.tick.0,
+                "Committed Bedrock movement on its region"
+            );
+        } else {
+            tracing::trace!(
+                player = %player.gameprofile.name,
+                input_tick = prepared.input.tick.0,
+                "Prepared Bedrock movement on its region"
+            );
+        }
+        Some(prepared)
     }
 
     pub(crate) fn drain_regional_input(
@@ -197,7 +247,7 @@ impl BedrockClient {
                 return false;
             }
             let was_waiting = head.is_some();
-            let Some(queued) = head.take().or_else(|| {
+            let Some(mut queued) = head.take().or_else(|| {
                 player.inbound_packets.pop().map(|packet| QueuedPlayInput {
                     packet,
                     movement: None,
@@ -207,6 +257,14 @@ impl BedrockClient {
             };
             // Keep the first world-owned packet ahead of everything behind it.
             if !Self::is_regional_reply(queued.packet.id) {
+                if queued
+                    .movement
+                    .as_ref()
+                    .is_some_and(|movement| movement.committed.is_some())
+                {
+                    *head = Some(queued);
+                    return false;
+                }
                 let movement = Self::can_prepare_movement(&queued.packet);
                 if movement
                     && self.try_regional_teleport_input(player, &queued.packet.payload, || {
@@ -214,6 +272,15 @@ impl BedrockClient {
                     })
                 {
                     continue;
+                }
+                if movement
+                    && !was_waiting
+                    && let Some(prepared) =
+                        self.prepare_level_move(player, server, extent, &queued.packet, &owns)
+                {
+                    queued.movement = Some(prepared);
+                    *head = Some(queued);
+                    return false;
                 }
                 let payload = (movement && !was_waiting).then(|| queued.packet.payload.clone());
                 *head = Some(queued);
@@ -271,10 +338,7 @@ mod tests {
     };
     use pumpkin_util::{GameMode, math::vector3::Vector3};
     use pumpkin_world::world::BlockFlags;
-    use std::{
-        sync::atomic::Ordering::Relaxed,
-        time::{Duration, Instant},
-    };
+    use std::time::{Duration, Instant};
 
     use crate::{
         data::VanillaData,

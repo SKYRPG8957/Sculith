@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use pumpkin_data::{Block, translation};
+use pumpkin_data::{Block, BlockStateId, entity::EntityPose, translation};
 use pumpkin_protocol::bedrock::client::CMovePlayer;
 use pumpkin_protocol::java::client::play::{
     CEntityPositionSync, CHeadRot, CPlayerPosition, CSetCamera, CUpdateEntityPos,
@@ -15,11 +15,12 @@ use crate::entity::{Entity, EntityBase};
 use crate::net::{ClientPlatform, DisconnectReason};
 use crate::plugin::player::player_input::PlayerInputEvent;
 use crate::plugin::player::player_move::PlayerMoveEvent;
+use crate::plugin::player::player_statistic_increment::PlayerStatisticIncrementEvent;
 use crate::plugin::player::player_toggle_flight_event::PlayerToggleFlightEvent;
 use crate::plugin::player::player_toggle_sneak_event::PlayerToggleSneakEvent;
 use crate::plugin::player::player_toggle_sprint_event::PlayerToggleSprintEvent;
 use crate::server::Server;
-use crate::world::{RegionChunks, chunker};
+use crate::world::{RegionChunks, World, chunker};
 
 use super::Player;
 use super::statistics::StatisticCategory;
@@ -54,6 +55,21 @@ pub enum ClientMoveOutcome {
     Applied,
     Rejected,
     Ignored,
+}
+
+pub(crate) struct CommittedPlayerMove {
+    world: uuid::Uuid,
+    teleport: i32,
+    epoch: u32,
+    from: Vector3<f64>,
+    to: Vector3<f64>,
+    movement: ClientMove,
+}
+
+#[derive(Clone, Copy)]
+enum MovePublication {
+    Delta,
+    Absolute,
 }
 
 impl Player {
@@ -428,12 +444,30 @@ impl Player {
 
         let pos = target.unwrap_or(last_pos);
         let was_on_ground = entity.on_ground.load(Ordering::Relaxed);
-        if !extent
-            .is_some_and(|extent| self.try_set_regional_position(server, extent, last_pos, pos))
-        {
+        if !extent.is_some_and(|extent| {
+            self.try_set_regional_position(server, extent, last_pos, pos, None)
+        }) {
             entity.set_pos(pos);
         }
+        self.finish_client_move(
+            last_pos,
+            pos,
+            requested,
+            was_on_ground,
+            MovePublication::Delta,
+        );
+        ClientMoveOutcome::Applied
+    }
 
+    fn finish_client_move(
+        &self,
+        last_pos: Vector3<f64>,
+        pos: Vector3<f64>,
+        requested: ClientMove,
+        was_on_ground: bool,
+        publication: MovePublication,
+    ) {
+        let entity = self.get_entity();
         let delta = Vector3::new(pos.x - last_pos.x, pos.y - last_pos.y, pos.z - last_pos.z);
         let distance = last_pos.squared_distance_to_vec(&pos).sqrt();
         let cm = (distance * 100.0) as i32;
@@ -468,6 +502,7 @@ impl Player {
                 requested.on_ground,
                 pos_changed,
                 rot_changed,
+                publication,
             );
         }
 
@@ -494,8 +529,82 @@ impl Player {
         }
         entity.emit_client_movement(self, delta);
         self.progress_motion(delta);
+    }
 
-        ClientMoveOutcome::Applied
+    pub(crate) fn try_commit_regional_client_move(
+        &self,
+        server: &Server,
+        extent: &RegionChunks,
+        movement: ClientMove,
+    ) -> Option<CommittedPlayerMove> {
+        let entity = self.get_entity();
+        let from = entity.pos.load();
+        let to = movement.position?;
+        let difference = to - from;
+        if !self.has_client_loaded()
+            || self.is_movement_locked.load(Ordering::Relaxed)
+            || self.camera_target_id.load().is_some()
+            || self.sleeping_since.load().is_some()
+            || self.living_entity.dead.load(Ordering::Relaxed)
+            || self.living_entity.health.load() <= 0.0
+            || entity.pose.load() != EntityPose::Standing
+            || entity.is_fall_flying()
+            || self.living_entity.is_auto_spin_attack()
+            || entity.touching_water.load(Ordering::Relaxed)
+            || entity.touching_lava.load(Ordering::Relaxed)
+            || movement.horizontal_collision
+            || movement.on_ground != entity.on_ground.load(Ordering::Relaxed)
+            || !movement.on_ground && !self.is_flying()
+            || difference.y.abs() > 0.000_02
+            || difference.horizontal_length_squared() > 1.0
+            || BlockPos::floored_v(to).chunk_position() != entity.chunk_pos.load()
+            || to.x != Self::clamp_horizontal(to.x)
+            || to.z != Self::clamp_horizontal(to.z)
+            || to.y != Self::clamp_vertical(to.y)
+            || self.look_changed(movement)
+            || server.plugin_manager.has_handlers::<PlayerMoveEvent>()
+            || server.plugin_manager.has_handlers::<PlayerInputEvent>()
+            || server
+                .plugin_manager
+                .has_handlers::<PlayerStatisticIncrementEvent>()
+        {
+            return None;
+        }
+        let awaiting = self.awaiting_teleport.try_lock().ok()?;
+        let vehicle = entity.vehicle.try_lock().ok()?;
+        let passengers = entity.passengers.try_lock().ok()?;
+        if awaiting.is_some() || vehicle.is_some() || !passengers.is_empty() {
+            return None;
+        }
+        let _checkpoint = server.try_regional_entity_save_guard()?;
+        let world = self.world().uuid;
+        let teleport = self.teleport_id_count.load(Ordering::Relaxed);
+        let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
+        self.try_set_regional_position(server, extent, from, to, Some(movement.on_ground))
+            .then_some(CommittedPlayerMove {
+                world,
+                teleport,
+                epoch,
+                from,
+                to,
+                movement,
+            })
+    }
+
+    pub(crate) fn finish_regional_client_move(&self, committed: &CommittedPlayerMove) {
+        if self.world().uuid == committed.world
+            && self.teleport_id_count.load(Ordering::Relaxed) == committed.teleport
+            && self.chunk_send_epoch.load(Ordering::Relaxed) == committed.epoch
+            && self.get_entity().pos.load() == committed.to
+        {
+            self.finish_client_move(
+                committed.from,
+                committed.to,
+                committed.movement,
+                committed.movement.on_ground,
+                MovePublication::Absolute,
+            );
+        }
     }
 
     fn try_set_regional_position(
@@ -504,6 +613,7 @@ impl Player {
         extent: &RegionChunks,
         from: Vector3<f64>,
         to: Vector3<f64>,
+        clear_path: Option<bool>,
     ) -> bool {
         if from == to || ![to.x, to.y, to.z].into_iter().all(f64::is_finite) {
             return false;
@@ -533,17 +643,37 @@ impl Player {
         let bounds =
             Entity::make_bounding_box(entity.entity_type, to, &entity.entity_dimension.load());
         let swept = entity.bounding_box.load().minmax(&bounds);
+        if clear_path.is_some() && entity.pose.load() != EntityPose::Standing {
+            return false;
+        }
         let destination = BlockPos::floored_v(to);
+        let mut first = BlockPos::floored_v(swept.min);
+        let last = swept.max_block_pos();
+        let floor = clear_path
+            .filter(|grounded| *grounded)
+            .map(|_| from.y.round() as i32 - 1);
+        if let Some(floor) = floor {
+            if (from.y - f64::from(floor + 1)).abs() > 0.000_02 {
+                return false;
+            }
+            first.0.y = floor;
+        }
         // Reuse the normal position fields without reacquiring the pinned chunk or index.
         let committed = world.level.try_with_regional_path(
-            BlockPos::floored_v(swept.min),
-            swept.max_block_pos(),
+            first,
+            last,
             owns,
-            |_| Some((destination, ())),
+            |read| {
+                (clear_path.is_none() || clear_movement_path(first, last, floor, read))
+                    .then_some((destination, ()))
+            },
             |(), biome| {
-                world
-                    .entity_index
-                    .try_move_regional_player(&world, self, bounds, || {
+                world.entity_index.try_move_regional_player(
+                    &world,
+                    self,
+                    bounds,
+                    clear_path.map(|_| swept.expand(1.0, 0.5, 1.0)),
+                    || {
                         if !self.can_simulate_in(&world)
                             || entity.is_removed()
                             || entity.pos.load() != from
@@ -558,7 +688,8 @@ impl Player {
                             |_| biome,
                         );
                         true
-                    })
+                    },
+                )
             },
         ) == Some(true);
         if committed {
@@ -588,7 +719,7 @@ impl Player {
             let entity = self.get_entity();
             let pos = entity.pos.load();
             let on_ground = entity.on_ground.load(Ordering::Relaxed);
-            self.broadcast_client_move(pos, pos, on_ground, false, true);
+            self.broadcast_client_move(pos, pos, on_ground, false, true, MovePublication::Delta);
         }
     }
 
@@ -629,6 +760,7 @@ impl Player {
         on_ground: bool,
         pos_changed: bool,
         rot_changed: bool,
+        publication: MovePublication,
     ) {
         let entity = self.get_entity();
         let world = entity.world.load_full();
@@ -638,7 +770,13 @@ impl Player {
         let head = Self::packed_rot(entity.head_yaw.load());
         let delta = pos - last_pos;
 
-        if pos_changed && delta.length_squared() >= 64.0 {
+        let long_move = delta.length_squared() >= 64.0;
+        if pos_changed && (long_move || matches!(publication, MovePublication::Absolute)) {
+            let mode = if long_move {
+                CMovePlayer::MODE_TELEPORT
+            } else {
+                CMovePlayer::MODE_NORMAL
+            };
             world.send_to_tracking_players_editioned(
                 entity,
                 &CEntityPositionSync::new(
@@ -649,13 +787,15 @@ impl Player {
                     entity.pitch.load(),
                     on_ground,
                 ),
-                &self.bedrock_move_packet(CMovePlayer::MODE_TELEPORT, on_ground, 0),
+                &self.bedrock_move_packet(mode, on_ground, 0),
             );
             // Bedrock ignores head yaw on teleport -> a normal move re-asserts it
-            world.send_to_tracking_players_bedrock(
-                entity,
-                &self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, on_ground, 0),
-            );
+            if long_move {
+                world.send_to_tracking_players_bedrock(
+                    entity,
+                    &self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, on_ground, 0),
+                );
+            }
         } else if pos_changed && rot_changed {
             world.send_to_tracking_players_editioned(
                 entity,
@@ -686,6 +826,34 @@ impl Player {
             world.send_to_tracking_players(entity, &CHeadRot::new(entity_id.into(), head));
         }
     }
+}
+
+fn clear_movement_path(
+    first: BlockPos,
+    last: BlockPos,
+    floor: Option<i32>,
+    read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+) -> bool {
+    for x in first.0.x..=last.0.x {
+        for z in first.0.z..=last.0.z {
+            for y in first.0.y..=last.0.y {
+                let Some(id) = read(BlockPos::new(x, y, z)) else {
+                    return false;
+                };
+                let state = id.to_state();
+                if if floor == Some(y) {
+                    !state.is_full_cube()
+                        || World::get_fluid_from_state_id(id).id
+                            != pumpkin_data::fluid::Fluid::EMPTY.id
+                } else {
+                    !state.is_air()
+                } {
+                    return false;
+                }
+            }
+        }
+    }
+    true
 }
 
 fn packed_delta(last_pos: Vector3<f64>, pos: Vector3<f64>) -> Vector3<i16> {
