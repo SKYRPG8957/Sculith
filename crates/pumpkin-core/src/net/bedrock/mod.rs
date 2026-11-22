@@ -217,6 +217,7 @@ struct ClientActivity {
     horse_jump: std::sync::Mutex<horse_jump::HorseJumpInput>,
     packet_observers: std::sync::OnceLock<packet_observers::PacketObservers>,
     inbound_head: std::sync::Mutex<Option<play_ingress::QueuedPlayInput>>,
+    regional_work: std::sync::Mutex<()>,
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
     mining: std::sync::Mutex<Option<mining::MiningClock>>,
 }
@@ -353,6 +354,7 @@ impl BedrockClient {
                 horse_jump: std::sync::Mutex::default(),
                 packet_observers: std::sync::OnceLock::new(),
                 inbound_head: std::sync::Mutex::default(),
+                regional_work: std::sync::Mutex::default(),
                 experience_pickup: AtomicCell::new(None),
                 mining: std::sync::Mutex::default(),
             }),

@@ -234,6 +234,12 @@ Boundary crossings, updated payloads and translated clients go through the
 ordinary world decoder. Movement effects, other scheduled callbacks, entity AI
 and entity chunk residency use world phases.
 
+When a native Bedrock player moves between active regions, the destination
+receives that connection's ready work at the position change. Previously
+claimed work and the handoff use the same per-connection guard. The player
+carries the ordered packets and timer deadlines across the move, so the
+destination can process them while the previous region is waiting.
+
 After a native Bedrock player gathers an experience orb, the current region
 can advance that player's pickup delay. Pending work follows the player across
 region changes. Deadlines prevent an overlapping world or region step from

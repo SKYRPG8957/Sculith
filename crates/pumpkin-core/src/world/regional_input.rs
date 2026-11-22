@@ -4,7 +4,7 @@ use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    entity::{EntityBase, player::Player},
+    entity::{Entity, EntityBase, player::Player},
     server::{Server, TickDeadline},
 };
 
@@ -51,6 +51,12 @@ impl RegionalInput {
         self.ready().take().unwrap_or_default()
     }
 
+    fn remove(&self, id: u64) {
+        if let Some(ready) = self.ready().as_mut() {
+            ready.remove(&id);
+        }
+    }
+
     fn take_ready(&self) -> ReadyConnections {
         self.ready()
             .as_mut()
@@ -78,6 +84,10 @@ impl RegionalInput {
                 continue;
             };
             let Some(client) = player.client.bedrock() else {
+                continue;
+            };
+            let Ok(_position) = client.regional_work().try_lock() else {
+                player.world().offer_regional_work(id, &player, work);
                 continue;
             };
             let owns = |position| player.can_simulate_in(world) && owns(position);
@@ -122,6 +132,49 @@ impl RegionLayout {
 }
 
 impl World {
+    pub(crate) fn move_player_across_chunks(&self, entity: &Entity, commit: impl FnOnce()) {
+        let Some(player) = self
+            .get_player_by_uuid(entity.entity_uuid)
+            .filter(|player| {
+                std::ptr::eq(player.get_entity(), entity) && player.can_simulate_in(self)
+            })
+        else {
+            commit();
+            return;
+        };
+        let Some(client) = player
+            .client
+            .bedrock()
+            .filter(|client| client.is_current_protocol())
+        else {
+            commit();
+            return;
+        };
+
+        // Finish this connection's claimed regional work before its owner changes.
+        let _position = client
+            .regional_work()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let from = entity.chunk_pos.load();
+        commit();
+        let to = entity.chunk_pos.load();
+        let layout = self.region_layout.load();
+        let previous = layout.owner(from);
+        let destination = layout.owner(to);
+        if previous == destination || destination.and_then(|owner| layout.input(owner)).is_none() {
+            return;
+        }
+        if let Some(input) = previous.and_then(|owner| layout.input(owner)) {
+            input.remove(client.id);
+        }
+        // A dispatcher can already have taken the old map. The FIFO and timer
+        // state still belong to the player, so wake the destination directly.
+        if self.offer_regional_work(client.id, &player, RegionalWork::all()) {
+            tracing::trace!(player = %player.gameprofile.name, ?from, ?to, "Moved Bedrock regional work with the player");
+        }
+    }
+
     pub(crate) fn offer_regional_input(&self, id: u64, player: &Arc<Player>) {
         self.offer_regional_work(id, player, RegionalWork::INPUT);
     }

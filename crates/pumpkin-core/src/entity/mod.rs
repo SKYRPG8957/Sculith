@@ -2432,15 +2432,16 @@ impl Entity {
                 |position| self.world.load().level.get_rough_biome(&position),
             );
         };
-        if item_motion.is_some() {
-            let origin = self.chunk_pos.load();
-            let destination = BlockPos::floored_v(new_position).chunk_position();
-            if origin != destination {
-                self.world
-                    .load()
-                    .move_item_across_chunks(self, commit_position);
-                return;
+        if (item_motion.is_some() || self.entity_type == &EntityType::PLAYER)
+            && self.chunk_pos.load() != BlockPos::floored_v(new_position).chunk_position()
+        {
+            let world = self.world.load();
+            if item_motion.is_some() {
+                world.move_item_across_chunks(self, commit_position);
+            } else {
+                world.move_player_across_chunks(self, commit_position);
             }
+            return;
         }
         commit_position();
     }

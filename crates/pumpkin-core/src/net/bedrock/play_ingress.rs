@@ -51,6 +51,10 @@ impl PreparedMovement {
 }
 
 impl BedrockClient {
+    pub(crate) fn regional_work(&self) -> &std::sync::Mutex<()> {
+        &self.activity.regional_work
+    }
+
     pub(super) fn enqueue_play_input(&self, player: &Arc<Player>, packet: RawPacket) {
         let ready = (Self::is_regional_reply(packet.id) || Self::can_prepare_movement(&packet))
             && self.is_current_protocol();
@@ -297,10 +301,11 @@ mod tests {
 
         let next = first + TICK_PERIOD;
         player.get_entity().set_pos(Vector3::new(8.0, 100.0, 8.0));
-        tick_region(world, origin, next);
         tick_region(world, destination, first);
         assert_eq!(delay(), 1);
         tick_region(world, destination, next);
+        assert_eq!(delay(), 0);
+        tick_region(world, origin, next);
         assert_eq!(delay(), 0);
         assert!(player.begin_experience_pickup());
     }
@@ -471,8 +476,13 @@ mod tests {
 
         offer(3);
         player.get_entity().set_pos(Vector3::new(520.0, 100.0, 8.0));
-        advance(west);
         assert_eq!(player.inbound_packets.len(), 1);
+        let pending_during_move = {
+            let _moving = client.regional_work().lock().unwrap();
+            advance(east);
+            player.inbound_packets.len()
+        };
+        assert_eq!(pending_during_move, 1);
         let pending_with_lock = {
             let _draining = client.activity.inbound_head.lock().unwrap();
             advance(east);
