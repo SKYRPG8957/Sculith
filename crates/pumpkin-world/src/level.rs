@@ -1473,6 +1473,21 @@ impl Level {
         self.loaded_entity_chunks.try_get(&coordinates).try_unwrap()
     }
 
+    /// Pins the current entity chunk and a watcher without waiting for either map.
+    /// The callback must not acquire these maps again.
+    pub fn try_with_watched_entity_chunk<R>(
+        &self,
+        coordinates: Vector2<i32>,
+        apply: impl FnOnce(&SyncEntityChunk) -> R,
+    ) -> Option<R> {
+        let watchers = self.chunk_watchers.try_get(&coordinates).try_unwrap()?;
+        if *watchers == 0 {
+            return None;
+        }
+        let chunk = self.try_get_entity_chunk(coordinates)?;
+        Some(apply(chunk.value()))
+    }
+
     /// Reserves tick orders for `entities` entities; entity `i` starts at
     /// `first + i * ORDERS_PER_ENTITY`.
     pub fn reserve_entity_tick_orders(&self, entities: usize) -> u64 {

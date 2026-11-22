@@ -2413,10 +2413,11 @@ impl World {
         let region_server = (inhabited && same_extent)
             .then(|| self.server.upgrade())
             .flatten();
-        if let Some(server) = &region_server
-            && let Some(input) = current.input(owner)
-        {
-            input.drain(self, server, chunks, deadline, &owns);
+        if let Some(server) = &region_server {
+            self.activate_regional_entity_chunks(server, chunks, &owns);
+            if let Some(input) = current.input(owner) {
+                input.drain(self, server, chunks, deadline, &owns);
+            }
         }
         let regional_campfires = region_server
             .as_ref()
@@ -5184,7 +5185,10 @@ impl World {
 
     #[expect(clippy::needless_pass_by_value)]
     pub fn spawn_entity_non_save(&self, entity: Arc<dyn EntityBase>) {
-        let _base_entity = entity.get_entity();
+        let Some(_registration) = self.reserve_entity_registration(entity.get_entity().entity_uuid)
+        else {
+            return;
+        };
         self.entity_tracker.add_entity(&entity, self);
         self.spawn_state.load().add_entity(self, entity.as_ref());
 
@@ -5323,19 +5327,10 @@ impl World {
 
     #[expect(clippy::needless_pass_by_value)]
     pub fn add_entity_silent(&self, entity: Arc<dyn EntityBase>) {
-        let base_entity = entity.get_entity();
-
-        // Guard against duplicate entities with the same UUID.
-        // This can happen when chunk entity data is loaded while the entity
-        // already exists in the world (e.g. another player is still tracking it).
-        let already_exists = self
-            .entities
-            .load()
-            .iter()
-            .any(|e| e.get_entity().entity_uuid == base_entity.entity_uuid);
-        if already_exists {
+        let Some(_registration) = self.reserve_entity_registration(entity.get_entity().entity_uuid)
+        else {
             return;
-        }
+        };
 
         // The entity stays live-only: it is written to its chunk's saved data on
         // unload (see `save_entities_by_chunk`), never at spawn, so it can't be both live and

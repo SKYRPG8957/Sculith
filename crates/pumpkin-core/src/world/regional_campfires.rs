@@ -26,6 +26,7 @@ struct ReadyRecipe {
 }
 
 pub(super) enum RegionalEntityUpdate {
+    Loaded(Vec<super::entity_chunks::ChunkActor>),
     Cooked {
         position: BlockPos,
         fire: Arc<dyn BlockEntity>,
@@ -176,6 +177,7 @@ impl World {
         let mut changed_fires = FxHashMap::default();
         for update in pending {
             match update {
+                RegionalEntityUpdate::Loaded(actors) => self.publish_chunk_actors(actors),
                 RegionalEntityUpdate::Cooked {
                     position,
                     fire,

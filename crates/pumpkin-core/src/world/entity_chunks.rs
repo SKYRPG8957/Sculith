@@ -1,21 +1,30 @@
-//! Applies asynchronous entity chunk results under the world's simulation owner.
+//! Applies asynchronous entity chunk results under their simulation owners.
 
 use std::sync::{Arc, Mutex, PoisonError, atomic::Ordering::Relaxed};
 
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use pumpkin_world::{
     chunk::{ChunkEntityData, io::Dirtiable},
     level::SyncEntityChunk,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
+use uuid::Uuid;
 
-use crate::entity::{
-    EntityBase,
-    r#type::{load_entity_from_nbt, self_and_passengers},
+use crate::{
+    entity::{
+        Entity, EntityBase,
+        r#type::{load_entity_from_nbt, self_and_passengers},
+    },
+    server::Server,
 };
 
-use super::{World, entity_save_records, merge_entity_records};
+use super::{
+    World, entity_save_records, merge_entity_records, regional_campfires::RegionalEntityUpdate,
+};
+
+const REGIONAL_CHUNKS_PER_STEP: usize = 4;
+const REGIONAL_ACTORS_PER_CHUNK: usize = 16;
 
 #[derive(Default)]
 pub(super) struct EntityChunkChanges {
@@ -24,7 +33,49 @@ pub(super) struct EntityChunkChanges {
     pub(super) snapshot: tokio::sync::RwLock<()>,
 }
 
-type ChunkActor = (Vector2<i32>, Arc<dyn EntityBase>);
+pub(super) type ChunkActor = (Vector2<i32>, Arc<dyn EntityBase>);
+
+pub(super) struct EntityRegistration<'a> {
+    active: &'a Mutex<FxHashSet<Uuid>>,
+    uuid: Uuid,
+}
+
+impl Drop for EntityRegistration<'_> {
+    fn drop(&mut self) {
+        self.active
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.uuid);
+    }
+}
+
+fn regional_actor_position(record: &NbtCompound, chunk: Vector2<i32>) -> Option<Vector3<f64>> {
+    let id = record.get_string("id")?;
+    // These constructors restore local fields. Team and passenger loading can
+    // still modify the scoreboard or introduce actors outside this extent.
+    if !matches!(
+        id.strip_prefix("minecraft:").unwrap_or(id),
+        "armor_stand" | "item" | "experience_orb" | "marker"
+    ) || record.get("Team").is_some()
+        || record
+            .get_list("Passengers")
+            .is_some_and(|riders| !riders.is_empty())
+    {
+        return None;
+    }
+    record.get_uuid("UUID")?;
+    let position = Entity::saved_position(record)?;
+    (BlockPos::floored_v(position).chunk_position() == chunk).then_some(position)
+}
+
+fn init_loaded_actor(entity: &dyn EntityBase) {
+    match entity.get_mob() {
+        Some(mob) => mob.mob_init_data_tracker(),
+        None => entity.init_data_tracker(),
+    }
+    // The previous incarnation's residual velocity is stale.
+    entity.get_entity().velocity.store(Vector3::default());
+}
 
 pub(super) fn save_chunk_entities(chunk: &ChunkEntityData, records: Vec<NbtCompound>) {
     let live = chunk.live.load(Relaxed);
@@ -37,6 +88,22 @@ pub(super) fn save_chunk_entities(chunk: &ChunkEntityData, records: Vec<NbtCompo
 }
 
 impl World {
+    pub(super) fn reserve_entity_registration(&self, uuid: Uuid) -> Option<EntityRegistration<'_>> {
+        let active = &self.entity_index.registering;
+        let mut pending = active.lock().unwrap_or_else(PoisonError::into_inner);
+        if pending.contains(&uuid)
+            || self
+                .entities
+                .load()
+                .iter()
+                .any(|entity| entity.get_entity().entity_uuid == uuid)
+        {
+            return None;
+        }
+        pending.insert(uuid);
+        Some(EntityRegistration { active, uuid })
+    }
+
     pub(crate) fn queue_entity_chunk_changes(
         &self,
         positions: impl IntoIterator<Item = Vector2<i32>>,
@@ -67,7 +134,6 @@ impl World {
     }
 
     /// Drains work after movement, using the current cache and watchers for each position.
-    /// Only this phase changes entity residency for the normal chunk loader.
     pub(crate) fn apply_entity_chunk_changes(self: &Arc<Self>) {
         let Ok(snapshot) = self.entity_chunk_changes.snapshot.try_write() else {
             return;
@@ -107,21 +173,133 @@ impl World {
         // Packet observers may request a save. The registry and saved cache
         // are already consistent before tracking can invoke their callbacks.
         self.finish_chunk_entity_removal(retired);
-        if !actors.is_empty() {
-            let players = self.players.load();
-            for (pos, entity) in actors {
-                self.track_new_entity(&entity);
-                self.finish_entity_registration(&entity);
-                for player in players.iter().filter(|player| {
-                    player
-                        .watched_section
-                        .load()
-                        .is_within_distance(pos.x, pos.y)
-                }) {
-                    player.try_restore_vehicle(&entity);
+        self.publish_chunk_actors(actors);
+    }
+
+    pub(super) fn publish_chunk_actors(&self, actors: Vec<ChunkActor>) {
+        if actors.is_empty() {
+            return;
+        }
+        let players = self.players.load();
+        for (pos, entity) in actors {
+            if entity.get_entity().is_removed() {
+                continue;
+            }
+            self.track_new_entity(&entity);
+            self.finish_entity_registration(&entity);
+            for player in players.iter().filter(|player| {
+                player
+                    .watched_section
+                    .load()
+                    .is_within_distance(pos.x, pos.y)
+            }) {
+                player.try_restore_vehicle(&entity);
+            }
+        }
+    }
+
+    pub(super) fn activate_regional_entity_chunks(
+        self: &Arc<Self>,
+        server: &Server,
+        extent: &[Vector2<i32>],
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) {
+        let Ok(pending) = self.entity_chunk_changes.pending.try_lock() else {
+            return;
+        };
+        if pending.is_empty() || server.tick_rate_manager.is_frozen() {
+            return;
+        }
+        let candidates: Vec<_> = extent
+            .iter()
+            .copied()
+            .filter(|pos| pending.contains(pos))
+            .collect();
+        drop(pending);
+        if candidates.is_empty() {
+            return;
+        }
+        let Some(_native) = server.plugin_manager.try_without_native_code() else {
+            return;
+        };
+        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+            return;
+        };
+        let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_write() else {
+            return;
+        };
+        let mut activated = 0;
+        for pos in candidates {
+            if owns(pos) && self.try_activate_regional_chunk(pos, owns) {
+                activated += 1;
+                if activated == REGIONAL_CHUNKS_PER_STEP {
+                    break;
                 }
             }
         }
+    }
+
+    fn try_activate_regional_chunk(
+        self: &Arc<Self>,
+        pos: Vector2<i32>,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> bool {
+        let Some(chunk) = self.level.try_with_watched_entity_chunk(pos, Arc::clone) else {
+            return false;
+        };
+        let Ok(mut records) = chunk.data.try_lock() else {
+            return false;
+        };
+        if chunk.live.load(Relaxed) || records.len() > REGIONAL_ACTORS_PER_CHUNK {
+            return false;
+        }
+        let Some(positions) = records
+            .iter()
+            .map(|record| regional_actor_position(record, pos))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
+        let mut actors = Vec::with_capacity(records.len());
+        for (record, position) in records.iter().zip(positions) {
+            let Some(entity) = load_entity_from_nbt(record, position, self) else {
+                return false;
+            };
+            if entity.get_entity().chunk_pos.load() != pos {
+                return false;
+            }
+            init_loaded_actor(entity.as_ref());
+            actors.push((pos, entity));
+        }
+
+        let Ok(registering) = self.entity_index.registering.try_lock() else {
+            return false;
+        };
+        if actors
+            .iter()
+            .any(|(_, entity)| registering.contains(&entity.get_entity().entity_uuid))
+        {
+            return false;
+        }
+        let Ok(mut updates) = self.regional_entity_updates.0.try_lock() else {
+            return false;
+        };
+        let Ok(mut pending) = self.entity_chunk_changes.pending.try_lock() else {
+            return false;
+        };
+        self.level.try_with_watched_entity_chunk(pos, |current| {
+            if !Arc::ptr_eq(current, &chunk) || !owns(pos) || !pending.remove(&pos) {
+                return false;
+            }
+            let added = self.register_chunk_actors(&actors);
+            records.clear();
+            chunk.live.store(true, Relaxed);
+            if !added.is_empty() {
+                tracing::trace!(world = %self.uuid, ?pos, count = added.len(), "Restored saved entities on their region");
+                updates.push(RegionalEntityUpdate::Loaded(added));
+            }
+            true
+        }) == Some(true)
     }
 
     fn load_chunk_actors(
@@ -143,12 +321,7 @@ impl World {
                 continue;
             };
             for entity in self_and_passengers(&root) {
-                match entity.get_mob() {
-                    Some(mob) => mob.mob_init_data_tracker(),
-                    None => entity.init_data_tracker(),
-                }
-                // The previous incarnation's residual velocity is stale.
-                entity.get_entity().velocity.store(Vector3::default());
+                init_loaded_actor(entity.as_ref());
                 actors.push((pos, entity));
             }
         }
@@ -206,7 +379,55 @@ mod tests {
     use super::*;
     use pumpkin_data::entity::EntityType;
 
-    use crate::entity::{Entity, ai::test_support::world, passive::cow::CowEntity};
+    use crate::entity::{
+        ai::test_support::world, decoration::armor_stand::ArmorStandEntity, passive::cow::CowEntity,
+    };
+
+    #[tokio::test]
+    async fn regional_restore_rechecks_watcher_owner_and_registration() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = world(&folder);
+        let pos = Vector2::new(10, 0);
+        let position = Vector3::new(160.5, 64.0, 8.5);
+        world.level.spawn_entity_generation(pos);
+        let saved = world.level.get_entity_chunk_sync(&pos).unwrap();
+        let stand = ArmorStandEntity::new(Entity::new(
+            world.clone(),
+            position,
+            &EntityType::ARMOR_STAND,
+        ));
+        let uuid = stand.get_entity().entity_uuid;
+        let mut record = NbtCompound::new();
+        stand.write_nbt(&mut record);
+        saved.data.lock().unwrap().push(record);
+        world.queue_entity_chunk_changes([pos]);
+
+        let snapshot = world.entity_chunk_changes.snapshot.try_write().unwrap();
+        let owns = |chunk| chunk == pos;
+        assert!(!world.try_activate_regional_chunk(pos, &owns));
+        world.level.mark_chunks_as_newly_watched(&[pos]);
+        assert!(!world.try_activate_regional_chunk(pos, &|_| false));
+        let reservation = world.reserve_entity_registration(uuid).unwrap();
+        assert!(!world.try_activate_regional_chunk(pos, &owns));
+        assert_eq!(saved.data.lock().unwrap().len(), 1);
+        assert!(world.get_entity_by_uuid(uuid).is_none());
+        drop(reservation);
+        assert!(world.try_activate_regional_chunk(pos, &owns));
+        assert!(!world.try_activate_regional_chunk(pos, &owns));
+        drop(snapshot);
+
+        let actor = world.get_entity_by_uuid(uuid).unwrap();
+        let id = actor.get_entity().entity_id;
+        assert_eq!(actor.get_entity().pos.load(), position);
+        assert!(saved.live.load(Relaxed));
+        assert!(saved.data.lock().unwrap().is_empty());
+        assert!(!world.entity_tracker.has_entity_with_id(id));
+        world.flush_regional_entity_updates();
+        world.apply_entity_chunk_changes();
+        assert!(world.entity_tracker.has_entity_with_id(id));
+        assert_eq!(world.entities.load().len(), 1);
+        world.level.shutdown().await;
+    }
 
     #[tokio::test]
     async fn a_crossing_actor_retires_only_at_the_new_chunk() {

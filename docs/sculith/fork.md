@@ -262,12 +262,15 @@ Replacement targets, a cancelled action, and a change of world invalidate
 the old mining session.
 
 Player movement registers the new view before entity chunk readers run.
-Readers share one disk request for a chunk and return its position to the
-world. At the end of the owned world step, the world checks current watchers,
-registers the saved actors once, and retires unwatched inactive chunks using
+Readers share one disk request for a chunk and return its position. An active
+region can register ready armor stands, dropped items, experience orbs and
+markers in small batches. It validates the current owner, pinned watchers,
+cached chunk and entity UUID registrations before consuming saved records.
+Actors with passengers or team memberships use world processing. The world
+pairs loaded actors with clients and retires unwatched inactive chunks using
 the live positions of entities and their vehicles. Disk reads and retirement
 writes run asynchronously. Manual saves serialize their entity snapshot
-against these residency changes. This lifecycle uses the world boundary.
+against these residency changes.
 Native plugins use ABI 35.
 
 ## Shared resource delivery

@@ -6454,22 +6454,25 @@ impl Entity {
         }
     }
 
+    pub(crate) fn saved_position(nbt: &NbtCompound) -> Option<Vector3<f64>> {
+        let position = nbt.get_list("Pos")?;
+        let [x, y, z, ..] = position else {
+            return None;
+        };
+        let limit =
+            |value: &NbtTag, max: f64| value.extract_double().unwrap_or(0.0).clamp(-max, max);
+        let pos = Vector3::new(
+            limit(x, MAX_HORIZONTAL_POSITION),
+            limit(y, MAX_VERTICAL_POSITION),
+            limit(z, MAX_HORIZONTAL_POSITION),
+        );
+        (pos.x.is_finite() && pos.y.is_finite() && pos.z.is_finite()).then_some(pos)
+    }
+
     fn read_placement_nbt(&self, nbt: &NbtCompound) {
-        if let Some(position) = nbt.get_list("Pos")
-            && position.len() >= 3
-        {
-            let x = position[0].extract_double().unwrap_or(0.0);
-            let y = position[1].extract_double().unwrap_or(0.0);
-            let z = position[2].extract_double().unwrap_or(0.0);
-            let pos = Vector3::new(
-                x.clamp(-MAX_HORIZONTAL_POSITION, MAX_HORIZONTAL_POSITION),
-                y.clamp(-MAX_VERTICAL_POSITION, MAX_VERTICAL_POSITION),
-                z.clamp(-MAX_HORIZONTAL_POSITION, MAX_HORIZONTAL_POSITION),
-            );
-            if pos.x.is_finite() && pos.y.is_finite() && pos.z.is_finite() {
-                self.set_pos(pos);
-                self.last_sent_pos.store(pos);
-            }
+        if let Some(pos) = Self::saved_position(nbt) {
+            self.set_pos(pos);
+            self.last_sent_pos.store(pos);
         }
         if let Some(velocity) = nbt.get_list("Motion")
             && velocity.len() >= 3

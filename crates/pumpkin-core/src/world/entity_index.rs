@@ -1,9 +1,9 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 
 use arc_swap::ArcSwap;
 use pumpkin_data::entity::EntityType;
 use pumpkin_util::math::boundingbox::BoundingBox;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use uuid::Uuid;
 
 use crate::entity::EntityBase;
@@ -306,6 +306,7 @@ impl PlayerIndex {
 pub struct EntityIndex {
     inner: RwLock<Index>,
     players: RwLock<PlayerIndex>,
+    pub(super) registering: Mutex<FxHashSet<Uuid>>,
 }
 
 impl EntityIndex {
