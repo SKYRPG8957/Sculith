@@ -31,6 +31,7 @@ use crate::entity::breath::DROWNING_INTERVAL;
 use crate::entity::combat::{CombatRules, CombatTracker, FallLocation, knockback_after_resistance};
 use crate::entity::mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE;
 use crate::entity::mob::neutral::find_by_uuid;
+use crate::entity::player::Player;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
 use crate::server::Server;
 use crate::world::loot::LootContextParameters;
@@ -644,6 +645,13 @@ impl LivingEntity {
         if equipment.is_empty() {
             return;
         }
+        if self.entity.entity_type == &EntityType::HORSE
+            && equipment
+                .iter()
+                .any(|(slot, _)| *slot == EquipmentSlot::SADDLE)
+        {
+            self.reset_mounted_horse_jumps();
+        }
         self.apply_and_send_equipment_attribute_modifiers(equipment);
 
         if equipment
@@ -706,6 +714,32 @@ impl LivingEntity {
         if armor_changed {
             let armor_packet = self.bedrock_armor_packet(equipment);
             world.send_to_tracking_players_bedrock(&self.entity, &armor_packet);
+        }
+    }
+
+    fn reset_mounted_horse_jumps(&self) {
+        let reset = |player: &Player| {
+            if let crate::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+                client.reset_horse_jump();
+            }
+        };
+        if let Ok(passengers) = self.entity.passengers.try_lock() {
+            passengers
+                .iter()
+                .filter_map(|rider| rider.get_player())
+                .for_each(reset);
+            return;
+        }
+
+        // A mount callback can edit the saddle while the passenger list is locked.
+        for player in self.entity.world.load().players.load().iter() {
+            if player
+                .get_entity()
+                .get_vehicle()
+                .is_some_and(|vehicle| vehicle.get_entity().entity_id == self.entity.entity_id)
+            {
+                reset(player);
+            }
         }
     }
 

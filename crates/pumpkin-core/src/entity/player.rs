@@ -7220,31 +7220,49 @@ impl Player {
         false
     }
 
+    pub(crate) fn on_started_riding(&self) {
+        self.entered_lava_pos.store(None);
+        if let ClientPlatform::Bedrock(client) = self.client.as_ref() {
+            client.reset_horse_jump();
+        }
+    }
+
     /// Only rears and plays the sound; the rider's client simulates the jump itself.
     pub fn start_riding_jump(&self, server: &Arc<Server>, jump_scale: i32) {
-        let Some(vehicle) = self.get_entity().get_vehicle() else {
-            return;
-        };
-        if vehicle
-            .get_controlling_passenger()
-            .is_none_or(|rider| rider.get_entity().entity_id != self.entity_id())
-        {
-            return;
+        if let Some(vehicle) = self.get_entity().get_vehicle() {
+            self.try_start_riding_jump(server, vehicle.as_ref(), jump_scale);
         }
+    }
+
+    pub(crate) fn try_start_riding_jump(
+        &self,
+        server: &Arc<Server>,
+        vehicle: &dyn EntityBase,
+        jump_scale: i32,
+    ) -> bool {
         let Some(horse) = vehicle.get_mob().and_then(|mob| mob.as_abstract_horse()) else {
-            return;
+            return false;
         };
-        if !horse.can_jump() || jump_scale <= 0 {
-            return;
+        let vehicle_id = vehicle.get_entity().entity_id;
+        let still_controls_horse = || {
+            horse.can_jump()
+                && self.get_entity().get_vehicle().is_some_and(|ridden| {
+                    ridden.get_entity().entity_id == vehicle_id
+                        && vehicle
+                            .get_controlling_passenger()
+                            .is_some_and(|rider| rider.get_entity().entity_id == self.entity_id())
+                })
+        };
+        if jump_scale <= 0 || !still_controls_horse() {
+            return false;
         }
-        let mut event = HorseJumpEvent::new(
-            vehicle.get_entity().entity_id,
-            player_jump_pending_scale(jump_scale),
-        );
+        let mut event = HorseJumpEvent::new(vehicle_id, player_jump_pending_scale(jump_scale));
         server.plugin_manager.fire_blocking(server, &mut event);
-        if !event.cancelled {
-            horse.handle_start_jump(jump_scale);
+        if event.cancelled || !still_controls_horse() {
+            return false;
         }
+        horse.handle_start_jump(jump_scale);
+        true
     }
 
     pub fn open_mount_screen(

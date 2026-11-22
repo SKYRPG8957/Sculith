@@ -2532,9 +2532,32 @@ impl Entity {
         caller: &dyn EntityBase,
     ) -> Vector3<f64> {
         let was_on_ground = self.on_ground.load(Ordering::SeqCst);
-        let bounding_box = self.bounding_box.load();
         let movement_step = self.collide_bounding_box(movement, caller);
+        let Some(stepped) = self.try_step_up(movement, movement_step, caller, was_on_ground) else {
+            return movement_step;
+        };
+        self.vertical_collision
+            .store(movement.y != stepped.y, Ordering::SeqCst);
+        self.on_ground.store(
+            movement.y != stepped.y && movement.y < 0.0,
+            Ordering::SeqCst,
+        );
+        self.horizontal_collision.store(
+            movement.x != stepped.x || movement.z != stepped.z,
+            Ordering::SeqCst,
+        );
+        stepped
+    }
 
+    /// Tries the same step-up geometry for simulated and client-driven movement.
+    #[expect(clippy::float_cmp)]
+    pub(crate) fn try_step_up(
+        &self,
+        movement: Vector3<f64>,
+        movement_step: Vector3<f64>,
+        caller: &dyn EntityBase,
+        was_on_ground: bool,
+    ) -> Option<Vector3<f64>> {
         let max_up_step = Self::max_up_step(caller);
         let horizontal_collision = movement.x != movement_step.x || movement.z != movement_step.z;
         let on_ground_after_collision = movement.y != movement_step.y && movement.y < 0.0;
@@ -2542,9 +2565,10 @@ impl Entity {
             || !(on_ground_after_collision || was_on_ground)
             || !horizontal_collision
         {
-            return movement_step;
+            return None;
         }
 
+        let bounding_box = self.bounding_box.load();
         let grounded_box = if on_ground_after_collision {
             bounding_box.shift(Vector3::new(0.0, movement_step.y, 0.0))
         } else {
@@ -2572,22 +2596,11 @@ impl Entity {
                 > movement_step.horizontal_length_squared()
             {
                 let distance_to_ground = bounding_box.min.y - grounded_box.min.y;
-                let stepped = step_from_ground - Vector3::new(0.0, distance_to_ground, 0.0);
-                self.vertical_collision
-                    .store(movement.y != stepped.y, Ordering::SeqCst);
-                self.on_ground.store(
-                    movement.y != stepped.y && movement.y < 0.0,
-                    Ordering::SeqCst,
-                );
-                self.horizontal_collision.store(
-                    movement.x != stepped.x || movement.z != stepped.z,
-                    Ordering::SeqCst,
-                );
-                return stepped;
+                return Some(step_from_ground - Vector3::new(0.0, distance_to_ground, 0.0));
             }
         }
 
-        movement_step
+        None
     }
 
     /// Only living entities step up, and a player-ridden mob steps at least one block.
@@ -5671,7 +5684,7 @@ impl Entity {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         if let Some(player) = passenger.get_player() {
-            player.entered_lava_pos.store(None);
+            player.on_started_riding();
             let other_passenger_type = passengers
                 .first()
                 .map(|p| format!("minecraft:{}", p.get_entity().entity_type.resource_name));

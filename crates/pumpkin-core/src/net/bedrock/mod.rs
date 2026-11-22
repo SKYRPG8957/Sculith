@@ -1,3 +1,4 @@
+mod horse_jump;
 pub mod nethernet;
 pub mod play;
 pub(crate) mod recipe;
@@ -204,6 +205,11 @@ struct CursorDrag {
     world: Weak<crate::world::World>,
 }
 
+struct ClientActivity {
+    last_seen: AtomicCell<Instant>,
+    horse_jump: std::sync::Mutex<horse_jump::HorseJumpInput>,
+}
+
 pub struct BedrockClient {
     pub id: u64,
     session: Arc<NetherNetSession>,
@@ -263,7 +269,7 @@ pub struct BedrockClient {
     pub streaming_packs: std::sync::Mutex<HashMap<String, BedrockStreamingPack>>,
     /// Stops producers and wakes the writer to drain its FIFO.
     closing: CloseSignal,
-    last_seen: Arc<AtomicCell<std::time::Instant>>,
+    activity: Arc<ClientActivity>,
     incoming_game_packet_send: Sender<RawPacket>,
     incoming_game_packet_recv: Mutex<Option<Receiver<RawPacket>>>,
     /// Packet rate limiter for incoming client packets.
@@ -329,7 +335,10 @@ impl BedrockClient {
             shared_pack: ArcSwapOption::empty(),
             streaming_packs: std::sync::Mutex::new(HashMap::new()),
             closing: CloseSignal::default(),
-            last_seen: Arc::new(AtomicCell::new(std::time::Instant::now())),
+            activity: Arc::new(ClientActivity {
+                last_seen: AtomicCell::new(Instant::now()),
+                horse_jump: std::sync::Mutex::default(),
+            }),
             incoming_game_packet_send: incoming_send,
             incoming_game_packet_recv: Mutex::new(Some(incoming_recv)),
             packet_limiter,
@@ -485,7 +494,7 @@ impl BedrockClient {
 
     async fn tick_connection(&self) -> bool {
         use std::time::Duration;
-        let idle = self.last_seen.load().elapsed();
+        let idle = self.activity.last_seen.load().elapsed();
         if idle > Duration::from_secs(10) {
             // A downloading client may stay silent until its full reliable chunk arrives.
             if idle < Duration::from_secs(60)
@@ -505,7 +514,7 @@ impl BedrockClient {
     }
 
     pub async fn process_nethernet_packet(self: &Arc<Self>, server: &Arc<Server>, packet: Bytes) {
-        self.last_seen.store(std::time::Instant::now());
+        self.activity.last_seen.store(Instant::now());
         if let Err(error) = self.process_batch(server, packet).await {
             error!(
                 "Failed to handle NetherNet payload for {}: {error}",

@@ -36,11 +36,13 @@ impl BedrockClient {
         if player.living_entity.dead.load(Ordering::Relaxed)
             || player.living_entity.health.load() <= 0.0
         {
+            self.reset_horse_jump();
             return;
         }
         if self.await_teleport(player, &packet) {
             // Stale poses before a respawn teleport must not count as client motion.
             player.get_entity().movement.store(Vector3::default());
+            self.reset_horse_jump();
             return;
         }
         if !player.has_client_loaded() {
@@ -122,7 +124,9 @@ impl BedrockClient {
         }
 
         if outcome == ClientMoveOutcome::Applied {
-            self.apply_vehicle_input(player, &packet);
+            self.apply_vehicle_input(server, player, &packet);
+        } else if was_riding {
+            self.reset_horse_jump();
         }
 
         if let Some(interaction) = packet.item_interaction {
@@ -154,7 +158,12 @@ impl BedrockClient {
 }
 
 impl BedrockClient {
-    fn apply_vehicle_input(&self, player: &Arc<Player>, packet: &SPlayerAuthInput) {
+    fn apply_vehicle_input(
+        &self,
+        server: &Arc<Server>,
+        player: &Arc<Player>,
+        packet: &SPlayerAuthInput,
+    ) {
         const MAX_STEP_SQUARED: f64 = 100.0;
         const GROUND_PROBE_DEPTH: f64 = 0.001;
 
@@ -163,6 +172,7 @@ impl BedrockClient {
             return;
         }
         let Some(vehicle) = player.controlled_vehicle() else {
+            self.reset_horse_jump();
             return;
         };
         let base = vehicle.get_entity();
@@ -178,7 +188,7 @@ impl BedrockClient {
 
         let before = base.pos.load();
         let target = vehicle.feet_from_bedrock_pos(packet.position.to_f64());
-        let motion = target - before;
+        let mut motion = target - before;
         let distance_squared = motion.length_squared();
         let world = player.world();
         let bounds = base.bounding_box.load();
@@ -196,14 +206,39 @@ impl BedrockClient {
             return;
         }
 
-        let collision = base.collide(motion, vehicle.as_ref());
-        let on_ground = collision.supporting.is_some()
-            || (motion.y <= 0.0
-                && !world.is_space_empty(bounds.shift(collision.movement.add_raw(
-                    0.0,
-                    -GROUND_PROBE_DEPTH,
-                    0.0,
-                ))));
+        let supported = |offset: Vector3<f64>| {
+            !world.is_space_empty(bounds.shift(offset.add_raw(0.0, -GROUND_PROBE_DEPTH, 0.0)))
+        };
+        let mut collision = base.collide(motion, vehicle.as_ref());
+        let mut corrected_jump = false;
+        if !is_boat {
+            let grounded = base.on_ground.load(Ordering::Relaxed) || supported(Vector3::default());
+            let Some(suppress_lift) =
+                self.apply_horse_jump_input(server, player, vehicle.as_ref(), packet, grounded)
+            else {
+                return;
+            };
+            if base.pos.load() != before {
+                return;
+            }
+            if suppress_lift && motion.y > GROUND_PROBE_DEPTH {
+                let requested_lift = motion.y;
+                motion.y = 0.0;
+                collision = base.collide(motion, vehicle.as_ref());
+                // Derive any height gain from the shared terrain step, independently of the jump.
+                if let Some(step) =
+                    base.try_step_up(motion, collision.movement, vehicle.as_ref(), grounded)
+                    && supported(step)
+                {
+                    collision.movement = step;
+                    collision.horizontal = (step - motion).horizontal_length_squared()
+                        > GROUND_PROBE_DEPTH * GROUND_PROBE_DEPTH;
+                }
+                corrected_jump = (collision.movement.y - requested_lift).abs() > GROUND_PROBE_DEPTH;
+            }
+        }
+        let on_ground =
+            collision.supporting.is_some() || (motion.y <= 0.0 && supported(collision.movement));
         base.horizontal_collision
             .store(collision.horizontal, Ordering::Relaxed);
         base.vertical_collision
@@ -229,7 +264,7 @@ impl BedrockClient {
                 forward || flags.get(InputData::PaddlingLeft as usize),
             );
         }
-        if collision.horizontal || collision.vertical {
+        if corrected_jump || collision.horizontal || collision.vertical {
             self.correct_vehicle_prediction(vehicle.as_ref());
         }
     }
