@@ -29,10 +29,7 @@ impl BedrockClient {
         if let Some(deadline) = deadline {
             let due = match self.activity.experience_pickup.load() {
                 Some(PickupClock::Collected(at)) => deadline.at > at,
-                Some(PickupClock::Advanced(at)) => deadline
-                    .at
-                    .checked_duration_since(at)
-                    .is_some_and(|elapsed| elapsed >= deadline.period),
+                Some(PickupClock::Advanced(at)) => deadline.follows(at),
                 None => true,
             };
             if !due {

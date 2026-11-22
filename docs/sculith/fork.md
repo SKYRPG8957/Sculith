@@ -241,6 +241,13 @@ advancing the same delay again. Orb contact, mending, and awarding experience
 run in the world phase. Coordinated steps and players without an eligible
 region use world processing.
 
+Native Bedrock survival mining accrues elapsed ticks on the player's region
+when that extent owns both the player and block. World steps and regional
+steps share a deadline stamp. The world checks the live block, mining
+speed and permissions before it publishes progress or breaks a block.
+Replacement targets, a cancelled action, and a change of world invalidate
+the old mining session.
+
 Player movement registers the new view before entity chunk readers run.
 Readers share one disk request for a chunk and return its position to the
 world. At the end of the owned world step, the world checks current watchers,

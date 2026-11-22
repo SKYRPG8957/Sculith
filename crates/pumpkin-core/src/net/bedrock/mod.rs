@@ -71,6 +71,7 @@ pub mod distant_terrain;
 mod experience_pickup;
 pub mod level_chunk;
 pub mod login;
+mod mining;
 mod packet_observers;
 mod play_ingress;
 pub mod versions;
@@ -217,6 +218,7 @@ struct ClientActivity {
     packet_observers: std::sync::OnceLock<packet_observers::PacketObservers>,
     inbound_head: std::sync::Mutex<Option<play_ingress::QueuedPlayInput>>,
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
+    mining: std::sync::Mutex<Option<mining::MiningClock>>,
 }
 
 pub struct BedrockClient {
@@ -352,6 +354,7 @@ impl BedrockClient {
                 packet_observers: std::sync::OnceLock::new(),
                 inbound_head: std::sync::Mutex::default(),
                 experience_pickup: AtomicCell::new(None),
+                mining: std::sync::Mutex::default(),
             }),
             incoming_game_packet_send: incoming_send,
             incoming_game_packet_recv: Mutex::new(Some(incoming_recv)),

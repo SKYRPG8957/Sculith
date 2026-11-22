@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
-use pumpkin_util::math::vector2::Vector2;
+use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -15,6 +15,7 @@ bitflags::bitflags! {
     struct RegionalWork: u8 {
         const INPUT = 1;
         const EXPERIENCE_PICKUP = 2;
+        const MINING = 4;
     }
 }
 
@@ -93,6 +94,11 @@ impl RegionalInput {
             {
                 pending |= RegionalWork::EXPERIENCE_PICKUP;
             }
+            if work.contains(RegionalWork::MINING)
+                && client.advance_regional_mining(world, &player, deadline, owns)
+            {
+                pending |= RegionalWork::MINING;
+            }
             if !pending.is_empty() {
                 // The owner can change after this job takes its ready list.
                 player.world().offer_regional_work(id, &player, pending);
@@ -122,6 +128,19 @@ impl World {
 
     pub(crate) fn offer_regional_experience_pickup(&self, id: u64, player: &Arc<Player>) -> bool {
         self.offer_regional_work(id, player, RegionalWork::EXPERIENCE_PICKUP)
+    }
+
+    pub(crate) fn offer_regional_mining(
+        &self,
+        id: u64,
+        player: &Arc<Player>,
+        target: BlockPos,
+    ) -> bool {
+        let layout = self.region_layout.load();
+        let target_owner = layout.owner(target.chunk_position());
+        target_owner.is_some()
+            && target_owner == layout.owner(player.get_entity().chunk_pos.load())
+            && self.offer_regional_work(id, player, RegionalWork::MINING)
     }
 
     fn offer_regional_work(&self, id: u64, player: &Arc<Player>, work: RegionalWork) -> bool {

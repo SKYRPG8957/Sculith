@@ -269,7 +269,9 @@ use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tag::Taggable;
-use pumpkin_data::{Block, BlockState, Enchantment, screen::WindowType, tag, translation};
+use pumpkin_data::{
+    Block, BlockState, BlockStateId, Enchantment, screen::WindowType, tag, translation,
+};
 use pumpkin_inventory::generic_container_screen_handler::GenericContainerScreenHandler;
 use pumpkin_inventory::mount_screen_handler::MountScreenHandler;
 use pumpkin_inventory::player::{
@@ -3521,15 +3523,19 @@ impl Player {
             if state.is_air() {
                 p.stop_mining();
             } else {
-                let finished = p.continue_mining(
-                    pos,
-                    &world,
-                    state,
-                    p.start_mining_time.load(Ordering::Relaxed),
-                );
-                if finished && matches!(p.client.as_ref(), ClientPlatform::Bedrock(_)) {
-                    p.stop_mining();
-                    p.break_block(&pos);
+                let baseline = p.mining_ticks_since(p.start_mining_time.load(Ordering::Relaxed));
+                if let Some(client) = p.client.bedrock() {
+                    let elapsed =
+                        client.tick_mining_clock(server, &p, &world, pos, state.id, deadline);
+                    if p.continue_mining(pos, &world, state, elapsed) {
+                        p.stop_mining();
+                        if elapsed <= baseline || p.is_current_mining_target(&world, pos, state.id)
+                        {
+                            p.break_block(&pos);
+                        }
+                    }
+                } else {
+                    p.continue_mining(pos, &world, state, baseline);
                 }
             }
         }
@@ -3615,16 +3621,30 @@ impl Player {
         }
     }
 
+    pub(crate) fn mining_ticks_since(&self, starting_time: i32) -> i32 {
+        self.tick_counter.load(Ordering::Relaxed) - starting_time + 1
+    }
+
+    pub(crate) fn is_current_mining_target(
+        &self,
+        world: &World,
+        position: BlockPos,
+        state: BlockStateId,
+    ) -> bool {
+        std::ptr::eq(self.get_entity().world.load().as_ref(), world)
+            && self.can_interact_with_block_at(&position, 1.0)
+            && world.get_block_state_id(&position) == state
+    }
+
     fn continue_mining(
         &self,
         location: BlockPos,
         world: &World,
         state: &BlockState,
-        starting_time: i32,
+        elapsed_ticks: i32,
     ) -> bool {
-        let time = self.tick_counter.load(Ordering::Relaxed) - starting_time;
         let speed = block::calc_block_breaking(self, state, Block::from_state_id(state.id));
-        let total_progress = speed * (time + 1) as f32;
+        let total_progress = speed * elapsed_ticks as f32;
         let stage = (total_progress * 10.0) as i32;
         let stage = stage.min(9);
         let old_speed = self
@@ -3684,7 +3704,12 @@ impl Player {
         if speed <= 0.0 {
             self.has_delayed_destroy.store(false, Ordering::Relaxed);
             self.refuse_delayed_destroy(&world, position, state);
-        } else if self.continue_mining(position, &world, state, starting_time) {
+        } else if self.continue_mining(
+            position,
+            &world,
+            state,
+            self.mining_ticks_since(starting_time),
+        ) {
             self.has_delayed_destroy.store(false, Ordering::Relaxed);
             if !self.break_block(&position) {
                 self.refuse_delayed_destroy(&world, position, state);
@@ -3714,6 +3739,9 @@ impl Player {
     /// Clears normal and delayed mining state without sending block updates.
     pub(crate) fn reset_mining(&self) {
         self.mining.store(false, Ordering::Relaxed);
+        if let Some(client) = self.client.bedrock() {
+            client.clear_mining_clock();
+        }
         self.has_delayed_destroy.store(false, Ordering::Relaxed);
         self.current_block_destroy_stage
             .store(-1, Ordering::Relaxed);
@@ -3723,6 +3751,9 @@ impl Player {
 
     pub(crate) fn stop_mining(&self) {
         let was_mining = self.mining.swap(false, Ordering::Relaxed);
+        if let Some(client) = self.client.bedrock() {
+            client.clear_mining_clock();
+        }
         let stage = self.current_block_destroy_stage.swap(-1, Ordering::Relaxed);
         self.current_block_breaking_speed
             .store(0, Ordering::Relaxed);

@@ -248,8 +248,10 @@ mod tests {
     use pumpkin_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
+    use pumpkin_data::Block;
     use pumpkin_protocol::serial::PacketWrite;
     use pumpkin_util::{GameMode, math::vector3::Vector3};
+    use pumpkin_world::world::BlockFlags;
     use std::{
         sync::atomic::Ordering::Relaxed,
         time::{Duration, Instant},
@@ -301,6 +303,66 @@ mod tests {
         tick_region(world, destination, next);
         assert_eq!(delay(), 0);
         assert!(player.begin_experience_pickup());
+    }
+
+    async fn verify_mining_clock(
+        world: &Arc<World>,
+        server: &Server,
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        chunk: Vector2<i32>,
+    ) {
+        world.level.get_or_fetch_chunk(chunk, |_| ()).await;
+        let target = BlockPos::new(9, 100, 8);
+        let dirt = Block::DIRT.default_state.id;
+        let stone = Block::STONE.default_state.id;
+        world.set_block_state(&target, dirt, BlockFlags::FORCE_STATE);
+        player.mining.store(true, Relaxed);
+        *player.mining_pos.lock().unwrap() = target;
+        let at = Instant::now();
+        let step = TickDeadline {
+            at,
+            period: TICK_PERIOD,
+        };
+        assert_eq!(
+            client.tick_mining_clock(server, player, world, target, dirt, Some(step)),
+            1
+        );
+        tick_region(world, chunk, at + TICK_PERIOD);
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(
+            client.mining_prediction_ticks(server, player, world, target, dirt, 1),
+            2
+        );
+        player.inbound_packets.push(RawPacket {
+            id: -1,
+            payload: bytes::Bytes::new(),
+        });
+        let repeated = TickDeadline {
+            at: at + TICK_PERIOD,
+            period: TICK_PERIOD,
+        };
+        assert_eq!(
+            client.tick_mining_clock(server, player, world, target, dirt, Some(repeated)),
+            1
+        );
+        assert!(player.inbound_packets.pop().is_some());
+        assert_eq!(
+            client.tick_mining_clock(server, player, world, target, dirt, Some(repeated)),
+            2
+        );
+
+        world.set_block_state(&target, stone, BlockFlags::FORCE_STATE);
+        tick_region(world, chunk, at + TICK_PERIOD * 2);
+        assert_eq!(
+            client.mining_prediction_ticks(server, player, world, target, dirt, 1),
+            1
+        );
+        assert_eq!(
+            client.mining_prediction_ticks(server, player, world, target, stone, 1),
+            1
+        );
+        player.reset_mining();
     }
 
     #[tokio::test]
@@ -420,6 +482,7 @@ mod tests {
         advance(east);
         check();
         verify_pickup_timer_handoff(&world, &player, east, west);
+        verify_mining_clock(&world, &server, &player, &client, west).await;
 
         world.players.store(Arc::default());
         client.close().await;

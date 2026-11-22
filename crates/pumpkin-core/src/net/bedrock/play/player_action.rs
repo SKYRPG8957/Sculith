@@ -98,6 +98,7 @@ impl BedrockClient {
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
                         let progress = if starts_breaking {
+                            self.clear_mining_clock();
                             player.start_mining_time.store(
                                 player.tick_counter.load(Ordering::Relaxed),
                                 Ordering::Relaxed,
@@ -154,9 +155,11 @@ impl BedrockClient {
                         return;
                     }
                     let speed = crate::block::calc_block_breaking(player, state, block);
-                    let elapsed = player.tick_counter.load(Ordering::Relaxed)
-                        - player.start_mining_time.load(Ordering::Relaxed)
-                        + 1;
+                    let baseline =
+                        player.mining_ticks_since(player.start_mining_time.load(Ordering::Relaxed));
+                    let elapsed = self.mining_prediction_ticks(
+                        server, player, &world, location, state.id, baseline,
+                    );
                     let same_block = *player
                         .mining_pos
                         .lock()
@@ -167,7 +170,10 @@ impl BedrockClient {
                         && speed * elapsed as f32 >= MIN_PREDICTED_BREAK_PROGRESS
                     {
                         player.stop_mining();
-                        if !player.commit_block_break(&world, &location, state, gamemode) {
+                        if (elapsed > baseline
+                            && !player.is_current_mining_target(&world, location, state.id))
+                            || !player.commit_block_break(&world, &location, state, gamemode)
+                        {
                             self.sync_mining_block(location, world.get_block_state_id(&location));
                         }
                     } else {

@@ -18,6 +18,14 @@ pub struct TickDeadline {
     pub(crate) period: Duration,
 }
 
+impl TickDeadline {
+    pub(crate) fn follows(self, previous: Instant) -> bool {
+        self.at
+            .checked_duration_since(previous)
+            .is_some_and(|elapsed| elapsed >= self.period)
+    }
+}
+
 pub(super) fn next_deadline(deadline: Instant, now: Instant, period: Duration) -> Instant {
     // Drop missed starts instead of queuing a backlog when an owner is late.
     if now.duration_since(deadline) >= period {
