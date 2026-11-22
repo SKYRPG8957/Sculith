@@ -369,7 +369,8 @@ server from opening the world and leaves the journal available for inspection.
 ## Manual world checkpoints
 
 `/save-all`, `/save-all flush`, and the management save request capture online
-players and loaded block-entity chunks at a server tick boundary. When both
+players and loaded block-entity chunks at a server tick boundary. The scheduler
+continues polling world deadlines while the checkpoint writer is busy. When both
 groups have records, the server syncs one `.sculith-world-checkpoint` in the
 world root before saving either group. Startup replays the checkpoint before
 opening region caches or admitting players. A retry can finish an interrupted

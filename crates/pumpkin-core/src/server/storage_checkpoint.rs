@@ -12,7 +12,7 @@ use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::{
     chunk::io::converter::RegionFormat,
     data::{
-        checkpoint::{SaveCheckpoint, write_terrain},
+        checkpoint::{CheckpointFence, SaveCheckpoint, write_terrain},
         player_data::PlayerDataStorage,
     },
     level::{ChunkSaver, LevelFolder},
@@ -43,22 +43,26 @@ pub(super) struct StorageCheckpoint {
 }
 
 impl StorageCheckpoint {
-    pub(super) fn capture_at_tick_boundary(&self, server: &Arc<Server>, manual: bool) {
+    pub(super) fn capture_at_tick_boundary(
+        &self,
+        server: &Arc<Server>,
+        reserve_boundary: impl FnOnce(&CheckpointFence) -> Option<OwnedRwLockWriteGuard<()>>,
+    ) {
         self.transfers.finish_tick(server);
-        if !manual {
+        if !self.manual_capture_requested() {
             return;
         }
-        let mut request = self.request.lock().unwrap_or_else(PoisonError::into_inner);
-        if request.is_none() {
-            return;
-        }
-        let Some(access) = server.player_data_storage.checkpoint.try_write() else {
+        let Some(access) = reserve_boundary(&server.player_data_storage.checkpoint) else {
             return;
         };
-        let Some(send) = request.take() else {
+        let request = self
+            .request
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        let Some(send) = request else {
             return;
         };
-        drop(request);
         if !send.is_closed() {
             let result = capture(server).map(|checkpoint| Capture { checkpoint, access });
             let _ = send.send(result);

@@ -325,11 +325,8 @@ fn wait_until_next_tick(
         if let Some(period) = independent_period
             && !server.tick_rate_manager.is_sprinting()
             && !server.tick_rate_manager.is_stepping_forward()
-            && !server.storage_checkpoint.manual_capture_requested()
         {
-            server
-                .storage_checkpoint
-                .capture_at_tick_boundary(server, false);
+            server.storage_checkpoint.transfers.finish_tick(server);
             worlds.dispatch_transfers(server);
             if let Some(world_wait) = worlds.poll(server, period) {
                 wait = wait.min(world_wait);

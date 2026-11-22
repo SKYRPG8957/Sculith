@@ -37,6 +37,7 @@ use pumpkin_protocol::java::client::play::{CChangeDifficulty, CTabList};
 use pumpkin_protocol::{ClientPacket, java::client::config::CPluginMessage};
 use pumpkin_util::Difficulty;
 use pumpkin_util::text::TextComponent;
+use pumpkin_world::data::checkpoint::CheckpointFence;
 use pumpkin_world::world_info::anvil::{
     AnvilLevelInfo, LEVEL_DAT_BACKUP_FILE_NAME, LEVEL_DAT_FILE_NAME,
 };
@@ -1488,7 +1489,8 @@ impl Server {
             }
         });
         commands.run_pending(self);
-        self.storage_checkpoint.capture_at_tick_boundary(self, true);
+        self.storage_checkpoint
+            .capture_at_tick_boundary(self, CheckpointFence::try_write);
     }
 
     /// Runs networking without advancing the worlds' simulation clocks.

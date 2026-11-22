@@ -121,13 +121,18 @@ impl WorldScheduler {
     }
 
     pub(super) fn maintain(&mut self, server: &Arc<Server>) {
-        let manual_save = server.storage_checkpoint.manual_capture_requested();
-        if manual_save {
-            self.wait_idle();
-        }
         server
             .storage_checkpoint
-            .capture_at_tick_boundary(server, manual_save);
+            .capture_at_tick_boundary(server, |fence| {
+                let access = fence.try_write()?;
+                if self.is_idle() {
+                    return Some(access);
+                }
+                // A running world may need storage access before it can finish.
+                drop(access);
+                self.wait_idle();
+                fence.try_write()
+            });
         if !server.tick_rate_manager.is_frozen() {
             server.plugin_manager.tick_loaders(server);
             server.player_data_storage.tick_worlds_at_boundary(
