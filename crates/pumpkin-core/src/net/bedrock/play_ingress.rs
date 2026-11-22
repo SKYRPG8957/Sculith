@@ -132,6 +132,11 @@ impl BedrockClient {
         }
         // A trident release can follow its predicted start in the same packet drain.
         self.reconcile_spin_attack_prediction(&player, spin_attack_prediction);
+        drop(head);
+        // A world-only packet can have held the head while regional work was offered.
+        if owned && !player.inbound_packets.is_empty() {
+            player.world().offer_regional_input(self.id, &player);
+        }
     }
 
     const fn is_regional_reply(id: i32) -> bool {
@@ -175,14 +180,16 @@ impl BedrockClient {
         owns: impl Fn(Vector2<i32>) -> bool,
     ) -> bool {
         let Ok(mut head) = self.activity.inbound_head.try_lock() else {
-            return false;
+            return true;
         };
         if head.is_some() {
             return false;
         }
         for _ in 0..REGIONAL_PACKET_BUDGET {
-            if !owns(player.get_entity().chunk_pos.load())
-                || !self.is_current_protocol()
+            if !owns(player.get_entity().chunk_pos.load()) {
+                return true;
+            }
+            if !self.is_current_protocol()
                 || server.plugin_manager.has_handlers::<PacketReceivedEvent>()
                 || server.plugin_manager.has_handlers::<PacketSentEvent>()
             {
@@ -232,5 +239,158 @@ impl BedrockClient {
             }
         }
         !player.inbound_packets.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_config::{
+        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
+    };
+    use pumpkin_protocol::serial::PacketWrite;
+    use pumpkin_util::{GameMode, math::vector3::Vector3};
+    use std::{
+        sync::atomic::Ordering::Relaxed,
+        time::{Duration, Instant},
+    };
+
+    use crate::{
+        data::VanillaData,
+        net::{ClientPlatform, GameProfile, PlayerConfig, packet_limiter::PacketRateLimiter},
+        server::TickDeadline,
+    };
+
+    #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "keeps each ownership transition in one session"
+    )]
+    async fn pending_input_follows_a_merge_split_and_player_crossing() {
+        let directory = tempfile::tempdir().unwrap();
+        let basic = BasicConfiguration {
+            default_level_name: directory
+                .path()
+                .join("world")
+                .to_string_lossy()
+                .into_owned(),
+            allow_chat_reports: false,
+            allow_nether: false,
+            allow_end: false,
+            ..Default::default()
+        };
+        let mut advanced = AdvancedConfiguration::default();
+        advanced.world.generator = WorldPreset::Flat;
+        advanced.networking.bedrock.online_mode = false;
+        let server = Server::new(
+            basic,
+            advanced,
+            TelemetryConfig::default(),
+            VanillaData::default(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        let world = server.worlds.load()[0].clone();
+        let address = "127.0.0.1:0".parse().unwrap();
+        let client = Arc::new(BedrockClient::new(
+            1,
+            super::super::NetherNetSession::test_session(address).await,
+            address,
+            Arc::default(),
+            PacketRateLimiter::new(false, 0.0, 0.0),
+            Arc::downgrade(&server),
+        ));
+        let player = Arc::new(Player::new(
+            Arc::new(ClientPlatform::Bedrock(client.clone())),
+            GameProfile {
+                id: uuid::Uuid::new_v4(),
+                name: "RegionalInput".into(),
+                properties: arc_swap::ArcSwap::default(),
+                profile_actions: None,
+            },
+            PlayerConfig::default(),
+            &world,
+            GameMode::Survival,
+        ));
+        player.initial_spawn_complete.store(true, Relaxed);
+        world.players.store(Arc::new(vec![player.clone()]));
+        let west = Vector2::new(0, 0);
+        let east = Vector2::new(32, 0);
+        let refresh = |joined| {
+            let mut forced = world.forced_chunks.lock().unwrap();
+            forced.clear();
+            forced.extend([west, east]);
+            if joined {
+                forced.extend((1..east.x).map(|x| Vector2::new(x, 0)));
+            }
+            drop(forced);
+            world.update_active_chunks();
+            world.tick_chunks();
+            let layout = world.region_layout.load();
+            assert_eq!(layout.owner(west) == layout.owner(east), joined);
+        };
+        let advance = |pos| {
+            let layout = world.region_layout.load();
+            let owner = layout.owner(pos).unwrap();
+            world.advance_region_time(
+                owner,
+                layout.chunks(owner).unwrap(),
+                TickDeadline {
+                    at: Instant::now(),
+                    period: Duration::from_millis(50),
+                },
+            );
+        };
+        let offer = |timestamp| {
+            player.ping.store(0, Relaxed);
+            client.send_latency_probe();
+            let mut payload = Vec::new();
+            NetworkStackLatency {
+                timestamp,
+                from_server: true,
+            }
+            .write(&mut payload)
+            .unwrap();
+            client.enqueue_play_input(
+                &player,
+                RawPacket {
+                    id: NetworkStackLatency::PACKET_ID,
+                    payload: payload.into(),
+                },
+            );
+        };
+        let check = || {
+            assert!(player.inbound_packets.is_empty());
+            assert!(player.ping.load(Relaxed) > 0);
+        };
+
+        refresh(false);
+        offer(1);
+        refresh(true);
+        advance(west);
+        check();
+
+        offer(2);
+        refresh(false);
+        advance(west);
+        check();
+
+        offer(3);
+        player.get_entity().set_pos(Vector3::new(520.0, 100.0, 8.0));
+        advance(west);
+        assert_eq!(player.inbound_packets.len(), 1);
+        let pending_with_lock = {
+            let _draining = client.activity.inbound_head.lock().unwrap();
+            advance(east);
+            player.inbound_packets.len()
+        };
+        assert_eq!(pending_with_lock, 1);
+        advance(east);
+        check();
+
+        world.players.store(Arc::default());
+        client.close().await;
+        world.level.shutdown().await;
     }
 }

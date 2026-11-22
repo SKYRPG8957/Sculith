@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::FxHashMap;
@@ -8,17 +8,42 @@ use crate::{
     server::Server,
 };
 
-use super::{RegionChunks, World};
+use super::{RegionChunks, RegionLayout, World};
+
+type ReadyConnections = FxHashMap<u64, Weak<Player>>;
 
 /// Ready connections for an active extent; the ordered packets stay with the player.
-#[derive(Default)]
-pub(super) struct RegionalInput(Mutex<FxHashMap<u64, Weak<Player>>>);
+pub(super) struct RegionalInput(Mutex<Option<ReadyConnections>>);
+
+impl Default for RegionalInput {
+    fn default() -> Self {
+        Self(Mutex::new(Some(FxHashMap::default())))
+    }
+}
 
 impl RegionalInput {
-    fn offer(&self, id: u64, player: &Arc<Player>) {
-        if let Ok(mut ready) = self.0.try_lock() {
-            ready.entry(id).or_insert_with(|| Arc::downgrade(player));
-        }
+    fn ready(&self) -> MutexGuard<'_, Option<ReadyConnections>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn offer(&self, id: u64, player: &Arc<Player>) -> bool {
+        let mut queue = self.ready();
+        let Some(ready) = queue.as_mut() else {
+            return false;
+        };
+        ready.entry(id).or_insert_with(|| Arc::downgrade(player));
+        true
+    }
+
+    pub(super) fn retire(&self) -> ReadyConnections {
+        self.ready().take().unwrap_or_default()
+    }
+
+    fn take_ready(&self) -> ReadyConnections {
+        self.ready()
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     pub(super) fn drain(
@@ -28,11 +53,7 @@ impl RegionalInput {
         extent: &RegionChunks,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
-        let Ok(mut queue) = self.0.try_lock() else {
-            return;
-        };
-        let ready = std::mem::take(&mut *queue);
-        drop(queue);
+        let ready = self.take_ready();
         if ready.is_empty() {
             return;
         }
@@ -46,7 +67,22 @@ impl RegionalInput {
                     player.can_simulate_in(world) && owns(position)
                 })
             {
-                self.offer(id, &player);
+                // The owner can change after this job takes its ready list.
+                player.world().offer_regional_input(id, &player);
+            }
+        }
+    }
+}
+
+impl RegionLayout {
+    pub(super) fn transfer_regional_inputs(&self, next: &Self) {
+        // Existing jobs can still return ready connections after retirement. They
+        // look up the current extent in the same way as a newly arrived packet.
+        for retired in self.replaced_inputs(next) {
+            for (id, player) in retired.retire() {
+                if let Some(player) = player.upgrade() {
+                    player.world().offer_regional_input(id, &player);
+                }
             }
         }
     }
@@ -57,11 +93,18 @@ impl World {
         if !player.can_simulate_in(self) {
             return;
         }
-        let layout = self.region_layout.load();
-        if let Some(owner) = layout.owner(player.get_entity().chunk_pos.load())
-            && let Some(input) = layout.input(owner)
-        {
-            input.offer(id, player);
+        loop {
+            let layout = self.region_layout.load();
+            let Some(input) = layout
+                .owner(player.get_entity().chunk_pos.load())
+                .and_then(|owner| layout.input(owner))
+            else {
+                return;
+            };
+            if input.offer(id, player) {
+                return;
+            }
+            // The publisher installed the new layout before closing this queue.
         }
     }
 }

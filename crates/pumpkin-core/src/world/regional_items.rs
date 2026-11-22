@@ -89,6 +89,8 @@ impl World {
         }
         // A dispatched owner reads the matching item plan when it acquires its permit.
         self.region_layout.store(layout.clone());
+        drop(published);
+        previous.transfer_regional_inputs(layout);
     }
 
     pub(super) fn assign_regional_item_timers(
@@ -184,7 +186,10 @@ impl World {
         if published.enabled {
             *published = Arc::default();
         }
-        self.region_layout.store(Arc::default());
+        let empty = Arc::<RegionLayout>::default();
+        let previous = self.region_layout.swap(empty.clone());
+        drop(published);
+        previous.transfer_regional_inputs(&empty);
     }
 
     pub(super) fn advance_regional_item_timers(

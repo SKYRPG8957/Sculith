@@ -82,6 +82,23 @@ impl RegionLayout {
         self.active.regions.get(&owner).map(|region| &region.input)
     }
 
+    pub(super) fn replaced_inputs<'a>(
+        &'a self,
+        next: &'a Self,
+    ) -> impl Iterator<Item = &'a RegionalInput> {
+        self.active
+            .regions
+            .iter()
+            .filter_map(move |(owner, region)| {
+                (!next
+                    .active
+                    .regions
+                    .get(owner)
+                    .is_some_and(|current| Arc::ptr_eq(current, region)))
+                .then_some(&region.input)
+            })
+    }
+
     pub(crate) fn regions(&self) -> impl Iterator<Item = (RegionId, &RegionChunks)> {
         self.active
             .regions
