@@ -771,18 +771,15 @@ impl Level {
             .into_iter()
             .filter_map(|pos_borrow| {
                 let pos = pos_borrow.borrow();
-                // Only include chunks with no watchers
-                let has_watchers = self
-                    .chunk_watchers
-                    .get(pos)
-                    .is_some_and(|count| *count != 0);
-
-                if has_watchers {
+                // Use the same map order as clean_memory. Watchers cannot
+                // attach until the cached entry has been removed.
+                let Entry::Occupied(chunk) = self.loaded_entity_chunks.entry(*pos) else {
                     return None;
-                }
-
-                // Remove immediately to prevent race conditions
-                self.loaded_entity_chunks.remove(pos)
+                };
+                let Entry::Vacant(_watch_slot) = self.chunk_watchers.entry(*pos) else {
+                    return None;
+                };
+                Some(chunk.remove_entry())
             })
             .collect();
 
@@ -1486,6 +1483,27 @@ impl Level {
         }
         let chunk = self.try_get_entity_chunk(coordinates)?;
         Some(apply(chunk.value()))
+    }
+
+    /// Commits against the same cached entity chunk while its watcher slot is vacant.
+    /// The callback must not access either map or perform disk I/O.
+    pub fn try_with_unwatched_entity_chunk(
+        &self,
+        coordinates: Vector2<i32>,
+        expected: &SyncEntityChunk,
+        apply: impl FnOnce(),
+    ) -> bool {
+        let Some(Entry::Vacant(_watch_slot)) = self.chunk_watchers.try_entry(coordinates) else {
+            return false;
+        };
+        let Some(chunk) = self.try_get_entity_chunk(coordinates) else {
+            return false;
+        };
+        if !Arc::ptr_eq(chunk.value(), expected) {
+            return false;
+        }
+        apply();
+        true
     }
 
     /// Reserves tick orders for `entities` entities; entity `i` starts at

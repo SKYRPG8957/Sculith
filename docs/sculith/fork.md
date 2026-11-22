@@ -273,9 +273,11 @@ the world is waiting to pair the restored drop with clients. Item merge and
 despawn observers keep timer execution on the world owner.
 Actors with passengers or team memberships use world processing. The world
 pairs loaded actors with clients and retires unwatched inactive chunks using
-the live positions of entities and their vehicles. Disk reads and retirement
-writes run asynchronously. Manual saves serialize their entity snapshot
-against these residency changes.
+the live positions of entities and their vehicles. The retirement step prepares
+records before pinning the watcher slot, then checks membership and the cached
+chunk again. A watcher that arrives during capture keeps the live actors.
+Disk reads and retirement writes run asynchronously. Manual saves serialize
+their entity snapshot against these residency changes.
 Native plugins use ABI 35.
 
 ## Shared resource delivery

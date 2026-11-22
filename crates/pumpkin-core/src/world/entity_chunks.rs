@@ -1,6 +1,6 @@
 //! Applies asynchronous entity chunk results under their simulation owners.
 
-use std::sync::{Arc, Mutex, PoisonError, atomic::Ordering::Relaxed};
+use std::sync::{Arc, Mutex, PoisonError, TryLockError, atomic::Ordering::Relaxed};
 
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
@@ -23,7 +23,7 @@ use crate::{
 
 use super::{
     RegionId, World, entity_save_records, merge_entity_records,
-    regional_campfires::RegionalEntityUpdate,
+    regional_campfires::RegionalEntityUpdate, saved_chunk_pos,
 };
 
 const REGIONAL_CHUNKS_PER_STEP: usize = 4;
@@ -81,13 +81,23 @@ fn init_loaded_actor(entity: &dyn EntityBase) {
 }
 
 pub(super) fn save_chunk_entities(chunk: &ChunkEntityData, records: Vec<NbtCompound>) {
-    let live = chunk.live.load(Relaxed);
-    if !live && records.is_empty() {
+    if !chunk.live.load(Relaxed) && records.is_empty() {
         return;
     }
     let mut data = chunk.data.lock().unwrap_or_else(PoisonError::into_inner);
-    merge_entity_records(&mut data, live, records);
-    chunk.mark_dirty(true);
+    store_entity_records(chunk, &mut data, records);
+}
+
+fn store_entity_records(
+    chunk: &ChunkEntityData,
+    data: &mut Vec<NbtCompound>,
+    records: Vec<NbtCompound>,
+) {
+    let live = chunk.live.load(Relaxed);
+    if live || !records.is_empty() {
+        merge_entity_records(data, live, records);
+        chunk.mark_dirty(true);
+    }
 }
 
 impl World {
@@ -394,17 +404,75 @@ impl World {
         if chunks.is_empty() {
             return Vec::new();
         }
-        let positions: FxHashSet<_> = chunks.keys().copied().collect();
-        let entities = self.detach_chunk_entities(&positions);
-        let mut records = entity_save_records(&entities);
-        for (pos, chunk) in chunks {
-            save_chunk_entities(&chunk, records.remove(&pos).unwrap_or_default());
-            // If a watcher arrived during capture, this chunk stays cached. Its
-            // next owner turn can reactivate the saved records from that cache.
-            chunk.live.store(false, Relaxed);
+        // NBT preparation can touch actor locks. Do it before pinning the view
+        // so an arriving watcher does not have to wait for serialization.
+        let mut by_chunk = FxHashMap::<_, Vec<_>>::default();
+        for entity in self.entities.load().iter() {
+            let pos = saved_chunk_pos(entity.as_ref());
+            if chunks.contains_key(&pos) {
+                by_chunk.entry(pos).or_default().push(entity.clone());
+            }
         }
-        self.level.clean_entity_chunks(positions);
-        entities
+
+        let mut retired = Vec::new();
+        let mut cleaned = Vec::new();
+        let mut retry = Vec::new();
+        for (pos, chunk) in chunks {
+            let entities = by_chunk.remove(&pos).unwrap_or_default();
+            let mut grouped = entity_save_records(&entities);
+            let records = grouped.remove(&pos).unwrap_or_default();
+            if !grouped.is_empty()
+                || entities.iter().any(|entity| {
+                    entity.get_entity().is_removed() || saved_chunk_pos(entity.as_ref()) != pos
+                })
+            {
+                retry.push(pos);
+                continue;
+            }
+            let mut data = match chunk.data.try_lock() {
+                Ok(data) => data,
+                Err(TryLockError::Poisoned(error)) => error.into_inner(),
+                Err(TryLockError::WouldBlock) => {
+                    retry.push(pos);
+                    continue;
+                }
+            };
+            let active = self
+                .active_chunks
+                .read()
+                .unwrap_or_else(PoisonError::into_inner);
+            if !active.contains(&pos)
+                && self.level.try_with_unwatched_entity_chunk(pos, &chunk, || {
+                    store_entity_records(&chunk, &mut data, records);
+                    for entity in &entities {
+                        entity.get_entity().mark_unloaded_to_chunk();
+                    }
+                    chunk.live.store(false, Relaxed);
+                })
+            {
+                retired.extend(entities);
+                cleaned.push(pos);
+            } else {
+                retry.push(pos);
+            }
+        }
+
+        if !retired.is_empty() {
+            let ids: FxHashSet<_> = retired
+                .iter()
+                .map(|entity| entity.get_entity().entity_id)
+                .collect();
+            self.entities.rcu(|current| {
+                current
+                    .iter()
+                    .filter(|entity| !ids.contains(&entity.get_entity().entity_id))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            });
+        }
+        self.level.clean_entity_chunks(cleaned);
+        self.queue_entity_chunk_changes(retry);
+        retired
     }
 }
 
@@ -412,12 +480,95 @@ impl World {
 mod tests {
     use super::*;
     use pumpkin_data::{item::Item, item_stack::ItemStack};
-    use std::time::{Duration, Instant};
+    use std::{
+        any::Any,
+        sync::atomic::AtomicBool,
+        time::{Duration, Instant},
+    };
 
     use crate::entity::{
         ai::test_support::world, decoration::armor_stand::ArmorStandEntity, item::RegionalItemStep,
-        passive::cow::CowEntity,
+        living::LivingEntity, passive::cow::CowEntity,
     };
+
+    struct RewatchedActor {
+        base: Entity,
+        rewatch: AtomicBool,
+    }
+
+    impl EntityBase for RewatchedActor {
+        fn get_entity(&self) -> &Entity {
+            &self.base
+        }
+
+        fn get_living_entity(&self) -> Option<&LivingEntity> {
+            None
+        }
+
+        fn cast_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn write_custom_nbt(&self, _nbt: &mut NbtCompound) {
+            if self.rewatch.swap(false, Relaxed) {
+                self.base
+                    .world
+                    .load()
+                    .level
+                    .mark_chunks_as_newly_watched(&[self.base.chunk_pos.load()]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_watcher_during_capture_keeps_the_live_actor() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = world(&folder);
+        let pos = Vector2::new(10, 0);
+        world.level.spawn_entity_generation(pos);
+        let cached = world.level.get_entity_chunk_sync(&pos).unwrap();
+        world.level.mark_chunks_as_newly_watched(&[pos]);
+        world.queue_entity_chunk_changes([pos]);
+        world.apply_entity_chunk_changes();
+
+        let actor = Arc::new(RewatchedActor {
+            base: Entity::new(
+                world.clone(),
+                Vector3::new(160.5, 64.0, 8.5),
+                &EntityType::ARMOR_STAND,
+            ),
+            rewatch: AtomicBool::new(true),
+        });
+        let id = actor.base.entity_id;
+        let uuid = actor.base.entity_uuid;
+        world.add_entity_silent(actor.clone());
+
+        world.queue_entity_chunk_changes(world.level.mark_chunks_as_not_watched([pos]));
+        world.apply_entity_chunk_changes();
+        assert!(world.level.is_chunk_watched(&pos));
+        assert!(cached.live.load(Relaxed));
+        assert!(cached.data.lock().unwrap().is_empty());
+        assert!(!actor.base.is_removed());
+        assert!(world.entity_tracker.has_entity_with_id(id));
+        assert_eq!(
+            world
+                .get_entity_by_uuid(uuid)
+                .unwrap()
+                .get_entity()
+                .entity_id,
+            id
+        );
+
+        world.queue_entity_chunk_changes(world.level.mark_chunks_as_not_watched([pos]));
+        world.apply_entity_chunk_changes();
+        assert!(actor.base.is_removed());
+        assert!(world.get_entity_by_uuid(uuid).is_none());
+        let reloaded = world.level.get_entity_chunk(pos).await;
+        let saved = reloaded.data.lock().unwrap().clone();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].get_uuid("UUID"), Some(uuid));
+        world.level.shutdown().await;
+    }
 
     #[tokio::test]
     async fn regional_restore_rechecks_watcher_owner_and_registration() {

@@ -69,9 +69,7 @@ use crate::{
         {OnNeighborUpdateArgs, OnScheduledTickArgs},
     },
     command::client_suggestions,
-    entity::{
-        Entity, EntityBase, RemovalReason, player::Player, r#type::load_static_entity_from_nbt,
-    },
+    entity::{Entity, EntityBase, player::Player, r#type::load_static_entity_from_nbt},
     error::PumpkinError,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
     plugin::{
@@ -5434,14 +5432,7 @@ impl World {
 
     fn finish_chunk_entity_removal(&self, entities: Vec<Arc<dyn EntityBase>>) {
         for entity in entities {
-            let base = entity.get_entity();
-            if base
-                .removal_reason
-                .compare_exchange(None, Some(RemovalReason::UnloadedToChunk))
-                .is_ok()
-            {
-                base.removed.store(true, Ordering::Release);
-            }
+            entity.get_entity().mark_unloaded_to_chunk();
             self.entity_tracker.remove_entity(entity.as_ref(), self);
             self.spawn_state.load().remove_entity(self, entity.as_ref());
             if let Some(mob) = entity.get_mob() {

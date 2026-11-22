@@ -4105,6 +4105,16 @@ impl Entity {
         true
     }
 
+    pub(crate) fn mark_unloaded_to_chunk(&self) {
+        if self
+            .removal_reason
+            .compare_exchange(None, Some(RemovalReason::UnloadedToChunk))
+            .is_ok()
+        {
+            self.removed.store(true, Ordering::Release);
+        }
+    }
+
     /// Vanilla `ClientboundAddEntityPacket(entity, serverEntity)`: tracker, not live.
     /// Players live: tracker skips `send_changes` for them.
     fn spawn_state(&self) -> SpawnState {
