@@ -86,8 +86,9 @@ batch. Shutdown drains world jobs before kicking players and saving.
 Console commands, server-wide tick hooks, datapack functions and game tests
 use a coordinated boundary. Frozen worlds still process network packets.
 Stepping and sprinting advance every participating world by the requested
-number of ticks. Manual and periodic player snapshots coordinate the worlds
-for capture and write asynchronously.
+number of ticks. Explicit checkpoints coordinate the worlds for capture.
+Periodic player saves capture ready worlds and retry busy owners at later
+boundaries. The captures share the existing ordered asynchronous writer.
 
 The active-chunk tracker groups connected chunks into regions for scheduled
 block and fluid work. Overlapping regions reuse owner IDs, with the largest

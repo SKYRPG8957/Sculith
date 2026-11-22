@@ -1468,15 +1468,20 @@ impl Server {
     /// A coordinated tick used by the server-wide step, sprint and legacy tick hooks.
     pub fn tick(self: &Arc<Self>) {
         let commands = PlayerCommands::default();
-        self.tick_with_player_commands(&commands);
+        self.tick_with_player_commands(&commands, |server| server.player_data_storage.tick(server));
         commands.run_all(self);
     }
 
-    fn tick_with_player_commands(self: &Arc<Self>, commands: &PlayerCommands) {
+    fn tick_with_player_commands(
+        self: &Arc<Self>,
+        commands: &PlayerCommands,
+        autosave: impl FnOnce(&Self) + Send,
+    ) {
         self.for_each_ready_transfer(|transfer, reservation| transfer.apply(self, reservation));
         self.simulation_pool.install(|| {
             if self.tick_rate_manager.runs_normally() || self.tick_rate_manager.is_sprinting() {
                 self.tick_worlds_with_player_commands(commands);
+                autosave(self);
             } else {
                 self.sync_game_time();
                 self.tick_network_with_player_commands(commands);
@@ -1505,6 +1510,7 @@ impl Server {
     pub fn tick_worlds(self: &Arc<Self>) {
         let commands = PlayerCommands::default();
         self.tick_worlds_with_player_commands(&commands);
+        self.player_data_storage.tick(self);
         commands.run_all(self);
     }
 
@@ -1526,7 +1532,6 @@ impl Server {
                 self.tick_owned_world(world, ownership, WorldStep::Coordinated, false, commands);
             }
         });
-        self.player_data_storage.tick(self);
     }
 
     fn tick_owned_world(

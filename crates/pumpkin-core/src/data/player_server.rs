@@ -9,6 +9,7 @@ use pumpkin_world::data::{
     checkpoint::CheckpointFence,
     player_data::{PlayerDataError, PlayerDataStorage},
 };
+use rustc_hash::FxHashSet;
 use std::sync::Arc;
 use std::{
     path::PathBuf,
@@ -74,16 +75,55 @@ impl ServerPlayerData {
     /// This function is called synchronously on the server tick loop to check
     /// if it is time to save player data.
     pub fn tick(&self, server: &Server) {
-        self.tick_at_boundary(server, || {});
+        self.try_periodic_save(server, true, false, |_| Self::capture_online(server));
     }
 
-    /// Requests a coordinated snapshot only when the periodic writer can start.
-    pub(crate) fn tick_at_boundary(&self, server: &Server, wait_for_simulation: impl FnOnce()) {
-        let now = Instant::now();
+    /// Captures available world owners and retries the busy worlds at the next boundary.
+    pub(crate) fn tick_worlds_at_boundary(
+        &self,
+        server: &Server,
+        deferred: &mut FxHashSet<Uuid>,
+        start_cycle: bool,
+    ) {
+        self.try_periodic_save(server, start_cycle, !deferred.is_empty(), |due| {
+            let mut snapshots = Vec::new();
+            let mut retry = FxHashSet::default();
+            for world in server.worlds.load().iter() {
+                if !due && !deferred.contains(&world.uuid) {
+                    continue;
+                }
+                if world.players.load().is_empty() {
+                    continue;
+                }
+                let Some(_owner) = world.try_simulation() else {
+                    retry.insert(world.uuid);
+                    continue;
+                };
+                if world.is_open() {
+                    snapshots.extend(
+                        world
+                            .players
+                            .load()
+                            .iter()
+                            .map(|player| Self::capture(player)),
+                    );
+                }
+            }
+            *deferred = retry;
+            snapshots
+        });
+    }
 
-        if !self.storage.is_save_enabled()
-            || now.duration_since(self.last_save.load()) < self.save_interval
-        {
+    fn try_periodic_save(
+        &self,
+        server: &Server,
+        start_cycle: bool,
+        has_deferred: bool,
+        capture: impl FnOnce(bool) -> Vec<(Uuid, NbtCompound)>,
+    ) {
+        let now = Instant::now();
+        let due = start_cycle && now.duration_since(self.last_save.load()) >= self.save_interval;
+        if !self.storage.is_save_enabled() || (!due && !has_deferred) {
             return;
         }
         // Leave at most one captured batch in flight. Retry the next tick if a save is busy.
@@ -93,9 +133,14 @@ impl ServerPlayerData {
         let Some(access) = self.checkpoint.try_read() else {
             return;
         };
-        wait_for_simulation();
-        self.last_save.store(now);
-        let write = self.write_batch(&server.runtime, order, access, Self::capture_online(server));
+        let snapshots = capture(due);
+        if due {
+            self.last_save.store(now);
+        }
+        if snapshots.is_empty() {
+            return;
+        }
+        let write = self.write_batch(&server.runtime, order, access, snapshots);
         server.spawn_task(async move {
             match Self::finish_write(write).await {
                 Ok(()) => debug!("Periodic player data save completed"),

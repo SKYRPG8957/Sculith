@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use uuid::Uuid;
 
 use super::{
@@ -65,6 +65,7 @@ impl Drop for Job {
 
 pub(super) struct WorldScheduler {
     clocks: FxHashMap<Uuid, WorldClock>,
+    deferred_player_saves: FxHashSet<Uuid>,
     poll_number: u64,
     jobs: Arc<RunningJobs>,
 }
@@ -73,6 +74,7 @@ impl WorldScheduler {
     pub(super) fn new() -> Self {
         Self {
             clocks: FxHashMap::default(),
+            deferred_player_saves: FxHashSet::default(),
             poll_number: 0,
             jobs: Arc::new(RunningJobs {
                 ticker: thread::current(),
@@ -105,15 +107,20 @@ impl WorldScheduler {
         }
     }
 
-    pub(super) fn tick_coordinated(&self, server: &Arc<Server>) {
-        server.tick_with_player_commands(&self.jobs.player_commands);
+    pub(super) fn tick_coordinated(&mut self, server: &Arc<Server>) {
+        let deferred = &mut self.deferred_player_saves;
+        server.tick_with_player_commands(&self.jobs.player_commands, |server| {
+            server
+                .player_data_storage
+                .tick_worlds_at_boundary(server, deferred, true);
+        });
     }
 
     pub(super) fn take_longest_tick(&self) -> i64 {
         self.jobs.longest_nanos.swap(0, Ordering::Relaxed)
     }
 
-    pub(super) fn maintain(&self, server: &Arc<Server>) {
+    pub(super) fn maintain(&mut self, server: &Arc<Server>) {
         let manual_save = server.storage_checkpoint.manual_capture_requested();
         if manual_save {
             self.wait_idle();
@@ -123,9 +130,11 @@ impl WorldScheduler {
             .capture_at_tick_boundary(server, manual_save);
         if !server.tick_rate_manager.is_frozen() {
             server.plugin_manager.tick_loaders(server);
-            server
-                .player_data_storage
-                .tick_at_boundary(server, || self.wait_idle());
+            server.player_data_storage.tick_worlds_at_boundary(
+                server,
+                &mut self.deferred_player_saves,
+                true,
+            );
         }
     }
 
@@ -143,6 +152,14 @@ impl WorldScheduler {
         let worlds = server.worlds.load();
         self.poll_number = self.poll_number.wrapping_add(1);
         let frozen = server.tick_rate_manager.is_frozen();
+        // Job completions can wake the ticker more often than the save cadence.
+        if !frozen && !self.deferred_player_saves.is_empty() {
+            server.player_data_storage.tick_worlds_at_boundary(
+                server,
+                &mut self.deferred_player_saves,
+                false,
+            );
+        }
         let mut next = None;
         for world in worlds.iter() {
             let clock = self
