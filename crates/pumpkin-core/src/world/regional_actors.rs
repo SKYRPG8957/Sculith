@@ -220,25 +220,28 @@ impl World {
     }
 
     pub(crate) fn move_actor_across_chunks(&self, entity: &Entity, commit_position: impl FnOnce()) {
-        // A move can overlap a change of layout. Hold the same permit used to
-        // publish that layout until the position and assignment agree.
-        if entity.entity_type.mob {
-            let plan = self
-                .regional_actors
-                .read()
-                .unwrap_or_else(PoisonError::into_inner);
-            if !entity.regional_effects.load(Relaxed) && !plan.contains(entity.entity_id) {
-                // An effect added concurrently registers after this position is committed.
+        // Keep retirement and layout publication out until the position and assignment agree.
+        let still_here =
+            || !entity.is_removed() && std::ptr::eq(entity.world.load().as_ref(), self);
+        let plan = self
+            .regional_actors
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        if !plan.kinds.intersects(ActorWork::of(entity)) && !plan.contains(entity.entity_id) {
+            if still_here() {
                 commit_position();
-                return;
             }
+            return;
         }
+        drop(plan);
         let mut published = self
             .regional_actors
             .write()
             .unwrap_or_else(PoisonError::into_inner);
-        commit_position();
-        self.refresh_actor_owner(&mut published, entity);
+        if still_here() {
+            commit_position();
+            self.refresh_actor_owner(&mut published, entity);
+        }
     }
 
     pub(crate) fn offer_mob_effects(&self, entity: &Entity) {

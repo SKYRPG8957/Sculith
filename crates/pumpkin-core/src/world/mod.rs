@@ -5461,8 +5461,14 @@ impl World {
         let entity = registered.as_deref().unwrap_or(entity);
         let base_entity = entity.get_entity();
         let _motion = base_entity.hold_drop_motion();
-        if !base_entity.mark_discarded() {
-            return;
+        {
+            let _placement = self
+                .regional_actors
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !base_entity.mark_discarded() {
+                return;
+            }
         }
 
         if let Some(vehicle) = base_entity.get_vehicle() {
@@ -8474,10 +8480,13 @@ fn entity_save_records(
         }
         let mut record = NbtCompound::new();
         entity.write_nbt(&mut record);
-        groups
-            .entry(base.chunk_pos.load())
-            .or_default()
-            .push(record);
+        // Movement can continue after serializing Pos. Use the chunk that will
+        // own this record when it is read, even if the live actor has moved.
+        let pos = Entity::saved_position(&record).map_or_else(
+            || base.chunk_pos.load(),
+            |position| BlockPos::floored_v(position).chunk_position(),
+        );
+        groups.entry(pos).or_default().push(record);
     }
     groups
 }

@@ -770,11 +770,7 @@ impl World {
             let entities = by_chunk.remove(&pos).unwrap_or_default();
             let mut grouped = entity_save_records(&entities);
             let records = grouped.remove(&pos).unwrap_or_default();
-            if !grouped.is_empty()
-                || entities.iter().any(|entity| {
-                    entity.get_entity().is_removed() || saved_chunk_pos(entity.as_ref()) != pos
-                })
-            {
+            if !grouped.is_empty() {
                 retry.push(pos);
                 continue;
             }
@@ -790,7 +786,27 @@ impl World {
                 .active_chunks
                 .read()
                 .unwrap_or_else(PoisonError::into_inner);
+            // Only pin movement during validation and commit. NBT hooks above
+            // may move an actor themselves and must be able to take the permit.
+            let _placement = if entities.is_empty() {
+                None
+            } else {
+                Some(match self.regional_actors.try_write() {
+                    Ok(placement) => placement,
+                    Err(TryLockError::Poisoned(error)) => error.into_inner(),
+                    Err(TryLockError::WouldBlock) => {
+                        retry.push(pos);
+                        continue;
+                    }
+                })
+            };
             if !active.contains(&pos)
+                && entities.iter().all(|entity| {
+                    let base = entity.get_entity();
+                    !base.is_removed()
+                        && std::ptr::eq(base.world.load().as_ref(), self)
+                        && saved_chunk_pos(entity.as_ref()) == pos
+                })
                 && self.level.try_with_unwatched_entity_chunk(pos, &chunk, || {
                     store_entity_records(&chunk, &mut data, records);
                     for entity in &entities {
@@ -877,6 +893,50 @@ mod tests {
                     .mark_chunks_as_newly_watched(&[self.base.chunk_pos.load()]);
             }
         }
+    }
+
+    struct RelocatingActor {
+        base: Entity,
+        destination: Vector3<f64>,
+    }
+
+    impl EntityBase for RelocatingActor {
+        fn get_entity(&self) -> &Entity {
+            &self.base
+        }
+
+        fn get_living_entity(&self) -> Option<&LivingEntity> {
+            None
+        }
+
+        fn cast_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn write_custom_nbt(&self, _nbt: &mut NbtCompound) {
+            self.base.set_pos(self.destination);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_save_groups_an_actor_by_its_captured_position() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = world(&folder);
+        let position = Vector3::new(-0.5, 64.0, 8.5);
+        let destination = Vector3::new(160.5, 64.0, 8.5);
+        let actor: Arc<dyn EntityBase> = Arc::new(RelocatingActor {
+            base: Entity::new(world.clone(), position, &EntityType::ARMOR_STAND),
+            destination,
+        });
+        world.add_entity_silent(actor.clone());
+
+        let records = entity_save_records(std::slice::from_ref(&actor));
+        assert_eq!(actor.get_entity().pos.load(), destination);
+        assert_eq!(records.len(), 1);
+        let records = &records[&Vector2::new(-1, 0)];
+        assert_eq!(records.len(), 1);
+        assert_eq!(Entity::saved_position(&records[0]), Some(position));
+        world.level.shutdown().await;
     }
 
     #[tokio::test]
@@ -1360,6 +1420,14 @@ mod tests {
         world.add_entity_silent(cow.clone());
 
         world.queue_entity_chunk_changes(world.level.mark_chunks_as_not_watched([source]));
+        let retirement_pending = {
+            let _handoff = world.regional_actors.read().unwrap();
+            world.apply_entity_chunk_changes();
+            assert!(world.get_entity_by_uuid(uuid).is_some());
+            let pending = world.entity_chunk_changes.pending.lock().unwrap();
+            pending.contains_key(&source)
+        };
+        assert!(retirement_pending);
         cow.get_entity().set_pos(Vector3::new(160.5, 64.0, 8.5));
         world.apply_entity_chunk_changes();
         assert!(world.get_entity_by_uuid(uuid).is_some());
@@ -1386,7 +1454,14 @@ mod tests {
                 .is_empty()
         );
         let loaded = world.level.get_entity_chunk(destination).await;
-        assert_eq!(loaded.data.lock().unwrap().len(), 1);
+        let (count, position) = {
+            let saved = loaded.data.lock().unwrap();
+            (saved.len(), saved.first().and_then(Entity::saved_position))
+        };
+        assert_eq!(count, 1);
+        assert_eq!(position, Some(Vector3::new(160.5, 64.0, 8.5)));
+        cow.get_entity().set_pos(Vector3::new(8.5, 64.0, 8.5));
+        assert_eq!(cow.get_entity().chunk_pos.load(), destination);
         world.level.mark_chunks_as_newly_watched(&[destination]);
         world.queue_entity_chunk_changes([destination, destination]);
         world.apply_entity_chunk_changes();

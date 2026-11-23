@@ -2061,7 +2061,8 @@ impl Entity {
     pub fn set_world(&self, world: Arc<World>) {
         let _motion = self.hold_drop_motion();
         let previous = self.world.load();
-        let changing_region = self.entity_type.mob && !Arc::ptr_eq(&previous, &world);
+        let changing_actor_world =
+            self.entity_type != &EntityType::PLAYER && !Arc::ptr_eq(&previous, &world);
         let change = || {
             let block_pos = self.block_pos.load();
             let biome = world.level.get_rough_biome(&block_pos);
@@ -2070,7 +2071,7 @@ impl Entity {
             self.bounding_box.set_index(&world.entity_index);
             self.world.store(world);
         };
-        if changing_region {
+        if changing_actor_world {
             previous.move_actor_across_chunks(self, change);
         } else {
             change();
@@ -2459,7 +2460,7 @@ impl Entity {
     ///
     /// This function calculates the new position, block position, and chunk position based on the provided coordinates. If any of these values change, the corresponding fields are updated.
     pub fn set_pos(&self, new_position: Vector3<f64>) {
-        let drop_motion = self.hold_drop_motion();
+        let _motion = self.hold_drop_motion();
         let commit_position = || {
             // A regional player move pins the same index before changing any position fields.
             let player_index = (self.entity_type == &EntityType::PLAYER).then(|| {
@@ -2485,11 +2486,7 @@ impl Entity {
                 |position| self.world.load().level.get_rough_biome(&position),
             );
         };
-        if (drop_motion.is_some()
-            || self.entity_type.mob
-            || self.entity_type == &EntityType::PLAYER)
-            && self.chunk_pos.load() != BlockPos::floored_v(new_position).chunk_position()
-        {
+        if self.chunk_pos.load() != BlockPos::floored_v(new_position).chunk_position() {
             let world = self.world.load();
             if self.entity_type == &EntityType::PLAYER {
                 world.move_player_across_chunks(self, commit_position);
@@ -5067,12 +5064,15 @@ impl Entity {
         pitch: Option<f32>,
         world: &World,
     ) {
-        let motion = self.hold_drop_motion();
-        if motion.is_some() && self.is_removed() {
+        let _motion = self.hold_drop_motion();
+        if self.is_removed() {
             return;
         }
         // Update server-side position and bounding box
         self.set_pos(position);
+        if self.is_removed() {
+            return;
+        }
         if let Some(yaw) = yaw {
             self.yaw.store(yaw);
         }

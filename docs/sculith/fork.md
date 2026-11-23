@@ -433,12 +433,14 @@ players once their client has the terrain chunk. The world reuses the tracker
 and pairs any remaining viewers. Legacy clients, attachment restoration and
 packet observers use world pairing.
 Actors with passengers or team memberships use world processing. The world
-retires unwatched inactive chunks using
-the live positions of entities and their vehicles. The retirement step prepares
-records before pinning the watcher slot, then checks membership and the cached
-chunk again. A watcher that arrives during capture keeps the live actors.
-Disk reads and retirement writes run asynchronously. Manual saves serialize
-their entity snapshot against these residency changes.
+retires unwatched inactive chunks using the live positions of entities and
+their vehicles. The retirement step prepares records first. It then pins
+cross-chunk moves while checking positions, watchers and the cached chunk
+through the commit. A watcher that arrives during capture keeps the live
+actors. A move still holding its permit defers retirement. Saves group each
+record by the position captured in that record. Disk reads and retirement
+writes run asynchronously. Manual saves serialize their entity snapshot
+against these residency changes.
 Native plugins use ABI 36 for the living entity layout change.
 
 ## Shared resource delivery
