@@ -63,6 +63,7 @@ use super::{
 };
 
 const REGIONAL_INVENTORY_BYTES: usize = 256;
+const REGIONAL_INVENTORY_ACTIONS: usize = 8;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Target {
@@ -249,11 +250,19 @@ impl PersonalSlot {
         }
     }
 
-    const fn stack<'a>(self, main: &'a [ItemStack], cursor: &'a ItemStack) -> &'a ItemStack {
-        match self {
-            Self::Storage(index) => &main[index],
-            Self::Cursor => cursor,
-        }
+    fn stack<'a>(
+        self,
+        main: &'a [ItemStack],
+        cursor: &'a ItemStack,
+        changes: &'a [(Self, ItemStack)],
+    ) -> &'a ItemStack {
+        changes.iter().find(|(slot, _)| *slot == self).map_or_else(
+            || match self {
+                Self::Storage(index) => &main[index],
+                Self::Cursor => cursor,
+            },
+            |(_, item)| item,
+        )
     }
 }
 
@@ -263,8 +272,25 @@ const fn matches_stack_id(info: &SlotInfo, stack: &ItemStack) -> bool {
 }
 
 struct RegionalInventoryPlan {
-    changes: [(PersonalSlot, ItemStack); 2],
+    changes: Vec<(PersonalSlot, ItemStack)>,
     updates: Vec<SlotUpdate>,
+}
+
+fn move_personal_stacks(
+    source: &ItemStack,
+    destination: &ItemStack,
+    count: Option<u8>,
+) -> Option<[ItemStack; 2]> {
+    let Some(count) = count else {
+        return Some([destination.clone(), source.clone()]);
+    };
+    if count == 0 || source.is_empty() || count > source.item_count {
+        return None;
+    }
+    let mut remainder = source.clone();
+    let merged = merge_stacks(source, destination.clone(), count)?;
+    remainder.decrement(count);
+    Some([remainder, merged])
 }
 
 impl RegionalInventoryPlan {
@@ -274,8 +300,13 @@ impl RegionalInventoryPlan {
         main: &[ItemStack],
         cursor: &ItemStack,
     ) -> Option<Self> {
-        let (from, to, count) = match request.actions.as_slice() {
-            [
+        if !(1..=REGIONAL_INVENTORY_ACTIONS).contains(&request.actions.len()) {
+            return None;
+        }
+        let mut changes = Vec::with_capacity(request.actions.len() * 2);
+        let mut touched = Vec::with_capacity(changes.capacity());
+        for action in &request.actions {
+            let (from, to, count) = match action {
                 Action::Take {
                     source,
                     destination,
@@ -285,58 +316,58 @@ impl RegionalInventoryPlan {
                     source,
                     destination,
                     count,
-                },
-            ] => (source, destination, Some(*count)),
-            [Action::Swap { slot1, slot2 }] => (slot1, slot2, None),
-            _ => return None,
-        };
-        let from_target = PersonalSlot::from_request(from)?;
-        let to_target = PersonalSlot::from_request(to)?;
-        if from_target == to_target {
-            return None;
-        }
-        let first = from_target.stack(main, cursor);
-        let second = to_target.stack(main, cursor);
-        if !matches_stack_id(from, first) || !matches_stack_id(to, second) {
-            return None;
-        }
-        let (first, second) = if let Some(count) = count {
-            if count == 0 || first.is_empty() || count > first.item_count {
+                } => (source, destination, Some(*count)),
+                Action::Swap { slot1, slot2 } => (slot1, slot2, None),
+                _ => return None,
+            };
+            let from_target = PersonalSlot::from_request(from)?;
+            let to_target = PersonalSlot::from_request(to)?;
+            if from_target == to_target {
                 return None;
             }
-            let mut remainder = first.clone();
-            let merged = merge_stacks(first, second.clone(), count)?;
-            remainder.decrement(count);
-            (remainder, merged)
-        } else {
-            (second.clone(), first.clone())
-        };
-        let changes = [(from_target, first), (to_target, second)].map(|(slot, stack)| {
-            (
-                slot,
-                if stack.is_empty() {
+            let first = from_target.stack(main, cursor, &changes);
+            let second = to_target.stack(main, cursor, &changes);
+            for (target, info, stack) in [(from_target, from, first), (to_target, to, second)] {
+                // A negative ID for this request can refer to the result of an
+                // earlier action on this same logical slot.
+                let staged = info.stack_id < 0
+                    && info.stack_id == request.request_id.0
+                    && changes.iter().any(|(slot, _)| *slot == target);
+                if !staged && !matches_stack_id(info, stack) {
+                    return None;
+                }
+            }
+            let [first, second] = move_personal_stacks(first, second, count)?;
+            for (target, info, stack) in [(from_target, from, first), (to_target, to, second)] {
+                let slot = match target {
+                    PersonalSlot::Storage(index) => {
+                        Some(handler.get_behaviour().slots.get(index)?.as_ref())
+                    }
+                    PersonalSlot::Cursor => None,
+                };
+                if !stack_fits(slot, &stack) {
+                    return None;
+                }
+                let stack = if stack.is_empty() {
                     ItemStack::EMPTY.clone()
                 } else {
                     stack
-                },
-            )
-        });
-        let mut updates = Vec::with_capacity(changes.len());
-        for ((target, stack), info) in changes.iter().zip([from, to]) {
-            let slot = match target {
-                PersonalSlot::Storage(index) => {
-                    Some(handler.get_behaviour().slots.get(*index)?.as_ref())
+                };
+                if let Some((_, current)) = changes.iter_mut().find(|(slot, _)| *slot == target) {
+                    *current = stack;
+                } else {
+                    changes.push((target, stack));
                 }
-                PersonalSlot::Cursor => None,
-            };
-            if !stack_fits(slot, stack) {
-                return None;
+                touched.push((target, info));
             }
+        }
+        let mut updates = Vec::with_capacity(touched.len());
+        for (target, info) in touched {
             record_update(
                 &mut updates,
                 info.container_name.clone(),
                 info.slot_id,
-                stack,
+                target.stack(main, cursor, &changes),
             );
         }
         Some(Self { changes, updates })
@@ -1028,12 +1059,7 @@ impl BedrockClient {
         let equipment = player.inventory.entity_equipment.try_lock().ok()?;
         let RegionalInventoryPlan { changes, updates } =
             RegionalInventoryPlan::prepare(request, &*handler, &main[..], &cursor)?;
-        let after = |target| {
-            changes
-                .iter()
-                .find(|(changed, _)| *changed == target)
-                .map_or_else(|| target.stack(&main[..], &cursor), |(_, stack)| stack)
-        };
+        let after = |target: PersonalSlot| target.stack(&main[..], &cursor, &changes);
         let response = self
             .serialize_packet(&CItemStackResponse {
                 responses: vec![build_stack_response(request.request_id, 0, updates)],
@@ -1383,12 +1409,81 @@ mod tests {
             )
         };
         let valid = plan(action(3, source, target)).unwrap();
-        let [(_, left), (_, held)] = valid.changes;
+        let [(_, left), (_, held)] = valid.changes.as_slice() else {
+            panic!("expected two changed slots");
+        };
         assert_eq!((left.item_count, held.item_count), (8, 8));
         assert_eq!((left.uid.get(), held.uid.get()), (source, target));
         assert!(plan(action(3, 0, target)).is_none());
         assert!(plan(action(3, source, -7)).is_none());
         assert!(plan(action(12, source, target)).is_none());
         assert_eq!((main[10].item_count, cursor.item_count), (11, 5));
+    }
+
+    #[test]
+    fn regional_inventory_batch_references_staged_slots_and_reports_final_counts() {
+        let inventory = Arc::new(PlayerInventory::new(
+            Arc::new(Mutex::new(EntityEquipment::new())),
+            Arc::new(build_equipment_slots()),
+        ));
+        let handler = PlayerScreenHandler::new(&inventory, None, 0, None);
+        let mut main = inventory.main_inventory.write().unwrap();
+        main[10] = ItemStack::new(11, &Item::DIAMOND);
+        main[11] = ItemStack::new(7, &Item::DIAMOND);
+        let slot = |container_name, slot_id, stack_id| SlotInfo {
+            container_name: FullContainerName {
+                container_name,
+                dynamic_id: None,
+            },
+            slot_id,
+            stack_id,
+        };
+        let request_id = -17;
+        let request = |cursor_id, count, swap_id| ItemStackRequest {
+            request_id: VarInt(request_id),
+            filter_cause: 0,
+            filter_strings: Vec::new(),
+            actions: vec![
+                Action::Take {
+                    count: 3,
+                    source: slot(
+                        ContainerName::CombinedHotBarAndInventory,
+                        10,
+                        main[10].uid.get(),
+                    ),
+                    destination: slot(ContainerName::Cursor, 0, 0),
+                },
+                Action::Place {
+                    count,
+                    source: slot(ContainerName::Cursor, 0, cursor_id),
+                    destination: slot(ContainerName::Inventory, 10, request_id),
+                },
+                Action::Swap {
+                    slot1: slot(ContainerName::Cursor, 0, request_id),
+                    slot2: slot(ContainerName::Inventory, 11, swap_id),
+                },
+            ],
+        };
+        let prepare = |cursor_id, count, swap_id| {
+            RegionalInventoryPlan::prepare(
+                &request(cursor_id, count, swap_id),
+                &handler,
+                &main[..],
+                ItemStack::EMPTY,
+            )
+        };
+        let valid = prepare(request_id, 2, main[11].uid.get()).unwrap();
+        let counts: Vec<_> = valid
+            .updates
+            .iter()
+            .map(|update| (update.slot_id, update.count))
+            .collect();
+        assert_eq!(counts, [(10, 10), (0, 7), (10, 10), (11, 1)]);
+        let cursor = PersonalSlot::Cursor.stack(&main[..], ItemStack::EMPTY, &valid.changes);
+        assert_eq!(cursor.uid, main[11].uid);
+        assert!(prepare(request_id - 2, 2, main[11].uid.get()).is_none());
+        assert!(prepare(request_id, 4, main[11].uid.get()).is_none());
+        assert!(prepare(request_id, 2, request_id).is_none());
+        assert_eq!((main[10].item_count, main[11].item_count), (11, 7));
     }
 }
