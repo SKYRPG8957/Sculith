@@ -717,6 +717,7 @@ impl World {
     pub async fn shutdown(&self) {
         let _region_shutdown = self.region_activity.write().await;
         self.invalidate_region_layout();
+        self.clear_prepared_chunk_mobs();
         self.cancel_block_edits();
         let entities = self.entities.load_full();
         self.save_entities_by_chunk(&entities, self.level.live_entity_chunk_positions())

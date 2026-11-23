@@ -321,6 +321,11 @@ Readers share one disk request for a chunk and return its position. An active
 region can register ready armor stands, dropped items, experience orbs and
 markers in small batches. It validates the current owner, pinned watchers,
 cached chunk and entity UUID registrations before consuming saved records.
+Regions also prepare unlinked cows, pigs, sheep and chickens in watched
+chunks. The world rechecks the resident chunk, type, UUID and position,
+applies the latest saved NBT, and registers and pairs the actors through its
+usual path. A changed record can fall back to construction on the world.
+Concurrent regions can share the entity snapshot permit while doing this work.
 An eligible drop joins the current region's timer plan with its saved age
 and pickup delay. Its first timer step uses the next regional deadline.
 The timer assignment follows a subsequent move to another region, even while
