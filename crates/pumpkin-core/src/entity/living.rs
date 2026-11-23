@@ -72,7 +72,7 @@ use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::text::TextComponent;
 use rand::RngExt;
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard};
 
 #[derive(Clone, Copy)]
 struct LastHurtByMob {
@@ -109,6 +109,7 @@ pub struct LivingEntity {
     pub fall_distance: AtomicCell<f32>,
     pub active_effects: std::sync::Mutex<FxHashMap<&'static StatusEffect, Effect>>,
     last_effect_step: AtomicCell<Option<std::time::Instant>>,
+    mob_effect_edit: RwLock<()>,
     pub entity_equipment: Arc<std::sync::Mutex<EntityEquipment>>,
     pub equipment_drop_chances: Arc<std::sync::Mutex<FxHashMap<EquipmentSlot, f32>>>,
     pub movement_input: AtomicCell<Vector3<f64>>,
@@ -505,6 +506,7 @@ impl LivingEntity {
             livings_flags: AtomicU8::new(0),
             active_effects: std::sync::Mutex::new(FxHashMap::default()),
             last_effect_step: AtomicCell::new(None),
+            mob_effect_edit: RwLock::new(()),
             entity_equipment: Arc::new(std::sync::Mutex::new(EntityEquipment::new())),
             equipment_drop_chances: Arc::new(std::sync::Mutex::new(FxHashMap::default())),
             equipment_slots: Arc::new(build_equipment_slots()),
@@ -1607,6 +1609,8 @@ impl LivingEntity {
             return;
         }
 
+        let effect_edit = self.hold_mob_effect_edit();
+
         // Apply non-instant effects
 
         // Effects that modify attributes (ex. speed) should also update the
@@ -1728,6 +1732,7 @@ impl LivingEntity {
             }
         }
         self.sync_effect_particles();
+        drop(effect_edit);
         if offer_clock {
             self.offer_regional_effects();
         }
@@ -1761,11 +1766,23 @@ impl LivingEntity {
     }
 
     pub fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
+        self.remove_effect_inner(effect_type, false)
+    }
+
+    fn remove_effect_inner(&self, effect_type: &'static StatusEffect, expired: bool) -> bool {
+        let effect_edit = self.hold_mob_effect_edit();
         let (succeeded, offer_clock) = {
             let mut effects = self
                 .active_effects
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if expired
+                && effects
+                    .get(effect_type)
+                    .is_none_or(|effect| effect.duration != 0)
+            {
+                return false;
+            }
             let succeeded = effects.remove(&effect_type).is_some();
             (succeeded, self.refresh_mob_effect_work(&effects))
         };
@@ -1830,6 +1847,7 @@ impl LivingEntity {
         if succeeded {
             self.sync_effect_particles();
         }
+        drop(effect_edit);
         if offer_clock {
             self.offer_regional_effects();
         }
@@ -3217,15 +3235,39 @@ impl LivingEntity {
         }
     }
 
-    fn effects_can_advance_on_region(effects: &FxHashMap<&'static StatusEffect, Effect>) -> bool {
+    fn hold_mob_effect_edit(&self) -> Option<RwLockReadGuard<'_, ()>> {
+        // World callers may reenter through a packet observer. Only the regional
+        // expiry takes the writer, with a nonblocking acquisition and no callbacks.
+        self.entity.entity_type.mob.then(|| {
+            self.mob_effect_edit
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        })
+    }
+
+    fn effect_can_expire_on_region(effect: &Effect) -> bool {
+        let kind = effect.effect_type;
+        !effect.show_particles
+            && kind.attribute_modifiers.is_empty()
+            && kind != &StatusEffect::ABSORPTION
+            && kind != &StatusEffect::HEALTH_BOOST
+            && kind != &StatusEffect::INVISIBILITY
+            && kind != &StatusEffect::GLOWING
+    }
+
+    fn effects_can_advance_on_region(
+        effects: &FxHashMap<&'static StatusEffect, Effect>,
+        mob: bool,
+    ) -> bool {
         let mut finite = false;
         for effect in effects.values() {
-            if (effect.duration != -1 && effect.duration <= 0)
+            if effect.duration < -1
+                || (effect.duration == 0 && !(mob && Self::effect_can_expire_on_region(effect)))
                 || crate::entity::effect::get_mob_effect(effect.effect_type).is_some()
             {
                 return false;
             }
-            finite |= effect.duration > 0;
+            finite |= effect.duration >= 0;
         }
         finite
     }
@@ -3234,7 +3276,7 @@ impl LivingEntity {
         if !self.entity.entity_type.mob {
             return false;
         }
-        let ready = Self::effects_can_advance_on_region(effects);
+        let ready = Self::effects_can_advance_on_region(effects, true);
         let previous = self.entity.regional_effects.swap(ready, Relaxed);
         ready && !previous
     }
@@ -3263,6 +3305,7 @@ impl LivingEntity {
         &self,
         deadline: TickDeadline,
         owns: impl FnOnce() -> bool,
+        publish_expirations: impl FnOnce(&[&'static StatusEffect]) -> bool,
     ) -> bool {
         if !self.is_alive() {
             return false;
@@ -3270,21 +3313,26 @@ impl LivingEntity {
         let Ok(mut effects) = self.active_effects.try_lock() else {
             return true;
         };
-        if !Self::effects_can_advance_on_region(&effects) {
+        let mob = self.entity.entity_type.mob;
+        if !Self::effects_can_advance_on_region(&effects, mob) {
             return false;
         }
+        let previous = self.last_effect_step.load();
         if !owns() || !TickDeadline::claim(&self.last_effect_step, Some(deadline)) {
             return true;
         }
-        let mut ready_to_expire = false;
+        if effects.values().any(|effect| effect.duration == 0)
+            && !self.expire_regional_mob_effects(&mut effects, publish_expirations)
+        {
+            self.last_effect_step.store(previous);
+            return true;
+        }
         for effect in effects.values_mut().filter(|effect| effect.duration > 0) {
             effect.duration -= 1;
-            ready_to_expire |= effect.duration == 0;
         }
-        if self.entity.entity_type.mob {
-            if ready_to_expire {
-                self.entity.regional_effects.store(false, Relaxed);
-            }
+        let ready = Self::effects_can_advance_on_region(&effects, mob);
+        if mob {
+            self.entity.regional_effects.store(ready, Relaxed);
             tracing::trace!(
                 entity = self.entity.entity_id,
                 chunk = ?self.entity.chunk_pos.load(),
@@ -3296,7 +3344,34 @@ impl LivingEntity {
                 "Advanced status effects on the player region"
             );
         }
-        !ready_to_expire
+        ready
+    }
+
+    fn expire_regional_mob_effects(
+        &self,
+        effects: &mut FxHashMap<&'static StatusEffect, Effect>,
+        publish: impl FnOnce(&[&'static StatusEffect]) -> bool,
+    ) -> bool {
+        let Ok(_edit) = self.mob_effect_edit.try_write() else {
+            return false;
+        };
+        let expired: Vec<_> = effects
+            .values()
+            .filter_map(|effect| (effect.duration == 0).then_some(effect.effect_type))
+            .collect();
+        if !publish(&expired) {
+            return false;
+        }
+        for kind in &expired {
+            effects.remove(kind);
+        }
+        tracing::trace!(
+            entity = self.entity.entity_id,
+            chunk = ?self.entity.chunk_pos.load(),
+            count = expired.len(),
+            "Expired status effects on the mob region"
+        );
+        true
     }
 
     fn tick_effects(&self, player: Option<&Player>, deadline: Option<TickDeadline>) {
@@ -3342,12 +3417,12 @@ impl LivingEntity {
             let mob_ready = self.refresh_mob_effect_work(&effects);
             deadline.is_some()
                 && (mob_ready
-                    || (regional_bedrock && Self::effects_can_advance_on_region(&effects)))
+                    || (regional_bedrock && Self::effects_can_advance_on_region(&effects, false)))
         };
 
         // Call the central removal function for each expired effect
         for effect_type in effects_to_remove {
-            self.remove_effect(effect_type);
+            self.remove_effect_inner(effect_type, true);
         }
 
         for (mob_effect, amplifier) in effects_to_apply {

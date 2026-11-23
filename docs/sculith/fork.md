@@ -357,8 +357,12 @@ state, which also supplies player saves.
 The same passive countdown can run on the region that owns a living mob.
 Its assignment changes with its chunk, and its remaining durations and deadline
 travel with the actor. The old owner checks the current assignment and loaded
-chunk before taking a step. The ordinary entity tick handles expiry and periodic
-effects, using the same deadline to avoid a second step after a handoff.
+chunk before taking a step. The owner may remove a hidden passive effect after
+its last tick and queue removal for its Java and Bedrock viewers. The active
+effects lock and an edit permit order the removal with effect reapplication.
+The world processes periodic effects, removals with attribute or metadata
+changes, and removals that need packet observers or translation. Both paths
+share the same deadline to prevent a second step after a handoff.
 
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the
@@ -421,7 +425,7 @@ records before pinning the watcher slot, then checks membership and the cached
 chunk again. A watcher that arrives during capture keeps the live actors.
 Disk reads and retirement writes run asynchronously. Manual saves serialize
 their entity snapshot against these residency changes.
-Native plugins use ABI 35.
+Native plugins use ABI 36 for the living entity layout change.
 
 ## Shared resource delivery
 

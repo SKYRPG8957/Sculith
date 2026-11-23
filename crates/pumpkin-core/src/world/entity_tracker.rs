@@ -7,6 +7,7 @@ use std::sync::{Arc, MutexGuard, RwLock, RwLockReadGuard};
 use bytes::{BufMut, Bytes};
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, mapref::entry::Entry, try_result::TryResult};
+use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::bedrock::client::move_actor_delta::{
@@ -41,7 +42,7 @@ use crate::net::ClientPlatform;
 use crate::net::bedrock::BedrockClient;
 use crate::net::chunk_sender::ChunkSender;
 use crate::net::java::JavaClient;
-use crate::plugin::server::packet::PacketSentEvent;
+use crate::plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent};
 use crate::server::Server;
 use crate::world::World;
 use crate::world::chunker::get_view_distance;
@@ -1884,6 +1885,83 @@ impl EntityTracker {
             tracked.try_publish_drop_expiry(world, &mut java_recipients);
         }
         Self::flush_regional_drop_packets(java_recipients);
+    }
+
+    pub(super) fn try_publish_regional_mob_effect_removals(
+        &self,
+        world: &World,
+        server: &Server,
+        entity: &Entity,
+        expired: &[&'static StatusEffect],
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) -> bool {
+        if server.plugin_manager.has_handlers::<PacketSentEvent>()
+            || server
+                .plugin_manager
+                .has_handlers::<BedrockConnectionPacketSentEvent>()
+        {
+            return false;
+        }
+        let tracked = match self.entity_map.try_get(&entity.entity_id) {
+            TryResult::Present(entry) => entry.value().clone(),
+            TryResult::Absent => return true,
+            TryResult::Locked => return false,
+        };
+        if !std::ptr::eq(tracked.entity.get_entity(), entity) {
+            return false;
+        }
+        let Some(viewers) = tracked.try_regional_pairings() else {
+            return false;
+        };
+        let eligible =
+            |player: &&Arc<Player>| !player.client.closed() && player.can_simulate_in(world);
+        let recipients = viewers.players.values().filter(eligible);
+        if recipients
+            .clone()
+            .any(|player| match player.client.as_ref() {
+                ClientPlatform::Java(client) => client.version.load() != CURRENT_MC_VERSION,
+                ClientPlatform::Bedrock(client) => !client.is_current_protocol(),
+            })
+        {
+            return false;
+        }
+        if recipients.clone().next().is_none() {
+            return true;
+        }
+
+        let mut java_packets = Vec::with_capacity(expired.len());
+        let mut bedrock_packets = Vec::with_capacity(expired.len());
+        for effect in expired {
+            let (java, bedrock) = World::mob_effect_removal_packets(entity.entity_id, effect);
+            let Ok(java) = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION)
+            else {
+                return false;
+            };
+            let mut bytes = Vec::new();
+            if BedrockClient::write_raw_packet(&bedrock, &mut bytes).is_err() {
+                return false;
+            }
+            java_packets.push(java);
+            bedrock_packets.push(Bytes::from(bytes));
+        }
+
+        // The caller still holds the active effects and edit guards. Pairing
+        // is pinned until these removals have been queued for the same viewers.
+        for player in recipients {
+            match player.client.as_ref() {
+                ClientPlatform::Java(client) => {
+                    if client.try_enqueue_current_packet_batch(&java_packets) {
+                        java_recipients.insert(client.id, player.client.clone());
+                    }
+                }
+                ClientPlatform::Bedrock(client) => {
+                    for packet in &bedrock_packets {
+                        client.try_enqueue_packet_data_unobserved(packet.clone());
+                    }
+                }
+            }
+        }
+        true
     }
 
     pub(super) fn try_publish_regional_drop_move(

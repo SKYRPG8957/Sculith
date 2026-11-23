@@ -351,14 +351,28 @@ impl World {
             } else if native.is_some()
                 && base.regional_effects.load(Relaxed)
                 && let Some(living) = actor.get_living_entity()
+                && let Some(_checkpoint) = server.try_regional_entity_save_guard()
                 && let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk)
             {
-                living.advance_regional_effects(deadline, || {
-                    !base.is_removed()
-                        && std::ptr::eq(base.world.load().as_ref(), self)
-                        && base.chunk_pos.load() == chunk
-                        && owns(chunk)
-                });
+                living.advance_regional_effects(
+                    deadline,
+                    || {
+                        !base.is_removed()
+                            && std::ptr::eq(base.world.load().as_ref(), self)
+                            && base.chunk_pos.load() == chunk
+                            && owns(chunk)
+                    },
+                    |expired| {
+                        self.entity_tracker
+                            .try_publish_regional_mob_effect_removals(
+                                self,
+                                server,
+                                base,
+                                expired,
+                                &mut java_recipients,
+                            )
+                    },
+                );
             }
         }
         EntityTracker::flush_regional_drop_packets(java_recipients);
@@ -611,18 +625,34 @@ mod tests {
         tick_actor_with_deadline(base.entity_id, Some(next), || {
             pig.tick(pig.as_ref(), &server);
         });
+        step(1, next);
         assert_eq!(remaining(), Some(0));
 
-        let stale = world.regional_actors.read().unwrap().clone();
-        add();
-        let plan = world.assign_regional_actors(&server, &[], true, &stale);
-        assert_eq!(plan.assigned[&base.entity_id], 1);
         let later = TickDeadline {
             at: next.at + next.period,
             ..next
         };
         step(1, later);
+        assert_eq!(remaining(), None);
+
+        let stale = world.regional_actors.read().unwrap().clone();
+        add();
+        let plan = world.assign_regional_actors(&server, &[], true, &stale);
+        assert_eq!(plan.assigned[&base.entity_id], 1);
+        let deadline = |ticks| TickDeadline {
+            at: later.at + later.period * ticks,
+            ..later
+        };
+        step(1, deadline(1));
         assert_eq!(remaining(), Some(1));
+        step(1, deadline(2));
+        assert_eq!(remaining(), Some(0));
+        assert!(living.advance_regional_effects(deadline(3), || true, |_| false));
+        assert_eq!(remaining(), Some(0));
+        tick_actor_with_deadline(base.entity_id, Some(deadline(3)), || {
+            pig.tick(pig.as_ref(), &server);
+        });
+        assert_eq!(remaining(), None);
         server.shutdown().await;
     }
 }

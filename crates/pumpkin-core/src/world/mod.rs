@@ -125,6 +125,7 @@ use pumpkin_protocol::{
     BClientPacket, ClientPacket, IdOr, SoundEvent,
     bedrock::{
         client::{
+            CMobEffect,
             block_event::CBlockEvent as CBedrockBlockEvent,
             common::BuildPlatform,
             creative_content::{
@@ -862,12 +863,19 @@ impl World {
     }
 
     pub fn send_remove_mob_effect(&self, entity: &Entity, effect_type: &'static StatusEffect) {
-        let je_packet =
-            CRemoveMobEffect::new(entity.entity_id.into(), VarInt(i32::from(effect_type.id)));
+        let (je_packet, be_packet) =
+            Self::mob_effect_removal_packets(entity.entity_id, effect_type);
+        self.send_to_tracking_players_and_self_editioned(entity, &je_packet, &be_packet);
+    }
 
-        let be_packet = pumpkin_protocol::bedrock::client::CMobEffect {
-            target_runtime_id: VarULong(entity.entity_id as u64),
-            event_id: pumpkin_protocol::bedrock::client::CMobEffect::EVENT_REMOVE,
+    fn mob_effect_removal_packets(
+        entity_id: i32,
+        effect_type: &'static StatusEffect,
+    ) -> (CRemoveMobEffect, CMobEffect) {
+        let java = CRemoveMobEffect::new(entity_id.into(), VarInt(i32::from(effect_type.id)));
+        let bedrock = CMobEffect {
+            target_runtime_id: VarULong(entity_id as u64),
+            event_id: CMobEffect::EVENT_REMOVE,
             effect_id: VarInt(effect_type.to_bedrock_id()),
             effect_amplifier: VarInt(0),
             show_particles: false,
@@ -875,7 +883,7 @@ impl World {
             tick: VarULong(0),
             ambient: false,
         };
-        self.send_to_tracking_players_and_self_editioned(entity, &je_packet, &be_packet);
+        (java, bedrock)
     }
 
     pub fn send_add_mob_effect(&self, entity: &Entity, effect: &pumpkin_data::potion::Effect) {
