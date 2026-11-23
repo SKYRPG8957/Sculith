@@ -921,21 +921,21 @@ mod tests {
         let mut active = FxHashSet::from_iter(west.iter().copied());
         let initial = publish(&active);
         // East has a pending disk result before it has an active owner.
-        world.queue_entity_chunk_changes([west[0]].into_iter().chain(watched));
-        {
+        world.queue_entity_chunk_changes(std::iter::once(west[0]).chain(watched));
+        let advanced_with_locked_chunk = {
             let blocked = cached(west[0]);
             let _records = blocked.data.lock().unwrap();
             tick(&initial, west[0]);
-        }
-        assert!(west[1..4].iter().copied().all(live));
-        assert!(!live(west[0]) && !live(west[4]) && !live(east));
+            !live(west[0]) && west[1..4].iter().copied().all(live)
+        };
+        assert!(advanced_with_locked_chunk);
+        assert!(!live(west[4]) && !live(west[5]) && !live(east));
 
         active.extend([bridge, east]);
         let merged = publish(&active);
-        {
-            let _saving = world.entity_chunk_changes.snapshot.try_write().unwrap();
-            tick(&merged, east);
-        }
+        let saving = world.entity_chunk_changes.snapshot.try_write().unwrap();
+        tick(&merged, east);
+        drop(saving);
         active.remove(&bridge);
         let split = publish(&active);
         assert_ne!(split.owner(west[0]), split.owner(east));
