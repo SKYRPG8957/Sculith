@@ -1893,26 +1893,25 @@ impl EntityTracker {
         server: &Server,
         entity: &Entity,
         expired: &[&'static StatusEffect],
+        java_metadata: Option<Box<[u8]>>,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
-    ) -> bool {
+    ) -> Option<bool> {
         if server.plugin_manager.has_handlers::<PacketSentEvent>()
             || server
                 .plugin_manager
                 .has_handlers::<BedrockConnectionPacketSentEvent>()
         {
-            return false;
+            return None;
         }
         let tracked = match self.entity_map.try_get(&entity.entity_id) {
             TryResult::Present(entry) => entry.value().clone(),
-            TryResult::Absent => return true,
-            TryResult::Locked => return false,
+            TryResult::Absent => return Some(true),
+            TryResult::Locked => return None,
         };
         if !std::ptr::eq(tracked.entity.get_entity(), entity) {
-            return false;
+            return None;
         }
-        let Some(viewers) = tracked.try_regional_pairings() else {
-            return false;
-        };
+        let viewers = tracked.try_regional_pairings()?;
         let eligible =
             |player: &&Arc<Player>| !player.client.closed() && player.can_simulate_in(world);
         let recipients = viewers.players.values().filter(eligible);
@@ -1923,35 +1922,39 @@ impl EntityTracker {
                 ClientPlatform::Bedrock(client) => !client.is_current_protocol(),
             })
         {
-            return false;
+            return None;
         }
         if recipients.clone().next().is_none() {
-            return true;
+            return Some(true);
         }
 
-        let mut java_packets = Vec::with_capacity(expired.len());
+        let mut java_packets =
+            Vec::with_capacity(expired.len() + usize::from(java_metadata.is_some()));
         let mut bedrock_packets = Vec::with_capacity(expired.len());
         for effect in expired {
             let (java, bedrock) = World::mob_effect_removal_packets(entity.entity_id, effect);
-            let Ok(java) = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION)
-            else {
-                return false;
-            };
+            let java = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?;
             let mut bytes = Vec::new();
-            if BedrockClient::write_raw_packet(&bedrock, &mut bytes).is_err() {
-                return false;
-            }
+            BedrockClient::write_raw_packet(&bedrock, &mut bytes).ok()?;
             java_packets.push(java);
             bedrock_packets.push(Bytes::from(bytes));
+        }
+        if let Some(metadata) = java_metadata {
+            let packet = CSetEntityMetadata::new(entity.entity_id.into(), metadata);
+            java_packets
+                .push(JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION).ok()?);
         }
 
         // The caller still holds the active effects and edit guards. Pairing
         // is pinned until these removals have been queued for the same viewers.
+        let mut all_java_queued = true;
         for player in recipients {
             match player.client.as_ref() {
                 ClientPlatform::Java(client) => {
                     if client.try_enqueue_current_packet_batch(&java_packets) {
                         java_recipients.insert(client.id, player.client.clone());
+                    } else {
+                        all_java_queued = false;
                     }
                 }
                 ClientPlatform::Bedrock(client) => {
@@ -1961,7 +1964,7 @@ impl EntityTracker {
                 }
             }
         }
-        true
+        Some(all_java_queued)
     }
 
     pub(super) fn try_publish_regional_drop_move(

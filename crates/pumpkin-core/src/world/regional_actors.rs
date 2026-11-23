@@ -362,13 +362,14 @@ impl World {
                             && base.chunk_pos.load() == chunk
                             && owns(chunk)
                     },
-                    |expired| {
+                    |expired, java_metadata| {
                         self.entity_tracker
                             .try_publish_regional_mob_effect_removals(
                                 self,
                                 server,
                                 base,
                                 expired,
+                                java_metadata,
                                 &mut java_recipients,
                             )
                     },
@@ -593,7 +594,7 @@ mod tests {
                 duration: 2,
                 amplifier: 0,
                 ambient: false,
-                show_particles: false,
+                show_particles: true,
                 show_icon: true,
                 blend: false,
             });
@@ -647,7 +648,7 @@ mod tests {
         assert_eq!(remaining(), Some(1));
         step(1, deadline(2));
         assert_eq!(remaining(), Some(0));
-        assert!(living.advance_regional_effects(deadline(3), || true, |_| false));
+        assert!(living.advance_regional_effects(deadline(3), || true, |_, _| None));
         assert_eq!(remaining(), Some(0));
         tick_actor_with_deadline(base.entity_id, Some(deadline(3)), || {
             pig.tick(pig.as_ref(), &server);

@@ -4735,6 +4735,11 @@ impl Entity {
         let tracked = (self.entity_type != &EntityType::PLAYER)
             .then(|| world.entity_tracker.get_tracked_entity(self.entity_id))
             .flatten();
+        // Order the world metadata snapshot and send with regional effect expiry.
+        let _effect_edit = tracked
+            .as_ref()
+            .and_then(|tracked| tracked.entity.get_living_entity())
+            .and_then(LivingEntity::hold_mob_effect_edit);
 
         // Unwatched, skip the player scan.
         if tracked
@@ -4745,18 +4750,18 @@ impl Entity {
             return;
         }
 
-        let version = CURRENT_MC_VERSION;
-        let is_horse = self.entity_type == &EntityType::HORSE;
-        let (bytes, health_changed) = if is_horse {
-            // Edits made by packet callbacks belong to the next publication.
-            self.synched_data
-                .take_dirty_for_version(version, tracked_data::living_entity::DATA_HEALTH_ID)
-        } else {
-            (self.synched_data.pack_dirty_for_version(&version), false)
-        };
+        // Edits made by packet callbacks belong to the next publication.
+        let (bytes, health_changed) = self.synched_data.take_dirty_for_version(
+            CURRENT_MC_VERSION,
+            tracked_data::living_entity::DATA_HEALTH_ID,
+        );
         let bedrock_health = tracked
             .as_ref()
-            .filter(|tracked| health_changed && tracked.has_bedrock_watchers())
+            .filter(|tracked| {
+                self.entity_type == &EntityType::HORSE
+                    && health_changed
+                    && tracked.has_bedrock_watchers()
+            })
             .and_then(|tracked| {
                 tracked
                     .entity
@@ -4766,9 +4771,6 @@ impl Entity {
         if let Some(buf) = bytes {
             let packet = CSetEntityMetadata::new(self.entity_id.into(), buf);
             self.send_java_metadata_packet(&world, &packet);
-        }
-        if !is_horse {
-            self.synched_data.clear_dirty();
         }
         if let Some((tracked, packet)) = bedrock_health {
             tracked.send_to_tracking_players_bedrock(&packet, &world);

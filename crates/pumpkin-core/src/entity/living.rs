@@ -178,6 +178,21 @@ struct EffectParticle {
 #[derive(Clone)]
 struct EffectParticles(Vec<EffectParticle>);
 
+impl EffectParticles {
+    fn from_effects<'a>(effects: impl Iterator<Item = &'a Effect>) -> (Self, Option<bool>) {
+        let mut particles = Vec::new();
+        let mut ambient = None;
+        for effect in effects {
+            let ambient = ambient.get_or_insert(true);
+            if effect.show_particles {
+                *ambient &= effect.ambient;
+                particles.push(EffectParticle::from_effect(effect));
+            }
+        }
+        (Self(particles), ambient)
+    }
+}
+
 impl MetadataSerializer for EffectParticles {
     fn write_metadata(
         &self,
@@ -1743,23 +1758,15 @@ impl LivingEntity {
             .active_effects
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let has_effects = !effects.is_empty();
-        let particles = EffectParticles(
-            effects
-                .values()
-                .filter(|effect| effect.show_particles)
-                .map(EffectParticle::from_effect)
-                .collect(),
-        );
-        let ambient = effects
-            .values()
-            .filter(|effect| effect.show_particles)
-            .all(|effect| effect.ambient);
+        let (particles, ambient) = EffectParticles::from_effects(effects.values());
         drop(effects);
+        self.set_effect_particles(particles, ambient);
+    }
 
+    fn set_effect_particles(&self, particles: EffectParticles, ambient: Option<bool>) {
         self.entity
             .set_synced_data(tracked_data::living_entity::EFFECT_PARTICLES, particles);
-        if has_effects {
+        if let Some(ambient) = ambient {
             self.entity
                 .set_synced_data(tracked_data::living_entity::EFFECT_AMBIENCE_ID, ambient);
         }
@@ -3235,7 +3242,7 @@ impl LivingEntity {
         }
     }
 
-    fn hold_mob_effect_edit(&self) -> Option<RwLockReadGuard<'_, ()>> {
+    pub(super) fn hold_mob_effect_edit(&self) -> Option<RwLockReadGuard<'_, ()>> {
         // World callers may reenter through a packet observer. Only the regional
         // expiry takes the writer, with a nonblocking acquisition and no callbacks.
         self.entity.entity_type.mob.then(|| {
@@ -3247,8 +3254,7 @@ impl LivingEntity {
 
     fn effect_can_expire_on_region(effect: &Effect) -> bool {
         let kind = effect.effect_type;
-        !effect.show_particles
-            && kind.attribute_modifiers.is_empty()
+        kind.attribute_modifiers.is_empty()
             && kind != &StatusEffect::ABSORPTION
             && kind != &StatusEffect::HEALTH_BOOST
             && kind != &StatusEffect::INVISIBILITY
@@ -3305,7 +3311,7 @@ impl LivingEntity {
         &self,
         deadline: TickDeadline,
         owns: impl FnOnce() -> bool,
-        publish_expirations: impl FnOnce(&[&'static StatusEffect]) -> bool,
+        publish_expirations: impl FnOnce(&[&'static StatusEffect], Option<Box<[u8]>>) -> Option<bool>,
     ) -> bool {
         if !self.is_alive() {
             return false;
@@ -3350,7 +3356,7 @@ impl LivingEntity {
     fn expire_regional_mob_effects(
         &self,
         effects: &mut FxHashMap<&'static StatusEffect, Effect>,
-        publish: impl FnOnce(&[&'static StatusEffect]) -> bool,
+        publish: impl FnOnce(&[&'static StatusEffect], Option<Box<[u8]>>) -> Option<bool>,
     ) -> bool {
         let Ok(_edit) = self.mob_effect_edit.try_write() else {
             return false;
@@ -3359,7 +3365,22 @@ impl LivingEntity {
             .values()
             .filter_map(|effect| (effect.duration == 0).then_some(effect.effect_type))
             .collect();
-        if !publish(&expired) {
+        let visible_expiration = effects
+            .values()
+            .any(|effect| effect.duration == 0 && effect.show_particles);
+        let published = if visible_expiration {
+            let (particles, ambient) = EffectParticles::from_effects(
+                effects.values().filter(|effect| effect.duration != 0),
+            );
+            self.entity
+                .synched_data
+                .try_publish_effect_particles(particles, ambient, |metadata| {
+                    publish(&expired, metadata)
+                })
+        } else {
+            publish(&expired, None).is_some()
+        };
+        if !published {
             return false;
         }
         for kind in &expired {
@@ -4046,6 +4067,36 @@ impl LivingEntity {
         }
     }
 
+    fn read_saved_effects(&self, nbt: &NbtCompound) {
+        let mut read_effects = Vec::new();
+        for effect in nbt.get_list("active_effects").unwrap_or_default() {
+            if let NbtTag::Compound(effect_nbt) = effect {
+                if let Some(mut effect) = Effect::create_from_nbt(&mut effect_nbt.clone()) {
+                    effect.blend = true; // TODO: change, is taken from effect give command
+                    read_effects.push((effect.effect_type, effect));
+                } else {
+                    warn!("Unable to read effect from nbt");
+                }
+            }
+        }
+        let _effect_edit = self.hold_mob_effect_edit();
+        let mut active_effects = self
+            .active_effects
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let update_particles = active_effects.values().any(|effect| effect.show_particles)
+            || read_effects.iter().any(|(_, effect)| effect.show_particles);
+        active_effects.clear();
+        active_effects.extend(read_effects);
+        if update_particles {
+            let (particles, ambient) = EffectParticles::from_effects(active_effects.values());
+            self.set_effect_particles(particles, ambient);
+        }
+        self.refresh_mob_effect_work(&active_effects);
+        self.entity
+            .set_glowing_from_effect(active_effects.contains_key(&StatusEffect::GLOWING));
+    }
+
     pub fn read_living_nbt_non_mut(&self, nbt: &NbtCompound) {
         // Load fall distance, but if this entity is currently marked dead ensure we don't restore
         // a lethal fall distance that would immediately re-kill on spawn.
@@ -4067,27 +4118,7 @@ impl LivingEntity {
         if let Some(packed) = nbt.get_list("attributes") {
             apply_attributes(self, packed);
         }
-
-        let mut read_effects = Vec::new();
-        for effect in nbt.get_list("active_effects").unwrap_or_default() {
-            if let NbtTag::Compound(effect_nbt) = effect {
-                if let Some(mut effect) = Effect::create_from_nbt(&mut effect_nbt.clone()) {
-                    effect.blend = true; // TODO: change, is taken from effect give command
-                    read_effects.push((effect.effect_type, effect));
-                } else {
-                    warn!("Unable to read effect from nbt");
-                }
-            }
-        }
-        let mut active_effects = self
-            .active_effects
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        active_effects.clear();
-        active_effects.extend(read_effects);
-        self.refresh_mob_effect_work(&active_effects);
-        self.entity
-            .set_glowing_from_effect(active_effects.contains_key(&StatusEffect::GLOWING));
+        self.read_saved_effects(nbt);
 
         // Vanilla LivingEntity.readAdditionalSaveData defaults to the mob's own max health,
         // not a flat 20; a hoglin (40 max) or iron golem (100 max) with no saved Health would

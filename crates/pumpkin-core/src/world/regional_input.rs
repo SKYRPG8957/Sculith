@@ -141,7 +141,7 @@ impl RegionalInput {
                 && world.regional_actors.try_read().map_or(true, |_layout| {
                     player
                         .living_entity
-                        .advance_regional_effects(deadline, owns_player, |_| false)
+                        .advance_regional_effects(deadline, owns_player, |_, _| None)
                 })
             {
                 pending |= RegionalWork::STATUS_EFFECTS;

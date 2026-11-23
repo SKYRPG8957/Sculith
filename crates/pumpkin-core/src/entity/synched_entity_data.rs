@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bytes::BufMut;
 use pumpkin_data::meta_data_type::MetaDataType;
-use pumpkin_data::tracked_data::{TrackedData, TrackedId};
+use pumpkin_data::packet::CURRENT_MC_VERSION;
+use pumpkin_data::tracked_data::{TrackedData, TrackedId, living_entity};
 use pumpkin_protocol::java::client::play::{Metadata, MetadataSerializer};
 use pumpkin_protocol::ser::WritingError;
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -55,6 +56,23 @@ pub struct DataItem {
     pub is_default: bool,
 }
 
+impl DataItem {
+    fn new<T: MetadataSerializer + Clone + Send + Sync + 'static>(
+        tracked: TrackedData,
+        value: T,
+        is_default: bool,
+    ) -> Self {
+        let holder = SerializerHolder { value };
+        Self {
+            tracked,
+            canonical_bytes: holder.write_canonical(tracked.id, tracked.r#type),
+            serializer: Box::new(holder),
+            dirty: !is_default,
+            is_default,
+        }
+    }
+}
+
 pub struct SynchedEntityData {
     items: Mutex<HashMap<TrackedData, DataItem>>,
     is_dirty: AtomicBool,
@@ -83,22 +101,12 @@ impl SynchedEntityData {
         tracked: TrackedData,
         value: T,
     ) {
-        let holder = SerializerHolder { value };
-        let canonical_bytes = holder.write_canonical(tracked.id, tracked.r#type);
+        let item = DataItem::new(tracked, value, true);
         let mut items = self
             .items
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        items.insert(
-            tracked,
-            DataItem {
-                tracked,
-                serializer: Box::new(holder),
-                canonical_bytes,
-                dirty: false,
-                is_default: true,
-            },
-        );
+        items.insert(tracked, item);
     }
 
     /// Stores a tracked value and marks it dirty, returning whether it differs from
@@ -175,6 +183,49 @@ impl SynchedEntityData {
         (bytes, watched_dirty)
     }
 
+    /// Updates the effect fields after the regional sender accepts the update.
+    /// The sender reports whether every Java viewer queued it. Undelivered
+    /// fields stay dirty for the ordinary tracker pass.
+    pub(super) fn try_publish_effect_particles<
+        T: MetadataSerializer + Clone + Send + Sync + 'static,
+    >(
+        &self,
+        particles: T,
+        ambient: Option<bool>,
+        publish: impl FnOnce(Option<Box<[u8]>>) -> Option<bool>,
+    ) -> bool {
+        let Ok(mut items) = self.items.try_lock() else {
+            return false;
+        };
+        let changes: Vec<_> = [
+            Some(DataItem::new(
+                living_entity::EFFECT_PARTICLES,
+                particles,
+                false,
+            )),
+            ambient.map(|ambient| DataItem::new(living_entity::EFFECT_AMBIENCE_ID, ambient, false)),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|change| {
+            items.get(&change.tracked).is_none_or(|current| {
+                current.dirty || current.canonical_bytes != change.canonical_bytes
+            })
+        })
+        .collect();
+        let bytes = Self::pack_values(changes.iter(), CURRENT_MC_VERSION);
+        let Some(delivered) = publish(bytes) else {
+            return false;
+        };
+        for mut change in changes {
+            change.dirty = !delivered;
+            items.insert(change.tracked, change);
+        }
+        self.is_dirty
+            .store(items.values().any(|item| item.dirty), Ordering::Release);
+        true
+    }
+
     fn pack_values<'a>(
         items: impl Iterator<Item = &'a DataItem>,
         version: JavaMinecraftVersion,
@@ -235,8 +286,42 @@ impl SynchedEntityData {
 #[cfg(test)]
 mod test {
     use pumpkin_data::tracked_data::player::PLAYER_MODE_CUSTOMISATION;
+    use pumpkin_protocol::codec::var_int::VarInt;
 
     use super::*;
+
+    #[test]
+    fn regional_particle_publication_only_consumes_delivered_effect_fields() {
+        let data = SynchedEntityData::new();
+        let particles = living_entity::EFFECT_PARTICLES;
+        let ambient = living_entity::EFFECT_AMBIENCE_ID;
+        data.set(PLAYER_MODE_CUSTOMISATION, 0x7fu8);
+        data.set(particles, VarInt(0));
+        data.set(ambient, false);
+        let before = data.pack_dirty_for_version(&CURRENT_MC_VERSION);
+
+        assert!(!data.try_publish_effect_particles(VarInt(0), Some(true), |_| None));
+        assert_eq!(data.pack_dirty_for_version(&CURRENT_MC_VERSION), before);
+
+        let mut expected = DataItem::new(particles, VarInt(0), false).canonical_bytes;
+        expected.extend(DataItem::new(ambient, true, false).canonical_bytes);
+        expected.push(255);
+        assert!(
+            data.try_publish_effect_particles(VarInt(0), Some(true), |bytes| {
+                assert_eq!(bytes.as_deref(), Some(expected.as_slice()));
+                Some(true)
+            })
+        );
+        let items = data.items.lock().unwrap();
+        assert!(items[&PLAYER_MODE_CUSTOMISATION].dirty);
+        assert!(!items[&particles].dirty && !items[&ambient].dirty);
+        drop(items);
+
+        assert!(data.try_publish_effect_particles(VarInt(0), Some(false), |_| Some(false)));
+        let items = data.items.lock().unwrap();
+        assert!(items[&PLAYER_MODE_CUSTOMISATION].dirty && items[&ambient].dirty);
+        assert!(!items[&particles].dirty);
+    }
 
     /// Metadata ids no longer vary per version: core serializes the current format for
     /// every client and `pumpkin-java-multiversion` translates. So the senders need no

@@ -357,12 +357,14 @@ state, which also supplies player saves.
 The same passive countdown can run on the region that owns a living mob.
 Its assignment changes with its chunk, and its remaining durations and deadline
 travel with the actor. The old owner checks the current assignment and loaded
-chunk before taking a step. The owner may remove a hidden passive effect after
-its last tick and queue removal for its Java and Bedrock viewers. The active
-effects lock and an edit permit order the removal with effect reapplication.
-The world processes periodic effects, removals with attribute or metadata
-changes, and removals that need packet observers or translation. Both paths
-share the same deadline to prevent a second step after a handoff.
+chunk before taking a step. The owner may remove a passive effect after its last
+tick and queue removal for its Java and Bedrock viewers. For visible effects,
+it includes Java particle metadata for the remaining effects in the same batch.
+Unsent particle metadata is kept for the next world tracker pass. The active
+effects lock and an edit permit order removals, metadata and reapplication.
+The world processes periodic effects, removals that alter attributes or entity
+flags, and removals that need packet observers or translation. Both paths share
+the same deadline to prevent a second step after a handoff.
 
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the
