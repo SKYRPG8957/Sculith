@@ -5732,10 +5732,14 @@ impl Player {
     }
 
     pub fn set_saturation(&self, saturation: f32) {
-        let abilities = self.lock_abilities_and_hunger();
-        self.hunger_manager.set_saturation(saturation);
-        drop(abilities);
+        self.record_saturation(saturation);
         self.send_health();
+    }
+
+    /// Records saturation before a synchronous Wasm import is ready to send packets.
+    pub fn record_saturation(&self, saturation: f32) {
+        let _abilities = self.lock_abilities_and_hunger();
+        self.hunger_manager.set_saturation(saturation);
     }
 
     pub fn set_allow_flight(&self, allow: bool) {
@@ -5786,11 +5790,16 @@ impl Player {
     }
 
     pub fn set_exhaustion(&self, exhaustion: f32) {
+        self.record_exhaustion(exhaustion);
+        self.send_health();
+    }
+
+    /// Records exhaustion and wakes its owner before a Wasm import publishes health.
+    pub fn record_exhaustion(&self, exhaustion: f32) {
         let abilities = self.lock_abilities_and_hunger();
         self.hunger_manager.set_exhaustion(exhaustion);
         drop(abilities);
         self.hunger_manager.offer_regional_drain(self);
-        self.send_health();
     }
 
     pub fn get_absorption(&self) -> f32 {

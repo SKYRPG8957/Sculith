@@ -32,7 +32,7 @@ use pumpkin_core::{
     entity::{
         EntityBase,
         player::{
-            TitleMode,
+            Player as CorePlayer, TitleMode,
             advancement::{AdvancementAward, PlayerAdvancement},
         },
     },
@@ -2362,25 +2362,9 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         Ok(player.living_entity.health.load())
     }
 
-    fn set_health(&mut self, player: Resource<Player>, health: f32) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.set_health(health);
-        Ok(())
-    }
-
     fn get_max_health(&mut self, player: Resource<Player>) -> wasmtime::Result<f32> {
         let player = self.get(&player)?;
         Ok(player.living_entity.get_max_health())
-    }
-
-    fn set_max_health(
-        &mut self,
-        player: Resource<Player>,
-        max_health: f32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.set_max_health(max_health);
-        Ok(())
     }
 
     fn get_food_level(&mut self, player: Resource<Player>) -> wasmtime::Result<u8> {
@@ -2393,44 +2377,14 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         Ok(player.hunger_manager.saturation.load())
     }
 
-    fn set_saturation(
-        &mut self,
-        player: Resource<Player>,
-        saturation: f32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.set_saturation(saturation);
-        Ok(())
-    }
-
     fn get_exhaustion(&mut self, player: Resource<Player>) -> wasmtime::Result<f32> {
         let player = self.get(&player)?;
         Ok(player.get_exhaustion())
     }
 
-    fn set_exhaustion(
-        &mut self,
-        player: Resource<Player>,
-        exhaustion: f32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.set_exhaustion(exhaustion);
-        Ok(())
-    }
-
     fn get_absorption(&mut self, player: Resource<Player>) -> wasmtime::Result<f32> {
         let player = self.get(&player)?;
         Ok(player.get_absorption())
-    }
-
-    fn set_absorption(
-        &mut self,
-        player: Resource<Player>,
-        absorption: f32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.set_absorption(absorption);
-        Ok(())
     }
 
     fn get_experience_level(&mut self, player: Resource<Player>) -> wasmtime::Result<i32> {
@@ -2796,7 +2750,101 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     }
 }
 
+fn set_player_attribute(
+    mut host: Access<'_, PluginHostState, HasSelf<PluginHostState>>,
+    player: &Resource<Player>,
+    value: f32,
+    record: fn(&CorePlayer, f32),
+    publish: fn(&CorePlayer),
+) -> wasmtime::Result<()> {
+    let player = host.get().get(player)?.clone();
+    record(&player, value);
+    // A synchronous import must return before packet observers can borrow this store.
+    drop(host.spawn(async move |accessor| {
+        run_blocking(accessor, move || {
+            if !player.client.closed() {
+                publish(&player);
+            }
+        })
+        .await
+    })?);
+    Ok(())
+}
+
 impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<PluginHostState> {
+    fn set_health(
+        host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        health: f32,
+    ) -> wasmtime::Result<()> {
+        set_player_attribute(
+            host,
+            &player,
+            health,
+            |player, health| player.living_entity.set_health(health),
+            CorePlayer::send_health,
+        )
+    }
+
+    fn set_max_health(
+        host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        max_health: f32,
+    ) -> wasmtime::Result<()> {
+        set_player_attribute(
+            host,
+            &player,
+            max_health,
+            |player, health| player.living_entity.record_max_health(health),
+            |player| {
+                player.living_entity.send_max_health();
+                player.send_health();
+            },
+        )
+    }
+
+    fn set_saturation(
+        host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        saturation: f32,
+    ) -> wasmtime::Result<()> {
+        set_player_attribute(
+            host,
+            &player,
+            saturation,
+            CorePlayer::record_saturation,
+            CorePlayer::send_health,
+        )
+    }
+
+    fn set_exhaustion(
+        host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        exhaustion: f32,
+    ) -> wasmtime::Result<()> {
+        set_player_attribute(
+            host,
+            &player,
+            exhaustion,
+            CorePlayer::record_exhaustion,
+            CorePlayer::send_health,
+        )
+    }
+
+    fn set_absorption(
+        host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        absorption: f32,
+    ) -> wasmtime::Result<()> {
+        set_player_attribute(
+            host,
+            &player,
+            absorption,
+            |player, absorption| player.living_entity.record_absorption(absorption),
+            |player| player.living_entity.send_absorption(),
+        )
+    }
+
     fn start_cooldown(
         mut host: Access<'_, PluginHostState, Self>,
         player: Resource<Player>,

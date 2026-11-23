@@ -357,6 +357,12 @@ host can run packet observers during the send. The 0.2 host sends from a task
 after its synchronous setter returns, and its packet observers can read the
 typed category and duration.
 
+The Wasm player setters for health, maximum health, absorption, saturation
+and exhaustion also support packet observers registered by the calling plugin.
+The 0.1 host services those observers before returning from the import.
+The synchronous 0.2 imports record the change immediately and publish current
+attributes from a store task through the normal packet callbacks.
+
 Native Bedrock survival mining accrues elapsed ticks on the player's region
 when that extent owns both the player and block. World steps and regional
 steps share a deadline stamp. The world checks the live block, mining

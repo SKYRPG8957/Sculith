@@ -1284,20 +1284,31 @@ impl LivingEntity {
 
     /// Sets the maximum health for this entity
     pub fn set_max_health(&self, max_health: f32) {
+        self.update_max_health(max_health, || self.send_max_health());
+    }
+
+    /// Records a maximum-health change before a synchronous Wasm import can publish it.
+    pub fn record_max_health(&self, max_health: f32) {
+        self.update_max_health(max_health, || {});
+    }
+
+    fn update_max_health(&self, max_health: f32, updated_attribute: impl FnOnce()) {
         // Update base attribute
         self.set_attribute_base(&Attributes::MAX_HEALTH, max_health as f64);
-
-        // Broadcast the attribute change
-        crate::entity::attributes::send_attribute_updates_for_living(
-            self,
-            vec![Attributes::MAX_HEALTH],
-        );
+        updated_attribute();
 
         // Clamp current health to new max if needed and send metadata update
         let current_health = self.health.load();
         if current_health > max_health {
             self.set_health(max_health);
         }
+    }
+
+    pub fn send_max_health(&self) {
+        crate::entity::attributes::send_attribute_updates_for_living(
+            self,
+            vec![Attributes::MAX_HEALTH],
+        );
     }
 
     /// Returns the current absorption amount for this entity (yellow hearts)
@@ -1307,24 +1318,35 @@ impl LivingEntity {
 
     /// Sets the current absorption amount for this entity (yellow hearts)
     pub fn set_absorption(&self, new_abs: f32) {
+        self.update_absorption(new_abs, || self.send_absorption());
+    }
+
+    /// Records absorption before a synchronous Wasm import can publish it.
+    pub fn record_absorption(&self, new_abs: f32) {
+        self.update_absorption(new_abs, || {});
+    }
+
+    fn update_absorption(&self, new_abs: f32, updated_attribute: impl FnOnce()) {
         // Must be at least 0
         let new_abs = new_abs.max(0.0);
 
         // Set local state
         self.absorption.store(new_abs);
 
-        // Broadcast attribute update for max_absorption so clients receive
-        // the updated absorption value via the attribute packet.
-        crate::entity::attributes::send_attribute_updates_for_living(
-            self,
-            vec![Attributes::MAX_ABSORPTION],
-        );
+        updated_attribute();
 
         // Send absorption metadata for players (visual yellow hearts)
         if self.entity.entity_type == &EntityType::PLAYER {
             self.entity
                 .set_synced_data(tracked_data::player::DATA_PLAYER_ABSORPTION_ID, new_abs);
         }
+    }
+
+    pub fn send_absorption(&self) {
+        crate::entity::attributes::send_attribute_updates_for_living(
+            self,
+            vec![Attributes::MAX_ABSORPTION],
+        );
     }
 
     /// Convenience helper to mutate an attribute instance. Automatically inserts
