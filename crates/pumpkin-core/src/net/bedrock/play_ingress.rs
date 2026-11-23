@@ -908,8 +908,8 @@ mod tests {
         verify_mining_clock(&world, &server, &player, &client, west).await;
         verify_stationary_inputs(&world, &player, &client, west);
         verify_stationary_turns(&world, &player, &client, west);
-        verify_grounded_walks(&world, &player, &client, west);
         verify_chunk_delivery_clock(&client);
+        verify_grounded_walks(&world, &player, &client, west);
         verify_teleport_acknowledgement(&world, &player, &client, west);
 
         world.players.store(Arc::default());
