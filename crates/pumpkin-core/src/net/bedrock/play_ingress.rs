@@ -629,7 +629,7 @@ mod tests {
         VarULong(base.entity_id as u64).write(&mut payload).unwrap();
         VarInt(1).write(&mut payload).unwrap();
         VarInt(0).write(&mut payload).unwrap();
-        0_u8.write(&mut payload).unwrap();
+        payload.push(0);
         NetworkItemDescriptor::default()
             .write(&mut payload)
             .unwrap();
