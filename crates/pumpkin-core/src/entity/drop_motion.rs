@@ -279,8 +279,11 @@ impl ItemEntity {
             max,
             owns,
             |read| {
-                let (collision, slipperiness) =
-                    regional_item_collision(world, bounds, movement, min, max, read)?;
+                let collision = regional_floor_collision(world, bounds, movement, min, max, read)?;
+                let slipperiness = match collision.supporting {
+                    Some(floor) => Some(read(floor)?.to_block().slipperiness),
+                    None => None,
+                };
                 let position = origin + collision.movement;
                 let next_bounds = if position == origin {
                     bounds
@@ -290,7 +293,10 @@ impl ItemEntity {
                     Entity::make_bounding_box(entity.entity_type, position, &dimensions)
                 };
                 let velocity = if moves {
-                    regional_item_velocity(movement, &collision, slipperiness)
+                    Self::velocity_after_motion(
+                        velocity_after_inert_floor(movement.y, &collision),
+                        slipperiness,
+                    )
                 } else {
                     velocity
                 };
@@ -337,75 +343,109 @@ impl ExperienceOrbEntity {
     ) {
         let entity = self.get_entity();
         let advance = |clock: &mut DropClock| {
-            if self.has_expired() || self.has_follow_target() || entity.on_ground.load(Relaxed) {
+            if self.has_expired() || self.has_follow_target() {
                 return;
             }
-            let movement = entity
-                .velocity
-                .load()
-                .add_raw(0.0, -self.get_gravity(), 0.0);
-            let distance_squared = movement.length_squared();
-            if !(distance_squared > 0.0 && distance_squared <= 1.0) {
-                return;
-            }
-            let position = entity.pos.load() + movement;
-            let bounds = Entity::make_bounding_box(
-                entity.entity_type,
-                position,
-                &entity.entity_dimension.load(),
-            );
-            let swept = entity.bounding_box.load().minmax(&bounds);
-            let min = BlockPos::floored_v(swept.min.add_raw(0.0, -COLLISION_LOOK_BELOW, 0.0));
-            let max = swept.max_block_pos();
-            let destination = BlockPos::floored_v(position);
-            world
-                .level
-                .try_with_clear_regional_path(min, max, destination, owns, |biome| {
-                    let radius = Self::FOLLOW_RANGE;
-                    world.entity_index.try_move_isolated_drop(
-                        world,
-                        entity.entity_id,
-                        swept,
-                        swept.expand(radius, radius, radius),
-                        bounds,
-                        || {
-                            if !owns(chunk) || !clock.claim(DropTickOwner::Region(owner), deadline)
-                            {
-                                return false;
-                            }
-                            DropMotionUpdate {
-                                position,
-                                bounds,
-                                collision: Some(Collision::free(movement)),
-                                velocity: movement * f64::from(Self::AIR_DRAG),
-                            }
-                            .apply(entity, biome);
-                            let age = self.advance_age();
-                            tracing::trace!(
-                                entity = entity.entity_id,
-                                region = owner,
-                                age,
-                                "Advanced experience orb on its region"
-                            );
-                            true
-                        },
-                    );
-                });
+            self.try_apply_regional_motion(world, owns, owner, || {
+                owns(chunk) && clock.claim(DropTickOwner::Region(owner), deadline)
+            });
         };
         entity.with_regional_drop_motion(world, chunk, owner, deadline, advance, publish);
     }
+
+    fn try_apply_regional_motion(
+        &self,
+        world: &World,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+        owner: RegionId,
+        claim: impl FnOnce() -> bool,
+    ) {
+        let entity = self.get_entity();
+        let movement = entity
+            .velocity
+            .load()
+            .add_raw(0.0, -self.get_gravity(), 0.0);
+        let distance_squared = movement.length_squared();
+        if !(distance_squared > 0.0 && distance_squared <= 1.0) {
+            return;
+        }
+        let origin = entity.pos.load();
+        let bounds = entity.bounding_box.load();
+        let dimensions = entity.entity_dimension.load();
+        let end = Entity::make_bounding_box(entity.entity_type, origin + movement, &dimensions);
+        let swept = bounds.stretch(movement).minmax(&end);
+        let min = BlockPos::floored_v(swept.min.add_raw(0.0, -COLLISION_LOOK_BELOW, 0.0));
+        let max = swept.max_block_pos();
+        world.level.try_with_regional_path(
+            min,
+            max,
+            owns,
+            |read| {
+                let collision = regional_floor_collision(world, bounds, movement, min, max, read)?;
+                let position = origin + collision.movement;
+                let slipperiness = match collision.supporting {
+                    Some(mut floor) => {
+                        floor.0.y = (position.y - Self::GROUND_FRICTION_OFFSET).floor() as i32;
+                        Some(read(floor)?.to_block().slipperiness)
+                    }
+                    None => None,
+                };
+                let velocity = self.velocity_after_motion(
+                    velocity_after_inert_floor(movement.y, &collision),
+                    movement.y,
+                    slipperiness,
+                );
+                let step = DropMotionUpdate {
+                    position,
+                    bounds: Entity::make_bounding_box(entity.entity_type, position, &dimensions),
+                    collision: Some(collision),
+                    velocity,
+                };
+                Some((BlockPos::floored_v(position), step))
+            },
+            |step, biome| {
+                let radius = Self::FOLLOW_RANGE;
+                world.entity_index.try_move_isolated_drop(
+                    world,
+                    entity.entity_id,
+                    swept,
+                    swept.expand(radius, radius, radius),
+                    step.bounds,
+                    || {
+                        if !claim() {
+                            return false;
+                        }
+                        let grounded = step
+                            .collision
+                            .as_ref()
+                            .is_some_and(|collision| collision.supporting.is_some());
+                        step.apply(entity, biome);
+                        let age = self.advance_age();
+                        tracing::trace!(
+                            entity = entity.entity_id,
+                            region = owner,
+                            age,
+                            grounded,
+                            "Advanced experience orb on its region"
+                        );
+                        true
+                    },
+                );
+            },
+        );
+    }
 }
 
-/// Air and inert full blocks below the item need no fluid, contact or fall callbacks.
+/// Air and inert full blocks below the drop need no fluid, contact or fall callbacks.
 #[expect(clippy::float_cmp)]
-fn regional_item_collision(
+fn regional_floor_collision(
     world: &World,
     bounds: BoundingBox,
     movement: Vector3<f64>,
     min: BlockPos,
     max: BlockPos,
     read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
-) -> Option<(Collision, Option<f32>)> {
+) -> Option<Collision> {
     let mut shapes = Vec::new();
     let mut positions = Vec::new();
     let swept = bounds.stretch(movement);
@@ -440,23 +480,15 @@ fn regional_item_collision(
     if shapes.iter().any(|shape| shape.intersects(&destination)) {
         return None;
     }
-    let slipperiness = match collision.supporting {
-        Some(floor) => Some(read(floor)?.to_block().slipperiness),
-        None => None,
-    };
-    Some((collision, slipperiness))
+    Some(collision)
 }
 
 #[expect(clippy::float_cmp)]
-fn regional_item_velocity(
-    movement: Vector3<f64>,
-    collision: &Collision,
-    slipperiness: Option<f32>,
-) -> Vector3<f64> {
+fn velocity_after_inert_floor(attempted_y: f64, collision: &Collision) -> Vector3<f64> {
     let mut velocity = collision.movement;
-    if movement.y != velocity.y {
+    if attempted_y != velocity.y {
         // The default full-block fall handler stops Y velocity without changing X or Z.
         velocity.y = 0.0;
     }
-    ItemEntity::velocity_after_motion(velocity, slipperiness)
+    velocity
 }

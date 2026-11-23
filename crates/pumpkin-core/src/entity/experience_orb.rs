@@ -31,6 +31,22 @@ pub struct ExperienceOrbEntity {
 }
 
 impl ExperienceOrbEntity {
+    pub(super) const GROUND_FRICTION_OFFSET: f64 = 0.999_999f32 as f64;
+
+    pub(super) fn velocity_after_motion(
+        &self,
+        moved: Vector3<f64>,
+        attempted_y: f64,
+        ground_slipperiness: Option<f32>,
+    ) -> Vector3<f64> {
+        let friction = Self::AIR_DRAG * ground_slipperiness.unwrap_or(1.0);
+        let mut velocity = moved * f64::from(friction);
+        if ground_slipperiness.is_some() && attempted_y < -self.get_gravity() {
+            velocity.y = -attempted_y * 0.4;
+        }
+        velocity
+    }
+
     pub(super) const AIR_DRAG: f32 = 0.98;
     pub(super) const FOLLOW_RANGE: f64 = 8.0;
     const DEFAULT_HEALTH: i32 = 5;
@@ -358,18 +374,15 @@ impl EntityBase for ExperienceOrbEntity {
 
         entity.tick_block_collisions(caller);
 
-        let on_ground = entity.on_ground.load(Ordering::Relaxed);
-        let mut friction = Self::AIR_DRAG;
-        if on_ground {
-            let pos = entity.get_pos_with_y_offset(f64::from(0.999_999f32)).0;
-            let block = entity.world.load().get_block(&pos);
-            friction *= block.slipperiness;
-        }
-        let mut velocity = entity.velocity.load() * f64::from(friction);
-        if on_ground && velo.y < -self.get_gravity() {
-            velocity.y = -velo.y * 0.4;
-        }
-        entity.velocity.store(velocity);
+        let slipperiness = entity.on_ground.load(Ordering::Relaxed).then(|| {
+            let (pos, ..) = entity.get_pos_with_y_offset(Self::GROUND_FRICTION_OFFSET);
+            entity.world.load().get_block(&pos).slipperiness
+        });
+        entity.velocity.store(self.velocity_after_motion(
+            entity.velocity.load(),
+            velo.y,
+            slipperiness,
+        ));
 
         if self.advance_age() > Self::LIFETIME {
             entity.remove();
@@ -469,6 +482,90 @@ fn orb_nbt_integer(nbt: &NbtCompound, name: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::VanillaData;
+    use pumpkin_config::{
+        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
+    };
+    use pumpkin_data::Block;
+    use pumpkin_util::math::position::BlockPos;
+    use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
+    use std::time::{Duration, Instant};
+
+    #[tokio::test]
+    async fn regional_floor_steps_match_world_landing_bounce_and_drag() {
+        let folder = tempfile::tempdir().unwrap();
+        let basic = BasicConfiguration {
+            default_level_name: folder.path().join("world").to_string_lossy().into_owned(),
+            allow_nether: false,
+            allow_end: false,
+            ..Default::default()
+        };
+        let mut advanced = AdvancedConfiguration::default();
+        advanced.world.generator = WorldPreset::Flat;
+        let server = Server::new(
+            basic,
+            advanced,
+            TelemetryConfig::default(),
+            VanillaData::default(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        let world = server.worlds.load()[0].clone();
+        let make_orb = |x| {
+            let position = Vector3::new(x + 0.5, 65.125, 8.5);
+            let floor = BlockPos::new(x as i32, 64, 8);
+            let chunk = floor.chunk_position();
+            world
+                .level
+                .loaded_chunks
+                .insert(chunk, ChunkData::empty_sync(chunk.x, chunk.y));
+            world.set_block_state(
+                &floor,
+                Block::STONE.default_state.id,
+                BlockFlags::FORCE_STATE,
+            );
+            let orb = Arc::new(ExperienceOrbEntity::new(
+                Entity::new(world.clone(), position, &EntityType::EXPERIENCE_ORB),
+                17,
+            ));
+            orb.entity.velocity.store(Vector3::new(0.125, -0.25, 0.0));
+            orb
+        };
+        let ordinary = make_orb(8.0);
+        let regional = make_orb(24.0);
+        world
+            .entities
+            .store(Arc::new(vec![ordinary.clone(), regional.clone()]));
+        let chunk = regional.entity.chunk_pos.load();
+        let start = Instant::now();
+        let period = Duration::from_millis(50);
+        for tick in 0..6 {
+            let step = TickDeadline {
+                at: start + period * tick,
+                period,
+            };
+            ordinary.tick_from_world(ordinary.as_ref(), &server, None);
+            regional.try_regional_orb_tick(&world, chunk, 0, step, &|pos| pos == chunk, || {});
+            regional.try_regional_orb_tick(&world, chunk, 0, step, &|pos| pos == chunk, || {});
+            assert_eq!(regional.orb_age.load(Ordering::Relaxed), tick + 1);
+            let a = ordinary.entity.pos.load().add_raw(16.0, 0.0, 0.0);
+            assert!(a.squared_distance_to_vec(&regional.entity.pos.load()) < 1e-18);
+            assert_eq!(
+                ordinary.entity.velocity.load(),
+                regional.entity.velocity.load()
+            );
+            assert_eq!(
+                ordinary.entity.on_ground.load(Ordering::Relaxed),
+                regional.entity.on_ground.load(Ordering::Relaxed),
+            );
+            if tick == 0 {
+                assert!(regional.entity.on_ground.load(Ordering::Relaxed));
+                assert!(regional.entity.velocity.load().y > 0.0);
+            }
+        }
+        server.shutdown().await;
+    }
 
     #[test]
     fn unstuck_selects_nearest_free_center_and_leaves_enclosed_orbs_in_place() {

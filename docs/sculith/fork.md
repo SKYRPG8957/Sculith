@@ -216,11 +216,12 @@ and expiry because native plugins can write live actor fields. Merge and despawn
 handlers use the world clock, as do coordinated steps and sprints. Saved items
 retain their remaining timers and last position.
 
-Experience orbs use the same region assignments and motion deadlines. An
-airborne orb with no follow target can advance a short path through loaded
-air if its region owns the sweep and the player index has no collector in
-range. The step applies gravity, drag and age together. The world handles
-nearby players, collisions, fluids and coordinated ticks. An expired orb can
+Experience orbs use the same region assignments and motion deadlines. An orb
+with no follow target can advance a short path through loaded air or land on
+inert full blocks if its region owns the sweep and the player index has no
+collector in range. The step applies gravity, collision, bounce, drag and age
+together. Block callbacks, partial collision shapes, fluids, nearby players
+and coordinated ticks use world processing. An expired orb can
 leave the registry and notify both editions on its region, using the shared
 drop removal path. Orb records keep their age and experience value across
 chunk retirement and restart. A restored orb starts on the next regional
