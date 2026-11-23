@@ -334,11 +334,14 @@ queues before new arrivals can enter them. An active region can register ready
 armor stands, dropped items, experience orbs and markers. It validates the
 current owner, pinned watchers, cached chunk and entity UUID registrations
 before consuming saved records.
-Regions also prepare unlinked cows, pigs, sheep and chickens in watched
-chunks. The world rechecks the resident chunk, type, UUID and position,
-applies the latest saved NBT, and registers and pairs the actors through its
-usual path. A changed record can fall back to construction on the world.
-Concurrent regions can share the entity snapshot permit while doing this work.
+Regions also restore persistent, unlinked cows, pigs, sheep and chickens
+when their terrain chunk is loaded and all saved actors in the entity chunk
+can be restored on the owner. The region rechecks the terrain entry and
+watchers before registering the actors and consuming their records. The
+world pairs these mobs with clients. Regions can prepare unlinked livestock
+for world registration in other chunks. The world rechecks the saved type,
+UUID and position, then applies the latest NBT. Concurrent regions can share
+the entity snapshot permit while doing this work.
 An eligible drop joins the current region's timer plan with its saved age
 and pickup delay. Its first timer step uses the next regional deadline.
 The timer assignment follows a subsequent move to another region. Item merge

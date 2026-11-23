@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, Mutex, PoisonError, TryLockError, Weak, atomic::Ordering::Relaxed},
 };
 
+use dashmap::try_result::TryResult;
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
@@ -119,15 +120,22 @@ impl Drop for EntityRegistration<'_> {
     }
 }
 
-fn regional_actor_position(record: &NbtCompound, chunk: Vector2<i32>) -> Option<Vector3<f64>> {
+fn regional_actor_position(
+    record: &NbtCompound,
+    chunk: Vector2<i32>,
+) -> Option<(Vector3<f64>, bool)> {
     let id = record.get_string("id")?;
-    if !matches!(
+    if matches!(
         id.strip_prefix("minecraft:").unwrap_or(id),
         "armor_stand" | "item" | "experience_orb" | "marker"
     ) {
+        return unlinked_saved_identity(record, chunk).map(|(_, position)| (position, false));
+    }
+    // Persistent livestock do not enter the world's natural spawn counts.
+    if record.get_bool("PersistenceRequired") != Some(true) {
         return None;
     }
-    unlinked_saved_identity(record, chunk).map(|(_, position)| position)
+    preparable_mob(record, chunk).map(|(_, _, position)| (position, true))
 }
 
 fn unlinked_saved_identity(
@@ -152,8 +160,8 @@ fn preparable_mob(
 ) -> Option<(&'static EntityType, Uuid, Vector3<f64>)> {
     let id = record.get_string("id")?;
     let kind = EntityType::from_name(id.strip_prefix("minecraft:").unwrap_or(id))?;
-    // Construction installs local goals and attributes. Reading NBT can send
-    // metadata or attach other actors, so that remains with world admission.
+    // Only these built-in mobs have had their constructors and restoration
+    // paths checked for regional use.
     if ![
         &EntityType::CHICKEN,
         &EntityType::COW,
@@ -426,12 +434,20 @@ impl World {
         else {
             return self.try_prepare_chunk_mobs(pos, &chunk, &records, owns);
         };
+        let terrain = if positions.iter().any(|&(_, needs_terrain)| needs_terrain) {
+            let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&pos) else {
+                return false;
+            };
+            Some(Arc::clone(loaded.value()))
+        } else {
+            None
+        };
         let schedules_drop = |entity: &dyn EntityBase| {
             let kind = entity.get_entity().entity_type;
             kind == &EntityType::EXPERIENCE_ORB || item_timers && kind == &EntityType::ITEM
         };
         let mut actors = Vec::with_capacity(records.len());
-        for (record, position) in records.iter().zip(positions) {
+        for (record, (position, _)) in records.iter().zip(positions) {
             let Some(entity) = load_entity_from_nbt(record, position, self) else {
                 return false;
             };
@@ -483,6 +499,18 @@ impl World {
         let Some(added) = self
             .level
             .try_with_watched_entity_chunk(pos, |current| {
+                // A replacement terrain chunk can change a restored mob's biome.
+                let _terrain = if let Some(terrain) = &terrain {
+                    let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&pos) else {
+                        return None;
+                    };
+                    if !Arc::ptr_eq(loaded.value(), terrain) {
+                        return None;
+                    }
+                    Some(loaded)
+                } else {
+                    None
+                };
                 if !Arc::ptr_eq(current, &chunk) || !owns(pos) || pending.remove(&pos).is_none() {
                     return None;
                 }
@@ -1074,6 +1102,72 @@ mod tests {
         assert!(saved.live.load(Relaxed));
         assert!(saved.data.lock().unwrap().is_empty());
         assert_eq!(world.entities.load().len(), 2);
+        world.level.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn the_region_registers_a_persistent_mob_from_watched_terrain_once() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = world(&folder);
+        let position = Vector3::new(160.5, 64.0, 8.5);
+        let pos = BlockPos::floored_v(position).chunk_position();
+        world.level.spawn_entity_generation(pos);
+        world.level.mark_chunks_as_newly_watched(&[pos]);
+        let chunk = world.level.get_entity_chunk_sync(&pos).unwrap();
+        let uuid = Uuid::new_v4();
+        let cow = from_type(&EntityType::COW, position, &world, uuid);
+        let mut record = NbtCompound::new();
+        cow.write_nbt(&mut record);
+        record.put_bool("PersistenceRequired", true);
+        record.put_bool("AgeLocked", true);
+        record.put_int("Age", -600);
+        record.put_float("Health", 6.0);
+        chunk.data.lock().unwrap().push(record);
+        world.queue_entity_chunk_changes([pos]);
+
+        let snapshot = world.entity_chunk_changes.snapshot.try_read().unwrap();
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        let owns = |chunk| chunk == pos;
+        assert!(!world.try_process_regional_chunk(pos, 0, deadline, false, &owns));
+        assert!(world.entity_chunk_changes.pending.lock().unwrap()[&pos].is_none());
+        world.level.loaded_chunks.insert(
+            pos,
+            pumpkin_world::chunk::ChunkData::empty_sync(pos.x, pos.y),
+        );
+        assert!(!world.try_process_regional_chunk(pos, 0, deadline, false, &|_| false));
+        assert!(world.get_entity_by_uuid(uuid).is_none());
+        assert!(!chunk.live.load(Relaxed));
+        assert_eq!(chunk.data.lock().unwrap().len(), 1);
+        assert!(world.try_process_regional_chunk(pos, 0, deadline, false, &owns));
+        assert!(chunk.live.load(Relaxed));
+        assert!(chunk.data.lock().unwrap().is_empty());
+        assert!(
+            world
+                .entity_chunk_changes
+                .pending
+                .lock()
+                .unwrap()
+                .is_empty()
+        );
+
+        let restored = world.get_entity_by_uuid(uuid).unwrap();
+        let mob = restored.get_mob().unwrap();
+        let age = mob.as_ageable().unwrap();
+        let id = restored.get_entity().entity_id;
+        assert_eq!(restored.get_entity().pos.load(), position);
+        assert!(age.is_baby() && age.is_age_locked());
+        assert_eq!(age.get_age(), -600);
+        assert_eq!(mob.get_mob_entity().living_entity.health.load(), 6.0);
+        assert!(!world.entity_tracker.has_entity_with_id(id));
+        drop(snapshot);
+
+        world.apply_entity_chunk_changes();
+        world.flush_regional_entity_updates();
+        assert!(world.entity_tracker.has_entity_with_id(id));
+        assert_eq!(world.entities.load().len(), 1);
         world.level.shutdown().await;
     }
 
