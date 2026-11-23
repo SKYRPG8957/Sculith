@@ -67,7 +67,7 @@ pub(super) enum WorldOperation {
         phase: ArrivalPhase,
         completion: oneshot::Sender<bool>,
     },
-    InventoryEdit(Box<PlayerInventoryEdit>),
+    InventoryEdit(Arc<PlayerInventoryEdit>),
     Depart {
         world: Arc<World>,
         phase: DeparturePhase,
@@ -87,7 +87,8 @@ impl WorldOperation {
                 completion, player, ..
             } => completion.is_closed() || player.client.closed(),
             Self::Transfer(transfer) => transfer.abandoned(),
-            Self::Depart { .. } | Self::InventoryEdit(_) => false,
+            Self::InventoryEdit(edit) => edit.claimed(),
+            Self::Depart { .. } => false,
         }
     }
 
@@ -100,10 +101,14 @@ impl WorldOperation {
                 .try_simulation()
                 .map(WorldTransferReservation::for_one_world),
             Self::Transfer(transfer) => transfer.try_reserve_worlds(),
-            Self::InventoryEdit(edit) => edit
-                .world
-                .try_simulation()
-                .map(WorldTransferReservation::for_one_world),
+            Self::InventoryEdit(edit) => {
+                if !edit.ready_for_world() {
+                    return None;
+                }
+                edit.world
+                    .try_simulation()
+                    .map(WorldTransferReservation::for_one_world)
+            }
         }
     }
 

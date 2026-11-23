@@ -6504,7 +6504,6 @@ impl Player {
 
     fn tick_inventory_item_components(&self, server: &Server) {
         use pumpkin_data::data_component_impl::{LodestoneTrackerImpl, MapPostProcessingImpl};
-        use pumpkin_inventory::Inventory;
 
         let needs_tick = |stack: &ItemStack| -> bool {
             !stack.is_empty()
@@ -6547,7 +6546,8 @@ impl Player {
 
         let world = self.world();
         let mut any_changed = false;
-        for (slot_idx, mut stack) in candidates {
+        for (slot_idx, expected) in candidates {
+            let mut stack = expected.clone();
             let mut changed = crate::world::map::resolve_map_post_processing(&mut stack, server);
 
             if let Some(tracker) = stack.get_data_component::<LodestoneTrackerImpl>()
@@ -6568,8 +6568,9 @@ impl Player {
             }
 
             if changed {
-                self.inventory.set_stack(slot_idx, stack);
-                any_changed = true;
+                any_changed |= self
+                    .inventory
+                    .replace_slot_if_equal(slot_idx, &expected, stack);
             }
         }
 

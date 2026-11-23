@@ -83,6 +83,13 @@ Rust and Wasm plugins can also queue a conditional player inventory edit with
 `schedule_inventory_edit`. Before writing the slot, the owner checks the active
 connection, intervening teleports or respawns, and the item type, count and
 components. A plugin can poll the receipt from a callback or a later tick.
+A current-protocol Bedrock connection's region can apply a queued storage-slot
+edit when the player's inventory is closed and the ordered input queue is idle.
+The region queues the slot packet with the write. Both owners use one ordered
+list of requests for the connection and complete each receipt once. Hotbar,
+equipment, open screens, observed packets and coordinated operation use the
+world path. Per-tick inventory component updates also check the original stack
+before replacing it.
 Transfers reserve the source and destination before changing a player's membership.
 Java and Bedrock logins prepare the player before queuing registration on the target
 world. Registration checks the live connection and membership while holding that owner.

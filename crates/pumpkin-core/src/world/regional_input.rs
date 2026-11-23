@@ -18,6 +18,7 @@ bitflags::bitflags! {
         const MINING = 4;
         const TERRAIN = 8;
         const ITEM_COOLDOWNS = 16;
+        const INVENTORY_EDITS = 32;
     }
 }
 
@@ -117,6 +118,17 @@ impl RegionalInput {
             {
                 pending |= RegionalWork::ITEM_COOLDOWNS;
             }
+            if work.contains(RegionalWork::INVENTORY_EDITS)
+                && client.inventory_edits().drain_region(
+                    server,
+                    world,
+                    &player,
+                    client,
+                    owns_player,
+                )
+            {
+                pending |= RegionalWork::INVENTORY_EDITS;
+            }
             if work.contains(RegionalWork::TERRAIN)
                 && player.can_dispatch_regional_terrain(client, server)
                 && (!owns_player()
@@ -209,6 +221,10 @@ impl World {
 
     pub(crate) fn offer_regional_item_cooldowns(&self, id: u64, player: &Arc<Player>) -> bool {
         self.offer_regional_work(id, player, RegionalWork::ITEM_COOLDOWNS)
+    }
+
+    pub(crate) fn offer_regional_inventory_edits(&self, id: u64, player: &Arc<Player>) {
+        self.offer_regional_work(id, player, RegionalWork::INVENTORY_EDITS);
     }
 
     pub(crate) fn offer_regional_mining(

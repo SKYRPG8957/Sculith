@@ -17,8 +17,8 @@ use pumpkin_protocol::{
     bedrock::{
         client::{
             chunk_radius_updated::CChunkRadiusUpdated, container_open::CContainerOpen,
-            inventory_content::CInventoryContent, player_hotbar::CPlayerHotbar,
-            update_block::CUpdateBlock,
+            inventory_content::CInventoryContent, inventory_slot::CInventorySlot,
+            player_hotbar::CPlayerHotbar, update_block::CUpdateBlock,
         },
         network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
         server::{
@@ -160,10 +160,6 @@ pub(crate) fn send_bedrock_inventory_slot(
     (container_id, container_name, slot): (u32, ContainerName, u32),
     stack: &ItemStack,
 ) {
-    use pumpkin_protocol::bedrock::client::{
-        inventory_content::CInventoryContent, inventory_slot::CInventorySlot,
-    };
-
     // Like Geyser, the offhand is always sent as a whole one-item container
     if container_name == ContainerName::Offhand {
         bedrock.try_enqueue_client_packet(&CInventoryContent {
@@ -178,7 +174,21 @@ pub(crate) fn send_bedrock_inventory_slot(
         return;
     }
 
-    bedrock.try_enqueue_client_packet(&CInventorySlot {
+    bedrock.try_enqueue_client_packet(&inventory_slot_packet(
+        container_id,
+        container_name,
+        slot,
+        stack,
+    ));
+}
+
+fn inventory_slot_packet(
+    container_id: u32,
+    container_name: ContainerName,
+    slot: u32,
+    stack: &ItemStack,
+) -> CInventorySlot {
+    CInventorySlot {
         container_id: VarUInt(container_id),
         slot: VarUInt(slot),
         full_container_name: Some(FullContainerName {
@@ -187,7 +197,24 @@ pub(crate) fn send_bedrock_inventory_slot(
         }),
         storage_item: None,
         item: NetworkItemStackDescriptor::from(stack),
-    });
+    }
+}
+
+impl BedrockClient {
+    pub(crate) fn encode_player_inventory_slot(
+        &self,
+        slot: usize,
+        stack: &ItemStack,
+    ) -> Option<bytes::Bytes> {
+        let (container_id, container_name, slot) = bedrock_player_inventory_slot(slot)?;
+        self.serialize_packet(&inventory_slot_packet(
+            container_id,
+            container_name,
+            slot,
+            stack,
+        ))
+        .ok()
+    }
 }
 
 pub(crate) fn send_bedrock_cursor_stack(bedrock: &BedrockClient, stack: &ItemStack) {

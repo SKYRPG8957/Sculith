@@ -91,6 +91,7 @@ enum WorldStep {
 pub(crate) use block_edits::BlockEdits;
 pub use block_edits::{BlockEditReceipt, BlockEditStatus};
 use player_commands::PlayerCommands;
+pub(crate) use player_inventory_edits::PlayerInventoryEdits;
 pub use player_inventory_edits::{PlayerInventoryEditReceipt, PlayerInventoryEditStatus};
 pub use recipe::RecipeManager;
 pub(crate) use region_scheduler::TickDeadline;

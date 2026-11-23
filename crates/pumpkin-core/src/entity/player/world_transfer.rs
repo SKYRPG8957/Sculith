@@ -354,6 +354,10 @@ impl Player {
         self.initial_spawn_complete.load(Ordering::Acquire) && self.can_tick_in(world)
     }
 
+    pub(crate) fn has_stable_world_membership(&self) -> bool {
+        self.world_change.load() == WorldChange::Idle
+    }
+
     /// Schedules a change of world for this connection.
     ///
     /// Tick hooks can return immediately and observe completion through `PlayerChangedWorldEvent`.

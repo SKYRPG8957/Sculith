@@ -87,6 +87,31 @@ impl BedrockClient {
         &self.activity.regional_work
     }
 
+    pub(crate) fn inventory_edits(&self) -> &crate::server::PlayerInventoryEdits {
+        &self.activity.inventory_edits
+    }
+
+    pub(crate) fn with_idle_player_inventory(&self, player: &Player, apply: impl FnOnce()) {
+        let Ok(head) = self.activity.inbound_head.try_lock() else {
+            return;
+        };
+        let Ok(screen) = player.current_screen_handler.try_lock() else {
+            return;
+        };
+        if head.is_none()
+            && player.inbound_packets.is_empty()
+            && player.has_client_loaded()
+            && !self.inventory_opened.load(Relaxed)
+            && std::ptr::addr_eq(
+                Arc::as_ptr(&screen),
+                Arc::as_ptr(&player.player_screen_handler),
+            )
+            && let Ok(_handler) = screen.try_lock()
+        {
+            apply();
+        }
+    }
+
     pub(super) fn enqueue_play_input(&self, player: &Arc<Player>, packet: RawPacket) {
         let ready = (Self::is_regional_reply(packet.id)
             || Self::can_prepare_movement(&packet)
