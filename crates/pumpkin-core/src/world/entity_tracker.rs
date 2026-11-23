@@ -4,9 +4,9 @@ use std::sync::atomic::{
 };
 use std::sync::{Arc, MutexGuard, RwLock, RwLockReadGuard};
 
-use bytes::BufMut;
+use bytes::{BufMut, Bytes};
 use crossbeam::atomic::AtomicCell;
-use dashmap::{DashMap, try_result::TryResult};
+use dashmap::{DashMap, mapref::entry::Entry, try_result::TryResult};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::bedrock::client::move_actor_delta::{
@@ -36,8 +36,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use uuid::Uuid;
 
 use crate::entity::player::Player;
-use crate::entity::{Entity, EntityBase};
+use crate::entity::{Entity, EntityBase, bedrock_actor_spawn_packet, item::ItemEntity};
 use crate::net::ClientPlatform;
+use crate::net::bedrock::BedrockClient;
 use crate::net::chunk_sender::ChunkSender;
 use crate::net::java::JavaClient;
 use crate::plugin::server::packet::PacketSentEvent;
@@ -129,6 +130,18 @@ fn try_ready_regional_viewer<'a>(
             .is_within_distance(chunk.x, chunk.y)
         && sender.is_chunk_ready(&chunk))
     .then_some(sender)
+}
+
+fn in_tracking_range(
+    player_pos: Vector3<f64>,
+    entity_pos: Vector3<f64>,
+    player_distance: i32,
+    tracking_range: u32,
+) -> bool {
+    let dx = player_pos.x - entity_pos.x;
+    let dz = player_pos.z - entity_pos.z;
+    let range = f64::from((tracking_range as i32).min(player_distance) * 16);
+    dx.mul_add(dx, dz * dz) <= range * range
 }
 
 #[derive(Default)]
@@ -575,14 +588,9 @@ impl TrackedEntity {
             self.remove_player(player);
             return;
         }
-        let dx = player_pos.x - entity_pos.x;
-        let dz = player_pos.z - entity_pos.z;
-        let dist_sq = dx.mul_add(dx, dz * dz);
-
-        let visible_range_blocks = f64::from((effective_range as i32).min(player_vd) * 16);
-        let range_sq = visible_range_blocks * visible_range_blocks;
-
-        if dist_sq <= range_sq && self.broadcast_to_player(player) {
+        if in_tracking_range(player_pos, entity_pos, player_vd, effective_range)
+            && self.broadcast_to_player(player)
+        {
             if !chunk_changed
                 && self
                     .seen_by
@@ -722,6 +730,117 @@ impl TrackedEntity {
         }
     }
 
+    fn encode_restored_java_drop(
+        &self,
+        client: &JavaClient,
+        item: Option<&ItemEntity>,
+    ) -> Option<Vec<Bytes>> {
+        let base = self.entity.get_entity();
+        let mut packets = vec![client.serialize_packet(&base.create_spawn_packet()).ok()?];
+        let mut add_metadata = |packet: &CSetEntityMetadata| {
+            packets.push(client.serialize_packet(packet).ok()?);
+            Some(())
+        };
+        if let Some(item) = item {
+            add_metadata(&item.java_item_spawn_metadata(item.try_spawn_stack()?)?)?;
+        } else if let Some(metadata) = self.entity.java_spawn_metadata(CURRENT_MC_VERSION) {
+            add_metadata(&CSetEntityMetadata::new(self.entity_id.into(), metadata))?;
+        }
+        if let Some(packet) = self.non_default_java_metadata() {
+            add_metadata(&packet)?;
+        }
+        Some(packets)
+    }
+
+    fn encode_restored_bedrock_drop(
+        &self,
+        client: &BedrockClient,
+        item: Option<&ItemEntity>,
+    ) -> Option<Bytes> {
+        if let Some(item) = item {
+            client
+                .serialize_packet(&item.bedrock_item_spawn_packet(&item.try_spawn_stack()?))
+                .ok()
+        } else {
+            client
+                .serialize_packet(&bedrock_actor_spawn_packet(self.entity.as_ref()))
+                .ok()
+        }
+    }
+
+    fn try_pair_restored_drop(
+        &self,
+        world: &World,
+        chunk: Vector2<i32>,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
+        let base = self.entity.get_entity();
+        let position = base.pos.load();
+        let item = (self.entity.as_ref() as &dyn std::any::Any).downcast_ref::<ItemEntity>();
+        let mut java = None;
+        let mut bedrock = None;
+        let players = world.players.load();
+        for player in players.iter() {
+            if player.waiting_for_vehicle(base.entity_uuid)
+                || !in_tracking_range(
+                    player.get_entity().pos.load(),
+                    position,
+                    get_view_distance(player).get() as i32,
+                    self.tracking_range,
+                )
+            {
+                continue;
+            }
+            // Keep the terrain ready and the viewer unpaired until the initial packets
+            // are queued. Ordinary pairing will pick up anyone we could not serve.
+            let Some(_chunk) = try_ready_regional_viewer(player, world, chunk) else {
+                continue;
+            };
+            let Ok(mut viewers) = self.seen_by.try_write() else {
+                continue;
+            };
+            if viewers.players.contains_key(&player.gameprofile.id) {
+                continue;
+            }
+            let queued = match player.client.as_ref() {
+                ClientPlatform::Java(client) if client.version.load() == CURRENT_MC_VERSION => {
+                    let queued = java
+                        .get_or_insert_with(|| self.encode_restored_java_drop(client, item))
+                        .as_ref()
+                        .is_some_and(|packets| client.try_enqueue_current_packet_batch(packets));
+                    if queued {
+                        java_recipients.insert(client.id, player.client.clone());
+                    }
+                    queued
+                }
+                ClientPlatform::Bedrock(client) if client.is_current_protocol() => {
+                    let queued = bedrock
+                        .get_or_insert_with(|| self.encode_restored_bedrock_drop(client, item))
+                        .as_ref()
+                        .is_some_and(|data| {
+                            client.try_enqueue_packet_data_unobserved(data.clone())
+                        });
+                    if queued {
+                        self.bedrock_watchers.fetch_add(1, Relaxed);
+                    }
+                    queued
+                }
+                _ => false,
+            };
+            if queued {
+                viewers.insert(player.gameprofile.id, player.clone());
+            }
+        }
+    }
+
+    fn non_default_java_metadata(&self) -> Option<CSetEntityMetadata> {
+        self.entity
+            .get_entity()
+            .synched_data
+            .get_non_default_values_for_version(&CURRENT_MC_VERSION)
+            .map(|data| CSetEntityMetadata::new(self.entity_id.into(), data))
+    }
+
     #[allow(clippy::too_many_lines)]
     pub fn add_pairing(&self, player: &Arc<Player>) {
         player.client.try_enqueue_spawn_packet(&self.entity);
@@ -802,20 +921,11 @@ impl TrackedEntity {
             }
         }
 
-        if let ClientPlatform::Java(client) = player.client.as_ref() {
-            let version = CURRENT_MC_VERSION;
-            if let Some(non_default) = self
-                .entity
-                .get_entity()
-                .synched_data
-                .get_non_default_values_for_version(&version)
-            {
-                let packet = CSetEntityMetadata::new(self.entity_id.into(), non_default);
-                if let Ok(packet_data) = JavaClient::serialize_packet_for_version(&packet, version)
-                {
-                    client.try_enqueue_packet(packet_data);
-                }
-            }
+        if let ClientPlatform::Java(client) = player.client.as_ref()
+            && let Some(packet) = self.non_default_java_metadata()
+            && let Ok(data) = JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION)
+        {
+            client.try_enqueue_packet(data);
         }
 
         if let Some(living) = self.entity.get_living_entity() {
@@ -1487,25 +1597,58 @@ impl EntityTracker {
     }
 
     pub fn add_entity(&self, entity: &Arc<dyn EntityBase>, world: &World) {
-        let entity_type = entity.get_entity().entity_type;
-        let range = entity_type.client_tracking_range;
-        if range == 0 {
+        let base = entity.get_entity();
+        if base.entity_type.client_tracking_range == 0 {
             return;
         }
-        let update_interval = entity_type.update_interval;
-        let track_deltas = entity_type.track_deltas;
-        let entity_id = entity.get_entity().entity_id;
-
-        let tracked = Arc::new(TrackedEntity::new(
-            entity.clone(),
-            range,
-            update_interval,
-            track_deltas,
-        ));
-        self.entity_map.insert(entity_id, tracked.clone());
-
+        let tracked = self
+            .entity_map
+            .entry(base.entity_id)
+            .and_modify(|tracked| {
+                if !Arc::ptr_eq(&tracked.entity, entity) {
+                    *tracked = Self::new_tracked_entity(entity);
+                }
+            })
+            .or_insert_with(|| Self::new_tracked_entity(entity))
+            .clone();
         let players = world.players.load();
         tracked.update_players(players.as_ref(), world);
+    }
+
+    fn new_tracked_entity(entity: &Arc<dyn EntityBase>) -> Arc<TrackedEntity> {
+        let kind = entity.get_entity().entity_type;
+        Arc::new(TrackedEntity::new(
+            entity.clone(),
+            kind.client_tracking_range,
+            kind.update_interval,
+            kind.track_deltas,
+        ))
+    }
+
+    pub(super) fn try_publish_restored_drop(
+        &self,
+        world: &World,
+        entity: &Arc<dyn EntityBase>,
+        chunk: Vector2<i32>,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
+        let base = entity.get_entity();
+        base.try_with_unmounted_drop(|| {
+            if base.is_removed()
+                || base.chunk_pos.load() != chunk
+                || !std::ptr::eq(base.world.load().as_ref(), world)
+                || base.velocity.load().length_squared() > 1e-4
+                || base.is_leashed()
+            {
+                return;
+            }
+            let Some(Entry::Vacant(slot)) = self.entity_map.try_entry(base.entity_id) else {
+                return;
+            };
+            let tracked = Self::new_tracked_entity(entity);
+            slot.insert(tracked.clone());
+            tracked.try_pair_restored_drop(world, chunk, java_recipients);
+        });
     }
 
     /// Must only be called after the player's own `CLogin` packet has been sent.
@@ -1796,6 +1939,32 @@ impl EntityTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn world_pairing_reuses_a_tracker_created_by_a_region() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = crate::entity::ai::test_support::world(&folder);
+        let position = Vector3::new(8.0, 64.0, 8.0);
+        let chunk = Vector2::new(0, 0);
+        let actor = crate::entity::r#type::from_type(
+            &EntityType::EXPERIENCE_ORB,
+            position,
+            &world,
+            Uuid::new_v4(),
+        );
+        let id = actor.get_entity().entity_id;
+        let mut recipients = FxHashMap::default();
+        world
+            .entity_tracker
+            .try_publish_restored_drop(&world, &actor, chunk, &mut recipients);
+        let first = world.entity_tracker.get_tracked_entity(id).unwrap();
+        world.entity_tracker.add_entity(&actor, &world);
+        let tracked = world.entity_tracker.get_tracked_entity(id).unwrap();
+        assert!(Arc::ptr_eq(&first, &tracked));
+        assert!(Arc::ptr_eq(&tracked.entity, &actor));
+        assert!(recipients.is_empty());
+        world.level.shutdown().await;
+    }
 
     #[test]
     fn a_partial_regional_move_keeps_the_baseline_until_a_full_send() {

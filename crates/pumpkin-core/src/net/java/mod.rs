@@ -578,6 +578,25 @@ impl JavaClient {
         queued
     }
 
+    /// Reserve the whole current-version spawn and its metadata before queuing either.
+    pub(crate) fn try_enqueue_current_packet_batch(&self, packets: &[Bytes]) -> bool {
+        if self.close_token.is_cancelled() || self.version.load() != CURRENT_MC_VERSION {
+            return false;
+        }
+        let total = packets.iter().map(Bytes::len).sum();
+        let Some(mut remaining) = self.reserve_bytes(total) else {
+            return false;
+        };
+        for packet in packets {
+            remaining -= packet.len();
+            if !self.queue_outgoing(OutgoingPacket::normal(packet.clone()), packet.len()) {
+                decrement_pending_bytes(&self.pending_bytes, remaining);
+                return false;
+            }
+        }
+        true
+    }
+
     /// Queues an already-formatted raw Java packet (`packet_id` + client-version `payload`)
     /// directly onto the wire queue without firing `PacketSentEvent`.
     pub fn try_enqueue_raw_packet_direct(&self, packet_id: i32, payload: &[u8]) -> bool {

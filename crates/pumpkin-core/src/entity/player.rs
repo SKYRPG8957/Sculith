@@ -1611,6 +1611,10 @@ impl Player {
         );
     }
 
+    pub(crate) fn waiting_for_vehicle(&self, uuid: Uuid) -> bool {
+        self.root_vehicle_uuid.load() == Some(uuid)
+    }
+
     pub(crate) fn try_restore_vehicle(self: &Arc<Self>, vehicle: &Arc<dyn EntityBase>) {
         // Claim the UUID atomically, otherwise blank it
         // between a non-matching swap and restore.

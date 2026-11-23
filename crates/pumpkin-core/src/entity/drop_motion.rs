@@ -133,7 +133,7 @@ impl Entity {
                 .claim(DropTickOwner::Region(owner), deadline);
         }
     }
-    pub(crate) fn try_regional_drop_expiry(&self, discard: impl FnOnce()) {
+    pub(crate) fn try_with_unmounted_drop(&self, use_drop: impl FnOnce()) {
         let Some(motion) = self.drop_motion.as_deref() else {
             return;
         };
@@ -148,7 +148,11 @@ impl Entity {
             return;
         };
         if vehicle.is_none() && passengers.is_empty() {
-            discard();
+            // Live attachments take the world motion guard. Release these locks
+            // so packet construction can read mount metadata under motion ownership.
+            drop(vehicle);
+            drop(passengers);
+            use_drop();
         }
     }
 

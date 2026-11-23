@@ -333,11 +333,14 @@ usual path. A changed record can fall back to construction on the world.
 Concurrent regions can share the entity snapshot permit while doing this work.
 An eligible drop joins the current region's timer plan with its saved age
 and pickup delay. Its first timer step uses the next regional deadline.
-The timer assignment follows a subsequent move to another region, even while
-the world is waiting to pair the restored drop with clients. Item merge and
-despawn observers keep timer execution on the world owner.
+The timer assignment follows a subsequent move to another region. Item merge
+and despawn observers keep timer execution on the world owner. Regions can
+pair a restored item or experience orb with current-version Java and Bedrock
+players once their client has the terrain chunk. The world reuses the tracker
+and pairs any remaining viewers. Legacy clients, attachment restoration and
+packet observers use world pairing.
 Actors with passengers or team memberships use world processing. The world
-pairs loaded actors with clients and retires unwatched inactive chunks using
+retires unwatched inactive chunks using
 the live positions of entities and their vehicles. The retirement step prepares
 records before pinning the watcher slot, then checks membership and the cached
 chunk again. A watcher that arrives during capture keeps the live actors.

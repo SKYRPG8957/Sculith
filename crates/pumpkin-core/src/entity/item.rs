@@ -754,6 +754,39 @@ impl ItemEntity {
             entity.velocity_dirty.store(true, Ordering::SeqCst);
         }
     }
+
+    pub(crate) fn try_spawn_stack(&self) -> Option<ItemStack> {
+        self.item_stack.try_lock().ok().map(|stack| stack.clone())
+    }
+
+    pub(crate) fn bedrock_item_spawn_packet(&self, stack: &ItemStack) -> CAddItemActor {
+        let runtime_id = self.entity.entity_id as u64;
+        CAddItemActor {
+            target_actor_id: VarLong(runtime_id as i64),
+            target_runtime_id: VarULong(runtime_id),
+            item: ItemStackWrapper::from(stack),
+            position: self.bedrock_pos().to_f32_lossy(),
+            velocity: self.entity.velocity.load().to_f32_lossy(),
+            entity_data: self.entity.bedrock_metadata(),
+            is_from_fishing: false,
+        }
+    }
+
+    pub(crate) fn java_item_spawn_metadata(&self, stack: ItemStack) -> Option<CSetEntityMetadata> {
+        let metadata = Metadata::new(
+            pumpkin_data::tracked_data::item::ITEM,
+            ItemStackSerializer::from(stack),
+        );
+        let mut data = Vec::new();
+        metadata
+            .write(&mut data, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .ok()?;
+        data.push(255);
+        Some(CSetEntityMetadata::new(
+            self.entity.entity_id.into(),
+            data.into(),
+        ))
+    }
 }
 
 impl EntityBase for ItemEntity {
@@ -1055,23 +1088,14 @@ impl EntityBase for ItemEntity {
     }
 
     fn send_bedrock_spawn_packet(&self, client: &crate::net::bedrock::BedrockClient) {
-        let entity = &self.entity;
-        let runtime_id = entity.entity_id as u64;
         let data = {
-            let item_stack = self
+            let stack = self
                 .item_stack
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let packet = CAddItemActor {
-                target_actor_id: VarLong(runtime_id as i64),
-                target_runtime_id: VarULong(runtime_id),
-                item: ItemStackWrapper::from(&*item_stack),
-                position: self.bedrock_pos().to_f32_lossy(),
-                velocity: entity.velocity.load().to_f32_lossy(),
-                entity_data: entity.bedrock_metadata(),
-                is_from_fishing: false,
-            };
-            client.serialize_packet(&packet).ok()
+            client
+                .serialize_packet(&self.bedrock_item_spawn_packet(&stack))
+                .ok()
         };
         if let Some(data) = data {
             client.try_enqueue_packet(data);
@@ -1084,25 +1108,15 @@ impl EntityBase for ItemEntity {
             client.try_enqueue_packet(data);
         }
 
-        let metadata = Metadata::new(
-            pumpkin_data::tracked_data::item::ITEM,
-            ItemStackSerializer::from(
-                self.item_stack
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clone(),
-            ),
-        );
-        let mut data = Vec::new();
-        if metadata
-            .write(&mut data, &pumpkin_data::packet::CURRENT_MC_VERSION)
-            .is_ok()
+        let stack = self
+            .item_stack
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(packet) = self.java_item_spawn_metadata(stack)
+            && let Ok(data) = client.serialize_packet(&packet)
         {
-            data.push(255);
-            let meta_packet = CSetEntityMetadata::new(self.entity.entity_id.into(), data.into());
-            if let Ok(meta_data) = client.serialize_packet(&meta_packet) {
-                client.try_enqueue_packet(meta_data);
-            }
+            client.try_enqueue_packet(data);
         }
     }
 }

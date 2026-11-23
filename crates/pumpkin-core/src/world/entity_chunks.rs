@@ -21,12 +21,13 @@ use crate::{
         item::ItemEntity,
         r#type::{from_type, load_entity_from_nbt, self_and_passengers},
     },
+    plugin::server::packet::PacketSentEvent,
     server::{Server, TickDeadline},
 };
 
 use super::{
-    RegionId, RegionLayout, World, entity_save_records, merge_entity_records,
-    regional_campfires::RegionalEntityUpdate, saved_chunk_pos,
+    RegionId, RegionLayout, World, entity_save_records, entity_tracker::EntityTracker,
+    merge_entity_records, regional_campfires::RegionalEntityUpdate, saved_chunk_pos,
 };
 
 const REGIONAL_CHUNKS_PER_STEP: usize = 4;
@@ -397,6 +398,10 @@ impl World {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "saved records and live registrations commit together under the same guards"
+    )]
     fn try_process_regional_chunk(
         self: &Arc<Self>,
         pos: Vector2<i32>,
@@ -475,26 +480,75 @@ impl World {
         let Ok(mut pending) = self.entity_chunk_changes.pending.try_lock() else {
             return false;
         };
-        self.level.try_with_watched_entity_chunk(pos, |current| {
-            if !Arc::ptr_eq(current, &chunk) || !owns(pos) || pending.remove(&pos).is_none() {
-                return false;
-            }
-            let added = self.register_chunk_actors(&actors);
-            if let Some(plan) = drop_plan.as_mut() {
-                for (_, actor) in &added {
-                    if schedules_drop(actor.as_ref()) {
-                        Arc::make_mut(plan).assign(owner, actor.clone());
+        let Some(added) = self
+            .level
+            .try_with_watched_entity_chunk(pos, |current| {
+                if !Arc::ptr_eq(current, &chunk) || !owns(pos) || pending.remove(&pos).is_none() {
+                    return None;
+                }
+                let added = self.register_chunk_actors(&actors);
+                if let Some(plan) = drop_plan.as_mut() {
+                    for (_, actor) in &added {
+                        if schedules_drop(actor.as_ref()) {
+                            Arc::make_mut(plan).assign(owner, actor.clone());
+                        }
                     }
                 }
+                records.clear();
+                chunk.live.store(true, Relaxed);
+                Some(added)
+            })
+            .flatten()
+        else {
+            return false;
+        };
+        if added.is_empty() {
+            return true;
+        }
+        tracing::trace!(world = %self.uuid, ?pos, count = added.len(), "Restored saved entities on their region");
+        let drops: Vec<_> = added
+            .iter()
+            .filter(|(_, actor)| {
+                let kind = actor.get_entity().entity_type;
+                kind == &EntityType::ITEM || kind == &EntityType::EXPERIENCE_ORB
+            })
+            .map(|(_, actor)| actor.clone())
+            .collect();
+        updates.push(RegionalEntityUpdate::Loaded(added));
+        drop(pending);
+        drop(updates);
+        drop(registering);
+        drop(drop_plan);
+        drop(records);
+
+        if !drops.is_empty()
+            && let Some(server) = self.server.upgrade()
+            && !server.plugin_manager.has_handlers::<PacketSentEvent>()
+        {
+            self.try_publish_restored_drops(pos, owns, &drops);
+        }
+        true
+    }
+
+    fn try_publish_restored_drops(
+        &self,
+        pos: Vector2<i32>,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+        drops: &[Arc<dyn EntityBase>],
+    ) {
+        let mut java_recipients = FxHashMap::default();
+        for actor in drops {
+            // A layout change takes the writer. Do not pair under a revoked owner.
+            let Ok(_layout) = self.regional_drops.try_read() else {
+                break;
+            };
+            if !owns(pos) {
+                break;
             }
-            records.clear();
-            chunk.live.store(true, Relaxed);
-            if !added.is_empty() {
-                tracing::trace!(world = %self.uuid, ?pos, count = added.len(), "Restored saved entities on their region");
-                updates.push(RegionalEntityUpdate::Loaded(added));
-            }
-            true
-        }) == Some(true)
+            self.entity_tracker
+                .try_publish_restored_drop(self, actor, pos, &mut java_recipients);
+        }
+        EntityTracker::flush_regional_drop_packets(java_recipients);
     }
 
     fn try_prepare_chunk_mobs(

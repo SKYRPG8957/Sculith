@@ -251,6 +251,49 @@ pub const fn entity_type_to_bedrock_identifier(entity_type: &EntityType) -> &'st
     }
 }
 
+pub(crate) fn bedrock_actor_spawn_packet<T: EntityBase + ?Sized>(actor: &T) -> CAddActor {
+    let entity = actor.get_entity();
+    let runtime_id = entity.entity_id as u64;
+    let identifier = actor.bedrock_identifier();
+    let mut metadata = entity.bedrock_metadata();
+    if let Some(extra_meta) = actor.entity_bedrock_spawn_metadata() {
+        metadata.merge(extra_meta);
+    }
+    if let Some(mob) = actor.get_mob()
+        && let Some(mob_metadata) = mob.mob_bedrock_spawn_metadata()
+    {
+        metadata.merge(mob_metadata);
+    }
+    let [pitch, yaw, head_yaw, body_yaw] = entity.bedrock_rotation();
+    let attributes_list = if entity.entity_type == &EntityType::HORSE {
+        actor
+            .get_living_entity()
+            .map_or_else(Vec::new, attributes::bedrock_horse_spawn_attributes)
+    } else {
+        Vec::new()
+    };
+    CAddActor {
+        target_actor_id: VarLong(runtime_id as i64),
+        target_runtime_id: VarULong(runtime_id),
+        actor_type: identifier.to_string(),
+        position: actor.bedrock_pos().to_f32_lossy(),
+        velocity: entity.velocity.load().to_f32_lossy(),
+        rotation: Vector2::new(pitch, yaw),
+        y_head_rotation: head_yaw,
+        y_body_rotation: body_yaw,
+        attributes_list,
+        actor_data: metadata,
+        // TODO: Bedrock `climate_variant` property for pig/cow/chicken (`TemperatureVariantAnimal`)
+        // empty -> client picks its own variant.
+        synced_properties: PropertySyncData {
+            int_entries_list: std::collections::HashMap::new(),
+            float_entries_list: std::collections::HashMap::new(),
+        },
+        actor_links: entity.bedrock_actor_links(),
+        passenger_of_block: None,
+    }
+}
+
 pub trait EntityBase: Send + Sync + std::any::Any {
     /// Whether the entity currently has a client representation.
     fn has_client_representation(&self) -> bool {
@@ -892,45 +935,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         if !self.has_client_representation() {
             return;
         }
-        let entity = self.get_entity();
-        let runtime_id = entity.entity_id as u64;
-        let identifier = self.bedrock_identifier();
-        let mut metadata = entity.bedrock_metadata();
-        if let Some(extra_meta) = self.entity_bedrock_spawn_metadata() {
-            metadata.merge(extra_meta);
-        }
-        if let Some(mob) = self.get_mob()
-            && let Some(mob_metadata) = mob.mob_bedrock_spawn_metadata()
-        {
-            metadata.merge(mob_metadata);
-        }
-        let [pitch, yaw, head_yaw, body_yaw] = entity.bedrock_rotation();
-        let attributes_list = if entity.entity_type == &EntityType::HORSE {
-            self.get_living_entity()
-                .map_or_else(Vec::new, attributes::bedrock_horse_spawn_attributes)
-        } else {
-            Vec::new()
-        };
-        let packet = CAddActor {
-            target_actor_id: VarLong(runtime_id as i64),
-            target_runtime_id: VarULong(runtime_id),
-            actor_type: identifier.to_string(),
-            position: self.bedrock_pos().to_f32_lossy(),
-            velocity: entity.velocity.load().to_f32_lossy(),
-            rotation: Vector2::new(pitch, yaw),
-            y_head_rotation: head_yaw,
-            y_body_rotation: body_yaw,
-            attributes_list,
-            actor_data: metadata,
-            // TODO: Bedrock `climate_variant` property for pig/cow/chicken (`TemperatureVariantAnimal`)
-            // empty -> client picks its own variant.
-            synced_properties: PropertySyncData {
-                int_entries_list: std::collections::HashMap::new(),
-                float_entries_list: std::collections::HashMap::new(),
-            },
-            actor_links: entity.bedrock_actor_links(),
-            passenger_of_block: None,
-        };
+        let packet = bedrock_actor_spawn_packet(self);
         if let Ok(data) = client.serialize_packet(&packet) {
             client.try_enqueue_packet(data);
         }

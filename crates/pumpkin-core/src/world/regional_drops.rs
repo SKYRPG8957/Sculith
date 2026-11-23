@@ -332,7 +332,7 @@ impl World {
             let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk) else {
                 continue;
             };
-            base.try_regional_drop_expiry(|| {
+            base.try_with_unmounted_drop(|| {
                 let actor_data = actor.as_ref() as &dyn Any;
                 let expired = actor_data.downcast_ref::<ItemEntity>().is_some_and(|item| {
                     item.has_expired() && ItemEntity::timers_unobserved(server)
