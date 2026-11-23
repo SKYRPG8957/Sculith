@@ -27,8 +27,11 @@ use crate::{
 };
 
 use super::{
-    RegionId, RegionLayout, World, entity_save_records, entity_tracker::EntityTracker,
-    merge_entity_records, regional_campfires::RegionalEntityUpdate, saved_chunk_pos,
+    RegionId, RegionLayout, World, entity_save_records,
+    entity_tracker::{EntityTracker, RestoredMobSpawn},
+    merge_entity_records,
+    regional_campfires::RegionalEntityUpdate,
+    saved_chunk_pos,
 };
 
 const REGIONAL_CHUNKS_PER_STEP: usize = 4;
@@ -446,8 +449,13 @@ impl World {
             let kind = entity.get_entity().entity_type;
             kind == &EntityType::EXPERIENCE_ORB || item_timers && kind == &EntityType::ITEM
         };
+        let can_pair = self
+            .server
+            .upgrade()
+            .is_some_and(|server| !server.plugin_manager.has_handlers::<PacketSentEvent>());
         let mut actors = Vec::with_capacity(records.len());
-        for (record, (position, _)) in records.iter().zip(positions) {
+        let mut mob_spawns = FxHashMap::default();
+        for (record, (position, restored_mob)) in records.iter().zip(positions) {
             let Some(entity) = load_entity_from_nbt(record, position, self) else {
                 return false;
             };
@@ -455,6 +463,12 @@ impl World {
                 return false;
             }
             init_loaded_actor(entity.as_ref());
+            if can_pair
+                && restored_mob
+                && let Some(spawn) = RestoredMobSpawn::prepare(&entity)
+            {
+                mob_spawns.insert(entity.get_entity().entity_id, spawn);
+            }
             if item_timers
                 && let Some(item) =
                     (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ItemEntity>()
@@ -534,11 +548,13 @@ impl World {
             return true;
         }
         tracing::trace!(world = %self.uuid, ?pos, count = added.len(), "Restored saved entities on their region");
-        let drops: Vec<_> = added
+        let pairable: Vec<_> = added
             .iter()
             .filter(|(_, actor)| {
-                let kind = actor.get_entity().entity_type;
-                kind == &EntityType::ITEM || kind == &EntityType::EXPERIENCE_ORB
+                let base = actor.get_entity();
+                base.entity_type == &EntityType::ITEM
+                    || base.entity_type == &EntityType::EXPERIENCE_ORB
+                    || mob_spawns.contains_key(&base.entity_id)
             })
             .map(|(_, actor)| actor.clone())
             .collect();
@@ -549,23 +565,25 @@ impl World {
         drop(drop_plan);
         drop(records);
 
-        if !drops.is_empty()
+        if can_pair
+            && !pairable.is_empty()
             && let Some(server) = self.server.upgrade()
             && !server.plugin_manager.has_handlers::<PacketSentEvent>()
         {
-            self.try_publish_restored_drops(pos, owns, &drops);
+            self.try_publish_restored_actors(pos, owns, &pairable, &mob_spawns);
         }
         true
     }
 
-    fn try_publish_restored_drops(
+    fn try_publish_restored_actors(
         &self,
         pos: Vector2<i32>,
         owns: &impl Fn(Vector2<i32>) -> bool,
-        drops: &[Arc<dyn EntityBase>],
+        actors: &[Arc<dyn EntityBase>],
+        mob_spawns: &FxHashMap<i32, RestoredMobSpawn>,
     ) {
         let mut java_recipients = FxHashMap::default();
-        for actor in drops {
+        for actor in actors {
             // A layout change takes the writer. Do not pair under a revoked owner.
             let Ok(_layout) = self.regional_drops.try_read() else {
                 break;
@@ -573,8 +591,22 @@ impl World {
             if !owns(pos) {
                 break;
             }
-            self.entity_tracker
-                .try_publish_restored_drop(self, actor, pos, &mut java_recipients);
+            if let Some(spawn) = mob_spawns.get(&actor.get_entity().entity_id) {
+                self.entity_tracker.try_publish_restored_mob(
+                    self,
+                    actor,
+                    pos,
+                    spawn,
+                    &mut java_recipients,
+                );
+            } else {
+                self.entity_tracker.try_publish_restored_drop(
+                    self,
+                    actor,
+                    pos,
+                    &mut java_recipients,
+                );
+            }
         }
         EntityTracker::flush_regional_drop_packets(java_recipients);
     }

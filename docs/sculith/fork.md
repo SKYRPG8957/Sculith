@@ -369,8 +369,12 @@ before consuming saved records.
 Regions also restore persistent, unlinked cows, pigs, sheep and chickens
 when their terrain chunk is loaded and all saved actors in the entity chunk
 can be restored on the owner. The region rechecks the terrain entry and
-watchers before registering the actors and consuming their records. The
-world pairs these mobs with clients. Regions can prepare unlinked livestock
+watchers before registering the actors and consuming their records. The region
+can also pair freshly restored livestock without equipment or effects. It
+prepares the native Java and Bedrock spawn data before making the actor live,
+then checks the pose and terrain delivery before putting those packets in the
+viewer's queue. The world reuses that tracker and pairs remaining viewers.
+Regions can prepare unlinked livestock
 for world registration in other chunks. The world rechecks the saved type,
 UUID and position, then applies the latest NBT. Concurrent regions can share
 the entity snapshot permit while doing this work.

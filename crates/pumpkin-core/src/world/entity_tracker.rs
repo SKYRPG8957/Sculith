@@ -144,6 +144,56 @@ fn in_tracking_range(
     dx.mul_add(dx, dz * dz) <= range * range
 }
 
+/// Spawn data prepared while a restored livestock actor is still private.
+pub(super) struct RestoredMobSpawn {
+    tracked: Arc<TrackedEntity>,
+    java: Vec<Bytes>,
+    bedrock: Bytes,
+    position: Vector3<f64>,
+    rotation: [f32; 4],
+    health: f32,
+    age: i32,
+}
+
+impl RestoredMobSpawn {
+    pub(super) fn prepare(actor: &Arc<dyn EntityBase>) -> Option<Self> {
+        let living = actor.get_living_entity()?;
+        if !actor.has_client_representation()
+            || living.is_dead_or_dying()
+            || !living.active_effects.try_lock().ok()?.is_empty()
+            || living
+                .entity_equipment
+                .try_lock()
+                .ok()?
+                .equipment
+                .values()
+                .any(|stack| !stack.is_empty())
+        {
+            return None;
+        }
+        let base = actor.get_entity();
+        Some(Self {
+            // The tracker initializes the Java pose baseline used by the spawn packet.
+            tracked: EntityTracker::new_tracked_entity(actor),
+            java: TrackedEntity::encode_restored_java_actor(actor.as_ref(), None)?,
+            bedrock: TrackedEntity::encode_restored_bedrock_actor(actor.as_ref(), None)?,
+            position: base.pos.load(),
+            rotation: base.bedrock_rotation(),
+            health: living.health.load(),
+            age: base.age.load(Relaxed),
+        })
+    }
+
+    fn is_fresh(&self, base: &Entity, health: f32) -> bool {
+        base.first_tick.load(Relaxed)
+            && base.tick_count.load(Relaxed) == 0
+            && base.pos.load() == self.position
+            && base.bedrock_rotation() == self.rotation
+            && base.age.load(Relaxed) == self.age
+            && health.to_bits() == self.health.to_bits()
+    }
+}
+
 #[derive(Default)]
 struct RegionalMoveDelivery {
     viewers: usize,
@@ -730,48 +780,67 @@ impl TrackedEntity {
         }
     }
 
-    fn encode_restored_java_drop(
-        &self,
-        client: &JavaClient,
+    fn encode_restored_java_actor(
+        actor: &dyn EntityBase,
         item: Option<&ItemEntity>,
     ) -> Option<Vec<Bytes>> {
-        let base = self.entity.get_entity();
-        let mut packets = vec![client.serialize_packet(&base.create_spawn_packet()).ok()?];
-        let mut add_metadata = |packet: &CSetEntityMetadata| {
-            packets.push(client.serialize_packet(packet).ok()?);
-            Some(())
+        let base = actor.get_entity();
+        let mut packets = vec![
+            JavaClient::serialize_packet_for_version(
+                &base.create_spawn_packet(),
+                CURRENT_MC_VERSION,
+            )
+            .ok()?,
+        ];
+        let metadata = if let Some(item) = item {
+            Some(item.java_item_spawn_metadata(item.try_spawn_stack()?)?)
+        } else {
+            actor
+                .java_spawn_metadata(CURRENT_MC_VERSION)
+                .map(|data| CSetEntityMetadata::new(base.entity_id.into(), data))
         };
-        if let Some(item) = item {
-            add_metadata(&item.java_item_spawn_metadata(item.try_spawn_stack()?)?)?;
-        } else if let Some(metadata) = self.entity.java_spawn_metadata(CURRENT_MC_VERSION) {
-            add_metadata(&CSetEntityMetadata::new(self.entity_id.into(), metadata))?;
+        if let Some(packet) = metadata {
+            packets
+                .push(JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION).ok()?);
         }
-        if let Some(packet) = self.non_default_java_metadata() {
-            add_metadata(&packet)?;
+        if actor.get_living_entity().is_some() {
+            packets.push(
+                JavaClient::serialize_packet_for_version(
+                    &Self::initial_head_rotation(base),
+                    CURRENT_MC_VERSION,
+                )
+                .ok()?,
+            );
+        }
+        if let Some(packet) = Self::non_default_java_metadata(base) {
+            packets
+                .push(JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION).ok()?);
         }
         Some(packets)
     }
 
-    fn encode_restored_bedrock_drop(
-        &self,
-        client: &BedrockClient,
+    fn encode_restored_bedrock_actor(
+        actor: &dyn EntityBase,
         item: Option<&ItemEntity>,
     ) -> Option<Bytes> {
+        let mut data = Vec::new();
         if let Some(item) = item {
-            client
-                .serialize_packet(&item.bedrock_item_spawn_packet(&item.try_spawn_stack()?))
-                .ok()
+            BedrockClient::write_raw_packet(
+                &item.bedrock_item_spawn_packet(&item.try_spawn_stack()?),
+                &mut data,
+            )
+            .ok()?;
         } else {
-            client
-                .serialize_packet(&bedrock_actor_spawn_packet(self.entity.as_ref()))
-                .ok()
+            BedrockClient::write_raw_packet(&bedrock_actor_spawn_packet(actor), &mut data).ok()?;
         }
+        Some(data.into())
     }
 
-    fn try_pair_restored_drop(
+    fn try_pair_restored_actor(
         &self,
         world: &World,
         chunk: Vector2<i32>,
+        mob: Option<&RestoredMobSpawn>,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) {
         let base = self.entity.get_entity();
@@ -799,14 +868,32 @@ impl TrackedEntity {
             let Ok(mut viewers) = self.seen_by.try_write() else {
                 continue;
             };
+            if base.is_removed() || base.chunk_pos.load() != chunk {
+                break;
+            }
+            if let Some(mob) = mob
+                && !self
+                    .entity
+                    .get_living_entity()
+                    .is_some_and(|living| mob.is_fresh(base, living.health.load()))
+            {
+                break;
+            }
             if viewers.players.contains_key(&player.gameprofile.id) {
                 continue;
             }
             let queued = match player.client.as_ref() {
                 ClientPlatform::Java(client) if client.version.load() == CURRENT_MC_VERSION => {
-                    let queued = java
-                        .get_or_insert_with(|| self.encode_restored_java_drop(client, item))
-                        .as_ref()
+                    let packets = mob.map_or_else(
+                        || {
+                            java.get_or_insert_with(|| {
+                                Self::encode_restored_java_actor(self.entity.as_ref(), item)
+                            })
+                            .as_ref()
+                        },
+                        |mob| Some(&mob.java),
+                    );
+                    let queued = packets
                         .is_some_and(|packets| client.try_enqueue_current_packet_batch(packets));
                     if queued {
                         java_recipients.insert(client.id, player.client.clone());
@@ -814,12 +901,19 @@ impl TrackedEntity {
                     queued
                 }
                 ClientPlatform::Bedrock(client) if client.is_current_protocol() => {
-                    let queued = bedrock
-                        .get_or_insert_with(|| self.encode_restored_bedrock_drop(client, item))
-                        .as_ref()
-                        .is_some_and(|data| {
-                            client.try_enqueue_packet_data_unobserved(data.clone())
-                        });
+                    let data = mob.map_or_else(
+                        || {
+                            bedrock
+                                .get_or_insert_with(|| {
+                                    Self::encode_restored_bedrock_actor(self.entity.as_ref(), item)
+                                })
+                                .as_ref()
+                        },
+                        |mob| Some(&mob.bedrock),
+                    );
+                    let queued = data.is_some_and(|data| {
+                        client.try_enqueue_packet_data_unobserved(data.clone())
+                    });
                     if queued {
                         self.bedrock_watchers.fetch_add(1, Relaxed);
                     }
@@ -833,12 +927,17 @@ impl TrackedEntity {
         }
     }
 
-    fn non_default_java_metadata(&self) -> Option<CSetEntityMetadata> {
-        self.entity
-            .get_entity()
-            .synched_data
+    fn initial_head_rotation(base: &Entity) -> CHeadRot {
+        CHeadRot::new(
+            base.entity_id.into(),
+            (base.head_yaw.load() * 256.0 / 360.0).rem_euclid(256.0) as u8,
+        )
+    }
+
+    fn non_default_java_metadata(base: &Entity) -> Option<CSetEntityMetadata> {
+        base.synched_data
             .get_non_default_values_for_version(&CURRENT_MC_VERSION)
-            .map(|data| CSetEntityMetadata::new(self.entity_id.into(), data))
+            .map(|data| CSetEntityMetadata::new(base.entity_id.into(), data))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -887,12 +986,7 @@ impl TrackedEntity {
         } else if self.entity.get_living_entity().is_some()
             && let ClientPlatform::Java(client) = player.client.as_ref()
         {
-            let head_yaw = self.entity.get_entity().head_yaw.load();
-            // TODO: use `pumpkin_util::math::pack_degrees`.
-            let head_rot_packet = CHeadRot::new(
-                self.entity_id.into(),
-                (head_yaw * 256.0 / 360.0).rem_euclid(256.0) as u8,
-            );
+            let head_rot_packet = Self::initial_head_rotation(self.entity.get_entity());
             if let Ok(data) = client.serialize_packet(&head_rot_packet) {
                 client.try_enqueue_packet(data);
             }
@@ -922,7 +1016,7 @@ impl TrackedEntity {
         }
 
         if let ClientPlatform::Java(client) = player.client.as_ref()
-            && let Some(packet) = self.non_default_java_metadata()
+            && let Some(packet) = Self::non_default_java_metadata(self.entity.get_entity())
             && let Ok(data) = JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION)
         {
             client.try_enqueue_packet(data);
@@ -1638,21 +1732,74 @@ impl EntityTracker {
     ) {
         let base = entity.get_entity();
         base.try_with_unmounted_drop(|| {
-            if base.is_removed()
-                || base.chunk_pos.load() != chunk
-                || !std::ptr::eq(base.world.load().as_ref(), world)
-                || base.velocity.load().length_squared() > 1e-4
-                || base.is_leashed()
-            {
-                return;
+            if !base.is_leashed() {
+                self.try_track_restored_actor(world, entity, chunk, None, java_recipients);
             }
-            let Some(Entry::Vacant(slot)) = self.entity_map.try_entry(base.entity_id) else {
-                return;
-            };
-            let tracked = Self::new_tracked_entity(entity);
-            slot.insert(tracked.clone());
-            tracked.try_pair_restored_drop(world, chunk, java_recipients);
         });
+    }
+
+    pub(super) fn try_publish_restored_mob(
+        &self,
+        world: &World,
+        entity: &Arc<dyn EntityBase>,
+        chunk: Vector2<i32>,
+        spawn: &RestoredMobSpawn,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
+        let base = entity.get_entity();
+        let Some(living) = entity.get_living_entity() else {
+            return;
+        };
+        let (Ok(vehicle), Ok(passengers), Ok(leash)) = (
+            base.vehicle.try_lock(),
+            base.passengers.try_lock(),
+            base.leashed_to.try_lock(),
+        ) else {
+            return;
+        };
+        let (Ok(equipment), Ok(effects)) = (
+            living.entity_equipment.try_lock(),
+            living.active_effects.try_lock(),
+        ) else {
+            return;
+        };
+        if vehicle.is_some()
+            || !passengers.is_empty()
+            || leash.is_some()
+            || !effects.is_empty()
+            || equipment.equipment.values().any(|stack| !stack.is_empty())
+            || !spawn.is_fresh(base, living.health.load())
+        {
+            return;
+        }
+        self.try_track_restored_actor(world, entity, chunk, Some(spawn), java_recipients);
+    }
+
+    fn try_track_restored_actor(
+        &self,
+        world: &World,
+        entity: &Arc<dyn EntityBase>,
+        chunk: Vector2<i32>,
+        mob: Option<&RestoredMobSpawn>,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
+        let base = entity.get_entity();
+        if base.is_removed()
+            || base.chunk_pos.load() != chunk
+            || !std::ptr::eq(base.world.load().as_ref(), world)
+            || base.velocity.load().length_squared() > 1e-4
+        {
+            return;
+        }
+        let Some(Entry::Vacant(slot)) = self.entity_map.try_entry(base.entity_id) else {
+            return;
+        };
+        let tracked = mob.map_or_else(
+            || Self::new_tracked_entity(entity),
+            |spawn| spawn.tracked.clone(),
+        );
+        slot.insert(tracked.clone());
+        tracked.try_pair_restored_actor(world, chunk, mob, java_recipients);
     }
 
     /// Must only be called after the player's own `CLogin` packet has been sent.
@@ -1967,6 +2114,45 @@ mod tests {
         let tracked = world.entity_tracker.get_tracked_entity(id).unwrap();
         assert!(Arc::ptr_eq(&first, &tracked));
         assert!(Arc::ptr_eq(&tracked.entity, &actor));
+        assert!(recipients.is_empty());
+        world.level.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn restored_mob_pairing_checks_pose_and_reuses_the_prepared_tracker() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = crate::entity::ai::test_support::world(&folder);
+        let chunk = Vector2::new(0, 0);
+        let actor = crate::entity::r#type::from_type(
+            &EntityType::COW,
+            Vector3::new(8.0, 64.0, 8.0),
+            &world,
+            Uuid::new_v4(),
+        );
+        let id = actor.get_entity().entity_id;
+        let stale = RestoredMobSpawn::prepare(&actor).unwrap();
+        actor.get_entity().set_pos(Vector3::new(9.0, 64.0, 8.0));
+        let mut recipients = FxHashMap::default();
+        world.entity_tracker.try_publish_restored_mob(
+            &world,
+            &actor,
+            chunk,
+            &stale,
+            &mut recipients,
+        );
+        assert!(world.entity_tracker.get_tracked_entity(id).is_none());
+
+        let spawn = RestoredMobSpawn::prepare(&actor).unwrap();
+        world.entity_tracker.try_publish_restored_mob(
+            &world,
+            &actor,
+            chunk,
+            &spawn,
+            &mut recipients,
+        );
+        world.entity_tracker.add_entity(&actor, &world);
+        let tracked = world.entity_tracker.get_tracked_entity(id).unwrap();
+        assert!(Arc::ptr_eq(&tracked, &spawn.tracked));
         assert!(recipients.is_empty());
         world.level.shutdown().await;
     }
