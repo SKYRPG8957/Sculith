@@ -362,14 +362,14 @@ impl World {
                             && base.chunk_pos.load() == chunk
                             && owns(chunk)
                     },
-                    |expired, java_metadata| {
+                    |expired, particles| {
                         self.entity_tracker
                             .try_publish_regional_mob_effect_removals(
                                 self,
                                 server,
                                 base,
                                 expired,
-                                java_metadata,
+                                particles,
                                 &mut java_recipients,
                             )
                     },

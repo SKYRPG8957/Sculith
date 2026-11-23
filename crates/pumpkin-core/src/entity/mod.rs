@@ -251,7 +251,10 @@ pub const fn entity_type_to_bedrock_identifier(entity_type: &EntityType) -> &'st
     }
 }
 
-pub(crate) fn bedrock_actor_spawn_packet<T: EntityBase + ?Sized>(actor: &T) -> CAddActor {
+pub(crate) fn bedrock_actor_spawn_packet<T: EntityBase + ?Sized>(
+    actor: &T,
+    current_protocol: bool,
+) -> CAddActor {
     let entity = actor.get_entity();
     let runtime_id = entity.entity_id as u64;
     let identifier = actor.bedrock_identifier();
@@ -263,6 +266,15 @@ pub(crate) fn bedrock_actor_spawn_packet<T: EntityBase + ?Sized>(actor: &T) -> C
         && let Some(mob_metadata) = mob.mob_bedrock_spawn_metadata()
     {
         metadata.merge(mob_metadata);
+    }
+    if current_protocol
+        && entity.entity_type.mob
+        && let Some(living) = actor.get_living_entity()
+    {
+        effect::bedrock_particles::BedrockEffectParticles::write_actor_data(
+            &mut metadata,
+            living.packed_bedrock_effect_particles(),
+        );
     }
     let [pitch, yaw, head_yaw, body_yaw] = entity.bedrock_rotation();
     let attributes_list = if entity.entity_type == &EntityType::HORSE {
@@ -935,7 +947,10 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         if !self.has_client_representation() {
             return;
         }
-        let packet = bedrock_actor_spawn_packet(self);
+        let _effect_edit = self
+            .get_living_entity()
+            .and_then(LivingEntity::hold_mob_effect_edit);
+        let packet = bedrock_actor_spawn_packet(self, client.is_current_protocol());
         if let Ok(data) = client.serialize_packet(&packet) {
             client.try_enqueue_packet(data);
         }

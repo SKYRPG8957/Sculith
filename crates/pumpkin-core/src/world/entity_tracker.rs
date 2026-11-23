@@ -36,6 +36,8 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use uuid::Uuid;
 
+use crate::entity::effect::bedrock_particles::BedrockEffectParticles;
+use crate::entity::living::{MobEffectDelivery, RegionalMobEffectParticles};
 use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase, bedrock_actor_spawn_packet, item::ItemEntity};
 use crate::net::ClientPlatform;
@@ -316,6 +318,9 @@ impl TrackedEntity {
         let _motion = entity.hold_drop_motion();
         if entity.is_removed() {
             return;
+        }
+        if entity.entity_type.mob {
+            self.send_pending_bedrock_mob_particles(world);
         }
         self.send_bedrock_move(entity, world);
         let tick = self.tick_count.fetch_add(1, Relaxed);
@@ -832,7 +837,8 @@ impl TrackedEntity {
             )
             .ok()?;
         } else {
-            BedrockClient::write_raw_packet(&bedrock_actor_spawn_packet(actor), &mut data).ok()?;
+            BedrockClient::write_raw_packet(&bedrock_actor_spawn_packet(actor, true), &mut data)
+                .ok()?;
         }
         Some(data.into())
     }
@@ -1149,10 +1155,26 @@ impl TrackedEntity {
                             }
                         }
                         ClientPlatform::Bedrock(client) => {
+                            let native_id = living
+                                .entity
+                                .entity_type
+                                .mob
+                                .then(|| {
+                                    BedrockEffectParticles::viewer_effect_id(effect.effect_type)
+                                })
+                                .flatten();
+                            if living.entity.entity_type.mob
+                                && client.is_current_protocol()
+                                && native_id.is_none()
+                            {
+                                continue;
+                            }
                             let pkt = pumpkin_protocol::bedrock::client::CMobEffect {
                                 target_runtime_id: (self.entity_id as u64).into(),
                                 event_id: pumpkin_protocol::bedrock::client::CMobEffect::EVENT_ADD,
-                                effect_id: effect.effect_type.to_bedrock_id().into(),
+                                effect_id: native_id
+                                    .unwrap_or_else(|| effect.effect_type.to_bedrock_id())
+                                    .into(),
                                 effect_amplifier: i32::from(effect.amplifier).into(),
                                 show_particles: effect.show_particles,
                                 effect_duration_ticks: effect.duration.into(),
@@ -1517,6 +1539,26 @@ impl TrackedEntity {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .snapshot()
+    }
+
+    fn send_pending_bedrock_mob_particles(&self, world: &World) {
+        let Some(living) = self.entity.get_living_entity() else {
+            return;
+        };
+        living.publish_dirty_bedrock_effect_particles(|packed| {
+            if self.has_bedrock_watchers() {
+                let packet = BedrockEffectParticles::packet(self.entity_id, packed);
+                let viewers = self.viewers();
+                World::broadcast_bedrock_grouped(
+                    &packet,
+                    viewers
+                        .iter()
+                        .filter(|viewer| viewer.can_simulate_in(world))
+                        .filter_map(|viewer| viewer.client.bedrock())
+                        .filter(|client| client.is_current_protocol()),
+                );
+            }
+        });
     }
 
     pub fn send_to_tracking_players<P: ClientPacket + Sync>(&self, packet: &P, _world: &World) {
@@ -1893,9 +1935,9 @@ impl EntityTracker {
         server: &Server,
         entity: &Entity,
         expired: &[&'static StatusEffect],
-        java_metadata: Option<Box<[u8]>>,
+        particles: RegionalMobEffectParticles,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
-    ) -> Option<bool> {
+    ) -> Option<MobEffectDelivery> {
         if server.plugin_manager.has_handlers::<PacketSentEvent>()
             || server
                 .plugin_manager
@@ -1905,7 +1947,7 @@ impl EntityTracker {
         }
         let tracked = match self.entity_map.try_get(&entity.entity_id) {
             TryResult::Present(entry) => entry.value().clone(),
-            TryResult::Absent => return Some(true),
+            TryResult::Absent => return Some(MobEffectDelivery::DELIVERED),
             TryResult::Locked => return None,
         };
         if !std::ptr::eq(tracked.entity.get_entity(), entity) {
@@ -1925,46 +1967,56 @@ impl EntityTracker {
             return None;
         }
         if recipients.clone().next().is_none() {
-            return Some(true);
+            return Some(MobEffectDelivery::DELIVERED);
         }
 
         let mut java_packets =
-            Vec::with_capacity(expired.len() + usize::from(java_metadata.is_some()));
-        let mut bedrock_packets = Vec::with_capacity(expired.len());
+            Vec::with_capacity(expired.len() + usize::from(particles.java.is_some()));
+        let mut bedrock_packets = Vec::with_capacity(usize::from(particles.bedrock.is_some()));
         for effect in expired {
-            let (java, bedrock) = World::mob_effect_removal_packets(entity.entity_id, effect);
+            let (java, mut bedrock) = World::mob_effect_removal_packets(entity.entity_id, effect);
             let java = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?;
-            let mut bytes = Vec::new();
-            BedrockClient::write_raw_packet(&bedrock, &mut bytes).ok()?;
             java_packets.push(java);
-            bedrock_packets.push(Bytes::from(bytes));
+            if let Some(id) = BedrockEffectParticles::viewer_effect_id(effect) {
+                bedrock.effect_id = id.into();
+                let mut bytes = Vec::new();
+                BedrockClient::write_raw_packet(&bedrock, &mut bytes).ok()?;
+                bedrock_packets.push(Bytes::from(bytes));
+            }
         }
-        if let Some(metadata) = java_metadata {
+        if let Some(metadata) = particles.java {
             let packet = CSetEntityMetadata::new(entity.entity_id.into(), metadata);
             java_packets
                 .push(JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION).ok()?);
         }
+        if let Some(packed) = particles.bedrock {
+            let packet = BedrockEffectParticles::packet(entity.entity_id, packed);
+            let mut bytes = Vec::new();
+            BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
+            bedrock_packets.push(Bytes::from(bytes));
+        }
 
         // The caller still holds the active effects and edit guards. Pairing
         // is pinned until these removals have been queued for the same viewers.
-        let mut all_java_queued = true;
+        let mut delivery = MobEffectDelivery::DELIVERED;
         for player in recipients {
             match player.client.as_ref() {
                 ClientPlatform::Java(client) => {
                     if client.try_enqueue_current_packet_batch(&java_packets) {
                         java_recipients.insert(client.id, player.client.clone());
                     } else {
-                        all_java_queued = false;
+                        delivery.java_queued = false;
                     }
                 }
                 ClientPlatform::Bedrock(client) => {
                     for packet in &bedrock_packets {
-                        client.try_enqueue_packet_data_unobserved(packet.clone());
+                        delivery.bedrock_queued &=
+                            client.try_enqueue_packet_data_unobserved(packet.clone());
                     }
                 }
             }
         }
-        Some(all_java_queued)
+        Some(delivery)
     }
 
     pub(super) fn try_publish_regional_drop_move(

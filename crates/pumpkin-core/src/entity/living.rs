@@ -21,6 +21,7 @@ use std::sync::atomic::{
 use tracing::warn;
 use uuid::Uuid;
 
+use super::effect::bedrock_particles::BedrockEffectParticles;
 use super::experience_orb::ExperienceOrbEntity;
 use super::{Entity, EntityBase, GearDamage, NBTStorageInit};
 use crate::entity::NBTStorage;
@@ -110,6 +111,7 @@ pub struct LivingEntity {
     pub active_effects: std::sync::Mutex<FxHashMap<&'static StatusEffect, Effect>>,
     last_effect_step: AtomicCell<Option<std::time::Instant>>,
     mob_effect_edit: RwLock<()>,
+    bedrock_effect_particles: BedrockEffectParticles,
     pub entity_equipment: Arc<std::sync::Mutex<EntityEquipment>>,
     pub equipment_drop_chances: Arc<std::sync::Mutex<FxHashMap<EquipmentSlot, f32>>>,
     pub movement_input: AtomicCell<Vector3<f64>>,
@@ -177,6 +179,24 @@ struct EffectParticle {
 
 #[derive(Clone)]
 struct EffectParticles(Vec<EffectParticle>);
+
+#[derive(Default)]
+pub(crate) struct RegionalMobEffectParticles {
+    pub java: Option<Box<[u8]>>,
+    pub bedrock: Option<i64>,
+}
+
+pub(crate) struct MobEffectDelivery {
+    pub java_queued: bool,
+    pub bedrock_queued: bool,
+}
+
+impl MobEffectDelivery {
+    pub(crate) const DELIVERED: Self = Self {
+        java_queued: true,
+        bedrock_queued: true,
+    };
+}
 
 impl EffectParticles {
     fn from_effects<'a>(effects: impl Iterator<Item = &'a Effect>) -> (Self, Option<bool>) {
@@ -522,6 +542,7 @@ impl LivingEntity {
             active_effects: std::sync::Mutex::new(FxHashMap::default()),
             last_effect_step: AtomicCell::new(None),
             mob_effect_edit: RwLock::new(()),
+            bedrock_effect_particles: BedrockEffectParticles::default(),
             entity_equipment: Arc::new(std::sync::Mutex::new(EntityEquipment::new())),
             equipment_drop_chances: Arc::new(std::sync::Mutex::new(FxHashMap::default())),
             equipment_slots: Arc::new(build_equipment_slots()),
@@ -1720,9 +1741,13 @@ impl LivingEntity {
             ambient: effect.ambient,
         };
 
-        let chunk_pos = self.entity.chunk_pos.load();
         let world = self.entity.world.load();
-        world.broadcast_to_chunk_editioned(chunk_pos, &je_packet, &be_packet);
+        world.broadcast_mob_effect_application(
+            &self.entity,
+            effect.effect_type,
+            &je_packet,
+            be_packet,
+        );
         let mut offer_clock = false;
         if !effect.effect_type.instantaneous {
             let passive = effect.duration > 0
@@ -1758,17 +1783,36 @@ impl LivingEntity {
             .active_effects
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let (particles, ambient) = EffectParticles::from_effects(effects.values());
-        drop(effects);
-        self.set_effect_particles(particles, ambient);
+        self.set_effect_particles(&effects);
     }
 
-    fn set_effect_particles(&self, particles: EffectParticles, ambient: Option<bool>) {
+    fn set_effect_particles(&self, effects: &FxHashMap<&'static StatusEffect, Effect>) {
+        let (particles, ambient) = EffectParticles::from_effects(effects.values());
         self.entity
             .set_synced_data(tracked_data::living_entity::EFFECT_PARTICLES, particles);
         if let Some(ambient) = ambient {
             self.entity
                 .set_synced_data(tracked_data::living_entity::EFFECT_AMBIENCE_ID, ambient);
+        }
+        if self.entity.entity_type.mob {
+            self.bedrock_effect_particles
+                .update(BedrockEffectParticles::pack(effects.values()));
+        }
+    }
+
+    pub(super) fn packed_bedrock_effect_particles(&self) -> i64 {
+        self.bedrock_effect_particles.packed()
+    }
+
+    pub(crate) fn publish_dirty_bedrock_effect_particles(&self, publish: impl FnOnce(i64)) {
+        if !self.bedrock_effect_particles.is_dirty() {
+            return;
+        }
+        // Order the ordinary tracker publication with region expiry. Effects
+        // changed by packet observers leave their new value pending.
+        let _effect_edit = self.hold_mob_effect_edit();
+        if let Some(packed) = self.bedrock_effect_particles.take_dirty() {
+            publish(packed);
         }
     }
 
@@ -3311,7 +3355,10 @@ impl LivingEntity {
         &self,
         deadline: TickDeadline,
         owns: impl FnOnce() -> bool,
-        publish_expirations: impl FnOnce(&[&'static StatusEffect], Option<Box<[u8]>>) -> Option<bool>,
+        publish_expirations: impl FnOnce(
+            &[&'static StatusEffect],
+            RegionalMobEffectParticles,
+        ) -> Option<MobEffectDelivery>,
     ) -> bool {
         if !self.is_alive() {
             return false;
@@ -3356,7 +3403,10 @@ impl LivingEntity {
     fn expire_regional_mob_effects(
         &self,
         effects: &mut FxHashMap<&'static StatusEffect, Effect>,
-        publish: impl FnOnce(&[&'static StatusEffect], Option<Box<[u8]>>) -> Option<bool>,
+        publish: impl FnOnce(
+            &[&'static StatusEffect],
+            RegionalMobEffectParticles,
+        ) -> Option<MobEffectDelivery>,
     ) -> bool {
         let Ok(_edit) = self.mob_effect_edit.try_write() else {
             return false;
@@ -3369,16 +3419,9 @@ impl LivingEntity {
             .values()
             .any(|effect| effect.duration == 0 && effect.show_particles);
         let published = if visible_expiration {
-            let (particles, ambient) = EffectParticles::from_effects(
-                effects.values().filter(|effect| effect.duration != 0),
-            );
-            self.entity
-                .synched_data
-                .try_publish_effect_particles(particles, ambient, |metadata| {
-                    publish(&expired, metadata)
-                })
+            self.publish_remaining_effect_particles(effects, &expired, publish)
         } else {
-            publish(&expired, None).is_some()
+            publish(&expired, RegionalMobEffectParticles::default()).is_some()
         };
         if !published {
             return false;
@@ -3393,6 +3436,35 @@ impl LivingEntity {
             "Expired status effects on the mob region"
         );
         true
+    }
+
+    fn publish_remaining_effect_particles(
+        &self,
+        effects: &FxHashMap<&'static StatusEffect, Effect>,
+        expired: &[&'static StatusEffect],
+        publish: impl FnOnce(
+            &[&'static StatusEffect],
+            RegionalMobEffectParticles,
+        ) -> Option<MobEffectDelivery>,
+    ) -> bool {
+        let remaining = effects.values().filter(|effect| effect.duration != 0);
+        let packed = BedrockEffectParticles::pack(remaining.clone());
+        let bedrock = self.bedrock_effect_particles.pending(packed);
+        let (particles, ambient) = EffectParticles::from_effects(remaining);
+        let mut bedrock_queued = false;
+        let published =
+            self.entity
+                .synched_data
+                .try_publish_effect_particles(particles, ambient, |java| {
+                    let delivery = publish(expired, RegionalMobEffectParticles { java, bedrock })?;
+                    bedrock_queued = delivery.bedrock_queued;
+                    Some(delivery.java_queued)
+                });
+        if published {
+            self.bedrock_effect_particles
+                .finish_publication(packed, bedrock_queued);
+        }
+        published
     }
 
     fn tick_effects(&self, player: Option<&Player>, deadline: Option<TickDeadline>) {
@@ -4089,8 +4161,7 @@ impl LivingEntity {
         active_effects.clear();
         active_effects.extend(read_effects);
         if update_particles {
-            let (particles, ambient) = EffectParticles::from_effects(active_effects.values());
-            self.set_effect_particles(particles, ambient);
+            self.set_effect_particles(&active_effects);
         }
         self.refresh_mob_effect_work(&active_effects);
         self.entity

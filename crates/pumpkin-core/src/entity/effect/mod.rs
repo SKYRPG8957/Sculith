@@ -1,3 +1,4 @@
+pub(crate) mod bedrock_particles;
 pub mod hunger;
 pub mod infested;
 pub mod oozing;

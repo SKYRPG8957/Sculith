@@ -71,7 +71,10 @@ use crate::{
         {OnNeighborUpdateArgs, OnScheduledTickArgs},
     },
     command::client_suggestions,
-    entity::{Entity, EntityBase, player::Player, r#type::load_static_entity_from_nbt},
+    entity::{
+        Entity, EntityBase, effect::bedrock_particles::BedrockEffectParticles, player::Player,
+        r#type::load_static_entity_from_nbt,
+    },
     error::PumpkinError,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
     plugin::{
@@ -865,7 +868,7 @@ impl World {
     pub fn send_remove_mob_effect(&self, entity: &Entity, effect_type: &'static StatusEffect) {
         let (je_packet, be_packet) =
             Self::mob_effect_removal_packets(entity.entity_id, effect_type);
-        self.send_to_tracking_players_and_self_editioned(entity, &je_packet, &be_packet);
+        self.send_mob_effect_packets(entity, effect_type, &je_packet, be_packet);
     }
 
     fn mob_effect_removal_packets(
@@ -917,7 +920,64 @@ impl World {
             ambient: effect.ambient,
         };
 
-        self.send_to_tracking_players_and_self_editioned(entity, &je_packet, &be_packet);
+        self.send_mob_effect_packets(entity, effect.effect_type, &je_packet, be_packet);
+    }
+
+    fn route_current_mob_effect(
+        entity: &Entity,
+        effect_type: &StatusEffect,
+        bedrock: &mut CMobEffect,
+    ) -> bool {
+        if !entity.entity_type.mob {
+            return true;
+        }
+        let Some(id) = BedrockEffectParticles::viewer_effect_id(effect_type) else {
+            return false;
+        };
+        bedrock.effect_id = VarInt(id);
+        true
+    }
+
+    fn legacy_mob_effect_viewer(player: &Player) -> bool {
+        player
+            .client
+            .bedrock()
+            .is_none_or(|client| !client.is_current_protocol())
+    }
+
+    fn send_mob_effect_packets<J: ClientPacket + Sync>(
+        &self,
+        entity: &Entity,
+        effect_type: &StatusEffect,
+        java: &J,
+        mut bedrock: CMobEffect,
+    ) {
+        if Self::route_current_mob_effect(entity, effect_type, &mut bedrock) {
+            self.send_to_tracking_players_and_self_editioned(entity, java, &bedrock);
+        } else {
+            self.send_to_tracking_players_filtered_editioned(
+                entity,
+                java,
+                &bedrock,
+                Self::legacy_mob_effect_viewer,
+            );
+        }
+    }
+
+    pub(crate) fn broadcast_mob_effect_application(
+        &self,
+        entity: &Entity,
+        effect_type: &StatusEffect,
+        java: &CUpdateMobEffect,
+        mut bedrock: CMobEffect,
+    ) {
+        let current = Self::route_current_mob_effect(entity, effect_type, &mut bedrock);
+        self.broadcast_to_chunk_filtered_editioned(
+            entity.chunk_pos.load(),
+            java,
+            &bedrock,
+            |player| current || Self::legacy_mob_effect_viewer(player),
+        );
     }
 
     pub fn send_to_tracking_players<P: ClientPacket + Sync>(&self, entity: &Entity, packet: &P) {
@@ -7673,14 +7733,25 @@ impl World {
         je_packet: &J,
         be_packet: &B,
     ) {
+        self.broadcast_to_chunk_filtered_editioned(chunk_pos, je_packet, be_packet, |_| true);
+    }
+
+    fn broadcast_to_chunk_filtered_editioned<J: ClientPacket, B: BClientPacket>(
+        &self,
+        chunk_pos: Vector2<i32>,
+        je_packet: &J,
+        be_packet: &B,
+        filter: impl Fn(&Player) -> bool,
+    ) {
         let players = self.players.load();
         let mut java_recipients = Vec::new();
         let mut bedrock_recipients = Vec::new();
 
         let recipients = players.iter().filter(|p| {
-            p.watched_section
-                .load()
-                .is_within_distance(chunk_pos.x, chunk_pos.y)
+            filter(p)
+                && p.watched_section
+                    .load()
+                    .is_within_distance(chunk_pos.x, chunk_pos.y)
         });
 
         for p in recipients {

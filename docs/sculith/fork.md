@@ -358,9 +358,14 @@ The same passive countdown can run on the region that owns a living mob.
 Its assignment changes with its chunk, and its remaining durations and deadline
 travel with the actor. The old owner checks the current assignment and loaded
 chunk before taking a step. The owner may remove a passive effect after its last
-tick and queue removal for its Java and Bedrock viewers. For visible effects,
-it includes Java particle metadata for the remaining effects in the same batch.
-Unsent particle metadata is kept for the next world tracker pass. The active
+tick and queue the resulting updates for its viewers. Java receives the removal
+and any remaining effect particles in one batch. A native Bedrock client gets
+the packed visible effect list in the mob spawn and when that list changes.
+The Bedrock list uses the lowest eight visible effect IDs in ascending order,
+with an ambient bit for each entry. Speed, slowness, jump boost, levitation,
+slow falling and weaving also use `MobEffect` for native mob viewers, as
+observed on BDS 1.26.63.1. Translated clients receive the legacy packet path.
+The tracker retries particle metadata the region could not queue. The active
 effects lock and an edit permit order removals, metadata and reapplication.
 The world processes periodic effects, removals that alter attributes or entity
 flags, and removals that need packet observers or translation. Both paths share
