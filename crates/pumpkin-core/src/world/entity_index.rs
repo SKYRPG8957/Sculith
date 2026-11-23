@@ -709,13 +709,12 @@ mod tests {
         assert!(index.cached_mob_slots(&original).is_none());
         assert_eq!(index.cached_mob_slots(&current).as_deref(), Some(&[0][..]));
         assert_eq!(slots.as_ref(), &[1]);
-        {
-            let _writer = index
-                .inner
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            assert!(index.cached_mob_slots(&current).is_none());
-        }
+        let writer = index
+            .inner
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(index.cached_mob_slots(&current).is_none());
+        drop(writer);
         world.level.shutdown().await;
         Ok(())
     }

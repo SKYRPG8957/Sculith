@@ -3456,14 +3456,13 @@ mod navigation_update_tests {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
         let mob = mob(world.clone());
-        {
-            let _navigator = mob
-                .navigator
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            world.navigation_change_sequence.store(1, Ordering::Release);
-            mob.on_navigation_block_changed(BlockPos::new(4, 64, 0), world.uuid, 1);
-        }
+        let navigator = mob
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        world.navigation_change_sequence.store(1, Ordering::Release);
+        mob.on_navigation_block_changed(BlockPos::new(4, 64, 0), world.uuid, 1);
+        drop(navigator);
         world.navigation_change_sequence.store(2, Ordering::Release);
         mob.on_navigation_block_changed(BlockPos::new(120, 64, 0), world.uuid, 2);
         let progress = mob
