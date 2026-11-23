@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use dashmap::try_result::TryResult;
 use pumpkin_data::{Block, BlockStateId, entity::EntityPose, translation};
 use pumpkin_protocol::bedrock::client::CMovePlayer;
 use pumpkin_protocol::java::client::play::{
@@ -68,6 +69,11 @@ pub(crate) struct CommittedPlayerMove {
     movement: ClientMove,
     rotation_changed: bool,
     received: FxHashSet<i32>,
+}
+
+pub(crate) enum RegionalClientMove {
+    Idle,
+    Committed(CommittedPlayerMove),
 }
 
 #[derive(Clone, Copy)]
@@ -542,12 +548,12 @@ impl Player {
         self.progress_motion(delta);
     }
 
-    pub(crate) fn try_commit_regional_client_move(
+    pub(crate) fn try_accept_regional_client_move(
         &self,
         server: &Server,
         extent: &RegionChunks,
         movement: ClientMove,
-    ) -> Option<CommittedPlayerMove> {
+    ) -> Option<RegionalClientMove> {
         let entity = self.get_entity();
         let from = entity.pos.load();
         let to = movement.position?;
@@ -571,7 +577,6 @@ impl Player {
             || to.x != Self::clamp_horizontal(to.x)
             || to.z != Self::clamp_horizontal(to.z)
             || to.y != Self::clamp_vertical(to.y)
-            || from == to && !self.look_changed(movement)
             || server.plugin_manager.has_handlers::<PlayerMoveEvent>()
             || server.plugin_manager.has_handlers::<PlayerInputEvent>()
             || server
@@ -593,6 +598,9 @@ impl Player {
         let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
         let rotation_changed =
             self.try_update_regional_pose(server, extent, from, to, Some(movement))?;
+        if from == to && !rotation_changed {
+            return Some(RegionalClientMove::Idle);
+        }
         let received = if from != to
             && entity.chunk_pos.load() == chunk
             && entity.pos.load() == to
@@ -612,7 +620,7 @@ impl Player {
         } else {
             FxHashSet::default()
         };
-        Some(CommittedPlayerMove {
+        Some(RegionalClientMove::Committed(CommittedPlayerMove {
             world: world.uuid,
             teleport,
             epoch,
@@ -621,7 +629,7 @@ impl Player {
             movement,
             rotation_changed,
             received,
-        })
+        }))
     }
 
     pub(crate) fn finish_regional_client_move(&self, committed: &CommittedPlayerMove) {
@@ -714,7 +722,17 @@ impl Player {
             rotation_changed
         };
         if from == to {
-            return movement.filter(|_| owns_player()).map(commit_look);
+            let movement = movement.filter(|_| owns_player())?;
+            if self.look_changed(movement) {
+                self.apply_look(movement);
+                return Some(true);
+            }
+            return (self.can_finish_idle_move(movement)
+                && matches!(
+                    world.level.loaded_chunks.try_get(&origin),
+                    TryResult::Present(_)
+                ))
+            .then_some(false);
         }
 
         let bounds =
@@ -767,6 +785,21 @@ impl Player {
             .inspect(|_| {
                 tracing::trace!(player = %self.gameprofile.name, region = owner, position = ?to, "Committed player position in its region");
             })
+    }
+
+    /// An unchanged ground input can finish here once its world effects are already settled.
+    fn can_finish_idle_move(&self, movement: ClientMove) -> bool {
+        let entity = self.get_entity();
+        movement.on_ground
+            && entity.on_ground.load(Ordering::Relaxed)
+            && !entity.horizontal_collision.load(Ordering::Relaxed)
+            && entity.movement.load() == Vector3::default()
+            && self.living_entity.fall_distance.load() == 0.0
+            && !self.living_entity.is_in_post_impulse_grace_time()
+            && !self
+                .living_entity
+                .is_ignoring_fall_damage_from_current_impulse()
+            && entity.move_dist.load() <= entity.next_step.load()
     }
 
     fn look_changed(&self, requested: ClientMove) -> bool {

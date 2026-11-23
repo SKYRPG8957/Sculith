@@ -13,7 +13,7 @@ use pumpkin_util::math::vector3::Vector3;
 
 use crate::entity::EntityBase;
 use crate::entity::player::{
-    ClientMove, ClientMoveOutcome, PlayerInput, client_move::CommittedPlayerMove,
+    ClientMove, ClientMoveOutcome, PlayerInput, client_move::RegionalClientMove,
 };
 use crate::entity::vehicle::boat::BEDROCK_YAW_OFFSET;
 use crate::world::RegionChunks;
@@ -21,13 +21,13 @@ use crate::world::RegionChunks;
 const TELEPORT_RESEND_INPUTS: u32 = 20;
 
 impl BedrockClient {
-    pub(in crate::net::bedrock) fn try_commit_regional_auth_move(
+    pub(in crate::net::bedrock) fn try_accept_regional_auth_move(
         &self,
         player: &Player,
         server: &Server,
         extent: &RegionChunks,
         packet: &SPlayerAuthInput,
-    ) -> Option<CommittedPlayerMove> {
+    ) -> Option<RegionalClientMove> {
         let flags = &packet.input_data;
         let needs_world = [
             InputData::HandledTeleport,
@@ -76,9 +76,9 @@ impl BedrockClient {
                 && self.client_delta.load().y < 0.0,
             horizontal_collision: false,
         };
-        let committed = player.try_commit_regional_client_move(server, extent, movement)?;
+        let accepted = player.try_accept_regional_client_move(server, extent, movement)?;
         self.store_input_state(packet);
-        Some(committed)
+        Some(accepted)
     }
 
     pub fn handle_player_auth_input(

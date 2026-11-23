@@ -16,7 +16,10 @@ use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use crate::{
     entity::{
         EntityBase,
-        player::{Player, client_move::CommittedPlayerMove},
+        player::{
+            Player,
+            client_move::{CommittedPlayerMove, RegionalClientMove},
+        },
     },
     plugin::server::packet::{PacketReceivedEvent, PacketSentEvent},
     server::{Server, player_commands::PlayerCommandIngress},
@@ -39,6 +42,12 @@ struct PreparedMovement {
     input: SPlayerAuthInput,
     fully_read: bool,
     committed: Option<CommittedPlayerMove>,
+}
+
+enum RegionalMovePreparation {
+    Consumed,
+    Deferred,
+    Unprepared,
 }
 
 impl PreparedMovement {
@@ -199,16 +208,32 @@ impl BedrockClient {
         player: &Player,
         server: &Server,
         extent: &RegionChunks,
-        packet: &RawPacket,
+        queued: &mut QueuedPlayInput,
         owns: &impl Fn(Vector2<i32>) -> bool,
-    ) -> Option<PreparedMovement> {
+    ) -> RegionalMovePreparation {
         if !player.get_entity().on_ground.load(Relaxed) && !player.is_flying() {
-            return None;
+            return RegionalMovePreparation::Unprepared;
         }
-        let mut prepared = Self::prepare_movement(player, &packet.payload, extent, owns)?;
+        let Some(mut prepared) =
+            Self::prepare_movement(player, &queued.packet.payload, extent, owns)
+        else {
+            return RegionalMovePreparation::Unprepared;
+        };
         if prepared.fully_read {
-            prepared.committed =
-                self.try_commit_regional_auth_move(player, server, extent, &prepared.input);
+            match self.try_accept_regional_auth_move(player, server, extent, &prepared.input) {
+                Some(RegionalClientMove::Idle) => {
+                    tracing::trace!(
+                        player = %player.gameprofile.name,
+                        input_tick = prepared.input.tick.0,
+                        "Consumed stationary Bedrock input on its region"
+                    );
+                    return RegionalMovePreparation::Consumed;
+                }
+                Some(RegionalClientMove::Committed(committed)) => {
+                    prepared.committed = Some(committed);
+                }
+                None => {}
+            }
         }
         if prepared.committed.is_some() {
             tracing::trace!(
@@ -223,7 +248,8 @@ impl BedrockClient {
                 "Prepared Bedrock movement on its region"
             );
         }
-        Some(prepared)
+        queued.movement = Some(prepared);
+        RegionalMovePreparation::Deferred
     }
 
     pub(crate) fn drain_regional_input(
@@ -273,14 +299,15 @@ impl BedrockClient {
                 {
                     continue;
                 }
-                if movement
-                    && !was_waiting
-                    && let Some(prepared) =
-                        self.prepare_regional_move(player, server, extent, &queued.packet, &owns)
-                {
-                    queued.movement = Some(prepared);
-                    *head = Some(queued);
-                    return false;
+                if movement && !was_waiting {
+                    match self.prepare_regional_move(player, server, extent, &mut queued, &owns) {
+                        RegionalMovePreparation::Consumed => continue,
+                        RegionalMovePreparation::Deferred => {
+                            *head = Some(queued);
+                            return false;
+                        }
+                        RegionalMovePreparation::Unprepared => {}
+                    }
                 }
                 let payload = (movement && !was_waiting).then(|| queued.packet.payload.clone());
                 *head = Some(queued);
@@ -333,6 +360,7 @@ mod tests {
     };
     use pumpkin_data::Block;
     use pumpkin_protocol::{
+        bedrock::server::player_auth_input::InputData,
         codec::{var_int::VarInt, var_uint::VarUInt, var_ulong::VarULong},
         serial::PacketWrite,
     };
@@ -472,35 +500,97 @@ mod tests {
         })));
     }
 
+    fn queue_auth_input(
+        client: &BedrockClient,
+        player: &Arc<Player>,
+        position: Vector3<f32>,
+        input_tick: u64,
+        on_ground: bool,
+    ) {
+        let mut payload = Vec::new();
+        for value in [0.0, 0.0, position.x, position.y, position.z, 0.0, 0.0, 0.0] {
+            value.write(&mut payload).unwrap();
+        }
+        let flags = if on_ground {
+            1 << InputData::VerticalCollision as usize
+        } else {
+            0
+        };
+        VarULong(flags).write(&mut payload).unwrap();
+        for _ in 0..2 {
+            VarUInt(0).write(&mut payload).unwrap();
+        }
+        VarInt(0).write(&mut payload).unwrap();
+        payload.extend([0; 8]);
+        VarULong(input_tick).write(&mut payload).unwrap();
+        for delta in [0.0f32, if on_ground { -0.08 } else { 0.0 }, 0.0] {
+            delta.write(&mut payload).unwrap();
+        }
+        payload.extend([0; 5]);
+        payload.extend([0; 28]);
+        client.enqueue_play_input(
+            player,
+            RawPacket {
+                id: SPlayerAuthInput::PACKET_ID,
+                payload: payload.into(),
+            },
+        );
+    }
+
+    fn verify_stationary_inputs(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        let entity = player.get_entity();
+        let position = player.bedrock_pos().to_f32_lossy();
+        entity.set_pos(player.feet_from_bedrock_pos(position.to_f64()));
+        entity.on_ground.store(true, Relaxed);
+        player.set_client_loaded(true);
+        client.client_delta.store(Vector3::new(0.0, -0.08, 0.0));
+
+        let enqueue = |tick| queue_auth_input(client, player, position, tick, true);
+        let start = 200;
+        let end = start + REGIONAL_PACKET_BUDGET as u64;
+        let at = Instant::now() + TICK_PERIOD * 10;
+        for tick in start..=end {
+            enqueue(tick);
+        }
+        tick_region(world, chunk, at);
+        assert_eq!(client.input_tick.load(Relaxed), end - 1);
+        assert_eq!(player.inbound_packets.len(), 1);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(client.input_tick.load(Relaxed), end);
+        assert!(player.inbound_packets.is_empty());
+
+        // An otherwise identical landing still needs the world's fall processing.
+        player.living_entity.fall_distance.store(1.0);
+        enqueue(end + 1);
+        enqueue(end + 2);
+        tick_region(world, chunk, at + TICK_PERIOD * 2);
+        assert_eq!(client.input_tick.load(Relaxed), end);
+        assert_eq!(player.inbound_packets.len(), 1);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        assert_eq!(player.living_entity.fall_distance.load(), 1.0);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(client.input_tick.load(Relaxed), end + 1);
+        assert_eq!(player.living_entity.fall_distance.load(), 0.0);
+        tick_region(world, chunk, at + TICK_PERIOD * 3);
+        assert_eq!(client.input_tick.load(Relaxed), end + 2);
+        assert!(player.inbound_packets.is_empty());
+    }
+
     fn verify_teleport_acknowledgement(
         world: &Arc<World>,
         player: &Arc<Player>,
         client: &BedrockClient,
         chunk: Vector2<i32>,
     ) {
-        let enqueue = |position: Vector3<f32>| {
-            let mut payload = Vec::new();
-            for value in [0.0, 0.0, position.x, position.y, position.z, 0.0, 0.0, 0.0] {
-                value.write(&mut payload).unwrap();
-            }
-            for _ in 0..3 {
-                VarUInt(0).write(&mut payload).unwrap();
-            }
-            VarInt(0).write(&mut payload).unwrap();
-            payload.extend([0; 8]);
-            VarULong(7).write(&mut payload).unwrap();
-            payload.extend([0; 12]);
-            payload.extend([0; 5]);
-            payload.extend([0; 28]);
-            client.enqueue_play_input(
-                player,
-                RawPacket {
-                    id: SPlayerAuthInput::PACKET_ID,
-                    payload: payload.into(),
-                },
-            );
-        };
+        let enqueue = |position| queue_auth_input(client, player, position, 7, false);
         let advance = || tick_region(world, chunk, Instant::now());
+        let previous_input = client.input_tick.load(Relaxed);
 
         enqueue(player.bedrock_pos().to_f32_lossy());
         advance();
@@ -514,7 +604,7 @@ mod tests {
         assert!(player.awaiting_teleport.lock().unwrap().is_none());
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
         assert_eq!(client.teleport_unconfirmed_inputs.load(Relaxed), 1);
-        assert_eq!(client.input_tick.load(Relaxed), 0);
+        assert_eq!(client.input_tick.load(Relaxed), previous_input);
         assert_eq!(player.get_entity().pos.load(), destination);
         assert!(player.has_client_loaded());
 
@@ -652,6 +742,7 @@ mod tests {
         check();
         verify_pickup_timer_handoff(&world, &player, east, west);
         verify_mining_clock(&world, &server, &player, &client, west).await;
+        verify_stationary_inputs(&world, &player, &client, west);
         verify_chunk_delivery_clock(&client);
         verify_teleport_acknowledgement(&world, &player, &client, west);
 
