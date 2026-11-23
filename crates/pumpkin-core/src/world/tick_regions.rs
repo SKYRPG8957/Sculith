@@ -64,8 +64,19 @@ impl RegionLayout {
         Arc::ptr_eq(&self.active, &other.active)
     }
 
+    pub(super) fn activates_chunks_from(&self, previous: &Self) -> bool {
+        self.active
+            .owners
+            .keys()
+            .any(|pos| !previous.active.owners.contains_key(pos))
+    }
+
+    pub(super) fn active_owner(&self, pos: Vector2<i32>) -> Option<RegionId> {
+        self.active.owners.get(&pos).copied()
+    }
+
     pub(crate) fn owner(&self, pos: Vector2<i32>) -> Option<RegionId> {
-        self.active.owners.get(&pos).copied().or_else(|| {
+        self.active_owner(pos).or_else(|| {
             self.inactive
                 .binary_search_by_key(&(pos.x, pos.y), |pos| (pos.x, pos.y))
                 .ok()

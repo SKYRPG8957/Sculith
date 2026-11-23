@@ -34,6 +34,12 @@ bitflags::bitflags! {
 }
 
 impl ActorWork {
+    fn enabled(server: &Server) -> Self {
+        let mut kinds = Self::EXPERIENCE | Self::PASSIVE_EFFECTS;
+        kinds.set(Self::ITEM, ItemEntity::timers_unobserved(server));
+        kinds
+    }
+
     fn of(base: &Entity) -> Self {
         if base.entity_type == &EntityType::ITEM {
             Self::ITEM
@@ -110,7 +116,7 @@ impl RegionalActors {
 }
 
 impl World {
-    pub(super) fn publish_region_layout(&self, layout: &Arc<RegionLayout>) {
+    pub(super) fn publish_region_layout(&self, layout: &Arc<RegionLayout>, coordinated: bool) {
         let previous = self.region_layout.load();
         if Arc::ptr_eq(&previous, layout) {
             return;
@@ -124,22 +130,39 @@ impl World {
             .regional_actors
             .write()
             .unwrap_or_else(PoisonError::into_inner);
-        if !published.kinds.is_empty() {
+        if !coordinated && let Some(server) = self.server.upgrade() {
             let mut reassigned = RegionalActors {
-                kinds: published.kinds,
+                kinds: ActorWork::enabled(&server),
                 ..Default::default()
             };
             for actor in published.by_region.values().flatten() {
                 let base = actor.get_entity();
-                if !base.is_removed()
+                if reassigned.kinds.intersects(ActorWork::of(base))
+                    && !base.is_removed()
                     && std::ptr::eq(base.world.load().as_ref(), self)
-                    && let Some(owner) = layout.owner(base.chunk_pos.load())
-                    && owner != RegionLayout::INACTIVE
+                    && let Some(owner) = layout.active_owner(base.chunk_pos.load())
                 {
                     reassigned.assign(owner, actor.clone());
                 }
             }
-            if reassigned.assigned != published.assigned {
+            if layout.activates_chunks_from(&previous) {
+                // An actor can stay loaded just outside simulation distance.
+                // Pick up its work when the extent opens, before the world ticks actors.
+                for actor in self.entities.load().iter() {
+                    let base = actor.get_entity();
+                    let pos = base.chunk_pos.load();
+                    if reassigned.kinds.intersects(ActorWork::of(base))
+                        && !base.is_removed()
+                        && previous.active_owner(pos).is_none()
+                        && let Some(owner) = layout.active_owner(pos)
+                        && std::ptr::eq(base.world.load().as_ref(), self)
+                        && !reassigned.contains(base.entity_id)
+                    {
+                        reassigned.assign(owner, actor.clone());
+                    }
+                }
+            }
+            if reassigned.kinds != published.kinds || reassigned.assigned != published.assigned {
                 *published = Arc::new(reassigned);
             }
         }
@@ -158,16 +181,12 @@ impl World {
     ) -> Arc<RegionalActors> {
         let mut next = RegionalActors::default();
         if regional {
-            next.kinds
-                .insert(ActorWork::EXPERIENCE | ActorWork::PASSIVE_EFFECTS);
-            next.kinds
-                .set(ActorWork::ITEM, ItemEntity::timers_unobserved(server));
+            next.kinds = ActorWork::enabled(server);
             let layout = self.region_layout.load();
             for &(entity, _) in tickable {
                 let base = entity.get_entity();
                 if next.kinds.intersects(ActorWork::of(base))
-                    && let Some(owner) = layout.owner(base.chunk_pos.load())
-                    && owner != RegionLayout::INACTIVE
+                    && let Some(owner) = layout.active_owner(base.chunk_pos.load())
                 {
                     next.assigned.insert(base.entity_id, owner);
                 }
@@ -240,9 +259,7 @@ impl World {
             && !entity.is_removed()
             && std::ptr::eq(entity.world.load().as_ref(), self)
         {
-            layout
-                .owner(entity.chunk_pos.load())
-                .filter(|&owner| owner != RegionLayout::INACTIVE)
+            layout.active_owner(entity.chunk_pos.load())
         } else {
             None
         };
@@ -509,7 +526,7 @@ mod tests {
                 (2, [destination].into()),
             ]),
         ));
-        world.publish_region_layout(&layout);
+        world.publish_region_layout(&layout, false);
         world.level.get_or_fetch_chunk(home, |_| ()).await;
 
         let position =
@@ -556,6 +573,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_inactive_mob_resumes_effect_work_when_its_region_is_published() {
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
+        let world = server.worlds.load()[0].clone();
+        let west = Vector2::new(0, 0);
+        let east = Vector2::new(10, 0);
+        let layout = |east_owner| {
+            let mut owners = FxHashMap::from_iter([(west, 0)]);
+            let mut regions = FxHashMap::from_iter([(0, [west].into())]);
+            if let Some(id) = east_owner {
+                owners.insert(east, id);
+                regions.insert(id, [east].into());
+            }
+            Arc::new(RegionLayout::from_active(owners, regions))
+        };
+        for chunk in [west, east] {
+            world
+                .level
+                .loaded_chunks
+                .insert(chunk, ChunkData::empty_sync(chunk.x, chunk.y));
+        }
+        let inactive = layout(None);
+        world.publish_region_layout(&inactive, false);
+
+        let pig = crate::entity::r#type::from_type(
+            &EntityType::PIG,
+            Vector3::new(168.0, 80.0, 8.0),
+            &world,
+            uuid::Uuid::new_v4(),
+        );
+        let id = pig.get_entity().entity_id;
+        let living = pig.get_living_entity().unwrap();
+        world.add_entity_silent(pig.clone());
+        let vision = &StatusEffect::NIGHT_VISION;
+        living.add_effect(Effect {
+            effect_type: vision,
+            duration: 4,
+            amplifier: 0,
+            ambient: false,
+            show_particles: false,
+            show_icon: false,
+            blend: false,
+        });
+        let remaining = || living.get_effect(vision).unwrap().duration;
+        assert!(!world.regional_actors.read().unwrap().contains(id));
+
+        let at = Instant::now();
+        let period = Duration::from_millis(50);
+        let step = |layout: &RegionLayout, owner, ticks| {
+            world.advance_region_time(
+                owner,
+                layout.chunks(owner).unwrap(),
+                TickDeadline {
+                    at: at + period * ticks,
+                    period,
+                },
+            );
+        };
+        let first = layout(Some(1));
+        world.publish_region_layout(&first, false);
+        step(&first, 1, 0);
+        assert_eq!(remaining(), 3);
+        world.publish_region_layout(&inactive, false);
+        step(&first, 1, 1);
+        assert_eq!(remaining(), 3);
+        assert!(!world.regional_actors.read().unwrap().contains(id));
+
+        let next = layout(Some(2));
+        world.publish_region_layout(&next, false);
+        step(&next, 2, 0);
+        assert_eq!(remaining(), 3);
+        step(&next, 2, 2);
+        assert_eq!(remaining(), 2);
+        assert_eq!(world.regional_actors.read().unwrap().assigned[&id], 2);
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn a_mob_keeps_its_effect_deadline_and_pending_work_across_regions() {
         let folder = tempfile::tempdir().unwrap();
         let server = test_server(folder.path()).await;
@@ -566,7 +661,7 @@ mod tests {
             FxHashMap::from_iter([(west, 0), (east, 1)]),
             FxHashMap::from_iter([(0, [west].into()), (1, [east].into())]),
         ));
-        world.publish_region_layout(&layout);
+        world.publish_region_layout(&layout, false);
         for chunk in [west, east] {
             world
                 .level

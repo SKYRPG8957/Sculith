@@ -3369,6 +3369,11 @@ impl LivingEntity {
         }
     }
 
+    pub(crate) fn start_restored_regional_effects(&self, deadline: TickDeadline) {
+        // Just like a tick-spawned mob, this incarnation first advances on the next step.
+        self.last_effect_step.store(Some(deadline.at));
+    }
+
     pub(crate) fn advance_regional_effects(
         &self,
         deadline: TickDeadline,

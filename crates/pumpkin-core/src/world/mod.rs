@@ -2342,7 +2342,7 @@ impl World {
                     let layout = tracker.tick_regions.layout().clone();
                     drop(active);
                     drop(tracker);
-                    self.publish_region_layout(&layout);
+                    self.publish_region_layout(&layout, coordinated);
                     plan
                 });
 

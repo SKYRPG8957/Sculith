@@ -445,9 +445,11 @@ impl World {
         } else {
             None
         };
-        let schedules_drop = |entity: &dyn EntityBase| {
-            let kind = entity.get_entity().entity_type;
-            kind == &EntityType::EXPERIENCE_ORB || item_timers && kind == &EntityType::ITEM
+        let schedules_actor = |entity: &dyn EntityBase| {
+            let base = entity.get_entity();
+            base.regional_effects.load(Relaxed)
+                || base.entity_type == &EntityType::EXPERIENCE_ORB
+                || item_timers && base.entity_type == &EntityType::ITEM
         };
         let can_pair = self
             .server
@@ -478,15 +480,18 @@ impl World {
                 entity
                     .get_entity()
                     .start_regional_drop_motion(owner, deadline);
+            } else if entity.get_entity().regional_effects.load(Relaxed)
+                && let Some(living) = entity.get_living_entity()
+            {
+                living.start_restored_regional_effects(deadline);
             }
             actors.push((pos, entity));
         }
 
-        // Publish restored drops with their assignment before a world tick can
-        // pick them up in its entity scan. Moves take the same assignment lock.
-        let mut drop_plan = if actors
+        // Publish restored actors and their work together. Moves take the same assignment lock.
+        let mut actor_plan = if actors
             .iter()
-            .any(|(_, entity)| schedules_drop(entity.as_ref()))
+            .any(|(_, entity)| schedules_actor(entity.as_ref()))
         {
             let Ok(plan) = self.regional_actors.try_write() else {
                 return false;
@@ -529,9 +534,9 @@ impl World {
                     return None;
                 }
                 let added = self.register_chunk_actors(&actors);
-                if let Some(plan) = drop_plan.as_mut() {
+                if let Some(plan) = actor_plan.as_mut() {
                     for (_, actor) in &added {
-                        if schedules_drop(actor.as_ref()) {
+                        if schedules_actor(actor.as_ref()) {
                             Arc::make_mut(plan).assign(owner, actor.clone());
                         }
                     }
@@ -562,7 +567,7 @@ impl World {
         drop(pending);
         drop(updates);
         drop(registering);
-        drop(drop_plan);
+        drop(actor_plan);
         drop(records);
 
         if can_pair
@@ -826,7 +831,7 @@ mod tests {
     use pumpkin_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
-    use pumpkin_data::{item::Item, item_stack::ItemStack};
+    use pumpkin_data::{effect::StatusEffect, item::Item, item_stack::ItemStack, potion::Effect};
     use std::{
         any::Any,
         sync::atomic::AtomicBool,
@@ -836,8 +841,11 @@ mod tests {
     use crate::{
         data::VanillaData,
         entity::{
-            ai::test_support::world, decoration::armor_stand::ArmorStandEntity,
-            item::RegionalItemStep, living::LivingEntity, passive::cow::CowEntity,
+            ai::test_support::world,
+            decoration::armor_stand::ArmorStandEntity,
+            item::RegionalItemStep,
+            living::{LivingEntity, MobEffectDelivery},
+            passive::cow::CowEntity,
         },
         world::tick_regions::TickRegions,
     };
@@ -1018,7 +1026,7 @@ mod tests {
             regions.active_chunks_changed();
             regions.schedule_ticks(active, Vec::new(), false);
             let layout = regions.layout().clone();
-            world.publish_region_layout(&layout);
+            world.publish_region_layout(&layout, false);
             layout
         };
         let tick = |layout: &RegionLayout, pos| {
@@ -1138,7 +1146,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_region_registers_a_persistent_mob_from_watched_terrain_once() {
+    async fn the_region_restores_a_persistent_mob_and_its_effect_clock_once() {
         let folder = tempfile::tempdir().unwrap();
         let world = world(&folder);
         let position = Vector3::new(160.5, 64.0, 8.5);
@@ -1148,6 +1156,16 @@ mod tests {
         let chunk = world.level.get_entity_chunk_sync(&pos).unwrap();
         let uuid = Uuid::new_v4();
         let cow = from_type(&EntityType::COW, position, &world, uuid);
+        let regeneration = &StatusEffect::REGENERATION;
+        cow.get_living_entity().unwrap().add_effect(Effect {
+            effect_type: regeneration,
+            duration: 50,
+            amplifier: 0,
+            ambient: false,
+            show_particles: false,
+            show_icon: false,
+            blend: false,
+        });
         let mut record = NbtCompound::new();
         cow.write_nbt(&mut record);
         record.put_bool("PersistenceRequired", true);
@@ -1192,8 +1210,29 @@ mod tests {
         assert_eq!(restored.get_entity().pos.load(), position);
         assert!(age.is_baby() && age.is_age_locked());
         assert_eq!(age.get_age(), -600);
-        assert_eq!(mob.get_mob_entity().living_entity.health.load(), 6.0);
+        let living = &mob.get_mob_entity().living_entity;
+        let state = || {
+            (
+                living.health.load(),
+                living.get_effect(regeneration).unwrap().duration,
+            )
+        };
+        assert!(world.regional_actors.read().unwrap().contains(id));
+        assert_eq!(state(), (6.0, 50));
         assert!(!world.entity_tracker.has_entity_with_id(id));
+        living.advance_regional_effects(
+            deadline,
+            || true,
+            |_, _| panic!("step on restore deadline"),
+        );
+        assert_eq!(state(), (6.0, 50));
+        let next = TickDeadline {
+            at: deadline.at + deadline.period,
+            ..deadline
+        };
+        living.advance_regional_effects(next, || true, |_, _| Some(MobEffectDelivery::DELIVERED));
+        living.advance_regional_effects(next, || true, |_, _| panic!("duplicate step"));
+        assert_eq!(state(), (7.0, 49));
         drop(snapshot);
 
         world.apply_entity_chunk_changes();

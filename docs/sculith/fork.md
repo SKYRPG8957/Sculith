@@ -356,8 +356,12 @@ state, which also supplies player saves.
 
 The same passive countdown can run on the region that owns a living mob.
 Its assignment changes with its chunk, and its remaining durations and deadline
-travel with the actor. The old owner checks the current assignment and loaded
-chunk before taking a step. The owner may remove a passive effect after its last
+travel with the actor. A loaded mob that returns to simulation distance joins
+the new extent when ownership is published. Its clock is paused while it
+has no active owner. Regional restoration registers a mob and its eligible
+effects together, with the first step on the following deadline. The old
+owner checks the current assignment and loaded chunk before taking a step.
+The owner may remove a passive effect after its last
 tick and queue the resulting updates for its viewers. Java receives the removal
 and any remaining effect particles in one batch. A native Bedrock client gets
 the packed visible effect list in the mob spawn and when that list changes.
