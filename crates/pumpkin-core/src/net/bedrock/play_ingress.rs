@@ -600,11 +600,12 @@ mod tests {
         client: &BedrockClient,
         chunk: Vector2<i32>,
     ) {
-        world.level.get_or_fetch_chunk(chunk, |_| ()).await;
+        let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
         let target = BlockPos::new(9, 100, 8);
         let dirt = Block::DIRT.default_state.id;
         let stone = Block::STONE.default_state.id;
-        world.set_block_state(&target, dirt, BlockFlags::FORCE_STATE);
+        let set_target = |state| terrain.set_block_absolute_y(9, 100, 8, state);
+        set_target(dirt);
         player.mining.store(true, Relaxed);
         *player.mining_pos.lock().unwrap() = target;
         let at = Instant::now();
@@ -616,7 +617,24 @@ mod tests {
             client.tick_mining_clock(server, player, world, target, dirt, Some(step)),
             1
         );
-        tick_region(world, chunk, at + TICK_PERIOD);
+        // Background chunk work can temporarily prevent the region from reading
+        // the block. Keep the deadline fixed while waiting for that work.
+        let advance_mining = |deadline, expected| async move {
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    tick_region(world, chunk, deadline);
+                    if client.mining_prediction_ticks(server, player, world, target, dirt, 1)
+                        == expected
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("regional mining should finish once the chunk can be read");
+        };
+        advance_mining(at + TICK_PERIOD, 2).await;
         tick_region(world, chunk, at + TICK_PERIOD);
         assert_eq!(
             client.mining_prediction_ticks(server, player, world, target, dirt, 1),
@@ -640,8 +658,8 @@ mod tests {
             2
         );
 
-        world.set_block_state(&target, stone, BlockFlags::FORCE_STATE);
-        tick_region(world, chunk, at + TICK_PERIOD * 2);
+        set_target(stone);
+        advance_mining(at + TICK_PERIOD * 2, 1).await;
         assert_eq!(
             client.mining_prediction_ticks(server, player, world, target, dirt, 1),
             1
@@ -1232,6 +1250,15 @@ mod tests {
         world.players.store(Arc::new(vec![player.clone()]));
         let west = Vector2::new(0, 0);
         let east = Vector2::new(32, 0);
+        // Preload the bridge fixture so generation cannot interrupt an input
+        // that needs to read the current terrain without blocking.
+        for x in west.x..=east.x {
+            world
+                .level
+                .loaded_chunks
+                .entry(Vector2::new(x, 0))
+                .or_insert_with(|| pumpkin_world::chunk::ChunkData::empty_sync(x, 0));
+        }
         let refresh = |joined| {
             let mut forced = world.forced_chunks.lock().unwrap();
             forced.clear();
