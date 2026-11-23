@@ -28,16 +28,17 @@ impl Default for HungerManager {
 
 impl HungerManager {
     pub fn tick(&self, player: &Player) {
-        let mut level = self.level.load();
-        let mut saturation = self.saturation.load();
-        let mut exhaustion = self.exhaustion.load();
-        let mut timer = self.tick_timer.load();
-
         let level_info = player.world().level_info.load();
         let difficulty = level_info.difficulty;
         let natural_regen = level_info.game_rules.natural_health_regeneration;
         let health = player.living_entity.health.load();
         let can_heal = player.can_food_heal();
+
+        let abilities = player.lock_abilities_and_hunger();
+        let mut level = self.level.load();
+        let mut saturation = self.saturation.load();
+        let mut exhaustion = self.exhaustion.load();
+        let mut timer = self.tick_timer.load();
 
         let mut needs_sync = false;
         let mut heal_amount = 0.0;
@@ -93,6 +94,7 @@ impl HungerManager {
             self.exhaustion.store(exhaustion);
             self.tick_timer.store(timer);
         }
+        drop(abilities);
 
         if needs_sync {
             player.send_health();
@@ -147,11 +149,6 @@ impl HungerManager {
 
     pub fn get_exhaustion(&self) -> f32 {
         self.exhaustion.load()
-    }
-
-    pub(super) fn can_skip_zero_exhaustion(&self) -> bool {
-        let exhaustion = self.get_exhaustion();
-        exhaustion <= MAX_EXHAUSTION
     }
 
     pub fn set_exhaustion(&self, exhaustion: f32) {

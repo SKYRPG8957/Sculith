@@ -3697,7 +3697,7 @@ impl LivingEntity {
         // If this LivingEntity corresponds to a Player, reset their hunger manager
         let world = self.entity.world.load();
         if let Some(player) = world.get_player_by_id(self.entity.entity_id) {
-            player.hunger_manager.restart();
+            player.restart_hunger();
             player
                 .spawn_extra_particles_on_fall
                 .store(false, Ordering::Relaxed);

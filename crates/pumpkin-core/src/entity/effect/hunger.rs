@@ -17,7 +17,7 @@ impl MobEffect for HungerMobEffect {
             && let Some(player) = entity.get_player()
         {
             let exhaustion = 0.1 * (f32::from(amplifier) + 1.0);
-            player.hunger_manager.add_exhaustion(exhaustion);
+            player.add_exhaustion_unobserved(exhaustion);
         }
     }
 }

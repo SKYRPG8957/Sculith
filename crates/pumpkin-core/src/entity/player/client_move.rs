@@ -85,7 +85,7 @@ pub(crate) enum RegionalClientMove {
 struct RegionalPose {
     rotation_changed: bool,
     stationary_settled: bool,
-    grounded_walk: bool,
+    grounded_move: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -631,9 +631,9 @@ impl Player {
         };
         if all_viewers_queued
             && (pose.stationary_settled
-                || pose.grounded_walk
+                || pose.grounded_move
                     && self
-                        .try_finish_grounded_walk(server, &world, extent, from, to)
+                        .try_finish_grounded_move(server, &world, extent, from, to)
                         .is_some())
         {
             return Some(RegionalClientMove::Complete {
@@ -654,7 +654,7 @@ impl Player {
     }
 
     /// Completes a level step which needs only the player's local movement accounting.
-    fn try_finish_grounded_walk(
+    fn try_finish_grounded_move(
         &self,
         server: &Server,
         world: &World,
@@ -676,7 +676,6 @@ impl Player {
                 .is_some_and(|current| Arc::ptr_eq(current, extent))
             || entity.pose.load() != EntityPose::Standing
             || !self.has_settled_ground_contact()
-            || entity.is_sprinting()
             || entity.is_sneaking()
             || entity.is_fall_flying()
             || entity.is_swimming()
@@ -692,9 +691,10 @@ impl Player {
             return None;
         }
         let abilities = self.abilities.try_lock().ok()?;
-        if abilities.flying || !self.hunger_manager.can_skip_zero_exhaustion() {
+        if abilities.flying {
             return None;
         }
+        let sprinting = entity.is_sprinting();
 
         let movement = to - from;
         let (walked, flown) = entity.movement_distances(movement, false);
@@ -720,10 +720,12 @@ impl Player {
 
         let cm = move_distance_cm(from, to);
         if cm > 0 {
-            self.stats
-                .try_lock()
-                .ok()?
-                .increment_custom(CustomStatistic::WalkOneCm, cm);
+            let stat = if sprinting {
+                CustomStatistic::SprintOneCm
+            } else {
+                CustomStatistic::WalkOneCm
+            };
+            self.stats.try_lock().ok()?.increment_custom(stat, cm);
         }
         entity.movement.store(movement);
         if active {
@@ -731,6 +733,11 @@ impl Player {
         }
         entity.move_dist.store(walked);
         entity.fly_dist.store(flown);
+        if !abilities.invulnerable
+            && let Some(exhaustion) = Self::grounded_movement_exhaustion(movement, sprinting)
+        {
+            self.hunger_manager.add_exhaustion(exhaustion);
+        }
         Some(())
     }
 
@@ -872,7 +879,7 @@ impl Player {
             }
             first.0.y = floor;
         }
-        let can_finish_walk =
+        let can_finish_grounded_move =
             floor.is_some() && from.y == to.y && destination.chunk_position() == origin;
         // Reuse the normal position fields without reacquiring the pinned chunk or index.
         world
@@ -883,13 +890,13 @@ impl Player {
                 owns,
                 |read| {
                     (movement.is_none() || clear_movement_path(first, last, floor, read)).then(|| {
-                        let grounded_walk = can_finish_walk && read(destination).is_some_and(|id| {
+                        let grounded_move = can_finish_grounded_move && read(destination).is_some_and(|id| {
                             !id.to_block().has_tag(&pumpkin_data::tag::Block::MINECRAFT_CLIMBABLE)
                         });
-                        (destination, grounded_walk)
+                        (destination, grounded_move)
                     })
                 },
-                |grounded_walk, biome| {
+                |grounded_move, biome| {
                     world.entity_index.try_move_regional_player(
                         &world,
                         self,
@@ -907,7 +914,7 @@ impl Player {
                             Some(RegionalPose {
                                 rotation_changed: movement.is_some_and(commit_look),
                                 stationary_settled: false,
-                                grounded_walk,
+                                grounded_move,
                             })
                         },
                     )
@@ -941,7 +948,7 @@ impl Player {
         Some(RegionalPose {
             rotation_changed,
             stationary_settled,
-            grounded_walk: false,
+            grounded_move: false,
         })
     }
 

@@ -3874,23 +3874,30 @@ impl Player {
     pub fn progress_motion(&self, delta_pos: Vector3<f64>) {
         // TODO: gliding...
         let entity = &self.living_entity.entity;
-        let (rate, distance) = if self.is_swimming() || entity.is_submerged_in_water() {
-            (0.01, delta_pos.length())
+        let exhaustion = if self.is_swimming() || entity.is_submerged_in_water() {
+            Self::movement_exhaustion(delta_pos.length(), 0.01)
         } else if entity.is_in_water() {
-            (0.01, delta_pos.horizontal_length())
+            Self::movement_exhaustion(delta_pos.horizontal_length(), 0.01)
         } else if self.living_entity.climbing.load(Ordering::Relaxed) {
-            return;
+            None
         } else if entity.on_ground.load(Ordering::Relaxed) {
-            let rate = if entity.is_sprinting() { 0.1 } else { 0.0 };
-            (rate, delta_pos.horizontal_length())
+            Self::grounded_movement_exhaustion(delta_pos, entity.is_sprinting())
         } else {
-            return;
+            None
         };
-
-        let delta = (distance * 100.0).round() as f32;
-        if delta > 0.0 {
-            self.add_exhaustion(rate * delta * 0.01);
+        if let Some(exhaustion) = exhaustion {
+            self.add_exhaustion(exhaustion);
         }
+    }
+
+    fn grounded_movement_exhaustion(movement: Vector3<f64>, sprinting: bool) -> Option<f32> {
+        let rate = if sprinting { 0.1 } else { 0.0 };
+        Self::movement_exhaustion(movement.horizontal_length(), rate)
+    }
+
+    fn movement_exhaustion(distance: f64, rate: f32) -> Option<f32> {
+        let cm = (distance * 100.0).round() as f32;
+        (cm > 0.0).then_some(rate * cm * 0.01)
     }
 
     #[must_use]
@@ -5349,12 +5356,7 @@ impl Player {
     }
 
     pub fn add_exhaustion(&self, exhaustion: f32) {
-        if self
-            .abilities
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .invulnerable
-        {
+        if self.lock_abilities_and_hunger().invulnerable {
             return;
         }
         let mut exhaustion_event =
@@ -5370,8 +5372,25 @@ impl Player {
         if exhaustion_event.cancelled {
             return;
         }
-        self.hunger_manager
-            .add_exhaustion(exhaustion_event.exhaustion);
+        self.add_exhaustion_unobserved(exhaustion_event.exhaustion);
+    }
+
+    /// Serializes exhaustion accounting with movement, food ticks and respawn.
+    /// Callers release the guard before sending packets or invoking plugins.
+    pub(super) fn lock_abilities_and_hunger(&self) -> std::sync::MutexGuard<'_, Abilities> {
+        self.abilities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(super) fn add_exhaustion_unobserved(&self, exhaustion: f32) {
+        let _abilities = self.lock_abilities_and_hunger();
+        self.hunger_manager.add_exhaustion(exhaustion);
+    }
+
+    pub(super) fn restart_hunger(&self) {
+        let _abilities = self.lock_abilities_and_hunger();
+        self.hunger_manager.restart();
     }
 
     pub fn heal(&self, additional_health: f32) {
@@ -5691,7 +5710,9 @@ impl Player {
     }
 
     pub fn set_exhaustion(&self, exhaustion: f32) {
+        let abilities = self.lock_abilities_and_hunger();
         self.hunger_manager.set_exhaustion(exhaustion);
+        drop(abilities);
         self.send_health();
     }
 
@@ -8490,10 +8511,10 @@ impl EntityBase for Player {
         }
         self.ender_chest_inventory.write_nbt(nbt);
 
-        self.abilities
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .write_nbt(nbt);
+        let abilities = self.lock_abilities_and_hunger();
+        abilities.write_nbt(nbt);
+        self.hunger_manager.write_nbt(nbt);
+        drop(abilities);
 
         let total_exp = experience::points_to_level(self.experience_level.load(Ordering::Relaxed))
             + self.experience_points.load(Ordering::Relaxed);
@@ -8525,9 +8546,6 @@ impl EntityBase for Player {
             "HasPlayedBefore",
             self.has_played_before.load(Ordering::Relaxed),
         );
-
-        // Store food level, saturation, exhaustion, and tick timer
-        self.hunger_manager.write_nbt(nbt);
 
         let air_supply = self
             .breath_manager
@@ -8682,23 +8700,20 @@ impl EntityBase for Player {
                 .and_then(|val| GameMode::try_from(val).ok()),
         );
 
-        {
-            let mut abilities = self
-                .abilities
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            abilities.set_for_gamemode(gamemode);
-            abilities.read_nbt(nbt);
-            if gamemode == GameMode::Creative {
-                abilities.allow_flying = true;
-                abilities.creative = true;
-                abilities.invulnerable = true;
-            } else if gamemode == GameMode::Spectator {
-                abilities.allow_flying = true;
-                abilities.creative = false;
-                abilities.invulnerable = true;
-            }
+        let mut abilities = self.lock_abilities_and_hunger();
+        abilities.set_for_gamemode(gamemode);
+        abilities.read_nbt(nbt);
+        if gamemode == GameMode::Creative {
+            abilities.allow_flying = true;
+            abilities.creative = true;
+            abilities.invulnerable = true;
+        } else if gamemode == GameMode::Spectator {
+            abilities.allow_flying = true;
+            abilities.creative = false;
+            abilities.invulnerable = true;
         }
+        self.hunger_manager.read_nbt_non_mut(nbt);
+        drop(abilities);
 
         self.living_entity.entity.invulnerable.store(
             matches!(gamemode, GameMode::Creative | GameMode::Spectator),
@@ -8719,8 +8734,6 @@ impl EntityBase for Player {
             nbt.get_bool("HasPlayedBefore").unwrap_or(false),
             Ordering::Relaxed,
         );
-
-        self.hunger_manager.read_nbt_non_mut(nbt);
 
         if let Some(air) = nbt
             .get_short("Air")

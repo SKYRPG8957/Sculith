@@ -226,7 +226,7 @@ impl BedrockClient {
                     rotation_changed,
                 }) => {
                     let message = if position_changed {
-                        "Completed Bedrock walk on its region"
+                        "Completed grounded Bedrock movement on its region"
                     } else {
                         "Consumed stationary Bedrock input on its region"
                     };
@@ -364,26 +364,52 @@ impl BedrockClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::future::BoxFuture;
     use pumpkin_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
     use pumpkin_data::Block;
     use pumpkin_protocol::{
-        bedrock::server::player_auth_input::InputData,
+        bedrock::{
+            client::update_attributes::CUpdateAttributes, server::player_auth_input::InputData,
+        },
         codec::{var_int::VarInt, var_uint::VarUInt, var_ulong::VarULong},
         serial::PacketWrite,
     };
     use pumpkin_util::{GameMode, math::vector3::Vector3};
     use pumpkin_world::world::BlockFlags;
-    use std::time::{Duration, Instant};
+    use std::{
+        sync::atomic::AtomicBool,
+        time::{Duration, Instant},
+    };
 
     use crate::{
         data::VanillaData,
         net::{ClientPlatform, GameProfile, PlayerConfig, packet_limiter::PacketRateLimiter},
+        plugin::{EventHandler, api::events::EventPriority},
         server::TickDeadline,
     };
 
     const TICK_PERIOD: Duration = Duration::from_millis(50);
+
+    #[derive(Default)]
+    struct HealthPacketObserver(AtomicBool);
+
+    impl EventHandler<PacketSentEvent> for HealthPacketObserver {
+        fn handle_blocking<'a>(
+            &'a self,
+            _: &'a Arc<Server>,
+            event: &'a mut PacketSentEvent,
+        ) -> BoxFuture<'a, ()> {
+            Box::pin(async move {
+                if event.packet_id == CUpdateAttributes::PACKET_ID {
+                    assert!(event.player.abilities.try_lock().is_ok());
+                    assert_eq!(event.player.get_exhaustion(), 1.0);
+                    self.0.store(true, Relaxed);
+                }
+            })
+        }
+    }
 
     fn tick_region(world: &Arc<World>, pos: Vector2<i32>, at: Instant) {
         let layout = world.region_layout.load();
@@ -687,7 +713,8 @@ mod tests {
         advance();
         assert!(client.activity.inbound_head.lock().unwrap().is_some());
 
-        let destination = Vector3::new(9.5, 100.0, 8.0);
+        let mut destination = player.position();
+        destination.x += 1.0;
         player.request_teleport(destination, 0.0, 0.0);
         player.set_client_loaded(false);
         enqueue(client.teleport_sent_pos.load());
@@ -780,7 +807,90 @@ mod tests {
         assert_eq!(distance(), 87);
         assert!(player.inbound_packets.is_empty());
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        verify_grounded_sprints(world, player, client, chunk);
         world.entity_tracker.remove_entity(player.as_ref(), world);
+    }
+
+    fn verify_grounded_sprints(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        use crate::entity::player::statistics::CustomStatistic;
+
+        let entity = player.get_entity();
+        let position = player.bedrock_pos().to_f32_lossy();
+        let at = Instant::now() + TICK_PERIOD * 40;
+        let start = client.input_tick.load(Relaxed) + 1;
+        let grounded_sprint = [InputData::VerticalCollision, InputData::SprintDown];
+        queue_auth_input(
+            client,
+            player,
+            position,
+            start,
+            entity.yaw.load(),
+            &[
+                InputData::VerticalCollision,
+                InputData::SprintDown,
+                InputData::StartSprinting,
+            ],
+        );
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(entity.is_sprinting());
+        player.set_exhaustion(4.0);
+
+        let sprint = |x, tick| {
+            queue_auth_input(
+                client,
+                player,
+                Vector3::new(x, position.y, position.z),
+                tick,
+                entity.yaw.load(),
+                &grounded_sprint,
+            );
+        };
+        let distance = || player.get_custom_stat(CustomStatistic::SprintOneCm);
+        let check_exhaustion = |expected: f32| {
+            assert!((player.get_exhaustion() - expected).abs() < 0.000_001);
+        };
+        sprint(9.125, start + 1);
+        sprint(9.375, start + 2);
+        tick_region(world, chunk, at);
+        assert_eq!(entity.pos.load().x, 9.375);
+        assert_eq!(distance(), 50);
+        assert_eq!(player.get_custom_stat(CustomStatistic::WalkOneCm), 87);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        check_exhaustion(4.05);
+
+        player.hunger_manager.tick(player);
+        assert_eq!(player.hunger_manager.saturation.load(), 4.0);
+        check_exhaustion(0.05);
+
+        // A region does not wait for the hunger state or apply the sprint twice.
+        let hunger = player.abilities.lock().unwrap();
+        sprint(9.5, start + 3);
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(entity.pos.load().x, 9.5);
+        assert_eq!(distance(), 50);
+        check_exhaustion(0.05);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        drop(hunger);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(distance(), 62);
+        check_exhaustion(0.063);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        queue_auth_input(
+            client,
+            player,
+            player.bedrock_pos().to_f32_lossy(),
+            start + 4,
+            entity.yaw.load(),
+            &[InputData::VerticalCollision, InputData::StopSprinting],
+        );
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(!entity.is_sprinting());
     }
 
     #[tokio::test]
@@ -911,6 +1021,15 @@ mod tests {
         verify_chunk_delivery_clock(&client);
         verify_grounded_walks(&world, &player, &client, west);
         verify_teleport_acknowledgement(&world, &player, &client, west);
+
+        let observer = Arc::new(HealthPacketObserver::default());
+        server
+            .plugin_manager
+            .register(observer.clone(), EventPriority::Normal, true);
+        client.set_player(player.clone());
+        std::thread::scope(|scope| scope.spawn(|| player.set_exhaustion(1.0)).join().unwrap());
+        client.clear_player();
+        assert!(observer.0.load(Relaxed));
 
         world.players.store(Arc::default());
         client.close().await;

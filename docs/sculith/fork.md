@@ -279,11 +279,13 @@ to remaining viewers. An intervening teleport supersedes the pending move.
 The world resynchronizes viewers that already got the regional move if the
 new pose stays within the same tracked chunk.
 
-An ordinary level step within one chunk can also finish on its region. The
-existing terrain view and simulation tickets must cover the new pose, all paired
-viewers must have their packets queued, and the movement must require only local
-accounting. The region records walked distance, movement and activity, and marks
-the player's changed position for normal actor pairing. A step that triggers
+An ordinary level step within one chunk, walking or sprinting, can also finish
+on its region. The existing terrain view and simulation tickets must cover the
+new pose. All paired viewers must have their packets queued and the movement
+must require only local accounting. The region records the movement statistic, delta, and activity, and
+marks the player's changed position for normal actor pairing. Sprint exhaustion
+uses the same calculation as world movement and shares the player's guard with
+the world food tick. A step that triggers
 sound or vibration, a location enchantment, or an exhaustion hook stays on the
 ordered world path for those effects.
 

@@ -506,7 +506,7 @@ impl Player {
         keep_inventory: bool,
     ) {
         self.living_entity.reset_state();
-        self.hunger_manager.restart();
+        self.restart_hunger();
         self.send_permission_lvl_update();
         if !keep_inventory {
             self.set_experience(0, 0.0, 0);
