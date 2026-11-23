@@ -1091,7 +1091,7 @@ mod tests {
         enqueue(16.375, start + 1);
         tick_region(world, origin, at);
         assert_eq!(entity.pos.load().x, 16.375);
-        assert_eq!(player.watched_section.load(), view);
+        assert!(player.watched_section.load() == view);
         assert_eq!(simulation_chunk(), destination);
         assert_eq!(distance() - before, 62);
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
