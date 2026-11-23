@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use dashmap::try_result::TryResult;
-use pumpkin_data::{Block, BlockStateId, entity::EntityPose, translation};
+use pumpkin_data::data_component_impl::{EnchantmentsImpl, EquipmentSlot};
+use pumpkin_data::{Block, BlockStateId, entity::EntityPose, tag::Taggable, translation};
 use pumpkin_protocol::bedrock::client::CMovePlayer;
 use pumpkin_protocol::java::client::play::{
     CEntityPositionSync, CHeadRot, CPlayerPosition, CSetCamera, CUpdateEntityPos,
@@ -15,6 +16,7 @@ use rustc_hash::FxHashSet;
 
 use crate::entity::{Entity, EntityBase};
 use crate::net::{ClientPlatform, DisconnectReason};
+use crate::plugin::entity::entity_exhaustion::EntityExhaustionEvent;
 use crate::plugin::player::player_input::PlayerInputEvent;
 use crate::plugin::player::player_move::PlayerMoveEvent;
 use crate::plugin::player::player_statistic_increment::PlayerStatisticIncrementEvent;
@@ -26,7 +28,7 @@ use crate::server::Server;
 use crate::world::{RegionChunks, World, chunker};
 
 use super::Player;
-use super::statistics::StatisticCategory;
+use super::statistics::{CustomStatistic, StatisticCategory};
 
 bitflags::bitflags! {
     /// Player controls with the established native plugin and input event encoding.
@@ -72,7 +74,10 @@ pub(crate) struct CommittedPlayerMove {
 }
 
 pub(crate) enum RegionalClientMove {
-    Complete { rotation_changed: bool },
+    Complete {
+        position_changed: bool,
+        rotation_changed: bool,
+    },
     Committed(CommittedPlayerMove),
 }
 
@@ -80,6 +85,7 @@ pub(crate) enum RegionalClientMove {
 struct RegionalPose {
     rotation_changed: bool,
     stationary_settled: bool,
+    grounded_walk: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -486,8 +492,7 @@ impl Player {
     ) {
         let entity = self.get_entity();
         let delta = Vector3::new(pos.x - last_pos.x, pos.y - last_pos.y, pos.z - last_pos.z);
-        let distance = last_pos.squared_distance_to_vec(&pos).sqrt();
-        let cm = (distance * 100.0) as i32;
+        let cm = move_distance_cm(last_pos, pos);
         if cm > 0 {
             let stat = self.get_movement_statistic();
             self.increment_stat(StatisticCategory::Custom, stat as i32, cm);
@@ -604,10 +609,14 @@ impl Player {
         let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
         let pose = self.try_update_regional_pose(server, extent, from, to, Some(movement))?;
         let rotation_changed = pose.rotation_changed;
+        let position_changed = from != to;
         if pose.stationary_settled && !rotation_changed {
-            return Some(RegionalClientMove::Complete { rotation_changed });
+            return Some(RegionalClientMove::Complete {
+                position_changed,
+                rotation_changed,
+            });
         }
-        let (received, all_viewers_queued) = if (from != to || pose.stationary_settled)
+        let (received, all_viewers_queued) = if (position_changed || pose.stationary_settled)
             && entity.chunk_pos.load() == chunk
             && entity.pos.load() == to
             && self.can_simulate_in(&world)
@@ -620,8 +629,17 @@ impl Player {
         } else {
             (FxHashSet::default(), false)
         };
-        if pose.stationary_settled && all_viewers_queued {
-            return Some(RegionalClientMove::Complete { rotation_changed });
+        if all_viewers_queued
+            && (pose.stationary_settled
+                || pose.grounded_walk
+                    && self
+                        .try_finish_grounded_walk(server, &world, extent, from, to)
+                        .is_some())
+        {
+            return Some(RegionalClientMove::Complete {
+                position_changed,
+                rotation_changed,
+            });
         }
         Some(RegionalClientMove::Committed(CommittedPlayerMove {
             world: world.uuid,
@@ -633,6 +651,87 @@ impl Player {
             rotation_changed,
             received,
         }))
+    }
+
+    /// Completes a level step which needs only the player's local movement accounting.
+    fn try_finish_grounded_walk(
+        &self,
+        server: &Server,
+        world: &World,
+        extent: &RegionChunks,
+        from: Vector3<f64>,
+        to: Vector3<f64>,
+    ) -> Option<()> {
+        let entity = self.get_entity();
+        let bounds = entity.bounding_box.index.try_write().ok()?;
+        let chunk = entity.chunk_pos.load();
+        let layout = world.region_layout.load();
+        if !std::ptr::eq(bounds.as_ptr(), Arc::as_ptr(&world.entity_index))
+            || !self.can_simulate_in(world)
+            || entity.is_removed()
+            || entity.pos.load() != to
+            || !layout
+                .owner(chunk)
+                .and_then(|owner| layout.chunks(owner))
+                .is_some_and(|current| Arc::ptr_eq(current, extent))
+            || entity.pose.load() != EntityPose::Standing
+            || !self.has_settled_ground_contact()
+            || entity.is_sprinting()
+            || entity.is_sneaking()
+            || entity.is_fall_flying()
+            || entity.is_swimming()
+            || self.is_swimming()
+            || entity.is_in_water()
+            || entity.is_submerged_in_water()
+            || self.living_entity.climbing.load(Ordering::Relaxed)
+            || self.is_spectator()
+            || server
+                .plugin_manager
+                .has_handlers::<EntityExhaustionEvent>()
+        {
+            return None;
+        }
+        let abilities = self.abilities.try_lock().ok()?;
+        if abilities.flying || !self.hunger_manager.can_skip_zero_exhaustion() {
+            return None;
+        }
+
+        let movement = to - from;
+        let (walked, flown) = entity.movement_distances(movement, false);
+        if walked > entity.next_step.load() {
+            return None;
+        }
+        let active = movement.length_squared() > 1.0E-5;
+        let equipment = self.inventory.entity_equipment.try_lock().ok()?;
+        if active
+            && equipment
+                .get(&EquipmentSlot::FEET)
+                .get_data_component::<EnchantmentsImpl>()
+                .is_some_and(|enchantments| {
+                    enchantments
+                        .enchantment
+                        .iter()
+                        .any(|(entry, _)| !entry.effects.location_changed.is_empty())
+                })
+        {
+            return None;
+        }
+        chunker::try_keep_bedrock_view(self, world)?;
+
+        let cm = move_distance_cm(from, to);
+        if cm > 0 {
+            self.stats
+                .try_lock()
+                .ok()?
+                .increment_custom(CustomStatistic::WalkOneCm, cm);
+        }
+        entity.movement.store(movement);
+        if active {
+            self.update_last_action_time();
+        }
+        entity.move_dist.store(walked);
+        entity.fly_dist.store(flown);
+        Some(())
     }
 
     fn try_publish_regional_pose(
@@ -755,17 +854,7 @@ impl Player {
             rotation_changed
         };
         if from == to {
-            let movement = movement.filter(|_| owns_player())?;
-            let rotation_changed = self.look_changed(movement);
-            let stationary_settled = self.can_finish_stationary_move(&world, movement);
-            if !rotation_changed && !stationary_settled {
-                return None;
-            }
-            self.apply_look(movement);
-            return Some(RegionalPose {
-                rotation_changed,
-                stationary_settled,
-            });
+            return self.try_commit_stationary_pose(&world, movement.filter(|_| owns_player())?);
         }
 
         let bounds =
@@ -783,6 +872,8 @@ impl Player {
             }
             first.0.y = floor;
         }
+        let can_finish_walk =
+            floor.is_some() && from.y == to.y && destination.chunk_position() == origin;
         // Reuse the normal position fields without reacquiring the pinned chunk or index.
         world
             .level
@@ -791,10 +882,14 @@ impl Player {
                 last,
                 owns,
                 |read| {
-                    (movement.is_none() || clear_movement_path(first, last, floor, read))
-                        .then_some((destination, ()))
+                    (movement.is_none() || clear_movement_path(first, last, floor, read)).then(|| {
+                        let grounded_walk = can_finish_walk && read(destination).is_some_and(|id| {
+                            !id.to_block().has_tag(&pumpkin_data::tag::Block::MINECRAFT_CLIMBABLE)
+                        });
+                        (destination, grounded_walk)
+                    })
                 },
-                |(), biome| {
+                |grounded_walk, biome| {
                     world.entity_index.try_move_regional_player(
                         &world,
                         self,
@@ -812,6 +907,7 @@ impl Player {
                             Some(RegionalPose {
                                 rotation_changed: movement.is_some_and(commit_look),
                                 stationary_settled: false,
+                                grounded_walk,
                             })
                         },
                     )
@@ -823,23 +919,41 @@ impl Player {
             })
     }
 
-    /// A stationary ground input can finish here once its world effects are settled.
-    fn can_finish_stationary_move(&self, world: &World, movement: ClientMove) -> bool {
+    fn try_commit_stationary_pose(
+        &self,
+        world: &World,
+        movement: ClientMove,
+    ) -> Option<RegionalPose> {
+        let rotation_changed = self.look_changed(movement);
         let entity = self.get_entity();
-        movement.on_ground
-            && entity.on_ground.load(Ordering::Relaxed)
-            && !entity.horizontal_collision.load(Ordering::Relaxed)
+        let stationary_settled = movement.on_ground
+            && self.has_settled_ground_contact()
             && entity.movement.load() == Vector3::default()
+            && entity.move_dist.load() <= entity.next_step.load()
+            && matches!(
+                world.level.loaded_chunks.try_get(&entity.chunk_pos.load()),
+                TryResult::Present(_)
+            );
+        if !rotation_changed && !stationary_settled {
+            return None;
+        }
+        self.apply_look(movement);
+        Some(RegionalPose {
+            rotation_changed,
+            stationary_settled,
+            grounded_walk: false,
+        })
+    }
+
+    fn has_settled_ground_contact(&self) -> bool {
+        let entity = self.get_entity();
+        entity.on_ground.load(Ordering::Relaxed)
+            && !entity.horizontal_collision.load(Ordering::Relaxed)
             && self.living_entity.fall_distance.load() == 0.0
             && !self.living_entity.is_in_post_impulse_grace_time()
             && !self
                 .living_entity
                 .is_ignoring_fall_damage_from_current_impulse()
-            && entity.move_dist.load() <= entity.next_step.load()
-            && matches!(
-                world.level.loaded_chunks.try_get(&entity.chunk_pos.load()),
-                TryResult::Present(_)
-            )
     }
 
     fn look_changed(&self, requested: ClientMove) -> bool {
@@ -1014,6 +1128,10 @@ impl Player {
             }
         }
     }
+}
+
+fn move_distance_cm(from: Vector3<f64>, to: Vector3<f64>) -> i32 {
+    (from.squared_distance_to_vec(&to).sqrt() * 100.0) as i32
 }
 
 fn clear_movement_path(

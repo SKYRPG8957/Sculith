@@ -149,6 +149,11 @@ impl HungerManager {
         self.exhaustion.load()
     }
 
+    pub(super) fn can_skip_zero_exhaustion(&self) -> bool {
+        let exhaustion = self.get_exhaustion();
+        exhaustion <= MAX_EXHAUSTION
+    }
+
     pub fn set_exhaustion(&self, exhaustion: f32) {
         self.exhaustion.store(exhaustion.min(MAX_EXHAUSTION));
     }

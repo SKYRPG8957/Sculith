@@ -261,8 +261,8 @@ with the swept chunk extent, destination biome and player spatial index pinned.
 The check uses the final target after the movement hook. A path outside the
 current extent or a busy chunk or index uses the ordinary position setter.
 Crossings between owners, updated payloads and translated clients go through
-the ordinary world decoder. Movement effects, other scheduled callbacks,
-entity AI and entity chunk residency use world phases.
+the ordinary world decoder. Movement effects that need shared work, other
+scheduled callbacks, entity AI and entity chunk residency use world phases.
 
 A native Bedrock input can also commit a short level move and its look on
 the region before the world processes the connection. The pose, controls and
@@ -278,6 +278,14 @@ Java receives an absolute position, including when the world finishes delivery
 to remaining viewers. An intervening teleport supersedes the pending move.
 The world resynchronizes viewers that already got the regional move if the
 new pose stays within the same tracked chunk.
+
+An ordinary level step within one chunk can also finish on its region. The
+existing terrain view and simulation tickets must cover the new pose, all paired
+viewers must have their packets queued, and the movement must require only local
+accounting. The region records walked distance, movement and activity, and marks
+the player's changed position for normal actor pairing. A step that triggers
+sound or vibration, a location enchantment, or an exhaustion hook stays on the
+ordered world path for those effects.
 
 When a native Bedrock player moves between active regions, the destination
 receives that connection's ready work at the position change. Previously

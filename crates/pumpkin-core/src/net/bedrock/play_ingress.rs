@@ -221,12 +221,20 @@ impl BedrockClient {
         };
         if prepared.fully_read {
             match self.try_accept_regional_auth_move(player, server, extent, &prepared.input) {
-                Some(RegionalClientMove::Complete { rotation_changed }) => {
+                Some(RegionalClientMove::Complete {
+                    position_changed,
+                    rotation_changed,
+                }) => {
+                    let message = if position_changed {
+                        "Completed Bedrock walk on its region"
+                    } else {
+                        "Consumed stationary Bedrock input on its region"
+                    };
                     tracing::trace!(
                         player = %player.gameprofile.name,
                         rotation_changed,
                         input_tick = prepared.input.tick.0,
-                        "Consumed stationary Bedrock input on its region"
+                        "{message}"
                     );
                     return RegionalMovePreparation::Consumed;
                 }
@@ -702,6 +710,79 @@ mod tests {
         assert!(client.activity.inbound_head.lock().unwrap().is_some());
     }
 
+    fn verify_grounded_walks(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        use crate::entity::player::statistics::CustomStatistic;
+        use crate::world::chunker;
+
+        let entity = player.get_entity();
+        let position = player.bedrock_pos().to_f32_lossy();
+        for x in 7..=9 {
+            for z in 7..=9 {
+                world.set_block_state(
+                    &BlockPos::new(x, 99, z),
+                    Block::STONE.default_state.id,
+                    BlockFlags::FORCE_STATE,
+                );
+            }
+        }
+        world.set_block_state(
+            &BlockPos::new(9, 100, 8),
+            Block::AIR.default_state.id,
+            BlockFlags::FORCE_STATE,
+        );
+        entity.set_pos(player.feet_from_bedrock_pos(position.to_f64()));
+        world
+            .entity_tracker
+            .add_entity(&(player.clone() as Arc<dyn EntityBase>), world);
+        chunker::update_position(player);
+
+        let walk = |x, tick| {
+            queue_auth_input(
+                client,
+                player,
+                Vector3::new(x, position.y, position.z),
+                tick,
+                entity.yaw.load(),
+                &[InputData::VerticalCollision],
+            );
+        };
+        let distance = || player.get_custom_stat(CustomStatistic::WalkOneCm);
+        let at = Instant::now() + TICK_PERIOD * 30;
+        let start = client.input_tick.load(Relaxed) + 1;
+        walk(8.25, start);
+        walk(8.5, start + 1);
+        tick_region(world, chunk, at);
+        assert_eq!(entity.pos.load().x, 8.5);
+        assert_eq!(distance(), 50);
+        assert_eq!(entity.movement.load(), Vector3::new(0.25, 0.0, 0.0));
+        assert_eq!(entity.move_dist.load(), 0.30);
+        assert_eq!(entity.fly_dist.load(), 0.30);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        // A step crossing the sound threshold applies its effects once through the world.
+        entity.next_step.store(0.38);
+        walk(8.75, start + 2);
+        walk(8.875, start + 3);
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(entity.pos.load().x, 8.75);
+        assert_eq!(distance(), 50);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(distance(), 75);
+        assert!(entity.next_step.load() > 0.38);
+        tick_region(world, chunk, at + TICK_PERIOD * 2);
+        assert_eq!(entity.pos.load().x, 8.875);
+        assert_eq!(distance(), 87);
+        assert!(player.inbound_packets.is_empty());
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        world.entity_tracker.remove_entity(player.as_ref(), world);
+    }
+
     #[tokio::test]
     #[expect(
         clippy::too_many_lines,
@@ -827,6 +908,7 @@ mod tests {
         verify_mining_clock(&world, &server, &player, &client, west).await;
         verify_stationary_inputs(&world, &player, &client, west);
         verify_stationary_turns(&world, &player, &client, west);
+        verify_grounded_walks(&world, &player, &client, west);
         verify_chunk_delivery_clock(&client);
         verify_teleport_acknowledgement(&world, &player, &client, west);
 

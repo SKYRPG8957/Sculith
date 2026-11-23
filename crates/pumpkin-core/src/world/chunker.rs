@@ -77,19 +77,20 @@ pub(crate) fn bedrock_view_is_current(player: &Player, published: Cylindrical) -
     bedrock_view(published, pos, get_view_distance(player)) == published
 }
 
-fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actual: Vector2<i32>) {
+fn desired_chunk_tickets(
+    player: &Player,
+    world: &World,
+    view: Cylindrical,
+    actual: Vector2<i32>,
+) -> HeldChunkTickets {
     use pumpkin_world::chunk_system::ChunkLoading;
-    let mut held = player
-        .held_chunk_tickets
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let generate = !player.is_spectator()
         || world
             .level_info
             .load()
             .game_rules
             .spectators_generate_chunks;
-    let next = HeldChunkTickets {
+    HeldChunkTickets {
         view: generate.then(|| {
             (
                 view.center,
@@ -108,7 +109,15 @@ fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actua
                 ChunkLoading::get_level_from_simulation_distance(distance),
             )
         }),
-    };
+    }
+}
+
+fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actual: Vector2<i32>) {
+    let mut held = player
+        .held_chunk_tickets
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let next = desired_chunk_tickets(player, world, view, actual);
     if *held == next {
         return;
     }
@@ -129,6 +138,21 @@ fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actua
     }
     *held = next;
     loading.send_change();
+}
+
+/// Marks a Bedrock move for actor re-pairing if terrain interests already describe the new pose.
+pub(crate) fn try_keep_bedrock_view(player: &Player, world: &World) -> Option<()> {
+    let registered = player.registered_chunk_view.try_lock().ok()?;
+    let held = player.held_chunk_tickets.try_lock().ok()?;
+    let view = player.watched_section.load();
+    let actual = player.get_entity().chunk_pos.load();
+    if *registered != Some(view)
+        || !bedrock_view_is_current(player, view)
+        || *held != desired_chunk_tickets(player, world, view, actual)
+    {
+        return None;
+    }
+    world.entity_tracker.try_mark_player_position(player)
 }
 
 pub fn update_position(player: &Arc<Player>) {

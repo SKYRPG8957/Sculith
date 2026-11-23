@@ -1706,6 +1706,17 @@ impl EntityTracker {
         }
     }
 
+    pub(crate) fn try_mark_player_position(&self, player: &Player) -> Option<()> {
+        let TryResult::Present(tracked) = self.entity_map.try_get(&player.entity_id()) else {
+            return None;
+        };
+        if !std::ptr::eq(tracked.entity.get_entity(), player.get_entity()) {
+            return None;
+        }
+        tracked.pos_dirty.store(true, Relaxed);
+        Some(())
+    }
+
     pub fn update_entity_position(&self, entity: &dyn EntityBase, world: &World) {
         if let Some(tracked) = self.get_tracked_entity(entity.get_entity().entity_id) {
             let new_pos = chunk_section_from_pos(&entity.get_entity().block_pos.load());

@@ -3537,21 +3537,13 @@ impl Entity {
         effect_pos: &BlockPos,
         effect_state: &'static BlockState,
     ) {
-        let moved_distance = (movement.length() * 0.6) as f32;
-        let horizontal_moved_distance = (movement.horizontal_length() * 0.6) as f32;
         let supporting_pos = self.get_pos_with_y_offset(1.0e-5).0;
         let (supporting_block, supporting_state) =
             self.world.load().get_block_and_state(&supporting_pos);
         let climbing = Self::is_state_climbable(supporting_block);
-        self.move_dist.store(
-            self.move_dist.load()
-                + if climbing {
-                    moved_distance
-                } else {
-                    horizontal_moved_distance
-                },
-        );
-        self.fly_dist.store(self.fly_dist.load() + moved_distance);
+        let (walked, flown) = self.movement_distances(movement, climbing);
+        self.move_dist.store(walked);
+        self.fly_dist.store(flown);
 
         if self.move_dist.load() > self.next_step.load() && !supporting_state.is_air() {
             let only_effect_state = supporting_pos == *effect_pos;
@@ -3592,6 +3584,19 @@ impl Entity {
                 self.emit_own_game_event(caller, GameEvent::Flap);
             }
         }
+    }
+
+    fn movement_distances(&self, movement: Vector3<f64>, climbing: bool) -> (f32, f32) {
+        let distance = movement.length();
+        let step_distance = if climbing {
+            distance
+        } else {
+            movement.horizontal_length()
+        };
+        (
+            self.move_dist.load() + (step_distance * 0.6) as f32,
+            self.fly_dist.load() + (distance * 0.6) as f32,
+        )
     }
 
     /// Vanilla `isStateClimbable`.
