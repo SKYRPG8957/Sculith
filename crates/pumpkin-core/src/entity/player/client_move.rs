@@ -10,6 +10,7 @@ use pumpkin_protocol::java::client::play::{
 use pumpkin_util::GameMode;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
 use pumpkin_util::text::TextComponent;
+use rustc_hash::FxHashSet;
 
 use crate::entity::{Entity, EntityBase};
 use crate::net::{ClientPlatform, DisconnectReason};
@@ -19,6 +20,7 @@ use crate::plugin::player::player_statistic_increment::PlayerStatisticIncrementE
 use crate::plugin::player::player_toggle_flight_event::PlayerToggleFlightEvent;
 use crate::plugin::player::player_toggle_sneak_event::PlayerToggleSneakEvent;
 use crate::plugin::player::player_toggle_sprint_event::PlayerToggleSprintEvent;
+use crate::plugin::server::packet::PacketSentEvent;
 use crate::server::Server;
 use crate::world::{RegionChunks, World, chunker};
 
@@ -64,13 +66,14 @@ pub(crate) struct CommittedPlayerMove {
     from: Vector3<f64>,
     to: Vector3<f64>,
     movement: ClientMove,
-    publication: MovePublication,
+    rotation_changed: bool,
+    received: FxHashSet<i32>,
 }
 
 #[derive(Clone, Copy)]
-enum MovePublication {
+enum MovePublication<'a> {
     Delta,
-    Absolute { rotation_changed: bool },
+    Committed(&'a CommittedPlayerMove),
 }
 
 impl Player {
@@ -467,7 +470,7 @@ impl Player {
         pos: Vector3<f64>,
         requested: ClientMove,
         was_on_ground: bool,
-        publication: MovePublication,
+        publication: MovePublication<'_>,
     ) {
         let entity = self.get_entity();
         let delta = Vector3::new(pos.x - last_pos.x, pos.y - last_pos.y, pos.z - last_pos.z);
@@ -500,7 +503,7 @@ impl Player {
                 self.apply_look(requested);
                 changed
             }
-            MovePublication::Absolute { rotation_changed } => rotation_changed,
+            MovePublication::Committed(committed) => committed.rotation_changed,
         };
 
         if pos_changed || rot_changed {
@@ -584,25 +587,49 @@ impl Player {
             return None;
         }
         let _checkpoint = server.try_regional_entity_save_guard()?;
-        let world = self.world().uuid;
+        let world = self.world();
+        let chunk = entity.chunk_pos.load();
         let teleport = self.teleport_id_count.load(Ordering::Relaxed);
         let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
-        let publication =
+        let rotation_changed =
             self.try_update_regional_pose(server, extent, from, to, Some(movement))?;
+        let received = if from != to
+            && entity.chunk_pos.load() == chunk
+            && entity.pos.load() == to
+            && self.can_simulate_in(&world)
+            && self.teleport_id_count.load(Ordering::Relaxed) == teleport
+            && self.chunk_send_epoch.load(Ordering::Relaxed) == epoch
+            && !server.plugin_manager.has_handlers::<PacketSentEvent>()
+        {
+            let head = rotation_changed.then(|| self.head_rotation_packet());
+            world.entity_tracker.try_publish_regional_player_move(
+                &world,
+                entity,
+                &self.absolute_position_packet(to, movement.on_ground),
+                head.as_ref(),
+                &self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, movement.on_ground, 0),
+            )
+        } else {
+            FxHashSet::default()
+        };
         Some(CommittedPlayerMove {
-            world,
+            world: world.uuid,
             teleport,
             epoch,
             from,
             to,
             movement,
-            publication,
+            rotation_changed,
+            received,
         })
     }
 
     pub(crate) fn finish_regional_client_move(&self, committed: &CommittedPlayerMove) {
-        if self.world().uuid == committed.world
-            && self.teleport_id_count.load(Ordering::Relaxed) == committed.teleport
+        let world = self.world();
+        if world.uuid != committed.world || !self.can_simulate_in(&world) {
+            return;
+        }
+        if self.teleport_id_count.load(Ordering::Relaxed) == committed.teleport
             && self.chunk_send_epoch.load(Ordering::Relaxed) == committed.epoch
             && self.get_entity().pos.load() == committed.to
         {
@@ -611,9 +638,36 @@ impl Player {
                 committed.to,
                 committed.movement,
                 committed.movement.on_ground,
-                committed.publication,
+                MovePublication::Committed(committed),
             );
+        } else if !committed.received.is_empty() {
+            self.reconcile_regional_move(&world, committed);
         }
+    }
+
+    fn reconcile_regional_move(&self, world: &World, committed: &CommittedPlayerMove) {
+        let entity = self.get_entity();
+        let pos = entity.pos.load();
+        if entity.is_removed()
+            || entity.chunk_pos.load() != BlockPos::floored_v(committed.to).chunk_position()
+            || pos == committed.to && !self.look_changed(committed.movement)
+        {
+            return;
+        }
+        // A server move within the same paired chunk can supersede an already sent pose.
+        let on_ground = entity.on_ground.load(Ordering::Relaxed);
+        let already_received = |viewer: &Self| committed.received.contains(&viewer.entity_id());
+        world.send_to_tracking_players_filtered_editioned(
+            entity,
+            &self.absolute_position_packet(pos, on_ground),
+            &self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, on_ground, 0),
+            already_received,
+        );
+        world.send_to_tracking_players_filtered(
+            entity,
+            &self.head_rotation_packet(),
+            already_received,
+        );
     }
 
     /// With a current-protocol regional input, commit position and look under the player's
@@ -625,7 +679,7 @@ impl Player {
         from: Vector3<f64>,
         to: Vector3<f64>,
         movement: Option<ClientMove>,
-    ) -> Option<MovePublication> {
+    ) -> Option<bool> {
         if ![to.x, to.y, to.z].into_iter().all(f64::is_finite) || from == to && movement.is_none() {
             return None;
         }
@@ -657,7 +711,7 @@ impl Player {
         let commit_look = |movement| {
             let rotation_changed = self.look_changed(movement);
             self.apply_look(movement);
-            MovePublication::Absolute { rotation_changed }
+            rotation_changed
         };
         if from == to {
             return movement.filter(|_| owns_player()).map(commit_look);
@@ -704,7 +758,7 @@ impl Player {
                                 || entity.bounding_box.value.store(bounds),
                                 |_| biome,
                             );
-                            Some(movement.map_or(MovePublication::Delta, commit_look))
+                            Some(movement.is_some_and(commit_look))
                         },
                     )
                 },
@@ -767,6 +821,26 @@ impl Player {
         );
     }
 
+    fn absolute_position_packet(&self, pos: Vector3<f64>, on_ground: bool) -> CEntityPositionSync {
+        let entity = self.get_entity();
+        CEntityPositionSync::new(
+            entity.entity_id.into(),
+            pos,
+            Vector3::default(),
+            entity.yaw.load(),
+            entity.pitch.load(),
+            on_ground,
+        )
+    }
+
+    fn head_rotation_packet(&self) -> CHeadRot {
+        let entity = self.get_entity();
+        CHeadRot::new(
+            entity.entity_id.into(),
+            Self::packed_rot(entity.head_yaw.load()),
+        )
+    }
+
     fn broadcast_client_move(
         &self,
         last_pos: Vector3<f64>,
@@ -774,35 +848,42 @@ impl Player {
         on_ground: bool,
         pos_changed: bool,
         rot_changed: bool,
-        publication: MovePublication,
+        publication: MovePublication<'_>,
     ) {
         let entity = self.get_entity();
         let world = entity.world.load_full();
         let entity_id = entity.entity_id;
         let yaw = Self::packed_rot(entity.yaw.load());
         let pitch = Self::packed_rot(entity.pitch.load());
-        let head = Self::packed_rot(entity.head_yaw.load());
         let delta = pos - last_pos;
+        let received = match publication {
+            MovePublication::Committed(committed) if !committed.received.is_empty() => {
+                Some(&committed.received)
+            }
+            _ => None,
+        };
+        let outstanding =
+            |viewer: &Self| received.is_none_or(|ids| !ids.contains(&viewer.entity_id()));
 
         let long_move = delta.length_squared() >= 64.0;
-        if pos_changed && (long_move || matches!(publication, MovePublication::Absolute { .. })) {
+        if pos_changed && (long_move || matches!(publication, MovePublication::Committed(_))) {
             let mode = if long_move {
                 CMovePlayer::MODE_TELEPORT
             } else {
                 CMovePlayer::MODE_NORMAL
             };
-            world.send_to_tracking_players_editioned(
-                entity,
-                &CEntityPositionSync::new(
-                    entity_id.into(),
-                    pos,
-                    Vector3::new(0.0, 0.0, 0.0),
-                    entity.yaw.load(),
-                    entity.pitch.load(),
-                    on_ground,
-                ),
-                &self.bedrock_move_packet(mode, on_ground, 0),
-            );
+            let java_move = self.absolute_position_packet(pos, on_ground);
+            let bedrock_move = self.bedrock_move_packet(mode, on_ground, 0);
+            if received.is_some() {
+                world.send_to_tracking_players_filtered_editioned(
+                    entity,
+                    &java_move,
+                    &bedrock_move,
+                    outstanding,
+                );
+            } else {
+                world.send_to_tracking_players_editioned(entity, &java_move, &bedrock_move);
+            }
             // Bedrock ignores head yaw on teleport -> a normal move re-asserts it
             if long_move {
                 world.send_to_tracking_players_bedrock(
@@ -837,7 +918,12 @@ impl Player {
         }
 
         if rot_changed {
-            world.send_to_tracking_players(entity, &CHeadRot::new(entity_id.into(), head));
+            let head = self.head_rotation_packet();
+            if received.is_some() {
+                world.send_to_tracking_players_filtered(entity, &head, outstanding);
+            } else {
+                world.send_to_tracking_players(entity, &head);
+            }
         }
     }
 }

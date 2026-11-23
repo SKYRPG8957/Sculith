@@ -2,20 +2,20 @@ use std::sync::atomic::{
     AtomicBool, AtomicU32,
     Ordering::{self, Relaxed},
 };
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, MutexGuard, RwLock, RwLockReadGuard};
 
 use bytes::BufMut;
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, try_result::TryResult};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_protocol::bedrock::client::CSetActorMotion;
 use pumpkin_protocol::bedrock::client::move_actor_delta::{
     CMoveActorDelta, MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW, MOVE_ACTOR_DELTA_FLAG_HAS_PITCH,
     MOVE_ACTOR_DELTA_FLAG_HAS_X, MOVE_ACTOR_DELTA_FLAG_HAS_Y, MOVE_ACTOR_DELTA_FLAG_HAS_YAW,
     MOVE_ACTOR_DELTA_FLAG_HAS_Z, MOVE_ACTOR_DELTA_FLAG_ON_GROUND,
 };
 use pumpkin_protocol::bedrock::client::remove_actor::CRemoveActor;
+use pumpkin_protocol::bedrock::client::{CMovePlayer, CSetActorMotion};
 use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::codec::var_long::VarLong;
@@ -38,6 +38,7 @@ use uuid::Uuid;
 use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase};
 use crate::net::ClientPlatform;
+use crate::net::chunk_sender::ChunkSender;
 use crate::net::java::JavaClient;
 use crate::plugin::server::packet::PacketSentEvent;
 use crate::server::Server;
@@ -115,6 +116,21 @@ impl Viewers {
     }
 }
 
+fn try_ready_regional_viewer<'a>(
+    player: &'a Player,
+    world: &World,
+    chunk: Vector2<i32>,
+) -> Option<MutexGuard<'a, ChunkSender>> {
+    let sender = player.chunk_sender.try_lock().ok()?;
+    (player.can_simulate_in(world)
+        && player
+            .watched_section
+            .load()
+            .is_within_distance(chunk.x, chunk.y)
+        && sender.is_chunk_ready(&chunk))
+    .then_some(sender)
+}
+
 #[derive(Default)]
 struct RegionalMoveDelivery {
     viewers: usize,
@@ -142,6 +158,7 @@ pub struct TrackedEntity {
     pub update_interval: u32,
     pub track_deltas: bool,
     seen_by: RwLock<Viewers>,
+    pending_spawns: AtomicU32,
     /// Bedrock players in `seen_by`.
     bedrock_watchers: AtomicU32,
     pub last_section_pos: AtomicCell<Vector3<i32>>,
@@ -190,6 +207,7 @@ impl TrackedEntity {
             update_interval,
             track_deltas,
             seen_by: RwLock::default(),
+            pending_spawns: AtomicU32::new(0),
             bedrock_watchers: AtomicU32::new(0),
             last_section_pos: AtomicCell::new(last_section_pos),
             pos_dirty: AtomicBool::new(false),
@@ -608,13 +626,17 @@ impl TrackedEntity {
                         .write()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     let inserted = viewers.insert(player.gameprofile.id, player.clone());
-                    if inserted && matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
-                        self.bedrock_watchers.fetch_add(1, Relaxed);
+                    if inserted {
+                        self.pending_spawns.fetch_add(1, Relaxed);
+                        if matches!(player.client.as_ref(), ClientPlatform::Bedrock(_)) {
+                            self.bedrock_watchers.fetch_add(1, Relaxed);
+                        }
                     }
                     inserted
                 };
                 if inserted {
                     self.add_pairing(player);
+                    self.pending_spawns.fetch_sub(1, Ordering::Release);
                 }
                 return;
             }
@@ -1060,6 +1082,20 @@ impl TrackedEntity {
         }
     }
 
+    fn try_regional_move_viewers(
+        &self,
+        chunk: Vector2<i32>,
+    ) -> Option<RwLockReadGuard<'_, Viewers>> {
+        let section = self.last_section_pos.load();
+        if (section.x, section.z) != (chunk.x, chunk.y) {
+            return None;
+        }
+        // Keep each existing pairing alive until its frame is queued. Spawns run
+        // outside this lock because their callbacks can themselves change viewers.
+        let viewers = self.seen_by.try_read().ok()?;
+        (self.pending_spawns.load(Ordering::Acquire) == 0).then_some(viewers)
+    }
+
     /// The region holds the drop motion guard and its current chunk assignment.
     fn try_publish_drop_move(
         &self,
@@ -1068,11 +1104,7 @@ impl TrackedEntity {
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) {
         let chunk = entity.chunk_pos.load();
-        let section = self.last_section_pos.load();
-        if (section.x, section.z) != (chunk.x, chunk.y) {
-            return;
-        }
-        let Ok(viewers) = self.seen_by.try_read() else {
+        let Some(viewers) = self.try_regional_move_viewers(chunk) else {
             return;
         };
         let pos = entity.pos.load();
@@ -1098,23 +1130,13 @@ impl TrackedEntity {
         let mut java = RegionalMoveDelivery::default();
         let mut bedrock = RegionalMoveDelivery::default();
         for player in viewers.players.values() {
-            let ready_chunk = || {
-                let sender = player.chunk_sender.try_lock().ok()?;
-                (player.can_simulate_in(world)
-                    && player
-                        .watched_section
-                        .load()
-                        .is_within_distance(chunk.x, chunk.y)
-                    && sender.is_chunk_ready(&chunk))
-                .then_some(sender)
-            };
             match player.client.as_ref() {
                 ClientPlatform::Java(client) if send_java => {
                     java.viewers += 1;
                     if client.version.load() != CURRENT_MC_VERSION {
                         continue;
                     }
-                    let Some(_chunk) = ready_chunk() else {
+                    let Some(_chunk) = try_ready_regional_viewer(player, world, chunk) else {
                         continue;
                     };
                     let data = java_packet.get_or_insert_with(|| {
@@ -1138,7 +1160,7 @@ impl TrackedEntity {
                     if !client.is_current_protocol() {
                         continue;
                     }
-                    let Some(_chunk) = ready_chunk() else {
+                    let Some(_chunk) = try_ready_regional_viewer(player, world, chunk) else {
                         continue;
                     };
                     // Each included coordinate carries the full position on that axis.
@@ -1589,6 +1611,80 @@ impl EntityTracker {
         if Arc::ptr_eq(&tracked.entity, actor) {
             tracked.try_publish_drop_move(world, entity, java_recipients);
         }
+    }
+
+    pub(crate) fn try_publish_regional_player_move(
+        &self,
+        world: &World,
+        entity: &Entity,
+        movement: &CEntityPositionSync,
+        head: Option<&CHeadRot>,
+        bedrock_move: &CMovePlayer,
+    ) -> FxHashSet<i32> {
+        let mut received = FxHashSet::default();
+        let TryResult::Present(entry) = self.entity_map.try_get(&entity.entity_id) else {
+            return received;
+        };
+        let tracked = entry.value().clone();
+        drop(entry);
+        if entity.is_removed() || !std::ptr::eq(tracked.entity.get_entity(), entity) {
+            return received;
+        }
+        let chunk = entity.chunk_pos.load();
+        let Some(viewers) = tracked.try_regional_move_viewers(chunk) else {
+            return received;
+        };
+
+        let mut java_packet = None;
+        let mut bedrock_packet = None;
+        for viewer in viewers.players.values() {
+            let Some(_chunk) = try_ready_regional_viewer(viewer, world, chunk) else {
+                continue;
+            };
+            let queued = match viewer.client.as_ref() {
+                ClientPlatform::Java(client) if client.version.load() == CURRENT_MC_VERSION => {
+                    let Some((position, head)) = java_packet
+                        .get_or_insert_with(|| {
+                            let position = JavaClient::serialize_packet_for_version(
+                                movement,
+                                CURRENT_MC_VERSION,
+                            )
+                            .ok()?;
+                            let head = head
+                                .map(|head| {
+                                    JavaClient::serialize_packet_for_version(
+                                        head,
+                                        CURRENT_MC_VERSION,
+                                    )
+                                })
+                                .transpose()
+                                .ok()?;
+                            Some((position, head))
+                        })
+                        .as_ref()
+                    else {
+                        continue;
+                    };
+                    let queued = client.try_enqueue_packet_data_unobserved(position.clone())
+                        && head.as_ref().is_none_or(|head| {
+                            client.try_enqueue_packet_data_unobserved(head.clone())
+                        });
+                    if queued {
+                        client.flush_channel();
+                    }
+                    queued
+                }
+                ClientPlatform::Bedrock(client) if client.is_current_protocol() => bedrock_packet
+                    .get_or_insert_with(|| client.serialize_packet(bedrock_move))
+                    .as_ref()
+                    .is_ok_and(|data| client.try_enqueue_packet_data_unobserved(data.clone())),
+                _ => false,
+            };
+            if queued {
+                received.insert(viewer.entity_id());
+            }
+        }
+        received
     }
 
     pub(super) fn flush_regional_drop_packets(

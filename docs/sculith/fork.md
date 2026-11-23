@@ -264,10 +264,12 @@ each swept chunk. The region pins the terrain and spatial indices and checks
 for an air path, a full dry floor for a walk, and clearance from nearby
 actors. A turn in place updates the rotation without a terrain collision
 check. The input stays at the head of the connection's queue until the world
-has run its effects and sent the resulting pose. Java receives an absolute
-position for a move so a viewer paired after the commit does not add the
-same displacement twice. An intervening teleport invalidates the pending
-publication.
+has run its effects. A move within the paired chunk can reach current-protocol
+viewers from the region once their actor spawn and terrain have been queued.
+Java receives an absolute position, including when the world finishes delivery
+to remaining viewers. An intervening teleport supersedes the pending move.
+The world resynchronizes viewers that already got the regional move if the
+new pose stays within the same tracked chunk.
 
 When a native Bedrock player moves between active regions, the destination
 receives that connection's ready work at the position change. Previously
