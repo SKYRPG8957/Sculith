@@ -511,12 +511,12 @@ mod tests {
         for value in [0.0, 0.0, position.x, position.y, position.z, 0.0, 0.0, 0.0] {
             value.write(&mut payload).unwrap();
         }
-        let flags = if on_ground {
-            1 << InputData::VerticalCollision as usize
-        } else {
-            0
-        };
-        VarULong(flags).write(&mut payload).unwrap();
+        VarUInt(u32::from(on_ground)).write(&mut payload).unwrap();
+        if on_ground {
+            VarInt(InputData::VerticalCollision as i32)
+                .write(&mut payload)
+                .unwrap();
+        }
         for _ in 0..2 {
             VarUInt(0).write(&mut payload).unwrap();
         }
