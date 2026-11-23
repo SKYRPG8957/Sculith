@@ -36,6 +36,9 @@ impl BedrockClient {
             InputData::StopSprinting,
             InputData::StartSneaking,
             InputData::StopSneaking,
+            // During flight, either held control can change the sneaking state.
+            InputData::Descend,
+            InputData::SneakDown,
             InputData::StartFlying,
             InputData::StopFlying,
             InputData::StartGliding,

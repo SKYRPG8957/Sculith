@@ -723,16 +723,18 @@ impl Player {
         };
         if from == to {
             let movement = movement.filter(|_| owns_player())?;
-            if self.look_changed(movement) {
-                self.apply_look(movement);
-                return Some(true);
+            let rotation_changed = self.look_changed(movement);
+            if !rotation_changed
+                && (!self.can_finish_idle_move(movement)
+                    || !matches!(
+                        world.level.loaded_chunks.try_get(&origin),
+                        TryResult::Present(_)
+                    ))
+            {
+                return None;
             }
-            return (self.can_finish_idle_move(movement)
-                && matches!(
-                    world.level.loaded_chunks.try_get(&origin),
-                    TryResult::Present(_)
-                ))
-            .then_some(false);
+            self.apply_look(movement);
+            return Some(rotation_changed);
         }
 
         let bounds =

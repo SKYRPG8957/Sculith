@@ -505,17 +505,17 @@ mod tests {
         player: &Arc<Player>,
         position: Vector3<f32>,
         input_tick: u64,
-        on_ground: bool,
+        flags: &[InputData],
     ) {
         let mut payload = Vec::new();
         for value in [0.0, 0.0, position.x, position.y, position.z, 0.0, 0.0, 0.0] {
             value.write(&mut payload).unwrap();
         }
-        VarUInt(u32::from(on_ground)).write(&mut payload).unwrap();
-        if on_ground {
-            VarInt(InputData::VerticalCollision as i32)
-                .write(&mut payload)
-                .unwrap();
+        VarUInt(u32::try_from(flags.len()).unwrap())
+            .write(&mut payload)
+            .unwrap();
+        for &flag in flags {
+            VarInt(flag as i32).write(&mut payload).unwrap();
         }
         for _ in 0..2 {
             VarUInt(0).write(&mut payload).unwrap();
@@ -523,6 +523,7 @@ mod tests {
         VarInt(0).write(&mut payload).unwrap();
         payload.extend([0; 8]);
         VarULong(input_tick).write(&mut payload).unwrap();
+        let on_ground = flags.contains(&InputData::VerticalCollision);
         for delta in [0.0f32, if on_ground { -0.08 } else { 0.0 }, 0.0] {
             delta.write(&mut payload).unwrap();
         }
@@ -550,7 +551,8 @@ mod tests {
         player.set_client_loaded(true);
         client.client_delta.store(Vector3::new(0.0, -0.08, 0.0));
 
-        let enqueue = |tick| queue_auth_input(client, player, position, tick, true);
+        let grounded = [InputData::VerticalCollision];
+        let enqueue = |tick| queue_auth_input(client, player, position, tick, &grounded);
         let start = 200;
         let end = start + REGIONAL_PACKET_BUDGET as u64;
         let at = Instant::now() + TICK_PERIOD * 10;
@@ -580,6 +582,31 @@ mod tests {
         tick_region(world, chunk, at + TICK_PERIOD * 3);
         assert_eq!(client.input_tick.load(Relaxed), end + 2);
         assert!(player.inbound_packets.is_empty());
+
+        // Flying descent can change the control state without a StartSneaking flag.
+        player.abilities.lock().unwrap().flying = true;
+        for (offset, held) in [(0, InputData::Descend), (2, InputData::SneakDown)] {
+            let tick = end + 3 + u64::from(offset);
+            let deadline = at + TICK_PERIOD * (4 + offset);
+            queue_auth_input(
+                client,
+                player,
+                position,
+                tick,
+                &[InputData::VerticalCollision, held],
+            );
+            tick_region(world, chunk, deadline);
+            assert_eq!(client.input_tick.load(Relaxed), tick - 1);
+            assert!(!entity.is_sneaking());
+            client.drain_world_input(player, None, Some(world), 1);
+            assert_eq!(client.input_tick.load(Relaxed), tick);
+            assert!(entity.is_sneaking());
+
+            enqueue(tick + 1);
+            client.drain_world_input(player, None, Some(world), 1);
+            assert!(!entity.is_sneaking());
+        }
+        player.abilities.lock().unwrap().flying = false;
     }
 
     fn verify_teleport_acknowledgement(
@@ -588,7 +615,7 @@ mod tests {
         client: &BedrockClient,
         chunk: Vector2<i32>,
     ) {
-        let enqueue = |position| queue_auth_input(client, player, position, 7, false);
+        let enqueue = |position| queue_auth_input(client, player, position, 7, &[]);
         let advance = || tick_region(world, chunk, Instant::now());
         let previous_input = client.input_tick.load(Relaxed);
 
