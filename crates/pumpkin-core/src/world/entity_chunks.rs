@@ -1,6 +1,9 @@
 //! Applies asynchronous entity chunk results under their simulation owners.
 
-use std::sync::{Arc, Mutex, PoisonError, TryLockError, Weak, atomic::Ordering::Relaxed};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex, PoisonError, TryLockError, Weak, atomic::Ordering::Relaxed},
+};
 
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
@@ -22,7 +25,7 @@ use crate::{
 };
 
 use super::{
-    RegionId, World, entity_save_records, merge_entity_records,
+    RegionId, RegionLayout, World, entity_save_records, merge_entity_records,
     regional_campfires::RegionalEntityUpdate, saved_chunk_pos,
 };
 
@@ -38,6 +41,50 @@ pub(super) struct EntityChunkChanges {
 }
 
 type PendingEntityChunks = FxHashMap<Vector2<i32>, Option<Box<PreparedChunkMobs>>>;
+
+/// Ready positions for one active extent. The pending table owns the work.
+#[derive(Default)]
+pub(super) struct RegionalEntityChunks(Mutex<ReadyEntityChunks>);
+
+#[derive(Default)]
+struct ReadyEntityChunks {
+    order: VecDeque<Vector2<i32>>,
+    queued: FxHashSet<Vector2<i32>>,
+}
+
+impl RegionalEntityChunks {
+    fn offer(&self, pos: Vector2<i32>) {
+        let mut ready = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if ready.queued.insert(pos) {
+            ready.order.push_back(pos);
+        }
+    }
+
+    fn has_work(&self) -> bool {
+        self.0.try_lock().is_ok_and(|ready| !ready.order.is_empty())
+    }
+
+    fn take_ready(&self, pending: &PendingEntityChunks) -> Vec<Vector2<i32>> {
+        let mut ready = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut batch = Vec::new();
+        for _ in 0..REGIONAL_CHUNKS_PER_STEP {
+            let Some(pos) = ready.order.pop_front() else {
+                break;
+            };
+            ready.queued.remove(&pos);
+            if pending.get(&pos).is_some_and(Option::is_none) {
+                batch.push(pos);
+            }
+        }
+        batch
+    }
+
+    pub(super) fn clear(&self) {
+        let mut ready = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        ready.order.clear();
+        ready.queued.clear();
+    }
+}
 
 struct PreparedChunkMobs {
     chunk: Weak<ChunkEntityData>,
@@ -176,9 +223,44 @@ impl World {
             .pending
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        let layout = self.region_layout.load();
         for pos in positions {
-            pending.entry(pos).or_insert(None);
+            if pending.entry(pos).or_insert(None).is_none()
+                && let Some(ready) = layout.entity_chunk_work_at(pos)
+            {
+                ready.offer(pos);
+            }
         }
+    }
+
+    pub(super) fn publish_entity_chunk_layout(
+        &self,
+        layout: &Arc<RegionLayout>,
+    ) -> Arc<RegionLayout> {
+        // Arrivals and regional commits check their layout under this lock.
+        // Seed the new extents before publishing them, including positions
+        // which had no active owner or were claimed by an old regional job.
+        let pending = self
+            .entity_chunk_changes
+            .pending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let previous = self.region_layout.load();
+        if layout.is_empty() {
+            previous.clear_entity_chunk_work();
+        } else {
+            for (&pos, prepared) in pending.iter() {
+                if prepared.is_none()
+                    && let Some(ready) = layout.entity_chunk_work_at(pos)
+                    && !previous
+                        .entity_chunk_work_at(pos)
+                        .is_some_and(|old| std::ptr::eq(old, ready))
+                {
+                    ready.offer(pos);
+                }
+            }
+        }
+        self.region_layout.swap(layout.clone())
     }
 
     pub(super) fn clear_prepared_chunk_mobs(&self) {
@@ -225,6 +307,7 @@ impl World {
             if changes.is_empty() {
                 return;
             }
+            self.region_layout.load().clear_entity_chunk_work();
             std::mem::take(&mut *changes)
         };
         let active = self
@@ -281,22 +364,10 @@ impl World {
         server: &Server,
         owner: RegionId,
         deadline: TickDeadline,
-        extent: &[Vector2<i32>],
+        ready: &RegionalEntityChunks,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
-        let Ok(pending) = self.entity_chunk_changes.pending.try_lock() else {
-            return;
-        };
-        if pending.is_empty() || server.tick_rate_manager.is_frozen() {
-            return;
-        }
-        let candidates: Vec<_> = extent
-            .iter()
-            .copied()
-            .filter(|pos| pending.get(pos).is_some_and(Option::is_none))
-            .collect();
-        drop(pending);
-        if candidates.is_empty() {
+        if server.tick_rate_manager.is_frozen() || !ready.has_work() {
             return;
         }
         let Some(_native) = server.plugin_manager.try_without_native_code() else {
@@ -308,15 +379,20 @@ impl World {
         let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
             return;
         };
-        let mut activated = 0;
+        let Ok(pending) = self.entity_chunk_changes.pending.try_lock() else {
+            return;
+        };
+        let candidates = ready.take_ready(&pending);
+        drop(pending);
+        let item_timers = ItemEntity::timers_unobserved(server);
         for pos in candidates {
-            let item_timers = ItemEntity::timers_unobserved(server);
-            if owns(pos) && self.try_process_regional_chunk(pos, owner, deadline, item_timers, owns)
+            if owns(pos)
+                && !self.try_process_regional_chunk(pos, owner, deadline, item_timers, owns)
+                && owns(pos)
             {
-                activated += 1;
-                if activated == REGIONAL_CHUNKS_PER_STEP {
-                    break;
-                }
+                // Retry after the other ready positions. A new extent will
+                // find this position in the pending table during publication.
+                ready.offer(pos);
             }
         }
     }
@@ -633,6 +709,9 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pumpkin_config::{
+        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
+    };
     use pumpkin_data::{item::Item, item_stack::ItemStack};
     use std::{
         any::Any,
@@ -640,9 +719,13 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use crate::entity::{
-        ai::test_support::world, decoration::armor_stand::ArmorStandEntity, item::RegionalItemStep,
-        living::LivingEntity, passive::cow::CowEntity,
+    use crate::{
+        data::VanillaData,
+        entity::{
+            ai::test_support::world, decoration::armor_stand::ArmorStandEntity,
+            item::RegionalItemStep, living::LivingEntity, passive::cow::CowEntity,
+        },
+        world::tick_regions::TickRegions,
     };
 
     struct RewatchedActor {
@@ -772,6 +855,105 @@ mod tests {
         assert!(world.entity_tracker.has_entity_with_id(id));
         assert_eq!(world.entities.load().len(), 1);
         world.level.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn queued_entity_chunks_follow_their_owner_through_a_merge_and_split() {
+        let folder = tempfile::tempdir().unwrap();
+        let basic = BasicConfiguration {
+            default_level_name: folder.path().join("world").to_string_lossy().into_owned(),
+            allow_chat_reports: false,
+            allow_nether: false,
+            allow_end: false,
+            ..Default::default()
+        };
+        let mut advanced = AdvancedConfiguration::default();
+        advanced.world.generator = WorldPreset::Flat;
+        let server = Server::new(
+            basic,
+            advanced,
+            TelemetryConfig::default(),
+            VanillaData::default(),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+        let world = server.worlds.load()[0].clone();
+        let west: Vec<_> = (10..16).map(|x| Vector2::new(x, 0)).collect();
+        let bridge = Vector2::new(16, 0);
+        let east = Vector2::new(17, 0);
+        let watched: Vec<_> = west.iter().copied().chain([east]).collect();
+        for &pos in &watched {
+            world.level.spawn_entity_generation(pos);
+        }
+        world.level.mark_chunks_as_newly_watched(&watched);
+        let cached = |pos| world.level.get_entity_chunk_sync(&pos).unwrap();
+        let live = |pos| cached(pos).live.load(Relaxed);
+        let stand = ArmorStandEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(280.5, 64.0, 8.5),
+            &EntityType::ARMOR_STAND,
+        ));
+        let uuid = stand.get_entity().entity_uuid;
+        let mut record = NbtCompound::new();
+        stand.write_nbt(&mut record);
+        cached(east).data.lock().unwrap().push(record);
+
+        let mut regions = TickRegions::default();
+        let mut publish = |active: &FxHashSet<_>| {
+            regions.active_chunks_changed();
+            regions.schedule_ticks(active, Vec::new(), false);
+            let layout = regions.layout().clone();
+            world.publish_region_layout(&layout);
+            layout
+        };
+        let tick = |layout: &RegionLayout, pos| {
+            let owner = layout.owner(pos).unwrap();
+            world.advance_region_time(
+                owner,
+                layout.chunks(owner).unwrap(),
+                TickDeadline {
+                    at: Instant::now(),
+                    period: Duration::from_millis(50),
+                },
+            );
+        };
+        let mut active = FxHashSet::from_iter(west.iter().copied());
+        let initial = publish(&active);
+        // East has a pending disk result before it has an active owner.
+        world.queue_entity_chunk_changes([west[0]].into_iter().chain(watched));
+        {
+            let blocked = cached(west[0]);
+            let _records = blocked.data.lock().unwrap();
+            tick(&initial, west[0]);
+        }
+        assert!(west[1..4].iter().copied().all(live));
+        assert!(!live(west[0]) && !live(west[4]) && !live(east));
+
+        active.extend([bridge, east]);
+        let merged = publish(&active);
+        {
+            let _saving = world.entity_chunk_changes.snapshot.try_write().unwrap();
+            tick(&merged, east);
+        }
+        active.remove(&bridge);
+        let split = publish(&active);
+        assert_ne!(split.owner(west[0]), split.owner(east));
+        tick(&merged, east);
+        assert!(!live(east));
+        tick(&split, east);
+        assert!(live(east));
+        assert!(world.get_entity_by_uuid(uuid).is_some());
+        assert!(!live(west[0]) && !live(west[4]));
+        tick(&split, west[0]);
+        assert!(west.iter().copied().all(live));
+
+        world.queue_entity_chunk_changes([west[0]]);
+        world.apply_entity_chunk_changes();
+        world.flush_regional_entity_updates();
+        assert!(!split.entity_chunk_work_at(west[0]).unwrap().has_work());
+        assert_eq!(world.entities.load().len(), 1);
+        server.shutdown().await;
     }
 
     #[tokio::test]

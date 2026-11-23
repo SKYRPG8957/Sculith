@@ -4,7 +4,7 @@ use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::level::{ScheduledTickGroup, ScheduledTickStep};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::regional_input::RegionalInput;
+use super::{entity_chunks::RegionalEntityChunks, regional_input::RegionalInput};
 
 pub type RegionId = usize;
 pub type RegionChunks = Arc<[Vector2<i32>]>;
@@ -25,6 +25,7 @@ struct ActiveRegions {
 struct ActiveRegion {
     chunks: RegionChunks,
     input: RegionalInput,
+    entity_chunks: RegionalEntityChunks,
 }
 
 impl ActiveRegion {
@@ -32,6 +33,7 @@ impl ActiveRegion {
         Self {
             chunks,
             input: RegionalInput::default(),
+            entity_chunks: RegionalEntityChunks::default(),
         }
     }
 }
@@ -80,6 +82,23 @@ impl RegionLayout {
 
     pub(super) fn input(&self, owner: RegionId) -> Option<&RegionalInput> {
         self.active.regions.get(&owner).map(|region| &region.input)
+    }
+
+    pub(super) fn entity_chunk_work(&self, owner: RegionId) -> Option<&RegionalEntityChunks> {
+        self.active
+            .regions
+            .get(&owner)
+            .map(|region| &region.entity_chunks)
+    }
+
+    pub(super) fn entity_chunk_work_at(&self, pos: Vector2<i32>) -> Option<&RegionalEntityChunks> {
+        self.entity_chunk_work(*self.active.owners.get(&pos)?)
+    }
+
+    pub(super) fn clear_entity_chunk_work(&self) {
+        for region in self.active.regions.values() {
+            region.entity_chunks.clear();
+        }
     }
 
     pub(super) fn replaced_inputs<'a>(

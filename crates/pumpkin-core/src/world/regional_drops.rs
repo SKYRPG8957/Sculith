@@ -114,7 +114,7 @@ impl World {
             }
         }
         // A dispatched owner reads the matching drop plan when it acquires its permit.
-        self.region_layout.store(layout.clone());
+        let previous = self.publish_entity_chunk_layout(layout);
         drop(published);
         previous.transfer_regional_inputs(layout);
     }
@@ -213,7 +213,7 @@ impl World {
             *published = Arc::default();
         }
         let empty = Arc::<RegionLayout>::default();
-        let previous = self.region_layout.swap(empty.clone());
+        let previous = self.publish_entity_chunk_layout(&empty);
         drop(published);
         previous.transfer_regional_inputs(&empty);
     }

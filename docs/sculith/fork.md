@@ -317,10 +317,15 @@ Replacement targets, a cancelled action, and a change of world invalidate
 the old mining session.
 
 Player movement registers the new view before entity chunk readers run.
-Readers share one disk request for a chunk and return its position. An active
-region can register ready armor stands, dropped items, experience orbs and
-markers in small batches. It validates the current owner, pinned watchers,
-cached chunk and entity UUID registrations before consuming saved records.
+Readers share one disk request for a chunk and route its ready position to the
+current active extent. Each region claims up to four positions per deadline.
+Duplicate notifications coalesce and a retry goes behind other ready positions.
+A merge, split or newly active extent receives its outstanding positions from
+the pending table. A world pass that claims that table clears the regional
+queues before new arrivals can enter them. An active region can register ready
+armor stands, dropped items, experience orbs and markers. It validates the
+current owner, pinned watchers, cached chunk and entity UUID registrations
+before consuming saved records.
 Regions also prepare unlinked cows, pigs, sheep and chickens in watched
 chunks. The world rechecks the resident chunk, type, UUID and position,
 applies the latest saved NBT, and registers and pairs the actors through its

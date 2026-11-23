@@ -2416,7 +2416,9 @@ impl World {
             .then(|| self.server.upgrade())
             .flatten();
         if let Some(server) = &region_server {
-            self.activate_regional_entity_chunks(server, owner, deadline, chunks, &owns);
+            if let Some(ready) = current.entity_chunk_work(owner) {
+                self.activate_regional_entity_chunks(server, owner, deadline, ready, &owns);
+            }
             if let Some(input) = current.input(owner) {
                 input.drain(self, server, chunks, deadline, &owns);
             }
