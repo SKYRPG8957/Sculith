@@ -367,9 +367,12 @@ slow falling and weaving also use `MobEffect` for native mob viewers, as
 observed on BDS 1.26.63.1. Translated clients receive the legacy packet path.
 The tracker retries particle metadata the region could not queue. The active
 effects lock and an edit permit order removals, metadata and reapplication.
-The world processes periodic effects, removals that alter attributes or entity
-flags, and removals that need packet observers or translation. Both paths share
-the same deadline to prevent a second step after a handoff.
+The region may also apply finite regeneration to living mobs. It checks the
+existing effect cadence, clamps the heal to the current maximum and publishes
+it with any effect expirations on the same deadline. The world processes other
+periodic effects, removals that alter attributes or entity flags, and changes
+that require heal observers, packet observers or translation. Both paths
+share the same deadline to prevent a second step after a handoff.
 
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the

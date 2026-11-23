@@ -36,14 +36,16 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use uuid::Uuid;
 
+use crate::entity::attributes::bedrock_mob_health_update;
 use crate::entity::effect::bedrock_particles::BedrockEffectParticles;
-use crate::entity::living::{MobEffectDelivery, RegionalMobEffectParticles};
+use crate::entity::living::{MobEffectDelivery, RegionalMobEffectData};
 use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase, bedrock_actor_spawn_packet, item::ItemEntity};
 use crate::net::ClientPlatform;
 use crate::net::bedrock::BedrockClient;
 use crate::net::chunk_sender::ChunkSender;
 use crate::net::java::JavaClient;
+use crate::plugin::api::events::entity::entity_regain_health::EntityRegainHealthEvent;
 use crate::plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent};
 use crate::server::Server;
 use crate::world::World;
@@ -1929,19 +1931,23 @@ impl EntityTracker {
         Self::flush_regional_drop_packets(java_recipients);
     }
 
-    pub(super) fn try_publish_regional_mob_effect_removals(
+    pub(super) fn try_publish_regional_mob_effect_changes(
         &self,
         world: &World,
         server: &Server,
         entity: &Entity,
         expired: &[&'static StatusEffect],
-        particles: RegionalMobEffectParticles,
+        data: RegionalMobEffectData,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) -> Option<MobEffectDelivery> {
         if server.plugin_manager.has_handlers::<PacketSentEvent>()
             || server
                 .plugin_manager
                 .has_handlers::<BedrockConnectionPacketSentEvent>()
+            || (data.health.is_some()
+                && server
+                    .plugin_manager
+                    .has_handlers::<EntityRegainHealthEvent>())
         {
             return None;
         }
@@ -1970,34 +1976,11 @@ impl EntityTracker {
             return Some(MobEffectDelivery::DELIVERED);
         }
 
-        let mut java_packets =
-            Vec::with_capacity(expired.len() + usize::from(particles.java.is_some()));
-        let mut bedrock_packets = Vec::with_capacity(usize::from(particles.bedrock.is_some()));
-        for effect in expired {
-            let (java, mut bedrock) = World::mob_effect_removal_packets(entity.entity_id, effect);
-            let java = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?;
-            java_packets.push(java);
-            if let Some(id) = BedrockEffectParticles::viewer_effect_id(effect) {
-                bedrock.effect_id = id.into();
-                let mut bytes = Vec::new();
-                BedrockClient::write_raw_packet(&bedrock, &mut bytes).ok()?;
-                bedrock_packets.push(Bytes::from(bytes));
-            }
-        }
-        if let Some(metadata) = particles.java {
-            let packet = CSetEntityMetadata::new(entity.entity_id.into(), metadata);
-            java_packets
-                .push(JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION).ok()?);
-        }
-        if let Some(packed) = particles.bedrock {
-            let packet = BedrockEffectParticles::packet(entity.entity_id, packed);
-            let mut bytes = Vec::new();
-            BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
-            bedrock_packets.push(Bytes::from(bytes));
-        }
+        let (java_packets, bedrock_packets) =
+            Self::encode_regional_mob_effect_changes(entity, expired, data)?;
 
         // The caller still holds the active effects and edit guards. Pairing
-        // is pinned until these removals have been queued for the same viewers.
+        // is pinned until the updates have been queued for the same viewers.
         let mut delivery = MobEffectDelivery::DELIVERED;
         for player in recipients {
             match player.client.as_ref() {
@@ -2017,6 +2000,48 @@ impl EntityTracker {
             }
         }
         Some(delivery)
+    }
+
+    fn encode_regional_mob_effect_changes(
+        entity: &Entity,
+        expired: &[&'static StatusEffect],
+        data: RegionalMobEffectData,
+    ) -> Option<(Vec<Bytes>, Vec<Bytes>)> {
+        let mut java_packets = Vec::with_capacity(expired.len() + usize::from(data.java.is_some()));
+        let mut bedrock_packets = Vec::with_capacity(usize::from(data.bedrock_particles.is_some()));
+        for effect in expired {
+            let (java, mut bedrock) = World::mob_effect_removal_packets(entity.entity_id, effect);
+            let java = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?;
+            java_packets.push(java);
+            if let Some(id) = BedrockEffectParticles::viewer_effect_id(effect) {
+                bedrock.effect_id = id.into();
+                let mut bytes = Vec::new();
+                BedrockClient::write_raw_packet(&bedrock, &mut bytes).ok()?;
+                bedrock_packets.push(Bytes::from(bytes));
+            }
+        }
+        if let Some(metadata) = data.java {
+            let packet = CSetEntityMetadata::new(entity.entity_id.into(), metadata);
+            java_packets
+                .push(JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION).ok()?);
+        }
+        if let Some(packed) = data.bedrock_particles {
+            let packet = BedrockEffectParticles::packet(entity.entity_id, packed);
+            let mut bytes = Vec::new();
+            BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
+            bedrock_packets.push(Bytes::from(bytes));
+        }
+
+        if entity.entity_type == &EntityType::HORSE
+            && let Some(health) = data.health
+        {
+            let packet =
+                bedrock_mob_health_update(entity.entity_id, health.health, health.max_health);
+            let mut bytes = Vec::new();
+            BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
+            bedrock_packets.push(Bytes::from(bytes));
+        }
+        Some((java_packets, bedrock_packets))
     }
 
     pub(super) fn try_publish_regional_drop_move(

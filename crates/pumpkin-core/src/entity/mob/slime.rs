@@ -91,6 +91,7 @@ impl SlimeEntity {
     }
 
     pub fn set_size(&self, size: i32, update_health: bool) {
+        let _effect_edit = self.entity.living_entity.hold_mob_effect_edit();
         let actual_size = size.clamp(1, 127);
         let entity = &self.entity.living_entity.entity;
         entity.data.store(actual_size, Ordering::Relaxed);

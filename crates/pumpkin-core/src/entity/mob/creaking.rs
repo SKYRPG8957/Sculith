@@ -470,7 +470,7 @@ impl Mob for CreakingEntity {
             });
 
             if !has_protection {
-                self.mob_entity.living_entity.health.store(0.0);
+                self.mob_entity.living_entity.record_health(0.0);
             }
         }
 

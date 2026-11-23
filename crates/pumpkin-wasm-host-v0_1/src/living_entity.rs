@@ -164,7 +164,7 @@ impl HostLivingEntity for PluginHostState {
     fn set_health(&mut self, this: Resource<WitLivingEntity>, health: f32) -> wasmtime::Result<()> {
         let entity = self.get(&this)?;
         if let Some(living) = entity.get_living_entity() {
-            living.health.store(health);
+            living.record_health(health);
         }
         Ok(())
     }

@@ -362,16 +362,15 @@ impl World {
                             && base.chunk_pos.load() == chunk
                             && owns(chunk)
                     },
-                    |expired, particles| {
-                        self.entity_tracker
-                            .try_publish_regional_mob_effect_removals(
-                                self,
-                                server,
-                                base,
-                                expired,
-                                particles,
-                                &mut java_recipients,
-                            )
+                    |expired, data| {
+                        self.entity_tracker.try_publish_regional_mob_effect_changes(
+                            self,
+                            server,
+                            base,
+                            expired,
+                            data,
+                            &mut java_recipients,
+                        )
                     },
                 );
             }
@@ -468,6 +467,7 @@ mod tests {
     use pumpkin_world::chunk::ChunkData;
 
     use crate::data::VanillaData;
+    use crate::entity::living::MobEffectDelivery;
 
     use super::*;
 
@@ -654,6 +654,94 @@ mod tests {
             pig.tick(pig.as_ref(), &server);
         });
         assert_eq!(remaining(), None);
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn regional_regeneration_and_expiry_commit_once_on_the_same_deadline() {
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
+        let world = server.worlds.load()[0].clone();
+        let pig = crate::entity::r#type::from_type(
+            &EntityType::PIG,
+            Vector3::new(8.0, 80.0, 8.0),
+            &world,
+            uuid::Uuid::new_v4(),
+        );
+        let living = pig.get_living_entity().unwrap();
+        let max_health = living.get_max_health();
+        let previous = max_health - 0.5;
+        living.set_health(previous);
+        living.add_effect(Effect {
+            effect_type: &StatusEffect::REGENERATION,
+            duration: 12,
+            amplifier: 2,
+            ambient: false,
+            show_particles: false,
+            show_icon: false,
+            blend: false,
+        });
+        living.add_effect(Effect {
+            effect_type: &StatusEffect::NIGHT_VISION,
+            duration: 0,
+            amplifier: 0,
+            ambient: false,
+            show_particles: true,
+            show_icon: true,
+            blend: false,
+        });
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+
+        assert!(living.advance_regional_effects(
+            deadline,
+            || true,
+            |expired, batch| {
+                assert_eq!(expired, [&StatusEffect::NIGHT_VISION]);
+                assert_eq!(batch.health.unwrap().health, max_health);
+                assert_eq!(batch.bedrock_particles, Some(0));
+                assert!(batch.java.is_some());
+                None
+            }
+        ));
+        assert_eq!(living.health.load(), previous);
+        assert!(living.has_effect(&StatusEffect::NIGHT_VISION));
+        assert_eq!(
+            living
+                .get_effect(&StatusEffect::REGENERATION)
+                .unwrap()
+                .duration,
+            12
+        );
+
+        assert!(living.advance_regional_effects(
+            deadline,
+            || true,
+            |_, _| Some(MobEffectDelivery::DELIVERED)
+        ));
+        assert_eq!(living.health.load(), max_health);
+        assert!(!living.has_effect(&StatusEffect::NIGHT_VISION));
+        assert_eq!(
+            living
+                .get_effect(&StatusEffect::REGENERATION)
+                .unwrap()
+                .duration,
+            11
+        );
+        assert!(living.advance_regional_effects(
+            deadline,
+            || true,
+            |_, _| { panic!("the same deadline was published twice") }
+        ));
+        assert_eq!(
+            living
+                .get_effect(&StatusEffect::REGENERATION)
+                .unwrap()
+                .duration,
+            11
+        );
         server.shutdown().await;
     }
 }

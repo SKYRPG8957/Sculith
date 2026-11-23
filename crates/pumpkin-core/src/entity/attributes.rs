@@ -273,7 +273,7 @@ fn bedrock_attribute(
     let value = effective_value as f32;
     let is_horse = living.entity.entity_type == &EntityType::HORSE;
     if is_horse && attribute.id == Attributes::MAX_HEALTH.id {
-        return Some(bedrock_health_attribute(living, value));
+        return Some(bedrock_health_attribute(living.health.load(), value));
     }
     let max_value = if is_horse
         && (attribute.id == Attributes::MOVEMENT_SPEED.id
@@ -291,11 +291,11 @@ fn bedrock_attribute(
     })
 }
 
-fn bedrock_health_attribute(living: &LivingEntity, max_health: f32) -> SyncedAttribute {
+fn bedrock_health_attribute(health: f32, max_health: f32) -> SyncedAttribute {
     SyncedAttribute {
         attribute_name: "minecraft:health".to_string(),
         min_value: 0.0,
-        current_value: living.health.load().max(0.0).min(max_health),
+        current_value: health.max(0.0).min(max_health),
         max_value: max_health,
     }
 }
@@ -316,10 +316,18 @@ fn bedrock_attribute_update(value: SyncedAttribute, default_value: f32) -> Bedro
 
 pub(super) fn bedrock_horse_health_update(living: &LivingEntity) -> BedrockAttributeUpdate {
     let max_health = living.get_max_health();
+    bedrock_mob_health_update(living.entity_id(), living.health.load(), max_health)
+}
+
+pub(crate) fn bedrock_mob_health_update(
+    entity_id: i32,
+    health: f32,
+    max_health: f32,
+) -> BedrockAttributeUpdate {
     BedrockAttributeUpdate {
-        target_runtime_id: VarULong(living.entity_id() as u64),
+        target_runtime_id: VarULong(entity_id as u64),
         attribute_list: vec![bedrock_attribute_update(
-            bedrock_health_attribute(living, max_health),
+            bedrock_health_attribute(health, max_health),
             max_health,
         )],
         tick: VarULong(0),

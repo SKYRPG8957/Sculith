@@ -183,27 +183,33 @@ impl SynchedEntityData {
         (bytes, watched_dirty)
     }
 
-    /// Updates the effect fields after the regional sender accepts the update.
-    /// The sender reports whether every Java viewer queued it. Undelivered
-    /// fields stay dirty for the ordinary tracker pass.
-    pub(super) fn try_publish_effect_particles<
+    /// Commits the changed mob effect fields after the sender accepts the batch.
+    /// Fields whose publication failed stay dirty for the ordinary tracker pass.
+    pub(super) fn try_publish_mob_effect_data<
         T: MetadataSerializer + Clone + Send + Sync + 'static,
     >(
         &self,
-        particles: T,
-        ambient: Option<bool>,
+        particles: Option<(T, Option<bool>)>,
+        health: Option<f32>,
         publish: impl FnOnce(Option<Box<[u8]>>) -> Option<bool>,
     ) -> bool {
         let Ok(mut items) = self.items.try_lock() else {
             return false;
         };
+        let (particles, ambient) = particles.map_or((None, None), |(particles, ambient)| {
+            (
+                Some(DataItem::new(
+                    living_entity::EFFECT_PARTICLES,
+                    particles,
+                    false,
+                )),
+                ambient,
+            )
+        });
         let changes: Vec<_> = [
-            Some(DataItem::new(
-                living_entity::EFFECT_PARTICLES,
-                particles,
-                false,
-            )),
+            particles,
             ambient.map(|ambient| DataItem::new(living_entity::EFFECT_AMBIENCE_ID, ambient, false)),
+            health.map(|health| DataItem::new(living_entity::DATA_HEALTH_ID, health, false)),
         ]
         .into_iter()
         .flatten()
@@ -291,7 +297,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn regional_particle_publication_only_consumes_delivered_effect_fields() {
+    fn regional_effect_publication_preserves_other_dirty_fields() {
         let data = SynchedEntityData::new();
         let particles = living_entity::EFFECT_PARTICLES;
         let ambient = living_entity::EFFECT_AMBIENCE_ID;
@@ -300,27 +306,39 @@ mod test {
         data.set(ambient, false);
         let before = data.pack_dirty_for_version(&CURRENT_MC_VERSION);
 
-        assert!(!data.try_publish_effect_particles(VarInt(0), Some(true), |_| None));
+        assert!(!data.try_publish_mob_effect_data(
+            Some((VarInt(0), Some(true))),
+            Some(7.0),
+            |_| None
+        ));
         assert_eq!(data.pack_dirty_for_version(&CURRENT_MC_VERSION), before);
 
         let mut expected = DataItem::new(particles, VarInt(0), false).canonical_bytes;
         expected.extend(DataItem::new(ambient, true, false).canonical_bytes);
+        let health = living_entity::DATA_HEALTH_ID;
+        expected.extend(DataItem::new(health, 7.0f32, false).canonical_bytes);
         expected.push(255);
-        assert!(
-            data.try_publish_effect_particles(VarInt(0), Some(true), |bytes| {
+        assert!(data.try_publish_mob_effect_data(
+            Some((VarInt(0), Some(true))),
+            Some(7.0),
+            |bytes| {
                 assert_eq!(bytes.as_deref(), Some(expected.as_slice()));
                 Some(true)
-            })
-        );
+            }
+        ));
         let items = data.items.lock().unwrap();
         assert!(items[&PLAYER_MODE_CUSTOMISATION].dirty);
-        assert!(!items[&particles].dirty && !items[&ambient].dirty);
+        assert!(!items[&particles].dirty && !items[&ambient].dirty && !items[&health].dirty);
         drop(items);
 
-        assert!(data.try_publish_effect_particles(VarInt(0), Some(false), |_| Some(false)));
+        assert!(data.try_publish_mob_effect_data(
+            Some((VarInt(0), Some(false))),
+            Some(8.0),
+            |_| Some(false)
+        ));
         let items = data.items.lock().unwrap();
         assert!(items[&PLAYER_MODE_CUSTOMISATION].dirty && items[&ambient].dirty);
-        assert!(!items[&particles].dirty);
+        assert!(!items[&particles].dirty && items[&health].dirty);
     }
 
     /// Metadata ids no longer vary per version: core serializes the current format for
