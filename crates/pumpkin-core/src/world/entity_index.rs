@@ -84,6 +84,8 @@ struct Index {
     /// Copy of each entity's bounds, so exact tests skip the entity itself.
     bounds: Vec<AtomicCell<BoundingBox>>,
     types: Vec<&'static EntityType>,
+    /// Mobs in registry order. A block update can use this after releasing the index lock.
+    mobs: Arc<[usize]>,
     /// Mobs with game event listeners, in list order.
     listeners: Vec<usize>,
     cells: FxHashMap<Cell, Vec<usize>>,
@@ -104,14 +106,18 @@ impl Index {
         self.types.clear();
         self.bounds.clear();
         self.listeners.clear();
+        let mut mobs = Vec::new();
         for (slot, registered) in registry.iter().enumerate() {
             let entity = registered.get_entity();
             self.slots.insert(entity.entity_id, slot);
             // The first in list order wins, like a linear search.
             self.uuids.entry(entity.entity_uuid).or_insert(slot);
             self.types.push(entity.entity_type);
-            if registered.get_mob().is_some_and(has_game_event_listener) {
-                self.listeners.push(slot);
+            if let Some(mob) = registered.get_mob() {
+                mobs.push(slot);
+                if has_game_event_listener(mob) {
+                    self.listeners.push(slot);
+                }
             }
             let bounds = entity.bounding_box.load();
             self.bounds.push(AtomicCell::new(bounds));
@@ -119,6 +125,7 @@ impl Index {
             self.ranges.push(range);
             self.insert(slot, range);
         }
+        self.mobs = mobs.into();
         self.registry = Arc::downgrade(registry);
     }
 
@@ -410,6 +417,12 @@ impl EntityIndex {
         slots.into_iter().map(move |slot| registry[slot].clone())
     }
 
+    /// A block update can still use the live registry when the index is busy or outdated.
+    pub(super) fn cached_mob_slots(&self, registry: &Arc<Registry>) -> Option<Arc<[usize]>> {
+        let index = self.inner.try_read().ok()?;
+        index.matches(registry).then(|| index.mobs.clone())
+    }
+
     /// Mobs with game event listeners whose body overlaps `area`, in list order.
     pub fn listeners(
         &self,
@@ -662,6 +675,49 @@ mod tests {
             .iter()
             .map(|entity| entity.get_entity().entity_id)
             .collect()
+    }
+
+    #[tokio::test]
+    async fn mob_slots_follow_registry_generation_and_skip_busy_indices()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let position = Vector3::new(0.5, 64.0, 0.5);
+        let cow = CowEntity::new(Entity::new(world.clone(), position, &EntityType::COW));
+        let marker = InteractionEntity::new(Entity::new(
+            world.clone(),
+            position,
+            &EntityType::INTERACTION,
+        ));
+        world
+            .entities
+            .store(Arc::new(vec![marker.clone(), cow.clone()]));
+        let original = world.entities.load_full();
+        let index = &world.entity_index;
+        let cow_id = cow.get_entity().entity_id;
+        assert!(index.cached_mob_slots(&original).is_none());
+        assert!(world.get_entity_by_id(cow_id).is_some());
+        let slots = index
+            .cached_mob_slots(&original)
+            .ok_or("missing mob slots")?;
+        assert_eq!(slots.as_ref(), &[1]);
+
+        world.entities.store(Arc::new(vec![cow, marker]));
+        let current = world.entities.load_full();
+        assert!(index.cached_mob_slots(&current).is_none());
+        assert!(world.get_entity_by_id(cow_id).is_some());
+        assert!(index.cached_mob_slots(&original).is_none());
+        assert_eq!(index.cached_mob_slots(&current).as_deref(), Some(&[0][..]));
+        assert_eq!(slots.as_ref(), &[1]);
+        {
+            let _writer = index
+                .inner
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            assert!(index.cached_mob_slots(&current).is_none());
+        }
+        world.level.shutdown().await;
+        Ok(())
     }
 
     #[tokio::test]

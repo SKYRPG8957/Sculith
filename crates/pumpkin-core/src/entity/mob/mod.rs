@@ -438,19 +438,26 @@ impl MobEntity {
         world: Uuid,
         sequence: u64,
     ) {
-        self.pending_navigation_updates
-            .push((position, world, sequence));
-        self.process_navigation_updates();
+        let update = (position, world, sequence);
+        let Some(mut navigator) = self.try_navigator() else {
+            self.pending_navigation_updates.push(update);
+            self.process_navigation_updates();
+            return;
+        };
+        if self.pending_navigation_updates.is_empty() {
+            self.apply_navigation_update(&mut navigator, update);
+        } else {
+            self.pending_navigation_updates.push(update);
+            self.apply_navigation_updates(&mut navigator);
+        }
     }
 
     pub(crate) fn process_navigation_updates(&self) {
         if self.pending_navigation_updates.is_empty() {
             return;
         }
-        let mut navigator = match self.navigator.try_lock() {
-            Ok(navigator) => navigator,
-            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
-            Err(std::sync::TryLockError::WouldBlock) => return,
+        let Some(mut navigator) = self.try_navigator() else {
+            return;
         };
         self.apply_navigation_updates(&mut navigator);
     }
@@ -458,18 +465,34 @@ impl MobEntity {
     fn apply_navigation_updates(&self, navigator: &mut Navigator) {
         // A search can enqueue more changes; leave those for the next owner boundary.
         for _ in 0..self.pending_navigation_updates.len() {
-            let Some((position, world, sequence)) = self.pending_navigation_updates.pop() else {
+            let Some(update) = self.pending_navigation_updates.pop() else {
                 break;
             };
-            if self.living_entity.entity.world.load().uuid == world
-                && navigator.get_path().is_some_and(|path| {
-                    path.world_change
-                        .is_none_or(|(path_world, seen)| path_world == world && seen < sequence)
-                })
-                && navigator.should_recompute_path(&self.living_entity, position)
-            {
-                navigator.recompute_path(&self.living_entity);
-            }
+            self.apply_navigation_update(navigator, update);
+        }
+    }
+
+    fn try_navigator(&self) -> Option<std::sync::MutexGuard<'_, Navigator>> {
+        match self.navigator.try_lock() {
+            Ok(navigator) => Some(navigator),
+            Err(std::sync::TryLockError::Poisoned(error)) => Some(error.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
+    }
+
+    fn apply_navigation_update(
+        &self,
+        navigator: &mut Navigator,
+        (position, world, sequence): (BlockPos, Uuid, u64),
+    ) {
+        if self.living_entity.entity.world.load().uuid == world
+            && navigator.get_path().is_some_and(|path| {
+                path.world_change
+                    .is_none_or(|(path_world, seen)| path_world == world && seen < sequence)
+            })
+            && navigator.should_recompute_path(&self.living_entity, position)
+        {
+            navigator.recompute_path(&self.living_entity);
         }
     }
 
@@ -3425,6 +3448,32 @@ mod navigation_update_tests {
         world.level.shutdown().await;
         assert_eq!(index, Some(0));
         assert!(mob.is_no_ai());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fresh_notice_drains_a_queued_edit_even_if_it_misses_the_route() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let mob = mob(world.clone());
+        {
+            let _navigator = mob
+                .navigator
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            world.navigation_change_sequence.store(1, Ordering::Release);
+            mob.on_navigation_block_changed(BlockPos::new(4, 64, 0), world.uuid, 1);
+        }
+        world.navigation_change_sequence.store(2, Ordering::Release);
+        mob.on_navigation_block_changed(BlockPos::new(120, 64, 0), world.uuid, 2);
+        let progress = mob
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_path()
+            .map(Path::get_next_node_index);
+        world.level.shutdown().await;
+        assert_eq!(progress, Some(0));
         Ok(())
     }
 

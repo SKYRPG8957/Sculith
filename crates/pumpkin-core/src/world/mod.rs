@@ -2026,11 +2026,25 @@ impl World {
             .fetch_add(1, Ordering::AcqRel)
             + 1;
         let entities = self.entities.load_full();
-        for entity in entities.iter() {
+        let notify = |entity: &dyn EntityBase| {
             if let Some(mob) = entity.get_mob() {
                 mob.get_mob_entity()
                     .on_navigation_block_changed(*position, self.uuid, sequence);
             }
+        };
+        // Native entities can implement their own get_mob. Built-in classifications
+        // are stable for the lifetime of the registry snapshot.
+        if let Some(server) = self.server.upgrade()
+            && let Some(_native) = server.plugin_manager.try_without_native_code()
+            && let Some(slots) = self.entity_index.cached_mob_slots(&entities)
+        {
+            for &slot in slots.iter() {
+                notify(entities[slot].as_ref());
+            }
+            return;
+        }
+        for entity in entities.iter() {
+            notify(entity.as_ref());
         }
     }
 
