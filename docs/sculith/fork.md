@@ -264,6 +264,14 @@ Crossings between owners, updated payloads and translated clients go through
 the ordinary world decoder. Movement effects that need shared work, other
 scheduled callbacks, entity AI and entity chunk residency use world phases.
 
+The region can prepare a native Bedrock direct melee request when the player
+and target are in its current extent. The request stays at the head of the
+connection queue. The world rechecks the extent and original packet before
+using the decoded request through the existing inventory and attack handlers.
+Target identity, reach, held item, damage, and plugin events are resolved on
+the world owner. Cross-region targets, translated packets, and receive or send
+packet observers use the usual world decoder.
+
 A native Bedrock input can also commit a short level move and its look on
 the region before the world processes the connection. The pose, controls and
 grounded state must stay stable. For positional movement, the extent must own

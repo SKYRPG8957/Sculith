@@ -5,9 +5,12 @@ use pumpkin_protocol::{
     bedrock::{
         network_stack_latency::NetworkStackLatency,
         server::{
-            client_cache_blob_status::SClientCacheBlobStatus, player_auth_input::SPlayerAuthInput,
+            client_cache_blob_status::SClientCacheBlobStatus,
+            inventory_transaction::{HandSlot, SInventoryTransaction, TransactionData},
+            player_auth_input::SPlayerAuthInput,
         },
     },
+    codec::{var_int::VarInt, var_ulong::VarULong},
     packet::Packet,
     serial::PacketRead,
 };
@@ -30,11 +33,28 @@ use super::BedrockClient;
 
 const REGIONAL_PACKET_BUDGET: usize = 8;
 const REGIONAL_MOVEMENT_BYTES: usize = 512;
+const REGIONAL_ATTACK_BYTES: usize = 512;
 
 // The raw packet remains available for translation, hook edits and changes of owner.
 pub(super) struct QueuedPlayInput {
     packet: RawPacket,
     movement: Option<PreparedMovement>,
+    attack: Option<PreparedAttack>,
+}
+
+impl From<RawPacket> for QueuedPlayInput {
+    fn from(packet: RawPacket) -> Self {
+        Self {
+            packet,
+            movement: None,
+            attack: None,
+        }
+    }
+}
+
+struct PreparedAttack {
+    extent: Weak<[Vector2<i32>]>,
+    packet: SInventoryTransaction,
 }
 
 struct PreparedMovement {
@@ -50,18 +70,16 @@ enum RegionalMovePreparation {
     Unprepared,
 }
 
-impl PreparedMovement {
-    fn owned_extent(&self, player: &Player) -> Option<RegionChunks> {
-        let extent = self.extent.upgrade()?;
-        let world = player.world();
-        let layout = world.region_layout.load();
-        (player.can_simulate_in(&world)
-            && layout
-                .owner(player.get_entity().chunk_pos.load())
-                .and_then(|owner| layout.chunks(owner))
-                .is_some_and(|current| Arc::ptr_eq(current, &extent)))
-        .then_some(extent)
-    }
+fn owned_extent(owner: &Weak<[Vector2<i32>]>, player: &Player) -> Option<RegionChunks> {
+    let extent = owner.upgrade()?;
+    let world = player.world();
+    let layout = world.region_layout.load();
+    (player.can_simulate_in(&world)
+        && layout
+            .owner(player.get_entity().chunk_pos.load())
+            .and_then(|owner| layout.chunks(owner))
+            .is_some_and(|current| Arc::ptr_eq(current, &extent)))
+    .then_some(extent)
 }
 
 impl BedrockClient {
@@ -70,7 +88,9 @@ impl BedrockClient {
     }
 
     pub(super) fn enqueue_play_input(&self, player: &Arc<Player>, packet: RawPacket) {
-        let ready = (Self::is_regional_reply(packet.id) || Self::can_prepare_movement(&packet))
+        let ready = (Self::is_regional_reply(packet.id)
+            || Self::can_prepare_movement(&packet)
+            || Self::can_prepare_attack(&packet))
             && self.is_current_protocol();
         player.inbound_packets.push(packet);
         if ready {
@@ -108,12 +128,10 @@ impl BedrockClient {
             let Some(QueuedPlayInput {
                 packet,
                 mut movement,
-            }) = head.take().or_else(|| {
-                player.inbound_packets.pop().map(|packet| QueuedPlayInput {
-                    packet,
-                    movement: None,
-                })
-            })
+                attack,
+            }) = head
+                .take()
+                .or_else(|| player.inbound_packets.pop().map(Into::into))
             else {
                 break;
             };
@@ -127,15 +145,17 @@ impl BedrockClient {
                 player.finish_regional_client_move(&committed);
                 continue;
             }
-            let original = movement.as_ref().map(|_| packet.payload.clone());
+            let original = (movement.is_some() || attack.is_some()).then(|| packet.payload.clone());
             let Some(packet) = self.filter_play_packet(&server, &player, packet) else {
                 continue;
             };
-            if let Some((movement, original)) = movement.zip(original)
+            let unchanged = original.is_some_and(|raw| {
+                std::ptr::eq(packet.payload.as_ref(), raw.as_ref()) && self.is_current_protocol()
+            });
+            if let Some(movement) = movement
+                && unchanged
                 && packet.id == SPlayerAuthInput::PACKET_ID
-                && std::ptr::eq(packet.payload.as_ref(), original.as_ref())
-                && self.is_current_protocol()
-                && let Some(extent) = movement.owned_extent(&player)
+                && let Some(extent) = owned_extent(&movement.extent, &player)
             {
                 tracing::trace!(
                     player = %player.gameprofile.name,
@@ -149,6 +169,14 @@ impl BedrockClient {
                     &mut spin_attack_prediction,
                     owned.then_some(&extent),
                 );
+            } else if let Some(attack) = attack
+                && unchanged
+                && packet.id == SInventoryTransaction::PACKET_ID
+                && owned
+                && owned_extent(&attack.extent, &player).is_some()
+            {
+                tracing::trace!(player = %player.gameprofile.name, "Applying region-prepared Bedrock melee attack");
+                self.handle_inventory_action(&player, attack.packet);
             } else if let Err(err) = self.handle_queued_play_packet(
                 &player,
                 &server,
@@ -177,6 +205,47 @@ impl BedrockClient {
 
     const fn can_prepare_movement(packet: &RawPacket) -> bool {
         packet.id == SPlayerAuthInput::PACKET_ID && packet.payload.len() <= REGIONAL_MOVEMENT_BYTES
+    }
+
+    fn can_prepare_attack(packet: &RawPacket) -> bool {
+        // The simple entity-use transaction has no old request, legacy slots or actions.
+        if packet.id != SInventoryTransaction::PACKET_ID
+            || packet.payload.len() > REGIONAL_ATTACK_BYTES
+        {
+            return false;
+        }
+        let Some(mut data) = packet.payload.strip_prefix(&[0, 0, 3, 0]) else {
+            return false;
+        };
+        VarULong::read(&mut data).is_ok()
+            && VarInt::read(&mut data).is_ok_and(|action| action.0 == 1)
+    }
+
+    fn prepare_attack(
+        player: &Player,
+        mut payload: &[u8],
+        extent: &RegionChunks,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<PreparedAttack> {
+        let packet = SInventoryTransaction::read(&mut payload).ok()?;
+        let TransactionData::UseItemOnEntity(data) = &packet.transaction_data else {
+            return None;
+        };
+        if !payload.is_empty() || data.action_type.0 != 1 || data.hand != HandSlot::Mainhand {
+            return None;
+        }
+        let world = player.world();
+        let target =
+            world.get_entity_by_id(i32::try_from(data.target_entity_runtime_id.0).ok()?)?;
+        let base = target.get_entity();
+        (!base.is_removed()
+            && std::ptr::eq(base.world.load().as_ref(), world.as_ref())
+            && owns(base.chunk_pos.load())
+            && owns(player.get_entity().chunk_pos.load()))
+        .then(|| PreparedAttack {
+            extent: Arc::downgrade(extent),
+            packet,
+        })
     }
 
     fn prepare_movement(
@@ -282,12 +351,10 @@ impl BedrockClient {
                 return false;
             }
             let was_waiting = head.is_some();
-            let Some(mut queued) = head.take().or_else(|| {
-                player.inbound_packets.pop().map(|packet| QueuedPlayInput {
-                    packet,
-                    movement: None,
-                })
-            }) else {
+            let Some(mut queued) = head
+                .take()
+                .or_else(|| player.inbound_packets.pop().map(Into::into))
+            else {
                 return false;
             };
             // Keep the first world-owned packet ahead of everything behind it.
@@ -317,6 +384,14 @@ impl BedrockClient {
                         }
                         RegionalMovePreparation::Unprepared => {}
                     }
+                }
+                if !was_waiting
+                    && Self::can_prepare_attack(&queued.packet)
+                    && let Some(attack) =
+                        Self::prepare_attack(player, &queued.packet.payload, extent, &owns)
+                {
+                    tracing::trace!(player = %player.gameprofile.name, "Prepared Bedrock melee attack on its region");
+                    queued.attack = Some(attack);
                 }
                 let payload = (movement && !was_waiting).then(|| queued.packet.payload.clone());
                 *head = Some(queued);
@@ -371,7 +446,8 @@ mod tests {
     use pumpkin_data::Block;
     use pumpkin_protocol::{
         bedrock::{
-            client::update_attributes::CUpdateAttributes, server::player_auth_input::InputData,
+            client::update_attributes::CUpdateAttributes, network_item::NetworkItemDescriptor,
+            server::player_auth_input::InputData,
         },
         codec::{var_int::VarInt, var_uint::VarUInt, var_ulong::VarULong},
         serial::PacketWrite,
@@ -533,6 +609,50 @@ mod tests {
             at: at + TICK_PERIOD,
             ..step
         })));
+    }
+
+    fn verify_attack_preparation(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        west: Vector2<i32>,
+    ) {
+        let target = crate::entity::r#type::from_type(
+            &pumpkin_data::entity::EntityType::PIG,
+            Vector3::new(520.0, 100.0, 8.0),
+            world,
+            uuid::Uuid::new_v4(),
+        );
+        world.add_entity_silent(target.clone());
+        let base = target.get_entity();
+        let mut payload = vec![0, 0, 3, 0];
+        VarULong(base.entity_id as u64).write(&mut payload).unwrap();
+        VarInt(1).write(&mut payload).unwrap();
+        VarInt(0).write(&mut payload).unwrap();
+        0_u8.write(&mut payload).unwrap();
+        NetworkItemDescriptor::default()
+            .write(&mut payload)
+            .unwrap();
+        payload.extend_from_slice(&[0; 24]);
+        let payload: bytes::Bytes = payload.into();
+        let advance = |expected| {
+            client.enqueue_play_input(
+                player,
+                RawPacket {
+                    id: SInventoryTransaction::PACKET_ID,
+                    payload: payload.clone(),
+                },
+            );
+            tick_region(world, west, Instant::now());
+            let head = client.activity.inbound_head.lock().unwrap().take().unwrap();
+            assert!(std::ptr::eq(head.packet.payload.as_ref(), payload.as_ref()));
+            assert_eq!(head.attack.is_some(), expected);
+            assert!(player.inbound_packets.is_empty());
+        };
+        advance(false);
+        base.set_pos(Vector3::new(9.0, 100.0, 8.0));
+        advance(true);
+        world.remove_entity(target.as_ref());
     }
 
     fn queue_auth_input(
@@ -1016,6 +1136,7 @@ mod tests {
         check();
         verify_pickup_timer_handoff(&world, &player, east, west);
         verify_mining_clock(&world, &server, &player, &client, west).await;
+        verify_attack_preparation(&world, &player, &client, west);
         verify_stationary_inputs(&world, &player, &client, west);
         verify_stationary_turns(&world, &player, &client, west);
         verify_chunk_delivery_clock(&client);
