@@ -4,6 +4,8 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::Difficulty;
 
+use crate::{net::bedrock::BedrockClient, server::TickDeadline};
+
 const MAX_FOOD: u8 = 20;
 const EXHAUSTION_COST: f32 = 4.0;
 const MAX_EXHAUSTION: f32 = 40.0;
@@ -28,6 +30,10 @@ impl Default for HungerManager {
 
 impl HungerManager {
     pub fn tick(&self, player: &Player) {
+        self.tick_with_deadline(player, None);
+    }
+
+    pub(super) fn tick_with_deadline(&self, player: &Player, deadline: Option<TickDeadline>) {
         let level_info = player.world().level_info.load();
         let difficulty = level_info.difficulty;
         let natural_regen = level_info.game_rules.natural_health_regeneration;
@@ -44,13 +50,15 @@ impl HungerManager {
         let mut heal_amount = 0.0;
         let mut damage_amount = 0.0;
 
-        if exhaustion > EXHAUSTION_COST {
-            exhaustion -= EXHAUSTION_COST;
-            if saturation > 0.0 {
-                saturation = (saturation - 1.0).max(0.0);
-            } else if difficulty != Difficulty::Peaceful {
-                level = level.saturating_sub(1);
-            }
+        let client = player
+            .client
+            .bedrock()
+            .filter(|client| client.is_current_protocol());
+        let has_excess = exhaustion > EXHAUSTION_COST;
+        let owns_drain = (has_excess || deadline.is_none())
+            && client.is_none_or(|client| client.claim_food_drain(deadline));
+        if has_excess && owns_drain {
+            Self::spend_exhaustion(&mut level, &mut saturation, &mut exhaustion, difficulty);
             needs_sync = true;
         }
 
@@ -107,14 +115,112 @@ impl HungerManager {
                 .living_entity
                 .damage(player, damage_amount, DamageType::STARVE);
         }
+        if deadline.is_some() {
+            self.offer_regional_drain(player);
+        }
+    }
+
+    fn spend_exhaustion(
+        level: &mut u8,
+        saturation: &mut f32,
+        exhaustion: &mut f32,
+        difficulty: Difficulty,
+    ) {
+        *exhaustion -= EXHAUSTION_COST;
+        if *saturation > 0.0 {
+            *saturation = (*saturation - 1.0).max(0.0);
+        } else if difficulty != Difficulty::Peaceful {
+            *level = level.saturating_sub(1);
+        }
+    }
+
+    pub(crate) fn has_exhaustion_to_drain(&self) -> bool {
+        self.exhaustion.load() > EXHAUSTION_COST
+    }
+
+    pub(super) fn offer_regional_drain(&self, player: &Player) {
+        if !self.has_exhaustion_to_drain() {
+            return;
+        }
+        let Some(client) = player
+            .client
+            .bedrock()
+            .filter(|client| client.is_current_protocol())
+        else {
+            return;
+        };
+        let world = player.world();
+        if let Some(registered) = world.get_player_by_uuid(player.gameprofile.id)
+            && std::ptr::eq(registered.as_ref(), player)
+        {
+            world.offer_regional_food_drain(client.id, &registered);
+        }
+    }
+
+    /// Consume the same exhaustion step as the world while the region owns the player.
+    /// The world still advances regeneration and starvation and publishes health.
+    pub(crate) fn drain_on_region(
+        &self,
+        player: &Player,
+        client: &BedrockClient,
+        deadline: TickDeadline,
+        owns: impl FnOnce() -> bool,
+    ) -> bool {
+        if !client.is_current_protocol() {
+            return false;
+        }
+        let Ok(abilities) = player.abilities.try_lock() else {
+            return true;
+        };
+        let mut exhaustion = self.exhaustion.load();
+        let mut level = self.level.load();
+        let mut saturation = self.saturation.load();
+        let health = player.living_entity.health.load();
+        let info = player.world().level_info.load_full();
+        if exhaustion <= EXHAUSTION_COST
+            || abilities.invulnerable
+            || player.is_spectator()
+            || !player.has_client_loaded()
+            || !player.has_stable_world_membership()
+            || !(health > 0.0 && level > 1)
+            || info.difficulty == Difficulty::Peaceful
+            || self.tick_timer.load() != 0
+        {
+            return false;
+        }
+        if info.game_rules.natural_health_regeneration && level >= 18 {
+            let Some(max_health) = player.living_entity.try_max_health() else {
+                return true;
+            };
+            if health < max_health {
+                return false;
+            }
+        }
+        if !owns() || !client.claim_food_drain(Some(deadline)) {
+            return true;
+        }
+        Self::spend_exhaustion(
+            &mut level,
+            &mut saturation,
+            &mut exhaustion,
+            info.difficulty,
+        );
+        self.level.store(level);
+        self.saturation.store(saturation);
+        self.exhaustion.store(exhaustion);
+        client.mark_regional_food_dirty();
+        tracing::trace!(player = %player.gameprofile.name, food = level, saturation, exhaustion, "Applied exhaustion on the player region");
+        exhaustion > EXHAUSTION_COST
     }
 
     pub fn eat(&self, player: &Player, food: u8, saturation: f32) {
+        let abilities = player.lock_abilities_and_hunger();
         let new_level = self.level.load().saturating_add(food).min(MAX_FOOD);
         let new_sat = (self.saturation.load() + saturation).clamp(0.0, f32::from(new_level));
 
         self.level.store(new_level);
         self.saturation.store(new_sat);
+        drop(abilities);
 
         player.send_health();
     }

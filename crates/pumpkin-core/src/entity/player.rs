@@ -3539,11 +3539,11 @@ impl Player {
             && level_info.game_rules.natural_health_regeneration
         {
             let tick_count = self.tick_counter.load(Ordering::Relaxed);
+            if tick_count % 20 == 0 && self.can_food_heal() {
+                self.heal(1.0);
+            }
+            let _abilities = self.lock_abilities_and_hunger();
             if tick_count % 20 == 0 {
-                if self.can_food_heal() {
-                    self.heal(1.0);
-                }
-
                 let saturation = self.hunger_manager.saturation.load();
                 if saturation < 20.0 {
                     self.hunger_manager.set_saturation(saturation + 1.0);
@@ -3555,7 +3555,7 @@ impl Player {
             }
         }
 
-        self.hunger_manager.tick(self);
+        self.hunger_manager.tick_with_deadline(self, deadline);
 
         self.tick_fall_flying();
         // Vanilla updates pose in PlayerEntity#tick after super.tick().
@@ -5567,6 +5567,13 @@ impl Player {
         }
 
         let max_health = self.living_entity.get_max_health();
+        let (food, saturation) = {
+            let _abilities = self.lock_abilities_and_hunger();
+            (
+                self.hunger_manager.level.load(),
+                self.hunger_manager.saturation.load(),
+            )
+        };
         let attribute = |name: &str, current_value, max_value, default_value| BedrockAttribute {
             min_value: 0.0,
             max_value,
@@ -5579,11 +5586,7 @@ impl Player {
         };
 
         self.try_enqueue_packet_editioned(
-            &CSetHealth::new(
-                self.living_entity.health.load(),
-                self.hunger_manager.level.load().into(),
-                self.hunger_manager.saturation.load(),
-            ),
+            &CSetHealth::new(self.living_entity.health.load(), food.into(), saturation),
             &CBedrockAttributes {
                 target_runtime_id: VarULong(self.entity_id() as u64),
                 attribute_list: vec![
@@ -5593,18 +5596,8 @@ impl Player {
                         max_health,
                         max_health,
                     ),
-                    attribute(
-                        "minecraft:player.hunger",
-                        self.hunger_manager.level.load().into(),
-                        20.0,
-                        20.0,
-                    ),
-                    attribute(
-                        "minecraft:player.saturation",
-                        self.hunger_manager.saturation.load(),
-                        20.0,
-                        5.0,
-                    ),
+                    attribute("minecraft:player.hunger", food.into(), 20.0, 20.0),
+                    attribute("minecraft:player.saturation", saturation, 20.0, 5.0),
                 ],
                 // This is a client input tick, not our independent server tick counter.
                 // Zero applies the authoritative values without prediction-history matching.
@@ -5628,6 +5621,10 @@ impl Player {
             return;
         }
 
+        let regional = self
+            .client
+            .bedrock()
+            .is_some_and(|client| client.take_regional_food_dirty());
         let health = self.living_entity.health.load() as i32;
         let food = self.hunger_manager.level.load();
         let saturation = self.hunger_manager.saturation.load();
@@ -5636,7 +5633,11 @@ impl Player {
         let last_food = self.last_sent_food.load(Ordering::Relaxed);
         let last_saturation = self.last_food_saturation.load(Ordering::Relaxed);
 
-        if health != last_health || food != last_food || (saturation == 0.0) != last_saturation {
+        if regional
+            || health != last_health
+            || food != last_food
+            || (saturation == 0.0) != last_saturation
+        {
             self.last_sent_health.store(health, Ordering::Relaxed);
             self.last_sent_food.store(food, Ordering::Relaxed);
             self.last_food_saturation
@@ -5720,7 +5721,9 @@ impl Player {
         if food_event.cancelled {
             return;
         }
+        let abilities = self.lock_abilities_and_hunger();
         self.hunger_manager.set_level(food_event.food_level);
+        drop(abilities);
         self.send_health();
     }
 
@@ -5729,7 +5732,9 @@ impl Player {
     }
 
     pub fn set_saturation(&self, saturation: f32) {
+        let abilities = self.lock_abilities_and_hunger();
         self.hunger_manager.set_saturation(saturation);
+        drop(abilities);
         self.send_health();
     }
 
@@ -5784,6 +5789,7 @@ impl Player {
         let abilities = self.lock_abilities_and_hunger();
         self.hunger_manager.set_exhaustion(exhaustion);
         drop(abilities);
+        self.hunger_manager.offer_regional_drain(self);
         self.send_health();
     }
 

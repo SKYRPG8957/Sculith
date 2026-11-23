@@ -225,6 +225,8 @@ struct ClientActivity {
     chunk_view_revision: AtomicU64,
     published_chunk_view: AtomicU64,
     last_chunk_step: AtomicCell<Option<Instant>>,
+    last_food_drain: AtomicCell<Option<Instant>>,
+    regional_food_dirty: AtomicBool,
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
     item_cooldown: AtomicCell<Option<item_cooldown::ItemCooldownClock>>,
     mining: std::sync::Mutex<Option<mining::MiningClock>>,
@@ -368,6 +370,8 @@ impl BedrockClient {
                 chunk_view_revision: AtomicU64::new(0),
                 published_chunk_view: AtomicU64::new(0),
                 last_chunk_step: AtomicCell::new(None),
+                last_food_drain: AtomicCell::new(None),
+                regional_food_dirty: AtomicBool::new(false),
                 experience_pickup: AtomicCell::new(None),
                 item_cooldown: AtomicCell::new(None),
                 mining: std::sync::Mutex::default(),
@@ -870,6 +874,34 @@ impl BedrockClient {
     pub(crate) fn is_current_protocol(&self) -> bool {
         let protocol = self.protocol_version.load(Ordering::Relaxed);
         protocol == 0 || protocol == CURRENT_BEDROCK_MC_PROTOCOL
+    }
+
+    /// Serialized by the player's abilities and hunger lock.
+    pub(crate) fn claim_food_drain(&self, deadline: Option<crate::server::TickDeadline>) -> bool {
+        if deadline.is_some_and(|step| {
+            self.activity
+                .last_food_drain
+                .load()
+                .is_some_and(|last| !step.follows(last))
+        }) {
+            return false;
+        }
+        self.activity
+            .last_food_drain
+            .store(deadline.map(|step| step.at));
+        true
+    }
+
+    pub(crate) fn mark_regional_food_dirty(&self) {
+        self.activity
+            .regional_food_dirty
+            .store(true, Ordering::Release);
+    }
+
+    pub(crate) fn take_regional_food_dirty(&self) -> bool {
+        self.activity
+            .regional_food_dirty
+            .swap(false, Ordering::AcqRel)
     }
 
     fn prepare_play_sent_event(
@@ -1686,6 +1718,37 @@ impl BedrockClient {
 mod tests {
     use super::*;
     use pumpkin_protocol::bedrock::client::biome_definition_list::CBiomeDefinitionList;
+
+    #[tokio::test]
+    async fn food_drain_shares_one_deadline_across_owners() {
+        use crate::server::TickDeadline;
+
+        let address = "127.0.0.1:0".parse().unwrap();
+        let client = BedrockClient::new(
+            1,
+            NetherNetSession::test_session(address).await,
+            address,
+            Arc::new(Mutex::new(HashMap::new())),
+            PacketRateLimiter::new(false, 0.0, 0.0),
+            Weak::new(),
+        );
+        let at = Instant::now();
+        let period = Duration::from_millis(50);
+        let first = TickDeadline { at, period };
+        assert!(client.claim_food_drain(Some(first)));
+        assert!(!client.claim_food_drain(Some(first)));
+        assert!(!client.claim_food_drain(Some(TickDeadline {
+            at: at + Duration::from_millis(49),
+            period,
+        })));
+        assert!(client.claim_food_drain(Some(TickDeadline {
+            at: at + period,
+            period
+        })));
+        assert!(client.claim_food_drain(None));
+        assert!(client.claim_food_drain(Some(first)));
+        client.close().await;
+    }
 
     #[tokio::test]
     async fn draining_a_kick_releases_the_peer_and_preserves_a_replacement() {

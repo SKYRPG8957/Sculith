@@ -1271,6 +1271,17 @@ impl LivingEntity {
         self.get_attribute_value(&Attributes::MAX_HEALTH) as f32
     }
 
+    pub(super) fn try_max_health(&self) -> Option<f32> {
+        let attribute = &Attributes::MAX_HEALTH;
+        let map = self.attributes.try_read().ok()?;
+        Some(
+            map.get(&attribute.id)
+                .map_or(attribute.default_value, |instance| {
+                    instance.sanitized_value(attribute)
+                }) as f32,
+        )
+    }
+
     /// Sets the maximum health for this entity
     pub fn set_max_health(&self, max_health: f32) {
         // Update base attribute

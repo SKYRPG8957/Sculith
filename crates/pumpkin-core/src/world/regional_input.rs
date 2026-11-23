@@ -5,6 +5,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     entity::{Entity, EntityBase, player::Player},
+    plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
     server::{Server, TickDeadline},
 };
 
@@ -19,6 +20,7 @@ bitflags::bitflags! {
         const TERRAIN = 8;
         const ITEM_COOLDOWNS = 16;
         const INVENTORY_EDITS = 32;
+        const FOOD_DRAIN = 64;
     }
 }
 
@@ -113,6 +115,18 @@ impl RegionalInput {
                 pending |= RegionalWork::MINING;
             }
             let owns_player = || owns(player.get_entity().chunk_pos.load());
+            if work.intersects(RegionalWork::INPUT | RegionalWork::FOOD_DRAIN)
+                && player.hunger_manager.has_exhaustion_to_drain()
+                && !server.tick_rate_manager.is_frozen()
+                && !server.plugin_manager.has_handlers::<PacketSentEvent>()
+                && !server.plugin_manager.has_handlers::<BedrockConnectionPacketSentEvent>()
+                // Layout publication takes the writer. A busy layout keeps this work pending.
+                && world.regional_drops.try_read().map_or(true, |_layout| {
+                    player.hunger_manager.drain_on_region(&player, client, deadline, owns_player)
+                })
+            {
+                pending |= RegionalWork::FOOD_DRAIN;
+            }
             if work.contains(RegionalWork::ITEM_COOLDOWNS)
                 && client.advance_regional_item_cooldowns(&player, deadline, owns_player)
             {
@@ -221,6 +235,10 @@ impl World {
 
     pub(crate) fn offer_regional_item_cooldowns(&self, id: u64, player: &Arc<Player>) -> bool {
         self.offer_regional_work(id, player, RegionalWork::ITEM_COOLDOWNS)
+    }
+
+    pub(crate) fn offer_regional_food_drain(&self, id: u64, player: &Arc<Player>) {
+        self.offer_regional_work(id, player, RegionalWork::FOOD_DRAIN);
     }
 
     pub(crate) fn offer_regional_inventory_edits(&self, id: u64, player: &Arc<Player>) {

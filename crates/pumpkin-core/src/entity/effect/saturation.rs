@@ -14,6 +14,7 @@ impl MobEffect for SaturationMobEffect {
             && let Some(player) = entity.get_player()
         {
             let hunger = amplifier + 1;
+            let _abilities = player.lock_abilities_and_hunger();
             player.hunger_manager.add_hunger(hunger);
             player
                 .hunger_manager

@@ -338,6 +338,14 @@ advancing the same delay again. Orb contact, mending, and awarding experience
 run in the world phase. Coordinated steps and players without an eligible
 region use world processing.
 
+A current-protocol Bedrock player's region can spend accumulated exhaustion
+to reduce saturation or food. The connection retains the same deadline stamp
+across movement, and both world and regional drains use the same food rule.
+Food writes and player save snapshots share the abilities lock. The world
+advances healing and starvation, and publishes the latest food attributes
+after a regional change. Peaceful regeneration, healing or starvation in
+progress, packet observers and coordinated ticks use the world processing path.
+
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the
 connection when it changes owners. A repeated deadline cannot count twice.
