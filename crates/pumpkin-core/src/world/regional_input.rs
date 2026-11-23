@@ -21,6 +21,7 @@ bitflags::bitflags! {
         const ITEM_COOLDOWNS = 16;
         const INVENTORY_EDITS = 32;
         const FOOD_DRAIN = 64;
+        const STATUS_EFFECTS = 128;
     }
 }
 
@@ -132,6 +133,19 @@ impl RegionalInput {
             {
                 pending |= RegionalWork::ITEM_COOLDOWNS;
             }
+            if work.contains(RegionalWork::STATUS_EFFECTS)
+                && !server.tick_rate_manager.is_frozen()
+                && world.regional_drops.try_read().map_or(true, |_layout| {
+                    player.living_entity.advance_regional_effects(
+                        &player,
+                        client,
+                        deadline,
+                        owns_player,
+                    )
+                })
+            {
+                pending |= RegionalWork::STATUS_EFFECTS;
+            }
             if work.contains(RegionalWork::INVENTORY_EDITS)
                 && client.inventory_edits().drain_region(
                     server,
@@ -239,6 +253,10 @@ impl World {
 
     pub(crate) fn offer_regional_food_drain(&self, id: u64, player: &Arc<Player>) {
         self.offer_regional_work(id, player, RegionalWork::FOOD_DRAIN);
+    }
+
+    pub(crate) fn offer_regional_status_effects(&self, id: u64, player: &Arc<Player>) {
+        self.offer_regional_work(id, player, RegionalWork::STATUS_EFFECTS);
     }
 
     pub(crate) fn offer_regional_inventory_edits(&self, id: u64, player: &Arc<Player>) {

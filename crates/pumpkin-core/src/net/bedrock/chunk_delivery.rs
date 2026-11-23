@@ -25,14 +25,6 @@ impl BedrockClient {
 
     /// The chunk sender lock serializes the world and regional callers.
     pub(crate) fn claim_chunk_step(&self, deadline: Option<TickDeadline>) -> bool {
-        if let Some((next, previous)) = deadline.zip(self.activity.last_chunk_step.load())
-            && !next.follows(previous)
-        {
-            return false;
-        }
-        self.activity
-            .last_chunk_step
-            .store(deadline.map(|step| step.at));
-        true
+        Self::claim_tick_deadline(&self.activity.last_chunk_step, deadline)
     }
 }

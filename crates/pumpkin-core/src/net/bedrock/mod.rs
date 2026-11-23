@@ -226,6 +226,7 @@ struct ClientActivity {
     published_chunk_view: AtomicU64,
     last_chunk_step: AtomicCell<Option<Instant>>,
     last_food_drain: AtomicCell<Option<Instant>>,
+    last_effect_step: AtomicCell<Option<Instant>>,
     regional_food_dirty: AtomicBool,
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
     item_cooldown: AtomicCell<Option<item_cooldown::ItemCooldownClock>>,
@@ -371,6 +372,7 @@ impl BedrockClient {
                 published_chunk_view: AtomicU64::new(0),
                 last_chunk_step: AtomicCell::new(None),
                 last_food_drain: AtomicCell::new(None),
+                last_effect_step: AtomicCell::new(None),
                 regional_food_dirty: AtomicBool::new(false),
                 experience_pickup: AtomicCell::new(None),
                 item_cooldown: AtomicCell::new(None),
@@ -878,24 +880,31 @@ impl BedrockClient {
 
     /// Serialized by the player's abilities and hunger lock.
     pub(crate) fn claim_food_drain(&self, deadline: Option<crate::server::TickDeadline>) -> bool {
-        if deadline.is_some_and(|step| {
-            self.activity
-                .last_food_drain
-                .load()
-                .is_some_and(|last| !step.follows(last))
-        }) {
-            return false;
-        }
-        self.activity
-            .last_food_drain
-            .store(deadline.map(|step| step.at));
-        true
+        Self::claim_tick_deadline(&self.activity.last_food_drain, deadline)
     }
 
     pub(crate) fn mark_regional_food_dirty(&self) {
         self.activity
             .regional_food_dirty
             .store(true, Ordering::Release);
+    }
+
+    /// Serialized by the player's active effects lock.
+    pub(crate) fn claim_effect_step(&self, deadline: Option<crate::server::TickDeadline>) -> bool {
+        Self::claim_tick_deadline(&self.activity.last_effect_step, deadline)
+    }
+
+    fn claim_tick_deadline(
+        clock: &AtomicCell<Option<Instant>>,
+        deadline: Option<crate::server::TickDeadline>,
+    ) -> bool {
+        if let Some((next, previous)) = deadline.zip(clock.load())
+            && !next.follows(previous)
+        {
+            return false;
+        }
+        clock.store(deadline.map(|step| step.at));
+        true
     }
 
     pub(crate) fn take_regional_food_dirty(&self) -> bool {

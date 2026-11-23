@@ -33,7 +33,8 @@ use crate::entity::mob::equipment::{DEFAULT_EQUIPMENT_DROP_CHANCE, is_equippable
 use crate::entity::mob::neutral::find_by_uuid;
 use crate::entity::player::Player;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
-use crate::server::Server;
+use crate::net::bedrock::BedrockClient;
+use crate::server::{Server, TickDeadline};
 use crate::world::loot::LootContextParameters;
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::AttributeModifierSlot;
@@ -1702,7 +1703,10 @@ impl LivingEntity {
         let chunk_pos = self.entity.chunk_pos.load();
         let world = self.entity.world.load();
         world.broadcast_to_chunk_editioned(chunk_pos, &je_packet, &be_packet);
+        let mut offer_clock = false;
         if !effect.effect_type.instantaneous {
+            offer_clock = effect.duration > 0
+                && crate::entity::effect::get_mob_effect(effect.effect_type).is_none();
             let apply_sound = effect.effect_type.apply_sound;
             let was_absent = self
                 .active_effects
@@ -1716,6 +1720,9 @@ impl LivingEntity {
             }
         }
         self.sync_effect_particles();
+        if offer_clock {
+            self.offer_regional_effects();
+        }
     }
 
     fn sync_effect_particles(&self) {
@@ -3198,14 +3205,84 @@ impl LivingEntity {
         }
     }
 
-    fn tick_effects(&self) {
+    fn effects_can_advance_on_region(effects: &FxHashMap<&'static StatusEffect, Effect>) -> bool {
+        let mut finite = false;
+        for effect in effects.values() {
+            if (effect.duration != -1 && effect.duration <= 0)
+                || crate::entity::effect::get_mob_effect(effect.effect_type).is_some()
+            {
+                return false;
+            }
+            finite |= effect.duration > 0;
+        }
+        finite
+    }
+
+    fn offer_regional_effects(&self) {
+        if !self.is_player() {
+            return;
+        }
+        let world = self.entity.world.load();
+        if let Some(player) = world.get_player_by_id(self.entity.entity_id)
+            && std::ptr::eq(player.get_entity(), self.get_entity())
+            && let Some(client) = player
+                .client
+                .bedrock()
+                .filter(|client| client.is_current_protocol())
+        {
+            world.offer_regional_status_effects(client.id, &player);
+        }
+    }
+
+    pub(crate) fn advance_regional_effects(
+        &self,
+        player: &Player,
+        client: &BedrockClient,
+        deadline: TickDeadline,
+        owns: impl FnOnce() -> bool,
+    ) -> bool {
+        if !client.is_current_protocol()
+            || !player.has_client_loaded()
+            || !player.has_stable_world_membership()
+            || !self.is_alive()
+        {
+            return false;
+        }
+        let Ok(mut effects) = self.active_effects.try_lock() else {
+            return true;
+        };
+        if !Self::effects_can_advance_on_region(&effects) {
+            return false;
+        }
+        if !owns() || !client.claim_effect_step(Some(deadline)) {
+            return true;
+        }
+        let mut ready_to_expire = false;
+        for effect in effects.values_mut().filter(|effect| effect.duration > 0) {
+            effect.duration -= 1;
+            ready_to_expire |= effect.duration == 0;
+        }
+        tracing::trace!(player = %player.gameprofile.name, "Advanced status effects on the player region");
+        !ready_to_expire
+    }
+
+    fn tick_effects(&self, player: Option<&Player>, deadline: Option<TickDeadline>) {
         let mut effects_to_remove = Vec::new();
         let mut effects_to_apply = Vec::new();
+        let client = player
+            .and_then(|player| player.client.bedrock())
+            .filter(|client| client.is_current_protocol());
 
-        {
+        let offer_clock = {
             let Ok(mut effects) = self.active_effects.try_lock() else {
                 return;
             };
+            if let Some(client) = client
+                && (deadline.is_none() || !effects.is_empty())
+                && !client.claim_effect_step(deadline)
+            {
+                return;
+            }
             let entity_age = self.entity.tick_count.load(Relaxed);
             for effect in effects.values_mut() {
                 if effect.duration == 0 {
@@ -3229,7 +3306,8 @@ impl LivingEntity {
                     effect.duration -= 1;
                 }
             }
-        }
+            deadline.is_some() && client.is_some() && Self::effects_can_advance_on_region(&effects)
+        };
 
         // Call the central removal function for each expired effect
         for effect_type in effects_to_remove {
@@ -3238,6 +3316,9 @@ impl LivingEntity {
 
         for (mob_effect, amplifier) in effects_to_apply {
             mob_effect.apply_effect_tick(self, amplifier);
+        }
+        if offer_clock {
+            self.offer_regional_effects();
         }
     }
 
@@ -4523,35 +4604,18 @@ impl LivingEntity {
             source.map(EntityBase::get_entity),
         );
     }
-}
-
-impl EntityBase for LivingEntity {
-    fn damage_with_context(
-        &self,
-        caller: &dyn EntityBase,
-        amount: f32,
-        damage_type: DamageType,
-        position: Option<Vector3<f64>>,
-        source: Option<&dyn EntityBase>,
-        cause: Option<&dyn EntityBase>,
-    ) -> bool {
-        self.damage_with_context(caller, amount, damage_type, position, source, cause)
-    }
-
-    fn tick_in_void(&self, dyn_self: &dyn EntityBase) {
-        dyn_self.damage(dyn_self, 4.0, DamageType::OUT_OF_WORLD);
-    }
-
-    fn get_gravity(&self) -> f64 {
-        self.get_attribute_value(&Attributes::GRAVITY)
-    }
 
     /// Advances the living entity by one tick: base entity tick, movement and
     /// physics while alive (still applied during the 20-tick death animation so
     /// knockback lands), velocity coalescing, status effects, void damage, and
     /// death-animation completion.
     #[allow(clippy::too_many_lines)]
-    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+    pub(super) fn tick_with_deadline(
+        &self,
+        caller: &dyn EntityBase,
+        server: &Server,
+        deadline: Option<TickDeadline>,
+    ) {
         let is_player = self.entity.entity_type == &EntityType::PLAYER;
         // Vanilla `ServerEntity.sendChanges` runs after this tick's travel. Leave
         // `velocity_dirty` / `sync_velocity` for the tracker so knockback sends
@@ -4689,7 +4753,7 @@ impl EntityBase for LivingEntity {
             self.on_changed_block(caller, current_block_pos);
         }
 
-        self.tick_effects();
+        self.tick_effects(caller.get_player(), deadline);
 
         let remaining_use_ticks = self.item_use_time.load(Ordering::Relaxed);
         if remaining_use_ticks > 0 {
@@ -4928,6 +4992,32 @@ impl EntityBase for LivingEntity {
                 self.entity.remove();
             }
         }
+    }
+}
+
+impl EntityBase for LivingEntity {
+    fn tick(&self, caller: &dyn EntityBase, server: &Server) {
+        self.tick_with_deadline(caller, server, None);
+    }
+
+    fn damage_with_context(
+        &self,
+        caller: &dyn EntityBase,
+        amount: f32,
+        damage_type: DamageType,
+        position: Option<Vector3<f64>>,
+        source: Option<&dyn EntityBase>,
+        cause: Option<&dyn EntityBase>,
+    ) -> bool {
+        self.damage_with_context(caller, amount, damage_type, position, source, cause)
+    }
+
+    fn tick_in_void(&self, dyn_self: &dyn EntityBase) {
+        dyn_self.damage(dyn_self, 4.0, DamageType::OUT_OF_WORLD);
+    }
+
+    fn get_gravity(&self) -> f64 {
+        self.get_attribute_value(&Attributes::GRAVITY)
     }
 
     fn get_entity(&self) -> &Entity {

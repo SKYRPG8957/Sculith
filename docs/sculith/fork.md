@@ -346,6 +346,14 @@ advances healing and starvation, and publishes the latest food attributes
 after a regional change. Peaceful regeneration, healing or starvation in
 progress, packet observers and coordinated ticks use the world processing path.
 
+Finite status effects on current-protocol Bedrock players can count down on
+the player's region while they have no periodic effects or removals to process.
+The active effects lock protects the remaining durations and the shared
+deadline stamp. Pending work and the stamp follow the connection across
+region changes. The world handles periodic effects, expiration and their
+attribute and packet updates. Coordinated ticks advance the same duration
+state, which also supplies player saves.
+
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the
 connection when it changes owners. A repeated deadline cannot count twice.

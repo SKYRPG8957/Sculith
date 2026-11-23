@@ -475,7 +475,7 @@ mod tests {
     use pumpkin_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
-    use pumpkin_data::Block;
+    use pumpkin_data::{Block, effect::StatusEffect, potion::Effect};
     use pumpkin_protocol::{
         bedrock::{
             client::update_attributes::CUpdateAttributes, network_item::NetworkItemDescriptor,
@@ -597,6 +597,74 @@ mod tests {
         client.tick_item_cooldowns(server, player, None);
         assert_eq!(remaining(), None);
         assert!(!player.is_on_cooldown("minecraft:ender_pearl"));
+        player.get_entity().set_pos(original_pos);
+    }
+
+    fn verify_status_effect_handoff(
+        world: &Arc<World>,
+        server: &Server,
+        player: &Arc<Player>,
+        regions: [Vector2<i32>; 2],
+        refresh: impl Fn(bool),
+    ) {
+        let [west, east] = regions;
+        let original_pos = player.get_entity().pos.load();
+        let add = |effect_type, duration| {
+            player.add_effect(Effect {
+                effect_type,
+                duration,
+                amplifier: 0,
+                ambient: false,
+                show_particles: false,
+                show_icon: true,
+                blend: false,
+            });
+        };
+        let duration = |effect_type| player.get_effect(effect_type).map(|effect| effect.duration);
+        let night_vision = &StatusEffect::NIGHT_VISION;
+        let speed = &StatusEffect::SPEED;
+        add(night_vision, 3);
+        add(speed, -1);
+
+        refresh(true);
+        let first = Instant::now() + TICK_PERIOD;
+        tick_region(world, west, first);
+        tick_region(world, west, first);
+        assert_eq!(duration(night_vision), Some(2));
+        assert_eq!(duration(speed), Some(-1));
+
+        refresh(false);
+        player.get_entity().set_pos(Vector3::new(520.0, 100.0, 8.0));
+        let next = first + TICK_PERIOD;
+        tick_region(world, west, next);
+        tick_region(world, east, first);
+        assert_eq!(duration(night_vision), Some(2));
+        tick_region(world, east, next);
+        assert_eq!(duration(night_vision), Some(1));
+        player.tick_with_deadline(
+            server,
+            Some(TickDeadline {
+                at: next,
+                period: TICK_PERIOD,
+            }),
+        );
+        assert_eq!(duration(night_vision), Some(1));
+        tick_region(world, east, next + TICK_PERIOD);
+        tick_region(world, east, next + TICK_PERIOD * 2);
+        assert_eq!(duration(night_vision), Some(0));
+        player.tick_with_deadline(server, None);
+        assert_eq!(duration(night_vision), None);
+
+        let poison = &StatusEffect::POISON;
+        add(night_vision, 3);
+        add(poison, 40);
+        tick_region(world, east, next + TICK_PERIOD * 3);
+        assert_eq!(duration(night_vision), Some(3));
+        assert_eq!(duration(poison), Some(40));
+        player.tick_with_deadline(server, None);
+        assert_eq!(duration(night_vision), Some(2));
+        assert_eq!(duration(poison), Some(39));
+        player.remove_all_effects();
         player.get_entity().set_pos(original_pos);
     }
 
@@ -1343,6 +1411,7 @@ mod tests {
         verify_grounded_walks(&world, &player, &client, west);
         verify_grounded_chunk_crossings(&world, &player, &client, west);
         verify_teleport_acknowledgement(&world, &player, &client, west);
+        verify_status_effect_handoff(&world, &server, &player, [west, east], refresh);
 
         let observer = Arc::new(HealthPacketObserver::default());
         server

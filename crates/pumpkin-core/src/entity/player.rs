@@ -3529,7 +3529,8 @@ impl Player {
         }
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
 
-        self.living_entity.tick(self, server);
+        self.living_entity
+            .tick_with_deadline(self, server, deadline);
         self.update_bedrock_shield_sneaking();
 
         self.breath_manager.tick(self);
