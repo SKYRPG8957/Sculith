@@ -72,8 +72,14 @@ pub(crate) struct CommittedPlayerMove {
 }
 
 pub(crate) enum RegionalClientMove {
-    Idle,
+    Complete { rotation_changed: bool },
     Committed(CommittedPlayerMove),
+}
+
+#[derive(Clone, Copy)]
+struct RegionalPose {
+    rotation_changed: bool,
+    stationary_settled: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -596,12 +602,12 @@ impl Player {
         let chunk = entity.chunk_pos.load();
         let teleport = self.teleport_id_count.load(Ordering::Relaxed);
         let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
-        let rotation_changed =
-            self.try_update_regional_pose(server, extent, from, to, Some(movement))?;
-        if from == to && !rotation_changed {
-            return Some(RegionalClientMove::Idle);
+        let pose = self.try_update_regional_pose(server, extent, from, to, Some(movement))?;
+        let rotation_changed = pose.rotation_changed;
+        if pose.stationary_settled && !rotation_changed {
+            return Some(RegionalClientMove::Complete { rotation_changed });
         }
-        let received = if from != to
+        let (received, all_viewers_queued) = if (from != to || pose.stationary_settled)
             && entity.chunk_pos.load() == chunk
             && entity.pos.load() == to
             && self.can_simulate_in(&world)
@@ -609,17 +615,14 @@ impl Player {
             && self.chunk_send_epoch.load(Ordering::Relaxed) == epoch
             && !server.plugin_manager.has_handlers::<PacketSentEvent>()
         {
-            let head = rotation_changed.then(|| self.head_rotation_packet());
-            world.entity_tracker.try_publish_regional_player_move(
-                &world,
-                entity,
-                &self.absolute_position_packet(to, movement.on_ground),
-                head.as_ref(),
-                &self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, movement.on_ground, 0),
-            )
+            self.try_publish_regional_pose(&world, to, movement.on_ground, pose)
+                .unwrap_or_default()
         } else {
-            FxHashSet::default()
+            (FxHashSet::default(), false)
         };
+        if pose.stationary_settled && all_viewers_queued {
+            return Some(RegionalClientMove::Complete { rotation_changed });
+        }
         Some(RegionalClientMove::Committed(CommittedPlayerMove {
             world: world.uuid,
             teleport,
@@ -630,6 +633,36 @@ impl Player {
             rotation_changed,
             received,
         }))
+    }
+
+    fn try_publish_regional_pose(
+        &self,
+        world: &World,
+        position: Vector3<f64>,
+        on_ground: bool,
+        pose: RegionalPose,
+    ) -> Option<(FxHashSet<i32>, bool)> {
+        let entity = self.get_entity();
+        let head = pose.rotation_changed.then(|| self.head_rotation_packet());
+        let bedrock = self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, on_ground, 0);
+        let tracker = &world.entity_tracker;
+        if pose.stationary_settled {
+            tracker.try_publish_regional_player_move(
+                world,
+                entity,
+                &self.rotation_packet(on_ground),
+                head.as_ref(),
+                &bedrock,
+            )
+        } else {
+            tracker.try_publish_regional_player_move(
+                world,
+                entity,
+                &self.absolute_position_packet(position, on_ground),
+                head.as_ref(),
+                &bedrock,
+            )
+        }
     }
 
     pub(crate) fn finish_regional_client_move(&self, committed: &CommittedPlayerMove) {
@@ -687,7 +720,7 @@ impl Player {
         from: Vector3<f64>,
         to: Vector3<f64>,
         movement: Option<ClientMove>,
-    ) -> Option<bool> {
+    ) -> Option<RegionalPose> {
         if ![to.x, to.y, to.z].into_iter().all(f64::is_finite) || from == to && movement.is_none() {
             return None;
         }
@@ -724,17 +757,15 @@ impl Player {
         if from == to {
             let movement = movement.filter(|_| owns_player())?;
             let rotation_changed = self.look_changed(movement);
-            if !rotation_changed
-                && (!self.can_finish_idle_move(movement)
-                    || !matches!(
-                        world.level.loaded_chunks.try_get(&origin),
-                        TryResult::Present(_)
-                    ))
-            {
+            let stationary_settled = self.can_finish_stationary_move(&world, movement);
+            if !rotation_changed && !stationary_settled {
                 return None;
             }
             self.apply_look(movement);
-            return Some(rotation_changed);
+            return Some(RegionalPose {
+                rotation_changed,
+                stationary_settled,
+            });
         }
 
         let bounds =
@@ -778,7 +809,10 @@ impl Player {
                                 || entity.bounding_box.value.store(bounds),
                                 |_| biome,
                             );
-                            Some(movement.is_some_and(commit_look))
+                            Some(RegionalPose {
+                                rotation_changed: movement.is_some_and(commit_look),
+                                stationary_settled: false,
+                            })
                         },
                     )
                 },
@@ -789,8 +823,8 @@ impl Player {
             })
     }
 
-    /// An unchanged ground input can finish here once its world effects are already settled.
-    fn can_finish_idle_move(&self, movement: ClientMove) -> bool {
+    /// A stationary ground input can finish here once its world effects are settled.
+    fn can_finish_stationary_move(&self, world: &World, movement: ClientMove) -> bool {
         let entity = self.get_entity();
         movement.on_ground
             && entity.on_ground.load(Ordering::Relaxed)
@@ -802,6 +836,10 @@ impl Player {
                 .living_entity
                 .is_ignoring_fall_damage_from_current_impulse()
             && entity.move_dist.load() <= entity.next_step.load()
+            && matches!(
+                world.level.loaded_chunks.try_get(&entity.chunk_pos.load()),
+                TryResult::Present(_)
+            )
     }
 
     fn look_changed(&self, requested: ClientMove) -> bool {
@@ -876,6 +914,16 @@ impl Player {
         )
     }
 
+    fn rotation_packet(&self, on_ground: bool) -> CUpdateEntityRot {
+        let entity = self.get_entity();
+        CUpdateEntityRot::new(
+            entity.entity_id.into(),
+            Self::packed_rot(entity.yaw.load()),
+            Self::packed_rot(entity.pitch.load()),
+            on_ground,
+        )
+    }
+
     fn broadcast_client_move(
         &self,
         last_pos: Vector3<f64>,
@@ -888,8 +936,6 @@ impl Player {
         let entity = self.get_entity();
         let world = entity.world.load_full();
         let entity_id = entity.entity_id;
-        let yaw = Self::packed_rot(entity.yaw.load());
-        let pitch = Self::packed_rot(entity.pitch.load());
         let delta = pos - last_pos;
         let received = match publication {
             MovePublication::Committed(committed) if !committed.received.is_empty() => {
@@ -932,8 +978,8 @@ impl Player {
                 &CUpdateEntityPosRot::new(
                     entity_id.into(),
                     packed_delta(last_pos, pos),
-                    yaw,
-                    pitch,
+                    Self::packed_rot(entity.yaw.load()),
+                    Self::packed_rot(entity.pitch.load()),
                     on_ground,
                 ),
                 &self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, on_ground, 0),
@@ -945,11 +991,18 @@ impl Player {
                 &self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, on_ground, 0),
             );
         } else if rot_changed {
-            world.send_to_tracking_players_editioned(
-                entity,
-                &CUpdateEntityRot::new(entity_id.into(), yaw, pitch, on_ground),
-                &self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, on_ground, 0),
-            );
+            let java = self.rotation_packet(on_ground);
+            let bedrock = self.bedrock_move_packet(CMovePlayer::MODE_NORMAL, on_ground, 0);
+            if received.is_some() {
+                world.send_to_tracking_players_filtered_editioned(
+                    entity,
+                    &java,
+                    &bedrock,
+                    outstanding,
+                );
+            } else {
+                world.send_to_tracking_players_editioned(entity, &java, &bedrock);
+            }
         }
 
         if rot_changed {

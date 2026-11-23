@@ -1613,28 +1613,27 @@ impl EntityTracker {
         }
     }
 
-    pub(crate) fn try_publish_regional_player_move(
+    /// Returns the recipients that already have the pose and whether every pairing was served.
+    pub(crate) fn try_publish_regional_player_move<J: ClientPacket>(
         &self,
         world: &World,
         entity: &Entity,
-        movement: &CEntityPositionSync,
+        movement: &J,
         head: Option<&CHeadRot>,
         bedrock_move: &CMovePlayer,
-    ) -> FxHashSet<i32> {
-        let mut received = FxHashSet::default();
+    ) -> Option<(FxHashSet<i32>, bool)> {
         let TryResult::Present(entry) = self.entity_map.try_get(&entity.entity_id) else {
-            return received;
+            return None;
         };
         let tracked = entry.value().clone();
         drop(entry);
         if entity.is_removed() || !std::ptr::eq(tracked.entity.get_entity(), entity) {
-            return received;
+            return None;
         }
         let chunk = entity.chunk_pos.load();
-        let Some(viewers) = tracked.try_regional_move_viewers(chunk) else {
-            return received;
-        };
+        let viewers = tracked.try_regional_move_viewers(chunk)?;
 
+        let mut received = FxHashSet::default();
         let mut java_packet = None;
         let mut bedrock_packet = None;
         for viewer in viewers.players.values() {
@@ -1684,7 +1683,8 @@ impl EntityTracker {
                 received.insert(viewer.entity_id());
             }
         }
-        received
+        let delivered = received.len() == viewers.players.len();
+        Some((received, delivered))
     }
 
     pub(super) fn flush_regional_drop_packets(

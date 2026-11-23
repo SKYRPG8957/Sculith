@@ -246,10 +246,13 @@ and packets with receive or send hooks use the world input path. A ready
 connection is routed by its current chunk and checked again when the regional
 job claims a packet. A merge
 or split forwards pending connections to their current owners. The world and
-region share the same ordered drain for that connection. An unchanged grounded
-input can finish on the region once movement, landing and footstep effects
-are settled. It records the client's current prediction and leaves the
-next packet available within the same regional packet budget.
+region share the same ordered drain for that connection. Stationary grounded
+inputs can finish on the region once movement, landing and footstep effects
+are settled. A change of look also requires queuing the updates for every
+paired viewer.
+The region records the client's current prediction and can then process the
+next packet within the same budget. A finishing world step serves any viewers
+whose packets the region could not queue.
 At the head of the queue,
 the region can also decode one native Bedrock movement packet within its current
 extent. The world rechecks that extent and the packet after receive hooks before
@@ -267,9 +270,10 @@ grounded state must stay stable. For positional movement, the extent must own
 each swept chunk. The region pins the terrain and spatial indices and checks
 for an air path, a full dry floor for a walk, and clearance from nearby
 actors. A turn in place updates the rotation without a terrain collision
-check. The input stays at the head of the connection's queue until the world
-has run its effects. A move within the paired chunk can reach current-protocol
-viewers from the region once their actor spawn and terrain have been queued.
+check. Input with outstanding effects or delivery stays at the head of the
+connection's queue for the world to finish. A move within the paired chunk can
+reach current-protocol viewers from the region once their actor spawn and
+terrain have been queued.
 Java receives an absolute position, including when the world finishes delivery
 to remaining viewers. An intervening teleport supersedes the pending move.
 The world resynchronizes viewers that already got the regional move if the

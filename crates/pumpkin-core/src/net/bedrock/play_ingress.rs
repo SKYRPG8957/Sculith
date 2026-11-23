@@ -221,9 +221,10 @@ impl BedrockClient {
         };
         if prepared.fully_read {
             match self.try_accept_regional_auth_move(player, server, extent, &prepared.input) {
-                Some(RegionalClientMove::Idle) => {
+                Some(RegionalClientMove::Complete { rotation_changed }) => {
                     tracing::trace!(
                         player = %player.gameprofile.name,
+                        rotation_changed,
                         input_tick = prepared.input.tick.0,
                         "Consumed stationary Bedrock input on its region"
                     );
@@ -505,10 +506,11 @@ mod tests {
         player: &Arc<Player>,
         position: Vector3<f32>,
         input_tick: u64,
+        yaw: f32,
         flags: &[InputData],
     ) {
         let mut payload = Vec::new();
-        for value in [0.0, 0.0, position.x, position.y, position.z, 0.0, 0.0, 0.0] {
+        for value in [0.0, yaw, position.x, position.y, position.z, 0.0, 0.0, yaw] {
             value.write(&mut payload).unwrap();
         }
         VarUInt(u32::try_from(flags.len()).unwrap())
@@ -552,7 +554,7 @@ mod tests {
         client.client_delta.store(Vector3::new(0.0, -0.08, 0.0));
 
         let grounded = [InputData::VerticalCollision];
-        let enqueue = |tick| queue_auth_input(client, player, position, tick, &grounded);
+        let enqueue = |tick| queue_auth_input(client, player, position, tick, 0.0, &grounded);
         let start = 200;
         let end = start + REGIONAL_PACKET_BUDGET as u64;
         let at = Instant::now() + TICK_PERIOD * 10;
@@ -593,6 +595,7 @@ mod tests {
                 player,
                 position,
                 tick,
+                0.0,
                 &[InputData::VerticalCollision, held],
             );
             tick_region(world, chunk, deadline);
@@ -609,13 +612,66 @@ mod tests {
         player.abilities.lock().unwrap().flying = false;
     }
 
+    fn verify_stationary_turns(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        let entity = player.get_entity();
+        let position = player.bedrock_pos().to_f32_lossy();
+        let start = client.input_tick.load(Relaxed) + 1;
+        let enqueue = |tick, yaw| {
+            queue_auth_input(
+                client,
+                player,
+                position,
+                tick,
+                yaw,
+                &[InputData::VerticalCollision],
+            );
+        };
+        let at = Instant::now() + TICK_PERIOD * 20;
+        enqueue(start, 22.5);
+        enqueue(start + 1, 45.0);
+        tick_region(world, chunk, at);
+        assert_eq!(entity.yaw.load(), 22.5);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+
+        // Without a tracking entry, finishing delivery still needs the world.
+        client.drain_world_input(player, None, Some(world), 1);
+        world
+            .entity_tracker
+            .add_entity(&(player.clone() as Arc<dyn EntityBase>), world);
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(entity.yaw.load(), 45.0);
+        assert_eq!(client.input_tick.load(Relaxed), start + 1);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        player.living_entity.fall_distance.store(1.0);
+        enqueue(start + 2, 67.5);
+        enqueue(start + 3, 90.0);
+        tick_region(world, chunk, at + TICK_PERIOD * 2);
+        assert_eq!(entity.yaw.load(), 67.5);
+        assert_eq!(player.living_entity.fall_distance.load(), 1.0);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(player.living_entity.fall_distance.load(), 0.0);
+        tick_region(world, chunk, at + TICK_PERIOD * 3);
+        assert_eq!(entity.yaw.load(), 90.0);
+        assert_eq!(client.input_tick.load(Relaxed), start + 3);
+        assert!(player.inbound_packets.is_empty());
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        world.entity_tracker.remove_entity(player.as_ref(), world);
+    }
+
     fn verify_teleport_acknowledgement(
         world: &Arc<World>,
         player: &Arc<Player>,
         client: &BedrockClient,
         chunk: Vector2<i32>,
     ) {
-        let enqueue = |position| queue_auth_input(client, player, position, 7, &[]);
+        let enqueue = |position| queue_auth_input(client, player, position, 7, 0.0, &[]);
         let advance = || tick_region(world, chunk, Instant::now());
         let previous_input = client.input_tick.load(Relaxed);
 
@@ -770,6 +826,7 @@ mod tests {
         verify_pickup_timer_handoff(&world, &player, east, west);
         verify_mining_clock(&world, &server, &player, &client, west).await;
         verify_stationary_inputs(&world, &player, &client, west);
+        verify_stationary_turns(&world, &player, &client, west);
         verify_chunk_delivery_clock(&client);
         verify_teleport_acknowledgement(&world, &player, &client, west);
 
