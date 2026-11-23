@@ -34,7 +34,7 @@ without a compatible decoder or variant is reported as `Unknown`. The typed
 fields describe the payload passed to the callback. Returning edits uses the
 packet ID and raw payload fields.
 
-Under protocol 2225, v0.2 has decoders for all 37 serverbound and 77
+Under protocol 2225, v0.2 has decoders for all 37 serverbound and 78
 clientbound packet IDs defined by Sculith. For pre-encoded assets the observed
 packet uses a payload record, such as `c-biome-definition-list-payload` or
 `c-crafting-data-payload`, with the decoded contents. The protocol catalogue
@@ -58,6 +58,10 @@ by these codecs.
 The public packet records changed in ABI 10. Rebuild native plugins against
 the same revision as the server. The experimental v0.2 packet records are
 regenerated with the codecs.
+
+The experimental v0.2 clientbound packet variant includes
+`c-start-item-cooldown` with the Bedrock category and remaining ticks.
+Rebuild v0.2 components that use these typed packet records against the new WIT.
 
 `ActorPickRequest` (35) uses a fixed signed little-endian 64-bit entity ID.
 Creative players can now pick a nearby tracked mob to create or select its

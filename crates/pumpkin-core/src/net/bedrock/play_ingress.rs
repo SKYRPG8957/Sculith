@@ -528,6 +528,46 @@ mod tests {
         assert!(player.begin_experience_pickup());
     }
 
+    fn verify_item_cooldown_handoff(
+        world: &Arc<World>,
+        server: &Server,
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        origin: Vector2<i32>,
+        destination: Vector2<i32>,
+    ) {
+        let original_pos = player.get_entity().pos.load();
+        let before_start = Instant::now();
+        player.start_cooldown("minecraft:ender_pearl".into(), 4);
+        player.start_cooldown("shield".into(), 2);
+        let remaining = || player.get_item_cooldown("minecraft:ender_pearl");
+        tick_region(world, origin, before_start);
+        assert_eq!(remaining(), Some(4));
+
+        let first = Instant::now() + TICK_PERIOD;
+        tick_region(world, origin, first);
+        tick_region(world, origin, first);
+        assert_eq!(remaining(), Some(3));
+        assert_eq!(player.get_cooldown("minecraft:ender_pearl"), 0.75);
+        assert_eq!(player.get_item_cooldown("shield"), Some(1));
+
+        player.get_entity().set_pos(Vector3::new(520.0, 100.0, 8.0));
+        let next = first + TICK_PERIOD;
+        tick_region(world, origin, next);
+        tick_region(world, destination, first);
+        assert_eq!(remaining(), Some(3));
+        tick_region(world, destination, next);
+        assert_eq!(remaining(), Some(2));
+        assert!(!player.is_on_cooldown("shield"));
+
+        client.tick_item_cooldowns(server, player, None);
+        assert_eq!(remaining(), Some(1));
+        client.tick_item_cooldowns(server, player, None);
+        assert_eq!(remaining(), None);
+        assert!(!player.is_on_cooldown("minecraft:ender_pearl"));
+        player.get_entity().set_pos(original_pos);
+    }
+
     async fn verify_mining_clock(
         world: &Arc<World>,
         server: &Server,
@@ -1233,6 +1273,7 @@ mod tests {
         advance(east);
         check();
         verify_pickup_timer_handoff(&world, &player, east, west);
+        verify_item_cooldown_handoff(&world, &server, &player, &client, west, east);
         verify_mining_clock(&world, &server, &player, &client, west).await;
         verify_attack_preparation(&world, &player, &client, west);
         verify_stationary_inputs(&world, &player, &client, west);

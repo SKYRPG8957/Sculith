@@ -39,6 +39,8 @@ bindgen!({
         "pumpkin:plugin/player@0.1.0.[method]player.open-gui": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.respawn": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.set-experience-level": async | store | trappable,
+        "pumpkin:plugin/player@0.1.0.[method]player.start-cooldown": async | store | trappable,
+        "pumpkin:plugin/player@0.1.0.[method]player.set-item-cooldown": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.set-experience-points": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.set-experience-progress": async | store | trappable,
         "pumpkin:plugin/player@0.1.0.[method]player.set-food-level": async | store | trappable,

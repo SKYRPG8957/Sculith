@@ -6,7 +6,7 @@ use crate::forms::FormsHostStateExt;
 use pumpkin_protocol::bedrock::client::PackIdVersion;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use wasmtime::component::{Accessor, HasSelf, Resource};
+use wasmtime::component::{Access, Accessor, HasSelf, Resource};
 
 use crate::pumpkin::plugin::forms::Form;
 use crate::pumpkin::plugin::java_dialogs::Dialog;
@@ -1889,17 +1889,6 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         Ok(team.map(|t| t.name))
     }
 
-    fn start_cooldown(
-        &mut self,
-        player: Resource<Player>,
-        group: String,
-        duration_ticks: i32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.start_cooldown(group, duration_ticks);
-        Ok(())
-    }
-
     fn get_cooldown(&mut self, player: Resource<Player>, group: String) -> wasmtime::Result<f32> {
         let player = self.get(&player)?;
         Ok(player.get_cooldown(&group))
@@ -2147,17 +2136,6 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         player.set_tab_list_ping(latency_ms);
-        Ok(())
-    }
-
-    fn set_item_cooldown(
-        &mut self,
-        player: Resource<Player>,
-        item_id: String,
-        ticks: i32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.set_item_cooldown(&item_id, ticks);
         Ok(())
     }
 
@@ -2819,6 +2797,34 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
 }
 
 impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<PluginHostState> {
+    fn start_cooldown(
+        mut host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        group: String,
+        duration_ticks: i32,
+    ) -> wasmtime::Result<()> {
+        let player = host.get().get(&player)?.clone();
+        let cooldown = player.record_item_cooldown(group.clone(), duration_ticks);
+        // Keep the synchronous setter visible immediately. The later send can
+        // run its packet hooks once this import releases the concurrent store.
+        drop(host.spawn(async move |accessor| {
+            run_blocking(accessor, move || {
+                player.send_current_item_cooldown(group, cooldown);
+            })
+            .await
+        })?);
+        Ok(())
+    }
+
+    fn set_item_cooldown(
+        host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        item_id: String,
+        ticks: i32,
+    ) -> wasmtime::Result<()> {
+        Self::start_cooldown(host, player, item_id, ticks)
+    }
+
     async fn open_form(
         accessor: &Accessor<PluginHostState, Self>,
         player: Resource<Player>,

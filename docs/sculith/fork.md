@@ -321,6 +321,17 @@ advancing the same delay again. Orb contact, mending, and awarding experience
 run in the world phase. Coordinated steps and players without an eligible
 region use world processing.
 
+Each current-protocol Bedrock connection with an active item cooldown advances
+it on the player's region. The same clock and cooldown entries follow the
+connection when it changes owners. A repeated deadline cannot count twice.
+During coordinated steps or without a region, the world advances the clock.
+Item use and its plugin callbacks still run through the ordered input path.
+Starting a cooldown sends the client's native category and duration packet.
+Both Wasm cooldown setters update the server cooldown immediately. The 0.1
+host can run packet observers during the send. The 0.2 host sends from a task
+after its synchronous setter returns, and its packet observers can read the
+typed category and duration.
+
 Native Bedrock survival mining accrues elapsed ticks on the player's region
 when that extent owns both the player and block. World steps and regional
 steps share a deadline stamp. The world checks the live block, mining

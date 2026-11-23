@@ -655,10 +655,19 @@ fn storage_click_target(
 /// Represents a Minecraft player entity.
 ///
 /// A `Player` is a special type of entity that represents a human player connected to the server.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ItemCooldown {
     pub start_tick: i32,
     pub duration: i32,
+}
+
+impl ItemCooldown {
+    pub(crate) fn remaining_at(self, tick: i32) -> Option<i32> {
+        let remaining = self
+            .duration
+            .saturating_sub(tick.wrapping_sub(self.start_tick));
+        (remaining > 0).then_some(remaining)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1285,18 +1294,77 @@ impl Player {
     }
 
     pub fn start_cooldown(&self, group: String, duration: i32) {
+        self.record_item_cooldown(group.clone(), duration);
+        self.send_item_cooldown(group, duration);
+    }
+
+    /// Records the authoritative state before a host can dispatch its packet.
+    pub fn record_item_cooldown(&self, group: String, duration: i32) -> ItemCooldown {
         let mut cooldowns = self
             .item_cooldowns
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        cooldowns.insert(
-            group.clone(),
-            ItemCooldown {
-                start_tick: self.tick_counter.load(Ordering::Relaxed),
-                duration,
-            },
-        );
-        self.try_send_client_packet(&CItemCooldown::new(group, VarInt(duration)));
+        let bedrock = self.client.bedrock();
+        let regional = bedrock.filter(|client| client.is_current_protocol());
+        let world_tick = self.tick_counter.load(Ordering::Relaxed);
+        let cooldown = ItemCooldown {
+            start_tick: regional.map_or(world_tick, |client| {
+                client.start_item_cooldown_clock(world_tick)
+            }),
+            duration,
+        };
+        cooldowns.insert(group, cooldown);
+        drop(cooldowns);
+        if let Some(client) = regional {
+            client.offer_item_cooldowns(self);
+        }
+        cooldown
+    }
+
+    /// Sends the remaining time for a deferred notification if its state is still current.
+    pub fn send_current_item_cooldown(&self, group: String, expected: ItemCooldown) {
+        let remaining = {
+            let cooldowns = self
+                .item_cooldowns
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cooldowns
+                .get(&group)
+                .copied()
+                .filter(|cooldown| *cooldown == expected)
+                .map(|cooldown| {
+                    cooldown
+                        .remaining_at(self.item_cooldown_tick())
+                        .unwrap_or(0)
+                })
+        };
+        if let Some(remaining) = remaining {
+            self.send_item_cooldown(group, remaining);
+        }
+    }
+
+    fn send_item_cooldown(&self, group: String, duration: i32) {
+        if let Some(client) = self.client.bedrock() {
+            let category = group
+                .strip_prefix("minecraft:")
+                .unwrap_or(&group)
+                .to_owned();
+            client.try_enqueue_client_packet(
+                &pumpkin_protocol::bedrock::client::CStartItemCooldown {
+                    category,
+                    duration: VarInt(duration.max(0)),
+                },
+            );
+        } else {
+            self.try_send_client_packet(&CItemCooldown::new(group, VarInt(duration)));
+        }
+    }
+
+    fn item_cooldown_tick(&self) -> i32 {
+        let world_tick = self.tick_counter.load(Ordering::Relaxed);
+        self.client
+            .bedrock()
+            .map_or(world_tick, |client| client.item_cooldown_tick(world_tick))
     }
 
     pub fn get_cooldown(&self, group: &str) -> f32 {
@@ -1304,14 +1372,16 @@ impl Player {
             .item_cooldowns
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(cooldown) = cooldowns.get(group) {
-            let current_tick = self.tick_counter.load(Ordering::Relaxed);
-            let elapsed = current_tick - cooldown.start_tick;
-            if elapsed < cooldown.duration {
-                return 1.0 - (elapsed as f32 / cooldown.duration as f32);
-            }
-        }
-        0.0
+        cooldowns
+            .get(group)
+            .and_then(|cooldown| {
+                cooldown
+                    .remaining_at(self.item_cooldown_tick())
+                    .map(|remaining| {
+                        1.0 - ((cooldown.duration - remaining) as f32 / cooldown.duration as f32)
+                    })
+            })
+            .unwrap_or(0.0)
     }
 
     pub fn is_on_cooldown(&self, group: &str) -> bool {
@@ -1320,8 +1390,7 @@ impl Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(cooldown) = cooldowns.get(group) {
-            let current_tick = self.tick_counter.load(Ordering::Relaxed);
-            if current_tick - cooldown.start_tick < cooldown.duration {
+            if cooldown.remaining_at(self.item_cooldown_tick()).is_some() {
                 return true;
             }
             cooldowns.remove(group);
@@ -3399,6 +3468,9 @@ impl Player {
         self.tick_chunk_delivery(server, deadline);
         self.try_bedrock_spawn();
         self.tick_counter.fetch_add(1, Ordering::Relaxed);
+        if let Some(client) = self.client.bedrock() {
+            client.tick_item_cooldowns(server, self, deadline);
+        }
         self.living_entity
             .entity
             .tick_count
@@ -4762,14 +4834,9 @@ impl Player {
             .item_cooldowns
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(cooldown) = cooldowns.get(item_id) {
-            let current_tick = self.tick_counter.load(Ordering::Relaxed);
-            let elapsed = current_tick - cooldown.start_tick;
-            if elapsed < cooldown.duration {
-                return Some(cooldown.duration - elapsed);
-            }
-        }
-        None
+        cooldowns
+            .get(item_id)?
+            .remaining_at(self.item_cooldown_tick())
     }
 
     pub fn has_item_cooldown(&self, item_id: &str) -> bool {

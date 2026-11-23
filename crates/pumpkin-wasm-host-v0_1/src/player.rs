@@ -1860,17 +1860,6 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         Ok(team.map(|t| t.name))
     }
 
-    fn start_cooldown(
-        &mut self,
-        player: Resource<Player>,
-        group: String,
-        duration_ticks: i32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.start_cooldown(group, duration_ticks);
-        Ok(())
-    }
-
     fn get_cooldown(&mut self, player: Resource<Player>, group: String) -> wasmtime::Result<f32> {
         let player = self.get(&player)?;
         Ok(player.get_cooldown(&group))
@@ -2095,17 +2084,6 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         player.set_tab_list_ping(latency_ms);
-        Ok(())
-    }
-
-    fn set_item_cooldown(
-        &mut self,
-        player: Resource<Player>,
-        item_id: String,
-        ticks: i32,
-    ) -> wasmtime::Result<()> {
-        let player = self.get(&player)?;
-        player.set_item_cooldown(&item_id, ticks);
         Ok(())
     }
 
@@ -2776,6 +2754,33 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
 }
 
 impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<PluginHostState> {
+    async fn start_cooldown(
+        mut host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        group: String,
+        duration_ticks: i32,
+    ) -> wasmtime::Result<()> {
+        let (player, plugin) = {
+            let state = host.get();
+            (state.get(&player)?.clone(), plugin_from_state(state)?)
+        };
+        plugin
+            .store
+            .pump_blocking(&mut host, move || {
+                player.start_cooldown(group, duration_ticks);
+            })
+            .await
+    }
+
+    async fn set_item_cooldown(
+        host: Access<'_, PluginHostState, Self>,
+        player: Resource<Player>,
+        item_id: String,
+        ticks: i32,
+    ) -> wasmtime::Result<()> {
+        Self::start_cooldown(host, player, item_id, ticks).await
+    }
+
     async fn open_form(
         mut host: Access<'_, PluginHostState, Self>,
         player: Resource<Player>,

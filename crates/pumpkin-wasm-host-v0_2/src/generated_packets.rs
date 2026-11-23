@@ -3669,6 +3669,15 @@ pub fn serialize_bedrock_packet(packet: &BClientboundPacket) -> Option<Bytes> {
             pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
             Some(buf.into())
         }
+        BClientboundPacket::CStartItemCooldown(data) => {
+            let p = pumpkin_protocol::bedrock::client::CStartItemCooldown {
+                category: data.category.clone(),
+                duration: VarInt(data.duration),
+            };
+            let mut buf = Vec::new();
+            pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();
+            Some(buf.into())
+        }
         BClientboundPacket::CStonecutterSetRecipe(data) => {
             let p = pumpkin_protocol::bedrock::client::CStonecutterSetRecipe {
                 player_unique_id: pumpkin_protocol::codec::var_long::VarLong(
@@ -5001,6 +5010,15 @@ entries.into_iter().map(|(key, item)| Some((key as _, project_bedrock_metadata_v
                 server_auth_sounds: p.server_auth_sounds.try_into().ok()?,
                 server_join_information: p.server_join_information.map_or(Some(None), |element| Some(Some(project_bedrock_server_join_information(element)?)))?,
                 telemetry: project_bedrock_server_telemetry_data(p.telemetry)?,
+            }))
+        }
+        id if id == <pumpkin_protocol::bedrock::client::CStartItemCooldown as pumpkin_protocol::Packet>::PACKET_ID => {
+            let mut body = payload;
+            let p = <pumpkin_protocol::bedrock::client::CStartItemCooldown as pumpkin_protocol::BServerPacket>::read(&mut body).ok()?;
+            if !body.is_empty() { return None; }
+            Some(BClientboundPacket::CStartItemCooldown(crate::pumpkin::plugin::bedrock_packets::CStartItemCooldown {
+                category: p.category.into(),
+                duration: p.duration.0.try_into().ok()?,
             }))
         }
         id if id == <pumpkin_protocol::bedrock::client::CStonecutterSetRecipe as pumpkin_protocol::Packet>::PACKET_ID => {
@@ -8648,6 +8666,17 @@ impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CShowCredits
     }
 }
 
+impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CStartItemCooldown {
+    fn to_wit(&self) -> BClientboundPacket {
+        BClientboundPacket::CStartItemCooldown(
+            crate::pumpkin::plugin::bedrock_packets::CStartItemCooldown {
+                category: self.category.to_string(),
+                duration: self.duration.0.try_into().unwrap(),
+            },
+        )
+    }
+}
+
 impl ToWitClientboundBedrock for pumpkin_protocol::bedrock::client::CStonecutterSetRecipe {
     fn to_wit(&self) -> BClientboundPacket {
         BClientboundPacket::CStonecutterSetRecipe(
@@ -8803,6 +8832,9 @@ pub fn clientbound_bedrock_any_to_wit(any: &dyn Any) -> Option<BClientboundPacke
         return Some(p.to_wit());
     }
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CShowCredits>() {
+        return Some(p.to_wit());
+    }
+    if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CStartItemCooldown>() {
         return Some(p.to_wit());
     }
     if let Some(p) = any.downcast_ref::<pumpkin_protocol::bedrock::client::CStonecutterSetRecipe>()

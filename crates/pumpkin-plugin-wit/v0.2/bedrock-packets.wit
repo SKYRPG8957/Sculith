@@ -2571,6 +2571,11 @@ interface bedrock-packets {
     /// NBT compound containing properties defining the unique block state.
     properties: nbt-tree,
   }
+  /// Starts a client-side cooldown for an item category.
+  record c-start-item-cooldown {
+    category: string,
+    duration: s32,
+  }
   /// Sent by the server to synchronize the selected stonecutter recipe index to the client.
   record c-stonecutter-set-recipe {
     /// Entity unique ID of the player owning the container.
@@ -3116,6 +3121,8 @@ interface bedrock-packets {
     c-show-credits(c-show-credits),
     /// Sent by the server to initialize the client's world, spawn coordinates, gamerules, and entity runtime ID.
     c-start-game(c-start-game),
+    /// Starts a client-side cooldown for an item category.
+    c-start-item-cooldown(c-start-item-cooldown),
     /// Sent by the server to synchronize the selected stonecutter recipe index to the client.
     c-stonecutter-set-recipe(c-stonecutter-set-recipe),
     /// Stop a named sound or all sounds. Bedrock has no per-category selector.

@@ -17,6 +17,7 @@ bitflags::bitflags! {
         const EXPERIENCE_PICKUP = 2;
         const MINING = 4;
         const TERRAIN = 8;
+        const ITEM_COOLDOWNS = 16;
     }
 }
 
@@ -111,6 +112,11 @@ impl RegionalInput {
                 pending |= RegionalWork::MINING;
             }
             let owns_player = || owns(player.get_entity().chunk_pos.load());
+            if work.contains(RegionalWork::ITEM_COOLDOWNS)
+                && client.advance_regional_item_cooldowns(&player, deadline, owns_player)
+            {
+                pending |= RegionalWork::ITEM_COOLDOWNS;
+            }
             if work.contains(RegionalWork::TERRAIN)
                 && player.can_dispatch_regional_terrain(client, server)
                 && (!owns_player()
@@ -199,6 +205,10 @@ impl World {
 
     pub(crate) fn offer_regional_terrain(&self, id: u64, player: &Arc<Player>) -> bool {
         self.offer_regional_work(id, player, RegionalWork::TERRAIN)
+    }
+
+    pub(crate) fn offer_regional_item_cooldowns(&self, id: u64, player: &Arc<Player>) -> bool {
+        self.offer_regional_work(id, player, RegionalWork::ITEM_COOLDOWNS)
     }
 
     pub(crate) fn offer_regional_mining(

@@ -70,6 +70,7 @@ mod chunk_delivery;
 mod close_signal;
 pub mod distant_terrain;
 mod experience_pickup;
+mod item_cooldown;
 pub mod level_chunk;
 pub mod login;
 mod mining;
@@ -224,6 +225,7 @@ struct ClientActivity {
     published_chunk_view: AtomicU64,
     last_chunk_step: AtomicCell<Option<Instant>>,
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
+    item_cooldown: AtomicCell<Option<item_cooldown::ItemCooldownClock>>,
     mining: std::sync::Mutex<Option<mining::MiningClock>>,
 }
 
@@ -365,6 +367,7 @@ impl BedrockClient {
                 published_chunk_view: AtomicU64::new(0),
                 last_chunk_step: AtomicCell::new(None),
                 experience_pickup: AtomicCell::new(None),
+                item_cooldown: AtomicCell::new(None),
                 mining: std::sync::Mutex::default(),
             }),
             incoming_game_packet_send: incoming_send,
