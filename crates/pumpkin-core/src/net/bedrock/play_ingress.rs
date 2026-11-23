@@ -980,7 +980,7 @@ mod tests {
     fn verify_teleport_acknowledgement(
         world: &Arc<World>,
         player: &Arc<Player>,
-        client: &BedrockClient,
+        client: &Arc<BedrockClient>,
         chunk: Vector2<i32>,
     ) {
         let enqueue = |position| queue_auth_input(client, player, position, 7, 0.0, &[]);
@@ -1013,6 +1013,8 @@ mod tests {
         advance();
         assert_eq!(*player.awaiting_teleport.lock().unwrap(), Some(next));
         assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
     }
 
     fn verify_grounded_walks(
@@ -1412,6 +1414,45 @@ mod tests {
         verify_grounded_chunk_crossings(&world, &player, &client, west);
         verify_teleport_acknowledgement(&world, &player, &client, west);
         verify_status_effect_handoff(&world, &server, &player, [west, east], refresh);
+
+        let waiting = Vector2::new(64, 0);
+        assert!(world.region_layout.load().owner(waiting).is_none());
+        offer(4);
+        player
+            .get_entity()
+            .set_pos(Vector3::new(1032.0, 100.0, 8.0));
+        // Take any former owner's work while the destination has no owner.
+        advance(west);
+        offer(5);
+        player.start_cooldown("shield".into(), 2);
+        assert_eq!(player.inbound_packets.len(), 2);
+        assert_eq!(player.get_item_cooldown("shield"), Some(2));
+
+        refresh(false);
+        let first = Instant::now() + TICK_PERIOD;
+        tick_region(&world, waiting, first);
+        check();
+        assert_eq!(player.get_item_cooldown("shield"), Some(1));
+        tick_region(&world, waiting, first);
+        assert_eq!(player.get_item_cooldown("shield"), Some(1));
+        tick_region(&world, waiting, first + TICK_PERIOD);
+        assert_eq!(player.get_item_cooldown("shield"), None);
+
+        let before_freeze = world.region_layout.load_full();
+        let owner = before_freeze.owner(waiting).unwrap();
+        world.invalidate_region_layout();
+        offer(6);
+        assert_eq!(player.inbound_packets.len(), 1);
+
+        refresh(false);
+        let resumed = world.region_layout.load_full();
+        assert_eq!(resumed.owner(waiting), Some(owner));
+        assert!(!Arc::ptr_eq(
+            before_freeze.chunks(owner).unwrap(),
+            resumed.chunks(owner).unwrap()
+        ));
+        advance(waiting);
+        check();
 
         let observer = Arc::new(HealthPacketObserver::default());
         server

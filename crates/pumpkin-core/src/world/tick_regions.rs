@@ -291,6 +291,7 @@ impl TickRegions {
                     .filter(|region| {
                         region.chunks.len() == count
                             && component.overlaps.get(&owner) == Some(&count)
+                            && !region.input.is_retired()
                     })
                     .cloned()
                     .unwrap_or_else(|| Arc::new(ActiveRegion::new(component.chunks.into())));

@@ -57,6 +57,10 @@ impl RegionalInput {
         self.ready().take().unwrap_or_default()
     }
 
+    pub(super) fn is_retired(&self) -> bool {
+        self.ready().is_none()
+    }
+
     fn remove(&self, id: u64) {
         if let Some(ready) = self.ready().as_mut() {
             ready.remove(&id);
@@ -192,6 +196,25 @@ impl RegionLayout {
 }
 
 impl World {
+    pub(super) fn resume_regional_player_work(
+        &self,
+        previous: &RegionLayout,
+        current: &RegionLayout,
+    ) {
+        for player in self.players.load().iter() {
+            let chunk = player.get_entity().chunk_pos.load();
+            if previous.active_owner(chunk).is_none()
+                && current.active_owner(chunk).is_some()
+                && let Some(client) = player.client.bedrock()
+                && client.is_current_protocol()
+            {
+                // A move into a chunk without an owner leaves work on the
+                // connection. Wake it when the new extent becomes active.
+                self.offer_regional_work(client.id, player, RegionalWork::all());
+            }
+        }
+    }
+
     pub(crate) fn move_player_across_chunks(&self, entity: &Entity, commit: impl FnOnce()) {
         let Some(player) = self
             .get_player_by_uuid(entity.entity_uuid)
@@ -220,9 +243,9 @@ impl World {
         commit();
         let to = entity.chunk_pos.load();
         let layout = self.region_layout.load();
-        let previous = layout.owner(from);
-        let destination = layout.owner(to);
-        if previous == destination || destination.and_then(|owner| layout.input(owner)).is_none() {
+        let previous = layout.active_owner(from);
+        let destination = layout.active_owner(to);
+        if previous == destination {
             return;
         }
         if let Some(input) = previous.and_then(|owner| layout.input(owner)) {
@@ -230,7 +253,9 @@ impl World {
         }
         // A dispatcher can already have taken the old map. The FIFO and timer
         // state still belong to the player, so wake the destination directly.
-        if self.offer_regional_work(client.id, &player, RegionalWork::all()) {
+        if destination.is_some()
+            && self.offer_regional_work(client.id, &player, RegionalWork::all())
+        {
             tracing::trace!(player = %player.gameprofile.name, ?from, ?to, "Moved Bedrock regional work with the player");
         }
     }
@@ -283,7 +308,7 @@ impl World {
         loop {
             let layout = self.region_layout.load();
             let Some(input) = layout
-                .owner(player.get_entity().chunk_pos.load())
+                .active_owner(player.get_entity().chunk_pos.load())
                 .and_then(|owner| layout.input(owner))
             else {
                 return false;
@@ -292,6 +317,9 @@ impl World {
                 return true;
             }
             // The publisher installed the new layout before closing this queue.
+            if Arc::ptr_eq(&layout, &self.region_layout.load()) {
+                return false;
+            }
         }
     }
 }

@@ -322,7 +322,11 @@ When a native Bedrock player moves between active regions, the destination
 receives that connection's ready work at the position change. Previously
 claimed work and the handoff use the same per-connection guard. The player
 carries the ordered packets and timer deadlines across the move, so the
-destination can process them while the previous region is waiting.
+destination can process them while the previous region is waiting. A move
+into a chunk without an active owner keeps work on the connection. Publishing
+the new extent wakes its input and timers without waiting for another packet.
+Resuming after a freeze opens a new queue for every retired extent, even when
+the chunk membership and region IDs stay the same.
 
 Once a native Bedrock player has spawned, its region can dispatch ready
 chunks from the existing sender. A view becomes eligible after the publisher

@@ -125,6 +125,7 @@ impl World {
             self.region_layout.store(layout.clone());
             return;
         }
+        let activates_chunks = layout.activates_chunks_from(&previous);
 
         let mut published = self
             .regional_actors
@@ -145,7 +146,7 @@ impl World {
                     reassigned.assign(owner, actor.clone());
                 }
             }
-            if layout.activates_chunks_from(&previous) {
+            if activates_chunks {
                 // An actor can stay loaded just outside simulation distance.
                 // Pick up its work when the extent opens, before the world ticks actors.
                 for actor in self.entities.load().iter() {
@@ -170,6 +171,9 @@ impl World {
         let previous = self.publish_entity_chunk_layout(layout);
         drop(published);
         previous.transfer_regional_inputs(layout);
+        if activates_chunks {
+            self.resume_regional_player_work(&previous, layout);
+        }
     }
 
     pub(super) fn assign_regional_actors(
@@ -294,6 +298,13 @@ impl World {
         let previous = self.publish_entity_chunk_layout(&empty);
         drop(published);
         previous.transfer_regional_inputs(&empty);
+        // A resumed world must replace its retired queues even when players
+        // have stayed in the same chunks during a freeze.
+        self.active_chunk_tracker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .tick_regions
+            .active_chunks_changed();
     }
 
     pub(super) fn advance_regional_actors(
