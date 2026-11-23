@@ -118,7 +118,7 @@ impl World {
         };
         // Take the assignment permit before pinning the terrain, as item moves do.
         let mut item_timers = if ItemEntity::timers_unobserved(server) {
-            let Ok(timers) = self.regional_drops.try_write() else {
+            let Ok(timers) = self.regional_actors.try_write() else {
                 return;
             };
             Some(timers)

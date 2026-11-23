@@ -44,9 +44,10 @@ pub mod raid;
 pub mod random_sequences;
 mod regional_campfires;
 use regional_campfires::RegionalEntityUpdates;
-mod regional_drops;
+mod regional_actors;
 mod regional_input;
-use regional_drops::RegionalDrops;
+use regional_actors::RegionalActors;
+pub(crate) use regional_actors::actor_deadline;
 pub mod stopwatches;
 mod tick_regions;
 pub(crate) use tick_regions::{RegionChunks, RegionId, RegionLayout};
@@ -301,7 +302,7 @@ pub struct World {
     pub(crate) region_activity: Arc<tokio::sync::RwLock<()>>,
     entity_chunk_changes: entity_chunks::EntityChunkChanges,
     regional_entity_updates: RegionalEntityUpdates,
-    regional_drops: RwLock<Arc<RegionalDrops>>,
+    regional_actors: RwLock<Arc<RegionalActors>>,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
@@ -501,7 +502,7 @@ impl World {
             region_activity: Arc::default(),
             entity_chunk_changes: entity_chunks::EntityChunkChanges::default(),
             regional_entity_updates: RegionalEntityUpdates::default(),
-            regional_drops: RwLock::default(),
+            regional_actors: RwLock::default(),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
             server,
             block_entities: DashMap::new(),
@@ -1776,9 +1777,9 @@ impl World {
         }
         let player_elapsed = t_players.elapsed();
 
-        // A scan based on an earlier entity list must keep any new regional drops.
-        let previous_item_timers = self
-            .regional_drops
+        // A scan based on an earlier entity list must keep newly registered work.
+        let previous_actor_plan = self
+            .regional_actors
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
@@ -1805,9 +1806,9 @@ impl World {
                 Some((entity, entity_chunk))
             })
             .collect();
-        let item_timers =
-            self.assign_regional_drops(server, &tickable, !coordinated, &previous_item_timers);
-        drop(previous_item_timers);
+        let actor_plan =
+            self.assign_regional_actors(server, &tickable, !coordinated, &previous_actor_plan);
+        drop(previous_actor_plan);
 
         // Entities that can affect each other tick in list order; separate islands run in
         // parallel.
@@ -1880,7 +1881,7 @@ impl World {
             let base = entity.get_entity();
             if let Some(item) = (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ItemEntity>()
             {
-                let time = if regional_item_timers && item_timers.contains(base.entity_id) {
+                let time = if regional_item_timers && actor_plan.contains(base.entity_id) {
                     ItemTimerStep::Region
                 } else {
                     ItemTimerStep::World(deadline)
@@ -1897,7 +1898,13 @@ impl World {
                 if base.has_vehicle() {
                     base.velocity.store(Vector3::default());
                 }
-                entity.tick(entity.as_ref(), server_ref);
+                if base.entity_type.mob {
+                    regional_actors::tick_actor_with_deadline(base.entity_id, deadline, || {
+                        entity.tick(entity.as_ref(), server_ref);
+                    });
+                } else {
+                    entity.tick(entity.as_ref(), server_ref);
+                }
             }
         };
         if let Some(islands) = islands {
@@ -2518,7 +2525,7 @@ impl World {
         }
         if inhabited && same_extent {
             if let Some(server) = &region_server {
-                self.advance_regional_drops(server, owner, deadline, &owns);
+                self.advance_regional_actors(server, owner, deadline, &owns);
             }
             self.flush_regional_block_updates(&owns);
         }
@@ -5372,7 +5379,11 @@ impl World {
     }
 
     fn finish_entity_registration(&self, entity: &Arc<dyn EntityBase>) {
-        self.record_tick_spawn(entity.get_entity().entity_id);
+        let base = entity.get_entity();
+        if base.regional_effects.load(Relaxed) {
+            self.offer_mob_effects(base);
+        }
+        self.record_tick_spawn(base.entity_id);
         self.add_pending_riders(entity);
     }
 

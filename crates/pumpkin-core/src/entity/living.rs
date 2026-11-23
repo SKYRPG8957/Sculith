@@ -33,7 +33,6 @@ use crate::entity::mob::equipment::{DEFAULT_EQUIPMENT_DROP_CHANCE, is_equippable
 use crate::entity::mob::neutral::find_by_uuid;
 use crate::entity::player::Player;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
-use crate::net::bedrock::BedrockClient;
 use crate::server::{Server, TickDeadline};
 use crate::world::loot::LootContextParameters;
 use crossbeam::atomic::AtomicCell;
@@ -109,6 +108,7 @@ pub struct LivingEntity {
     /// The distance the entity has been falling.
     pub fall_distance: AtomicCell<f32>,
     pub active_effects: std::sync::Mutex<FxHashMap<&'static StatusEffect, Effect>>,
+    last_effect_step: AtomicCell<Option<std::time::Instant>>,
     pub entity_equipment: Arc<std::sync::Mutex<EntityEquipment>>,
     pub equipment_drop_chances: Arc<std::sync::Mutex<FxHashMap<EquipmentSlot, f32>>>,
     pub movement_input: AtomicCell<Vector3<f64>>,
@@ -504,6 +504,7 @@ impl LivingEntity {
             recent_kinetic_enemies: std::sync::Mutex::new(FxHashMap::default()),
             livings_flags: AtomicU8::new(0),
             active_effects: std::sync::Mutex::new(FxHashMap::default()),
+            last_effect_step: AtomicCell::new(None),
             entity_equipment: Arc::new(std::sync::Mutex::new(EntityEquipment::new())),
             equipment_drop_chances: Arc::new(std::sync::Mutex::new(FxHashMap::default())),
             equipment_slots: Arc::new(build_equipment_slots()),
@@ -1705,15 +1706,22 @@ impl LivingEntity {
         world.broadcast_to_chunk_editioned(chunk_pos, &je_packet, &be_packet);
         let mut offer_clock = false;
         if !effect.effect_type.instantaneous {
-            offer_clock = effect.duration > 0
+            let passive = effect.duration > 0
                 && crate::entity::effect::get_mob_effect(effect.effect_type).is_none();
             let apply_sound = effect.effect_type.apply_sound;
-            let was_absent = self
-                .active_effects
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(effect.effect_type, effect)
-                .is_none();
+            let was_absent = {
+                let mut effects = self
+                    .active_effects
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let absent = effects.insert(effect.effect_type, effect).is_none();
+                offer_clock = if self.entity.entity_type.mob {
+                    self.refresh_mob_effect_work(&effects)
+                } else {
+                    passive
+                };
+                absent
+            };
             if was_absent && let Some(sound) = apply_sound {
                 let category = self.entity.entity_type.sound_source;
                 world.play_sound_fine(sound, category, &self.entity.pos.load(), 1.0, 1.0);
@@ -1753,13 +1761,14 @@ impl LivingEntity {
     }
 
     pub fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
-        // Remove the effect
-        let succeeded = self
-            .active_effects
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&effect_type)
-            .is_some();
+        let (succeeded, offer_clock) = {
+            let mut effects = self
+                .active_effects
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let succeeded = effects.remove(&effect_type).is_some();
+            (succeeded, self.refresh_mob_effect_work(&effects))
+        };
 
         // Broadcast effect removal
         self.entity
@@ -1820,6 +1829,9 @@ impl LivingEntity {
 
         if succeeded {
             self.sync_effect_particles();
+        }
+        if offer_clock {
+            self.offer_regional_effects();
         }
 
         succeeded
@@ -3218,11 +3230,24 @@ impl LivingEntity {
         finite
     }
 
+    fn refresh_mob_effect_work(&self, effects: &FxHashMap<&'static StatusEffect, Effect>) -> bool {
+        if !self.entity.entity_type.mob {
+            return false;
+        }
+        let ready = Self::effects_can_advance_on_region(effects);
+        let previous = self.entity.regional_effects.swap(ready, Relaxed);
+        ready && !previous
+    }
+
     fn offer_regional_effects(&self) {
+        let world = self.entity.world.load();
+        if self.entity.entity_type.mob {
+            world.offer_mob_effects(&self.entity);
+            return;
+        }
         if !self.is_player() {
             return;
         }
-        let world = self.entity.world.load();
         if let Some(player) = world.get_player_by_id(self.entity.entity_id)
             && std::ptr::eq(player.get_entity(), self.get_entity())
             && let Some(client) = player
@@ -3236,16 +3261,10 @@ impl LivingEntity {
 
     pub(crate) fn advance_regional_effects(
         &self,
-        player: &Player,
-        client: &BedrockClient,
         deadline: TickDeadline,
         owns: impl FnOnce() -> bool,
     ) -> bool {
-        if !client.is_current_protocol()
-            || !player.has_client_loaded()
-            || !player.has_stable_world_membership()
-            || !self.is_alive()
-        {
+        if !self.is_alive() {
             return false;
         }
         let Ok(mut effects) = self.active_effects.try_lock() else {
@@ -3254,7 +3273,7 @@ impl LivingEntity {
         if !Self::effects_can_advance_on_region(&effects) {
             return false;
         }
-        if !owns() || !client.claim_effect_step(Some(deadline)) {
+        if !owns() || !TickDeadline::claim(&self.last_effect_step, Some(deadline)) {
             return true;
         }
         let mut ready_to_expire = false;
@@ -3262,24 +3281,38 @@ impl LivingEntity {
             effect.duration -= 1;
             ready_to_expire |= effect.duration == 0;
         }
-        tracing::trace!(player = %player.gameprofile.name, "Advanced status effects on the player region");
+        if self.entity.entity_type.mob {
+            if ready_to_expire {
+                self.entity.regional_effects.store(false, Relaxed);
+            }
+            tracing::trace!(
+                entity = self.entity.entity_id,
+                chunk = ?self.entity.chunk_pos.load(),
+                "Advanced status effects on the mob region"
+            );
+        } else {
+            tracing::trace!(
+                entity = self.entity.entity_id,
+                "Advanced status effects on the player region"
+            );
+        }
         !ready_to_expire
     }
 
     fn tick_effects(&self, player: Option<&Player>, deadline: Option<TickDeadline>) {
         let mut effects_to_remove = Vec::new();
         let mut effects_to_apply = Vec::new();
-        let client = player
+        let regional_bedrock = player
             .and_then(|player| player.client.bedrock())
-            .filter(|client| client.is_current_protocol());
+            .is_some_and(|client| client.is_current_protocol());
 
         let offer_clock = {
             let Ok(mut effects) = self.active_effects.try_lock() else {
                 return;
             };
-            if let Some(client) = client
+            if (regional_bedrock || self.entity.entity_type.mob)
                 && (deadline.is_none() || !effects.is_empty())
-                && !client.claim_effect_step(deadline)
+                && !TickDeadline::claim(&self.last_effect_step, deadline)
             {
                 return;
             }
@@ -3306,7 +3339,10 @@ impl LivingEntity {
                     effect.duration -= 1;
                 }
             }
-            deadline.is_some() && client.is_some() && Self::effects_can_advance_on_region(&effects)
+            let mob_ready = self.refresh_mob_effect_work(&effects);
+            deadline.is_some()
+                && (mob_ready
+                    || (regional_bedrock && Self::effects_can_advance_on_region(&effects)))
         };
 
         // Call the central removal function for each expired effect
@@ -3962,7 +3998,7 @@ impl LivingEntity {
             if let NbtTag::Compound(effect_nbt) = effect {
                 if let Some(mut effect) = Effect::create_from_nbt(&mut effect_nbt.clone()) {
                     effect.blend = true; // TODO: change, is taken from effect give command
-                    read_effects.push(effect);
+                    read_effects.push((effect.effect_type, effect));
                 } else {
                     warn!("Unable to read effect from nbt");
                 }
@@ -3973,9 +4009,8 @@ impl LivingEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         active_effects.clear();
-        for effect in read_effects {
-            active_effects.insert(effect.effect_type, effect);
-        }
+        active_effects.extend(read_effects);
+        self.refresh_mob_effect_work(&active_effects);
         self.entity
             .set_glowing_from_effect(active_effects.contains_key(&StatusEffect::GLOWING));
 
@@ -4997,7 +5032,11 @@ impl LivingEntity {
 
 impl EntityBase for LivingEntity {
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
-        self.tick_with_deadline(caller, server, None);
+        self.tick_with_deadline(
+            caller,
+            server,
+            crate::world::actor_deadline(self.entity.entity_id),
+        );
     }
 
     fn damage_with_context(

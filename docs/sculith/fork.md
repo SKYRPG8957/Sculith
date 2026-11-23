@@ -354,6 +354,12 @@ region changes. The world handles periodic effects, expiration and their
 attribute and packet updates. Coordinated ticks advance the same duration
 state, which also supplies player saves.
 
+The same passive countdown can run on the region that owns a living mob.
+Its assignment changes with its chunk, and its remaining durations and deadline
+travel with the actor. The old owner checks the current assignment and loaded
+chunk before taking a step. The ordinary entity tick handles expiry and periodic
+effects, using the same deadline to avoid a second step after a handoff.
+
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the
 connection when it changes owners. A repeated deadline cannot count twice.

@@ -488,7 +488,7 @@ impl World {
             .iter()
             .any(|(_, entity)| schedules_drop(entity.as_ref()))
         {
-            let Ok(plan) = self.regional_drops.try_write() else {
+            let Ok(plan) = self.regional_actors.try_write() else {
                 return false;
             };
             Some(plan)
@@ -585,7 +585,7 @@ impl World {
         let mut java_recipients = FxHashMap::default();
         for actor in actors {
             // A layout change takes the writer. Do not pair under a revoked owner.
-            let Ok(_layout) = self.regional_drops.try_read() else {
+            let Ok(_layout) = self.regional_actors.try_read() else {
                 break;
             };
             if !owns(pos) {
@@ -1255,7 +1255,7 @@ mod tests {
             .downcast_ref::<ItemEntity>()
             .unwrap();
         let id = restored.get_entity().entity_id;
-        assert!(world.regional_drops.read().unwrap().contains(id));
+        assert!(world.regional_actors.read().unwrap().contains(id));
         assert!(!world.entity_tracker.has_entity_with_id(id));
         let next = TickDeadline {
             at: deadline.at + deadline.period,
@@ -1277,7 +1277,7 @@ mod tests {
             .downcast_ref::<ExperienceOrbEntity>()
             .unwrap();
         let orb_id = restored_orb.get_entity().entity_id;
-        assert!(world.regional_drops.read().unwrap().contains(orb_id));
+        assert!(world.regional_actors.read().unwrap().contains(orb_id));
         assert!(!world.entity_tracker.has_entity_with_id(orb_id));
         let mut moved = 0;
         let mut publish = || moved += 1;

@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crossbeam::atomic::AtomicCell;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::world::{RegionChunks, RegionId, RegionLayout};
@@ -23,6 +24,17 @@ impl TickDeadline {
         self.at
             .checked_duration_since(previous)
             .is_some_and(|elapsed| elapsed >= self.period)
+    }
+
+    /// The caller holds the lock for the state this deadline protects.
+    pub(crate) fn claim(clock: &AtomicCell<Option<Instant>>, deadline: Option<Self>) -> bool {
+        if let Some((next, previous)) = deadline.zip(clock.load())
+            && !next.follows(previous)
+        {
+            return false;
+        }
+        clock.store(deadline.map(|step| step.at));
+        true
     }
 }
 

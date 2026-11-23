@@ -1,7 +1,8 @@
 use std::{
     any::Any,
+    cell::Cell,
     collections::hash_map::Entry,
-    sync::{Arc, PoisonError},
+    sync::{Arc, PoisonError, atomic::Ordering::Relaxed},
 };
 
 use dashmap::try_result::TryResult;
@@ -25,39 +26,68 @@ use super::{
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Default, PartialEq, Eq)]
-    struct DropKinds: u8 {
+    struct ActorWork: u8 {
         const ITEM = 1;
         const EXPERIENCE = 2;
+        const PASSIVE_EFFECTS = 4;
     }
 }
 
-impl DropKinds {
+impl ActorWork {
     fn of(base: &Entity) -> Self {
         if base.entity_type == &EntityType::ITEM {
             Self::ITEM
         } else if base.entity_type == &EntityType::EXPERIENCE_ORB {
             Self::EXPERIENCE
+        } else if base.regional_effects.load(Relaxed) {
+            Self::PASSIVE_EFFECTS
         } else {
             Self::empty()
         }
     }
 }
 
+thread_local! {
+    static ACTOR_DEADLINE: Cell<Option<(i32, TickDeadline)>> = const { Cell::new(None) };
+}
+
+pub fn actor_deadline(id: i32) -> Option<TickDeadline> {
+    ACTOR_DEADLINE
+        .get()
+        .filter(|&(actor, _)| actor == id)
+        .map(|(_, deadline)| deadline)
+}
+
+pub(super) fn tick_actor_with_deadline(
+    id: i32,
+    deadline: Option<TickDeadline>,
+    tick: impl FnOnce(),
+) {
+    struct RestoreDeadline(Option<(i32, TickDeadline)>);
+    impl Drop for RestoreDeadline {
+        fn drop(&mut self) {
+            ACTOR_DEADLINE.set(self.0);
+        }
+    }
+    let _restore = RestoreDeadline(ACTOR_DEADLINE.replace(deadline.map(|step| (id, step))));
+    tick();
+}
+
 #[derive(Clone, Default)]
-pub(super) struct RegionalDrops {
-    kinds: DropKinds,
+pub(super) struct RegionalActors {
+    kinds: ActorWork,
     by_region: FxHashMap<RegionId, Vec<Arc<dyn EntityBase>>>,
     assigned: FxHashMap<i32, RegionId>,
 }
 
-impl RegionalDrops {
+impl RegionalActors {
     pub(super) fn contains(&self, entity_id: i32) -> bool {
         self.assigned.contains_key(&entity_id)
     }
 
     pub(super) fn assign(&mut self, owner: RegionId, actor: Arc<dyn EntityBase>) {
         let base = actor.get_entity();
-        self.kinds |= DropKinds::of(base);
+        self.kinds |= ActorWork::of(base);
         self.assigned.insert(base.entity_id, owner);
         self.by_region.entry(owner).or_default().push(actor);
     }
@@ -91,11 +121,11 @@ impl World {
         }
 
         let mut published = self
-            .regional_drops
+            .regional_actors
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         if !published.kinds.is_empty() {
-            let mut reassigned = RegionalDrops {
+            let mut reassigned = RegionalActors {
                 kinds: published.kinds,
                 ..Default::default()
             };
@@ -119,22 +149,23 @@ impl World {
         previous.transfer_regional_inputs(layout);
     }
 
-    pub(super) fn assign_regional_drops(
+    pub(super) fn assign_regional_actors(
         &self,
         server: &Server,
         tickable: &[(&Arc<dyn EntityBase>, Vector2<i32>)],
         regional: bool,
-        previous: &Arc<RegionalDrops>,
-    ) -> Arc<RegionalDrops> {
-        let mut next = RegionalDrops::default();
+        previous: &Arc<RegionalActors>,
+    ) -> Arc<RegionalActors> {
+        let mut next = RegionalActors::default();
         if regional {
-            next.kinds.insert(DropKinds::EXPERIENCE);
             next.kinds
-                .set(DropKinds::ITEM, ItemEntity::timers_unobserved(server));
+                .insert(ActorWork::EXPERIENCE | ActorWork::PASSIVE_EFFECTS);
+            next.kinds
+                .set(ActorWork::ITEM, ItemEntity::timers_unobserved(server));
             let layout = self.region_layout.load();
             for &(entity, _) in tickable {
                 let base = entity.get_entity();
-                if next.kinds.intersects(DropKinds::of(base))
+                if next.kinds.intersects(ActorWork::of(base))
                     && let Some(owner) = layout.owner(base.chunk_pos.load())
                     && owner != RegionLayout::INACTIVE
                 {
@@ -145,7 +176,7 @@ impl World {
         if next.kinds == previous.kinds && next.assigned == previous.assigned {
             // A running region can keep its snapshot across an ordinary world tick.
             return self
-                .regional_drops
+                .regional_actors
                 .read()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone();
@@ -159,7 +190,7 @@ impl World {
             }
         }
         let mut published = self
-            .regional_drops
+            .regional_actors
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         // A spawn or movement may have updated the assignments during the scan.
@@ -169,31 +200,58 @@ impl World {
         published.clone()
     }
 
-    pub(crate) fn move_drop_across_chunks(&self, entity: &Entity, commit_position: impl FnOnce()) {
+    pub(crate) fn move_actor_across_chunks(&self, entity: &Entity, commit_position: impl FnOnce()) {
         // A move can overlap a change of layout. Hold the same permit used to
         // publish that layout until the position and assignment agree.
+        if entity.entity_type.mob {
+            let plan = self
+                .regional_actors
+                .read()
+                .unwrap_or_else(PoisonError::into_inner);
+            if !entity.regional_effects.load(Relaxed) && !plan.contains(entity.entity_id) {
+                // An effect added concurrently registers after this position is committed.
+                commit_position();
+                return;
+            }
+        }
         let mut published = self
-            .regional_drops
+            .regional_actors
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         commit_position();
-        if !published.kinds.intersects(DropKinds::of(entity))
-            || entity.is_removed()
-            || !std::ptr::eq(entity.world.load().as_ref(), self)
-        {
-            return;
+        self.refresh_actor_owner(&mut published, entity);
+    }
+
+    pub(crate) fn offer_mob_effects(&self, entity: &Entity) {
+        let mut published = self
+            .regional_actors
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        if published.contains(entity.entity_id) {
+            // A world scan may have seen the previous effect set become empty.
+            Arc::make_mut(&mut published);
         }
-        let owner = self
-            .region_layout
-            .load()
-            .owner(entity.chunk_pos.load())
-            .filter(|&owner| owner != RegionLayout::INACTIVE);
+        self.refresh_actor_owner(&mut published, entity);
+    }
+
+    fn refresh_actor_owner(&self, published: &mut Arc<RegionalActors>, entity: &Entity) {
+        let layout = self.region_layout.load();
+        let owner = if published.kinds.intersects(ActorWork::of(entity))
+            && !entity.is_removed()
+            && std::ptr::eq(entity.world.load().as_ref(), self)
+        {
+            layout
+                .owner(entity.chunk_pos.load())
+                .filter(|&owner| owner != RegionLayout::INACTIVE)
+        } else {
+            None
+        };
         let id = entity.entity_id;
         if published.assigned.get(&id).copied() == owner {
             return;
         }
 
-        let timers = Arc::make_mut(&mut published);
+        let timers = Arc::make_mut(published);
         let previous = timers.unassign(id);
         if let Some(owner) = owner
             && let Some(actor) =
@@ -206,7 +264,7 @@ impl World {
 
     pub(super) fn reset_region_layout(&self) {
         let mut published = self
-            .regional_drops
+            .regional_actors
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         if !published.kinds.is_empty() {
@@ -218,14 +276,14 @@ impl World {
         previous.transfer_regional_inputs(&empty);
     }
 
-    pub(super) fn advance_regional_drops(
+    pub(super) fn advance_regional_actors(
         &self,
         server: &Server,
         owner: RegionId,
         deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
-        let Ok(published) = self.regional_drops.try_read() else {
+        let Ok(published) = self.regional_actors.try_read() else {
             return;
         };
         let plan = published.clone();
@@ -247,7 +305,7 @@ impl World {
             let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
                 break;
             };
-            let Ok(published) = self.regional_drops.try_read() else {
+            let Ok(published) = self.regional_actors.try_read() else {
                 break;
             };
             if published.assigned.get(&base.entity_id) != Some(&owner) {
@@ -290,6 +348,17 @@ impl World {
                 if orb.has_expired() {
                     expired.push(actor);
                 }
+            } else if native.is_some()
+                && base.regional_effects.load(Relaxed)
+                && let Some(living) = actor.get_living_entity()
+                && let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk)
+            {
+                living.advance_regional_effects(deadline, || {
+                    !base.is_removed()
+                        && std::ptr::eq(base.world.load().as_ref(), self)
+                        && base.chunk_pos.load() == chunk
+                        && owns(chunk)
+                });
             }
         }
         EntityTracker::flush_regional_drop_packets(java_recipients);
@@ -315,7 +384,7 @@ impl World {
         let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
             return;
         };
-        let Ok(published) = self.regional_drops.try_read() else {
+        let Ok(published) = self.regional_actors.try_read() else {
             return;
         };
         let Ok(mut pending) = self.regional_entity_updates.0.try_lock() else {
@@ -369,25 +438,27 @@ impl World {
 mod tests {
     use std::{
         cell::Cell,
+        path::Path,
         time::{Duration, Instant},
     };
 
     use pumpkin_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
-    use pumpkin_data::{entity::EntityType, item::Item, item_stack::ItemStack};
+    use pumpkin_data::{
+        effect::StatusEffect, entity::EntityType, item::Item, item_stack::ItemStack, potion::Effect,
+    };
     use pumpkin_nbt::NbtCompound;
     use pumpkin_util::math::vector3::Vector3;
+    use pumpkin_world::chunk::ChunkData;
 
     use crate::data::VanillaData;
 
     use super::*;
 
-    #[tokio::test]
-    async fn a_handoff_in_another_region_preserves_the_running_item_step() {
-        let folder = tempfile::tempdir().unwrap();
+    async fn test_server(root: &Path) -> Arc<Server> {
         let basic = BasicConfiguration {
-            default_level_name: folder.path().join("world").to_string_lossy().into_owned(),
+            default_level_name: root.join("world").to_string_lossy().into_owned(),
             allow_chat_reports: false,
             allow_nether: false,
             allow_end: false,
@@ -396,7 +467,7 @@ mod tests {
         let mut advanced = AdvancedConfiguration::default();
         advanced.world.generator = WorldPreset::Flat;
         advanced.networking.bedrock.online_mode = false;
-        let server = Server::new(
+        Server::new(
             basic,
             advanced,
             TelemetryConfig::default(),
@@ -404,7 +475,13 @@ mod tests {
             Vec::new(),
         )
         .await
-        .unwrap();
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_handoff_in_another_region_preserves_the_running_item_step() {
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
         let world = server.worlds.load()[0].clone();
         let home = Vector2::new(0, 0);
         let origin = Vector2::new(10, 0);
@@ -432,8 +509,8 @@ mod tests {
         };
         let local = spawn(home);
         let crossing = spawn(origin);
-        let previous = world.regional_drops.read().unwrap().clone();
-        world.assign_regional_drops(
+        let previous = world.regional_actors.read().unwrap().clone();
+        world.assign_regional_actors(
             &server,
             &[(&local, home), (&crossing, origin)],
             true,
@@ -445,14 +522,14 @@ mod tests {
             at: Instant::now(),
             period: Duration::from_millis(50),
         };
-        world.advance_regional_drops(&server, 0, deadline, &|chunk| {
+        world.advance_regional_actors(&server, 0, deadline, &|chunk| {
             // Place the handoff after the running job has read its actor list.
             if !moved.replace(true) {
                 crossing.get_entity().set_pos(position(destination));
             }
             layout.owner(chunk) == Some(0)
         });
-        let current = world.regional_drops.read().unwrap().clone();
+        let current = world.regional_actors.read().unwrap().clone();
         assert_eq!(current.assigned[&crossing.get_entity().entity_id], 2);
         let mut data = NbtCompound::new();
         local.write_nbt(&mut data);
@@ -460,6 +537,92 @@ mod tests {
             data.get_short("PickupDelay"),
             Some(i16::from(ItemEntity::DEFAULT_PICKUP_DELAY - 1))
         );
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_mob_keeps_its_effect_deadline_and_pending_work_across_regions() {
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
+        let world = server.worlds.load()[0].clone();
+        let west = Vector2::new(0, 0);
+        let east = Vector2::new(8, 0);
+        let layout = Arc::new(RegionLayout::from_active(
+            FxHashMap::from_iter([(west, 0), (east, 1)]),
+            FxHashMap::from_iter([(0, [west].into()), (1, [east].into())]),
+        ));
+        world.publish_region_layout(&layout);
+        for chunk in [west, east] {
+            world
+                .level
+                .loaded_chunks
+                .insert(chunk, ChunkData::empty_sync(chunk.x, chunk.y));
+        }
+
+        let pig = crate::entity::r#type::from_type(
+            &EntityType::PIG,
+            Vector3::new(8.0, 80.0, 8.0),
+            &world,
+            uuid::Uuid::new_v4(),
+        );
+        let base = pig.get_entity();
+        base.has_no_gravity.store(true, Relaxed);
+        pig.get_mob().unwrap().get_mob_entity().set_no_ai(true);
+        world.add_entity_silent(pig.clone());
+        let previous = world.regional_actors.read().unwrap().clone();
+        world.assign_regional_actors(&server, &[(&pig, west)], true, &previous);
+        let living = pig.get_living_entity().unwrap();
+        let vision = &StatusEffect::NIGHT_VISION;
+        let add = || {
+            living.add_effect(Effect {
+                effect_type: vision,
+                duration: 2,
+                amplifier: 0,
+                ambient: false,
+                show_particles: false,
+                show_icon: true,
+                blend: false,
+            });
+        };
+        let remaining = || living.get_effect(vision).map(|effect| effect.duration);
+        let first = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        let next = TickDeadline {
+            at: first.at + first.period,
+            ..first
+        };
+        let step = |owner, deadline| {
+            world.advance_region_time(owner, layout.chunks(owner).unwrap(), deadline);
+        };
+        add();
+        step(0, first);
+        assert_eq!(remaining(), Some(1));
+        base.set_pos(Vector3::new(136.0, 80.0, 8.0));
+        assert_eq!(
+            world.regional_actors.read().unwrap().assigned[&base.entity_id],
+            1
+        );
+        step(0, next);
+        step(1, first);
+        assert_eq!(remaining(), Some(1));
+        step(1, next);
+        tick_actor_with_deadline(base.entity_id, Some(next), || {
+            pig.tick(pig.as_ref(), &server);
+        });
+        assert_eq!(remaining(), Some(0));
+
+        let stale = world.regional_actors.read().unwrap().clone();
+        add();
+        let plan = world.assign_regional_actors(&server, &[], true, &stale);
+        assert_eq!(plan.assigned[&base.entity_id], 1);
+        let later = TickDeadline {
+            at: next.at + next.period,
+            ..next
+        };
+        step(1, later);
+        assert_eq!(remaining(), Some(1));
         server.shutdown().await;
     }
 }

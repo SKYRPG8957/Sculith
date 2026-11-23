@@ -122,7 +122,7 @@ impl RegionalInput {
                 && !server.plugin_manager.has_handlers::<PacketSentEvent>()
                 && !server.plugin_manager.has_handlers::<BedrockConnectionPacketSentEvent>()
                 // Layout publication takes the writer. A busy layout keeps this work pending.
-                && world.regional_drops.try_read().map_or(true, |_layout| {
+                && world.regional_actors.try_read().map_or(true, |_layout| {
                     player.hunger_manager.drain_on_region(&player, client, deadline, owns_player)
                 })
             {
@@ -134,14 +134,14 @@ impl RegionalInput {
                 pending |= RegionalWork::ITEM_COOLDOWNS;
             }
             if work.contains(RegionalWork::STATUS_EFFECTS)
+                && client.is_current_protocol()
+                && player.has_client_loaded()
+                && player.has_stable_world_membership()
                 && !server.tick_rate_manager.is_frozen()
-                && world.regional_drops.try_read().map_or(true, |_layout| {
-                    player.living_entity.advance_regional_effects(
-                        &player,
-                        client,
-                        deadline,
-                        owns_player,
-                    )
+                && world.regional_actors.try_read().map_or(true, |_layout| {
+                    player
+                        .living_entity
+                        .advance_regional_effects(deadline, owns_player)
                 })
             {
                 pending |= RegionalWork::STATUS_EFFECTS;

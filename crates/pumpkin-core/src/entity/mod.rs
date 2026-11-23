@@ -1729,6 +1729,7 @@ pub struct Entity {
     /// velocity goes to the own client
     pub sync_velocity: AtomicBool,
     drop_motion: Option<Box<std::sync::Mutex<drop_motion::DropMotion>>>,
+    pub(crate) regional_effects: AtomicBool,
     /// Unsent entity pushes on a player. Bedrock clients don't predict them, so they stay
     /// pending at full size until `SetActorMotion` can layer them on the last client delta.
     pub push_impulse: AtomicCell<Vector3<f64>>,
@@ -2011,6 +2012,7 @@ impl Entity {
             drop_motion: (entity_type == &EntityType::ITEM
                 || entity_type == &EntityType::EXPERIENCE_ORB)
                 .then(Box::default),
+            regional_effects: AtomicBool::new(false),
             push_impulse: AtomicCell::new(Vector3::default()),
             removed: AtomicBool::new(false),
             last_sent_yaw: AtomicU8::new(0),
@@ -2043,12 +2045,21 @@ impl Entity {
     /// Called when the entity changes dimensions (e.g., through a nether portal).
     pub fn set_world(&self, world: Arc<World>) {
         let _motion = self.hold_drop_motion();
-        let block_pos = self.block_pos.load();
-        let biome = world.level.get_rough_biome(&block_pos);
-        self.current_biome.store(Arc::new(biome));
-        self.last_biome_update_pos.store(block_pos);
-        self.bounding_box.set_index(&world.entity_index);
-        self.world.store(world);
+        let previous = self.world.load();
+        let changing_region = self.entity_type.mob && !Arc::ptr_eq(&previous, &world);
+        let change = || {
+            let block_pos = self.block_pos.load();
+            let biome = world.level.get_rough_biome(&block_pos);
+            self.current_biome.store(Arc::new(biome));
+            self.last_biome_update_pos.store(block_pos);
+            self.bounding_box.set_index(&world.entity_index);
+            self.world.store(world);
+        };
+        if changing_region {
+            previous.move_actor_across_chunks(self, change);
+        } else {
+            change();
+        }
     }
 
     fn init_bedrock_flags(&self) {
@@ -2459,14 +2470,16 @@ impl Entity {
                 |position| self.world.load().level.get_rough_biome(&position),
             );
         };
-        if (drop_motion.is_some() || self.entity_type == &EntityType::PLAYER)
+        if (drop_motion.is_some()
+            || self.entity_type.mob
+            || self.entity_type == &EntityType::PLAYER)
             && self.chunk_pos.load() != BlockPos::floored_v(new_position).chunk_position()
         {
             let world = self.world.load();
-            if drop_motion.is_some() {
-                world.move_drop_across_chunks(self, commit_position);
-            } else {
+            if self.entity_type == &EntityType::PLAYER {
                 world.move_player_across_chunks(self, commit_position);
+            } else {
+                world.move_actor_across_chunks(self, commit_position);
             }
             return;
         }
