@@ -1071,7 +1071,9 @@ mod tests {
         assert_eq!(distance(), 50);
         assert_eq!(player.get_custom_stat(CustomStatistic::WalkOneCm), 87);
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
-        check_exhaustion(4.05);
+        // The same regional tick spends the exhaustion recorded by these moves.
+        assert_eq!(player.hunger_manager.saturation.load(), 4.0);
+        check_exhaustion(0.05);
 
         player.hunger_manager.tick(player);
         assert_eq!(player.hunger_manager.saturation.load(), 4.0);
