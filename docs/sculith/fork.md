@@ -259,6 +259,10 @@ tick number and splitting passes that number to each successor.
 An active region can consume the front of a native Bedrock player's input queue
 for latency, chunk cache and teleport acknowledgments. A teleport is confirmed
 against the wire position and the pending ID recorded after queuing the packet.
+The region and world both wait for the current ID. An outgoing hook can edit
+or replace a native teleport, and confirmation uses the queued coordinates.
+If a new teleport supersedes an earlier one during an outgoing hook, the
+earlier packet is dropped before it enters the network queue.
 The region consumes stale coordinates while that teleport is pending. A resend
 and packets with receive or send hooks use the world input path. A ready
 connection is routed by its current chunk and checked again when the regional

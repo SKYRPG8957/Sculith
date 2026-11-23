@@ -478,7 +478,8 @@ mod tests {
     use pumpkin_data::{Block, effect::StatusEffect, potion::Effect};
     use pumpkin_protocol::{
         bedrock::{
-            client::update_attributes::CUpdateAttributes, network_item::NetworkItemDescriptor,
+            client::{CMovePlayer, update_attributes::CUpdateAttributes},
+            network_item::NetworkItemDescriptor,
             server::player_auth_input::InputData,
         },
         codec::{var_int::VarInt, var_uint::VarUInt, var_ulong::VarULong},
@@ -487,7 +488,7 @@ mod tests {
     use pumpkin_util::{GameMode, math::vector3::Vector3};
     use pumpkin_world::world::BlockFlags;
     use std::{
-        sync::atomic::AtomicBool,
+        sync::{Mutex, atomic::AtomicBool, mpsc},
         time::{Duration, Instant},
     };
 
@@ -514,6 +515,45 @@ mod tests {
                     assert!(event.player.abilities.try_lock().is_ok());
                     assert_eq!(event.player.get_exhaustion(), 1.0);
                     self.0.store(true, Relaxed);
+                }
+            })
+        }
+    }
+
+    struct TeleportPacketObserver {
+        delayed_x: f32,
+        entered: mpsc::Sender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl EventHandler<PacketSentEvent> for TeleportPacketObserver {
+        fn handle_blocking<'a>(
+            &'a self,
+            _: &'a Arc<Server>,
+            event: &'a mut PacketSentEvent,
+        ) -> BoxFuture<'a, ()> {
+            Box::pin(async move {
+                if event.packet_id != CMovePlayer::PACKET_ID {
+                    return;
+                }
+                let mut packet = CMovePlayer::read(&mut event.payload.as_ref()).unwrap();
+                if packet.mode != CMovePlayer::MODE_TELEPORT {
+                    return;
+                }
+                if packet.position.x == self.delayed_x {
+                    self.entered.send(()).unwrap();
+                    self.release
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                } else {
+                    // A hook can replace the primary frame with an edited teleport.
+                    packet.position.x += 0.25;
+                    let mut payload = Vec::new();
+                    packet.write(&mut payload).unwrap();
+                    event.extra_packets.push((event.packet_id, payload.into()));
+                    event.cancelled = true;
                 }
             })
         }
@@ -1007,14 +1047,77 @@ mod tests {
         player.request_teleport(Vector3::new(10.0, 100.0, 8.0), 0.0, 0.0);
         let sent_id = client.activity.sent_teleport_id.load().unwrap();
         // Start a newer teleport before its packet has been queued.
-        let next = (VarInt(sent_id.wrapping_add(1)), destination);
+        let next_id = sent_id.wrapping_add(1);
+        let next = (VarInt(next_id), destination);
         *player.awaiting_teleport.lock().unwrap() = Some(next);
+        player.set_client_loaded(false);
         enqueue(client.teleport_sent_pos.load());
         advance();
         assert_eq!(*player.awaiting_teleport.lock().unwrap(), Some(next));
         assert!(client.activity.inbound_head.lock().unwrap().is_some());
         client.drain_world_input(player, None, Some(world), 1);
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        assert_eq!(*player.awaiting_teleport.lock().unwrap(), Some(next));
+        assert!(!player.has_client_loaded());
+
+        client.send_teleport(player);
+        assert_eq!(client.activity.sent_teleport_id.load(), Some(sent_id));
+        player.get_entity().set_pos(destination);
+        client.send_teleport(player);
+        assert_eq!(client.activity.sent_teleport_id.load(), Some(next_id));
+        enqueue(client.teleport_sent_pos.load());
+        advance();
+        assert!(player.awaiting_teleport.lock().unwrap().is_none());
+        assert!(player.has_client_loaded());
+    }
+
+    fn verify_superseded_teleport(
+        world: &Arc<World>,
+        server: &Arc<Server>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+    ) {
+        let old = Vector3::new(1034.0, 100.0, 8.0);
+        let latest = Vector3::new(1036.0, 100.0, 8.0);
+        let (entered, parked) = mpsc::channel();
+        let (resume, release) = mpsc::channel();
+        server.plugin_manager.register(
+            Arc::new(TeleportPacketObserver {
+                delayed_x: 1034.0,
+                entered,
+                release: Mutex::new(release),
+            }),
+            EventPriority::Normal,
+            true,
+        );
+        let mut outgoing = client.outgoing_packet_queue_recv.try_lock().unwrap();
+        let outgoing = outgoing.as_mut().unwrap();
+        while outgoing.try_recv().is_ok() {}
+        std::thread::scope(|scope| {
+            let older = scope.spawn(|| player.request_teleport(old, 0.0, 0.0));
+            parked.recv_timeout(Duration::from_secs(10)).unwrap();
+            let newer = scope.spawn(|| player.request_teleport(latest, 0.0, 0.0));
+            newer.join().unwrap();
+            resume.send(()).unwrap();
+            older.join().unwrap();
+        });
+
+        let sent: Vec<_> = std::iter::from_fn(|| outgoing.try_recv().ok())
+            .filter_map(|outgoing| {
+                let (id, payload) = super::super::split_raw_packet(&outgoing.data)?;
+                (i32::from(id) == CMovePlayer::PACKET_ID)
+                    .then(|| CMovePlayer::read(&mut payload.as_ref()).unwrap().position)
+            })
+            .collect();
+        assert_eq!(player.position(), latest);
+        let wire = player.bedrock_pos().to_f32_lossy().add_raw(0.25, 0.0, 0.0);
+        assert_eq!(sent, [wire]);
+
+        player.set_client_loaded(false);
+        queue_auth_input(client, player, wire, 8, 0.0, &[InputData::HandledTeleport]);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(player.awaiting_teleport.lock().unwrap().is_none());
+        assert!(player.has_client_loaded());
     }
 
     fn verify_grounded_walks(
@@ -1459,6 +1562,7 @@ mod tests {
             .plugin_manager
             .register(observer.clone(), EventPriority::Normal, true);
         client.set_player(player.clone());
+        verify_superseded_teleport(&world, &server, &player, &client);
         std::thread::scope(|scope| scope.spawn(|| player.set_exhaustion(1.0)).join().unwrap());
         client.clear_player();
         assert!(observer.0.load(Relaxed));
