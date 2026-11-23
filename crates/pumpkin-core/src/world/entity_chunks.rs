@@ -820,10 +820,8 @@ mod tests {
         assert!(!saved.live.load(Relaxed));
         assert!(!world.entity_tracker.has_entity_with_id(cow_id));
 
-        let mut records = saved.data.lock().unwrap();
-        records[0].put_float("Health", 6.0);
-        records[1].put_list("Pos", vec![163.5.into(), 64.0.into(), 8.5.into()]);
-        drop(records);
+        saved.data.lock().unwrap()[0].put_float("Health", 6.0);
+        saved.data.lock().unwrap()[1].put_list("Pos", vec![163.5.into(), 64.0.into(), 8.5.into()]);
         drop(snapshot);
         world.apply_entity_chunk_changes();
 
