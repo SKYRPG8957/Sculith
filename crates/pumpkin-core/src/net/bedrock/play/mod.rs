@@ -33,6 +33,7 @@ use pumpkin_protocol::{
             interact::{Action, SInteract},
             inventory_transaction::{
                 TransactionData, WINDOW_ID_ARMOUR, WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
+                WINDOW_ID_UI,
             },
             mob_equipment::SMobEquipment,
             player_action::{PlayerActionType as PlayerAction, SPlayerAction},
@@ -157,68 +158,72 @@ pub(crate) const fn bedrock_player_inventory_slot(
 /// Sends one slot of the Bedrock player's own containers
 pub(crate) fn send_bedrock_inventory_slot(
     bedrock: &BedrockClient,
-    (container_id, container_name, slot): (u32, ContainerName, u32),
+    target: (u32, ContainerName, u32),
     stack: &ItemStack,
 ) {
-    // Like Geyser, the offhand is always sent as a whole one-item container
-    if container_name == ContainerName::Offhand {
-        bedrock.try_enqueue_client_packet(&CInventoryContent {
-            container_id: VarUInt(container_id),
-            slots: vec![NetworkItemStackDescriptor::from(stack)],
-            full_container_name: FullContainerName {
-                container_name,
-                dynamic_id: None,
-            },
-            storage_item: NetworkItemStackDescriptor::default(),
-        });
-        return;
+    match bedrock.serialize_inventory_slot(target, stack) {
+        Ok(packet) => bedrock.try_enqueue_packet(packet),
+        Err(error) => tracing::error!("Failed to serialize Bedrock packet: {error}"),
     }
-
-    bedrock.try_enqueue_client_packet(&inventory_slot_packet(
-        container_id,
-        container_name,
-        slot,
-        stack,
-    ));
 }
 
-fn inventory_slot_packet(
+const CURSOR_SLOT: (u32, ContainerName, u32) = (WINDOW_ID_UI as u32, ContainerName::Cursor, 0);
+
+fn inventory_content_packet(
     container_id: u32,
     container_name: ContainerName,
-    slot: u32,
-    stack: &ItemStack,
-) -> CInventorySlot {
-    CInventorySlot {
+    slots: Vec<NetworkItemStackDescriptor>,
+) -> CInventoryContent {
+    CInventoryContent {
         container_id: VarUInt(container_id),
-        slot: VarUInt(slot),
-        full_container_name: Some(FullContainerName {
+        slots,
+        full_container_name: FullContainerName {
             container_name,
             dynamic_id: None,
-        }),
-        storage_item: None,
-        item: NetworkItemStackDescriptor::from(stack),
+        },
+        storage_item: NetworkItemStackDescriptor::default(),
     }
 }
 
 impl BedrockClient {
+    fn serialize_inventory_slot(
+        &self,
+        (container_id, container_name, slot): (u32, ContainerName, u32),
+        stack: &ItemStack,
+    ) -> std::io::Result<bytes::Bytes> {
+        // Like Geyser, the offhand is always sent as a whole one-item container.
+        if container_name == ContainerName::Offhand {
+            self.serialize_packet(&inventory_content_packet(
+                container_id,
+                container_name,
+                vec![NetworkItemStackDescriptor::from(stack)],
+            ))
+        } else {
+            self.serialize_packet(&CInventorySlot {
+                container_id: VarUInt(container_id),
+                slot: VarUInt(slot),
+                full_container_name: Some(FullContainerName {
+                    container_name,
+                    dynamic_id: None,
+                }),
+                storage_item: None,
+                item: NetworkItemStackDescriptor::from(stack),
+            })
+        }
+    }
+
     pub(crate) fn encode_player_inventory_slot(
         &self,
         slot: usize,
         stack: &ItemStack,
     ) -> Option<bytes::Bytes> {
-        let (container_id, container_name, slot) = bedrock_player_inventory_slot(slot)?;
-        self.serialize_packet(&inventory_slot_packet(
-            container_id,
-            container_name,
-            slot,
-            stack,
-        ))
-        .ok()
+        self.serialize_inventory_slot(bedrock_player_inventory_slot(slot)?, stack)
+            .ok()
     }
 }
 
 pub(crate) fn send_bedrock_cursor_stack(bedrock: &BedrockClient, stack: &ItemStack) {
-    send_bedrock_inventory_slot(bedrock, (124, ContainerName::Cursor, 0), stack);
+    send_bedrock_inventory_slot(bedrock, CURSOR_SLOT, stack);
 }
 
 pub mod actor_event;

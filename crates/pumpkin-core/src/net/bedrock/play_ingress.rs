@@ -115,7 +115,8 @@ impl BedrockClient {
     pub(super) fn enqueue_play_input(&self, player: &Arc<Player>, packet: RawPacket) {
         let ready = (Self::is_regional_reply(packet.id)
             || Self::can_prepare_movement(&packet)
-            || Self::can_prepare_attack(&packet))
+            || Self::can_prepare_attack(&packet)
+            || Self::can_route_inventory(&packet))
             && self.is_current_protocol();
         player.inbound_packets.push(packet);
         if ready {
@@ -384,6 +385,14 @@ impl BedrockClient {
             };
             // Keep the first world-owned packet ahead of everything behind it.
             if !Self::is_regional_reply(queued.packet.id) {
+                let owns_player = || owns(player.get_entity().chunk_pos.load());
+                if !was_waiting
+                    && self
+                        .try_regional_inventory_request(player, server, &queued.packet, owns_player)
+                        .is_some()
+                {
+                    continue;
+                }
                 if queued
                     .movement
                     .as_ref()
@@ -394,9 +403,7 @@ impl BedrockClient {
                 }
                 let movement = Self::can_prepare_movement(&queued.packet);
                 if movement
-                    && self.try_regional_teleport_input(player, &queued.packet.payload, || {
-                        owns(player.get_entity().chunk_pos.load())
-                    })
+                    && self.try_regional_teleport_input(player, &queued.packet.payload, owns_player)
                 {
                     continue;
                 }

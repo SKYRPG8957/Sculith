@@ -1,6 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::Ordering::Relaxed};
 
-use pumpkin_data::{item_stack::ItemStack, statistic::StatisticCategory};
+use pumpkin_data::{
+    data_component_impl::BlocksAttacksImpl, item_stack::ItemStack, statistic::StatisticCategory,
+};
 use pumpkin_inventory::{
     container_click::SLOT_INDEX_OUTSIDE,
     crafting::{
@@ -15,11 +17,9 @@ use pumpkin_inventory::{
     slot::Slot,
 };
 use pumpkin_protocol::{
+    RawPacket,
     bedrock::{
-        client::{
-            inventory_content::CInventoryContent, inventory_slot::CInventorySlot,
-            item_stack_response::CItemStackResponse,
-        },
+        client::{inventory_slot::CInventorySlot, item_stack_response::CItemStackResponse},
         network_item::{
             ContainerName, FullContainerName, NetworkItemDescriptor, NetworkItemStackDescriptor,
             potion_contents_from_bedrock,
@@ -29,11 +29,13 @@ use pumpkin_protocol::{
             inventory_transaction::{InventoryAction, InventoryActionSource, WINDOW_ID_INVENTORY},
             item_stack_request::{
                 ItemStackRequest, ItemStackRequestAction as Action,
-                ItemStackRequestSlotInfo as SlotInfo,
+                ItemStackRequestSlotInfo as SlotInfo, SItemStackRequest,
             },
         },
     },
     codec::{var_int::VarInt, var_uint::VarUInt},
+    packet::Packet,
+    serial::PacketRead,
 };
 use pumpkin_util::GameMode;
 
@@ -47,14 +49,20 @@ use crate::{
         },
         player::inventory_interact::InventoryClickEvent,
         player::player_drop_item::PlayerDropItemEvent,
+        server::packet::BedrockConnectionPacketSentEvent,
     },
-    server::StorageTransferError,
+    server::{Server, StorageTransferError},
     world::World,
 };
 
-use super::item_stack_request::{
-    SlotUpdate, build_stack_response, map_bedrock_container_slot, record_update,
+use super::{
+    CURSOR_SLOT, inventory_content_packet,
+    item_stack_request::{
+        SlotUpdate, build_stack_response, map_bedrock_container_slot, record_update,
+    },
 };
+
+const REGIONAL_INVENTORY_BYTES: usize = 256;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Target {
@@ -196,6 +204,143 @@ struct InventoryPlan {
 
 fn same_stack(a: &ItemStack, b: &ItemStack) -> bool {
     a.uid == b.uid && a.are_equal(b)
+}
+
+fn merge_stacks(source: &ItemStack, mut destination: ItemStack, count: u8) -> Option<ItemStack> {
+    if destination.is_empty() {
+        Some(source.copy_with_count(count))
+    } else if destination.are_items_and_components_equal(source) {
+        destination.item_count = destination.item_count.checked_add(count)?;
+        Some(destination)
+    } else {
+        None
+    }
+}
+
+fn stack_fits(slot: Option<&dyn Slot>, stack: &ItemStack) -> bool {
+    stack.is_empty()
+        || (stack.item_count <= stack.get_max_stack_size()
+            && slot.is_none_or(|slot| {
+                slot.can_insert(stack)
+                    && stack.item_count <= slot.get_max_item_count_for_stack(stack)
+            }))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PersonalSlot {
+    Storage(usize),
+    Cursor,
+}
+
+impl PersonalSlot {
+    fn from_request(slot: &SlotInfo) -> Option<Self> {
+        if slot.container_name.dynamic_id.is_some() {
+            return None;
+        }
+        let index = usize::from(slot.slot_id);
+        match slot.container_name.container_name {
+            ContainerName::Inventory | ContainerName::CombinedHotBarAndInventory
+                if (PlayerInventory::HOTBAR_SIZE..PlayerInventory::MAIN_SIZE).contains(&index) =>
+            {
+                Some(Self::Storage(index))
+            }
+            ContainerName::Cursor if index == 0 => Some(Self::Cursor),
+            _ => None,
+        }
+    }
+
+    const fn stack<'a>(self, main: &'a [ItemStack], cursor: &'a ItemStack) -> &'a ItemStack {
+        match self {
+            Self::Storage(index) => &main[index],
+            Self::Cursor => cursor,
+        }
+    }
+}
+
+const fn matches_stack_id(info: &SlotInfo, stack: &ItemStack) -> bool {
+    let actual_id = if stack.is_empty() { 0 } else { stack.uid.get() };
+    info.stack_id == actual_id
+}
+
+struct RegionalInventoryPlan {
+    changes: [(PersonalSlot, ItemStack); 2],
+    updates: Vec<SlotUpdate>,
+}
+
+impl RegionalInventoryPlan {
+    fn prepare(
+        request: &ItemStackRequest,
+        handler: &dyn ScreenHandler,
+        main: &[ItemStack],
+        cursor: &ItemStack,
+    ) -> Option<Self> {
+        let (from, to, count) = match request.actions.as_slice() {
+            [
+                Action::Take {
+                    source,
+                    destination,
+                    count,
+                }
+                | Action::Place {
+                    source,
+                    destination,
+                    count,
+                },
+            ] => (source, destination, Some(*count)),
+            [Action::Swap { slot1, slot2 }] => (slot1, slot2, None),
+            _ => return None,
+        };
+        let from_target = PersonalSlot::from_request(from)?;
+        let to_target = PersonalSlot::from_request(to)?;
+        if from_target == to_target {
+            return None;
+        }
+        let first = from_target.stack(main, cursor);
+        let second = to_target.stack(main, cursor);
+        if !matches_stack_id(from, first) || !matches_stack_id(to, second) {
+            return None;
+        }
+        let (first, second) = if let Some(count) = count {
+            if count == 0 || first.is_empty() || count > first.item_count {
+                return None;
+            }
+            let mut remainder = first.clone();
+            let merged = merge_stacks(first, second.clone(), count)?;
+            remainder.decrement(count);
+            (remainder, merged)
+        } else {
+            (second.clone(), first.clone())
+        };
+        let changes = [(from_target, first), (to_target, second)].map(|(slot, stack)| {
+            (
+                slot,
+                if stack.is_empty() {
+                    ItemStack::EMPTY.clone()
+                } else {
+                    stack
+                },
+            )
+        });
+        let mut updates = Vec::with_capacity(changes.len());
+        for ((target, stack), info) in changes.iter().zip([from, to]) {
+            let slot = match target {
+                PersonalSlot::Storage(index) => {
+                    Some(handler.get_behaviour().slots.get(*index)?.as_ref())
+                }
+                PersonalSlot::Cursor => None,
+            };
+            if !stack_fits(slot, stack) {
+                return None;
+            }
+            record_update(
+                &mut updates,
+                info.container_name.clone(),
+                info.slot_id,
+                stack,
+            );
+        }
+        Some(Self { changes, updates })
+    }
 }
 
 pub(super) fn matches_item_type_and_count(desc: &NetworkItemDescriptor, stack: &ItemStack) -> bool {
@@ -502,14 +647,7 @@ impl InventoryPlan {
             }
             return Ok(());
         }
-        let mut dest = self.get(to);
-        if dest.is_empty() {
-            dest = source_stack.copy_with_count(count);
-        } else if dest.are_items_and_components_equal(&source_stack) {
-            dest.item_count = dest.item_count.checked_add(count).ok_or(())?;
-        } else {
-            return Err(());
-        }
+        let dest = merge_stacks(&source_stack, self.get(to), count).ok_or(())?;
         self.can_put(to, &dest)?;
         self.can_take(player, from)?;
         self.cursor_placement |= from == Target::Cursor && matches!(to, Target::Slot(_));
@@ -570,17 +708,11 @@ impl InventoryPlan {
     }
 
     fn can_put(&self, target: Target, stack: &ItemStack) -> Result<(), ()> {
-        if !stack.is_empty() && stack.item_count > stack.get_max_stack_size() {
-            return Err(());
-        }
-        if let Target::Slot(index) = target
-            && !stack.is_empty()
-            && (!self.slots[index].can_insert(stack)
-                || stack.item_count > self.slots[index].get_max_item_count_for_stack(stack))
-        {
-            return Err(());
-        }
-        Ok(())
+        let slot = match target {
+            Target::Slot(index) => Some(self.slots[index].as_ref()),
+            _ => None,
+        };
+        stack_fits(slot, stack).then_some(()).ok_or(())
     }
 
     fn put(&mut self, target: Target, stack: ItemStack, info: &SlotInfo) {
@@ -831,6 +963,134 @@ impl InventoryPlan {
 }
 
 impl BedrockClient {
+    pub(in crate::net::bedrock) const fn can_route_inventory(packet: &RawPacket) -> bool {
+        packet.id == SItemStackRequest::PACKET_ID
+            && packet.payload.len() <= REGIONAL_INVENTORY_BYTES
+    }
+
+    fn inventory_request_can_run_on_region(&self, player: &Player, server: &Server) -> bool {
+        let plugins = &server.plugin_manager;
+        player.has_client_loaded()
+            && !player.living_entity.is_dead_or_dying()
+            && !server.stop_token.is_cancelled()
+            && !server.tick_rate_manager.is_frozen()
+            && !plugins.has_handlers::<InventoryClickEvent>()
+            && !plugins.has_handlers::<InventoryInteractEvent>()
+            && !plugins.has_handlers::<BedrockConnectionPacketSentEvent>()
+            && self.cursor_drag.try_lock().is_ok_and(|drag| drag.is_none())
+            // A full inventory refresh can toggle shield blocking. Keep that
+            // side effect on the world when it can change the player's state.
+            && !player.living_entity.entity.is_sneaking()
+            && player.living_entity.item_in_use.try_lock().is_ok_and(|active| {
+                active.as_ref().is_none_or(|stack| stack.get_data_component::<BlocksAttacksImpl>().is_none())
+            })
+    }
+
+    pub(in crate::net::bedrock) fn try_regional_inventory_request(
+        &self,
+        player: &Player,
+        server: &Server,
+        packet: &RawPacket,
+        owns_player: impl FnOnce() -> bool,
+    ) -> Option<()> {
+        if !Self::can_route_inventory(packet) {
+            return None;
+        }
+        let mut payload = packet.payload.as_ref();
+        let packet = SItemStackRequest::read(&mut payload).ok()?;
+        let [request] = packet.requests.as_slice() else {
+            return None;
+        };
+        let mode = player.gamemode.load();
+        if !payload.is_empty()
+            || !request.filter_strings.is_empty()
+            || mode == GameMode::Spectator
+            || !self.inventory_request_can_run_on_region(player, server)
+        {
+            return None;
+        }
+        let current = player.current_screen_handler.try_lock().ok()?;
+        if !std::ptr::addr_eq(
+            Arc::as_ptr(&current),
+            Arc::as_ptr(&player.player_screen_handler),
+        ) {
+            return None;
+        }
+        let mut handler = current.try_lock().ok()?;
+        if !handler.as_any().is::<PlayerScreenHandler>() || !handler.can_use(player) {
+            return None;
+        }
+        // Player checkpoints take these locks in the same order, so they see
+        // the stacks before the move or after it, including the cursor.
+        let cursor = handler.get_behaviour().cursor_stack.clone();
+        let mut cursor = cursor.try_lock().ok()?;
+        let mut main = player.inventory.main_inventory.try_write().ok()?;
+        let equipment = player.inventory.entity_equipment.try_lock().ok()?;
+        let RegionalInventoryPlan { changes, updates } =
+            RegionalInventoryPlan::prepare(request, &*handler, &main[..], &cursor)?;
+        let after = |target| {
+            changes
+                .iter()
+                .find(|(changed, _)| *changed == target)
+                .map_or_else(|| target.stack(&main[..], &cursor), |(_, stack)| stack)
+        };
+        let response = self
+            .serialize_packet(&CItemStackResponse {
+                responses: vec![build_stack_response(request.request_id, 0, updates)],
+            })
+            .ok()?;
+        let content = self
+            .serialize_packet(&inventory_content_packet(
+                WINDOW_ID_INVENTORY as u32,
+                ContainerName::Inventory,
+                (0..PlayerInventory::MAIN_SIZE)
+                    .map(|index| {
+                        NetworkItemStackDescriptor::from(after(PersonalSlot::Storage(index)))
+                    })
+                    .collect(),
+            ))
+            .ok()?;
+        let cursor_packet = self
+            .serialize_inventory_slot(CURSOR_SLOT, after(PersonalSlot::Cursor))
+            .ok()?;
+        let equipment_packets = (PlayerInventory::MAIN_SIZE..=PlayerInventory::OFF_HAND_SLOT)
+            .map(|index| {
+                let stack = player
+                    .inventory
+                    .equipment_slots
+                    .get(&index)
+                    .map_or_else(|| ItemStack::EMPTY.clone(), |slot| equipment.get(slot));
+                self.encode_player_inventory_slot(index, &stack)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if player.gamemode.load() != mode || !player.has_stable_world_membership() || !owns_player()
+        {
+            return None;
+        }
+        for (target, stack) in changes {
+            match target {
+                PersonalSlot::Storage(index) => {
+                    if !same_stack(&main[index], &stack) {
+                        main[index] = stack.clone();
+                        handler.set_received_stack(index, stack);
+                        player.inventory_changed.store(true, Relaxed);
+                    }
+                }
+                PersonalSlot::Cursor => *cursor = stack,
+            }
+        }
+        for packet in [response, content, cursor_packet]
+            .into_iter()
+            .chain(equipment_packets)
+        {
+            if !self.try_enqueue_packet_data_unobserved(packet) {
+                break;
+            }
+        }
+        tracing::trace!(player = %player.gameprofile.name, request_id = request.request_id.0, "Completed Bedrock inventory request on its region");
+        Some(())
+    }
+
     pub(in crate::net::bedrock) fn handle_cursor_drag(
         &self,
         player: &Player,
@@ -1052,30 +1312,83 @@ impl BedrockClient {
                     .map(|target| (target, player.inventory.get_slot(index)))
             })
             .collect();
-        self.try_enqueue_client_packet(&CInventoryContent {
-            container_id: VarUInt(0),
+        self.try_enqueue_client_packet(&inventory_content_packet(
+            WINDOW_ID_INVENTORY as u32,
+            ContainerName::Inventory,
             slots,
-            full_container_name: FullContainerName {
-                container_name: ContainerName::Inventory,
-                dynamic_id: None,
-            },
-            storage_item: NetworkItemStackDescriptor::default(),
-        });
+        ));
         if let Some((window, slots)) = storage {
-            self.try_enqueue_client_packet(&CInventoryContent {
-                container_id: VarUInt(u32::from(window)),
+            self.try_enqueue_client_packet(&inventory_content_packet(
+                u32::from(window),
+                ContainerName::LevelEntity,
                 slots,
-                full_container_name: FullContainerName {
-                    container_name: ContainerName::LevelEntity,
-                    dynamic_id: None,
-                },
-                storage_item: NetworkItemStackDescriptor::default(),
-            });
+            ));
         }
         super::send_bedrock_cursor_stack(self, &cursor);
         for (target, stack) in equipment {
             super::send_bedrock_inventory_slot(self, target, &stack);
         }
         player.update_bedrock_shield_sneaking();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_data::item::Item;
+    use pumpkin_inventory::{build_equipment_slots, entity_equipment::EntityEquipment};
+
+    #[test]
+    fn regional_inventory_move_checks_both_slot_ids_before_writing() {
+        let inventory = Arc::new(PlayerInventory::new(
+            Arc::new(Mutex::new(EntityEquipment::new())),
+            Arc::new(build_equipment_slots()),
+        ));
+        let handler = PlayerScreenHandler::new(&inventory, None, 0, None);
+        let mut main = inventory.main_inventory.write().unwrap();
+        main[10] = ItemStack::new(11, &Item::DIAMOND);
+        let cursor = ItemStack::new(5, &Item::DIAMOND);
+        let action = |count, source_id, cursor_id| Action::Take {
+            count,
+            source: SlotInfo {
+                container_name: FullContainerName {
+                    container_name: ContainerName::CombinedHotBarAndInventory,
+                    dynamic_id: None,
+                },
+                slot_id: 10,
+                stack_id: source_id,
+            },
+            destination: SlotInfo {
+                container_name: FullContainerName {
+                    container_name: ContainerName::Cursor,
+                    dynamic_id: None,
+                },
+                slot_id: 0,
+                stack_id: cursor_id,
+            },
+        };
+        let source = main[10].uid.get();
+        let target = cursor.uid.get();
+        let plan = |action| {
+            RegionalInventoryPlan::prepare(
+                &ItemStackRequest {
+                    request_id: VarInt(-7),
+                    actions: vec![action],
+                    filter_strings: Vec::new(),
+                    filter_cause: 0,
+                },
+                &handler,
+                &main[..],
+                &cursor,
+            )
+        };
+        let valid = plan(action(3, source, target)).unwrap();
+        let [(_, left), (_, held)] = valid.changes;
+        assert_eq!((left.item_count, held.item_count), (8, 8));
+        assert_eq!((left.uid.get(), held.uid.get()), (source, target));
+        assert!(plan(action(3, 0, target)).is_none());
+        assert!(plan(action(3, source, -7)).is_none());
+        assert!(plan(action(12, source, target)).is_none());
+        assert_eq!((main[10].item_count, cursor.item_count), (11, 5));
     }
 }

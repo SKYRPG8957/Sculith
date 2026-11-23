@@ -90,6 +90,14 @@ list of requests for the connection and complete each receipt once. Hotbar,
 equipment, open screens, observed packets and coordinated operation use the
 world path. Per-tick inventory component updates also check the original stack
 before replacing it.
+On its personal inventory screen, a current Bedrock client can also finish a
+single `Take`, `Place` or `Swap` request on its region. Both slots must be in
+ordinary storage or the cursor, and both stack IDs must match the live slots.
+The region prepares the reply and inventory refresh, checks that it still owns
+the player, and writes both stacks under the same locks a player save uses.
+The ordered input queue keeps later packets behind the request. Requests with
+prediction references, other screens or slot types, drag state, or inventory
+and packet observers use the world dispatcher.
 Transfers reserve the source and destination before changing a player's membership.
 Java and Bedrock logins prepare the player before queuing registration on the target
 world. Registration checks the live connection and membership while holding that owner.
