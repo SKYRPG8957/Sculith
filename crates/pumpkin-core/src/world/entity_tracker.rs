@@ -1200,6 +1200,10 @@ impl TrackedEntity {
         if (section.x, section.z) != (chunk.x, chunk.y) {
             return None;
         }
+        self.try_regional_pairings()
+    }
+
+    fn try_regional_pairings(&self) -> Option<RwLockReadGuard<'_, Viewers>> {
         // Keep each existing pairing alive until its frame is queued. Spawns run
         // outside this lock because their callbacks can themselves change viewers.
         let viewers = self.seen_by.try_read().ok()?;
@@ -1774,7 +1778,9 @@ impl EntityTracker {
             return None;
         }
         let chunk = entity.chunk_pos.load();
-        let viewers = tracked.try_regional_move_viewers(chunk)?;
+        // Player steps use absolute positions. An existing pairing can receive
+        // them before the world refreshes the tracked section, once terrain is ready.
+        let viewers = tracked.try_regional_pairings()?;
 
         let mut received = FxHashSet::default();
         let mut java_packet = None;
@@ -1785,32 +1791,31 @@ impl EntityTracker {
             };
             let queued = match viewer.client.as_ref() {
                 ClientPlatform::Java(client) if client.version.load() == CURRENT_MC_VERSION => {
-                    let Some((position, head)) = java_packet
+                    let Some(packets) = java_packet
                         .get_or_insert_with(|| {
-                            let position = JavaClient::serialize_packet_for_version(
-                                movement,
-                                CURRENT_MC_VERSION,
-                            )
-                            .ok()?;
-                            let head = head
-                                .map(|head| {
+                            let mut packets = vec![
+                                JavaClient::serialize_packet_for_version(
+                                    movement,
+                                    CURRENT_MC_VERSION,
+                                )
+                                .ok()?,
+                            ];
+                            if let Some(head) = head {
+                                packets.push(
                                     JavaClient::serialize_packet_for_version(
                                         head,
                                         CURRENT_MC_VERSION,
                                     )
-                                })
-                                .transpose()
-                                .ok()?;
-                            Some((position, head))
+                                    .ok()?,
+                                );
+                            }
+                            Some(packets)
                         })
                         .as_ref()
                     else {
                         continue;
                     };
-                    let queued = client.try_enqueue_packet_data_unobserved(position.clone())
-                        && head.as_ref().is_none_or(|head| {
-                            client.try_enqueue_packet_data_unobserved(head.clone())
-                        });
+                    let queued = client.try_enqueue_current_packet_batch(packets);
                     if queued {
                         client.flush_channel();
                     }

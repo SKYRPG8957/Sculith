@@ -5,6 +5,7 @@ use pumpkin_protocol::{
     bedrock::client::network_chunk_publisher_update::CNetworkChunkPublisherUpdate,
     java::client::play::CCenterChunk,
 };
+use pumpkin_world::chunk_system::ChunkLoading;
 use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 
 use crate::{
@@ -83,7 +84,6 @@ fn desired_chunk_tickets(
     view: Cylindrical,
     actual: Vector2<i32>,
 ) -> HeldChunkTickets {
-    use pumpkin_world::chunk_system::ChunkLoading;
     let generate = !player.is_spectator()
         || world
             .level_info
@@ -126,6 +126,14 @@ fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actua
         .chunk_loading
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    replace_chunk_tickets(&mut loading, &mut held, next);
+}
+
+fn replace_chunk_tickets(
+    loading: &mut ChunkLoading,
+    held: &mut HeldChunkTickets,
+    next: HeldChunkTickets,
+) {
     for (before, after) in [(held.view, next.view), (held.simulation, next.simulation)] {
         if before != after {
             if let Some((pos, level)) = after {
@@ -140,19 +148,42 @@ fn update_chunk_tickets(player: &Player, world: &World, view: Cylindrical, actua
     loading.send_change();
 }
 
-/// Marks a Bedrock move for actor re-pairing if terrain interests already describe the new pose.
-pub(crate) fn try_keep_bedrock_view(player: &Player, world: &World) -> Option<()> {
+/// Keeps a published view and moves its existing simulation ticket to a ready chunk.
+pub(crate) fn try_keep_bedrock_view(
+    player: &Player,
+    world: &World,
+    origin: Vector2<i32>,
+) -> Option<()> {
     let registered = player.registered_chunk_view.try_lock().ok()?;
-    let held = player.held_chunk_tickets.try_lock().ok()?;
+    let mut held = player.held_chunk_tickets.try_lock().ok()?;
     let view = player.watched_section.load();
     let actual = player.get_entity().chunk_pos.load();
-    if *registered != Some(view)
-        || !bedrock_view_is_current(player, view)
-        || *held != desired_chunk_tickets(player, world, view, actual)
+    if *registered != Some(view) || !bedrock_view_is_current(player, view) {
+        return None;
+    }
+    let next = desired_chunk_tickets(player, world, view, actual);
+    if *held == next {
+        return world.entity_tracker.try_mark_player_position(player);
+    }
+    let (_, level) = next.simulation?;
+    if held.view != next.view
+        || held.simulation != Some((origin, level))
+        || origin == actual
+        || !player
+            .client
+            .bedrock()
+            .is_some_and(|client| client.chunk_view_published())
     {
         return None;
     }
-    world.entity_tracker.try_mark_player_position(player)
+    let sender = player.chunk_sender.try_lock().ok()?;
+    if !view.is_within_distance(actual.x, actual.y) || !sender.is_chunk_ready(&actual) {
+        return None;
+    }
+    let mut loading = world.level.chunk_loading.try_lock().ok()?;
+    world.entity_tracker.try_mark_player_position(player)?;
+    replace_chunk_tickets(&mut loading, &mut held, next);
+    Some(())
 }
 
 pub fn update_position(player: &Arc<Player>) {

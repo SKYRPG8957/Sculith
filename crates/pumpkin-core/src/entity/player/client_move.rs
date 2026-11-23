@@ -617,7 +617,7 @@ impl Player {
             });
         }
         let (received, all_viewers_queued) = if (position_changed || pose.stationary_settled)
-            && entity.chunk_pos.load() == chunk
+            && (entity.chunk_pos.load() == chunk || pose.grounded_move)
             && entity.pos.load() == to
             && self.can_simulate_in(&world)
             && self.teleport_id_count.load(Ordering::Relaxed) == teleport
@@ -716,7 +716,7 @@ impl Player {
         {
             return None;
         }
-        chunker::try_keep_bedrock_view(self, world)?;
+        chunker::try_keep_bedrock_view(self, world, BlockPos::floored_v(from).chunk_position())?;
 
         let cm = move_distance_cm(from, to);
         if cm > 0 {
@@ -795,15 +795,27 @@ impl Player {
     fn reconcile_regional_move(&self, world: &World, committed: &CommittedPlayerMove) {
         let entity = self.get_entity();
         let pos = entity.pos.load();
-        if entity.is_removed()
-            || entity.chunk_pos.load() != BlockPos::floored_v(committed.to).chunk_position()
-            || pos == committed.to && !self.look_changed(committed.movement)
-        {
+        if entity.is_removed() || pos == committed.to && !self.look_changed(committed.movement) {
             return;
         }
-        // A server move within the same paired chunk can supersede an already sent pose.
+        // A teleport can supersede an already sent pose. Across chunks, only
+        // correct an existing pairing once its new terrain has been queued.
+        let chunk = entity.chunk_pos.load();
+        let same_chunk = chunk == BlockPos::floored_v(committed.to).chunk_position();
         let on_ground = entity.on_ground.load(Ordering::Relaxed);
-        let already_received = |viewer: &Self| committed.received.contains(&viewer.entity_id());
+        let already_received = |viewer: &Self| {
+            committed.received.contains(&viewer.entity_id())
+                && (same_chunk
+                    || viewer.can_simulate_in(world)
+                        && viewer
+                            .watched_section
+                            .load()
+                            .is_within_distance(chunk.x, chunk.y)
+                        && viewer
+                            .chunk_sender
+                            .try_lock()
+                            .is_ok_and(|sender| sender.is_chunk_ready(&chunk)))
+        };
         world.send_to_tracking_players_filtered_editioned(
             entity,
             &self.absolute_position_packet(pos, on_ground),
@@ -879,8 +891,7 @@ impl Player {
             }
             first.0.y = floor;
         }
-        let can_finish_grounded_move =
-            floor.is_some() && from.y == to.y && destination.chunk_position() == origin;
+        let can_finish_grounded_move = floor.is_some() && from.y == to.y;
         // Reuse the normal position fields without reacquiring the pinned chunk or index.
         world
             .level

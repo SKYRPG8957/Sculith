@@ -1013,6 +1013,104 @@ mod tests {
         assert!(!entity.is_sprinting());
     }
 
+    fn verify_grounded_chunk_crossings(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        origin: Vector2<i32>,
+    ) {
+        use crate::entity::player::statistics::CustomStatistic;
+        use pumpkin_world::chunk::ChunkData;
+
+        let destination = Vector2::new(origin.x + 1, origin.y);
+        world
+            .level
+            .loaded_chunks
+            .entry(destination)
+            .or_insert_with(|| ChunkData::empty_sync(destination.x, destination.y));
+        world.forced_chunks.lock().unwrap().insert(destination);
+        world.update_active_chunks();
+        world.tick_chunks();
+        assert_eq!(
+            world.region_layout.load().owner(origin),
+            world.region_layout.load().owner(destination)
+        );
+        for x in 14..=17 {
+            for z in 7..=9 {
+                world.set_block_state(
+                    &BlockPos::new(x, 99, z),
+                    Block::STONE.default_state.id,
+                    BlockFlags::FORCE_STATE,
+                );
+            }
+        }
+        let entity = player.get_entity();
+        entity.set_pos(Vector3::new(15.75, 100.0, 8.0));
+        let position = player.bedrock_pos().to_f32_lossy();
+        entity.set_pos(player.feet_from_bedrock_pos(position.to_f64()));
+        entity.next_step.store(10.0);
+        let mut config = (*player.config.load_full()).clone();
+        config.view_distance = std::num::NonZeroU8::new(4).unwrap();
+        player.config.store(Arc::new(config));
+        world
+            .entity_tracker
+            .add_entity(&(player.clone() as Arc<dyn EntityBase>), world);
+        crate::world::chunker::update_position(player);
+        let view = player.watched_section.load();
+        let simulation_chunk = || {
+            player
+                .held_chunk_tickets
+                .lock()
+                .unwrap()
+                .simulation
+                .unwrap()
+                .0
+        };
+        assert_eq!(simulation_chunk(), origin);
+        player
+            .chunk_sender
+            .lock()
+            .unwrap()
+            .mark_sent_out_of_band(destination);
+
+        let enqueue = |x, tick| {
+            queue_auth_input(
+                client,
+                player,
+                Vector3::new(x, position.y, position.z),
+                tick,
+                entity.yaw.load(),
+                &[InputData::VerticalCollision],
+            );
+        };
+        let at = Instant::now() + TICK_PERIOD * 45;
+        let start = client.input_tick.load(Relaxed) + 1;
+        let distance = || player.get_custom_stat(CustomStatistic::WalkOneCm);
+        let before = distance();
+        enqueue(16.125, start);
+        enqueue(16.375, start + 1);
+        tick_region(world, origin, at);
+        assert_eq!(entity.pos.load().x, 16.375);
+        assert_eq!(player.watched_section.load(), view);
+        assert_eq!(simulation_chunk(), destination);
+        assert_eq!(distance() - before, 62);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        // When the client still needs the destination chunk, the world keeps
+        // finalizing the move and shifting its terrain interests in FIFO.
+        assert!(!player.chunk_sender.lock().unwrap().is_chunk_ready(&origin));
+        enqueue(15.875, start + 2);
+        tick_region(world, destination, at + TICK_PERIOD);
+        assert_eq!(entity.pos.load().x, 15.875);
+        assert_eq!(simulation_chunk(), destination);
+        assert_eq!(distance() - before, 62);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(simulation_chunk(), origin);
+        assert_eq!(distance() - before, 112);
+        world.entity_tracker.remove_entity(player.as_ref(), world);
+    }
+
     #[tokio::test]
     #[expect(
         clippy::too_many_lines,
@@ -1141,6 +1239,7 @@ mod tests {
         verify_stationary_turns(&world, &player, &client, west);
         verify_chunk_delivery_clock(&client);
         verify_grounded_walks(&world, &player, &client, west);
+        verify_grounded_chunk_crossings(&world, &player, &client, west);
         verify_teleport_acknowledgement(&world, &player, &client, west);
 
         let observer = Arc::new(HealthPacketObserver::default());

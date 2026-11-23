@@ -578,7 +578,7 @@ impl JavaClient {
         queued
     }
 
-    /// Reserve the whole current-version spawn and its metadata before queuing either.
+    /// Reserve bytes for all current-version packets before queuing any of them.
     pub(crate) fn try_enqueue_current_packet_batch(&self, packets: &[Bytes]) -> bool {
         if self.close_token.is_cancelled() || self.version.load() != CURRENT_MC_VERSION {
             return false;
