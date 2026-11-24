@@ -366,8 +366,9 @@ With an idle input queue and personal inventory, the region can also finish
 simple food. It validates the use deadline and held stack, applies the item
 count and hunger together for saves, and queues the owner HUD and use flags
 for both editions. Consuming the last item clears the hotbar slot and sends
-the empty hand to Java and Bedrock viewers. A change of owner or an unavailable
-game-event index keeps completion queued for another region step. The world
+the empty hand to Java and Bedrock viewers. The region can refresh a stale
+game-event index independently. A busy index or change of owner keeps
+completion queued for another region step. The world
 handles foods with completion effects, depletion of a stack with equipment
 attributes, matching advancement criteria, and observed game events or packets.
 

@@ -337,7 +337,7 @@ impl World {
                         GameEvent::ItemInteractFinish.notification_radius(),
                     );
                     self.entity_index
-                        .try_has_game_event_listener(&self.entities.load_full(), &area)
+                        .try_has_game_event_listener(&self.entities, &area)
                         .map(|has_listener| !has_listener)
                 },
                 |metadata, java, empty_main_hand| {

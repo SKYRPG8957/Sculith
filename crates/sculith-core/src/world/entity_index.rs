@@ -425,19 +425,19 @@ impl EntityIndex {
 
     pub(super) fn try_has_game_event_listener(
         &self,
-        registry: &Arc<Registry>,
+        source: &ArcSwap<Registry>,
         area: &BoundingBox,
     ) -> Option<bool> {
-        if registry.is_empty() {
+        if source.load().is_empty() {
             return Some(false);
         }
-        let index = self.inner.try_read().ok()?;
-        index.matches(registry).then(|| {
-            index
-                .listeners
-                .iter()
-                .any(|&slot| index.intersects(slot, area))
-        })
+        let (registry, index) =
+            Self::try_read_current(&self.inner, source, Index::matches, Index::rebuild)?;
+        let has_listener = index
+            .listeners
+            .iter()
+            .any(|&slot| index.intersects(slot, area));
+        Arc::ptr_eq(&registry, &source.load()).then_some(has_listener)
     }
 
     /// Mobs with game event listeners whose body overlaps `area`, in list order.
@@ -677,8 +677,11 @@ impl EntityIndex {
 mod tests {
     use super::*;
     use crate::entity::{
-        Entity, ai::test_support::world, interaction::InteractionEntity, item::ItemEntity,
-        passive::cow::CowEntity,
+        Entity,
+        ai::test_support::world,
+        interaction::InteractionEntity,
+        item::ItemEntity,
+        passive::{allay::AllayEntity, cow::CowEntity},
     };
     use crate::server::TickDeadline;
     use pumpkin_data::{entity::EntityType, item::Item, item_stack::ItemStack};
@@ -732,6 +735,36 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert!(index.cached_mob_slots(&current).is_none());
         drop(writer);
+        world.level.shutdown().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn game_event_query_refreshes_the_listener_index_when_available()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let position = Vector3::new(0.5, 64.0, 0.5);
+        let allay = AllayEntity::new(Entity::new(world.clone(), position, &EntityType::ALLAY));
+        let cow = CowEntity::new(Entity::new(world.clone(), position, &EntityType::COW));
+        let area = allay.get_entity().bounding_box.load();
+        let index = &world.entity_index;
+        let query = || index.try_has_game_event_listener(&world.entities, &area);
+
+        world.entities.store(Arc::new(vec![cow.clone()]));
+        assert_eq!(query(), Some(false));
+
+        let reader = index
+            .inner
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        world.entities.store(Arc::new(vec![cow.clone(), allay]));
+        assert_eq!(query(), None);
+        drop(reader);
+        assert_eq!(query(), Some(true));
+
+        world.entities.store(Arc::new(vec![cow]));
+        assert_eq!(query(), Some(false));
         world.level.shutdown().await;
         Ok(())
     }

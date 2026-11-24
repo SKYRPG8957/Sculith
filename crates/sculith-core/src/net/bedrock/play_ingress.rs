@@ -585,7 +585,7 @@ mod tests {
         );
     }
 
-    fn verify_food_finish_retries_after_handoff(
+    fn verify_food_finish_refreshes_index_after_handoff(
         world: &Arc<World>,
         server: &Server,
         player: &Arc<Player>,
@@ -639,17 +639,12 @@ mod tests {
             position(destination),
             &EntityType::INTERACTION,
         ));
-        let marker_id = marker.get_entity().entity_id;
         let due = first + TICK_PERIOD;
         tick_region(world, origin, due);
         world.entities.store(Arc::new(vec![marker]));
         tick_region(world, destination, due);
-        assert_eq!(food(), (10, 1));
-
-        assert!(world.get_entity_by_id(marker_id).is_some());
-        tick_region(world, destination, due + TICK_PERIOD);
         assert_eq!(food(), (14, 0));
-        tick_region(world, destination, due + TICK_PERIOD * 2);
+        tick_region(world, destination, due + TICK_PERIOD);
         assert_eq!(food(), (14, 0));
 
         world.entities.store(previous);
@@ -1620,7 +1615,9 @@ mod tests {
         assert_eq!(pending_with_lock, 1);
         advance(east);
         check();
-        verify_food_finish_retries_after_handoff(&world, &server, &player, &client, west, east);
+        verify_food_finish_refreshes_index_after_handoff(
+            &world, &server, &player, &client, west, east,
+        );
         verify_pickup_timer_handoff(&world, &player, east, west);
         verify_item_cooldown_handoff(&world, &server, &player, &client, west, east);
         verify_mining_clock(&world, &server, &player, &client, west).await;
