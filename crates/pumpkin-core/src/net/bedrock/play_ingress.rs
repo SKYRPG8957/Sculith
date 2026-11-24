@@ -478,7 +478,7 @@ mod tests {
     use pumpkin_data::{Block, effect::StatusEffect, potion::Effect};
     use pumpkin_protocol::{
         bedrock::{
-            client::{CMovePlayer, update_attributes::CUpdateAttributes},
+            client::{CMobEffect, CMovePlayer, update_attributes::CUpdateAttributes},
             network_item::NetworkItemDescriptor,
             server::player_auth_input::InputData,
         },
@@ -655,7 +655,7 @@ mod tests {
                 duration,
                 amplifier: 0,
                 ambient: false,
-                show_particles: false,
+                show_particles: effect_type == &StatusEffect::NIGHT_VISION,
                 show_icon: true,
                 blend: false,
             });
@@ -690,10 +690,35 @@ mod tests {
         );
         assert_eq!(duration(night_vision), Some(1));
         tick_region(world, east, next + TICK_PERIOD);
-        tick_region(world, east, next + TICK_PERIOD * 2);
         assert_eq!(duration(night_vision), Some(0));
-        player.tick_with_deadline(server, None);
+        let expires = next + TICK_PERIOD * 2;
+        tick_region(world, east, expires);
         assert_eq!(duration(night_vision), None);
+        tick_region(world, east, expires);
+        player.tick_with_deadline(
+            server,
+            Some(TickDeadline {
+                at: expires,
+                period: TICK_PERIOD,
+            }),
+        );
+        let client = player.client.bedrock().unwrap();
+        let mut outgoing = client.outgoing_packet_queue_recv.try_lock().unwrap();
+        let receiver = outgoing.as_mut().unwrap();
+        let removals = std::iter::from_fn(|| receiver.try_recv().ok())
+            .filter(|outgoing| {
+                let (id, payload) = super::super::split_raw_packet(&outgoing.data).unwrap();
+                if i32::from(id) != CMobEffect::PACKET_ID {
+                    return false;
+                }
+                let body = &mut payload.as_ref();
+                VarULong::read(body).unwrap().0 == player.entity_id() as u64
+                    && u8::read(body).unwrap() == CMobEffect::EVENT_REMOVE
+                    && VarInt::read(body).unwrap().0 == 16
+            })
+            .count();
+        assert_eq!(removals, 1);
+        drop(outgoing);
 
         let poison = &StatusEffect::POISON;
         add(night_vision, 3);

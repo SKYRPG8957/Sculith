@@ -394,10 +394,10 @@ impl World {
                             && owns(chunk)
                     },
                     |expired, data| {
-                        self.entity_tracker.try_publish_regional_mob_effect_changes(
+                        self.entity_tracker.try_publish_regional_effect_changes(
                             self,
                             server,
-                            base,
+                            actor.as_ref(),
                             expired,
                             data,
                             &mut java_recipients,
@@ -406,7 +406,7 @@ impl World {
                 );
             }
         }
-        EntityTracker::flush_regional_drop_packets(java_recipients);
+        EntityTracker::flush_regional_java_packets(java_recipients);
         drop(native);
         if !expired.is_empty() {
             self.expire_regional_drops(server, owner, &expired, owns);

@@ -355,12 +355,15 @@ after a regional change. Peaceful regeneration, healing or starvation in
 progress, packet observers and coordinated ticks use the world processing path.
 
 Finite status effects on current-protocol Bedrock players can count down on
-the player's region while they have no periodic effects or removals to process.
+the player's region while they have no periodic effects to apply.
 The active effects lock protects the remaining durations and the shared
-deadline stamp. Pending work and the stamp follow the connection across
-region changes. The world handles periodic effects, expiration and their
-attribute and packet updates. Coordinated ticks advance the same duration
-state, which also supplies player saves.
+deadline stamp. Pending work and the stamp follow the connection across region
+changes. The region can expire passive effects with no attribute or actor flag
+changes. It sends the removal to the player and existing viewers, including
+updated particle metadata for Java viewers. Effect changes from the world and
+the regional removal use the same edit guard. The world handles periodic
+effects, attribute and flag changes, translated connections and packet hooks.
+Coordinated ticks advance the same duration state, which also supplies saves.
 
 The same passive countdown can run on the region that owns a living mob.
 Its assignment changes with its chunk, and its remaining durations and deadline

@@ -5,11 +5,12 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     entity::{Entity, EntityBase, player::Player},
+    net::ClientPlatform,
     plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
     server::{Server, TickDeadline},
 };
 
-use super::{RegionChunks, RegionLayout, World};
+use super::{RegionChunks, RegionLayout, World, entity_tracker::EntityTracker};
 
 bitflags::bitflags! {
     #[derive(Clone, Copy)]
@@ -89,6 +90,7 @@ impl RegionalInput {
         let Some(_native) = server.plugin_manager.try_without_native_code() else {
             return;
         };
+        let mut java_recipients = FxHashMap::default();
         for (id, (player, work)) in ready {
             let Some(player) = player.upgrade() else {
                 continue;
@@ -139,14 +141,13 @@ impl RegionalInput {
             }
             if work.contains(RegionalWork::STATUS_EFFECTS)
                 && client.is_current_protocol()
-                && player.has_client_loaded()
-                && player.has_stable_world_membership()
-                && !server.tick_rate_manager.is_frozen()
-                && world.regional_actors.try_read().map_or(true, |_layout| {
-                    player
-                        .living_entity
-                        .advance_regional_effects(deadline, owns_player, |_, _| None)
-                })
+                && world.advance_regional_player_effects(
+                    server,
+                    &player,
+                    deadline,
+                    owns_player,
+                    &mut java_recipients,
+                )
             {
                 pending |= RegionalWork::STATUS_EFFECTS;
             }
@@ -178,6 +179,7 @@ impl RegionalInput {
                 player.world().offer_regional_work(id, &player, pending);
             }
         }
+        EntityTracker::flush_regional_java_packets(java_recipients);
     }
 }
 
@@ -196,6 +198,41 @@ impl RegionLayout {
 }
 
 impl World {
+    fn advance_regional_player_effects(
+        &self,
+        server: &Server,
+        player: &Player,
+        deadline: TickDeadline,
+        owns_player: impl Fn() -> bool,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) -> bool {
+        if !player.has_client_loaded()
+            || !player.has_stable_world_membership()
+            || server.tick_rate_manager.is_frozen()
+        {
+            return false;
+        }
+        let Ok(_layout) = self.regional_actors.try_read() else {
+            return true;
+        };
+        let owns_effects = || owns_player() && player.has_stable_world_membership();
+        player
+            .living_entity
+            .advance_regional_effects(deadline, owns_effects, |expired, data| {
+                if !owns_effects() {
+                    return None;
+                }
+                self.entity_tracker.try_publish_regional_effect_changes(
+                    self,
+                    server,
+                    player,
+                    expired,
+                    data,
+                    java_recipients,
+                )
+            })
+    }
+
     pub(super) fn resume_regional_player_work(
         &self,
         previous: &RegionLayout,

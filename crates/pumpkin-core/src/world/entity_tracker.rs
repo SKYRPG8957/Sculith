@@ -1928,14 +1928,14 @@ impl EntityTracker {
             drop(entry);
             tracked.try_publish_drop_expiry(world, &mut java_recipients);
         }
-        Self::flush_regional_drop_packets(java_recipients);
+        Self::flush_regional_java_packets(java_recipients);
     }
 
-    pub(super) fn try_publish_regional_mob_effect_changes(
+    pub(super) fn try_publish_regional_effect_changes(
         &self,
         world: &World,
         server: &Server,
-        entity: &Entity,
+        subject: &dyn EntityBase,
         expired: &[&'static StatusEffect],
         data: RegionalMobEffectData,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
@@ -1951,18 +1951,24 @@ impl EntityTracker {
         {
             return None;
         }
+        let entity = subject.get_entity();
         let tracked = match self.entity_map.try_get(&entity.entity_id) {
-            TryResult::Present(entry) => entry.value().clone(),
-            TryResult::Absent => return Some(MobEffectDelivery::DELIVERED),
+            TryResult::Present(entry) => Some(entry.value().clone()),
+            TryResult::Absent => None,
             TryResult::Locked => return None,
         };
-        if !std::ptr::eq(tracked.entity.get_entity(), entity) {
-            return None;
-        }
-        let viewers = tracked.try_regional_pairings()?;
-        let eligible =
-            |player: &&Arc<Player>| !player.client.closed() && player.can_simulate_in(world);
-        let recipients = viewers.players.values().filter(eligible);
+        let viewers = match &tracked {
+            Some(tracked) if std::ptr::eq(tracked.entity.get_entity(), entity) => {
+                Some(tracked.try_regional_pairings()?)
+            }
+            Some(_) => return None,
+            None => None,
+        };
+        let recipients = viewers
+            .iter()
+            .flat_map(|viewers| viewers.players.values().map(Arc::as_ref))
+            .chain(subject.get_player())
+            .filter(|player| player.can_simulate_in(world));
         if recipients
             .clone()
             .any(|player| match player.client.as_ref() {
@@ -1977,7 +1983,7 @@ impl EntityTracker {
         }
 
         let (java_packets, bedrock_packets) =
-            Self::encode_regional_mob_effect_changes(entity, expired, data)?;
+            Self::encode_regional_effect_changes(entity, expired, data)?;
 
         // The caller still holds the active effects and edit guards. Pairing
         // is pinned until the updates have been queued for the same viewers.
@@ -2002,7 +2008,7 @@ impl EntityTracker {
         Some(delivery)
     }
 
-    fn encode_regional_mob_effect_changes(
+    fn encode_regional_effect_changes(
         entity: &Entity,
         expired: &[&'static StatusEffect],
         data: RegionalMobEffectData,
@@ -2013,8 +2019,7 @@ impl EntityTracker {
             let (java, mut bedrock) = World::mob_effect_removal_packets(entity.entity_id, effect);
             let java = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?;
             java_packets.push(java);
-            if let Some(id) = BedrockEffectParticles::viewer_effect_id(effect) {
-                bedrock.effect_id = id.into();
+            if World::route_current_mob_effect(entity, effect, &mut bedrock) {
                 let mut bytes = Vec::new();
                 BedrockClient::write_raw_packet(&bedrock, &mut bytes).ok()?;
                 bedrock_packets.push(Bytes::from(bytes));
@@ -2140,7 +2145,7 @@ impl EntityTracker {
         Some((received, delivered))
     }
 
-    pub(super) fn flush_regional_drop_packets(
+    pub(super) fn flush_regional_java_packets(
         java_recipients: FxHashMap<u64, Arc<ClientPlatform>>,
     ) {
         // The world may still have Java's ordinary tick flush suspended.

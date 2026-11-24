@@ -112,7 +112,7 @@ pub struct LivingEntity {
     pub fall_distance: AtomicCell<f32>,
     pub active_effects: std::sync::Mutex<FxHashMap<&'static StatusEffect, Effect>>,
     last_effect_step: AtomicCell<Option<std::time::Instant>>,
-    mob_effect_edit: RwLock<()>,
+    effect_edit: RwLock<()>,
     bedrock_effect_particles: BedrockEffectParticles,
     pub entity_equipment: Arc<std::sync::Mutex<EntityEquipment>>,
     pub equipment_drop_chances: Arc<std::sync::Mutex<FxHashMap<EquipmentSlot, f32>>>,
@@ -549,7 +549,7 @@ impl LivingEntity {
             livings_flags: AtomicU8::new(0),
             active_effects: std::sync::Mutex::new(FxHashMap::default()),
             last_effect_step: AtomicCell::new(None),
-            mob_effect_edit: RwLock::new(()),
+            effect_edit: RwLock::new(()),
             bedrock_effect_particles: BedrockEffectParticles::default(),
             entity_equipment: Arc::new(std::sync::Mutex::new(EntityEquipment::new())),
             equipment_drop_chances: Arc::new(std::sync::Mutex::new(FxHashMap::default())),
@@ -1660,7 +1660,7 @@ impl LivingEntity {
             return;
         }
 
-        let effect_edit = self.hold_mob_effect_edit();
+        let effect_edit = self.hold_effect_edit();
 
         // Apply non-instant effects
 
@@ -1836,7 +1836,7 @@ impl LivingEntity {
     }
 
     fn remove_effect_inner(&self, effect_type: &'static StatusEffect, expired: bool) -> bool {
-        let effect_edit = self.hold_mob_effect_edit();
+        let effect_edit = self.hold_effect_edit();
         let (succeeded, offer_clock) = {
             let mut effects = self
                 .active_effects
@@ -3301,14 +3301,16 @@ impl LivingEntity {
         }
     }
 
-    pub(super) fn hold_mob_effect_edit(&self) -> Option<RwLockReadGuard<'_, ()>> {
+    fn hold_effect_edit(&self) -> RwLockReadGuard<'_, ()> {
         // World callers may reenter through an observer. Regional effect writes
         // take the writer with a nonblocking acquisition and no callbacks.
-        self.entity.entity_type.mob.then(|| {
-            self.mob_effect_edit
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-        })
+        self.effect_edit
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(super) fn hold_mob_effect_edit(&self) -> Option<RwLockReadGuard<'_, ()>> {
+        self.entity.entity_type.mob.then(|| self.hold_effect_edit())
     }
 
     fn effect_can_expire_on_region(effect: &Effect) -> bool {
@@ -3329,7 +3331,7 @@ impl LivingEntity {
             let regional_regeneration =
                 mob && effect.effect_type == &StatusEffect::REGENERATION && effect.duration >= 0;
             if effect.duration < -1
-                || (effect.duration == 0 && !(mob && Self::effect_can_expire_on_region(effect)))
+                || (effect.duration == 0 && !Self::effect_can_expire_on_region(effect))
                 || (!regional_regeneration
                     && crate::entity::effect::get_mob_effect(effect.effect_type).is_some())
             {
@@ -3404,7 +3406,7 @@ impl LivingEntity {
                     REGENERATION.should_apply_effect_tick(effect.duration, effect.amplifier)
                 });
         if (regenerates || effects.values().any(|effect| effect.duration == 0))
-            && !self.commit_regional_mob_effects(&mut effects, regenerates, publish)
+            && !self.commit_regional_effects(&mut effects, regenerates, publish)
         {
             self.last_effect_step.store(previous);
             return true;
@@ -3429,7 +3431,7 @@ impl LivingEntity {
         ready
     }
 
-    fn commit_regional_mob_effects(
+    fn commit_regional_effects(
         &self,
         effects: &mut FxHashMap<&'static StatusEffect, Effect>,
         regenerates: bool,
@@ -3438,7 +3440,7 @@ impl LivingEntity {
             RegionalMobEffectData,
         ) -> Option<MobEffectDelivery>,
     ) -> bool {
-        let Ok(_edit) = self.mob_effect_edit.try_write() else {
+        let Ok(_edit) = self.effect_edit.try_write() else {
             return false;
         };
         let attributes = if regenerates {
@@ -3469,7 +3471,8 @@ impl LivingEntity {
             .values()
             .any(|effect| effect.duration == 0 && effect.show_particles);
         let remaining = effects.values().filter(|effect| effect.duration != 0);
-        let packed = visible_expiration.then(|| BedrockEffectParticles::pack(remaining.clone()));
+        let packed = (self.entity.entity_type.mob && visible_expiration)
+            .then(|| BedrockEffectParticles::pack(remaining.clone()));
         let bedrock_particles =
             packed.and_then(|packed| self.bedrock_effect_particles.pending(packed));
         let particles = visible_expiration.then(|| EffectParticles::from_effects(remaining));
@@ -3515,23 +3518,33 @@ impl LivingEntity {
             for kind in &expired {
                 effects.remove(kind);
             }
-            tracing::trace!(
-                entity = self.entity.entity_id,
-                chunk = ?self.entity.chunk_pos.load(),
-                count = expired.len(),
-                "Expired status effects on the mob region"
-            );
+            if self.entity.entity_type.mob {
+                tracing::trace!(
+                    entity = self.entity.entity_id,
+                    chunk = ?self.entity.chunk_pos.load(),
+                    count = expired.len(),
+                    "Expired status effects on the mob region"
+                );
+            } else {
+                tracing::trace!(
+                    entity = self.entity.entity_id,
+                    chunk = ?self.entity.chunk_pos.load(),
+                    count = expired.len(),
+                    "Expired status effects on the player region"
+                );
+            }
         }
         true
     }
 
     fn tick_effects(&self, player: Option<&Player>, deadline: Option<TickDeadline>) {
-        let _effect_edit = self.hold_mob_effect_edit();
         let mut effects_to_remove = Vec::new();
         let mut effects_to_apply = Vec::new();
         let regional_bedrock = player
             .and_then(|player| player.client.bedrock())
             .is_some_and(|client| client.is_current_protocol());
+        let _effect_edit =
+            (regional_bedrock || self.entity.entity_type.mob).then(|| self.hold_effect_edit());
 
         let offer_clock = {
             let Ok(mut effects) = self.active_effects.try_lock() else {

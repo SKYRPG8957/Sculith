@@ -613,7 +613,7 @@ impl World {
                 );
             }
         }
-        EntityTracker::flush_regional_drop_packets(java_recipients);
+        EntityTracker::flush_regional_java_packets(java_recipients);
     }
 
     fn try_prepare_chunk_mobs(
