@@ -9,8 +9,8 @@ use std::{
 };
 
 use bytes::Bytes;
-use pumpkin_config::{AdvancedConfiguration, resource_pack::BedrockPack};
 use pumpkin_nbt::{Nbt, NbtCompound, deserializer::NbtReadHelperBedrock, tag::NbtTag};
+use sculith_config::{AdvancedConfiguration, resource_pack::BedrockPack};
 pub use sculith_packs::bundle::PackEdit;
 use sculith_packs::{
     ModelMapping, SoundMapping,
@@ -480,7 +480,7 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../sculith-packs/tests/fixtures");
         let mut config = AdvancedConfiguration::default();
         config.resource_pack.shared =
-            Some(pumpkin_config::resource_pack::SharedResourcePackConfig {
+            Some(sculith_config::resource_pack::SharedResourcePackConfig {
                 source: root.join("pack"),
                 mapping: root.join("textures.json"),
                 required: true,

@@ -481,11 +481,11 @@ impl BedrockClient {
 mod tests {
     use super::*;
     use futures::future::BoxFuture;
-    use pumpkin_config::{
-        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
-    };
     use pumpkin_data::{Block, effect::StatusEffect, potion::Effect};
     use pumpkin_world::world::BlockFlags;
+    use sculith_config::{
+        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
+    };
     use sculith_protocol::{
         bedrock::{
             client::{CMobEffect, CMovePlayer, update_attributes::CUpdateAttributes},

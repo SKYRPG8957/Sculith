@@ -1,4 +1,4 @@
-use pumpkin_config::LANBroadcastConfig;
+use sculith_config::LANBroadcastConfig;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;

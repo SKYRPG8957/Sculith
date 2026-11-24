@@ -844,10 +844,10 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_config::{
+    use pumpkin_data::{effect::StatusEffect, item::Item, item_stack::ItemStack, potion::Effect};
+    use sculith_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
-    use pumpkin_data::{effect::StatusEffect, item::Item, item_stack::ItemStack, potion::Effect};
     use std::{
         any::Any,
         sync::atomic::AtomicBool,

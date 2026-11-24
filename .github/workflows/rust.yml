@@ -28,8 +28,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo fmt --manifest-path tests/interop/plugin/Cargo.toml --check
-      - run: cargo clippy --locked -p sculith-packs -p pumpkin-codegen -p sculith-protocol -p pumpkin-config -p pumpkin-world -p sculith-core -p sculith -p sculith-interop-connections --features sculith/plugin-v0_2 --all-targets -- -D warnings
-      - run: cargo test --locked -p sculith-packs -p sculith-protocol -p pumpkin-config -p pumpkin-world -p sculith-core --lib
+      - run: cargo clippy --locked -p sculith-packs -p pumpkin-codegen -p sculith-protocol -p sculith-config -p pumpkin-world -p sculith-core -p sculith -p sculith-interop-connections --features sculith/plugin-v0_2 --all-targets -- -D warnings
+      - run: cargo test --locked -p sculith-packs -p sculith-protocol -p sculith-config -p pumpkin-world -p sculith-core --lib
       - run: cargo test --locked -p sculith-protocol --test bedrock_controls
       - run: cargo test --locked -p pumpkin-wasm-host-v0_2 -p pumpkin-plugin-runtime --lib
       - run: cargo build --locked --release --target wasm32-wasip2 --manifest-path tests/interop/plugin/Cargo.toml

@@ -14,7 +14,7 @@ pub enum ChunkConfig {
     /// Linear chunk storage format.
     #[serde(rename = "linear")]
     Linear,
-    /// Pumpkin's own optimized world format.
+    /// Pump region storage format.
     #[serde(rename = "pump")]
     #[default]
     Pump,

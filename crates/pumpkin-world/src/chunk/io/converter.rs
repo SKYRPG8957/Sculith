@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
-use pumpkin_config::chunk::{AnvilChunkConfig, ChunkConfig};
 use rayon::prelude::*;
+use sculith_config::chunk::{AnvilChunkConfig, ChunkConfig};
 use sculith_util::math::vector2::Vector2;
 use thiserror::Error;
 use tracing::warn;

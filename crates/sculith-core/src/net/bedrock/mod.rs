@@ -17,8 +17,8 @@ use std::{
 use tracing::{debug, error, warn};
 
 use bytes::Bytes;
-use pumpkin_config::networking::compression::CompressionInfo;
 use pumpkin_inventory::screen_handler::ScreenHandler;
+use sculith_config::networking::compression::CompressionInfo;
 use sculith_protocol::{
     BClientPacket, PacketDecodeError, RawPacket,
     bedrock::{

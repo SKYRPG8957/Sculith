@@ -1,8 +1,8 @@
 use arc_swap::ArcSwap;
 use bytes::{BufMut, BytesMut};
 use hmac::{Hmac, KeyInit, Mac};
-use pumpkin_config::networking::proxy::VelocityConfig;
 use rand::RngExt;
+use sculith_config::networking::proxy::VelocityConfig;
 use sculith_protocol::{
     Property, java::client::login::CLoginPluginRequest, java::server::login::SLoginPluginResponse,
     ser::NetworkReadExt,

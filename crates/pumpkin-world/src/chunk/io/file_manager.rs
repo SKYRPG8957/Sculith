@@ -707,11 +707,11 @@ pub enum LevelFileIO<D> {
 
 impl<D> LevelFileIO<D> {
     #[must_use]
-    pub fn from_config(config: &pumpkin_config::chunk::ChunkConfig) -> Self
+    pub fn from_config(config: &sculith_config::chunk::ChunkConfig) -> Self
     where
         D: SingleChunkDataSerializer,
     {
-        use pumpkin_config::chunk::ChunkConfig;
+        use sculith_config::chunk::ChunkConfig;
         match config {
             ChunkConfig::Linear => Self::Linear(ChunkFileManager::new(())),
             ChunkConfig::Anvil(config) => Self::Anvil(ChunkFileManager::new(config.clone())),
@@ -804,7 +804,7 @@ mod tests {
     use super::*;
     use crate::chunk::{ChunkEntityData, ChunkSerializingError, io::Dirtiable};
     use bytes::Bytes;
-    use pumpkin_config::chunk::AnvilChunkConfig;
+    use sculith_config::chunk::AnvilChunkConfig;
     use std::{path::Path, sync::atomic::AtomicBool};
 
     fn folder(root: &Path) -> LevelFolder {

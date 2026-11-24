@@ -1,8 +1,8 @@
 use bytes::{Buf, BufMut, Bytes};
 use flate2::read::{GzDecoder, GzEncoder, ZlibDecoder, ZlibEncoder};
 use lz4_java_wrc::Context;
-use pumpkin_config::chunk::AnvilChunkConfig;
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_config::chunk::AnvilChunkConfig;
 use sculith_util::math::vector2::Vector2;
 use std::{
     fs::{File, OpenOptions},
@@ -179,14 +179,14 @@ impl Compression {
     }
 }
 
-impl From<pumpkin_config::chunk::Compression> for Compression {
-    fn from(value: pumpkin_config::chunk::Compression) -> Self {
+impl From<sculith_config::chunk::Compression> for Compression {
+    fn from(value: sculith_config::chunk::Compression) -> Self {
         // :c
         match value {
-            pumpkin_config::chunk::Compression::GZip => Self::GZip,
-            pumpkin_config::chunk::Compression::ZLib => Self::ZLib,
-            pumpkin_config::chunk::Compression::LZ4 => Self::LZ4,
-            pumpkin_config::chunk::Compression::Custom => Self::Custom,
+            sculith_config::chunk::Compression::GZip => Self::GZip,
+            sculith_config::chunk::Compression::ZLib => Self::ZLib,
+            sculith_config::chunk::Compression::LZ4 => Self::LZ4,
+            sculith_config::chunk::Compression::Custom => Self::Custom,
         }
     }
 }
@@ -906,7 +906,7 @@ mod tests {
     };
     use crate::chunk::io::RegionFile;
     use bytes::{BufMut, Bytes, BytesMut};
-    use pumpkin_config::chunk::AnvilChunkConfig;
+    use sculith_config::chunk::AnvilChunkConfig;
     use sculith_util::math::vector2::Vector2;
     use std::io;
     use tempfile::TempDir;
@@ -1241,7 +1241,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("r.0.0.mca");
         let mut zlib = AnvilChunkConfig::default();
-        zlib.compression.algorithm = pumpkin_config::chunk::Compression::ZLib;
+        zlib.compression.algorithm = sculith_config::chunk::Compression::ZLib;
         let mut region = AnvilRegion::open(&path, Vector2::new(0, 0)).unwrap();
         region.stage_chunk(
             33,

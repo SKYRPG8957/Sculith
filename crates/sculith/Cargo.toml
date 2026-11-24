@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 sculith-core.workspace = true
 pumpkin-wasm-host.workspace = true
-pumpkin-config.workspace = true
+sculith-config.workspace = true
 pumpkin-data = { workspace = true, features = ["default"] }
 sculith-util.workspace = true
 pumpkin-world.workspace = true

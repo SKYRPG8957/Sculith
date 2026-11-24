@@ -35,10 +35,10 @@ use sculith_core::{
     data::VanillaData,
     stop_or_exit_server,
 };
-use sculith_core::{PumpkinServer, stop_server};
+use sculith_core::{SculithServer, stop_server};
 
-use pumpkin_config::{LoadConfiguration, PumpkinConfig};
 use pumpkin_wasm_host::WasmPluginLoader;
+use sculith_config::{LoadConfiguration, SculithConfig};
 use sculith_core::plugin::loader::PluginLoader;
 use sculith_util::text::{
     TextComponent,
@@ -101,7 +101,7 @@ async fn main() {
     console_subscriber::init();
     let time = Instant::now();
 
-    let mut config = PumpkinConfig::load(&exec_dir);
+    let mut config = SculithConfig::load(&exec_dir);
     if offline {
         configure_local_session(&mut config);
     }
@@ -121,8 +121,8 @@ async fn main() {
 
     if let Some(target_arg) = parse_convert_world_arg(std::env::args().skip(1)) {
         let anvil_default = match &config.advanced.world.chunk {
-            pumpkin_config::chunk::ChunkConfig::Anvil(cfg) => cfg.clone(),
-            _ => pumpkin_config::chunk::AnvilChunkConfig::default(),
+            sculith_config::chunk::ChunkConfig::Anvil(cfg) => cfg.clone(),
+            _ => sculith_config::chunk::AnvilChunkConfig::default(),
         };
         let Some(target_config) =
             pumpkin_world::chunk::io::converter::parse_chunk_config(&target_arg, anvil_default)
@@ -193,7 +193,7 @@ async fn main() {
         config.advanced.plugins.verify_signatures,
     ))];
 
-    let pumpkin_server = PumpkinServer::new(
+    let sculith_server = SculithServer::new(
         config.basic,
         config.advanced,
         config.telemetry,
@@ -206,7 +206,7 @@ async fn main() {
         tracing::error!("{error}");
         exit(1);
     });
-    let plugin_wait_time = pumpkin_server.init_plugins().await;
+    let plugin_wait_time = sculith_server.init_plugins().await;
 
     let time_elapsed = time.elapsed().saturating_sub(plugin_wait_time);
 
@@ -216,7 +216,7 @@ async fn main() {
             .color_named(NamedColor::Gold)
             .to_pretty_console()
     );
-    let advanced_config = &pumpkin_server.server.advanced_config;
+    let advanced_config = &sculith_server.server.advanced_config;
     info!(
         "Server is now running. Connect using port: {}{}{}",
         if advanced_config.networking.java.enabled {
@@ -256,12 +256,12 @@ async fn main() {
     );
 
     let distant_terrain =
-        sculith_core::net::bedrock::distant_terrain::DistantTerrain::start(&pumpkin_server.server)
+        sculith_core::net::bedrock::distant_terrain::DistantTerrain::start(&sculith_server.server)
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "Could not start distant terrain");
                 None
             });
-    pumpkin_server.start().await;
+    sculith_server.start().await;
     if let Some(worker) = distant_terrain {
         worker.stop();
     }
@@ -409,7 +409,7 @@ fn has_init_settings_arg(mut args: impl Iterator<Item = String>) -> bool {
     args.any(|arg| arg == "--init-settings" || arg == "--initSettings")
 }
 
-fn configure_local_session(config: &mut PumpkinConfig) {
+fn configure_local_session(config: &mut SculithConfig) {
     let net = &mut config.advanced.networking;
     let local = std::net::Ipv4Addr::LOCALHOST.into();
     net.bedrock.nethernet.address.set_ip(local);
@@ -432,7 +432,7 @@ fn configure_local_session(config: &mut PumpkinConfig) {
     reason = "launcher output before server startup"
 )]
 fn check_settings(dir: &Path, offline: bool) -> i32 {
-    let mut config = match PumpkinConfig::load_for_check(dir) {
+    let mut config = match SculithConfig::load_for_check(dir) {
         Ok(config) => config,
         Err(err) => {
             eprintln!("Sculith settings check failed: {err}");
@@ -445,7 +445,7 @@ fn check_settings(dir: &Path, offline: bool) -> i32 {
     let bedrock = &config.advanced.networking.bedrock;
     println!(
         "Settings: {}",
-        dir.join(PumpkinConfig::get_path()).display()
+        dir.join(SculithConfig::get_path()).display()
     );
     println!(
         "Bedrock enabled={} address={} online_mode={}",

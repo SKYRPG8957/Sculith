@@ -3035,18 +3035,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pumpkin-config"
-version = "0.2.2+26.3-26.63"
-dependencies = [
- "sculith-util",
- "rand 0.10.3",
- "serde",
- "toml",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "sculith-core"
 version = "0.2.2+26.3-26.63"
 dependencies = [
@@ -3072,7 +3060,7 @@ dependencies = [
  "png",
  "pumpkin-auth",
  "pumpkin-command",
- "pumpkin-config",
+ "sculith-config",
  "pumpkin-data",
  "pumpkin-gametest",
  "pumpkin-inventory",
@@ -3272,7 +3260,7 @@ name = "pumpkin-tester"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "bytes",
- "pumpkin-config",
+ "sculith-config",
  "sculith-core",
  "pumpkin-data",
  "pumpkin-gametest",
@@ -3359,7 +3347,7 @@ name = "pumpkin-wasm-host-v0_1"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "bytes",
- "pumpkin-config",
+ "sculith-config",
  "sculith-core",
  "pumpkin-data",
  "pumpkin-inventory",
@@ -3384,7 +3372,7 @@ name = "pumpkin-wasm-host-v0_2"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "bytes",
- "pumpkin-config",
+ "sculith-config",
  "sculith-core",
  "pumpkin-data",
  "pumpkin-inventory",
@@ -3420,7 +3408,7 @@ dependencies = [
  "lz4-java-wrc",
  "md5",
  "miniz_oxide 0.9.1",
- "pumpkin-config",
+ "sculith-config",
  "pumpkin-data",
  "pumpkin-nbt",
  "sculith-util",
@@ -4210,7 +4198,7 @@ name = "sculith"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "console-subscriber",
- "pumpkin-config",
+ "sculith-config",
  "sculith-core",
  "pumpkin-data",
  "sculith-util",
@@ -4220,6 +4208,18 @@ dependencies = [
  "rustls",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "sculith-config"
+version = "0.2.2+26.3-26.63"
+dependencies = [
+ "sculith-util",
+ "rand 0.10.3",
+ "serde",
+ "toml",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

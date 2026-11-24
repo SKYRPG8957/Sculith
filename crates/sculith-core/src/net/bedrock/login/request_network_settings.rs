@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::net::bedrock::BedrockVersions;
-use pumpkin_config::networking::compression::CompressionInfo;
+use sculith_config::networking::compression::CompressionInfo;
 use std::sync::atomic::Ordering;
 
 const INCOMPATIBLE_PROTOCOL_FLUSH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);

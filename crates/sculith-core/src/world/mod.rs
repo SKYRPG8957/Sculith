@@ -91,7 +91,6 @@ pub use explosion::{
     BlockInteraction, DefaultExplosionDamageCalculator, Explosion, ExplosionDamageCalculator,
     ExplosionInteraction, SimpleExplosionDamageCalculator,
 };
-use pumpkin_config::BasicConfiguration;
 use pumpkin_data::block_properties::{blocks_movement, is_air};
 use pumpkin_data::block_rotation::{Mirror, Rotation};
 use pumpkin_data::data_component_impl::EquipmentSlot;
@@ -129,6 +128,7 @@ pub use pumpkin_world::{world::BlockFlags, world_info::LevelData};
 use rand::seq::{IndexedRandom, SliceRandom};
 use rand::{RngExt, rng};
 use scoreboard::Scoreboard;
+use sculith_config::BasicConfiguration;
 use sculith_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
 use sculith_protocol::bedrock::client::start_game::{CStartGame, ServerTelemetryData};
 use sculith_protocol::java::client::play::{
@@ -210,9 +210,9 @@ pub use pumpkin_data::environment_attribute::{Activity, MoonPhase};
 
 use crate::world::natural_spawner::{SpawnState, spawn_for_chunk};
 use crate::world::player_touch::{pickup_body, touch_entities};
-use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_world::chunk::ChunkHeightmapType::{self, MotionBlocking, WorldSurface};
+use sculith_config::lighting::LightingEngineConfig;
 use uuid::Uuid;
 use weather::Weather;
 

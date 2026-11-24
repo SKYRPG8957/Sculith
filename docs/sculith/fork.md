@@ -15,13 +15,16 @@ The fork reuses the standalone item-use decoder and routes the decoded
 transaction through the existing inventory handler. It preserves the bounded
 input reader and the existing transaction fields and game rules.
 
-The executable and discovery name are Sculith. The server, protocol and utility
-packages are `sculith-core`, `sculith-protocol` and `sculith-util`, with Rust
-imports `sculith_core`, `sculith_protocol` and `sculith_util`. Native Rust
-plugins must be rebuilt against ABI 39. The native plugin macro exports
-`SCULITH_API_VERSION`, and the loader also reads the earlier version marker.
-Wasm plugins load by WIT API version.
-Upstream telemetry and update notifications default to off. CI builds and tests source;
+The executable and discovery name are Sculith. The server, configuration,
+protocol and utility packages are `sculith-core`, `sculith-config`,
+`sculith-protocol` and `sculith-util`. Embedders start `sculith_core::SculithServer`
+with settings from `sculith_config`. Both fresh and migrated settings are saved
+as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
+Native Rust plugins must be rebuilt against ABI 40. The native plugin macro
+exports `SCULITH_API_VERSION`, and the loader also reads the earlier version
+marker. Wasm plugins load by WIT API version.
+Telemetry and update notifications default to off. The optional update checker
+queries Sculith releases. CI builds and tests source;
 it has no release, artifact-upload, container-push or automatic publication job.
 The upstream Docker downloader and compose file are removed because they ran
 upstream release binaries. This branch currently supports source builds.

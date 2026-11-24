@@ -12,7 +12,7 @@ doctest = false
 [dependencies]
 sculith-core.workspace = true
 pumpkin-wasm-host-common.workspace = true
-pumpkin-config.workspace = true
+sculith-config.workspace = true
 pumpkin-data = { workspace = true, features = ["default"] }
 pumpkin-inventory.workspace = true
 pumpkin-macros.workspace = true

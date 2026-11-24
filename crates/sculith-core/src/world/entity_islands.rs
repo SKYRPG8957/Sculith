@@ -13,8 +13,8 @@ use sculith_util::math::{
     vector3::Vector3,
 };
 
-use pumpkin_config::world::EntityIslandsConfig;
 use pumpkin_world::chunk::CHUNK_WIDTH;
+use sculith_config::world::EntityIslandsConfig;
 
 use crate::block::blocks::redstone::SIGNAL_MAX;
 use crate::entity::{DelayedLeash, EntityBase, PUSH_STRENGTH, tnt::TNTEntity};

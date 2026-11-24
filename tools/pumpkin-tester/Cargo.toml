@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 bytes.workspace = true
-pumpkin-config.workspace = true
+sculith-config.workspace = true
 sculith-core.workspace = true
 pumpkin-data.workspace = true
 pumpkin-gametest.workspace = true

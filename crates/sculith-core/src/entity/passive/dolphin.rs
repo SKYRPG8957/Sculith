@@ -449,7 +449,7 @@ mod tests {
         let crate::world::entity_islands::EntityReach::Conservative(reach) =
             crate::world::entity_islands::EntityReach::of(
                 dolphin,
-                &pumpkin_config::world::EntityIslandsConfig::default(),
+                &sculith_config::world::EntityIslandsConfig::default(),
             )
         else {
             return Err("dolphin unexpectedly has audited reach".into());

@@ -13,7 +13,7 @@ use crate::server::Server;
 
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 const GITHUB_LATEST_RELEASE_URL: &str =
-    "https://api.github.com/repos/Pumpkin-MC/Pumpkin/releases/latest";
+    "https://api.github.com/repos/SKYRPG8957/Sculith/releases/latest";
 
 /// Metadata for a GitHub release returned by the GitHub REST API.
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -83,7 +83,7 @@ fn compare_identifiers(a: &str, b: &str) -> Ordering {
     }
 }
 
-/// Returns `true` if `latest` represents a newer Pumpkin version than `current`.
+/// Returns `true` if `latest` represents a newer Sculith version than `current`.
 #[must_use]
 pub fn is_newer_version(current: &str, latest: &str) -> bool {
     let (Some(cur), Some(lat)) = (ParsedVersion::parse(current), ParsedVersion::parse(latest))
@@ -120,7 +120,7 @@ pub async fn check_for_updates_from_url(
     connect_timeout_ms: u32,
     read_timeout_ms: u32,
 ) -> Result<Option<GitHubRelease>, reqwest::Error> {
-    let user_agent = format!("Pumpkin-Server/{CARGO_PKG_VERSION}");
+    let user_agent = format!("Sculith-Server/{CARGO_PKG_VERSION}");
     let client = pumpkin_auth::client_builder()
         .connect_timeout(Duration::from_millis(u64::from(connect_timeout_ms)))
         .timeout(Duration::from_millis(u64::from(read_timeout_ms)))
@@ -143,10 +143,10 @@ pub async fn check_for_updates_from_url(
     }
 }
 
-/// Builds the chat message sent to operators when a new Pumpkin update is available.
+/// Builds the chat message sent to operators when a new Sculith update is available.
 #[must_use]
 pub fn build_update_notification_message(release: &GitHubRelease) -> TextComponent {
-    TextComponent::text("[Pumpkin] ")
+    TextComponent::text("[Sculith] ")
         .color_named(NamedColor::Gold)
         .bold()
         .add_child(
@@ -190,7 +190,7 @@ pub fn notify_update_if_op(server: &Server, player: &Player) {
     }
 }
 
-/// Starts a background task to check for new Pumpkin updates on startup if enabled in configuration.
+/// Starts a background task to check for new Sculith updates on startup if enabled in configuration.
 pub fn start_update_checker(server: &Arc<Server>) {
     let config = &server.advanced_config.update_checker;
     if !config.enabled {
@@ -217,7 +217,7 @@ pub fn start_update_checker(server: &Arc<Server>) {
         match result {
             Ok(Some(release)) => {
                 warn!(
-                    "A new version of Pumpkin is available: {} (current: {}). Download it at {}",
+                    "A new version of Sculith is available: {} (current: {}). Download it at {}",
                     TextComponent::text(release.tag_name.clone())
                         .color_named(NamedColor::Green)
                         .to_pretty_console(),
@@ -241,10 +241,10 @@ pub fn start_update_checker(server: &Arc<Server>) {
                 let _ = server_task.available_update.set(release);
             }
             Ok(None) => {
-                debug!("Pumpkin is up to date ({CARGO_PKG_VERSION}).");
+                debug!("Sculith is up to date ({CARGO_PKG_VERSION}).");
             }
             Err(err) => {
-                debug!("Failed to check for Pumpkin updates: {err}");
+                debug!("Failed to check for Sculith updates: {err}");
             }
         }
     });
@@ -277,12 +277,12 @@ mod tests {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         let app = Router::new().route(
-            "/repos/Pumpkin-MC/Pumpkin/releases/latest",
+            "/repos/SKYRPG8957/Sculith/releases/latest",
             get(|| async {
                 (
                     StatusCode::OK,
                     [(axum::http::header::CONTENT_TYPE, "application/json")],
-                    r#"{"tag_name":"0.3.0+26.3-26.60","html_url":"https://github.com/Pumpkin-MC/Pumpkin/releases/tag/0.3.0%2B26.3-26.60"}"#,
+                    r#"{"tag_name":"0.3.0+26.3-26.60","html_url":"https://github.com/SKYRPG8957/Sculith/releases/tag/0.3.0%2B26.3-26.60"}"#,
                 )
                     .into_response()
             }),
@@ -294,7 +294,7 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let url = format!("http://127.0.0.1:{port}/repos/Pumpkin-MC/Pumpkin/releases/latest");
+        let url = format!("http://127.0.0.1:{port}/repos/SKYRPG8957/Sculith/releases/latest");
 
         let newer = check_for_updates_from_url(&url, "0.2.1+26.3-26.60", 5000, 5000)
             .await
@@ -303,7 +303,7 @@ mod tests {
             newer,
             Some(GitHubRelease {
                 tag_name: "0.3.0+26.3-26.60".to_string(),
-                html_url: "https://github.com/Pumpkin-MC/Pumpkin/releases/tag/0.3.0%2B26.3-26.60"
+                html_url: "https://github.com/SKYRPG8957/Sculith/releases/tag/0.3.0%2B26.3-26.60"
                     .to_string(),
             })
         );

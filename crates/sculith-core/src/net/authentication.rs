@@ -1,10 +1,10 @@
 use std::{collections::HashMap, net::IpAddr};
 
 use base64::{Engine, engine::general_purpose};
-use pumpkin_config::{AuthenticationConfig, networking::auth::TextureConfig};
 use reqwest::{StatusCode, Url};
 use rsa::PublicKey as RsaPublicKey;
 use rsa::pkcs8::DecodePublicKey;
+use sculith_config::{AuthenticationConfig, networking::auth::TextureConfig};
 use sculith_protocol::Property;
 use serde::Deserialize;
 use thiserror::Error;
@@ -485,7 +485,7 @@ mod tests {
                 "https://fallback2.auth/hasJoined?username={username}&serverId={server_hash}"
             ]
         }"#;
-        let config: pumpkin_config::AuthenticationConfig =
+        let config: sculith_config::AuthenticationConfig =
             serde_json::from_str(json_str).expect("config should deserialize");
         assert_eq!(
             config.url.as_deref(),
@@ -506,7 +506,7 @@ mod tests {
                 "https://fallback1.auth/hasJoined?username={username}&serverId={server_hash}"
             ]
         }"#;
-        let config: pumpkin_config::AuthenticationConfig =
+        let config: sculith_config::AuthenticationConfig =
             serde_json::from_str(json_str).expect("config with alias should deserialize");
         assert_eq!(config.fallbacks.len(), 1);
         assert_eq!(

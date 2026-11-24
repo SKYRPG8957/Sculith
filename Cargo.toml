@@ -8,7 +8,7 @@ members = [
     "crates/pumpkin-auth",
     "crates/pumpkin-codecs",
     "crates/pumpkin-command",
-    "crates/pumpkin-config",
+    "crates/sculith-config",
     "crates/pumpkin-data",
     "crates/pumpkin-scheduler",
     "crates/pumpkin-gametest",
@@ -216,7 +216,7 @@ proc-macro2 = { version = "1.0", default-features = false, features = ["proc-mac
 pumpkin-auth = { path = "crates/pumpkin-auth", default-features = false }
 pumpkin-codecs = { path = "crates/pumpkin-codecs", default-features = false }
 pumpkin-command = { path = "crates/pumpkin-command", default-features = false }
-pumpkin-config = { path = "crates/pumpkin-config", default-features = false }
+sculith-config = { path = "crates/sculith-config", default-features = false }
 sculith-core = { path = "crates/sculith-core", default-features = false }
 pumpkin-data = { path = "crates/pumpkin-data", default-features = false }
 pumpkin-gametest = { path = "crates/pumpkin-gametest", default-features = false }

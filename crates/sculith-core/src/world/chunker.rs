@@ -35,7 +35,7 @@ pub fn get_view_distance(player: &Player) -> NonZero<u8> {
 
 pub(super) fn simulation_distance(
     player: &Player,
-    config: &pumpkin_config::AdvancedConfiguration,
+    config: &sculith_config::AdvancedConfiguration,
 ) -> u8 {
     match player.client.as_ref() {
         ClientPlatform::Java(_) => config.networking.java.simulation_distance.get(),

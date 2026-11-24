@@ -1,5 +1,5 @@
 use crate::command::node::dispatcher::CommandDispatcher;
-use pumpkin_config::CommandsConfig;
+use sculith_config::CommandsConfig;
 use sculith_util::{
     PermissionLvl,
     permission::{Permission, PermissionDefault, PermissionManager, PermissionRegistry},
@@ -326,7 +326,7 @@ fn register_permissions(registry: &PermissionRegistry) {
 
 #[cfg(test)]
 mod override_tests {
-    use pumpkin_config::{CommandOverride, CommandsConfig};
+    use sculith_config::{CommandOverride, CommandsConfig};
     use sculith_util::PermissionLvl;
     use sculith_util::permission::{PermissionDefault, PermissionManager};
 

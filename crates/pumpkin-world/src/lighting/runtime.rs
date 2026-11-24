@@ -2,8 +2,8 @@ use crate::chunk::io::Dirtiable;
 use crate::chunk::palette::BlockPalette;
 use crate::level::Level;
 use crossbeam::queue::SegQueue;
-use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::BlockDirection;
+use sculith_config::lighting::LightingEngineConfig;
 use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 

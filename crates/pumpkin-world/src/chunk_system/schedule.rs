@@ -11,8 +11,8 @@ use super::{
 use crate::chunk::io::Dirtiable;
 use crate::level::{Level, LoadedChunkChange, SaveCompletion, SaveRequest, SyncChunk};
 use dashmap::DashMap;
-use pumpkin_config::lighting::LightingEngineConfig;
 use rustc_hash::FxBuildHasher;
+use sculith_config::lighting::LightingEngineConfig;
 use sculith_util::math::vector2::Vector2;
 use slotmap::Key;
 use std::cmp::{Ordering, max};

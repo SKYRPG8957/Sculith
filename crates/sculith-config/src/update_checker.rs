@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-/// Configuration for checking for new Pumpkin updates on startup.
+/// Configuration for checking for new Sculith updates on startup.
 #[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(default)]
 pub struct UpdateCheckerConfig {
-    /// Whether to check for new Pumpkin updates on server startup.
+    /// Whether to check for new Sculith updates on server startup.
     pub enabled: bool,
     /// Whether to notify server operators in chat when they join if an update is available.
     pub notify_ops_on_join: bool,

@@ -699,7 +699,7 @@ impl pumpkin::plugin::server::HostOpManagerWithStore<PluginHostState> for HasSel
                 existing.bypasses_player_limit = bypasses_player_limit;
             } else {
                 let op_entry =
-                    pumpkin_config::op::Op::new(uuid, name, internal_level, bypasses_player_limit);
+                    sculith_config::op::Op::new(uuid, name, internal_level, bypasses_player_limit);
                 config.ops.push(op_entry);
             }
             config.save();
@@ -1108,7 +1108,7 @@ impl pumpkin::plugin::server::HostWhitelistManager for PluginHostState {
         } else {
             config
                 .whitelist
-                .push(pumpkin_config::whitelist::WhitelistEntry::new(uuid, name));
+                .push(sculith_config::whitelist::WhitelistEntry::new(uuid, name));
             config.save();
             Ok(true)
         }

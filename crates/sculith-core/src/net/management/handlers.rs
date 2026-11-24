@@ -4,12 +4,12 @@ use std::{
     sync::{Arc, LazyLock, atomic::Ordering},
 };
 
-use pumpkin_config::{op::Op, whitelist::WhitelistEntry};
 use pumpkin_data::{
     game_rules::{GameRule, GameRuleValue},
     packet::CURRENT_MC_VERSION,
     translation,
 };
+use sculith_config::{op::Op, whitelist::WhitelistEntry};
 use sculith_util::permission::PermissionLvl;
 use serde::Deserialize;
 use serde_json::{Value, json};

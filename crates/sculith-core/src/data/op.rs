@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use pumpkin_config::op;
+use sculith_config::op;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

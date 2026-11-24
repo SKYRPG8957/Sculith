@@ -4,9 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pumpkin_config::TelemetryConfig;
+use sculith_config::TelemetryConfig;
 use sculith_core::{
-    PumpkinServer, STOP_INTERRUPT,
+    STOP_INTERRUPT, SculithServer,
     data::VanillaData,
     net::{PacketRateLimiter, java::pending::PendingConnection},
     serve_java_connection,
@@ -29,7 +29,7 @@ pub async fn run_embedded_stop_test(summary_lines: &mut Vec<String>) -> Result<(
         ..Default::default()
     };
 
-    let pumpkin_server = PumpkinServer::new(
+    let sculith_server = SculithServer::new(
         basic_config,
         advanced_config,
         telemetry_config,
@@ -39,7 +39,7 @@ pub async fn run_embedded_stop_test(summary_lines: &mut Vec<String>) -> Result<(
     )
     .await
     .map_err(|err| format!("Failed to initialize embedded server: {err}"))?;
-    let server = pumpkin_server.server.clone();
+    let server = sculith_server.server.clone();
     harness::prepare_spawn_chunk(&server).await;
 
     let (client, transport) = tokio::io::duplex(64 * 1024);
@@ -71,7 +71,7 @@ pub async fn run_embedded_stop_test(summary_lines: &mut Vec<String>) -> Result<(
         joined.map(|bot| (bot, player_id))
     };
     let ((), joined) = timeout(STOP_TIMEOUT, async {
-        tokio::join!(pumpkin_server.start(), session)
+        tokio::join!(sculith_server.start(), session)
     })
     .await
     .map_err(|_| "Embedded server did not finish stopping".to_string())?;

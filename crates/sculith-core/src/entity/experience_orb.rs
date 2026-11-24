@@ -483,11 +483,11 @@ fn orb_nbt_integer(nbt: &NbtCompound, name: &str) -> Option<i64> {
 mod tests {
     use super::*;
     use crate::data::VanillaData;
-    use pumpkin_config::{
-        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
-    };
     use pumpkin_data::Block;
     use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
+    use sculith_config::{
+        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
+    };
     use sculith_util::math::position::BlockPos;
     use std::time::{Duration, Instant};
 

@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use pumpkin_config::TelemetryConfig;
 use rustc_hash::FxHashMap;
+use sculith_config::TelemetryConfig;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 

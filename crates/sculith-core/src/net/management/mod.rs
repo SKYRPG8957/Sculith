@@ -23,8 +23,8 @@ use axum::{
     routing::get,
 };
 use futures::{SinkExt, StreamExt};
-use pumpkin_config::networking::management::ManagementServerConfig;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
+use sculith_config::networking::management::ManagementServerConfig;
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tracing::{debug, error, info, warn};

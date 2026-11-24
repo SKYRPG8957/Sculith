@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use pumpkin_data::dimension::Dimension;
+use sculith_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use sculith_core::{
     data::VanillaData,
     net::{PacketRateLimiter, java::pending::PendingConnection},

@@ -26,11 +26,11 @@ use crate::server::{
     ticker::{CONSOLE_COMMAND_CAPACITY, ConsoleCommand, Ticker},
 };
 use plugin::server::server_load::{LoadType, ServerLoadEvent};
-use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use pumpkin_world::world_info::WorldInfoError;
 use rustyline::Editor;
 use rustyline::history::FileHistory;
 use rustyline::{Config, error::ReadlineError};
+use sculith_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use sculith_util::text::TextComponent;
 use sculith_util::text::color::{Color, NamedColor};
 use std::collections::HashMap;
@@ -283,7 +283,7 @@ fn resolve_some<T: Future, D, F: FnOnce(D) -> T>(
     )
 }
 
-/// Why [`PumpkinServer::new`] failed, returned to the caller instead of exiting the process.
+/// Why [`SculithServer::new`] failed, returned to the caller instead of exiting the process.
 #[derive(thiserror::Error, Debug)]
 pub enum ServerSetupError {
     #[error("Failed to initialize server: {0}")]
@@ -302,7 +302,7 @@ pub enum ServerSetupError {
     TickerSpawn(std::io::Error),
 }
 
-pub struct PumpkinServer {
+pub struct SculithServer {
     pub server: Arc<Server>,
     pub tcp_listener: Option<TcpListener>,
     pub nethernet_listener: Option<NetherNetListener>,
@@ -313,7 +313,7 @@ pub struct PumpkinServer {
     standalone: bool,
 }
 
-impl PumpkinServer {
+impl SculithServer {
     pub fn log_info(&self, message: &str) {
         tracing::info!(target: "plugin", "{}", message);
     }

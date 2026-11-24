@@ -1,7 +1,7 @@
 use crate::ProtoChunk;
 use crate::generation::generator::WorldGenerator;
 use crate::world::WorldPortalExt;
-use pumpkin_config::lighting::LightingEngineConfig;
+use sculith_config::lighting::LightingEngineConfig;
 
 use super::{Cache, Chunk, StagedChunkEnum};
 
@@ -144,8 +144,8 @@ mod tests {
     #[test]
     fn nether_lighting_clears_stale_sky_light_and_preserves_block_light() {
         use crate::chunk_system::Cache;
-        use pumpkin_config::lighting::LightingEngineConfig;
         use pumpkin_data::Block;
+        use sculith_config::lighting::LightingEngineConfig;
 
         let dimension = Dimension::THE_NETHER;
         let world_gen = get_world_gen(

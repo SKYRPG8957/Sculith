@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::resource_pack::{BEDROCK_PACK_CHUNK_SIZE, SharedPack};
-use pumpkin_config::resource_pack::BedrockPack;
+use sculith_config::resource_pack::BedrockPack;
 
 fn resolve_pack_path(pack: &BedrockPack) -> Option<std::path::PathBuf> {
     pack.path.as_ref().map_or_else(

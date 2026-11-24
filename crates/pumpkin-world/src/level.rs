@@ -16,12 +16,12 @@ use arc_swap::ArcSwap;
 use crossbeam::queue::SegQueue;
 use dashmap::{DashMap, Entry, try_result::TryResult};
 use futures::stream::{FuturesUnordered, StreamExt};
-use pumpkin_config::{lighting::LightingEngineConfig, world::LevelConfig};
 use pumpkin_data::biome::Biome;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::{Block, BlockStateId, block_properties::has_random_ticks, fluid::Fluid};
 use rayon::prelude::*;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use sculith_config::{lighting::LightingEngineConfig, world::LevelConfig};
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
 use sculith_util::world_seed::Seed;
 use std::collections::hash_map::Entry as HashEntry;
@@ -1650,8 +1650,8 @@ impl Level {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_config::world::LevelConfig;
     use pumpkin_data::block_properties::RedstoneOreLikeProperties;
+    use sculith_config::world::LevelConfig;
     use std::cell::Cell;
     use tempfile::TempDir;
 

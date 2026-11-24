@@ -10,12 +10,12 @@ use std::{
 };
 
 use leveldb::{CompactionMode, Compressor, CompressorList, DB, Options, Status, StatusCode};
-use pumpkin_config::chunk::AnvilChunkConfig;
 use pumpkin_data::{Block, BlockStateId, biome::Biome, dimension::Dimension};
 use pumpkin_nbt::{
     Nbt,
     deserializer::{NbtReadHelper, NbtReadHelperBedrockDisk},
 };
+use sculith_config::chunk::AnvilChunkConfig;
 use sculith_util::{
     math::{position::BlockPos, vector2::Vector2},
     world_seed::Seed,

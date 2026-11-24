@@ -6,8 +6,8 @@ use std::{
 
 use bytes::Bytes;
 use crossbeam::atomic::AtomicCell;
-use pumpkin_config::networking::compression::CompressionInfo;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
+use sculith_config::networking::compression::CompressionInfo;
 use sculith_protocol::{
     ClientPacket, ConnectionState, PacketDecodeError, RawPacket, ServerPacket,
     codec::var_int::VarInt,

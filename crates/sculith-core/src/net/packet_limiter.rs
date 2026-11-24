@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 use std::time::Instant;
 
-use pumpkin_config::PacketLimiterConfig;
+use sculith_config::PacketLimiterConfig;
 
 #[derive(Debug)]
 struct LimiterState {

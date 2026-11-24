@@ -81,7 +81,7 @@
 # --- Bedrock (keep below the Networking and Plugins rules it refines) ---
 /assets/bedrock/                                                            @xRookieFight @QuantumSegfault
 /assets/en_us_bedrock.lang                                                  @QuantumSegfault
-/crates/pumpkin-config/src/networking/bedrock.rs                            @QuantumSegfault
+/crates/sculith-config/src/networking/bedrock.rs                            @QuantumSegfault
 /crates/sculith-protocol/src/bedrock/                                       @xRookieFight @QuantumSegfault
 /crates/sculith-core/src/net/bedrock/                                       @xRookieFight @QuantumSegfault
 /crates/sculith-protocol/fuzz/fuzz_targets/*_bedrock.rs                     @Snowiiii @xRookieFight @QuantumSegfault

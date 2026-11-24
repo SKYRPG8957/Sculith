@@ -137,8 +137,8 @@ fn nether_complex_references_use_selected_structure() {
 #[test]
 fn structure_references_are_rebuilt_when_resuming_generation() {
     use crate::chunk_system::chunk_state::Chunk;
-    use pumpkin_config::lighting::LightingEngineConfig;
     use pumpkin_data::structures::StructureKeys;
+    use sculith_config::lighting::LightingEngineConfig;
 
     let seed = Seed(1_782_124_772_053_846_960);
     let world_gen = get_world_gen(seed, Dimension::OVERWORLD, false, Vec::new(), String::new());
@@ -167,8 +167,8 @@ fn structure_references_are_rebuilt_when_resuming_generation() {
 #[test]
 fn block_entities_survive_chunk_data_resume() {
     use crate::chunk_system::chunk_state::Chunk;
-    use pumpkin_config::lighting::LightingEngineConfig;
     use pumpkin_nbt::compound::NbtCompound;
+    use sculith_config::lighting::LightingEngineConfig;
 
     let seed = Seed(4242);
     let world_gen = get_world_gen(seed, Dimension::OVERWORLD, false, Vec::new(), String::new());
@@ -207,7 +207,7 @@ fn block_entities_survive_chunk_data_resume() {
 #[test]
 fn heightmap_roundtrip_through_chunk_data_resume() {
     use crate::chunk_system::chunk_state::Chunk;
-    use pumpkin_config::lighting::LightingEngineConfig;
+    use sculith_config::lighting::LightingEngineConfig;
     use sculith_util::math::vector3::Vector3;
 
     let seed = Seed(1779920288596261407);

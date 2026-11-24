@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 
-use pumpkin_config::whitelist::WhitelistEntry;
 use pumpkin_data::translation;
+use sculith_config::whitelist::WhitelistEntry;
 use sculith_util::PermissionLvl;
 use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use sculith_util::text::TextComponent;

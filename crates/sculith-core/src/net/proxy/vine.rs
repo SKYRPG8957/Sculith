@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use arc_swap::ArcSwap;
 use bytes::{BufMut, BytesMut};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use pumpkin_config::networking::proxy::VineConfig;
+use sculith_config::networking::proxy::VineConfig;
 use sculith_protocol::{
     Property, java::client::login::CLoginPluginRequest, java::server::login::SLoginPluginResponse,
     ser::NetworkReadExt,

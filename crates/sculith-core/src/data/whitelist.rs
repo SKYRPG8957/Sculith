@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use pumpkin_config::whitelist::WhitelistEntry;
+use sculith_config::whitelist::WhitelistEntry;
 use serde::{Deserialize, Serialize};
 
 use crate::net::GameProfile;

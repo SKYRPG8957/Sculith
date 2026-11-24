@@ -1,4 +1,4 @@
-//! Configuration management and serialization for the Pumpkin Minecraft server.
+//! Configuration management and serialization for the Sculith server.
 #![deny(missing_docs)]
 #![deny(clippy::unwrap_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
@@ -74,10 +74,10 @@ use player_data::PlayerDataConfig;
 use resource_pack::ResourcePackConfig;
 use world::LevelConfig;
 
-/// Root configuration container for Pumpkin server settings.
+/// Root configuration container for Sculith server settings.
 #[derive(Deserialize, Serialize, Default)]
 #[serde(default)]
-pub struct PumpkinConfig {
+pub struct SculithConfig {
     /// Core basic configuration settings.
     #[serde(flatten)]
     pub basic: BasicConfiguration,
@@ -89,7 +89,7 @@ pub struct PumpkinConfig {
     pub telemetry: TelemetryConfig,
 }
 
-impl PumpkinConfig {
+impl SculithConfig {
     /// Check the operator's file before applying the normal first-run defaults.
     ///
     /// # Errors
@@ -113,7 +113,7 @@ impl PumpkinConfig {
     }
 }
 
-impl LoadConfiguration for PumpkinConfig {
+impl LoadConfiguration for SculithConfig {
     fn get_path() -> &'static Path {
         Path::new("sculith.toml")
     }

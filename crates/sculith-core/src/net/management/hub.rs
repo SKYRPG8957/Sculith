@@ -10,7 +10,7 @@ use super::{
     dto::{IpBanDto, OperatorDto, PlayerDto, ServerState, TypedGameRule, UserBanDto},
     rpc::RpcNotification,
 };
-use pumpkin_config::{
+use sculith_config::{
     AdvancedConfiguration, BasicConfiguration, networking::management::ManagementServerConfig,
 };
 

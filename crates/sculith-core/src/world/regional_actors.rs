@@ -487,14 +487,14 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use pumpkin_config::{
-        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
-    };
     use pumpkin_data::{
         effect::StatusEffect, entity::EntityType, item::Item, item_stack::ItemStack, potion::Effect,
     };
     use pumpkin_nbt::NbtCompound;
     use pumpkin_world::chunk::ChunkData;
+    use sculith_config::{
+        AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
+    };
     use sculith_util::math::vector3::Vector3;
 
     use crate::data::VanillaData;

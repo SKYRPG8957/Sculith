@@ -1,5 +1,5 @@
-use pumpkin_config::AdvancedConfiguration;
 use rand::{rng, seq::SliceRandom};
+use sculith_config::AdvancedConfiguration;
 use time::{Month, OffsetDateTime};
 
 // In fact Mojang also has some Seasonal Events, so we can use that later to match Vanilla :D

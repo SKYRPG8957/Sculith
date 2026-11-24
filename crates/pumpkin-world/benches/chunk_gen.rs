@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_world::ProtoChunk;
@@ -9,6 +8,7 @@ use pumpkin_world::chunk_system::{Cache, Chunk, StagedChunkEnum, generate_single
 use pumpkin_world::generation::generator::WorldGenerator;
 use pumpkin_world::generation::get_world_gen;
 use pumpkin_world::world::WorldPortalExt;
+use sculith_config::lighting::LightingEngineConfig;
 use sculith_util::world_seed::Seed;
 use std::hint::black_box;
 use std::sync::Arc;

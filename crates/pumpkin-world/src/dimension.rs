@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
-use pumpkin_config::world::LevelConfig;
 use pumpkin_data::dimension::Dimension;
+use sculith_config::world::LevelConfig;
 
 use crate::level::Level;
 

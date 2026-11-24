@@ -45,7 +45,7 @@ pub struct PluginsConfig {
     /// MY_API_KEY = "secret_key"
     /// ```
     pub overrides: HashMap<String, PluginOverride>,
-    /// Whether Pumpkin should verify WASM plugin signatures before loading.
+    /// Whether Sculith should verify Wasm plugin signatures before loading.
     pub verify_signatures: bool,
 }
 
