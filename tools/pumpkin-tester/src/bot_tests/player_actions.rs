@@ -3,8 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pumpkin_core::server::Server;
 use pumpkin_data::dimension::Dimension;
+use sculith_core::server::Server;
 use sculith_protocol::java::server::play::Action;
 
 use crate::bot::{HeadlessBot, MAX_POLL_TICKS};

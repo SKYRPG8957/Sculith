@@ -1,8 +1,8 @@
 use std::{net::SocketAddr, time::Duration};
 
 use bytes::Bytes;
-use pumpkin_core::net::java::{JavaReadHalf, JavaWriteHalf};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
+use sculith_core::net::java::{JavaReadHalf, JavaWriteHalf};
 use sculith_protocol::{
     ClientPacket, ConnectionState, RawPacket, ServerPacket,
     codec::var_int::VarInt,

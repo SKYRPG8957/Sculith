@@ -166,7 +166,7 @@ fn to_owned_ingredient(ing: WitIngredient) -> OwnedRecipeIngredient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_core::server::RecipeManager;
+    use sculith_core::server::RecipeManager;
     use std::sync::Arc;
 
     #[test]

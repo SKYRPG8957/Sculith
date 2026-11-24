@@ -45,11 +45,11 @@ use crate::pumpkin::{
         item_stack::ItemStack as WitHostItemStack,
     },
 };
-use pumpkin_core::block::entities::BlockEntity as InternalBlockEntity;
-use pumpkin_core::block::entities::furnace_like_block_entity::CookingBlockEntityBase;
-use pumpkin_core::block::entities::sign::{DyeColor as InternalDyeColor, Text as InternalText};
 use pumpkin_wasm_host_common::state::PluginHostState;
 use pumpkin_wasm_host_common::state::{self, FromResource};
+use sculith_core::block::entities::BlockEntity as InternalBlockEntity;
+use sculith_core::block::entities::furnace_like_block_entity::CookingBlockEntityBase;
+use sculith_core::block::entities::sign::{DyeColor as InternalDyeColor, Text as InternalText};
 
 impl pumpkin::plugin::block_entity::Host for PluginHostState {}
 

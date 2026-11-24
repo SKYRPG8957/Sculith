@@ -2,7 +2,7 @@ use std::sync::Arc;
 use wasmtime::component::{Access, HasSelf, Resource};
 
 use crate::pumpkin::plugin::display::{HostModelDisplayEntity, ModelDisplayEntity};
-use pumpkin_core::entity::decoration::model::ModelDisplayEntity as InternalModelDisplayEntity;
+use sculith_core::entity::decoration::model::ModelDisplayEntity as InternalModelDisplayEntity;
 
 use sculith_util::math::vector3::Vector3;
 
@@ -21,11 +21,11 @@ use crate::{
     },
     uuid::UuidExt,
 };
-use pumpkin_core::entity::decoration::display::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::entity::decoration::display::{
     BlockDisplayEntity as InternalBlockDisplayEntity, DisplayEntity as InternalDisplayEntity,
     ItemDisplayEntity as InternalItemDisplayEntity, TextDisplayEntity as InternalTextDisplayEntity,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl Host for PluginHostState {}
 
@@ -46,7 +46,7 @@ impl HostModelDisplayEntity for PluginHostState {
         &mut self,
         model: Resource<ModelDisplayEntity>,
     ) -> wasmtime::Result<Resource<Entity>> {
-        self.add(self.get(&model)?.clone() as Arc<dyn pumpkin_core::entity::EntityBase>)
+        self.add(self.get(&model)?.clone() as Arc<dyn sculith_core::entity::EntityBase>)
     }
 
     fn get_model(&mut self, model: Resource<ModelDisplayEntity>) -> wasmtime::Result<String> {
@@ -173,7 +173,7 @@ const fn map_text_alignment_rev(align: TextAlignment) -> u8 {
 }
 
 fn get_display_entity<'a>(
-    base: &'a (dyn pumpkin_core::entity::EntityBase + 'static),
+    base: &'a (dyn sculith_core::entity::EntityBase + 'static),
 ) -> Option<&'a InternalDisplayEntity> {
     if let Some(b) = base.cast_any().downcast_ref::<InternalBlockDisplayEntity>() {
         return Some(&b.display);
@@ -314,7 +314,7 @@ impl HostDisplayEntity for PluginHostState {
         let display_res = self.get(&display)?;
         Ok(get_display_entity(display_res.as_ref()).map_or(
             0,
-            pumpkin_core::entity::decoration::display::DisplayEntity::get_interpolation_duration,
+            sculith_core::entity::decoration::display::DisplayEntity::get_interpolation_duration,
         ))
     }
 
@@ -337,7 +337,7 @@ impl HostDisplayEntity for PluginHostState {
         let display_res = self.get(&display)?;
         Ok(get_display_entity(display_res.as_ref()).map_or(
             0,
-            pumpkin_core::entity::decoration::display::DisplayEntity::get_interpolation_start_delta_ticks,
+            sculith_core::entity::decoration::display::DisplayEntity::get_interpolation_start_delta_ticks,
         ))
     }
 
@@ -357,7 +357,7 @@ impl HostDisplayEntity for PluginHostState {
         let display_res = self.get(&display)?;
         Ok(get_display_entity(display_res.as_ref()).map_or(
             0,
-            pumpkin_core::entity::decoration::display::DisplayEntity::get_teleport_duration,
+            sculith_core::entity::decoration::display::DisplayEntity::get_teleport_duration,
         ))
     }
 
@@ -493,7 +493,7 @@ impl HostDisplayEntity for PluginHostState {
         let display_res = self.get(&display)?;
         Ok(get_display_entity(display_res.as_ref()).map_or(
             -1,
-            pumpkin_core::entity::decoration::display::DisplayEntity::get_glow_color_override,
+            sculith_core::entity::decoration::display::DisplayEntity::get_glow_color_override,
         ))
     }
 
@@ -513,7 +513,7 @@ impl HostDisplayEntity for PluginHostState {
         let display_res = self.get(&display)?;
         Ok(get_display_entity(display_res.as_ref()).map_or(
             -1,
-            pumpkin_core::entity::decoration::display::DisplayEntity::get_brightness,
+            sculith_core::entity::decoration::display::DisplayEntity::get_brightness,
         ))
     }
 

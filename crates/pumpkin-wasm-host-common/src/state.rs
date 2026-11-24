@@ -10,24 +10,24 @@ use wasmtime_wasi_http::{
 };
 
 use crate::plugin::WasmPlugin;
-use pumpkin_core::{entity::player::Player, server::Server, world::World};
+use sculith_core::{entity::player::Player, server::Server, world::World};
 
 pub struct WasmCommand {
     pub names: Vec<String>,
-    pub builder: pumpkin_core::command::argument_builder::CommandArgumentBuilder,
+    pub builder: sculith_core::command::argument_builder::CommandArgumentBuilder,
 }
 
 impl WasmCommand {
     #[must_use]
     pub fn new(names: Vec<String>, description: String) -> Self {
         let primary = names.first().cloned().unwrap_or_default();
-        let builder = pumpkin_core::command::argument_builder::command(primary, description);
+        let builder = sculith_core::command::argument_builder::command(primary, description);
         Self { names, builder }
     }
 
     #[must_use]
     pub fn then(mut self, child: WasmCommandNode) -> Self {
-        use pumpkin_core::command::argument_builder::ArgumentBuilder;
+        use sculith_core::command::argument_builder::ArgumentBuilder;
         self.builder = self.builder.then(child.into_detached_node());
         self
     }
@@ -35,23 +35,23 @@ impl WasmCommand {
     #[must_use]
     pub fn executes(
         mut self,
-        executor: impl pumpkin_core::command::node::CommandExecutor + 'static,
+        executor: impl sculith_core::command::node::CommandExecutor + 'static,
     ) -> Self {
-        use pumpkin_core::command::argument_builder::ArgumentBuilder;
+        use sculith_core::command::argument_builder::ArgumentBuilder;
         self.builder = self.builder.executes(executor);
         self
     }
 }
 
 pub enum WasmCommandNode {
-    Literal(pumpkin_core::command::argument_builder::LiteralArgumentBuilder),
-    Argument(pumpkin_core::command::argument_builder::RequiredArgumentBuilder),
+    Literal(sculith_core::command::argument_builder::LiteralArgumentBuilder),
+    Argument(sculith_core::command::argument_builder::RequiredArgumentBuilder),
 }
 
 impl WasmCommandNode {
     #[must_use]
     pub fn then(self, child: Self) -> Self {
-        use pumpkin_core::command::argument_builder::ArgumentBuilder;
+        use sculith_core::command::argument_builder::ArgumentBuilder;
         match self {
             Self::Literal(b) => Self::Literal(b.then(child.into_detached_node())),
             Self::Argument(b) => Self::Argument(b.then(child.into_detached_node())),
@@ -61,9 +61,9 @@ impl WasmCommandNode {
     #[must_use]
     pub fn executes(
         self,
-        executor: impl pumpkin_core::command::node::CommandExecutor + 'static,
+        executor: impl sculith_core::command::node::CommandExecutor + 'static,
     ) -> Self {
-        use pumpkin_core::command::argument_builder::ArgumentBuilder;
+        use sculith_core::command::argument_builder::ArgumentBuilder;
         match self {
             Self::Literal(b) => Self::Literal(b.executes(executor)),
             Self::Argument(b) => Self::Argument(b.executes(executor)),
@@ -73,7 +73,7 @@ impl WasmCommandNode {
     #[must_use]
     pub fn suggests(
         self,
-        provider: impl pumpkin_core::command::suggestion::provider::SuggestionProvider + 'static,
+        provider: impl sculith_core::command::suggestion::provider::SuggestionProvider + 'static,
     ) -> Self {
         match self {
             Self::Literal(b) => Self::Literal(b),
@@ -82,14 +82,14 @@ impl WasmCommandNode {
     }
 
     #[must_use]
-    pub fn into_detached_node(self) -> pumpkin_core::command::node::detached::DetachedNode {
-        use pumpkin_core::command::argument_builder::ArgumentBuilder;
+    pub fn into_detached_node(self) -> sculith_core::command::node::detached::DetachedNode {
+        use sculith_core::command::argument_builder::ArgumentBuilder;
         match self {
             Self::Literal(b) => {
-                pumpkin_core::command::node::detached::DetachedNode::Literal(b.build())
+                sculith_core::command::node::detached::DetachedNode::Literal(b.build())
             }
             Self::Argument(b) => {
-                pumpkin_core::command::node::detached::DetachedNode::Argument(b.build())
+                sculith_core::command::node::detached::DetachedNode::Argument(b.build())
             }
         }
     }
@@ -110,7 +110,7 @@ pub enum InventoryProvider {
 
 #[derive(Clone)]
 pub struct ContainerBlockEntity {
-    pub provider: Arc<dyn pumpkin_core::block::entities::BlockEntity>,
+    pub provider: Arc<dyn sculith_core::block::entities::BlockEntity>,
     pub inventory: Arc<dyn pumpkin_inventory::Inventory>,
 }
 

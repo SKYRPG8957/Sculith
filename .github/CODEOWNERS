@@ -5,17 +5,17 @@
 
 # --- Networking (Java) ---
 /crates/sculith-protocol/                                                   @Snowiiii @xRookieFight
-/crates/pumpkin-core/src/net/                                               @Snowiiii @xRookieFight
+/crates/sculith-core/src/net/                                               @Snowiiii @xRookieFight
 
 # --- Commands ---
-/crates/pumpkin-core/src/command/                                           @aure31
+/crates/sculith-core/src/command/                                           @aure31
 
 # --- Plugins ---
 /crates/pumpkin-plugin-api/                                                 @yunuservices @Phoenixxo
 /crates/pumpkin-api-macros/                                                 @yunuservices @Phoenixxo
 /crates/pumpkin-plugin-runtime/                                             @Phoenixxo
 /crates/pumpkin-plugin-wit/                                                 @yunuservices @Phoenixxo @QuantumSegfault
-/crates/pumpkin-core/src/plugin/                                            @yunuservices @Phoenixxo @QuantumSegfault
+/crates/sculith-core/src/plugin/                                            @yunuservices @Phoenixxo @QuantumSegfault
 /crates/pumpkin-wasm-host/                                                  @yunuservices @Phoenixxo @QuantumSegfault
 /crates/pumpkin-wasm-host-common/                                           @yunuservices @Phoenixxo @QuantumSegfault
 /crates/pumpkin-wasm-host-v0_1/                                             @yunuservices @Phoenixxo @QuantumSegfault
@@ -27,30 +27,30 @@
 /README.md                                                                  @Snowiiii
 
 # --- Gameplay ---
-/crates/pumpkin-core/src/block/                                             @RoosterBooster007 @MegalithOfficial
-/crates/pumpkin-core/src/item/                                              @RoosterBooster007 @MegalithOfficial
-/crates/pumpkin-core/src/entity/projectile/                                 @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/block/                                             @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/item/                                              @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/entity/projectile/                                 @RoosterBooster007 @MegalithOfficial
 
 # --- Redstone and block automation (keep below the block/ rule) ---
-/crates/pumpkin-core/src/block/blocks/redstone/                             @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/blocks/piston/                               @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/blocks/hopper.rs                             @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/entities/hopper.rs                           @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/entities/dispenser.rs                        @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/entities/dropper.rs                          @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/entities/crafter.rs                          @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/entities/comparator.rs                       @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/entities/daylight_detector.rs                @RoosterBooster007 @zinedinp @MegalithOfficial
-/crates/pumpkin-core/src/block/entities/piston.rs                           @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/blocks/redstone/                             @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/blocks/piston/                               @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/blocks/hopper.rs                             @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/entities/hopper.rs                           @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/entities/dispenser.rs                        @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/entities/dropper.rs                          @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/entities/crafter.rs                          @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/entities/comparator.rs                       @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/entities/daylight_detector.rs                @RoosterBooster007 @zinedinp @MegalithOfficial
+/crates/sculith-core/src/block/entities/piston.rs                           @RoosterBooster007 @zinedinp @MegalithOfficial
 /crates/pumpkin-inventory/src/crafter_screen_handler.rs                     @RoosterBooster007 @zinedinp @MegalithOfficial
 
 # --- Mobs ---
-/crates/pumpkin-core/src/entity/mob/                                        @RoosterBooster007 @MegalithOfficial
-/crates/pumpkin-core/src/entity/ai/                                         @RoosterBooster007 @MegalithOfficial
-/crates/pumpkin-core/src/entity/passive/                                    @RoosterBooster007 @MegalithOfficial
-/crates/pumpkin-core/src/entity/boss/                                       @RoosterBooster007 @MegalithOfficial
-/crates/pumpkin-core/src/entity/spawn_util.rs                               @RoosterBooster007 @MegalithOfficial
-/crates/pumpkin-core/src/world/natural_spawner.rs                           @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/entity/mob/                                        @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/entity/ai/                                         @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/entity/passive/                                    @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/entity/boss/                                       @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/entity/spawn_util.rs                               @RoosterBooster007 @MegalithOfficial
+/crates/sculith-core/src/world/natural_spawner.rs                           @RoosterBooster007 @MegalithOfficial
 
 # --- World generation ---
 /crates/pumpkin-world/src/generation/feature/                               @Snowiiii @RoosterBooster007 @MegalithOfficial
@@ -66,8 +66,8 @@
 # --- Testing ---
 /crates/pumpkin-gametest/                                                   @KairuDeibisu
 /tools/pumpkin-tester/                                                      @KairuDeibisu
-/crates/pumpkin-core/src/server/builtin_game_tests/                         @KairuDeibisu
-/crates/pumpkin-core/src/server/server_test_manager.rs                      @KairuDeibisu
+/crates/sculith-core/src/server/builtin_game_tests/                         @KairuDeibisu
+/crates/sculith-core/src/server/server_test_manager.rs                      @KairuDeibisu
 /crates/*/tests/                                                            @KairuDeibisu
 /assets/tests/                                                              @KairuDeibisu
 
@@ -83,8 +83,8 @@
 /assets/en_us_bedrock.lang                                                  @QuantumSegfault
 /crates/pumpkin-config/src/networking/bedrock.rs                            @QuantumSegfault
 /crates/sculith-protocol/src/bedrock/                                       @xRookieFight @QuantumSegfault
-/crates/pumpkin-core/src/net/bedrock/                                       @xRookieFight @QuantumSegfault
+/crates/sculith-core/src/net/bedrock/                                       @xRookieFight @QuantumSegfault
 /crates/sculith-protocol/fuzz/fuzz_targets/*_bedrock.rs                     @Snowiiii @xRookieFight @QuantumSegfault
 /crates/pumpkin-nbt/fuzz/fuzz_targets/deserialize_bedrock.rs                @QuantumSegfault
-/crates/pumpkin-core/src/plugin/api/events/player/bedrock_form_response.rs  @yunuservices @Phoenixxo @QuantumSegfault
+/crates/sculith-core/src/plugin/api/events/player/bedrock_form_response.rs  @yunuservices @Phoenixxo @QuantumSegfault
 /crates/pumpkin-plugin-api/src/events/player/bedrock_form_response.rs       @yunuservices @Phoenixxo @QuantumSegfault

@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use sculith_util::text::TextComponent;
 
-use pumpkin_core::{
+use sculith_core::{
     command::{
         argument_types::{
             argument_type::JavaClientArgumentType, coordinates::Coordinates,
@@ -35,10 +35,10 @@ pub enum NotInBounds {
 
 #[derive(Clone)]
 pub enum OwnedArg {
-    Entities(Vec<Arc<dyn pumpkin_core::entity::EntityBase>>),
-    Entity(Arc<dyn pumpkin_core::entity::EntityBase>),
+    Entities(Vec<Arc<dyn sculith_core::entity::EntityBase>>),
+    Entity(Arc<dyn sculith_core::entity::EntityBase>),
     Players(Vec<Arc<Player>>),
-    GameProfiles(Vec<pumpkin_core::net::GameProfile>),
+    GameProfiles(Vec<sculith_core::net::GameProfile>),
     BlockPos(sculith_util::math::position::BlockPos),
     Pos3D(sculith_util::math::vector3::Vector3<f64>),
     Pos2D(sculith_util::math::vector2::Vector2<f64>),
@@ -50,8 +50,8 @@ pub enum OwnedArg {
     ResourceLocation(String),
     Block(String),
     BlockPredicate(String),
-    BossbarColor(pumpkin_core::world::bossbar::BossbarColor),
-    BossbarStyle(pumpkin_core::world::bossbar::BossbarDivisions),
+    BossbarColor(sculith_core::world::bossbar::BossbarColor),
+    BossbarStyle(sculith_core::world::bossbar::BossbarDivisions),
     Particle(pumpkin_data::particle::Particle),
     Msg(String),
     TextComponent(TextComponent),
@@ -105,7 +105,7 @@ pub fn build_consumed_args_from_context(context: &CommandContext) -> HashMap<Str
                 map.insert(name.clone(), arg);
             }
         } else if let Some(selector) =
-            res.downcast_ref::<pumpkin_core::command::argument_types::entity_selector::EntitySelector>()
+            res.downcast_ref::<sculith_core::command::argument_types::entity_selector::EntitySelector>()
         {
             if let Ok(players) = selector.find_players(&context.source) {
                 map.insert(name.clone(), OwnedArg::Players(players));

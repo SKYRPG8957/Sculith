@@ -11,7 +11,7 @@ test = false
 doctest = false
 
 [dependencies]
-pumpkin-core.workspace = true
+sculith-core.workspace = true
 pumpkin-data.workspace = true
 pumpkin-inventory.workspace = true
 sculith-protocol.workspace = true

@@ -18,10 +18,10 @@ use crate::{
         },
     },
 };
-use pumpkin_core::plugin::api::events::dialog::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::api::events::dialog::{
     DialogClearEvent, DialogClickActionEvent, DialogShowEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 #[allow(clippy::too_many_lines)]
 pub(crate) fn protocol_dialog_from_wasm(

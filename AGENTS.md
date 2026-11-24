@@ -44,7 +44,7 @@ Things worth knowing before you start:
 
 ## Layout
 
-Crates live in `crates/` and are named after what they do (`pumpkin-world` for chunks and generation, `sculith-protocol` for packets, and so on). `crates/pumpkin-core` is the server itself, `crates/pumpkin-wasm-host` (with `-common`, `-v0_1` and `-v0_2`) is the Wasm plugin host, and `crates/sculith` is the binary that wires them together. `assets/` holds the extracted vanilla data and `tools/pumpkin-codegen` turns it into `pumpkin-data`. The server is GPL-3.0; the plugin crates have their own licenses (see Plugin API below).
+Crates live in `crates/` and are named after what they do (`pumpkin-world` for chunks and generation, `sculith-protocol` for packets, and so on). `crates/sculith-core` is the server itself, `crates/pumpkin-wasm-host` (with `-common`, `-v0_1` and `-v0_2`) is the Wasm plugin host, and `crates/sculith` is the binary that wires them together. `assets/` holds the extracted vanilla data and `tools/pumpkin-codegen` turns it into `pumpkin-data`. The server is GPL-3.0; the plugin crates have their own licenses (see Plugin API below).
 
 Some directories have their own `AGENTS.md` with details for that area. Read it when you work there:
 
@@ -91,7 +91,7 @@ Regenerate with `cargo run --locked -p pumpkin-codegen` and never edit `crates/p
 
 ## Where things get wired up
 
-Paths are under `crates/pumpkin-core/src/`. Forgetting to register a new implementation is a common mistake, so copy the wiring of the closest existing example.
+Paths are under `crates/sculith-core/src/`. Forgetting to register a new implementation is a common mistake, so copy the wiring of the closest existing example.
 
 | Adding          | Example to follow                | Register in                                                                  |
 | :-------------- | :------------------------------- | :--------------------------------------------------------------------------- |

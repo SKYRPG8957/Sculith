@@ -27,8 +27,10 @@ use crate::{
     },
     uuid::UuidExt,
 };
-use pumpkin_core::plugin::api::gui::PluginScreenHandler;
-use pumpkin_core::{
+use pumpkin_inventory::player::player_inventory::PlayerInventory;
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::api::gui::PluginScreenHandler;
+use sculith_core::{
     entity::{
         EntityBase,
         player::{
@@ -38,8 +40,6 @@ use pumpkin_core::{
     },
     net::DisconnectReason,
 };
-use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_wasm_host_common::state::PluginHostState;
 use sculith_protocol::Property;
 use sculith_protocol::bedrock::client::modal_form_request::CModalFormRequest;
 use sculith_protocol::java::client::dialog::DialogNBT;
@@ -245,16 +245,16 @@ pub(crate) const fn to_wasm_bedrock_version(
 }
 
 const fn to_wasm_chat_mode(
-    mode: &pumpkin_core::entity::player::ChatMode,
+    mode: &sculith_core::entity::player::ChatMode,
 ) -> pumpkin::plugin::player::ChatMode {
     match mode {
-        pumpkin_core::entity::player::ChatMode::Enabled => {
+        sculith_core::entity::player::ChatMode::Enabled => {
             pumpkin::plugin::player::ChatMode::Enabled
         }
-        pumpkin_core::entity::player::ChatMode::CommandsOnly => {
+        sculith_core::entity::player::ChatMode::CommandsOnly => {
             pumpkin::plugin::player::ChatMode::CommandsOnly
         }
-        pumpkin_core::entity::player::ChatMode::Hidden => pumpkin::plugin::player::ChatMode::Hidden,
+        sculith_core::entity::player::ChatMode::Hidden => pumpkin::plugin::player::ChatMode::Hidden,
     }
 }
 
@@ -1144,7 +1144,7 @@ use crate::pumpkin::plugin::item_stack::ItemStack as WitHostItemStack;
 
 impl pumpkin::plugin::player::HostInventoryEdit for PluginHostState {
     fn status(&mut self, edit: Resource<InventoryEdit>) -> wasmtime::Result<InventoryEditStatus> {
-        use pumpkin_core::server::PlayerInventoryEditStatus as Status;
+        use sculith_core::server::PlayerInventoryEditStatus as Status;
 
         Ok(match self.get_mut(&edit)?.status() {
             Status::Pending => InventoryEditStatus::Pending,
@@ -1970,10 +1970,10 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         let player = self.get(&player)?;
         let w = match weather {
             crate::pumpkin::plugin::player::PlayerWeather::Clear => {
-                pumpkin_core::entity::player::PlayerWeather::Clear
+                sculith_core::entity::player::PlayerWeather::Clear
             }
             crate::pumpkin::plugin::player::PlayerWeather::Downfall => {
-                pumpkin_core::entity::player::PlayerWeather::Downfall
+                sculith_core::entity::player::PlayerWeather::Downfall
             }
         };
         player.set_player_weather(w);
@@ -1992,10 +1992,10 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<Option<crate::pumpkin::plugin::player::PlayerWeather>> {
         let player = self.get(&player)?;
         Ok(player.get_player_weather().map(|w| match w {
-            pumpkin_core::entity::player::PlayerWeather::Clear => {
+            sculith_core::entity::player::PlayerWeather::Clear => {
                 crate::pumpkin::plugin::player::PlayerWeather::Clear
             }
-            pumpkin_core::entity::player::PlayerWeather::Downfall => {
+            sculith_core::entity::player::PlayerWeather::Downfall => {
                 crate::pumpkin::plugin::player::PlayerWeather::Downfall
             }
         }))
@@ -2655,7 +2655,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         let guard = player.advancements.lock_ignore_poison();
         let done =
             guard.progress.map.get(advancement).is_some_and(
-                pumpkin_core::entity::player::advancement::AdvancementProgress::is_done,
+                sculith_core::entity::player::advancement::AdvancementProgress::is_done,
             );
         Ok(done)
     }
@@ -2704,7 +2704,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         player: Resource<Player>,
     ) -> wasmtime::Result<Option<Resource<pumpkin::plugin::player::JavaPlayer>>> {
         let player = self.get(&player)?.clone();
-        if let pumpkin_core::net::ClientPlatform::Java(_) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Java(_) = player.client.as_ref() {
             Ok(Some(self.add(player)?))
         } else {
             Ok(None)
@@ -2716,7 +2716,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         player: Resource<Player>,
     ) -> wasmtime::Result<Option<Resource<pumpkin::plugin::player::BedrockPlayer>>> {
         let player = self.get(&player)?.clone();
-        if let pumpkin_core::net::ClientPlatform::Bedrock(_) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(_) = player.client.as_ref() {
             Ok(Some(self.add(player)?))
         } else {
             Ok(None)
@@ -2887,7 +2887,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
                 Form::Modal(form) => state.serialize_modal_form_v0_2(form, locale),
                 Form::Custom(form) => state.serialize_custom_form_v0_2(form, locale),
             };
-            pumpkin_core::entity::player::forms::Form::from_json(json)
+            sculith_core::entity::player::forms::Form::from_json(json)
         });
         run_blocking(accessor, move || {
             form.and_then(|form| player.open_form(form))
@@ -3383,7 +3383,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         port: u16,
     ) -> wasmtime::Result<()> {
         let player = accessor.get_res(&player)?;
-        if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
             client.try_send_packet(&sculith_protocol::java::client::play::CTransfer::new(
                 &host,
                 sculith_protocol::codec::var_int::VarInt(i32::from(port)),
@@ -4081,7 +4081,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
     ) -> wasmtime::Result<()> {
         let player = accessor.get_res(&player)?.clone();
 
-        if let pumpkin_core::net::ClientPlatform::Java(_) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Java(_) = player.client.as_ref() {
             player
                 .send_client_packet(&sculith_protocol::java::client::play::CCustomPayload::new(
                     &channel, &data,
@@ -4104,7 +4104,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
             .map(|t| accessor.take_res(t))
             .transpose()?;
 
-        if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
             client.try_send_packet(
                 &sculith_protocol::java::client::play::CAddResourcePack::new(
                     &uuid,
@@ -4127,7 +4127,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
 
         let uuid = Uuid::from_wit(&id);
 
-        if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
             client.try_send_packet(
                 &sculith_protocol::java::client::play::CRemoveResourcePack::new(Some(&uuid)),
             );
@@ -4141,7 +4141,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
     ) -> wasmtime::Result<()> {
         let player = accessor.get_res(&player)?;
 
-        if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
             client.try_send_packet(
                 &sculith_protocol::java::client::play::CRemoveResourcePack::new(None),
             );
@@ -4165,7 +4165,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
         let operation = async move {
             if let Some(server) = player.world().server.upgrade() {
                 let mut event =
-                    pumpkin_core::plugin::api::events::dialog::dialog_show::DialogShowEvent::new(
+                    sculith_core::plugin::api::events::dialog::dialog_show::DialogShowEvent::new(
                         player.clone(),
                         protocol_dialog.clone(),
                     );
@@ -4175,7 +4175,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
                 }
             }
 
-            if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
+            if let sculith_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
                 match client.connection_state.load() {
                     sculith_protocol::ConnectionState::Config => {
                         client.try_send_packet(
@@ -4218,7 +4218,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
         let operation = async move {
             if let Some(server) = player.world().server.upgrade() {
                 let mut event =
-                    pumpkin_core::plugin::api::events::dialog::dialog_clear::DialogClearEvent::new(
+                    sculith_core::plugin::api::events::dialog::dialog_clear::DialogClearEvent::new(
                         player.clone(),
                     );
                 server.plugin_manager.fire(&server, &mut event).await;
@@ -4227,7 +4227,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
                 }
             }
 
-            if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
+            if let sculith_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
                 match client.connection_state.load() {
                     sculith_protocol::ConnectionState::Config => {
                         client.try_send_packet(
@@ -4275,7 +4275,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
                 && let Some(player_arc) = player.world().get_player_by_uuid(player.gameprofile.id)
             {
                 let mut event =
-                    pumpkin_core::plugin::api::events::player::player_kick::PlayerKickEvent::new(
+                    sculith_core::plugin::api::events::player::player_kick::PlayerKickEvent::new(
                         player_arc,
                         reason.clone().to_pretty_console(),
                     );
@@ -4287,7 +4287,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
 
             let send_packet = options.teardown_policy
                 != pumpkin::plugin::player::SocketTeardownPolicy::DropConnection;
-            if let pumpkin_core::net::ClientPlatform::Java(java) = player.client.as_ref() {
+            if let sculith_core::net::ClientPlatform::Java(java) = player.client.as_ref() {
                 java.kick_explicit(&reason, send_packet).await;
             }
 
@@ -4305,7 +4305,7 @@ impl pumpkin::plugin::player::HostBedrockPlayer for PluginHostState {
     ) -> wasmtime::Result<pumpkin::plugin::player::BedrockMinecraftVersion> {
         let player = self.get(&player)?;
 
-        if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
             Ok(to_wasm_bedrock_version(client.version.load()))
         } else {
             Ok(pumpkin::plugin::player::BedrockMinecraftVersion::Unknown)
@@ -4318,7 +4318,7 @@ impl pumpkin::plugin::player::HostBedrockPlayer for PluginHostState {
     ) -> wasmtime::Result<u32> {
         let player = self.get(&player)?;
 
-        if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
             Ok(client.protocol_version.load(Ordering::Relaxed))
         } else {
             Ok(0)
@@ -4331,7 +4331,7 @@ impl pumpkin::plugin::player::HostBedrockPlayer for PluginHostState {
     ) -> wasmtime::Result<u64> {
         let player = self.get(&player)?;
 
-        if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
             Ok(client.id)
         } else {
             Ok(0)
@@ -4346,7 +4346,7 @@ impl pumpkin::plugin::player::HostBedrockPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?.clone();
 
-        if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
             client.try_enqueue_raw_packet_direct(packet_id, &payload);
         }
         Ok(())
@@ -4449,7 +4449,7 @@ impl pumpkin::plugin::player::HostBedrockPlayer for PluginHostState {
     ) -> wasmtime::Result<pumpkin::plugin::player::BedrockPlayerSettings> {
         let player = self.get(&player)?.clone();
 
-        if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
             let data = client.client_data.load();
             (**data).as_ref().map_or_else(
                 || Err(wasmtime::Error::msg("client data not available")),
@@ -4588,7 +4588,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
             tick: VarULong(0),
         };
 
-        if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
             client.send_packet(&packet).await;
         }
 
@@ -4615,7 +4615,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
     ) -> wasmtime::Result<u32> {
         let player = accessor.get_res(&player)?.clone();
 
-        if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
             let form_id = client
                 .allocate_form_id()
                 .ok_or_else(|| wasmtime::Error::msg("Form IDs exhausted for this connection"))?;
@@ -4653,7 +4653,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
     ) -> wasmtime::Result<()> {
         let player = accessor.get_res(&player)?.clone();
 
-        if let pumpkin_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
+        if let sculith_core::net::ClientPlatform::Bedrock(client) = player.client.as_ref() {
             let entries = info
                 .packs
                 .into_iter()
@@ -4720,7 +4720,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
                 && let Some(player_arc) = player.world().get_player_by_uuid(player.gameprofile.id)
             {
                 let mut event =
-                    pumpkin_core::plugin::api::events::player::player_kick::PlayerKickEvent::new(
+                    sculith_core::plugin::api::events::player::player_kick::PlayerKickEvent::new(
                         player_arc,
                         options.message.clone(),
                     );
@@ -4732,7 +4732,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
 
             let send_packet = options.teardown_policy
                 != pumpkin::plugin::player::SocketTeardownPolicy::DropConnection;
-            if let pumpkin_core::net::ClientPlatform::Bedrock(bedrock) = player.client.as_ref() {
+            if let sculith_core::net::ClientPlatform::Bedrock(bedrock) = player.client.as_ref() {
                 bedrock
                     .kick_explicit(
                         disconnect_reason,

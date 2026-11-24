@@ -4,11 +4,11 @@ use crate::{
         Event, HangingBreakByEntityEventData, HangingBreakEventData, HangingPlaceEventData,
     },
 };
-use pumpkin_core::plugin::hanging::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::hanging::{
     hanging_break::HangingBreakEvent, hanging_break_by_entity::HangingBreakByEntityEvent,
     hanging_place::HangingPlaceEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl ToFromWasmEvent for HangingBreakEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {

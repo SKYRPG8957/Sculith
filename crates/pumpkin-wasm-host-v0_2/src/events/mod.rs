@@ -10,13 +10,13 @@ use sculith_util::{
 use wasmtime::component::Resource;
 
 use crate::pumpkin;
-use pumpkin_core::{
+use pumpkin_wasm_host_common::{plugin::WasmPlugin, state::PluginHostState};
+use sculith_core::{
     entity::player::Player,
     plugin::{BoxFuture, EventHandler, Payload},
     server::Server,
     world::World,
 };
-use pumpkin_wasm_host_common::{plugin::WasmPlugin, state::PluginHostState};
 
 pub mod block;
 pub mod cleanup;
@@ -352,7 +352,7 @@ impl<E: Payload + ToFromWasmEvent + Clone + 'static> EventHandler<E> for WasmPlu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_core::plugin::server::{
+    use sculith_core::plugin::server::{
         server_broadcast::ServerBroadcastEvent, server_command::ServerCommandEvent,
     };
     use sculith_util::text::TextComponent;

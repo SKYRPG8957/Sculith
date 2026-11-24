@@ -558,7 +558,7 @@ impl HostEntity for PluginHostState {
     }
 
     fn get_max_air(&mut self, _entity: Resource<Entity>) -> wasmtime::Result<i32> {
-        Ok(pumpkin_core::entity::breath::MAX_AIR)
+        Ok(sculith_core::entity::breath::MAX_AIR)
     }
 
     fn raycast(

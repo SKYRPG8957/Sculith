@@ -10,13 +10,13 @@ use sculith_util::{
 use wasmtime::component::Resource;
 
 use crate::pumpkin;
-use pumpkin_core::{
+use pumpkin_wasm_host_common::{plugin::WasmPlugin, state::PluginHostState};
+use sculith_core::{
     entity::player::Player,
     plugin::{BoxFuture, EventHandler, Payload},
     server::Server,
     world::World,
 };
-use pumpkin_wasm_host_common::{plugin::WasmPlugin, state::PluginHostState};
 
 pub mod block;
 pub mod cleanup;

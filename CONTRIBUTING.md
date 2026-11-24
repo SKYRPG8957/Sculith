@@ -105,11 +105,11 @@ Use the existing navigation and controls to move, look and jump. Do not add a se
 
 #### Entity island reach
 
-Entity islands let the server tick independent groups of entities in parallel while keeping entities within each group in list order. To form those groups, the scheduler needs bounds on what each entity can read or change during its turn. Missing an interaction can put dependent entities on different threads; reporting too much can merge groups that could have run independently. The implementation is in [`world::entity_islands`](crates/pumpkin-core/src/world/entity_islands.rs).
+Entity islands let the server tick independent groups of entities in parallel while keeping entities within each group in list order. To form those groups, the scheduler needs bounds on what each entity can read or change during its turn. Missing an interaction can put dependent entities on different threads; reporting too much can merge groups that could have run independently. The implementation is in [`world::entity_islands`](crates/sculith-core/src/world/entity_islands.rs).
 
 An *audited reach* uses bounds derived from the mob's reviewed behavior. Mobs without one use a broader conservative estimate. New AI can use that fallback until its access patterns have been checked.
 
-For goals, [`Goal::tick_reach()`](crates/pumpkin-core/src/entity/ai/goal/mod.rs) returns a `GoalReach` describing access during the upcoming entity tick. Include searches and reads, not just writes or attacks. Include callbacks that may run when an inactive goal starts or an active goal stops, as well as its normal `tick` callback.
+For goals, [`Goal::tick_reach()`](crates/sculith-core/src/entity/ai/goal/mod.rs) returns a `GoalReach` describing access during the upcoming entity tick. Include searches and reads, not just writes or attacks. Include callbacks that may run when an inactive goal starts or an active goal stops, as well as its normal `tick` callback.
 
 | `GoalReach` field | What it must cover |
 | --- | --- |
@@ -123,7 +123,7 @@ Calculate the report from existing state. Reporting reach must not consume rando
 
 Leave `tick_reach()` returning `None` if the goal's reach has not been audited. The selector checks every registered goal, including inactive ones; a `None` result makes the mob use the conservative fallback. An empty `GoalReach` means no additional access, not unknown access.
 
-Return true from `Mob::has_audited_tick()` only after checking the species' own tick code against [`MobEntity::audited_reach`](crates/pumpkin-core/src/entity/mob/mod.rs). That includes custom AI and Brain callbacks, movement, block reads and writes, spawns and remote interactions. Check it again when those behaviors change. Implementing `GoalReach` only covers the goal's contribution.
+Return true from `Mob::has_audited_tick()` only after checking the species' own tick code against [`MobEntity::audited_reach`](crates/sculith-core/src/entity/mob/mod.rs). That includes custom AI and Brain callbacks, movement, block reads and writes, spawns and remote interactions. Check it again when those behaviors change. Implementing `GoalReach` only covers the goal's contribution.
 
 `MobEntity::audited_reach` includes common movement and active-route information. If a new behavior can access state outside those bounds, extend the calculation before marking it audited. The conservative fallback also has finite margins. Effects outside them, such as long-range explosions, teleports or chained block updates, need explicit dependency or global reach handling. Setting `changes_blocks` alone does not describe a distant write location.
 

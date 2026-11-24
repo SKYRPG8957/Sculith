@@ -14,13 +14,13 @@ use crate::{
         },
     },
 };
-use pumpkin_core::plugin::Context;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::Context;
 
-fn register_typed_event<E: pumpkin_core::plugin::Payload + ToFromWasmEvent + Clone + 'static>(
+fn register_typed_event<E: sculith_core::plugin::Payload + ToFromWasmEvent + Clone + 'static>(
     ctx: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
 ) {
     ctx.register_event::<E, _>(Arc::clone(handler), priority, blocking);
@@ -30,11 +30,11 @@ fn register_typed_event<E: pumpkin_core::plugin::Payload + ToFromWasmEvent + Clo
 fn register_player_event(
     ctx: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::player::{
+    use sculith_core::plugin::player::{
         bedrock_form_response::BedrockFormResponseEvent,
         changed_main_hand::PlayerChangedMainHandEvent, egg_throw::PlayerEggThrowEvent,
         exp_change::PlayerExpChangeEvent, fish::PlayerFishEvent,
@@ -137,270 +137,270 @@ fn register_player_event(
         }
         EventType::PlayerItemConsumeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_item_consume::PlayerItemConsumeEvent,
+                sculith_core::plugin::api::events::player::player_item_consume::PlayerItemConsumeEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerItemDamageEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent,
+                sculith_core::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerDropItemEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_drop_item::PlayerDropItemEvent,
+                sculith_core::plugin::api::events::player::player_drop_item::PlayerDropItemEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerBedEnterEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_bed::PlayerBedEnterEvent,
+                sculith_core::plugin::api::events::player::player_bed::PlayerBedEnterEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerBedLeaveEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_bed::PlayerBedLeaveEvent,
+                sculith_core::plugin::api::events::player::player_bed::PlayerBedLeaveEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerBucketEmptyEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_bucket::PlayerBucketEmptyEvent,
+                sculith_core::plugin::api::events::player::player_bucket::PlayerBucketEmptyEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerBucketFillEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_bucket::PlayerBucketFillEvent,
+                sculith_core::plugin::api::events::player::player_bucket::PlayerBucketFillEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::AsyncPlayerChatEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::async_player_chat::AsyncPlayerChatEvent,
+                sculith_core::plugin::api::events::player::async_player_chat::AsyncPlayerChatEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::AsyncPlayerPreLoginEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::async_player_pre_login::AsyncPlayerPreLoginEvent,
+                sculith_core::plugin::api::events::player::async_player_pre_login::AsyncPlayerPreLoginEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerAdvancementDoneEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_advancement_done::PlayerAdvancementDoneEvent,
+                sculith_core::plugin::api::events::player::player_advancement_done::PlayerAdvancementDoneEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerAnimationEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_animation::PlayerAnimationEvent,
+                sculith_core::plugin::api::events::player::player_animation::PlayerAnimationEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerArmorStandManipulateEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_armor_stand_manipulate::PlayerArmorStandManipulateEvent,
+                sculith_core::plugin::api::events::player::player_armor_stand_manipulate::PlayerArmorStandManipulateEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerBucketEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_bucket_entity::PlayerBucketEntityEvent,
+                sculith_core::plugin::api::events::player::player_bucket_entity::PlayerBucketEntityEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerChangedWorldEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent,
+                sculith_core::plugin::api::events::player::player_changed_world::PlayerChangedWorldEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerChannelEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_channel::PlayerChannelEvent,
+                sculith_core::plugin::api::events::player::player_channel::PlayerChannelEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerCommandPreprocessEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_command_preprocess::PlayerCommandPreprocessEvent,
+                sculith_core::plugin::api::events::player::player_command_preprocess::PlayerCommandPreprocessEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerEditBookEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_edit_book::PlayerEditBookEvent,
+                sculith_core::plugin::api::events::player::player_edit_book::PlayerEditBookEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerElytraBoostEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_elytra_boost::PlayerElytraBoostEvent,
+                sculith_core::plugin::api::events::player::player_elytra_boost::PlayerElytraBoostEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerExpCooldownChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_exp_cooldown_change::PlayerExpCooldownChangeEvent,
+                sculith_core::plugin::api::events::player::player_exp_cooldown_change::PlayerExpCooldownChangeEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerHarvestBlockEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_harvest_block::PlayerHarvestBlockEvent,
+                sculith_core::plugin::api::events::player::player_harvest_block::PlayerHarvestBlockEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerHideEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_hide_entity::PlayerHideEntityEvent,
+                sculith_core::plugin::api::events::player::player_hide_entity::PlayerHideEntityEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerItemBreakEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_item_break::PlayerItemBreakEvent,
+                sculith_core::plugin::api::events::player::player_item_break::PlayerItemBreakEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerItemMendEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_item_mend::PlayerItemMendEvent,
+                sculith_core::plugin::api::events::player::player_item_mend::PlayerItemMendEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerKickEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_kick::PlayerKickEvent,
+                sculith_core::plugin::api::events::player::player_kick::PlayerKickEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerLeashEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_leash_entity::PlayerLeashEntityEvent,
+                sculith_core::plugin::api::events::player::player_leash_entity::PlayerLeashEntityEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerLevelChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_level_change::PlayerLevelChangeEvent,
+                sculith_core::plugin::api::events::player::player_level_change::PlayerLevelChangeEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerLocaleChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_locale_change::PlayerLocaleChangeEvent,
+                sculith_core::plugin::api::events::player::player_locale_change::PlayerLocaleChangeEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerNameEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_name_entity::PlayerNameEntityEvent,
+                sculith_core::plugin::api::events::player::player_name_entity::PlayerNameEntityEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerOpenSignEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_open_sign::PlayerOpenSignEvent,
+                sculith_core::plugin::api::events::player::player_open_sign::PlayerOpenSignEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerPortalEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_portal::PlayerPortalEvent,
+                sculith_core::plugin::api::events::player::player_portal::PlayerPortalEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerPreLoginEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_pre_login::PlayerPreLoginEvent,
+                sculith_core::plugin::api::events::player::player_pre_login::PlayerPreLoginEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerRiptideEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_riptide::PlayerRiptideEvent,
+                sculith_core::plugin::api::events::player::player_riptide::PlayerRiptideEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerShearEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_shear_entity::PlayerShearEntityEvent,
+                sculith_core::plugin::api::events::player::player_shear_entity::PlayerShearEntityEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerShowEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_show_entity::PlayerShowEntityEvent,
+                sculith_core::plugin::api::events::player::player_show_entity::PlayerShowEntityEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerSpawnChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_spawn_change::PlayerSpawnChangeEvent,
+                sculith_core::plugin::api::events::player::player_spawn_change::PlayerSpawnChangeEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerStatisticIncrementEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_statistic_increment::PlayerStatisticIncrementEvent,
+                sculith_core::plugin::api::events::player::player_statistic_increment::PlayerStatisticIncrementEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerSwapHandsEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_swap_hands::PlayerSwapHandItemsEvent,
+                sculith_core::plugin::api::events::player::player_swap_hands::PlayerSwapHandItemsEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerTakeLecternBookEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_take_lectern_book::PlayerTakeLecternBookEvent,
+                sculith_core::plugin::api::events::player::player_take_lectern_book::PlayerTakeLecternBookEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerUnleashEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_unleash_entity::PlayerUnleashEntityEvent,
+                sculith_core::plugin::api::events::player::player_unleash_entity::PlayerUnleashEntityEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerVelocityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_velocity::PlayerVelocityEvent,
+                sculith_core::plugin::api::events::player::player_velocity::PlayerVelocityEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerInputEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_input::PlayerInputEvent,
+                sculith_core::plugin::api::events::player::player_input::PlayerInputEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerInteractAtEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_interact_at_entity::PlayerInteractAtEntityEvent,
+                sculith_core::plugin::api::events::player::player_interact_at_entity::PlayerInteractAtEntityEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerLinksSendEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_links_send::PlayerLinksSendEvent,
+                sculith_core::plugin::api::events::player::player_links_send::PlayerLinksSendEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerPickupArrowEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_pickup_arrow::PlayerPickupArrowEvent,
+                sculith_core::plugin::api::events::player::player_pickup_arrow::PlayerPickupArrowEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerRecipeBookClickEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_recipe_book_click::PlayerRecipeBookClickEvent,
+                sculith_core::plugin::api::events::player::player_recipe_book_click::PlayerRecipeBookClickEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerRecipeBookSettingsChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_recipe_book_settings_change::PlayerRecipeBookSettingsChangeEvent,
+                sculith_core::plugin::api::events::player::player_recipe_book_settings_change::PlayerRecipeBookSettingsChangeEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerRecipeDiscoverEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_recipe_discover::PlayerRecipeDiscoverEvent,
+                sculith_core::plugin::api::events::player::player_recipe_discover::PlayerRecipeDiscoverEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerRegisterChannelEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_register_channel::PlayerRegisterChannelEvent,
+                sculith_core::plugin::api::events::player::player_register_channel::PlayerRegisterChannelEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerResourcePackStatusEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_resource_pack_status::PlayerResourcePackStatusEvent,
+                sculith_core::plugin::api::events::player::player_resource_pack_status::PlayerResourcePackStatusEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
         EventType::PlayerSpawnLocationEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_spawn_location::PlayerSpawnLocationEvent,
+                sculith_core::plugin::api::events::player::player_spawn_location::PlayerSpawnLocationEvent,
             >(ctx, handler, priority, blocking);
         }
         EventType::PlayerUnregisterChannelEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::player::player_unregister_channel::PlayerUnregisterChannelEvent,
+                sculith_core::plugin::api::events::player::player_unregister_channel::PlayerUnregisterChannelEvent,
             >(ctx, handler, priority, blocking)
             ;
         }
@@ -414,11 +414,11 @@ fn register_player_event(
 fn register_entity_event(
     ctx: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::entity::{
+    use sculith_core::plugin::entity::{
         area_effect_cloud_apply::AreaEffectCloudApplyEvent,
         arrow_body_count_change::ArrowBodyCountChangeEvent,
         bat_toggle_sleep::BatToggleSleepEvent,
@@ -738,11 +738,11 @@ fn register_entity_event(
 fn register_inventory_event(
     resource: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::inventory::{
+    use sculith_core::plugin::inventory::{
         brew::BrewEvent, brewing_stand_fuel::BrewingStandFuelEvent, craft_item::CraftItemEvent,
         furnace_burn::FurnaceBurnEvent, furnace_extract::FurnaceExtractEvent,
         furnace_smelt::FurnaceSmeltEvent, furnace_start_smelt::FurnaceStartSmeltEvent,
@@ -833,11 +833,11 @@ fn register_inventory_event(
 fn register_vehicle_event(
     resource: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::vehicle::{
+    use sculith_core::plugin::vehicle::{
         vehicle_block_collision::VehicleBlockCollisionEvent,
         vehicle_collision::VehicleCollisionEvent, vehicle_create::VehicleCreateEvent,
         vehicle_damage::VehicleDamageEvent, vehicle_destroy::VehicleDestroyEvent,
@@ -890,11 +890,11 @@ fn register_vehicle_event(
 fn register_enchantment_event(
     resource: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::enchantment::{
+    use sculith_core::plugin::enchantment::{
         enchant_item::EnchantItemEvent, prepare_item_enchant::PrepareItemEnchantEvent,
     };
 
@@ -917,11 +917,11 @@ fn register_enchantment_event(
 fn register_world_event(
     resource: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::world::{
+    use sculith_core::plugin::world::{
         chunk_load::ChunkLoad, chunk_save::ChunkSave, chunk_send::ChunkSend,
         spawn_change::SpawnChangeEvent,
     };
@@ -941,93 +941,93 @@ fn register_world_event(
         }
         EventType::WeatherChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::weather_change::WeatherChangeEvent,
+                sculith_core::plugin::api::events::world::weather_change::WeatherChangeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::ThunderChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::weather_change::ThunderChangeEvent,
+                sculith_core::plugin::api::events::world::weather_change::ThunderChangeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::WorldLoadEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::world_load::WorldLoadEvent,
+                sculith_core::plugin::api::events::world::world_load::WorldLoadEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::WorldUnloadEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::world_load::WorldUnloadEvent,
+                sculith_core::plugin::api::events::world::world_load::WorldUnloadEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::AsyncStructureGenerateEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::async_structure_generate::AsyncStructureGenerateEvent,
+                sculith_core::plugin::api::events::world::async_structure_generate::AsyncStructureGenerateEvent,
             >(resource, handler, priority, blocking)
             ;
         }
         EventType::AsyncStructureSpawnEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::async_structure_spawn::AsyncStructureSpawnEvent,
+                sculith_core::plugin::api::events::world::async_structure_spawn::AsyncStructureSpawnEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::ChunkPopulateEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::chunk_populate::ChunkPopulateEvent,
+                sculith_core::plugin::api::events::world::chunk_populate::ChunkPopulateEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::ChunkUnloadEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::chunk_unload::ChunkUnloadEvent,
+                sculith_core::plugin::api::events::world::chunk_unload::ChunkUnloadEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::EntitiesLoadEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::entities_load::EntitiesLoadEvent,
+                sculith_core::plugin::api::events::world::entities_load::EntitiesLoadEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::EntitiesUnloadEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::entities_unload::EntitiesUnloadEvent,
+                sculith_core::plugin::api::events::world::entities_unload::EntitiesUnloadEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::GenericGameEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::generic_game::GenericGameEvent,
+                sculith_core::plugin::api::events::world::generic_game::GenericGameEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::LootGenerateEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::loot_generate::LootGenerateEvent,
+                sculith_core::plugin::api::events::world::loot_generate::LootGenerateEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::PortalCreateEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::portal_create::PortalCreateEvent,
+                sculith_core::plugin::api::events::world::portal_create::PortalCreateEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::StructureGrowEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::structure_grow::StructureGrowEvent,
+                sculith_core::plugin::api::events::world::structure_grow::StructureGrowEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::TimeSkipEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::time_skip::TimeSkipEvent,
+                sculith_core::plugin::api::events::world::time_skip::TimeSkipEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::WorldInitEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::world_init::WorldInitEvent,
+                sculith_core::plugin::api::events::world::world_init::WorldInitEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::WorldSaveEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::world_save::WorldSaveEvent,
+                sculith_core::plugin::api::events::world::world_save::WorldSaveEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::LightningStrikeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::world::lightning_strike::LightningStrikeEvent,
+                sculith_core::plugin::api::events::world::lightning_strike::LightningStrikeEvent,
             >(resource, handler, priority, blocking);
         }
         _ => {
@@ -1040,11 +1040,11 @@ fn register_world_event(
 fn register_block_event(
     resource: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::block::{
+    use sculith_core::plugin::block::{
         block_break::BlockBreakEvent, block_burn::BlockBurnEvent,
         block_can_build::BlockCanBuildEvent, block_grow::BlockGrowEvent,
         block_place::BlockPlaceEvent, block_redstone::BlockRedstoneEvent,
@@ -1071,197 +1071,197 @@ fn register_block_event(
         }
         EventType::BlockDamageEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_damage::BlockDamageEvent,
+                sculith_core::plugin::api::events::block::block_damage::BlockDamageEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockIgniteEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_ignite::BlockIgniteEvent,
+                sculith_core::plugin::api::events::block::block_ignite::BlockIgniteEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockFromToEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_from_to::BlockFromToEvent,
+                sculith_core::plugin::api::events::block::block_from_to::BlockFromToEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockFormEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_form::BlockFormEvent,
+                sculith_core::plugin::api::events::block::block_form::BlockFormEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockFadeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_fade::BlockFadeEvent,
+                sculith_core::plugin::api::events::block::block_fade::BlockFadeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockDispenseEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_dispense::BlockDispenseEvent,
+                sculith_core::plugin::api::events::block::block_dispense::BlockDispenseEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockExplodeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_explode::BlockExplodeEvent,
+                sculith_core::plugin::api::events::block::block_explode::BlockExplodeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockPhysicsEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_physics::BlockPhysicsEvent,
+                sculith_core::plugin::api::events::block::block_physics::BlockPhysicsEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockPistonExtendEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_piston::BlockPistonExtendEvent,
+                sculith_core::plugin::api::events::block::block_piston::BlockPistonExtendEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockPistonRetractEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_piston::BlockPistonRetractEvent,
+                sculith_core::plugin::api::events::block::block_piston::BlockPistonRetractEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::NotePlayEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::note_play::NotePlayEvent,
+                sculith_core::plugin::api::events::block::note_play::NotePlayEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::SignChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::sign_change::SignChangeEvent,
+                sculith_core::plugin::api::events::block::sign_change::SignChangeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::SpongeAbsorbEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::sponge_absorb::SpongeAbsorbEvent,
+                sculith_core::plugin::api::events::block::sponge_absorb::SpongeAbsorbEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::TntPrimeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::tnt_prime::TNTPrimeEvent,
+                sculith_core::plugin::api::events::block::tnt_prime::TNTPrimeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BellResonateEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::bell_resonate::BellResonateEvent,
+                sculith_core::plugin::api::events::block::bell_resonate::BellResonateEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BellRingEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::bell_ring::BellRingEvent,
+                sculith_core::plugin::api::events::block::bell_ring::BellRingEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockBrushEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_brush::BlockBrushEvent,
+                sculith_core::plugin::api::events::block::block_brush::BlockBrushEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockCookEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_cook::BlockCookEvent,
+                sculith_core::plugin::api::events::block::block_cook::BlockCookEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockDamageAbortEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_damage_abort::BlockDamageAbortEvent,
+                sculith_core::plugin::api::events::block::block_damage_abort::BlockDamageAbortEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockDispenseArmorEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_dispense_armor::BlockDispenseArmorEvent,
+                sculith_core::plugin::api::events::block::block_dispense_armor::BlockDispenseArmorEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockDispenseLootEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_dispense_loot::BlockDispenseLootEvent,
+                sculith_core::plugin::api::events::block::block_dispense_loot::BlockDispenseLootEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockDropItemEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_drop_item::BlockDropItemEvent,
+                sculith_core::plugin::api::events::block::block_drop_item::BlockDropItemEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockExpEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_exp::BlockExpEvent,
+                sculith_core::plugin::api::events::block::block_exp::BlockExpEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockFertilizeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_fertilize::BlockFertilizeEvent,
+                sculith_core::plugin::api::events::block::block_fertilize::BlockFertilizeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockMultiPlaceEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_multi_place::BlockMultiPlaceEvent,
+                sculith_core::plugin::api::events::block::block_multi_place::BlockMultiPlaceEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockReceiveGameEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_receive_game::BlockReceiveGameEvent,
+                sculith_core::plugin::api::events::block::block_receive_game::BlockReceiveGameEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockShearEntityEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_shear_entity::BlockShearEntityEvent,
+                sculith_core::plugin::api::events::block::block_shear_entity::BlockShearEntityEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BlockSpreadEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::block_spread::BlockSpreadEvent,
+                sculith_core::plugin::api::events::block::block_spread::BlockSpreadEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::BrewingStartEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::brewing_start::BrewingStartEvent,
+                sculith_core::plugin::api::events::block::brewing_start::BrewingStartEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::CampfireStartEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::campfire_start::CampfireStartEvent,
+                sculith_core::plugin::api::events::block::campfire_start::CampfireStartEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::CauldronLevelChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::cauldron_level_change::CauldronLevelChangeEvent,
+                sculith_core::plugin::api::events::block::cauldron_level_change::CauldronLevelChangeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::CrafterCraftEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::crafter_craft::CrafterCraftEvent,
+                sculith_core::plugin::api::events::block::crafter_craft::CrafterCraftEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::EntityBlockFormEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::entity_block_form::EntityBlockFormEvent,
+                sculith_core::plugin::api::events::block::entity_block_form::EntityBlockFormEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::FluidLevelChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::fluid_level_change::FluidLevelChangeEvent,
+                sculith_core::plugin::api::events::block::fluid_level_change::FluidLevelChangeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::InventoryBlockStartEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::inventory_block_start::InventoryBlockStartEvent,
+                sculith_core::plugin::api::events::block::inventory_block_start::InventoryBlockStartEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::LeavesDecayEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::leaves_decay::LeavesDecayEvent,
+                sculith_core::plugin::api::events::block::leaves_decay::LeavesDecayEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::MoistureChangeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::moisture_change::MoistureChangeEvent,
+                sculith_core::plugin::api::events::block::moisture_change::MoistureChangeEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::SculkBloomEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::sculk_bloom::SculkBloomEvent,
+                sculith_core::plugin::api::events::block::sculk_bloom::SculkBloomEvent,
             >(resource, handler, priority, blocking);
         }
         EventType::VaultDisplayItemEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::block::vault_display_item::VaultDisplayItemEvent,
+                sculith_core::plugin::api::events::block::vault_display_item::VaultDisplayItemEvent,
             >(resource, handler, priority, blocking);
         }
 
@@ -1274,11 +1274,11 @@ fn register_block_event(
 fn register_raid_event(
     resource: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::raid::{
+    use sculith_core::plugin::raid::{
         raid_finish::RaidFinishEvent, raid_spawn_wave::RaidSpawnWaveEvent,
         raid_stop::RaidStopEvent, raid_trigger::RaidTriggerEvent,
     };
@@ -1305,11 +1305,11 @@ fn register_raid_event(
 fn register_dialog_event(
     resource: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::api::events::dialog::{
+    use sculith_core::plugin::api::events::dialog::{
         DialogClearEvent, DialogClickActionEvent, DialogShowEvent,
     };
 
@@ -1332,11 +1332,11 @@ fn register_dialog_event(
 fn register_server_event(
     resource: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::server::{
+    use sculith_core::plugin::server::{
         list_ping::ServerListPingEvent,
         packet::{PacketReceivedEvent, PacketSentEvent},
         server_broadcast::ServerBroadcastEvent,
@@ -1373,7 +1373,7 @@ fn register_server_event(
         }
         EventType::MapInitializeEvent => {
             register_typed_event::<
-                pumpkin_core::plugin::api::events::server::map_initialize::MapInitializeEvent,
+                sculith_core::plugin::api::events::server::map_initialize::MapInitializeEvent,
             >(resource, handler, priority, blocking);
         }
         _ => {
@@ -1385,11 +1385,11 @@ fn register_server_event(
 fn register_hanging_event(
     ctx: &Context,
     handler: &Arc<WasmPluginEventHandler>,
-    priority: pumpkin_core::plugin::EventPriority,
+    priority: sculith_core::plugin::EventPriority,
     blocking: bool,
     event_type: EventType,
 ) {
-    use pumpkin_core::plugin::hanging::{
+    use sculith_core::plugin::hanging::{
         hanging_break::HangingBreakEvent, hanging_break_by_entity::HangingBreakByEntityEvent,
         hanging_place::HangingPlaceEvent,
     };
@@ -1424,11 +1424,11 @@ impl pumpkin::plugin::context::HostContext for PluginHostState {
     ) -> wasmtime::Result<()> {
         // Updated return type
         let priority = match event_priority {
-            EventPriority::Highest => pumpkin_core::plugin::EventPriority::Highest,
-            EventPriority::High => pumpkin_core::plugin::EventPriority::High,
-            EventPriority::Normal => pumpkin_core::plugin::EventPriority::Normal,
-            EventPriority::Low => pumpkin_core::plugin::EventPriority::Low,
-            EventPriority::Lowest => pumpkin_core::plugin::EventPriority::Lowest,
+            EventPriority::Highest => sculith_core::plugin::EventPriority::Highest,
+            EventPriority::High => sculith_core::plugin::EventPriority::High,
+            EventPriority::Normal => sculith_core::plugin::EventPriority::Normal,
+            EventPriority::Low => sculith_core::plugin::EventPriority::Low,
+            EventPriority::Lowest => sculith_core::plugin::EventPriority::Lowest,
         };
 
         // Use ? to trap if the plugin was dropped or the context handle is dead
@@ -1672,7 +1672,7 @@ impl pumpkin::plugin::context::HostContext for PluginHostState {
         command: Resource<Command>,
         permission: String,
     ) -> wasmtime::Result<()> {
-        use pumpkin_core::command::argument_builder::ArgumentBuilder;
+        use sculith_core::command::argument_builder::ArgumentBuilder;
 
         let command = self.take(command)?;
         let context = self.get(&context)?.clone();

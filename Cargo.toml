@@ -3,7 +3,7 @@ resolver = "3"
 members = [
     "crates/sculith-packs",
     "crates/sculith",
-    "crates/pumpkin-core",
+    "crates/sculith-core",
     "crates/pumpkin-api-macros",
     "crates/pumpkin-auth",
     "crates/pumpkin-codecs",
@@ -136,7 +136,7 @@ codegen-units = 1
 [profile.release.package.pumpkin-data]
 codegen-units = 16
 
-[profile.release.package.pumpkin-core]
+[profile.release.package.sculith-core]
 codegen-units = 16
 
 [profile.release.package.pumpkin-world]
@@ -217,7 +217,7 @@ pumpkin-auth = { path = "crates/pumpkin-auth", default-features = false }
 pumpkin-codecs = { path = "crates/pumpkin-codecs", default-features = false }
 pumpkin-command = { path = "crates/pumpkin-command", default-features = false }
 pumpkin-config = { path = "crates/pumpkin-config", default-features = false }
-pumpkin-core = { path = "crates/pumpkin-core", default-features = false }
+sculith-core = { path = "crates/sculith-core", default-features = false }
 pumpkin-data = { path = "crates/pumpkin-data", default-features = false }
 pumpkin-gametest = { path = "crates/pumpkin-gametest", default-features = false }
 pumpkin-inventory = { path = "crates/pumpkin-inventory", default-features = false }

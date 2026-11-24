@@ -6,7 +6,10 @@ use sculith_util::text::{
 };
 
 use crate::pumpkin::plugin::command::{CommandError as CommandErrorWit, SuggestionRequest};
-use pumpkin_core::{
+use pumpkin_wasm_host_common::{
+    args::build_consumed_args_from_context, plugin::WasmPlugin, state::PluginHostState,
+};
+use sculith_core::{
     command::{
         context::command_context::CommandContext,
         errors::error_types::DISPATCHER_PARSE_EXCEPTION,
@@ -17,9 +20,6 @@ use pumpkin_core::{
         },
     },
     server::Server,
-};
-use pumpkin_wasm_host_common::{
-    args::build_consumed_args_from_context, plugin::WasmPlugin, state::PluginHostState,
 };
 
 fn map_command_result(

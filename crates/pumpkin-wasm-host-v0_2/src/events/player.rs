@@ -49,7 +49,8 @@ use crate::{
     uuid::UuidExt,
 };
 use bytes::Bytes;
-use pumpkin_core::plugin::player::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::player::{
     async_player_chat::AsyncPlayerChatEvent,
     async_player_pre_login::AsyncPlayerPreLoginEvent,
     bedrock_form_response::BedrockFormResponseEvent,
@@ -121,7 +122,6 @@ use pumpkin_core::plugin::player::{
     player_unregister_channel::PlayerUnregisterChannelEvent,
     player_velocity::PlayerVelocityEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 const fn to_wasm_fish_state(state: PlayerFishState) -> WasmPlayerFishState {
     match state {
@@ -927,7 +927,7 @@ impl ToFromWasmEvent for PlayerInteractEntityEvent {
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::player::player_item_consume::PlayerItemConsumeEvent
+    for sculith_core::plugin::api::events::player::player_item_consume::PlayerItemConsumeEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let player = state
@@ -954,7 +954,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent
+    for sculith_core::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let player = state
@@ -983,7 +983,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::player::player_drop_item::PlayerDropItemEvent
+    for sculith_core::plugin::api::events::player::player_drop_item::PlayerDropItemEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let player = state
@@ -1012,7 +1012,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::player::player_bed::PlayerBedEnterEvent
+    for sculith_core::plugin::api::events::player::player_bed::PlayerBedEnterEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let player = state
@@ -1039,7 +1039,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::player::player_bed::PlayerBedLeaveEvent
+    for sculith_core::plugin::api::events::player::player_bed::PlayerBedLeaveEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let player = state
@@ -1064,7 +1064,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::player::player_bucket::PlayerBucketEmptyEvent
+    for sculith_core::plugin::api::events::player::player_bucket::PlayerBucketEmptyEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let player = state
@@ -1093,7 +1093,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::player::player_bucket::PlayerBucketFillEvent
+    for sculith_core::plugin::api::events::player::player_bucket::PlayerBucketFillEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let player = state

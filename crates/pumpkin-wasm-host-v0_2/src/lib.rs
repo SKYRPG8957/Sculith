@@ -6,10 +6,10 @@
 use pumpkin_wasm_host_common::state::FromResource;
 
 use crate::bindings::PluginPre;
-use pumpkin_core::plugin::PluginMetadata;
 use pumpkin_wasm_host_common::{
     concurrent_store::LegacySyncReentry, plugin::PluginInitError, state::PluginHostState,
 };
+use sculith_core::plugin::PluginMetadata;
 use wasmtime::component::{Accessor, HasSelf, InstancePre, Linker, Resource};
 use wasmtime::{Engine, Store};
 
@@ -99,7 +99,7 @@ pub(crate) trait AccessorExt {
         T::Internal: Clone;
     fn take_res<T: FromResource>(&self, res: Resource<T>) -> wasmtime::Result<T::Internal>;
     fn add_res<T: FromResource>(&self, item: T::Internal) -> wasmtime::Result<Resource<T>>;
-    fn server(&self) -> wasmtime::Result<std::sync::Arc<pumpkin_core::server::Server>>;
+    fn server(&self) -> wasmtime::Result<std::sync::Arc<sculith_core::server::Server>>;
 }
 
 impl AccessorExt for Accessor<PluginHostState, HasSelf<PluginHostState>> {
@@ -118,7 +118,7 @@ impl AccessorExt for Accessor<PluginHostState, HasSelf<PluginHostState>> {
         self.with(|mut host| host.get().add(item))
     }
 
-    fn server(&self) -> wasmtime::Result<std::sync::Arc<pumpkin_core::server::Server>> {
+    fn server(&self) -> wasmtime::Result<std::sync::Arc<sculith_core::server::Server>> {
         self.with(|mut host| host.get().require_server().cloned())
     }
 }
@@ -127,11 +127,11 @@ impl AccessorExt for Accessor<PluginHostState, HasSelf<PluginHostState>> {
 /// through an [`Accessor`].
 pub(crate) trait RequireServer {
     /// Borrows the server, failing if the host state has none set.
-    fn require_server(&self) -> wasmtime::Result<&std::sync::Arc<pumpkin_core::server::Server>>;
+    fn require_server(&self) -> wasmtime::Result<&std::sync::Arc<sculith_core::server::Server>>;
 }
 
 impl RequireServer for PluginHostState {
-    fn require_server(&self) -> wasmtime::Result<&std::sync::Arc<pumpkin_core::server::Server>> {
+    fn require_server(&self) -> wasmtime::Result<&std::sync::Arc<sculith_core::server::Server>> {
         self.server
             .as_ref()
             .ok_or_else(|| wasmtime::Error::msg("Server not available"))
@@ -178,19 +178,19 @@ impl<T: ?Sized> RwLockIgnorePoison<T> for std::sync::RwLock<T> {
 
 mod resource_with {
     use super::pumpkin::plugin;
-    use pumpkin_core::{
-        command::CommandSender,
-        entity::{EntityBase, player::Player},
-        plugin::{Context, api::gui::PluginGui},
-        server::{RecipeManager, Server},
-        world::World,
-    };
     use pumpkin_wasm_host_common::{
         args::OwnedArg,
         state::{
             ChunkBuffer, FromResource, InventoryProvider, ScoreboardProvider, WasmCommand,
             WasmCommandNode,
         },
+    };
+    use sculith_core::{
+        command::CommandSender,
+        entity::{EntityBase, player::Player},
+        plugin::{Context, api::gui::PluginGui},
+        server::{RecipeManager, Server},
+        world::World,
     };
     use sculith_util::text::TextComponent;
     use std::collections::HashMap;
@@ -207,7 +207,7 @@ mod resource_with {
         type Internal = Arc<Player>;
     }
     impl FromResource for plugin::player::InventoryEdit {
-        type Internal = pumpkin_core::server::PlayerInventoryEditReceipt;
+        type Internal = sculith_core::server::PlayerInventoryEditReceipt;
     }
     impl FromResource for plugin::player::JavaPlayer {
         type Internal = Arc<Player>;
@@ -222,7 +222,7 @@ mod resource_with {
         type Internal = Arc<World>;
     }
     impl FromResource for plugin::world::BlockEdit {
-        type Internal = pumpkin_core::server::BlockEditReceipt;
+        type Internal = sculith_core::server::BlockEditReceipt;
     }
     impl FromResource for plugin::world::Chunk {
         type Internal = (Arc<World>, Weak<pumpkin_world::chunk::ChunkData>);
@@ -265,7 +265,7 @@ mod resource_with {
         type Internal = Arc<RecipeManager>;
     }
     impl FromResource for plugin::enchantments::EnchantmentManager {
-        type Internal = Arc<pumpkin_core::server::enchantment::EnchantmentManager>;
+        type Internal = Arc<sculith_core::server::enchantment::EnchantmentManager>;
     }
     impl FromResource for plugin::server::OpManager {
         type Internal = Arc<Server>;
@@ -283,8 +283,8 @@ mod resource_with {
     #[allow(clippy::wildcard_imports)]
     mod block_entities {
         use super::super::pumpkin::plugin;
-        use pumpkin_core::block::entities::*;
         use pumpkin_wasm_host_common::state::{ContainerBlockEntity, FromResource};
+        use sculith_core::block::entities::*;
         use std::sync::Arc;
 
         impl FromResource for plugin::block_entity::BlockEntity {
@@ -465,19 +465,19 @@ mod resource_with {
         type Internal = Arc<dyn EntityBase>;
     }
     impl FromResource for plugin::display::BlockDisplayEntity {
-        type Internal = Arc<pumpkin_core::entity::decoration::display::BlockDisplayEntity>;
+        type Internal = Arc<sculith_core::entity::decoration::display::BlockDisplayEntity>;
     }
     impl FromResource for plugin::display::ItemDisplayEntity {
-        type Internal = Arc<pumpkin_core::entity::decoration::display::ItemDisplayEntity>;
+        type Internal = Arc<sculith_core::entity::decoration::display::ItemDisplayEntity>;
     }
     impl FromResource for plugin::display::ModelDisplayEntity {
-        type Internal = Arc<pumpkin_core::entity::decoration::model::ModelDisplayEntity>;
+        type Internal = Arc<sculith_core::entity::decoration::model::ModelDisplayEntity>;
     }
     impl FromResource for plugin::display::TextDisplayEntity {
-        type Internal = Arc<pumpkin_core::entity::decoration::display::TextDisplayEntity>;
+        type Internal = Arc<sculith_core::entity::decoration::display::TextDisplayEntity>;
     }
     impl FromResource for plugin::display::InteractionEntity {
-        type Internal = Arc<pumpkin_core::entity::interaction::InteractionEntity>;
+        type Internal = Arc<sculith_core::entity::interaction::InteractionEntity>;
     }
 
     impl FromResource for plugin::world::ChunkBuffer {

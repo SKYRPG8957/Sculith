@@ -4,11 +4,11 @@ use crate::{
         Event, RaidFinishEventData, RaidSpawnWaveEventData, RaidStopEventData, RaidTriggerEventData,
     },
 };
-use pumpkin_core::plugin::raid::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::raid::{
     raid_finish::RaidFinishEvent, raid_spawn_wave::RaidSpawnWaveEvent, raid_stop::RaidStopEvent,
     raid_trigger::RaidTriggerEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl ToFromWasmEvent for RaidFinishEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {

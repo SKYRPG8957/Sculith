@@ -24,9 +24,12 @@ impl PluginLoader for NativePluginLoader {
                 .map_err(|e| LoaderError::LibraryLoad(e.to_string()))?;
 
             // Ensure this plugin was built against a compatible Sculith native plugin API.
-            // SAFETY: `PUMPKIN_API_VERSION` is an exported `u32` constant symbol created by `#[plugin_impl]`.
+            // SAFETY: Both version markers are exported `u32` constants in the native plugin ABI.
             let plugin_api_version = unsafe {
-                match library.get::<*const u32>(b"PUMPKIN_API_VERSION") {
+                match library
+                    .get::<*const u32>(b"SCULITH_API_VERSION")
+                    .or_else(|_| library.get::<*const u32>(b"PUMPKIN_API_VERSION"))
+                {
                     Ok(symbol) => **symbol,
                     Err(_) => return Err(LoaderError::ApiVersionMissing),
                 }

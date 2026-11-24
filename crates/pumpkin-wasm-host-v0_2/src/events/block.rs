@@ -23,7 +23,8 @@ use crate::{
         SignChangeEventData, SpongeAbsorbEventData, TntPrimeEventData, VaultDisplayItemEventData,
     },
 };
-use pumpkin_core::plugin::block::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::block::{
     bell_resonate::BellResonateEvent,
     bell_ring::BellRingEvent,
     block_break::BlockBreakEvent,
@@ -69,7 +70,6 @@ use pumpkin_core::plugin::block::{
     tnt_prime::TNTPrimeEvent,
     vault_display_item::VaultDisplayItemEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl ToFromWasmEvent for BlockRedstoneEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {

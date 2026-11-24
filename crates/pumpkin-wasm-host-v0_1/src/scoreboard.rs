@@ -7,8 +7,8 @@ use crate::pumpkin::{
         TeamSettings,
     },
 };
-use pumpkin_core::world::scoreboard::{ScoreboardObjective, ScoreboardScore, Team};
 use pumpkin_wasm_host_common::state::{PluginHostState, ScoreboardProvider};
+use sculith_core::world::scoreboard::{ScoreboardObjective, ScoreboardScore, Team};
 use sculith_protocol::NumberFormat;
 use sculith_protocol::codec::var_int::VarInt;
 
@@ -63,13 +63,13 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if !matches!(
                     *custom_guard,
-                    Some(pumpkin_core::entity::player::CustomScoreboard::Java(_))
+                    Some(sculith_core::entity::player::CustomScoreboard::Java(_))
                 ) {
-                    *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Java(
-                        pumpkin_core::world::scoreboard::Scoreboard::default(),
+                    *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Java(
+                        sculith_core::world::scoreboard::Scoreboard::default(),
                     ));
                 }
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.add_objective(player.as_ref(), objective);
@@ -113,13 +113,13 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if !matches!(
                     *custom_guard,
-                    Some(pumpkin_core::entity::player::CustomScoreboard::Java(_))
+                    Some(sculith_core::entity::player::CustomScoreboard::Java(_))
                 ) {
-                    *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Java(
-                        pumpkin_core::world::scoreboard::Scoreboard::default(),
+                    *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Java(
+                        sculith_core::world::scoreboard::Scoreboard::default(),
                     ));
                 }
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.update_objective(player.as_ref(), objective);
@@ -148,7 +148,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.remove_objective(player.as_ref(), &name);
@@ -182,13 +182,13 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if !matches!(
                     *custom_guard,
-                    Some(pumpkin_core::entity::player::CustomScoreboard::Java(_))
+                    Some(sculith_core::entity::player::CustomScoreboard::Java(_))
                 ) {
-                    *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Java(
-                        pumpkin_core::world::scoreboard::Scoreboard::default(),
+                    *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Java(
+                        sculith_core::world::scoreboard::Scoreboard::default(),
                     ));
                 }
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.set_display_objective(player.as_ref(), slot, Some(&objective_name));
@@ -219,7 +219,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.clear_display_objective(player.as_ref(), slot);
@@ -255,13 +255,13 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if !matches!(
                     *custom_guard,
-                    Some(pumpkin_core::entity::player::CustomScoreboard::Java(_))
+                    Some(sculith_core::entity::player::CustomScoreboard::Java(_))
                 ) {
-                    *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Java(
-                        pumpkin_core::world::scoreboard::Scoreboard::default(),
+                    *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Java(
+                        sculith_core::world::scoreboard::Scoreboard::default(),
                     ));
                 }
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.update_score(player.as_ref(), score);
@@ -292,13 +292,13 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if !matches!(
                     *custom_guard,
-                    Some(pumpkin_core::entity::player::CustomScoreboard::Java(_))
+                    Some(sculith_core::entity::player::CustomScoreboard::Java(_))
                 ) {
-                    *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Java(
-                        pumpkin_core::world::scoreboard::Scoreboard::default(),
+                    *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Java(
+                        sculith_core::world::scoreboard::Scoreboard::default(),
                     ));
                 }
-                let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 else {
                     return Err(wasmtime::Error::msg("Invalid scoreboard state"));
@@ -329,7 +329,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.remove_score(player.as_ref(), &entity_name, &objective_name);
@@ -358,7 +358,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.reset_scores_for_entity(player.as_ref(), &entity_name);
@@ -391,13 +391,13 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if !matches!(
                     *custom_guard,
-                    Some(pumpkin_core::entity::player::CustomScoreboard::Java(_))
+                    Some(sculith_core::entity::player::CustomScoreboard::Java(_))
                 ) {
-                    *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Java(
-                        pumpkin_core::world::scoreboard::Scoreboard::default(),
+                    *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Java(
+                        sculith_core::world::scoreboard::Scoreboard::default(),
                     ));
                 }
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.add_team(player.as_ref(), team);
@@ -426,7 +426,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.remove_team(player.as_ref(), &name);
@@ -457,7 +457,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.update_team(player.as_ref(), team);
@@ -487,7 +487,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.add_player_to_team(player.as_ref(), &team_name, player_name);
@@ -517,7 +517,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.remove_player_from_team(player.as_ref(), &team_name, &player_name);
@@ -546,7 +546,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_mut()
                 {
                     sb.clear_team_players(player.as_ref(), &team_name);
@@ -575,7 +575,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_ref()
                 {
                     sb.get_teams().keys().cloned().collect()
@@ -605,7 +605,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_ref()
                 {
                     sb.get_team(&name).cloned()
@@ -641,7 +641,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_ref()
                 {
                     sb.get_team(&team_name)
@@ -673,7 +673,7 @@ impl scoreboard::HostScoreboard for PluginHostState {
                     .custom_scoreboard
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if let Some(pumpkin_core::entity::player::CustomScoreboard::Java(sb)) =
+                if let Some(sculith_core::entity::player::CustomScoreboard::Java(sb)) =
                     custom_guard.as_ref()
                 {
                     sb.get_entity_team(&player_name).map(|t| t.name.clone())
@@ -752,23 +752,23 @@ fn map_team_settings(
         display_name,
         options,
         nametag_visibility: match settings.nametag_visibility {
-            NametagVisibility::Always => pumpkin_core::world::scoreboard::NameTagVisibility::Always,
-            NametagVisibility::Never => pumpkin_core::world::scoreboard::NameTagVisibility::Never,
+            NametagVisibility::Always => sculith_core::world::scoreboard::NameTagVisibility::Always,
+            NametagVisibility::Never => sculith_core::world::scoreboard::NameTagVisibility::Never,
             NametagVisibility::HideForOtherTeams => {
-                pumpkin_core::world::scoreboard::NameTagVisibility::HideForOtherTeams
+                sculith_core::world::scoreboard::NameTagVisibility::HideForOtherTeams
             }
             NametagVisibility::HideForOwnTeam => {
-                pumpkin_core::world::scoreboard::NameTagVisibility::HideForOwnTeam
+                sculith_core::world::scoreboard::NameTagVisibility::HideForOwnTeam
             }
         },
         collision_rule: match settings.collision_rule {
-            CollisionRule::Always => pumpkin_core::world::scoreboard::CollisionRule::Always,
-            CollisionRule::Never => pumpkin_core::world::scoreboard::CollisionRule::Never,
+            CollisionRule::Always => sculith_core::world::scoreboard::CollisionRule::Always,
+            CollisionRule::Never => sculith_core::world::scoreboard::CollisionRule::Never,
             CollisionRule::PushOtherTeams => {
-                pumpkin_core::world::scoreboard::CollisionRule::PushOtherTeams
+                sculith_core::world::scoreboard::CollisionRule::PushOtherTeams
             }
             CollisionRule::PushOwnTeam => {
-                pumpkin_core::world::scoreboard::CollisionRule::PushOwnTeam
+                sculith_core::world::scoreboard::CollisionRule::PushOwnTeam
             }
         },
         color: map_named_color(settings.color),
@@ -829,23 +829,23 @@ fn map_team_to_settings(
     let see_friendly_invisibles = (team.options & 0x02) != 0;
 
     let nametag_visibility = match team.nametag_visibility {
-        pumpkin_core::world::scoreboard::NameTagVisibility::Always => NametagVisibility::Always,
-        pumpkin_core::world::scoreboard::NameTagVisibility::Never => NametagVisibility::Never,
-        pumpkin_core::world::scoreboard::NameTagVisibility::HideForOtherTeams => {
+        sculith_core::world::scoreboard::NameTagVisibility::Always => NametagVisibility::Always,
+        sculith_core::world::scoreboard::NameTagVisibility::Never => NametagVisibility::Never,
+        sculith_core::world::scoreboard::NameTagVisibility::HideForOtherTeams => {
             NametagVisibility::HideForOtherTeams
         }
-        pumpkin_core::world::scoreboard::NameTagVisibility::HideForOwnTeam => {
+        sculith_core::world::scoreboard::NameTagVisibility::HideForOwnTeam => {
             NametagVisibility::HideForOwnTeam
         }
     };
 
     let collision_rule = match team.collision_rule {
-        pumpkin_core::world::scoreboard::CollisionRule::Always => CollisionRule::Always,
-        pumpkin_core::world::scoreboard::CollisionRule::Never => CollisionRule::Never,
-        pumpkin_core::world::scoreboard::CollisionRule::PushOtherTeams => {
+        sculith_core::world::scoreboard::CollisionRule::Always => CollisionRule::Always,
+        sculith_core::world::scoreboard::CollisionRule::Never => CollisionRule::Never,
+        sculith_core::world::scoreboard::CollisionRule::PushOtherTeams => {
             CollisionRule::PushOtherTeams
         }
-        pumpkin_core::world::scoreboard::CollisionRule::PushOwnTeam => CollisionRule::PushOwnTeam,
+        sculith_core::world::scoreboard::CollisionRule::PushOwnTeam => CollisionRule::PushOwnTeam,
     };
 
     let color = map_named_color_rev(team.color);
@@ -916,28 +916,28 @@ impl HostBedrockScoreboard for PluginHostState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !matches!(
             *custom_guard,
-            Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(_))
+            Some(sculith_core::entity::player::CustomScoreboard::Bedrock(_))
         ) {
-            *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(
-                pumpkin_core::world::scoreboard::BedrockScoreboard::default(),
+            *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Bedrock(
+                sculith_core::world::scoreboard::BedrockScoreboard::default(),
             ));
         }
-        let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         else {
             return Err(wasmtime::Error::msg("Invalid scoreboard state"));
         };
         sb.add_objective(
             player.as_ref(),
-            pumpkin_core::world::scoreboard::BedrockObjective {
+            sculith_core::world::scoreboard::BedrockObjective {
                 name,
                 display_name,
                 sort_order: match sort_order {
                     scoreboard::BedrockSortOrder::Ascending => {
-                        pumpkin_core::world::scoreboard::BedrockSortOrder::Ascending
+                        sculith_core::world::scoreboard::BedrockSortOrder::Ascending
                     }
                     scoreboard::BedrockSortOrder::Descending => {
-                        pumpkin_core::world::scoreboard::BedrockSortOrder::Descending
+                        sculith_core::world::scoreboard::BedrockSortOrder::Descending
                     }
                 },
             },
@@ -959,28 +959,28 @@ impl HostBedrockScoreboard for PluginHostState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !matches!(
             *custom_guard,
-            Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(_))
+            Some(sculith_core::entity::player::CustomScoreboard::Bedrock(_))
         ) {
-            *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(
-                pumpkin_core::world::scoreboard::BedrockScoreboard::default(),
+            *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Bedrock(
+                sculith_core::world::scoreboard::BedrockScoreboard::default(),
             ));
         }
-        let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         else {
             return Err(wasmtime::Error::msg("Invalid scoreboard state"));
         };
         sb.update_objective(
             player.as_ref(),
-            pumpkin_core::world::scoreboard::BedrockObjective {
+            sculith_core::world::scoreboard::BedrockObjective {
                 name,
                 display_name,
                 sort_order: match sort_order {
                     scoreboard::BedrockSortOrder::Ascending => {
-                        pumpkin_core::world::scoreboard::BedrockSortOrder::Ascending
+                        sculith_core::world::scoreboard::BedrockSortOrder::Ascending
                     }
                     scoreboard::BedrockSortOrder::Descending => {
-                        pumpkin_core::world::scoreboard::BedrockSortOrder::Descending
+                        sculith_core::world::scoreboard::BedrockSortOrder::Descending
                     }
                 },
             },
@@ -998,7 +998,7 @@ impl HostBedrockScoreboard for PluginHostState {
             .custom_scoreboard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        if let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         {
             sb.remove_objective(player.as_ref(), &name);
@@ -1019,26 +1019,26 @@ impl HostBedrockScoreboard for PluginHostState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !matches!(
             *custom_guard,
-            Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(_))
+            Some(sculith_core::entity::player::CustomScoreboard::Bedrock(_))
         ) {
-            *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(
-                pumpkin_core::world::scoreboard::BedrockScoreboard::default(),
+            *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Bedrock(
+                sculith_core::world::scoreboard::BedrockScoreboard::default(),
             ));
         }
-        let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         else {
             return Err(wasmtime::Error::msg("Invalid scoreboard state"));
         };
         let b_slot = match slot {
             scoreboard::BedrockDisplaySlot::PlayerList => {
-                pumpkin_core::world::scoreboard::BedrockDisplaySlot::PlayerList
+                sculith_core::world::scoreboard::BedrockDisplaySlot::PlayerList
             }
             scoreboard::BedrockDisplaySlot::Sidebar => {
-                pumpkin_core::world::scoreboard::BedrockDisplaySlot::Sidebar
+                sculith_core::world::scoreboard::BedrockDisplaySlot::Sidebar
             }
             scoreboard::BedrockDisplaySlot::BelowName => {
-                pumpkin_core::world::scoreboard::BedrockDisplaySlot::BelowName
+                sculith_core::world::scoreboard::BedrockDisplaySlot::BelowName
             }
         };
         sb.set_display_objective(player.as_ref(), b_slot, Some(&objective_name));
@@ -1055,18 +1055,18 @@ impl HostBedrockScoreboard for PluginHostState {
             .custom_scoreboard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        if let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         {
             let b_slot = match slot {
                 scoreboard::BedrockDisplaySlot::PlayerList => {
-                    pumpkin_core::world::scoreboard::BedrockDisplaySlot::PlayerList
+                    sculith_core::world::scoreboard::BedrockDisplaySlot::PlayerList
                 }
                 scoreboard::BedrockDisplaySlot::Sidebar => {
-                    pumpkin_core::world::scoreboard::BedrockDisplaySlot::Sidebar
+                    sculith_core::world::scoreboard::BedrockDisplaySlot::Sidebar
                 }
                 scoreboard::BedrockDisplaySlot::BelowName => {
-                    pumpkin_core::world::scoreboard::BedrockDisplaySlot::BelowName
+                    sculith_core::world::scoreboard::BedrockDisplaySlot::BelowName
                 }
             };
             sb.clear_display_objective(player.as_ref(), b_slot);
@@ -1088,13 +1088,13 @@ impl HostBedrockScoreboard for PluginHostState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !matches!(
             *custom_guard,
-            Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(_))
+            Some(sculith_core::entity::player::CustomScoreboard::Bedrock(_))
         ) {
-            *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(
-                pumpkin_core::world::scoreboard::BedrockScoreboard::default(),
+            *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Bedrock(
+                sculith_core::world::scoreboard::BedrockScoreboard::default(),
             ));
         }
-        let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         else {
             return Err(wasmtime::Error::msg("Invalid scoreboard state"));
@@ -1117,13 +1117,13 @@ impl HostBedrockScoreboard for PluginHostState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !matches!(
             *custom_guard,
-            Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(_))
+            Some(sculith_core::entity::player::CustomScoreboard::Bedrock(_))
         ) {
-            *custom_guard = Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(
-                pumpkin_core::world::scoreboard::BedrockScoreboard::default(),
+            *custom_guard = Some(sculith_core::entity::player::CustomScoreboard::Bedrock(
+                sculith_core::world::scoreboard::BedrockScoreboard::default(),
             ));
         }
-        let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         else {
             return Err(wasmtime::Error::msg("Invalid scoreboard state"));
@@ -1143,7 +1143,7 @@ impl HostBedrockScoreboard for PluginHostState {
             .custom_scoreboard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        if let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         {
             sb.remove_score(player.as_ref(), &entity_name, &objective_name);
@@ -1161,7 +1161,7 @@ impl HostBedrockScoreboard for PluginHostState {
             .custom_scoreboard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(pumpkin_core::entity::player::CustomScoreboard::Bedrock(sb)) =
+        if let Some(sculith_core::entity::player::CustomScoreboard::Bedrock(sb)) =
             custom_guard.as_mut()
         {
             sb.reset_scores_for_entity(player.as_ref(), &entity_name);

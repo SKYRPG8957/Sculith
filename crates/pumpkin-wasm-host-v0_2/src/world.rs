@@ -25,61 +25,61 @@ use crate::pumpkin::plugin::world::{
     WorldBorder as WitWorldBorder, WorldSpawnLocation as WitWorldSpawnLocation,
 };
 use crate::pumpkin::{self, plugin::world::World};
-use pumpkin_core::block::entities::banner::BannerBlockEntity as InternalBannerBlockEntity;
-use pumpkin_core::block::entities::barrel::BarrelBlockEntity as InternalBarrelBlockEntity;
-use pumpkin_core::block::entities::beacon::BeaconBlockEntity as InternalBeaconBlockEntity;
-use pumpkin_core::block::entities::bed::BedBlockEntity as InternalBedBlockEntity;
-use pumpkin_core::block::entities::beehive::BeehiveBlockEntity as InternalBeehiveBlockEntity;
-use pumpkin_core::block::entities::bell::BellBlockEntity as InternalBellBlockEntity;
-use pumpkin_core::block::entities::blasting_furnace::BlastingFurnaceBlockEntity as InternalBlastingFurnaceBlockEntity;
-use pumpkin_core::block::entities::brewing_stand::BrewingStandBlockEntity as InternalBrewingStandBlockEntity;
-use pumpkin_core::block::entities::brushable_block::BrushableBlockBlockEntity as InternalBrushableBlockBlockEntity;
-use pumpkin_core::block::entities::calibrated_sculk_sensor::CalibratedSculkSensorBlockEntity as InternalCalibratedSculkSensorBlockEntity;
-use pumpkin_core::block::entities::campfire::CampfireBlockEntity as InternalCampfireBlockEntity;
-use pumpkin_core::block::entities::chest::ChestBlockEntity as InternalChestBlockEntity;
-use pumpkin_core::block::entities::chiseled_bookshelf::ChiseledBookshelfBlockEntity as InternalChiseledBookshelfBlockEntity;
-use pumpkin_core::block::entities::command_block::CommandBlockEntity as InternalCommandBlockEntity;
-use pumpkin_core::block::entities::comparator::ComparatorBlockEntity as InternalComparatorBlockEntity;
-use pumpkin_core::block::entities::conduit::ConduitBlockEntity as InternalConduitBlockEntity;
-use pumpkin_core::block::entities::copper_golem_statue::CopperGolemStatueBlockEntity as InternalCopperGolemStatueBlockEntity;
-use pumpkin_core::block::entities::crafter::CrafterBlockEntity as InternalCrafterBlockEntity;
-use pumpkin_core::block::entities::creaking_heart::CreakingHeartBlockEntity as InternalCreakingHeartBlockEntity;
-use pumpkin_core::block::entities::daylight_detector::DaylightDetectorBlockEntity as InternalDaylightDetectorBlockEntity;
-use pumpkin_core::block::entities::decorated_pot::DecoratedPotBlockEntity as InternalDecoratedPotBlockEntity;
-use pumpkin_core::block::entities::dispenser::DispenserBlockEntity as InternalDispenserBlockEntity;
-use pumpkin_core::block::entities::dropper::DropperBlockEntity as InternalDropperBlockEntity;
-use pumpkin_core::block::entities::enchanting_table::EnchantingTableBlockEntity as InternalEnchantingTableBlockEntity;
-use pumpkin_core::block::entities::end_gateway::EndGatewayBlockEntity as InternalEndGatewayBlockEntity;
-use pumpkin_core::block::entities::end_portal::EndPortalBlockEntity as InternalEndPortalBlockEntity;
-use pumpkin_core::block::entities::ender_chest::EnderChestBlockEntity as InternalEnderChestBlockEntity;
-use pumpkin_core::block::entities::furnace::FurnaceBlockEntity as InternalFurnaceBlockEntity;
-use pumpkin_core::block::entities::hanging_sign::HangingSignBlockEntity as InternalHangingSignBlockEntity;
-use pumpkin_core::block::entities::hopper::HopperBlockEntity as InternalHopperBlockEntity;
-use pumpkin_core::block::entities::jigsaw_block::JigsawBlockEntity as InternalJigsawBlockEntity;
-use pumpkin_core::block::entities::jukebox::JukeboxBlockEntity as InternalJukeboxBlockEntity;
-use pumpkin_core::block::entities::lectern::LecternBlockEntity as InternalLecternBlockEntity;
-use pumpkin_core::block::entities::map::MapBlockEntity as InternalMapBlockEntity;
-use pumpkin_core::block::entities::mob_spawner::MobSpawnerBlockEntity as InternalMobSpawnerBlockEntity;
-use pumpkin_core::block::entities::piston::PistonBlockEntity as InternalPistonBlockEntity;
-use pumpkin_core::block::entities::potent_sulfur::PotentSulfurBlockEntity as InternalPotentSulfurBlockEntity;
-use pumpkin_core::block::entities::sculk_catalyst::SculkCatalystBlockEntity as InternalSculkCatalystBlockEntity;
-use pumpkin_core::block::entities::sculk_sensor::SculkSensorBlockEntity as InternalSculkSensorBlockEntity;
-use pumpkin_core::block::entities::sculk_shrieker::SculkShriekerBlockEntity as InternalSculkShriekerBlockEntity;
-use pumpkin_core::block::entities::shelf::ShelfBlockEntity as InternalShelfBlockEntity;
-use pumpkin_core::block::entities::shulker_box::ShulkerBoxBlockEntity as InternalShulkerBoxBlockEntity;
-use pumpkin_core::block::entities::sign::SignBlockEntity as InternalSignBlockEntity;
-use pumpkin_core::block::entities::skull::SkullBlockEntity as InternalSkullBlockEntity;
-use pumpkin_core::block::entities::smoker::SmokerBlockEntity as InternalSmokerBlockEntity;
-use pumpkin_core::block::entities::structure_block::StructureBlockBlockEntity as InternalStructureBlockBlockEntity;
-use pumpkin_core::block::entities::test_block::TestBlockBlockEntity as InternalTestBlockBlockEntity;
-use pumpkin_core::block::entities::test_instance_block::TestInstanceBlockBlockEntity as InternalTestInstanceBlockBlockEntity;
-use pumpkin_core::block::entities::trapped_chest::TrappedChestBlockEntity as InternalTrappedChestBlockEntity;
-use pumpkin_core::block::entities::trial_spawner::TrialSpawnerBlockEntity as InternalTrialSpawnerBlockEntity;
-use pumpkin_core::block::entities::vault::VaultBlockEntity as InternalVaultBlockEntity;
-use pumpkin_core::world::explosion::ExplosionInteraction;
 use pumpkin_data::game_rules::{GameRule, GameRuleValue};
 use pumpkin_wasm_host_common::state::ChunkBuffer;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::block::entities::banner::BannerBlockEntity as InternalBannerBlockEntity;
+use sculith_core::block::entities::barrel::BarrelBlockEntity as InternalBarrelBlockEntity;
+use sculith_core::block::entities::beacon::BeaconBlockEntity as InternalBeaconBlockEntity;
+use sculith_core::block::entities::bed::BedBlockEntity as InternalBedBlockEntity;
+use sculith_core::block::entities::beehive::BeehiveBlockEntity as InternalBeehiveBlockEntity;
+use sculith_core::block::entities::bell::BellBlockEntity as InternalBellBlockEntity;
+use sculith_core::block::entities::blasting_furnace::BlastingFurnaceBlockEntity as InternalBlastingFurnaceBlockEntity;
+use sculith_core::block::entities::brewing_stand::BrewingStandBlockEntity as InternalBrewingStandBlockEntity;
+use sculith_core::block::entities::brushable_block::BrushableBlockBlockEntity as InternalBrushableBlockBlockEntity;
+use sculith_core::block::entities::calibrated_sculk_sensor::CalibratedSculkSensorBlockEntity as InternalCalibratedSculkSensorBlockEntity;
+use sculith_core::block::entities::campfire::CampfireBlockEntity as InternalCampfireBlockEntity;
+use sculith_core::block::entities::chest::ChestBlockEntity as InternalChestBlockEntity;
+use sculith_core::block::entities::chiseled_bookshelf::ChiseledBookshelfBlockEntity as InternalChiseledBookshelfBlockEntity;
+use sculith_core::block::entities::command_block::CommandBlockEntity as InternalCommandBlockEntity;
+use sculith_core::block::entities::comparator::ComparatorBlockEntity as InternalComparatorBlockEntity;
+use sculith_core::block::entities::conduit::ConduitBlockEntity as InternalConduitBlockEntity;
+use sculith_core::block::entities::copper_golem_statue::CopperGolemStatueBlockEntity as InternalCopperGolemStatueBlockEntity;
+use sculith_core::block::entities::crafter::CrafterBlockEntity as InternalCrafterBlockEntity;
+use sculith_core::block::entities::creaking_heart::CreakingHeartBlockEntity as InternalCreakingHeartBlockEntity;
+use sculith_core::block::entities::daylight_detector::DaylightDetectorBlockEntity as InternalDaylightDetectorBlockEntity;
+use sculith_core::block::entities::decorated_pot::DecoratedPotBlockEntity as InternalDecoratedPotBlockEntity;
+use sculith_core::block::entities::dispenser::DispenserBlockEntity as InternalDispenserBlockEntity;
+use sculith_core::block::entities::dropper::DropperBlockEntity as InternalDropperBlockEntity;
+use sculith_core::block::entities::enchanting_table::EnchantingTableBlockEntity as InternalEnchantingTableBlockEntity;
+use sculith_core::block::entities::end_gateway::EndGatewayBlockEntity as InternalEndGatewayBlockEntity;
+use sculith_core::block::entities::end_portal::EndPortalBlockEntity as InternalEndPortalBlockEntity;
+use sculith_core::block::entities::ender_chest::EnderChestBlockEntity as InternalEnderChestBlockEntity;
+use sculith_core::block::entities::furnace::FurnaceBlockEntity as InternalFurnaceBlockEntity;
+use sculith_core::block::entities::hanging_sign::HangingSignBlockEntity as InternalHangingSignBlockEntity;
+use sculith_core::block::entities::hopper::HopperBlockEntity as InternalHopperBlockEntity;
+use sculith_core::block::entities::jigsaw_block::JigsawBlockEntity as InternalJigsawBlockEntity;
+use sculith_core::block::entities::jukebox::JukeboxBlockEntity as InternalJukeboxBlockEntity;
+use sculith_core::block::entities::lectern::LecternBlockEntity as InternalLecternBlockEntity;
+use sculith_core::block::entities::map::MapBlockEntity as InternalMapBlockEntity;
+use sculith_core::block::entities::mob_spawner::MobSpawnerBlockEntity as InternalMobSpawnerBlockEntity;
+use sculith_core::block::entities::piston::PistonBlockEntity as InternalPistonBlockEntity;
+use sculith_core::block::entities::potent_sulfur::PotentSulfurBlockEntity as InternalPotentSulfurBlockEntity;
+use sculith_core::block::entities::sculk_catalyst::SculkCatalystBlockEntity as InternalSculkCatalystBlockEntity;
+use sculith_core::block::entities::sculk_sensor::SculkSensorBlockEntity as InternalSculkSensorBlockEntity;
+use sculith_core::block::entities::sculk_shrieker::SculkShriekerBlockEntity as InternalSculkShriekerBlockEntity;
+use sculith_core::block::entities::shelf::ShelfBlockEntity as InternalShelfBlockEntity;
+use sculith_core::block::entities::shulker_box::ShulkerBoxBlockEntity as InternalShulkerBoxBlockEntity;
+use sculith_core::block::entities::sign::SignBlockEntity as InternalSignBlockEntity;
+use sculith_core::block::entities::skull::SkullBlockEntity as InternalSkullBlockEntity;
+use sculith_core::block::entities::smoker::SmokerBlockEntity as InternalSmokerBlockEntity;
+use sculith_core::block::entities::structure_block::StructureBlockBlockEntity as InternalStructureBlockBlockEntity;
+use sculith_core::block::entities::test_block::TestBlockBlockEntity as InternalTestBlockBlockEntity;
+use sculith_core::block::entities::test_instance_block::TestInstanceBlockBlockEntity as InternalTestInstanceBlockBlockEntity;
+use sculith_core::block::entities::trapped_chest::TrappedChestBlockEntity as InternalTrappedChestBlockEntity;
+use sculith_core::block::entities::trial_spawner::TrialSpawnerBlockEntity as InternalTrialSpawnerBlockEntity;
+use sculith_core::block::entities::vault::VaultBlockEntity as InternalVaultBlockEntity;
+use sculith_core::world::explosion::ExplosionInteraction;
 
 pub(crate) fn from_wit_game_rule(rule: WitGameRule) -> GameRule {
     // SAFETY: WIT GameRule and pumpkin_data::game_rules::GameRule have identical variant order
@@ -134,7 +134,7 @@ fn from_wit_block_flags(flags: WitBlockFlags) -> BlockFlags {
 fn world_from_state(
     state: &PluginHostState,
     world: &Resource<World>,
-) -> wasmtime::Result<Arc<pumpkin_core::world::World>> {
+) -> wasmtime::Result<Arc<sculith_core::world::World>> {
     Ok(state.get(world)?.clone())
 }
 
@@ -320,7 +320,7 @@ pub trait WorldHostStateExt {
     ) -> wasmtime::Result<pumpkin::plugin::biomes::Biome>;
     fn get_wit_block_entity_v0_2(
         &mut self,
-        block_entity: Arc<dyn pumpkin_core::block::entities::BlockEntity>,
+        block_entity: Arc<dyn sculith_core::block::entities::BlockEntity>,
     ) -> wasmtime::Result<Option<BlockEntityType>>;
 }
 
@@ -337,7 +337,7 @@ impl WorldHostStateExt for PluginHostState {
     )]
     fn get_wit_block_entity_v0_2(
         &mut self,
-        block_entity: Arc<dyn pumpkin_core::block::entities::BlockEntity>,
+        block_entity: Arc<dyn sculith_core::block::entities::BlockEntity>,
     ) -> wasmtime::Result<Option<BlockEntityType>> {
         let mut be = block_entity as _;
         macro_rules! match_be {
@@ -676,7 +676,7 @@ impl pumpkin::plugin::sounds::Host for PluginHostState {}
 
 impl pumpkin::plugin::world::HostBlockEdit for PluginHostState {
     fn status(&mut self, edit: Resource<WitBlockEdit>) -> wasmtime::Result<WitBlockEditStatus> {
-        use pumpkin_core::server::BlockEditStatus;
+        use sculith_core::server::BlockEditStatus;
 
         Ok(match self.get_mut(&edit)?.status() {
             BlockEditStatus::Pending => WitBlockEditStatus::Pending,
@@ -1174,7 +1174,7 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
 
         // Add players as entities
         for player in world_provider.players.load().iter() {
-            entities.push(self.add(player.clone() as Arc<dyn pumpkin_core::entity::EntityBase>)?);
+            entities.push(self.add(player.clone() as Arc<dyn sculith_core::entity::EntityBase>)?);
         }
 
         // Add other entities
@@ -1207,7 +1207,7 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
         let uuid = <crate::pumpkin::plugin::uuid::Uuid as crate::uuid::UuidExt>::from_wit(&id);
         if let Some(player) = world_provider.get_player_by_uuid(uuid) {
             return Ok(Some(
-                self.add(player as Arc<dyn pumpkin_core::entity::EntityBase>)?,
+                self.add(player as Arc<dyn sculith_core::entity::EntityBase>)?,
             ));
         }
         if let Some(entity) = world_provider.get_entity_by_uuid(uuid) {
@@ -1516,14 +1516,14 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         let world = accessor.with(|mut host| world_from_state(host.get(), &world))?;
         let pos = super::events::from_wasm_position(pos);
         let result = run_blocking(accessor, move || {
-            pumpkin_core::entity::decoration::model::ModelDisplayEntity::spawn(
+            sculith_core::entity::decoration::model::ModelDisplayEntity::spawn(
                 &world, &model, pos, scale,
             )
         })
         .await?;
         match result {
             Ok(entity) => accessor
-                .add_res(entity as Arc<dyn pumpkin_core::entity::EntityBase>)
+                .add_res(entity as Arc<dyn sculith_core::entity::EntityBase>)
                 .map(Ok),
             Err(error) => Ok(Err(error)),
         }
@@ -1630,7 +1630,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
 
         let internal_type = super::entity::from_wit_entity_type(entity_type)?;
         let pos = sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
-        let entity = pumpkin_core::entity::r#type::from_type(
+        let entity = sculith_core::entity::r#type::from_type(
             internal_type,
             pos,
             &world,
@@ -1888,17 +1888,17 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         let stack = accessor.take_res(item)?.lock().await.clone();
         let world = accessor.with(|mut host| world_from_state(host.get(), &world))?;
         let pos_vec = super::events::from_wasm_position(pos);
-        let entity = pumpkin_core::entity::Entity::new(
+        let entity = sculith_core::entity::Entity::new(
             Arc::clone(&world),
             pos_vec,
             &pumpkin_data::entity::EntityType::ITEM,
         );
-        let item_entity: Arc<dyn pumpkin_core::entity::EntityBase> =
-            Arc::new(pumpkin_core::entity::item::ItemEntity::new_with_velocity(
+        let item_entity: Arc<dyn sculith_core::entity::EntityBase> =
+            Arc::new(sculith_core::entity::item::ItemEntity::new_with_velocity(
                 entity,
                 stack,
                 sculith_util::math::vector3::Vector3::default(),
-                pumpkin_core::entity::item::ItemEntity::DEFAULT_PICKUP_DELAY,
+                sculith_core::entity::item::ItemEntity::DEFAULT_PICKUP_DELAY,
             ));
         let spawned = Arc::clone(&item_entity);
         run_blocking(accessor, move || {
@@ -1923,13 +1923,13 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
             pos_vec.y + 0.5 + rand::random_range(-0.25..0.25) - height,
             pos_vec.z + 0.5 + rand::random_range(-0.25..0.25),
         );
-        let entity = pumpkin_core::entity::Entity::new(
+        let entity = sculith_core::entity::Entity::new(
             Arc::clone(&world),
             natural_pos,
             &pumpkin_data::entity::EntityType::ITEM,
         );
-        let item_entity: Arc<dyn pumpkin_core::entity::EntityBase> =
-            Arc::new(pumpkin_core::entity::item::ItemEntity::new(entity, stack));
+        let item_entity: Arc<dyn sculith_core::entity::EntityBase> =
+            Arc::new(sculith_core::entity::item::ItemEntity::new(entity, stack));
         let spawned = Arc::clone(&item_entity);
         run_blocking(accessor, move || {
             world.spawn_entity(spawned);
@@ -1965,7 +1965,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         let world = accessor.with(|mut host| world_from_state(host.get(), &world))?;
         let pos_vec = super::events::from_wasm_position(pos);
         run_blocking(accessor, move || {
-            pumpkin_core::entity::experience_orb::ExperienceOrbEntity::spawn(
+            sculith_core::entity::experience_orb::ExperienceOrbEntity::spawn(
                 &world, pos_vec, amount,
             );
         })
@@ -2048,7 +2048,7 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
         for player in world.players.load().iter() {
             if player.living_entity.entity.chunk_pos.load() == chunk_pos {
                 entities
-                    .push(self.add(player.clone() as Arc<dyn pumpkin_core::entity::EntityBase>)?);
+                    .push(self.add(player.clone() as Arc<dyn sculith_core::entity::EntityBase>)?);
             }
         }
         for entity in world.entities.load().iter() {
@@ -2743,7 +2743,7 @@ pub struct WasmChunkGenerator {
     pub plugin: Arc<pumpkin_wasm_host_common::plugin::WasmPlugin>,
     pub dimension: pumpkin_data::dimension::Dimension,
     pub seed: u64,
-    pub server: Arc<pumpkin_core::server::Server>,
+    pub server: Arc<sculith_core::server::Server>,
 }
 
 impl WasmChunkGenerator {

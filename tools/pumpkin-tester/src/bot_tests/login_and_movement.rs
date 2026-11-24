@@ -4,8 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pumpkin_core::server::Server;
 use pumpkin_data::dimension::Dimension;
+use sculith_core::server::Server;
 use sculith_util::math::vector3::Vector3;
 
 use crate::bot::{HeadlessBot, MAX_POLL_TICKS};

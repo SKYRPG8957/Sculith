@@ -17,7 +17,8 @@ use crate::{
         },
     },
 };
-use pumpkin_core::command::{
+use pumpkin_wasm_host_common::state::{PluginHostState, WasmCommand, WasmCommandNode};
+use sculith_core::command::{
     argument_builder::{argument, literal},
     argument_types::{
         block::BlockArgumentType,
@@ -41,7 +42,6 @@ use pumpkin_core::command::{
         time::TimeArgumentType,
     },
 };
-use pumpkin_wasm_host_common::state::{PluginHostState, WasmCommand, WasmCommandNode};
 
 pub mod executor;
 
@@ -127,42 +127,42 @@ impl pumpkin::plugin::command::HostConsumedArgs for PluginHostState {
             OwnedArg::Particle(p) => Arg::Particle(format!("{p:?}")),
             OwnedArg::TextComponent(t) => Arg::TextComponent(self.add(t)?),
             OwnedArg::BossbarColor(c) => Arg::BossbarColor(match c {
-                pumpkin_core::world::bossbar::BossbarColor::Pink => {
+                sculith_core::world::bossbar::BossbarColor::Pink => {
                     pumpkin::plugin::command::BossbarColor::Pink
                 }
-                pumpkin_core::world::bossbar::BossbarColor::Blue => {
+                sculith_core::world::bossbar::BossbarColor::Blue => {
                     pumpkin::plugin::command::BossbarColor::Blue
                 }
-                pumpkin_core::world::bossbar::BossbarColor::Red => {
+                sculith_core::world::bossbar::BossbarColor::Red => {
                     pumpkin::plugin::command::BossbarColor::Red
                 }
-                pumpkin_core::world::bossbar::BossbarColor::Green => {
+                sculith_core::world::bossbar::BossbarColor::Green => {
                     pumpkin::plugin::command::BossbarColor::Green
                 }
-                pumpkin_core::world::bossbar::BossbarColor::Yellow => {
+                sculith_core::world::bossbar::BossbarColor::Yellow => {
                     pumpkin::plugin::command::BossbarColor::Yellow
                 }
-                pumpkin_core::world::bossbar::BossbarColor::Purple => {
+                sculith_core::world::bossbar::BossbarColor::Purple => {
                     pumpkin::plugin::command::BossbarColor::Purple
                 }
-                pumpkin_core::world::bossbar::BossbarColor::White => {
+                sculith_core::world::bossbar::BossbarColor::White => {
                     pumpkin::plugin::command::BossbarColor::White
                 }
             }),
             OwnedArg::BossbarStyle(s) => Arg::BossbarStyle(match s {
-                pumpkin_core::world::bossbar::BossbarDivisions::NoDivision => {
+                sculith_core::world::bossbar::BossbarDivisions::NoDivision => {
                     pumpkin::plugin::command::BossbarStyle::NoDivision
                 }
-                pumpkin_core::world::bossbar::BossbarDivisions::Notches6 => {
+                sculith_core::world::bossbar::BossbarDivisions::Notches6 => {
                     pumpkin::plugin::command::BossbarStyle::Notches6
                 }
-                pumpkin_core::world::bossbar::BossbarDivisions::Notches10 => {
+                sculith_core::world::bossbar::BossbarDivisions::Notches10 => {
                     pumpkin::plugin::command::BossbarStyle::Notches10
                 }
-                pumpkin_core::world::bossbar::BossbarDivisions::Notches12 => {
+                sculith_core::world::bossbar::BossbarDivisions::Notches12 => {
                     pumpkin::plugin::command::BossbarStyle::Notches12
                 }
-                pumpkin_core::world::bossbar::BossbarDivisions::Notches20 => {
+                sculith_core::world::bossbar::BossbarDivisions::Notches20 => {
                     pumpkin::plugin::command::BossbarStyle::Notches20
                 }
             }),
@@ -204,10 +204,10 @@ impl pumpkin::plugin::command::HostConsumedArgs for PluginHostState {
             OwnedArg::Enchantment(e) => Arg::Enchantment(e.name.to_string()),
             OwnedArg::Advancement(a) => Arg::Advancement(a.to_string()),
             OwnedArg::EntityAnchor(a) => Arg::EntityAnchor(match a {
-                pumpkin_core::command::argument_types::entity_anchor::EntityAnchor::Eyes => {
+                sculith_core::command::argument_types::entity_anchor::EntityAnchor::Eyes => {
                     pumpkin::plugin::command::EntityAnchor::Eyes
                 }
-                pumpkin_core::command::argument_types::entity_anchor::EntityAnchor::Feet => {
+                sculith_core::command::argument_types::entity_anchor::EntityAnchor::Feet => {
                     pumpkin::plugin::command::EntityAnchor::Feet
                 }
             }),
@@ -283,14 +283,14 @@ impl pumpkin::plugin::command::HostCommandSender for PluginHostState {
     ) -> wasmtime::Result<CommandSenderType> {
         let sender = self.get(&res)?.clone();
         match sender {
-            pumpkin_core::command::CommandSender::Console => Ok(CommandSenderType::Console),
-            pumpkin_core::command::CommandSender::Player(player) => {
+            sculith_core::command::CommandSender::Console => Ok(CommandSenderType::Console),
+            sculith_core::command::CommandSender::Player(player) => {
                 Ok(CommandSenderType::Player(self.add(player)?))
             }
-            pumpkin_core::command::CommandSender::CommandBlock(block_entity, world) => Ok(
+            sculith_core::command::CommandSender::CommandBlock(block_entity, world) => Ok(
                 CommandSenderType::CommandBlock((self.add(block_entity)?, self.add(world)?)),
             ),
-            pumpkin_core::command::CommandSender::Dummy => Ok(CommandSenderType::Dummy),
+            sculith_core::command::CommandSender::Dummy => Ok(CommandSenderType::Dummy),
         }
     }
 
@@ -343,14 +343,14 @@ impl pumpkin::plugin::command::HostCommandSender for PluginHostState {
     fn is_player(&mut self, sender: Resource<CommandSender>) -> wasmtime::Result<bool> {
         Ok(matches!(
             self.get(&sender)?,
-            pumpkin_core::command::CommandSender::Player(_)
+            sculith_core::command::CommandSender::Player(_)
         ))
     }
 
     fn is_console(&mut self, sender: Resource<CommandSender>) -> wasmtime::Result<bool> {
         Ok(matches!(
             self.get(&sender)?,
-            pumpkin_core::command::CommandSender::Console
+            sculith_core::command::CommandSender::Console
         ))
     }
 
@@ -358,7 +358,7 @@ impl pumpkin::plugin::command::HostCommandSender for PluginHostState {
         &mut self,
         sender: Resource<CommandSender>,
     ) -> wasmtime::Result<Option<Resource<Player>>> {
-        if let pumpkin_core::command::CommandSender::Player(player) = &self.get(&sender)? {
+        if let sculith_core::command::CommandSender::Player(player) = &self.get(&sender)? {
             Ok(Some(self.add(player.clone()).map_err(|_| {
                 wasmtime::Error::msg("Failed to add player resource")
             })?))

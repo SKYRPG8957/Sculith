@@ -1,11 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
-use pumpkin_core::{
-    entity::{Entity, EntityBase, passive::allay::AllayEntity, player::Player},
-    server::Server,
-};
 use pumpkin_data::{
     entity::EntityType, item::Item, item_stack::ItemStack, statistic::StatisticCategory,
+};
+use sculith_core::{
+    entity::{Entity, EntityBase, passive::allay::AllayEntity, player::Player},
+    server::Server,
 };
 use sculith_protocol::{codec::var_int::VarInt, java::server::play::SInteract};
 use sculith_util::{GameMode, Hand, math::vector3::Vector3};

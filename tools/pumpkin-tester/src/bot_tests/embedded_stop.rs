@@ -5,7 +5,7 @@ use std::{
 };
 
 use pumpkin_config::TelemetryConfig;
-use pumpkin_core::{
+use sculith_core::{
     PumpkinServer, STOP_INTERRUPT,
     data::VanillaData,
     net::{PacketRateLimiter, java::pending::PendingConnection},

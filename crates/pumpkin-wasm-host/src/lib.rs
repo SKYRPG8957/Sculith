@@ -6,7 +6,6 @@
 
 use std::{any::Any, path::Path, sync::Arc};
 
-use pumpkin_core::server::Server;
 use pumpkin_wasm_host_common::{
     concurrent_store::{LegacySyncReentry, TokioSpawner},
     plugin::WasmPlugin,
@@ -14,9 +13,10 @@ use pumpkin_wasm_host_common::{
     signature::is_wasm_signed,
 };
 use runtime::PluginRuntime;
+use sculith_core::server::Server;
 use tracing::warn;
 
-use pumpkin_core::plugin::{
+use sculith_core::plugin::{
     Context, Plugin, PluginFuture,
     loader::{LoaderError, PluginLoadFuture, PluginLoader, PluginUnloadFuture},
 };

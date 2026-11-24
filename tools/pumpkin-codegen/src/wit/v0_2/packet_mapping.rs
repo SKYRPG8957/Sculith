@@ -1446,9 +1446,9 @@ fn emit_struct_output(
             output.push_str("            };\n");
             output.push_str("            let mut buf = Vec::new();\n");
             if attr_name == "java_packet" {
-                output.push_str("            pumpkin_core::net::java::JavaClient::write_packet_for_version(&p, version, &mut buf).unwrap();\n");
+                output.push_str("            sculith_core::net::java::JavaClient::write_packet_for_version(&p, version, &mut buf).unwrap();\n");
             } else {
-                output.push_str("            pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();\n");
+                output.push_str("            sculith_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();\n");
             }
             output.push_str("            Some(buf.into())\n");
             output.push_str("        }\n");
@@ -1579,9 +1579,9 @@ fn process_enum(
             output.push_str("            };\n");
             output.push_str("            let mut buf = Vec::new();\n");
             if attr_name == "java_packet" {
-                output.push_str("            pumpkin_core::net::java::JavaClient::write_packet_for_version(&p, version, &mut buf).unwrap();\n");
+                output.push_str("            sculith_core::net::java::JavaClient::write_packet_for_version(&p, version, &mut buf).unwrap();\n");
             } else {
-                output.push_str("            pumpkin_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();\n");
+                output.push_str("            sculith_core::net::bedrock::BedrockClient::write_raw_packet(&p, &mut buf).unwrap();\n");
             }
             output.push_str("            Some(buf.into())\n");
             output.push_str("        }\n");

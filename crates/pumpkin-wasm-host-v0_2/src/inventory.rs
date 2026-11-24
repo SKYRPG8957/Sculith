@@ -944,7 +944,7 @@ impl HostPlayerInventory for PluginHostState {
 }
 
 fn update_cursor_stack(
-    player: &pumpkin_core::entity::player::Player,
+    player: &sculith_core::entity::player::Player,
     stack: &pumpkin_data::item_stack::ItemStack,
 ) {
     let screen_handler_arc = player

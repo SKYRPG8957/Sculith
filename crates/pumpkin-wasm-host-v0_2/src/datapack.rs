@@ -5,8 +5,8 @@ use crate::pumpkin::plugin::datapack::{
     HostDatapackManagerWithStore,
 };
 use crate::{AccessorExt, RequireServer};
-use pumpkin_core::data::datapack::DatapackManager;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::data::datapack::DatapackManager;
 use wasmtime::component::{Accessor, HasSelf, Resource};
 
 impl DatapackHost for PluginHostState {}
@@ -115,7 +115,7 @@ impl HostDatapackManagerWithStore<PluginHostState> for HasSelf<PluginHostState> 
     }
 }
 
-fn to_wit_datapack_info(info: pumpkin_core::data::datapack::DatapackInfo) -> WitDatapackInfo {
+fn to_wit_datapack_info(info: sculith_core::data::datapack::DatapackInfo) -> WitDatapackInfo {
     WitDatapackInfo {
         id: info.id,
         name: info.name,
@@ -129,15 +129,15 @@ fn to_wit_datapack_info(info: pumpkin_core::data::datapack::DatapackInfo) -> Wit
 
 fn to_data_enable_position(
     pos: WitEnablePosition,
-) -> pumpkin_core::data::datapack::DatapackEnablePosition {
+) -> sculith_core::data::datapack::DatapackEnablePosition {
     match pos {
-        WitEnablePosition::First => pumpkin_core::data::datapack::DatapackEnablePosition::First,
-        WitEnablePosition::Last => pumpkin_core::data::datapack::DatapackEnablePosition::Last,
+        WitEnablePosition::First => sculith_core::data::datapack::DatapackEnablePosition::First,
+        WitEnablePosition::Last => sculith_core::data::datapack::DatapackEnablePosition::Last,
         WitEnablePosition::Before(s) => {
-            pumpkin_core::data::datapack::DatapackEnablePosition::Before(s)
+            sculith_core::data::datapack::DatapackEnablePosition::Before(s)
         }
         WitEnablePosition::After(s) => {
-            pumpkin_core::data::datapack::DatapackEnablePosition::After(s)
+            sculith_core::data::datapack::DatapackEnablePosition::After(s)
         }
     }
 }

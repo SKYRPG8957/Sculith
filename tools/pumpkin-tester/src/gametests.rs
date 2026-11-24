@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
-use pumpkin_core::{
+use pumpkin_data::{Block, dimension::Dimension};
+use pumpkin_gametest::{GameTestReporter, GameTestRunner};
+use sculith_core::{
     server::{
         Server,
         builtin_game_tests::builtin_game_test_ids,
@@ -11,8 +13,6 @@ use pumpkin_core::{
     },
     world::{BlockFlags, World},
 };
-use pumpkin_data::{Block, dimension::Dimension};
-use pumpkin_gametest::{GameTestReporter, GameTestRunner};
 use sculith_util::{
     math::{position::BlockPos, vector2::Vector2},
     text::TextComponent,

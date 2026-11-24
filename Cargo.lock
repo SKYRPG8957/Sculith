@@ -3047,7 +3047,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pumpkin-core"
+name = "sculith-core"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "aes 0.9.4",
@@ -3273,7 +3273,7 @@ version = "0.2.2+26.3-26.63"
 dependencies = [
  "bytes",
  "pumpkin-config",
- "pumpkin-core",
+ "sculith-core",
  "pumpkin-data",
  "pumpkin-gametest",
  "sculith-protocol",
@@ -3312,7 +3312,7 @@ dependencies = [
 name = "pumpkin-wasm-host"
 version = "0.2.2+26.3-26.63"
 dependencies = [
- "pumpkin-core",
+ "sculith-core",
  "pumpkin-plugin-runtime",
  "pumpkin-wasm-host-common",
  "pumpkin-wasm-host-v0_1",
@@ -3335,7 +3335,7 @@ dependencies = [
  "hyper",
  "postcard",
  "pumpkin-auth",
- "pumpkin-core",
+ "sculith-core",
  "pumpkin-data",
  "pumpkin-inventory",
  "pumpkin-plugin-runtime",
@@ -3360,7 +3360,7 @@ version = "0.2.2+26.3-26.63"
 dependencies = [
  "bytes",
  "pumpkin-config",
- "pumpkin-core",
+ "sculith-core",
  "pumpkin-data",
  "pumpkin-inventory",
  "pumpkin-macros",
@@ -3385,7 +3385,7 @@ version = "0.2.2+26.3-26.63"
 dependencies = [
  "bytes",
  "pumpkin-config",
- "pumpkin-core",
+ "sculith-core",
  "pumpkin-data",
  "pumpkin-inventory",
  "pumpkin-macros",
@@ -4211,7 +4211,7 @@ version = "0.2.2+26.3-26.63"
 dependencies = [
  "console-subscriber",
  "pumpkin-config",
- "pumpkin-core",
+ "sculith-core",
  "pumpkin-data",
  "sculith-util",
  "pumpkin-wasm-host",
@@ -4226,7 +4226,7 @@ dependencies = [
 name = "sculith-interop-connections"
 version = "0.0.0"
 dependencies = [
- "pumpkin-core",
+ "sculith-core",
  "pumpkin-data",
  "pumpkin-inventory",
  "sculith-protocol",

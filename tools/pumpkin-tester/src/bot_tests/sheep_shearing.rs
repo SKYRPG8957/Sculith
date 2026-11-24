@@ -3,7 +3,11 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use pumpkin_core::{
+use pumpkin_data::{
+    dimension::Dimension, dye_color::DyeColor, entity::EntityType, item::Item,
+    item_stack::ItemStack,
+};
+use sculith_core::{
     data::datapack::loot_table_loader::parse_loot_table,
     entity::{Entity, EntityBase, passive::sheep::SheepEntity},
     net::ClientPlatform,
@@ -17,10 +21,6 @@ use pumpkin_core::{
         },
     },
     server::Server,
-};
-use pumpkin_data::{
-    dimension::Dimension, dye_color::DyeColor, entity::EntityType, item::Item,
-    item_stack::ItemStack,
 };
 use sculith_protocol::{
     codec::var_int::VarInt,
@@ -136,7 +136,7 @@ pub fn run_sheep_shearing_test(
             .filter_map(|entity| {
                 entity
                     .cast_any()
-                    .downcast_ref::<pumpkin_core::entity::item::ItemEntity>()
+                    .downcast_ref::<sculith_core::entity::item::ItemEntity>()
             })
             .map(|entity| {
                 let stack = entity

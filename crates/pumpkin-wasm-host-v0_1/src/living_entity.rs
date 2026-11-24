@@ -76,28 +76,28 @@ pub const fn from_wit_attribute(attr: Attribute) -> &'static pumpkin_data::attri
 #[must_use]
 pub const fn from_wit_modifier_op(
     op: WitModifierOperation,
-) -> pumpkin_core::entity::attributes::ModifierOperation {
+) -> sculith_core::entity::attributes::ModifierOperation {
     match op {
-        WitModifierOperation::Add => pumpkin_core::entity::attributes::ModifierOperation::Add,
+        WitModifierOperation::Add => sculith_core::entity::attributes::ModifierOperation::Add,
         WitModifierOperation::MultiplyBase => {
-            pumpkin_core::entity::attributes::ModifierOperation::MultiplyBase
+            sculith_core::entity::attributes::ModifierOperation::MultiplyBase
         }
         WitModifierOperation::MultiplyTotal => {
-            pumpkin_core::entity::attributes::ModifierOperation::MultiplyTotal
+            sculith_core::entity::attributes::ModifierOperation::MultiplyTotal
         }
     }
 }
 
 #[must_use]
 pub const fn to_wit_modifier_op(
-    op: pumpkin_core::entity::attributes::ModifierOperation,
+    op: sculith_core::entity::attributes::ModifierOperation,
 ) -> WitModifierOperation {
     match op {
-        pumpkin_core::entity::attributes::ModifierOperation::Add => WitModifierOperation::Add,
-        pumpkin_core::entity::attributes::ModifierOperation::MultiplyBase => {
+        sculith_core::entity::attributes::ModifierOperation::Add => WitModifierOperation::Add,
+        sculith_core::entity::attributes::ModifierOperation::MultiplyBase => {
             WitModifierOperation::MultiplyBase
         }
-        pumpkin_core::entity::attributes::ModifierOperation::MultiplyTotal => {
+        sculith_core::entity::attributes::ModifierOperation::MultiplyTotal => {
             WitModifierOperation::MultiplyTotal
         }
     }
@@ -173,7 +173,7 @@ impl HostLivingEntity for PluginHostState {
         let entity = self.get(&this)?;
         Ok(entity.get_living_entity().map_or(
             0.0,
-            pumpkin_core::entity::living::LivingEntity::get_max_health,
+            sculith_core::entity::living::LivingEntity::get_max_health,
         ))
     }
 
@@ -254,7 +254,7 @@ impl HostLivingEntity for PluginHostState {
         let attribute = from_wit_attribute(attr);
         if let Some(living) = entity.get_living_entity() {
             living.set_attribute_base(attribute, value);
-            pumpkin_core::entity::attributes::send_attribute_updates_for_living(
+            sculith_core::entity::attributes::send_attribute_updates_for_living(
                 living,
                 vec![attribute.clone()],
             );
@@ -271,13 +271,13 @@ impl HostLivingEntity for PluginHostState {
         let entity = self.get(&this)?;
         let attribute = from_wit_attribute(attr);
         if let Some(living) = entity.get_living_entity() {
-            let internal_mod = pumpkin_core::entity::attributes::Modifier {
+            let internal_mod = sculith_core::entity::attributes::Modifier {
                 id: modifier.id,
                 amount: modifier.amount,
                 operation: from_wit_modifier_op(modifier.operation),
             };
             living.update_attribute(attribute, |inst| inst.add_or_replace_modifier(internal_mod));
-            pumpkin_core::entity::attributes::send_attribute_updates_for_living(
+            sculith_core::entity::attributes::send_attribute_updates_for_living(
                 living,
                 vec![attribute.clone()],
             );
@@ -295,7 +295,7 @@ impl HostLivingEntity for PluginHostState {
         let attribute = from_wit_attribute(attr);
         if let Some(living) = entity.get_living_entity() {
             living.update_attribute(attribute, |inst| inst.remove_modifier(&id));
-            pumpkin_core::entity::attributes::send_attribute_updates_for_living(
+            sculith_core::entity::attributes::send_attribute_updates_for_living(
                 living,
                 vec![attribute.clone()],
             );
@@ -345,7 +345,7 @@ impl HostLivingEntity for PluginHostState {
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 map.remove(&attribute.id);
             };
-            pumpkin_core::entity::attributes::send_attribute_updates_for_living(
+            sculith_core::entity::attributes::send_attribute_updates_for_living(
                 living,
                 vec![attribute.clone()],
             );

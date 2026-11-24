@@ -85,7 +85,7 @@ server checks pack limits and mapped assets, then compiles both packs before
 offering the new revision. A missing mapped asset rejects the entire batch.
 
 ```rust
-use pumpkin_core::{plugin::Context, resource_pack::PackEdit};
+use sculith_core::{plugin::Context, resource_pack::PackEdit};
 
 async fn replace_statue(context: &Context, geometry_json: Vec<u8>) -> Result<(), String> {
     context.server.edit_shared_resources(vec![PackEdit::Put {

@@ -3,9 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pumpkin_core::server::{Server, server_test_manager::drain_game_test_queue};
 use pumpkin_data::{Block, dimension::Dimension, item::Item};
 use pumpkin_gametest::GameTestRunner;
+use sculith_core::server::{Server, server_test_manager::drain_game_test_queue};
 use sculith_util::{GameMode, PermissionLvl, math::position::BlockPos};
 
 use crate::bot::{HeadlessBot, MAX_POLL_TICKS};
@@ -103,7 +103,7 @@ pub async fn run_commands_and_gamemode_tests(
     Ok(())
 }
 
-fn count_player_diamonds(player: &pumpkin_core::entity::player::Player) -> u8 {
+fn count_player_diamonds(player: &sculith_core::entity::player::Player) -> u8 {
     let inv = player.inventory();
     let main_inv = inv
         .main_inventory

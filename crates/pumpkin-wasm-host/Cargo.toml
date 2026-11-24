@@ -15,7 +15,7 @@ doctest = false
 v0_2 = ["dep:pumpkin-wasm-host-v0_2"]
 
 [dependencies]
-pumpkin-core.workspace = true
+sculith-core.workspace = true
 pumpkin-wasm-host-common.workspace = true
 pumpkin-wasm-host-v0_1.workspace = true
 pumpkin-wasm-host-v0_2 = { workspace = true, optional = true }

@@ -6,7 +6,7 @@ use crate::pumpkin::plugin::enchantments::{
 };
 use crate::pumpkin::plugin::recipe::RecipeManager as WitRecipeManager;
 use pumpkin::plugin::server::CommandSender as WasmCommandSender;
-use pumpkin_core::command::CommandSender;
+use sculith_core::command::CommandSender;
 
 use super::player::{from_wit_permission_level, parse_ban_expiry, to_wit_permission_level};
 use crate::{
@@ -25,9 +25,9 @@ use crate::{
     },
     uuid::UuidExt,
 };
-use pumpkin_core::data::SaveJSONConfiguration;
-use pumpkin_core::plugin::permissions;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::data::SaveJSONConfiguration;
+use sculith_core::plugin::permissions;
 
 impl pumpkin::plugin::server::Host for PluginHostState {}
 
@@ -1186,7 +1186,7 @@ impl pumpkin::plugin::server::HostBanManagerWithStore<PluginHostState>
                     existing.expires = expires;
                     existing.reason.clone_from(&reason_text);
                 } else {
-                    let entry = pumpkin_core::data::banlist_serializer::BannedPlayerEntry {
+                    let entry = sculith_core::data::banlist_serializer::BannedPlayerEntry {
                         uuid,
                         name: name.clone(),
                         created: time::OffsetDateTime::now_utc(),
@@ -1201,7 +1201,7 @@ impl pumpkin::plugin::server::HostBanManagerWithStore<PluginHostState>
 
                 if kick_if_online && let Some(player) = server.get_player_by_uuid(uuid) {
                     player.kick(
-                        pumpkin_core::net::DisconnectReason::Kicked,
+                        sculith_core::net::DisconnectReason::Kicked,
                         &sculith_util::text::TextComponent::text(reason_text.clone()),
                     );
                 }
@@ -1260,7 +1260,7 @@ impl pumpkin::plugin::server::HostBanManagerWithStore<PluginHostState>
                     existing.expires = expires;
                     existing.reason.clone_from(&reason_text);
                 } else {
-                    let entry = pumpkin_core::data::banlist_serializer::BannedIpEntry {
+                    let entry = sculith_core::data::banlist_serializer::BannedIpEntry {
                         ip: ip_addr,
                         created: time::OffsetDateTime::now_utc(),
                         source: source_name,
@@ -1276,7 +1276,7 @@ impl pumpkin::plugin::server::HostBanManagerWithStore<PluginHostState>
                     for player in server.get_all_players() {
                         if player.client.address().ip() == ip_addr {
                             player.kick(
-                                pumpkin_core::net::DisconnectReason::Kicked,
+                                sculith_core::net::DisconnectReason::Kicked,
                                 &sculith_util::text::TextComponent::text(reason_text.clone()),
                             );
                         }
@@ -1422,7 +1422,7 @@ impl pumpkin::plugin::server::HostWhitelistManagerWithStore<PluginHostState>
                     };
                     for player in to_kick {
                         player.kick(
-                            pumpkin_core::net::DisconnectReason::Kicked,
+                            sculith_core::net::DisconnectReason::Kicked,
                             &pumpkin_macros::translate_cross!(
                                 pumpkin_data::translation::java::MULTIPLAYER_DISCONNECT_NOT_WHITELISTED,
                                 pumpkin_data::translation::bedrock::DISCONNECT_KICKED

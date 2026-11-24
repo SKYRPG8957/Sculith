@@ -7,14 +7,14 @@ use crate::{
         VehicleUpdateEventData,
     },
 };
-use pumpkin_core::plugin::vehicle::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::vehicle::{
     vehicle_block_collision::VehicleBlockCollisionEvent, vehicle_collision::VehicleCollisionEvent,
     vehicle_create::VehicleCreateEvent, vehicle_damage::VehicleDamageEvent,
     vehicle_destroy::VehicleDestroyEvent, vehicle_enter::VehicleEnterEvent,
     vehicle_entity_collision::VehicleEntityCollisionEvent, vehicle_exit::VehicleExitEvent,
     vehicle_move::VehicleMoveEvent, vehicle_update::VehicleUpdateEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 use sculith_util::math::vector3::Vector3;
 
 impl ToFromWasmEvent for VehicleBlockCollisionEvent {

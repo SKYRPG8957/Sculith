@@ -12,8 +12,8 @@ mod world_interaction;
 
 use std::{net::SocketAddr, sync::Arc};
 
-use pumpkin_core::server::Server;
 use pumpkin_gametest::GameTestRunner;
+use sculith_core::server::Server;
 
 pub async fn run_bot_tests(
     server: &Arc<Server>,

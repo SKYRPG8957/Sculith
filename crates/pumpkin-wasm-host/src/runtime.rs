@@ -4,7 +4,6 @@ use std::{any::Any, fs, net::SocketAddr, path::Path, sync::Arc};
 use wasmtime::{Cache, CacheConfig, Engine, component::Component, component::Linker};
 use wasmtime_wasi::{FsPerms, WasiCtxBuilder, sockets::SocketAddrUse};
 
-use pumpkin_core::plugin::{Context, PluginMetadata, cache::calculate_hash_for_bytes, permissions};
 use pumpkin_plugin_runtime::RuntimeSpawner;
 use pumpkin_wasm_host_common::{
     concurrent_store::{self, LegacySyncReentry, StoreMode},
@@ -13,6 +12,7 @@ use pumpkin_wasm_host_common::{
     signature,
     state::PluginHostState,
 };
+use sculith_core::plugin::{Context, PluginMetadata, cache::calculate_hash_for_bytes, permissions};
 
 #[derive(Clone, Copy, Default)]
 struct SocketPolicy {

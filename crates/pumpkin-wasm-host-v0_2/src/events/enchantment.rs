@@ -11,10 +11,10 @@ use crate::{
         PrepareItemEnchantEventData,
     },
 };
-use pumpkin_core::plugin::enchantment::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::enchantment::{
     enchant_item::EnchantItemEvent, prepare_item_enchant::PrepareItemEnchantEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 fn consume_item_stack(
     state: &mut PluginHostState,

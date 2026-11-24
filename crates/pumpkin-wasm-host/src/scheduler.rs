@@ -1,10 +1,10 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use pumpkin_core::server::Server;
 use pumpkin_wasm_host_common::{
     plugin::PluginApiVersion,
     scheduler::{ScheduledTask, TaskScheduler},
 };
+use sculith_core::server::Server;
 
 use crate::runtime::guest_exports;
 #[cfg(not(feature = "v0_2"))]

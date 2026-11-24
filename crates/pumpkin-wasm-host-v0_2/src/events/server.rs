@@ -11,8 +11,10 @@ use crate::{
         ServerTickStartEventData, ServerboundPacket,
     },
 };
-use pumpkin_core::net::ClientPlatform;
-use pumpkin_core::plugin::server::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
+use sculith_core::net::ClientPlatform;
+use sculith_core::plugin::server::{
     list_ping::ServerListPingEvent,
     map_initialize::MapInitializeEvent,
     packet::{
@@ -26,8 +28,6 @@ use pumpkin_core::plugin::server::{
     server_tick_end::ServerTickEndEvent,
     server_tick_start::ServerTickStartEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
-use pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
 use sculith_protocol::ConnectionState as ProtoConnectionState;
 use std::sync::atomic::Ordering;
 
@@ -413,7 +413,7 @@ impl ToFromWasmEvent for ServerListPingEvent {
             Event::ServerListPingEvent(data) => Self {
                 hostname: data.hostname,
                 address:
-                    pumpkin_core::plugin::api::events::server::list_ping::ServerListPingAddress::new(
+                    sculith_core::plugin::api::events::server::list_ping::ServerListPingAddress::new(
                         data.address.host,
                         data.address.port,
                     ),

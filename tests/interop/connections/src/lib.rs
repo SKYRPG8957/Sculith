@@ -7,7 +7,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use pumpkin_core::{
+use pumpkin_data::{
+    data_component_impl::EquipmentSlot, entity::EntityType, item::Item, item_stack::ItemStack,
+};
+use pumpkin_inventory::screen_handler::ScreenHandler;
+use sculith_core::{
     plugin::inventory::craft_item::CraftItemEvent,
     plugin::inventory::inventory_creative::InventoryCreativeEvent,
     plugin::inventory::inventory_drag::InventoryDragEvent,
@@ -29,10 +33,6 @@ use pumpkin_core::{
     resource_pack::PackEdit,
     server::Server,
 };
-use pumpkin_data::{
-    data_component_impl::EquipmentSlot, entity::EntityType, item::Item, item_stack::ItemStack,
-};
-use pumpkin_inventory::screen_handler::ScreenHandler;
 use sculith_protocol::{
     ConnectionState, ServerPacket,
     bedrock::server::{login::SLogin, request_network_settings::SRequestNetworkSettings},
@@ -45,7 +45,7 @@ use sculith_protocol::{
 };
 
 #[unsafe(no_mangle)]
-pub static PUMPKIN_API_VERSION: u32 = pumpkin_core::plugin::PLUGIN_API_VERSION;
+pub static SCULITH_API_VERSION: u32 = sculith_core::plugin::PLUGIN_API_VERSION;
 
 #[unsafe(no_mangle)]
 pub static METADATA: LazyLock<PluginMetadata> = LazyLock::new(|| PluginMetadata {

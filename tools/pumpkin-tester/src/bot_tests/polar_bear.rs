@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use pumpkin_core::{
+use pumpkin_data::entity::EntityType;
+use sculith_core::{
     entity::{Entity, EntityBase, ageable::AgeableMob, passive::polar_bear::PolarBearEntity},
     server::Server,
 };
-use pumpkin_data::entity::EntityType;
 use sculith_util::{GameMode, math::vector3::Vector3};
 
 use crate::bot::HeadlessBot;

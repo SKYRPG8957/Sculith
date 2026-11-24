@@ -485,14 +485,14 @@ impl HostEntity for PluginHostState {
     }
 
     fn get_max_freeze_ticks(&mut self, _entity: Resource<Entity>) -> wasmtime::Result<i32> {
-        Ok(pumpkin_core::entity::Entity::MAX_FROZEN_TICKS)
+        Ok(sculith_core::entity::Entity::MAX_FROZEN_TICKS)
     }
 
     fn is_frozen(&mut self, entity: Resource<Entity>) -> wasmtime::Result<bool> {
         let entity = self.get(&entity)?;
         Ok(
             entity.get_entity().get_frozen_ticks()
-                >= pumpkin_core::entity::Entity::MAX_FROZEN_TICKS,
+                >= sculith_core::entity::Entity::MAX_FROZEN_TICKS,
         )
     }
 
@@ -626,7 +626,7 @@ impl HostEntity for PluginHostState {
     }
 
     fn get_max_air(&mut self, _entity: Resource<Entity>) -> wasmtime::Result<i32> {
-        Ok(pumpkin_core::entity::breath::MAX_AIR)
+        Ok(sculith_core::entity::breath::MAX_AIR)
     }
 
     fn raycast(

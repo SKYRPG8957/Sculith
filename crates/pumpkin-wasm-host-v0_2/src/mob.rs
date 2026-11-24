@@ -24,17 +24,17 @@ use crate::{
     },
     uuid::UuidExt,
 };
-use pumpkin_core::entity::ai::goal::Goal;
-use pumpkin_core::entity::mob::Mob as InternalMob;
-use pumpkin_core::entity::passive::tamable::TamableAnimal;
-use pumpkin_core::server::Server;
 use pumpkin_wasm_host_common::{plugin::WasmPlugin, state::PluginHostState};
+use sculith_core::entity::ai::goal::Goal;
+use sculith_core::entity::mob::Mob as InternalMob;
+use sculith_core::entity::passive::tamable::TamableAnimal;
+use sculith_core::server::Server;
 
 #[must_use]
 pub const fn from_wit_path_node_type(
     t: WitPathNodeType,
-) -> pumpkin_core::entity::ai::pathfinder::node::PathType {
-    use pumpkin_core::entity::ai::pathfinder::node::PathType;
+) -> sculith_core::entity::ai::pathfinder::node::PathType {
+    use sculith_core::entity::ai::pathfinder::node::PathType;
     match t {
         WitPathNodeType::Blocked => PathType::Blocked,
         WitPathNodeType::Open => PathType::Open,
@@ -198,7 +198,7 @@ pub struct CustomWasmGoal {
     pub goal_id: u32,
 }
 
-fn current_mob_entity(mob: &dyn InternalMob) -> Option<Arc<dyn pumpkin_core::entity::EntityBase>> {
+fn current_mob_entity(mob: &dyn InternalMob) -> Option<Arc<dyn sculith_core::entity::EntityBase>> {
     let entity = mob.get_entity();
     entity.world.load().get_entity_by_id(entity.entity_id)
 }
@@ -314,13 +314,13 @@ impl HostMob for PluginHostState {
                 crate::pumpkin::plugin::world::BuiltinAiGoal::Swim => {
                     mob_entity.add_goal(
                         priority,
-                        pumpkin_core::entity::ai::goal::swim::SwimGoal::default(),
+                        sculith_core::entity::ai::goal::swim::SwimGoal::default(),
                     );
                 }
                 crate::pumpkin::plugin::world::BuiltinAiGoal::WanderAround(speed) => {
                     mob_entity.add_goal(
                         priority,
-                        pumpkin_core::entity::ai::goal::wander_around::WanderAroundGoal::new(
+                        sculith_core::entity::ai::goal::wander_around::WanderAroundGoal::new(
                             f64::from(speed),
                         ),
                     );
@@ -328,15 +328,15 @@ impl HostMob for PluginHostState {
                 crate::pumpkin::plugin::world::BuiltinAiGoal::MeleeAttack(speed) => {
                     mob_entity.add_goal(
                         priority,
-                        pumpkin_core::entity::ai::goal::melee_attack::MeleeAttackGoal::new(
+                        sculith_core::entity::ai::goal::melee_attack::MeleeAttackGoal::new(
                             f64::from(speed),
                             false,
                         ),
                     );
                 }
                 crate::pumpkin::plugin::world::BuiltinAiGoal::LookAtPlayer(range) => {
-                    mob_entity.add_goal(priority, pumpkin_core::entity::ai::goal::look_at_entity::LookAtEntityGoal::new(
-                        std::sync::Weak::<pumpkin_core::entity::mob::zombie::zombie::ZombieEntity>::new() as std::sync::Weak<dyn pumpkin_core::entity::mob::Mob>,
+                    mob_entity.add_goal(priority, sculith_core::entity::ai::goal::look_at_entity::LookAtEntityGoal::new(
+                        std::sync::Weak::<sculith_core::entity::mob::zombie::zombie::ZombieEntity>::new() as std::sync::Weak<dyn sculith_core::entity::mob::Mob>,
                         &pumpkin_data::entity::EntityType::PLAYER,
                         range,
                         0.02,
@@ -346,14 +346,14 @@ impl HostMob for PluginHostState {
                 crate::pumpkin::plugin::world::BuiltinAiGoal::LookAround => {
                     mob_entity.add_goal(
                         priority,
-                        pumpkin_core::entity::ai::goal::look_around::RandomLookAroundGoal::default(
+                        sculith_core::entity::ai::goal::look_around::RandomLookAroundGoal::default(
                         ),
                     );
                 }
                 crate::pumpkin::plugin::world::BuiltinAiGoal::EscapeDanger(speed) => {
                     mob_entity.add_goal(
                         priority,
-                        *pumpkin_core::entity::ai::goal::escape_danger::EscapeDangerGoal::new(
+                        *sculith_core::entity::ai::goal::escape_danger::EscapeDangerGoal::new(
                             f64::from(speed),
                         ),
                     );
@@ -433,7 +433,7 @@ impl HostMob for PluginHostState {
             mob.get_mob_entity()
                 .navigator
                 .lock_ignore_poison()
-                .set_progress(pumpkin_core::entity::ai::pathfinder::NavigatorGoal::new(
+                .set_progress(sculith_core::entity::ai::pathfinder::NavigatorGoal::new(
                     mob_pos, dest, speed,
                 ));
             true
@@ -454,7 +454,7 @@ impl HostMob for PluginHostState {
             mob.get_mob_entity()
                 .navigator
                 .lock_ignore_poison()
-                .set_progress(pumpkin_core::entity::ai::pathfinder::NavigatorGoal::new(
+                .set_progress(sculith_core::entity::ai::pathfinder::NavigatorGoal::new(
                     mob_pos, target_pos, speed,
                 ));
             mob.get_mob_entity()
@@ -587,7 +587,7 @@ impl HostMob for PluginHostState {
         let entity = self.get(&this)?;
         let any = entity.cast_any();
 
-        if let Some(sheep) = any.downcast_ref::<pumpkin_core::entity::passive::sheep::SheepEntity>()
+        if let Some(sheep) = any.downcast_ref::<sculith_core::entity::passive::sheep::SheepEntity>()
         {
             return Ok(WitMobData::Sheep(WitSheepData {
                 color: to_wit_dye_color(sheep.get_color()),
@@ -595,7 +595,7 @@ impl HostMob for PluginHostState {
             }));
         }
 
-        if let Some(wolf) = any.downcast_ref::<pumpkin_core::entity::passive::wolf::WolfEntity>() {
+        if let Some(wolf) = any.downcast_ref::<sculith_core::entity::passive::wolf::WolfEntity>() {
             return Ok(WitMobData::Wolf(WitWolfData {
                 is_tamed: wolf.is_tame(),
                 owner: wolf.get_owner().map(|u| Uuid::to_wit(&u)),
@@ -606,7 +606,7 @@ impl HostMob for PluginHostState {
             }));
         }
 
-        if let Some(cat) = any.downcast_ref::<pumpkin_core::entity::passive::cat::CatEntity>() {
+        if let Some(cat) = any.downcast_ref::<sculith_core::entity::passive::cat::CatEntity>() {
             return Ok(WitMobData::Cat(WitCatData {
                 is_tamed: cat.is_tame(),
                 owner: cat.get_owner().map(|u| Uuid::to_wit(&u)),
@@ -616,7 +616,7 @@ impl HostMob for PluginHostState {
         }
 
         if let Some(villager) =
-            any.downcast_ref::<pumpkin_core::entity::passive::villager::VillagerEntity>()
+            any.downcast_ref::<sculith_core::entity::passive::villager::VillagerEntity>()
         {
             let data = *villager.villager_data.lock_ignore_poison();
             return Ok(WitMobData::Villager(WitVillagerData {
@@ -630,7 +630,7 @@ impl HostMob for PluginHostState {
         }
 
         if let Some(creeper) =
-            any.downcast_ref::<pumpkin_core::entity::mob::creeper::CreeperEntity>()
+            any.downcast_ref::<sculith_core::entity::mob::creeper::CreeperEntity>()
         {
             return Ok(WitMobData::Creeper(WitCreeperData {
                 is_powered: creeper.is_charged(),
@@ -640,14 +640,14 @@ impl HostMob for PluginHostState {
             }));
         }
 
-        if let Some(slime) = any.downcast_ref::<pumpkin_core::entity::mob::slime::SlimeEntity>() {
+        if let Some(slime) = any.downcast_ref::<sculith_core::entity::mob::slime::SlimeEntity>() {
             return Ok(WitMobData::Slime(WitSlimeData {
                 size: slime.get_size(),
             }));
         }
 
         if let Some(enderman) =
-            any.downcast_ref::<pumpkin_core::entity::mob::enderman::EndermanEntity>()
+            any.downcast_ref::<sculith_core::entity::mob::enderman::EndermanEntity>()
         {
             return Ok(WitMobData::Enderman(WitEndermanData {
                 carried_block_state: enderman
@@ -659,14 +659,14 @@ impl HostMob for PluginHostState {
         }
 
         if let Some(iron_golem) =
-            any.downcast_ref::<pumpkin_core::entity::passive::iron_golem::IronGolemEntity>()
+            any.downcast_ref::<sculith_core::entity::passive::iron_golem::IronGolemEntity>()
         {
             return Ok(WitMobData::IronGolem(WitIronGolemData {
                 is_player_created: iron_golem.is_player_created(),
             }));
         }
 
-        if let Some(fox) = any.downcast_ref::<pumpkin_core::entity::passive::fox::FoxEntity>() {
+        if let Some(fox) = any.downcast_ref::<sculith_core::entity::passive::fox::FoxEntity>() {
             return Ok(WitMobData::Fox(WitFoxData {
                 is_sitting: fox.is_sitting(),
                 is_sleeping: fox.is_sleeping(),
@@ -675,7 +675,7 @@ impl HostMob for PluginHostState {
         }
 
         if let Some(shulker) =
-            any.downcast_ref::<pumpkin_core::entity::mob::shulker::ShulkerEntity>()
+            any.downcast_ref::<sculith_core::entity::mob::shulker::ShulkerEntity>()
         {
             return Ok(WitMobData::Shulker(WitShulkerData {
                 attached_face: to_wit_block_direction(shulker.get_attach_face()),
@@ -685,7 +685,7 @@ impl HostMob for PluginHostState {
         }
 
         if let Some(zombie) =
-            any.downcast_ref::<pumpkin_core::entity::mob::zombie::zombie::ZombieEntity>()
+            any.downcast_ref::<sculith_core::entity::mob::zombie::zombie::ZombieEntity>()
         {
             return Ok(WitMobData::Zombie(WitZombieData {
                 is_baby: zombie.is_baby(),
@@ -713,7 +713,7 @@ impl HostMob for PluginHostState {
         match data {
             WitMobData::Sheep(sheep_data) => {
                 if let Some(sheep) =
-                    any.downcast_ref::<pumpkin_core::entity::passive::sheep::SheepEntity>()
+                    any.downcast_ref::<sculith_core::entity::passive::sheep::SheepEntity>()
                 {
                     sheep.set_color(from_wit_dye_color(sheep_data.color));
                     sheep.set_sheared(sheep_data.is_sheared);
@@ -722,7 +722,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Wolf(wolf_data) => {
                 if let Some(wolf) =
-                    any.downcast_ref::<pumpkin_core::entity::passive::wolf::WolfEntity>()
+                    any.downcast_ref::<sculith_core::entity::passive::wolf::WolfEntity>()
                 {
                     wolf.set_tame(wolf_data.is_tamed);
                     wolf.set_owner(wolf_data.owner.map(|u| Uuid::from_wit(&u)));
@@ -734,7 +734,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Cat(cat_data) => {
                 if let Some(cat) =
-                    any.downcast_ref::<pumpkin_core::entity::passive::cat::CatEntity>()
+                    any.downcast_ref::<sculith_core::entity::passive::cat::CatEntity>()
                 {
                     cat.set_tame(cat_data.is_tamed);
                     cat.set_owner(cat_data.owner.map(|u| Uuid::from_wit(&u)));
@@ -746,7 +746,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Villager(villager_data) => {
                 if let Some(villager) =
-                    any.downcast_ref::<pumpkin_core::entity::passive::villager::VillagerEntity>()
+                    any.downcast_ref::<sculith_core::entity::passive::villager::VillagerEntity>()
                 {
                     {
                         let mut vdata = villager.villager_data.lock_ignore_poison();
@@ -766,7 +766,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Creeper(creeper_data) => {
                 if let Some(creeper) =
-                    any.downcast_ref::<pumpkin_core::entity::mob::creeper::CreeperEntity>()
+                    any.downcast_ref::<sculith_core::entity::mob::creeper::CreeperEntity>()
                 {
                     creeper.set_charged(creeper_data.is_powered);
                     creeper.set_fuse(creeper_data.fuse);
@@ -777,7 +777,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Slime(slime_data) => {
                 if let Some(slime) =
-                    any.downcast_ref::<pumpkin_core::entity::mob::slime::SlimeEntity>()
+                    any.downcast_ref::<sculith_core::entity::mob::slime::SlimeEntity>()
                 {
                     slime.set_size(slime_data.size, false);
                     return Ok(true);
@@ -785,7 +785,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Enderman(enderman_data) => {
                 if let Some(enderman) =
-                    any.downcast_ref::<pumpkin_core::entity::mob::enderman::EndermanEntity>()
+                    any.downcast_ref::<sculith_core::entity::mob::enderman::EndermanEntity>()
                 {
                     enderman.set_carried_block(
                         enderman_data
@@ -798,7 +798,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::IronGolem(iron_golem_data) => {
                 if let Some(iron_golem) =
-                    any.downcast_ref::<pumpkin_core::entity::passive::iron_golem::IronGolemEntity>()
+                    any.downcast_ref::<sculith_core::entity::passive::iron_golem::IronGolemEntity>()
                 {
                     iron_golem.set_player_created(iron_golem_data.is_player_created);
                     return Ok(true);
@@ -806,7 +806,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Fox(fox_data) => {
                 if let Some(fox) =
-                    any.downcast_ref::<pumpkin_core::entity::passive::fox::FoxEntity>()
+                    any.downcast_ref::<sculith_core::entity::passive::fox::FoxEntity>()
                 {
                     fox.set_sitting(fox_data.is_sitting);
                     fox.set_sleeping(fox_data.is_sleeping);
@@ -816,7 +816,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Shulker(shulker_data) => {
                 if let Some(shulker) =
-                    any.downcast_ref::<pumpkin_core::entity::mob::shulker::ShulkerEntity>()
+                    any.downcast_ref::<sculith_core::entity::mob::shulker::ShulkerEntity>()
                 {
                     shulker.set_attach_face(from_wit_block_direction(shulker_data.attached_face));
                     shulker.set_raw_peek(shulker_data.peek_amount);
@@ -826,7 +826,7 @@ impl HostMob for PluginHostState {
             }
             WitMobData::Zombie(zombie_data) => {
                 if let Some(zombie) =
-                    any.downcast_ref::<pumpkin_core::entity::mob::zombie::zombie::ZombieEntity>()
+                    any.downcast_ref::<sculith_core::entity::mob::zombie::zombie::ZombieEntity>()
                 {
                     zombie.set_baby(zombie_data.is_baby);
                     zombie.set_can_break_doors(zombie_data.can_break_doors);

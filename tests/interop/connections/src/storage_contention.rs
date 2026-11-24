@@ -6,7 +6,9 @@ use std::{
     time::Duration,
 };
 
-use pumpkin_core::{
+use pumpkin_data::item_stack::ItemStack;
+use pumpkin_inventory::{Inventory, slot::Slot};
+use sculith_core::{
     entity::player::Player,
     plugin::{
         BoxFuture, Context, EventHandler, EventPriority,
@@ -14,8 +16,6 @@ use pumpkin_core::{
     },
     server::Server,
 };
-use pumpkin_data::item_stack::ItemStack;
-use pumpkin_inventory::{Inventory, slot::Slot};
 use sculith_protocol::{RawPacket, java::server::play::SClickSlot, packet::MultiVersionJavaPacket};
 
 pub fn register(context: &Arc<Context>) {

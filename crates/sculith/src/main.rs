@@ -29,17 +29,17 @@ use tokio::signal::ctrl_c;
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
 
-use pumpkin_core::{
+use sculith_core::{
     CRASH_REPORT, SERVER_EXIT_CODE, SERVER_IS_STOPPING,
     crash::{CrashReport, FullBacktrace},
     data::VanillaData,
     stop_or_exit_server,
 };
-use pumpkin_core::{PumpkinServer, stop_server};
+use sculith_core::{PumpkinServer, stop_server};
 
 use pumpkin_config::{LoadConfiguration, PumpkinConfig};
-use pumpkin_core::plugin::loader::PluginLoader;
 use pumpkin_wasm_host::WasmPluginLoader;
+use sculith_core::plugin::loader::PluginLoader;
 use sculith_util::text::{
     TextComponent,
     color::{Color, NamedColor},
@@ -108,7 +108,7 @@ async fn main() {
 
     let vanilla_data = VanillaData::load();
 
-    pumpkin_core::init_logger(&config.advanced);
+    sculith_core::init_logger(&config.advanced);
 
     let world_dir = exec_dir.join(config.basic.get_world_path());
     if world_dir.join("db/CURRENT").is_file() {
@@ -256,7 +256,7 @@ async fn main() {
     );
 
     let distant_terrain =
-        pumpkin_core::net::bedrock::distant_terrain::DistantTerrain::start(&pumpkin_server.server)
+        sculith_core::net::bedrock::distant_terrain::DistantTerrain::start(&pumpkin_server.server)
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "Could not start distant terrain");
                 None

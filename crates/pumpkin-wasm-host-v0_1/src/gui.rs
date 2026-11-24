@@ -7,9 +7,9 @@ use crate::pumpkin::plugin::{
     item_stack::ItemStack as WitHostItemStack,
     screens::Screen as WitScreen,
 };
-use pumpkin_core::plugin::api::gui::{PluginGui, PluginInventory};
 use pumpkin_data::screen::WindowType;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::api::gui::{PluginGui, PluginInventory};
 
 #[must_use]
 pub const fn to_wit_screen(window_type: WindowType) -> WitScreen {

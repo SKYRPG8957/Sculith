@@ -36,7 +36,8 @@ use crate::{
         WardenAngerChangeEventData,
     },
 };
-use pumpkin_core::plugin::entity::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::entity::{
     area_effect_cloud_apply::AreaEffectCloudApplyEvent,
     arrow_body_count_change::ArrowBodyCountChangeEvent,
     bat_toggle_sleep::BatToggleSleepEvent,
@@ -98,7 +99,6 @@ use pumpkin_core::plugin::entity::{
     villager_reputation_change::VillagerReputationChangeEvent,
     warden_anger_change::WardenAngerChangeEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl ToFromWasmEvent for EntityDamageEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
@@ -253,7 +253,7 @@ impl ToFromWasmEvent for EntityRegainHealthEvent {
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_air_change::EntityAirChangeEvent
+    for sculith_core::plugin::api::events::entity::entity_air_change::EntityAirChangeEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityAirChangeEvent(EntityAirChangeEventData {
@@ -275,7 +275,7 @@ impl ToFromWasmEvent
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_breed::EntityBreedEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::entity::entity_breed::EntityBreedEvent {
     fn apply_wasm_event(&mut self, event: Event, _state: &mut PluginHostState) {
         if let Event::EntityBreedEvent(data) = event {
             self.cancelled = data.cancelled;
@@ -306,7 +306,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_breed
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_dismount::EntityDismountEvent
+    for sculith_core::plugin::api::events::entity::entity_dismount::EntityDismountEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityDismountEvent(EntityDismountEventData {
@@ -328,7 +328,7 @@ impl ToFromWasmEvent
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_dye::EntityDyeEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::entity::entity_dye::EntityDyeEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let player = self.player.as_ref().and_then(|p| state.add(p.clone()).ok());
         Event::EntityDyeEvent(EntityDyeEventData {
@@ -343,7 +343,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_dye::
         match event {
             Event::EntityDyeEvent(data) => Self {
                 entity_id: data.entity_id,
-                color: pumpkin_core::plugin::api::events::entity::entity_dye::DyeColor::White,
+                color: sculith_core::plugin::api::events::entity::entity_dye::DyeColor::White,
                 player: data.player.map(|p| consume_player(state, &p)),
                 cancelled: data.cancelled,
             },
@@ -353,7 +353,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_dye::
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_enter_love_mode::EntityEnterLoveModeEvent
+    for sculith_core::plugin::api::events::entity::entity_enter_love_mode::EntityEnterLoveModeEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityEnterLoveModeEvent(EntityEnterLoveModeEventData {
@@ -378,7 +378,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_explode::EntityExplodeEvent
+    for sculith_core::plugin::api::events::entity::entity_explode::EntityExplodeEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityExplodeEvent(EntityExplodeEventData {
@@ -406,7 +406,7 @@ impl ToFromWasmEvent
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_mount::EntityMountEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::entity::entity_mount::EntityMountEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityMountEvent(EntityMountEventData {
             entity_id: self.entity_id,
@@ -428,7 +428,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_mount
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_pickup_item::EntityPickupItemEvent
+    for sculith_core::plugin::api::events::entity::entity_pickup_item::EntityPickupItemEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityPickupItemEvent(EntityPickupItemEventData {
@@ -453,7 +453,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_portal::EntityPortalEvent
+    for sculith_core::plugin::api::events::entity::entity_portal::EntityPortalEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityPortalEvent(EntityPortalEventData {
@@ -476,7 +476,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_resurrect::EntityResurrectEvent
+    for sculith_core::plugin::api::events::entity::entity_resurrect::EntityResurrectEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityResurrectEvent(EntityResurrectEventData {
@@ -497,7 +497,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_shoot_bow::EntityShootBowEvent
+    for sculith_core::plugin::api::events::entity::entity_shoot_bow::EntityShootBowEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityShootBowEvent(EntityShootBowEventData {
@@ -521,7 +521,7 @@ impl ToFromWasmEvent
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_tame::EntityTameEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::entity::entity_tame::EntityTameEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let owner = state
             .add(self.owner.clone())
@@ -546,7 +546,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::entity::entity_tame:
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_target::EntityTargetEvent
+    for sculith_core::plugin::api::events::entity::entity_target::EntityTargetEvent
 {
     fn apply_wasm_event(&mut self, event: Event, _state: &mut PluginHostState) {
         if let Event::EntityTargetEvent(data) = event {
@@ -569,7 +569,7 @@ impl ToFromWasmEvent
                 entity_id: data.entity_id,
                 target_id: data.target_id,
                 reason:
-                    pumpkin_core::plugin::api::events::entity::entity_target::TargetReason::Unknown,
+                    sculith_core::plugin::api::events::entity::entity_target::TargetReason::Unknown,
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),
@@ -578,7 +578,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_teleport::EntityTeleportEvent
+    for sculith_core::plugin::api::events::entity::entity_teleport::EntityTeleportEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityTeleportEvent(EntityTeleportEventData {
@@ -611,7 +611,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_toggle_glide::EntityToggleGlideEvent
+    for sculith_core::plugin::api::events::entity::entity_toggle_glide::EntityToggleGlideEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityToggleGlideEvent(EntityToggleGlideEventData {
@@ -634,7 +634,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::entity::entity_transform::EntityTransformEvent
+    for sculith_core::plugin::api::events::entity::entity_transform::EntityTransformEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntityTransformEvent(EntityTransformEventData {

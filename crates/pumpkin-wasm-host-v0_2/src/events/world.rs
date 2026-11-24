@@ -10,11 +10,11 @@ use crate::{
         ThunderChangeEventData, WeatherChangeEventData, WorldLoadEventData, WorldUnloadEventData,
     },
 };
-use pumpkin_core::plugin::world::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::world::{
     chunk_load::ChunkLoad, chunk_save::ChunkSave, chunk_send::ChunkSend,
     spawn_change::SpawnChangeEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl ToFromWasmEvent for SpawnChangeEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
@@ -205,7 +205,7 @@ impl ToFromWasmEvent for ChunkSend {
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::weather_change::WeatherChangeEvent
+    for sculith_core::plugin::api::events::world::weather_change::WeatherChangeEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let target_world = state
@@ -232,7 +232,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::weather_change::ThunderChangeEvent
+    for sculith_core::plugin::api::events::world::weather_change::ThunderChangeEvent
 {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let target_world = state
@@ -258,7 +258,7 @@ impl ToFromWasmEvent
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::world_load::WorldLoadEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::world::world_load::WorldLoadEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let target_world = state
             .add(self.world.clone())
@@ -277,7 +277,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::world_load::W
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::world_load::WorldUnloadEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::world::world_load::WorldUnloadEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let target_world = state
             .add(self.world.clone())
@@ -301,7 +301,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::world_load::W
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::async_structure_generate::AsyncStructureGenerateEvent
+    for sculith_core::plugin::api::events::world::async_structure_generate::AsyncStructureGenerateEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::AsyncStructureGenerateEvent(crate::pumpkin::plugin::event::AsyncStructureGenerateEventData {
@@ -333,7 +333,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::async_structure_spawn::AsyncStructureSpawnEvent
+    for sculith_core::plugin::api::events::world::async_structure_spawn::AsyncStructureSpawnEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::AsyncStructureSpawnEvent(
@@ -367,7 +367,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::chunk_populate::ChunkPopulateEvent
+    for sculith_core::plugin::api::events::world::chunk_populate::ChunkPopulateEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::ChunkPopulateEvent(crate::pumpkin::plugin::event::ChunkPopulateEventData {
@@ -395,7 +395,7 @@ impl ToFromWasmEvent
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::chunk_unload::ChunkUnloadEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::world::chunk_unload::ChunkUnloadEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::ChunkUnloadEvent(crate::pumpkin::plugin::event::ChunkUnloadEventData {
             chunk_x: self.chunk_pos.x,
@@ -423,7 +423,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::chunk_unload:
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::entities_load::EntitiesLoadEvent
+    for sculith_core::plugin::api::events::world::entities_load::EntitiesLoadEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntitiesLoadEvent(crate::pumpkin::plugin::event::EntitiesLoadEventData {
@@ -454,7 +454,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::entities_unload::EntitiesUnloadEvent
+    for sculith_core::plugin::api::events::world::entities_unload::EntitiesUnloadEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::EntitiesUnloadEvent(crate::pumpkin::plugin::event::EntitiesUnloadEventData {
@@ -484,7 +484,7 @@ impl ToFromWasmEvent
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::generic_game::GenericGameEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::world::generic_game::GenericGameEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::GenericGameEvent(crate::pumpkin::plugin::event::GenericGameEventData {
             event_id: self.event_key.clone(),
@@ -515,7 +515,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::generic_game:
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::loot_generate::LootGenerateEvent
+    for sculith_core::plugin::api::events::world::loot_generate::LootGenerateEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::LootGenerateEvent(crate::pumpkin::plugin::event::LootGenerateEventData {
@@ -543,7 +543,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::portal_create::PortalCreateEvent
+    for sculith_core::plugin::api::events::world::portal_create::PortalCreateEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::PortalCreateEvent(crate::pumpkin::plugin::event::PortalCreateEventData {
@@ -559,13 +559,13 @@ impl ToFromWasmEvent
                 block_pos: from_wasm_block_position(data.pos),
                 portal_type: match data.portal_type.as_str() {
                     "Nether" => {
-                        pumpkin_core::plugin::api::events::world::portal_create::PortalType::Nether
+                        sculith_core::plugin::api::events::world::portal_create::PortalType::Nether
                     }
                     "End" => {
-                        pumpkin_core::plugin::api::events::world::portal_create::PortalType::End
+                        sculith_core::plugin::api::events::world::portal_create::PortalType::End
                     }
                     _ => {
-                        pumpkin_core::plugin::api::events::world::portal_create::PortalType::Custom
+                        sculith_core::plugin::api::events::world::portal_create::PortalType::Custom
                     }
                 },
                 cancelled: data.cancelled,
@@ -583,7 +583,7 @@ impl ToFromWasmEvent
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::structure_grow::StructureGrowEvent
+    for sculith_core::plugin::api::events::world::structure_grow::StructureGrowEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::StructureGrowEvent(crate::pumpkin::plugin::event::StructureGrowEventData {
@@ -599,27 +599,27 @@ impl ToFromWasmEvent
             Event::StructureGrowEvent(data) => Self {
                 block_pos: from_wasm_block_position(data.pos),
                 species: match data.species.as_str() {
-                    "Oak" => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Oak,
-                    "Spruce" => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Spruce,
-                    "Birch" => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Birch,
-                    "Jungle" => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Jungle,
-                    "Acacia" => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Acacia,
+                    "Oak" => sculith_core::plugin::api::events::world::structure_grow::TreeType::Oak,
+                    "Spruce" => sculith_core::plugin::api::events::world::structure_grow::TreeType::Spruce,
+                    "Birch" => sculith_core::plugin::api::events::world::structure_grow::TreeType::Birch,
+                    "Jungle" => sculith_core::plugin::api::events::world::structure_grow::TreeType::Jungle,
+                    "Acacia" => sculith_core::plugin::api::events::world::structure_grow::TreeType::Acacia,
                     "DarkOak" => {
-                        pumpkin_core::plugin::api::events::world::structure_grow::TreeType::DarkOak
+                        sculith_core::plugin::api::events::world::structure_grow::TreeType::DarkOak
                     }
                     "Mangrove" => {
-                        pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Mangrove
+                        sculith_core::plugin::api::events::world::structure_grow::TreeType::Mangrove
                     }
-                    "Cherry" => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Cherry,
-                    "Poplar" => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Poplar,
-                    "Azalea" => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Azalea,
+                    "Cherry" => sculith_core::plugin::api::events::world::structure_grow::TreeType::Cherry,
+                    "Poplar" => sculith_core::plugin::api::events::world::structure_grow::TreeType::Poplar,
+                    "Azalea" => sculith_core::plugin::api::events::world::structure_grow::TreeType::Azalea,
                     "BrownMushroom" => {
-                        pumpkin_core::plugin::api::events::world::structure_grow::TreeType::BrownMushroom
+                        sculith_core::plugin::api::events::world::structure_grow::TreeType::BrownMushroom
                     }
                     "RedMushroom" => {
-                        pumpkin_core::plugin::api::events::world::structure_grow::TreeType::RedMushroom
+                        sculith_core::plugin::api::events::world::structure_grow::TreeType::RedMushroom
                     }
-                    _ => pumpkin_core::plugin::api::events::world::structure_grow::TreeType::Custom,
+                    _ => sculith_core::plugin::api::events::world::structure_grow::TreeType::Custom,
                 },
                 bone_meal: data.bone_meal,
                 cancelled: data.cancelled,
@@ -636,7 +636,7 @@ impl ToFromWasmEvent
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::time_skip::TimeSkipEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::world::time_skip::TimeSkipEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::TimeSkipEvent(crate::pumpkin::plugin::event::TimeSkipEventData {
             skip_amount: self.skip_amount,
@@ -662,7 +662,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::time_skip::Ti
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::world_init::WorldInitEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::world::world_init::WorldInitEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {
         let target_world = state
             .add(self.world.clone())
@@ -681,7 +681,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::world_init::W
     }
 }
 
-impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::world_save::WorldSaveEvent {
+impl ToFromWasmEvent for sculith_core::plugin::api::events::world::world_save::WorldSaveEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::WorldSaveEvent(crate::pumpkin::plugin::event::WorldSaveEventData {
             world_name: self.world_name.clone(),
@@ -708,7 +708,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::world_save::W
 }
 
 impl ToFromWasmEvent
-    for pumpkin_core::plugin::api::events::world::lightning_strike::LightningStrikeEvent
+    for sculith_core::plugin::api::events::world::lightning_strike::LightningStrikeEvent
 {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {
         Event::LightningStrikeEvent(crate::pumpkin::plugin::event::LightningStrikeEventData {

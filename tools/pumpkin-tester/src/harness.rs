@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
-use pumpkin_core::{
+use pumpkin_data::dimension::Dimension;
+use sculith_core::{
     data::VanillaData,
     net::{PacketRateLimiter, java::pending::PendingConnection},
     serve_java_connection,
     server::Server,
 };
-use pumpkin_data::dimension::Dimension;
 use sculith_util::{PermissionLvl, math::vector2::Vector2};
 use tokio::net::TcpListener;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};

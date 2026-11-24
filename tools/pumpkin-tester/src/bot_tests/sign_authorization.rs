@@ -3,7 +3,8 @@ use std::{
     time::Duration,
 };
 
-use pumpkin_core::{
+use pumpkin_data::{Block, dimension::Dimension, item::Item, item_stack::ItemStack};
+use sculith_core::{
     block::entities::{
         hanging_sign::HangingSignBlockEntity,
         sign::{DyeColor, SignBlockEntity, SignEntityRef},
@@ -11,7 +12,6 @@ use pumpkin_core::{
     entity::EntityBase,
     server::Server,
 };
-use pumpkin_data::{Block, dimension::Dimension, item::Item, item_stack::ItemStack};
 use sculith_protocol::java::server::play::SUpdateSign;
 use sculith_util::{
     GameMode, Hand, PermissionLvl, math::position::BlockPos, math::vector3::Vector3,
@@ -21,7 +21,7 @@ use crate::bot::{HeadlessBot, MAX_POLL_TICKS};
 
 const BOT_NAME: &str = "SignAuthBot";
 
-fn stored_line(world: &pumpkin_core::world::World, pos: BlockPos) -> String {
+fn stored_line(world: &sculith_core::world::World, pos: BlockPos) -> String {
     world
         .get_block_entity(&pos)
         .and_then(|entity| {
@@ -31,14 +31,14 @@ fn stored_line(world: &pumpkin_core::world::World, pos: BlockPos) -> String {
         .unwrap_or_default()
 }
 
-fn stored_text(world: &pumpkin_core::world::World, pos: BlockPos) -> String {
+fn stored_text(world: &sculith_core::world::World, pos: BlockPos) -> String {
     let raw = stored_line(world, pos);
     serde_json::from_str::<sculith_util::text::TextComponent>(&raw)
         .map(|component| component.0.to_bedrock_string())
         .unwrap_or(raw)
 }
 
-fn sign_editor(world: &pumpkin_core::world::World, pos: BlockPos) -> Option<uuid::Uuid> {
+fn sign_editor(world: &sculith_core::world::World, pos: BlockPos) -> Option<uuid::Uuid> {
     world.get_block_entity(&pos).and_then(|entity| {
         SignEntityRef::from_block_entity(&*entity).and_then(|sign| {
             *sign
@@ -49,7 +49,7 @@ fn sign_editor(world: &pumpkin_core::world::World, pos: BlockPos) -> Option<uuid
     })
 }
 
-fn set_editor(world: &pumpkin_core::world::World, pos: BlockPos, editor: Option<uuid::Uuid>) {
+fn set_editor(world: &sculith_core::world::World, pos: BlockPos, editor: Option<uuid::Uuid>) {
     if let Some(entity) = world.get_block_entity(&pos)
         && let Some(sign) = SignEntityRef::from_block_entity(&*entity)
     {
@@ -60,7 +60,7 @@ fn set_editor(world: &pumpkin_core::world::World, pos: BlockPos, editor: Option<
     }
 }
 
-fn set_allow_op_features(world: &pumpkin_core::world::World, pos: BlockPos, allow: bool) {
+fn set_allow_op_features(world: &sculith_core::world::World, pos: BlockPos, allow: bool) {
     if let Some(entity) = world.get_block_entity(&pos)
         && let Some(SignEntityRef::Sign(sign)) = SignEntityRef::from_block_entity(&*entity)
     {
@@ -69,7 +69,7 @@ fn set_allow_op_features(world: &pumpkin_core::world::World, pos: BlockPos, allo
 }
 
 fn set_click_component(
-    world: &pumpkin_core::world::World,
+    world: &sculith_core::world::World,
     pos: BlockPos,
     line: &str,
     allow_op_features: bool,
@@ -109,20 +109,20 @@ async fn tick(server: &Arc<Server>, count: usize) {
     }
 }
 
-fn sign_color(world: &pumpkin_core::world::World, pos: BlockPos) -> Option<DyeColor> {
+fn sign_color(world: &sculith_core::world::World, pos: BlockPos) -> Option<DyeColor> {
     world.get_block_entity(&pos).and_then(|entity| {
         SignEntityRef::from_block_entity(&*entity).map(|sign| sign.front_text().get_color())
     })
 }
 
-fn sign_is_glowing(world: &pumpkin_core::world::World, pos: BlockPos) -> bool {
+fn sign_is_glowing(world: &sculith_core::world::World, pos: BlockPos) -> bool {
     world.get_block_entity(&pos).is_some_and(|entity| {
         SignEntityRef::from_block_entity(&*entity)
             .is_some_and(|sign| sign.front_text().has_glowing_text())
     })
 }
 
-fn sign_is_waxed(world: &pumpkin_core::world::World, pos: BlockPos) -> bool {
+fn sign_is_waxed(world: &sculith_core::world::World, pos: BlockPos) -> bool {
     world.get_block_entity(&pos).is_some_and(|entity| {
         SignEntityRef::from_block_entity(&*entity).is_some_and(|sign| sign.is_waxed())
     })
@@ -138,7 +138,7 @@ fn crafted_click_line(marker: BlockPos) -> String {
 async fn move_to_and_wait(
     server: &Arc<Server>,
     bot: &mut HeadlessBot,
-    player: &pumpkin_core::entity::player::Player,
+    player: &sculith_core::entity::player::Player,
     target: Vector3<f64>,
 ) -> Result<(), String> {
     bot.move_to(target, true).await?;
@@ -152,7 +152,7 @@ async fn move_to_and_wait(
     Err("bot did not reach the requested position".to_string())
 }
 
-async fn place_sign(server: &Arc<Server>, world: &pumpkin_core::world::World, pos: BlockPos) {
+async fn place_sign(server: &Arc<Server>, world: &sculith_core::world::World, pos: BlockPos) {
     world
         .level
         .set_block_state(&pos.down(), Block::STONE.default_state.id);
@@ -189,9 +189,9 @@ async fn click_and_wait(
 
 async fn run_out_of_range_case(
     server: &Arc<Server>,
-    world: &pumpkin_core::world::World,
+    world: &sculith_core::world::World,
     bot: &mut HeadlessBot,
-    player: &pumpkin_core::entity::player::Player,
+    player: &sculith_core::entity::player::Player,
     base: BlockPos,
 ) -> Result<(), String> {
     // The registered editor must still be within edit range.
@@ -250,9 +250,9 @@ async fn run_out_of_range_case(
 
 async fn run_range_buffer_case(
     server: &Arc<Server>,
-    world: &pumpkin_core::world::World,
+    world: &sculith_core::world::World,
     bot: &mut HeadlessBot,
-    player: &pumpkin_core::entity::player::Player,
+    player: &sculith_core::entity::player::Player,
     base: BlockPos,
 ) -> Result<(), String> {
     // Vanilla's `playerIsTooFarAwayToEdit` allows four more blocks than the
@@ -306,9 +306,9 @@ async fn run_range_buffer_case(
 
 async fn run_authorization_cases(
     server: &Arc<Server>,
-    world: &pumpkin_core::world::World,
+    world: &sculith_core::world::World,
     bot: &mut HeadlessBot,
-    player: &pumpkin_core::entity::player::Player,
+    player: &sculith_core::entity::player::Player,
     base: BlockPos,
 ) -> Result<(), String> {
     // A sign nobody has opened must not accept an update.
@@ -402,9 +402,9 @@ async fn run_authorization_cases(
 
 async fn run_click_command_cases(
     server: &Arc<Server>,
-    world: &pumpkin_core::world::World,
+    world: &sculith_core::world::World,
     bot: &mut HeadlessBot,
-    player: &pumpkin_core::entity::player::Player,
+    player: &sculith_core::entity::player::Player,
     base: BlockPos,
 ) -> Result<(), String> {
     let marker = base.offset(Vector3::new(0, 5, 0));
@@ -482,9 +482,9 @@ async fn run_click_command_cases(
 
 async fn run_applicator_cases(
     server: &Arc<Server>,
-    world: &pumpkin_core::world::World,
+    world: &sculith_core::world::World,
     bot: &mut HeadlessBot,
-    player: &pumpkin_core::entity::player::Player,
+    player: &sculith_core::entity::player::Player,
     base: BlockPos,
 ) -> Result<(), String> {
     // Dyeing a sign with a disabled click command must not run it.

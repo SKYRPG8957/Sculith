@@ -5,8 +5,8 @@ mod harness;
 
 use std::{net::SocketAddr, process::ExitCode, sync::Arc, time::Instant};
 
-use pumpkin_core::server::Server;
 use pumpkin_gametest::GameTestRunner;
+use sculith_core::server::Server;
 use tokio::net::TcpListener;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 

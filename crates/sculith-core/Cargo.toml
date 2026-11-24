@@ -1,12 +1,12 @@
 [package]
-name = "pumpkin-core"
+name = "sculith-core"
 version.workspace = true
 description = "Empowering everyone to host fast and efficient Minecraft servers."
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-# Required to expose pumpkin plugin API
+# Required to expose the native plugin API
 [lib]
 doctest = false
 

@@ -2,9 +2,9 @@ use crate::pumpkin::plugin::enchantments::{
     AttributeModifierSlot as WitAttributeModifierSlot, CustomEnchantment as WitCustomEnchantment,
     EnchantmentManager as WitEnchantmentManager, HostEnchantmentManager,
 };
-use pumpkin_core::server::enchantment::CustomEnchantmentEntry;
 use pumpkin_data::enchantment::{AttributeModifierSlot, Enchantment};
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::server::enchantment::CustomEnchantmentEntry;
 use sculith_util::text::TextComponent;
 use wasmtime::component::Resource;
 

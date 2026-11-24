@@ -3,8 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pumpkin_core::{server::Server, world::BlockFlags};
 use pumpkin_data::{Block, block_properties::OakTrapdoorLikeProperties, dimension::Dimension};
+use sculith_core::{server::Server, world::BlockFlags};
 use sculith_util::math::position::BlockPos;
 
 use crate::bot::{HeadlessBot, MAX_POLL_TICKS};

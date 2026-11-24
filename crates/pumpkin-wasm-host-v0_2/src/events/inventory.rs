@@ -10,7 +10,8 @@ use crate::{
         SmithItemEventData, TradeSelectEventData,
     },
 };
-use pumpkin_core::plugin::inventory::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_core::plugin::inventory::{
     brew::BrewEvent, brewing_stand_fuel::BrewingStandFuelEvent, craft_item::CraftItemEvent,
     furnace_burn::FurnaceBurnEvent, furnace_extract::FurnaceExtractEvent,
     furnace_smelt::FurnaceSmeltEvent, furnace_start_smelt::FurnaceStartSmeltEvent,
@@ -23,7 +24,6 @@ use pumpkin_core::plugin::inventory::{
     prepare_item_craft::PrepareItemCraftEvent, prepare_smithing::PrepareSmithingEvent,
     smith_item::SmithItemEvent, trade_select::TradeSelectEvent,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl ToFromWasmEvent for InventoryOpenEvent {
     fn to_wasm_event(&self, state: &mut PluginHostState) -> Event {

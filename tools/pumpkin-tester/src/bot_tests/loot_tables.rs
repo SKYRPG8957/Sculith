@@ -3,11 +3,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pumpkin_core::{
+use pumpkin_data::{dimension::Dimension, entity::EntityType, item::Item};
+use sculith_core::{
     entity::{Entity, EntityBase, passive::sheep::SheepEntity},
     server::Server,
 };
-use pumpkin_data::{dimension::Dimension, entity::EntityType, item::Item};
 use sculith_util::loot_table::parser::parse_loot_table;
 
 use crate::bot::HeadlessBot;
@@ -73,7 +73,7 @@ pub async fn run_loot_table_tests(
     if !handle
         .generate_loot_with_context(
             0,
-            &pumpkin_core::world::loot::LootContextParameters {
+            &sculith_core::world::loot::LootContextParameters {
                 world: Some(&world),
                 ..Default::default()
             },
@@ -89,7 +89,7 @@ pub async fn run_loot_table_tests(
     Ok(())
 }
 
-fn count_item(player: &pumpkin_core::entity::player::Player, item: &Item) -> u32 {
+fn count_item(player: &sculith_core::entity::player::Player, item: &Item) -> u32 {
     player
         .inventory()
         .main_inventory
