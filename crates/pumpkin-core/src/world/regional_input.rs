@@ -146,7 +146,7 @@ impl RegionalInput {
                 pending |= RegionalWork::STATUS_EFFECTS;
             }
             if work.contains(RegionalWork::BREATH)
-                && world.recover_regional_player_air(
+                && world.advance_regional_player_breath(
                     server,
                     &player,
                     client,
@@ -222,7 +222,7 @@ impl World {
             })
     }
 
-    fn recover_regional_player_air(
+    fn advance_regional_player_breath(
         &self,
         server: &Server,
         player: &Player,
@@ -251,7 +251,7 @@ impl World {
         // An earlier movement packet might still take the player underwater.
         client
             .with_idle_play_ingress(player, || {
-                player.breath_manager.recover_on_region(
+                player.breath_manager.advance_on_region(
                     self,
                     player,
                     deadline,

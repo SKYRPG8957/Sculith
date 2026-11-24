@@ -6633,7 +6633,7 @@ impl World {
         }
     }
 
-    fn fluid_state_from_block_state(id: BlockStateId) -> (&'static Fluid, FluidState) {
+    pub(crate) fn fluid_state_from_block_state(id: BlockStateId) -> (&'static Fluid, FluidState) {
         let fluid = Self::get_fluid_from_state_id(id);
         let source = if fluid.matches_type(&Fluid::WATER) {
             &Fluid::WATER

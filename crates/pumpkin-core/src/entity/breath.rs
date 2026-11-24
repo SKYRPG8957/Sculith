@@ -8,6 +8,7 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityPose;
 use pumpkin_data::tracked_data::entity::DATA_AIR_SUPPLY_ID;
+use pumpkin_data::{Block, BlockStateId};
 use sculith_protocol::bedrock::client::set_actor_data::{
     MetadataValue, SyncedActorDataList, entity_data_key,
 };
@@ -55,10 +56,10 @@ impl BreathManager {
                 return;
             }
         }
-        let recovering = self.tick_inner(player);
+        let can_continue = self.tick_inner(player);
         drop(edit);
-        if recovering && deadline.is_some() && client.is_some() {
-            Self::offer_regional_recovery(player);
+        if can_continue && deadline.is_some() && client.is_some() {
+            Self::offer_regional_breath_step(player);
         }
     }
 
@@ -121,7 +122,7 @@ impl BreathManager {
                         .damage(player, DROWNING_DAMAGE, DamageType::DROWN);
                 }
             }
-            false
+            new_air > AIR_DEPLETION_RATE
         } else {
             let mut new_air = Self::recovered_air(prev);
             if new_air != prev {
@@ -149,7 +150,28 @@ impl BreathManager {
         air.saturating_add(AIR_RECOVERY_RATE).min(MAX_AIR)
     }
 
-    pub(crate) fn recover_on_region(
+    fn regional_air(
+        state: BlockStateId,
+        previous: i32,
+        pose: EntityPose,
+        eye_y: f64,
+        block_y: i32,
+    ) -> Option<i32> {
+        if previous < MAX_AIR && pose == EntityPose::Standing && is_air(state) {
+            return Some(Self::recovered_air(previous));
+        }
+        if previous > AIR_DEPLETION_RATE && state == Block::WATER.default_state.id {
+            // The source's own surface is enough to prove submersion without
+            // reading the block above. The world handles the remaining cases.
+            let (_, water) = World::fluid_state_from_block_state(state);
+            if eye_y <= f64::from(block_y) + f64::from(water.height) {
+                return Some(previous - AIR_DEPLETION_RATE);
+            }
+        }
+        None
+    }
+
+    pub(crate) fn advance_on_region(
         &self,
         world: &World,
         player: &Player,
@@ -169,7 +191,7 @@ impl BreathManager {
             return true;
         };
         let previous_air = self.air_supply.load(Ordering::Relaxed);
-        if !(0..MAX_AIR).contains(&previous_air)
+        if !(0..=MAX_AIR).contains(&previous_air)
             || !living.is_alive()
             || !matches!(
                 player.gamemode.load(),
@@ -191,19 +213,22 @@ impl BreathManager {
         let Ok(_position) = entity.bounding_box.index.try_write() else {
             return true;
         };
-        if awaiting.is_some() || entity.pose.load() != EntityPose::Standing {
+        let pose = entity.pose.load();
+        if awaiting.is_some() || !matches!(pose, EntityPose::Standing | EntityPose::Swimming) {
             return false;
         }
-        let eyes = BlockPos::floored_v(entity.get_eye_pos());
+        let eye = entity.get_eye_pos();
+        let eyes = BlockPos::floored_v(eye);
         if !owns(eyes.chunk_position()) {
             return true;
         }
         world
             .level
             .try_with_block_state(eyes, |_, state| {
-                if !is_air(state) {
+                let Some(air) = Self::regional_air(state, previous_air, pose, eye.y, eyes.0.y)
+                else {
                     return false;
-                }
+                };
                 if !owns(eyes.chunk_position()) {
                     return true;
                 }
@@ -212,7 +237,6 @@ impl BreathManager {
                 if !TickDeadline::claim(clock, Some(deadline)) {
                     return true;
                 }
-                let air = Self::recovered_air(previous_air);
                 if !entity
                     .synched_data
                     .try_publish_value(DATA_AIR_SUPPLY_ID, VarInt(air), |java| {
@@ -227,18 +251,27 @@ impl BreathManager {
                     return true;
                 }
                 self.air_supply.store(air, Ordering::Relaxed);
-                self.drowning_tick.store(0, Ordering::Relaxed);
-                tracing::trace!(
-                    entity = entity.entity_id,
-                    air,
-                    "Recovered air on the player region"
-                );
-                air < MAX_AIR
+                if air > previous_air {
+                    self.drowning_tick.store(0, Ordering::Relaxed);
+                    tracing::trace!(
+                        entity = entity.entity_id,
+                        air,
+                        "Recovered air on the player region"
+                    );
+                    air < MAX_AIR
+                } else {
+                    tracing::trace!(
+                        entity = entity.entity_id,
+                        air,
+                        "Consumed air on the player region"
+                    );
+                    air > AIR_DEPLETION_RATE
+                }
             })
             .unwrap_or(true)
     }
 
-    fn offer_regional_recovery(player: &Player) {
+    fn offer_regional_breath_step(player: &Player) {
         let world = player.world();
         if let Some(client) = player
             .client
@@ -277,8 +310,8 @@ impl BreathManager {
         self.air_supply.store(air, Ordering::Relaxed);
         self.publish_air_supply(player);
         drop(edit);
-        if (0..MAX_AIR).contains(&air) {
-            Self::offer_regional_recovery(player);
+        if (0..=MAX_AIR).contains(&air) {
+            Self::offer_regional_breath_step(player);
         }
     }
 
@@ -287,5 +320,31 @@ impl BreathManager {
         self.air_supply.store(MAX_AIR, Ordering::Relaxed);
         self.drowning_tick.store(0, Ordering::Relaxed);
         self.publish_air_supply(player);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn regional_breath_needs_a_known_surface_and_leaves_drowning_to_the_world() {
+        let source = Block::WATER.default_state.id;
+        let submerged =
+            |air| BreathManager::regional_air(source, air, EntityPose::Swimming, 64.5, 64);
+        assert_eq!(submerged(MAX_AIR), Some(MAX_AIR - 1));
+        assert_eq!(submerged(2), Some(1));
+        assert_eq!(submerged(1), None);
+        assert_eq!(submerged(0), None);
+        assert_eq!(
+            BreathManager::regional_air(source, 12, EntityPose::Standing, 64.95, 64),
+            None
+        );
+        let flowing = pumpkin_data::block_properties::WaterLikeProperties { level: 1 }
+            .to_state_id(&Block::WATER);
+        assert_eq!(
+            BreathManager::regional_air(flowing, 12, EntityPose::Standing, 64.125, 64),
+            None
+        );
     }
 }
