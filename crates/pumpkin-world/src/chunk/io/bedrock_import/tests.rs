@@ -433,6 +433,158 @@ fn malformed_block_entities_leave_no_destination() {
     assert_eq!(snapshot(&source), before);
 }
 
+fn write_livestock_fixture(source: &Path, pos: Vector2<i32>) {
+    use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+
+    write_world(source, false, FLAT_LAYERS);
+    let db = DB::open(source.join("db"), Options::default()).unwrap();
+
+    let mut record = NbtCompound::new();
+    record.put_string("identifier", "minecraft:pig".into());
+    record.put_long("UniqueID", -101);
+    record.put_list(
+        "Pos",
+        vec![(-2.5f32).into(), (-60f32).into(), 3.5f32.into()],
+    );
+    record.put_list("Rotation", vec![90f32.into(), 0f32.into()]);
+    record.put_int("Age", -450);
+    record.put_bool("IsBaby", true);
+    record.put_bool("Persistent", true);
+    record.put_string("CustomName", "{새끼 돼지".into());
+    let mut health = NbtCompound::new();
+    health.put_string("Name", "minecraft:health".into());
+    health.put_float("Base", 10.0);
+    health.put_float("Current", 3.0);
+    record.put_list("Attributes", vec![NbtTag::Compound(health)]);
+
+    let put = |id: [u8; 8], bytes: Vec<u8>| {
+        let mut key = actors::ACTOR_PREFIX.to_vec();
+        key.extend_from_slice(&id);
+        db.put(&key, &bytes).unwrap();
+    };
+    let encode = |record: NbtCompound| {
+        let mut bytes = Vec::new();
+        Nbt::from(record)
+            .write_to_writer_bedrock_disk(&mut bytes)
+            .unwrap();
+        bytes
+    };
+    let key = [0, 0, 0, 1, 0, 0, 0, 243];
+    let mut bytes = encode(record.clone());
+    assert_eq!(bytes.pop(), Some(pumpkin_nbt::END_ID));
+    let mut component = Vec::new();
+    named_tag(
+        &mut component,
+        pumpkin_nbt::STRING_ID,
+        "StorageKey",
+        &[8, 0, 0, 0, 0, 1, 0, 0, 0, 243],
+    );
+    component.push(pumpkin_nbt::END_ID);
+    let mut internal = Vec::new();
+    named_tag(
+        &mut internal,
+        pumpkin_nbt::COMPOUND_ID,
+        "EntityStorageKeyComponent",
+        &component,
+    );
+    internal.push(pumpkin_nbt::END_ID);
+    named_tag(
+        &mut bytes,
+        pumpkin_nbt::COMPOUND_ID,
+        "internalComponents",
+        &internal,
+    );
+    bytes.push(pumpkin_nbt::END_ID);
+    put(key, bytes);
+    let linked = [0, 0, 0, 1, 0, 0, 0, 244];
+    let mut attached = record.clone();
+    attached.put_long("UniqueID", -102);
+    attached.put_long("LeasherID", 42);
+    put(linked, encode(attached));
+    let rider = [0, 0, 0, 1, 0, 0, 0, 246];
+    let mut riding = record.clone();
+    riding.put_long("UniqueID", -103);
+    put(rider, encode(riding));
+    let vehicle = [0, 0, 0, 1, 0, 0, 0, 247];
+    let mut boat = NbtCompound::new();
+    boat.put_string("identifier", "minecraft:boat".into());
+    let mut link = NbtCompound::new();
+    link.put_long("entityID", -103);
+    boat.put_list("LinksTag", vec![NbtTag::Compound(link)]);
+    put(vehicle, encode(boat));
+    let elsewhere = [0, 0, 0, 1, 0, 0, 0, 245];
+    record.put_long("UniqueID", -104);
+    record.put_list("Pos", vec![2.5f32.into(), (-60f32).into(), 3.5f32.into()]);
+    put(elsewhere, encode(record));
+
+    let mut index = b"digp".to_vec();
+    index.extend_from_slice(&pos.x.to_le_bytes());
+    index.extend_from_slice(&pos.y.to_le_bytes());
+    db.put(
+        &index,
+        &[key, key, linked, elsewhere, rider, vehicle].concat(),
+    )
+    .unwrap();
+    db.close().unwrap();
+}
+
+#[test]
+fn imported_livestock_is_indexed_once_and_writes_the_existing_entity_format() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("bedrock");
+    let pos = Vector2::new(-1, 0);
+    write_livestock_fixture(&source, pos);
+    let before = snapshot(&source);
+    let inspection = inspect_terrain(&source, GeneratorPolicy::RequireSource).unwrap();
+    assert_eq!(inspection.blockers, 0);
+    assert_eq!(inspection.stats.entities_imported, 1);
+    assert_eq!(inspection.stats.entity_records_excluded, 4);
+    assert_eq!(inspection.stats.skipped_actor_examples.len(), 4);
+    let read = |name: &str| {
+        let destination = directory.path().join(name);
+        let stats = import_terrain(&source, &destination).unwrap();
+        assert_eq!(
+            (stats.entities_imported, stats.entity_records_excluded),
+            (1, 4)
+        );
+        let region_pos = region_of(pos);
+        let region = AnvilRegion::open(
+            &destination
+                .join("entities")
+                .join(AnvilRegion::file_name(region_pos)),
+            region_pos,
+        )
+        .unwrap();
+        let bytes =
+            AnvilRegion::decode_chunk(region.read_chunk(region_chunk_index(pos)).unwrap().unwrap())
+                .unwrap();
+        <ChunkEntityData as crate::chunk::format::anvil::SingleChunkDataSerializer>::from_bytes(
+            &bytes, pos,
+        )
+        .unwrap()
+        .data
+        .into_inner()
+        .unwrap()
+    };
+    let first = read("java");
+    assert_eq!(first, read("java-again"));
+    assert_eq!(first.len(), 1);
+    let imported = &first[0];
+    assert_eq!(imported.get_string("id"), Some("minecraft:pig"));
+    assert_eq!(imported.get_int("Age"), Some(-450));
+    assert_eq!(imported.get_float("Health"), Some(3.0));
+    assert_eq!(imported.get_bool("PersistenceRequired"), Some(true));
+    assert_eq!(
+        imported
+            .get_compound("CustomName")
+            .unwrap()
+            .get_string("text"),
+        Some("{새끼 돼지")
+    );
+    assert!(imported.get_uuid("UUID").is_some());
+    assert_eq!(snapshot(&source), before);
+}
+
 #[test]
 fn unmapped_terrain_leaves_no_destination() {
     let directory = tempfile::tempdir().unwrap();

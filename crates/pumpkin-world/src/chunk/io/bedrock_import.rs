@@ -1,7 +1,7 @@
-//! Imports saved Bedrock terrain and supported storage into a new Anvil world.
+//! Imports saved Bedrock terrain, supported storage and livestock into a new Anvil world.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{self, Cursor, Read},
     num::NonZeroU8,
@@ -23,8 +23,8 @@ use sculith_util::{
 
 use crate::{
     chunk::{
-        ChunkData, ChunkHeightmapType, ChunkReadingError, ChunkSections, ChunkWritingError,
-        format::anvil::AnvilRegion, palette::BlockPalette,
+        ChunkData, ChunkEntityData, ChunkHeightmapType, ChunkReadingError, ChunkSections,
+        ChunkWritingError, format::anvil::AnvilRegion, palette::BlockPalette,
     },
     world_info::{
         FlatPresetLayer, FlatPresetSettings, GeneratorSettings, LevelData, StructureOverrides,
@@ -34,6 +34,7 @@ use crate::{
 
 use super::{RegionFile, region_chunk_index, region_of};
 
+mod actors;
 mod storage;
 mod storage_export;
 mod terrain;
@@ -112,7 +113,9 @@ pub struct ImportStats {
     pub block_entity_records_excluded: usize,
     pub block_entities_skipped: usize,
     pub skipped_block_entity_examples: Vec<SkippedBlockEntity>,
+    pub entities_imported: usize,
     pub entity_records_excluded: usize,
+    pub skipped_actor_examples: Vec<SkippedActor>,
     pub other_records_excluded: usize,
     pub default_generator_selected: bool,
 }
@@ -121,6 +124,13 @@ pub struct ImportStats {
 pub struct SkippedBlockEntity {
     pub kind: String,
     pub position: Option<BlockPos>,
+    pub reason: String,
+}
+
+#[derive(Debug)]
+pub struct SkippedActor {
+    pub kind: String,
+    pub chunk: Vector2<i32>,
     pub reason: String,
 }
 
@@ -181,12 +191,19 @@ pub fn inspect_terrain(source: &Path, policy: GeneratorPolicy) -> Result<Inspect
     let items = storage::item_registry();
     let mut inspection = Inspection::default();
     let mut stats = ImportStats::default();
-    match read_level(&source, &registry, policy) {
-        Ok((_, default_selected)) => stats.default_generator_selected = default_selected,
-        Err(error) => inspection.record_blocker(error),
-    }
+    let seed = match read_level(&source, &registry, policy) {
+        Ok((info, default_selected)) => {
+            stats.default_generator_selected = default_selected;
+            info.world_gen_settings.seed
+        }
+        Err(error) => {
+            inspection.record_blocker(error);
+            0
+        }
+    };
     let db = open_database_copy(&source, staging.path())?;
-    let regions = index_chunks(&db, &mut stats, |error| {
+    let mut riders = BTreeSet::new();
+    let regions = index_chunks(&db, &mut stats, Some(&mut riders), |error| {
         inspection.record_blocker(error);
         Ok(())
     })?;
@@ -197,7 +214,14 @@ pub fn inspect_terrain(source: &Path, policy: GeneratorPolicy) -> Result<Inspect
         let before = stats.chunks;
         for ((x, z), sections) in columns {
             match read_chunk(&db, x, z, sections, &registry, &items, &mut stats) {
-                Ok(_) => stats.chunks += 1,
+                Ok(_) => {
+                    stats.chunks += 1;
+                    if let Err(error) =
+                        actors::read_chunk(&db, Vector2::new(x, z), seed, &riders, &mut stats)
+                    {
+                        inspection.record_blocker(error.at_chunk(x, z));
+                    }
+                }
                 Err(error) => inspection.record_blocker(error.at_chunk(x, z)),
             }
         }
@@ -209,7 +233,7 @@ pub fn inspect_terrain(source: &Path, policy: GeneratorPolicy) -> Result<Inspect
     Ok(inspection)
 }
 
-/// Imports saved Overworld terrain and supported storage into a new directory.
+/// Imports saved Overworld terrain, supported storage and livestock into a new directory.
 /// The completed world is moved into place after conversion succeeds.
 pub fn import_terrain(source: &Path, destination: &Path) -> Result<ImportStats, Error> {
     import_terrain_with_generator(source, destination, GeneratorPolicy::RequireSource)
@@ -237,28 +261,53 @@ pub fn import_terrain_with_generator(
         default_generator_selected,
         ..ImportStats::default()
     };
-    let regions = index_chunks(&db, &mut stats, Err)?;
+    let mut riders = BTreeSet::new();
+    let regions = index_chunks(&db, &mut stats, Some(&mut riders), Err)?;
     if regions.is_empty() {
         return Err(invalid("the source contains no saved Overworld terrain"));
     }
 
     let output = staging.path().join("world");
     let region_folder = output.join("region");
+    let entity_folder = output.join("entities");
     fs::create_dir_all(&region_folder)?;
     let config = AnvilChunkConfig::default();
     for ((rx, rz), columns) in regions {
         let region_pos = Vector2::new(rx, rz);
-        let path = region_folder.join(AnvilRegion::file_name(region_pos));
+        let filename = AnvilRegion::file_name(region_pos);
+        let path = region_folder.join(&filename);
         let mut region = AnvilRegion::open(&path, region_pos)?;
+        let mut entity_region = None;
         for ((x, z), sections) in columns {
             let chunk = read_chunk(&db, x, z, sections, &registry, &items, &mut stats)
                 .map_err(|error| error.at_chunk(x, z))?;
             update_spawn_height(&mut info, &chunk);
+            let pos = Vector2::new(x, z);
+            let records =
+                actors::read_chunk(&db, pos, info.world_gen_settings.seed, &riders, &mut stats)
+                    .map_err(|error| error.at_chunk(x, z))?;
+            if !records.is_empty() {
+                let region = if let Some(region) = &mut entity_region {
+                    region
+                } else {
+                    fs::create_dir_all(&entity_folder)?;
+                    entity_region.insert(AnvilRegion::open(
+                        &entity_folder.join(&filename),
+                        region_pos,
+                    )?)
+                };
+                let bytes = ChunkEntityData::encode_records(pos, &records);
+                let encoded = AnvilRegion::encode_chunk(bytes, &config)?;
+                region.stage_chunk(region_chunk_index(pos), encoded);
+            }
             let encoded = AnvilRegion::encode_chunk(chunk.internal_to_bytes(), &config)?;
-            region.stage_chunk(region_chunk_index(Vector2::new(x, z)), encoded);
+            region.stage_chunk(region_chunk_index(pos), encoded);
             stats.chunks += 1;
         }
         region.flush(true)?;
+        if let Some(mut entity_region) = entity_region {
+            entity_region.flush(true)?;
+        }
         stats.regions += 1;
     }
     if info.spawn_y == AUTOMATIC_SPAWN_Y {
@@ -403,14 +452,20 @@ type ChunkIndex = BTreeMap<(i32, i32), BTreeMap<(i32, i32), u32>>;
 fn index_chunks(
     db: &DB,
     stats: &mut ImportStats,
+    mut riders: Option<&mut BTreeSet<i64>>,
     mut on_blocker: impl FnMut(Error) -> Result<(), Error>,
 ) -> Result<ChunkIndex, Error> {
     let mut regions = ChunkIndex::new();
     for entry in db.new_iter()?.entries() {
-        let (key, _) = entry?;
+        let (key, bytes) = entry?;
         let Some(record) = ChunkKey::read(&key) else {
-            if key.starts_with(b"actorprefix") {
+            if key.starts_with(actors::ACTOR_PREFIX) {
                 stats.entity_records_excluded += 1;
+                if let Some(riders) = riders.as_deref_mut()
+                    && let Err(error) = actors::collect_riders(&bytes, riders)
+                {
+                    on_blocker(error)?;
+                }
             } else {
                 stats.other_records_excluded += 1;
             }

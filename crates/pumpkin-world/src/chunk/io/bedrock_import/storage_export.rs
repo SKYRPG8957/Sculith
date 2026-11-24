@@ -68,7 +68,7 @@ pub fn export_storage(
     copy_database(&template.join("db"), &database)?;
     let db = DB::open(database, bedrock_db_options())?;
     let mut preserved = ImportStats::default();
-    let regions = index_chunks(&db, &mut preserved, Err)?;
+    let regions = index_chunks(&db, &mut preserved, None, Err)?;
     let mut inventories_updated = 0;
     for ((rx, rz), columns) in regions {
         let region_pos = Vector2::new(rx, rz);

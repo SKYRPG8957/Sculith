@@ -674,6 +674,15 @@ chests and containers with other unsupported metadata are also skipped. The
 command reports excluded database records and shows the first 16 skipped block
 entities with their coordinates and reasons.
 
+Modern actor records indexed to a saved Overworld chunk can also bring in pigs,
+cows, sheep and chickens. The importer preserves their position, age,
+breeding cooldown, base health and movement attributes, current health, name,
+and mapped appearance. It reads the saved egg timer for an adult chicken's
+climate. Sculith assigns stable UUIDs from the source seed and actor keys.
+Actors with links, equipment or active effects and unsupported species remain
+in the source. Inspection and import report converted livestock and include
+examples of skipped actor records.
+
 The official Bedrock 1.26.63.1 server fixtures covered a flat column and 27
 ordinary terrain columns. Java and Bedrock protocol clients read the same
 imported block, and Java received the original flat strata in a newly generated
@@ -786,8 +795,8 @@ replays a published group before admitting players.
 
 ## Remaining work
 
-Standalone Bedrock world export and conversion of entities, player data and
-other block-entity contents remain open.
+Standalone Bedrock world export and conversion of player data, other actors
+and other block-entity contents remain open.
 
 Automatic checkpoints for ground stack splits by mobs and automation, minecart
 inventories, and automation involving other block types remain open.

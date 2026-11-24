@@ -614,6 +614,7 @@ fn export_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
 )]
 fn print_bedrock_import_stats(stats: &ImportStats, verb: &str) {
     println!("{verb} {} storage containers.", stats.containers_imported);
+    println!("{verb} {} livestock actors.", stats.entities_imported);
     println!(
         "Excluded data in {} block-entity records, {} entity records and {} other LevelDB records.",
         stats.block_entity_records_excluded,
@@ -626,6 +627,12 @@ fn print_bedrock_import_stats(stats: &ImportStats, verb: &str) {
         );
     }
     print_block_entity_examples(stats, "Skipped");
+    for skipped in &stats.skipped_actor_examples {
+        println!(
+            "Skipped Bedrock actor {:?} in chunk {}, {} ({}).",
+            skipped.kind, skipped.chunk.x, skipped.chunk.y, skipped.reason
+        );
+    }
 }
 
 #[expect(
