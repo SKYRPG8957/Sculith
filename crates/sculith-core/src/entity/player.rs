@@ -8882,11 +8882,21 @@ impl EntityBase for Player {
             Ordering::Relaxed,
         );
 
-        let gamemode = nbt
+        let saved_gamemode = nbt
             .get_int("playerGameType")
             .or_else(|| nbt.get_byte("playerGameType").map(i32::from))
             .and_then(|val| GameMode::try_from(val).ok())
             .unwrap_or_else(|| self.gamemode.load());
+        let gamemode = if self
+            .world()
+            .server
+            .upgrade()
+            .is_some_and(|server| server.basic_config.force_gamemode)
+        {
+            self.gamemode.load()
+        } else {
+            saved_gamemode
+        };
 
         self.gamemode.store(gamemode);
 
@@ -8899,6 +8909,9 @@ impl EntityBase for Player {
         let mut abilities = self.lock_abilities_and_hunger();
         abilities.set_for_gamemode(gamemode);
         abilities.read_nbt(nbt);
+        if gamemode != saved_gamemode {
+            abilities.set_for_gamemode(gamemode);
+        }
         if gamemode == GameMode::Creative {
             abilities.allow_flying = true;
             abilities.creative = true;

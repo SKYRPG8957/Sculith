@@ -798,3 +798,28 @@ compatibility, authoritative movement and inventory validation,
 production authentication coverage, the old Sculith plugin API, or production
 load capacity. Those remain
 Sculith work. No Windows GDK client test is claimed for this fork.
+
+## Basic server settings
+
+The Sculith binary reads `server.properties` alongside `sculith.toml`.
+A normal first run in a new server directory creates both files. An existing
+TOML installation can generate the basic file with `--init-server-properties`
+or the Windows `Settings.cmd` launcher. The legacy `--init-settings` command
+still initializes the TOML configuration.
+
+The basic file accepts UTF-8 `key=value` lines and `#` comments. Present keys
+override their TOML equivalents at launch. Use `server-name`, `server-ip`,
+`server-port`, `online-mode`, `max-players`, `view-distance` and
+`tick-distance` for the Bedrock listener. The port controls both TCP signaling
+and UDP. A missing `server-ip` leaves the bind address from TOML in effect.
+For Java use `java-enabled` and `java-port`. Its authentication and bind IP
+come from TOML. `--offline` applies the loopback-only override last.
+
+Use `level-name` to choose a world folder. New worlds use `level-type=DEFAULT`
+or `FLAT`, `level-seed` and `difficulty`. A saved world retains its generator,
+seed and difficulty. Use `/difficulty` to change difficulty in an existing
+world. `gamemode` sets the default for new players, and `force-gamemode=true`
+also applies it on reconnect. `allow-list` enables the existing whitelist.
+Manage allowed accounts with `/whitelist`. An explicit `transport` must be
+`nethernet`. Sculith reports other keys it skips. `--check` shows the settings
+paths, world folder, preset and effective listener addresses.

@@ -48,6 +48,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
+mod properties;
+
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
@@ -56,6 +58,10 @@ static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
 // like `par_iter`. These should be spawned in the the rayon pool and then passed to the tokio
 // runtime with a channel! See `Level::fetch_chunks` as an example!
 #[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::print_stderr,
+    reason = "configuration errors are reported before logging starts"
+)]
 #[tokio::main]
 async fn main() {
     let _ = MAIN_THREAD.set(thread::current().id());
@@ -81,8 +87,16 @@ async fn main() {
     let offline = std::env::args_os().skip(1).any(|arg| arg == "--offline");
     let check = std::env::args_os().nth(1).is_some_and(|arg| arg == "check")
         || std::env::args_os().skip(1).any(|arg| arg == "--check");
-    if check || has_init_settings_arg(std::env::args().skip(1)) {
-        exit(check_settings(&exec_dir, offline));
+    let initialize_properties = std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--init-server-properties");
+    if check || initialize_properties || has_init_settings_arg(std::env::args().skip(1)) {
+        let mode = if initialize_properties {
+            properties::LoadMode::InitializeProperties
+        } else {
+            properties::LoadMode::Check
+        };
+        exit(check_settings(&exec_dir, offline, mode));
     }
 
     // reqwest is built with `rustls-no-provider`, so pick the ring provider (the one
@@ -101,7 +115,19 @@ async fn main() {
     console_subscriber::init();
     let time = Instant::now();
 
-    let mut config = SculithConfig::load(&exec_dir);
+    let conversion = parse_convert_world_arg(std::env::args().skip(1));
+    let mode = if conversion.is_some() {
+        properties::LoadMode::Check
+    } else {
+        properties::LoadMode::Run
+    };
+    let mut config = match properties::load(&exec_dir, mode) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("Sculith settings load failed: {error}");
+            exit(1);
+        }
+    };
     if offline {
         configure_local_session(&mut config);
     }
@@ -119,7 +145,7 @@ async fn main() {
         exit(1);
     }
 
-    if let Some(target_arg) = parse_convert_world_arg(std::env::args().skip(1)) {
+    if let Some(target_arg) = conversion {
         let anvil_default = match &config.advanced.world.chunk {
             sculith_config::chunk::ChunkConfig::Anvil(cfg) => cfg.clone(),
             _ => sculith_config::chunk::AnvilChunkConfig::default(),
@@ -431,8 +457,8 @@ fn configure_local_session(config: &mut SculithConfig) {
     clippy::print_stderr,
     reason = "launcher output before server startup"
 )]
-fn check_settings(dir: &Path, offline: bool) -> i32 {
-    let mut config = match SculithConfig::load_for_check(dir) {
+fn check_settings(dir: &Path, offline: bool, mode: properties::LoadMode) -> i32 {
+    let mut config = match properties::load(dir, mode) {
         Ok(config) => config,
         Err(err) => {
             eprintln!("Sculith settings check failed: {err}");
@@ -447,9 +473,25 @@ fn check_settings(dir: &Path, offline: bool) -> i32 {
         "Settings: {}",
         dir.join(SculithConfig::get_path()).display()
     );
+    let basic_path = dir.join(properties::FILE_NAME);
+    if basic_path.is_file() {
+        println!("Basic settings: {}", basic_path.display());
+    }
     println!(
         "Bedrock enabled={} address={} online_mode={}",
-        bedrock.enabled, bedrock.nethernet.address, bedrock.online_mode
+        bedrock.enabled && bedrock.nethernet.enabled,
+        bedrock.nethernet.address,
+        bedrock.online_mode
+    );
+    let java = &config.advanced.networking.java;
+    println!(
+        "Java enabled={} address={} online_mode={}",
+        java.enabled, java.address, java.online_mode
+    );
+    println!(
+        "World folder={:?} level-type={}",
+        config.basic.default_level_name,
+        properties::level_type(config.advanced.world.generator)
     );
     0
 }

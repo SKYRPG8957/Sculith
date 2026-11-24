@@ -350,6 +350,8 @@ impl Server {
                 if basic_config.hardcore {
                     default_data.difficulty = Difficulty::Hard;
                     default_data.difficulty_locked = true;
+                } else {
+                    default_data.difficulty = basic_config.default_difficulty;
                 }
                 AnvilLevelInfo.write_world_info(&default_data, &world_path)?;
                 default_data

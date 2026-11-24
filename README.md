@@ -16,12 +16,18 @@ and Bedrock 1.26.63 (protocol 2225) are the initial targets.
 cargo build --release --locked -p sculith
 ```
 
-Run `sculith` (`sculith.exe` on Windows) from the server directory. The first
-start creates `sculith.toml`. Run `sculith --init-settings` to create it before startup. Existing installations can migrate their settings on first launch. Stop with the console command `stop`.
+Run `sculith` (`sculith.exe` on Windows) from the server directory. A fresh server
+creates `server.properties` for common settings and `sculith.toml` for advanced
+options. Open `Settings.cmd` on Windows or run `sculith --init-server-properties`
+to create the basic file from an existing configuration. Stop with `stop`.
 
-Bedrock uses NetherNet on TCP/UDP 19132. Enable Java in `[networking.java]` to listen on TCP 25565. Authentication is
-on by default. Plugins use the upstream Rust/Wasm API; Sculith's previous
-prototype plugins need to be ported.
+Edit `server-name` and `server-port` in `server.properties` for Bedrock, which
+uses NetherNet on TCP and UDP. Set `java-enabled=true` for Java access on
+`java-port`, which defaults to TCP 25565. Authentication is on by default.
+Properties present in the file take precedence over their TOML equivalents.
+`sculith --check` prints the effective listeners and world settings.
+Existing TOML-only installations can keep using `sculith.toml`.
+Plugins use the upstream Rust/Wasm API.
 
 Place a 64×64 PNG named `server-icon.png` in the server directory to set the
 Java server list icon.
@@ -32,9 +38,10 @@ Protocol plugins can use the [packet events](docs/sculith/packets.md).
 
 ## Worlds
 
-To create a flat world, set `default_level_name` to a new folder name and
-`generator = "flat"` in the `[world]` table of `sculith.toml`. Sculith saves
-the generator with the world and reads it from the save on later starts.
+To create a flat world, set `level-name` to a new folder name and
+`level-type=FLAT` in `server.properties`. With TOML, use
+`default_level_name` and `generator = "flat"` in the `[world]` table.
+Sculith records the generator and seed in the world save for later starts.
 
 Sculith supports Anvil, Linear and Pump storage. To bring in saved Bedrock
 1.26.63 Overworld terrain, stop the source server and choose a new destination.
@@ -48,8 +55,8 @@ Start Sculith normally to open the imported `world` from Java and Bedrock. The
 import writes a separate Anvil world with mapped blocks and biomes, the world
 seed and spawn. Supported chest and barrel inventories retain slots, counts,
 potion variants and enchantments. The source retains entities, player records
-and unsupported block-entity data. To use a different destination, set
-`default_level_name` in `sculith.toml` to that world folder.
+and unsupported block-entity data. For a different destination, set
+`level-name` in `server.properties` to that world folder.
 See [the fork notes](docs/sculith/fork.md) for format limits.
 
 ## License
