@@ -1,14 +1,8 @@
-use std::{
-    collections::{HashMap, HashSet},
-    io::Cursor,
-};
+use std::{collections::HashSet, io::Cursor};
 
 use pumpkin_data::{
     Block,
     block_properties::{ChestLikeProperties, ChestType},
-    data_component::DataComponent,
-    item::{BedrockItem, Item, JavaToBedrockItemMapping},
-    item_stack::ItemStack,
 };
 use pumpkin_nbt::{
     Nbt,
@@ -23,16 +17,13 @@ use super::{
 };
 use crate::chunk::ChunkData;
 
+mod items;
+pub(super) use items::{
+    StorageItemRegistry, convert_stack, item_registry, new_bedrock_stack, read_import_registry,
+    read_sculith_stack, write_item_version,
+};
+
 pub(super) const SLOTS: usize = 27;
-
-pub(super) type StorageItemRegistry = HashMap<&'static str, i16>;
-
-pub(super) fn item_registry() -> StorageItemRegistry {
-    BedrockItem::ALL_BEDROCK_ITEMS
-        .iter()
-        .map(|item| (item.registry_key, item.id))
-        .collect()
-}
 
 pub(super) fn import_record(
     bytes: &[u8],
@@ -196,60 +187,4 @@ fn convert_container(
         entity.put_list("Items", converted);
     }
     Ok(entity)
-}
-
-pub(super) fn convert_stack(
-    source: &NbtCompound,
-    terrain: &TerrainRegistry,
-    items: &StorageItemRegistry,
-) -> Result<ItemStack, String> {
-    if let Some(field) = source
-        .child_tags
-        .iter()
-        .filter(|(field, tag)| match field.as_ref() {
-            "Slot" | "Name" | "Count" | "WasPickedUp" | "Block" => false,
-            "Damage" => !matches!(tag, NbtTag::Short(0)),
-            "tag" => !matches!(tag, NbtTag::Compound(data) if data.is_empty()),
-            _ => true,
-        })
-        .map(|(field, _)| field)
-        .min()
-    {
-        return Err(format!("unsupported item field {field:?}"));
-    }
-    let name = source.get_string("Name").ok_or("missing item name")?;
-    let item = items
-        .get(name)
-        .and_then(|&id| JavaToBedrockItemMapping::from_bedrock(id, 0))
-        .map(|mapping| mapping.java_item)
-        .filter(|item| *item != &Item::AIR)
-        .ok_or_else(|| format!("item {name:?} has no plain mapping"))?;
-    // Bedrock potion metadata zero means water, while Java's default has no potion.
-    if item
-        .components
-        .iter()
-        .any(|(component, _)| *component == DataComponent::PotionContents)
-    {
-        return Err(format!("item {name:?} requires potion data conversion"));
-    }
-    if let Some(block) = source.get("Block") {
-        let block = block.extract_compound().ok_or("invalid block item data")?;
-        let state = terrain
-            .block(block)
-            .map_err(|error| format!("unsupported block item state: {error}"))?;
-        let block = Block::from_state_id(state);
-        if block.name != item.registry_key || state != block.default_state.id {
-            return Err("only default states for block items are supported".into());
-        }
-    }
-    let count = source
-        .get_byte("Count")
-        .and_then(|count| u8::try_from(count).ok())
-        .filter(|&count| count > 0)
-        .ok_or("invalid item count")?;
-    let stack = ItemStack::new(count, item);
-    if count > stack.get_max_stack_size() {
-        return Err(format!("item count {count} exceeds the stack limit"));
-    }
-    Ok(stack)
 }

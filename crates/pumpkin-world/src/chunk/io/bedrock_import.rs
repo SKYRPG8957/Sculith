@@ -265,6 +265,7 @@ pub fn import_terrain_with_generator(
         info.spawn_y = LevelData::default(Seed(0)).spawn_y;
     }
     AnvilLevelInfo.write_world_info(&info, &output)?;
+    storage::write_item_version(&output)?;
     if crate::world_info::data_files::read_world_gen_settings(&output).is_none() {
         return Err(invalid("failed to save imported world generation settings"));
     }

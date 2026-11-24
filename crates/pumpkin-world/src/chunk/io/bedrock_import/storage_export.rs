@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use pumpkin_data::item::{Item, JavaToBedrockItemMapping};
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::{
     Nbt,
     compound::NbtCompound,
@@ -44,7 +44,7 @@ pub fn export_storage(
         return Err(invalid("destination must be outside the Sculith world"));
     }
     let terrain = TerrainRegistry::load()?;
-    let items = storage::item_registry();
+    let items = storage::read_import_registry(&sculith)?;
     let (template_info, _) = read_level(&template, &terrain, GeneratorPolicy::NormalIfUnspecified)?;
     let sculith_info = AnvilLevelInfo.read_world_info(&sculith)?;
     if template_info.world_gen_settings.seed != sculith_info.world_gen_settings.seed {
@@ -145,12 +145,6 @@ fn copy_world_entry(entry: &DirEntry, output: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-struct PlainStack {
-    item: &'static Item,
-    count: u8,
-}
-
 pub(super) fn export_record(
     raw: &[u8],
     original: &ChunkData,
@@ -234,9 +228,17 @@ fn replace_slots(
     {
         return Err(format!("unsupported Sculith container field {field:?}"));
     }
-    let before = java_slots(previous)?;
-    let after = java_slots(current)?;
-    if before == after {
+    let before = java_slots(previous, items)?;
+    let after = java_slots(current, items)?;
+    if before
+        .iter()
+        .zip(&after)
+        .all(|(before, after)| match (before, after) {
+            (Some(before), Some(after)) => before.are_equal(after),
+            (None, None) => true,
+            _ => false,
+        })
+    {
         return Ok(false);
     }
     let existing = saved.get_list("Items").unwrap_or_default();
@@ -248,19 +250,20 @@ fn replace_slots(
             .filter_map(NbtTag::extract_compound)
             .filter_map(|entry| {
                 let index = usize::try_from(entry.get_byte("Slot")?).ok()?;
-                let old = before.get(index).copied().flatten()?;
-                (old.item == stack.item).then_some((entry, index))
+                let old = before.get(index)?.as_ref()?;
+                old.are_items_and_components_equal(&stack)
+                    .then_some((entry, index))
             })
             .min_by_key(|&(_, index)| index != slot)
             .map(|(entry, _)| entry);
         let mut entry = match prototype {
             Some(prototype) => prototype.clone(),
-            None => new_bedrock_stack(stack.item)?,
+            None => storage::new_bedrock_stack(&stack)?,
         };
         entry.put_byte("Slot", slot as i8);
-        entry.put_byte("Count", stack.count as i8);
+        entry.put_byte("Count", stack.item_count as i8);
         let decoded = storage::convert_stack(&entry, terrain, items)?;
-        if decoded.item != stack.item || decoded.item_count != stack.count {
+        if !decoded.are_equal(&stack) {
             return Err(format!("slot {slot} has no reversible Bedrock mapping"));
         }
         encoded.push(NbtTag::Compound(entry));
@@ -269,13 +272,16 @@ fn replace_slots(
     Ok(true)
 }
 
-fn java_slots(entity: &NbtCompound) -> Result<[Option<PlainStack>; SLOTS], String> {
+fn java_slots(
+    entity: &NbtCompound,
+    items: &StorageItemRegistry,
+) -> Result<[Option<ItemStack>; SLOTS], String> {
     let entries = match entity.get("Items") {
         None => &[][..],
         Some(NbtTag::List(items)) => items.as_slice(),
         Some(_) => return Err("invalid Sculith Items list".into()),
     };
-    let mut slots = [None; SLOTS];
+    let mut slots = [const { None }; SLOTS];
     for entry in entries {
         let entry = entry
             .extract_compound()
@@ -285,42 +291,11 @@ fn java_slots(entity: &NbtCompound) -> Result<[Option<PlainStack>; SLOTS], Strin
             .and_then(|slot| usize::try_from(slot).ok())
             .filter(|&slot| slot < SLOTS)
             .ok_or("invalid Sculith item slot")?;
-        if let Some(field) = entry
-            .child_tags
-            .iter()
-            .filter_map(|(field, value)| match field.as_ref() {
-                "id" | "count" | "Slot" => None,
-                "components" if matches!(value, NbtTag::Compound(tag) if tag.is_empty()) => None,
-                _ => Some(field),
-            })
-            .min()
-        {
-            return Err(format!("slot {slot} has unsupported item field {field:?}"));
-        }
-        let item = entry
-            .get_string("id")
-            .and_then(|id| id.strip_prefix("minecraft:"))
-            .and_then(Item::from_registry_key)
-            .filter(|item| *item != &Item::AIR)
-            .ok_or("invalid Sculith item identifier")?;
-        let count = entry
-            .get_int("count")
-            .and_then(|count| i8::try_from(count).ok())
-            .filter(|&count| count > 0)
-            .ok_or("invalid Sculith item count")? as u8;
-        if slots[slot].replace(PlainStack { item, count }).is_some() {
+        let stack = storage::read_sculith_stack(entry, items)
+            .map_err(|error| format!("slot {slot}: {error}"))?;
+        if slots[slot].replace(stack).is_some() {
             return Err(format!("duplicate Sculith item slot {slot}"));
         }
     }
     Ok(slots)
-}
-
-fn new_bedrock_stack(item: &Item) -> Result<NbtCompound, String> {
-    let mapping = JavaToBedrockItemMapping::from_java_item_id(item.id)
-        .filter(|mapping| mapping.bedrock_data == 0)
-        .ok_or_else(|| format!("item {:?} has no plain Bedrock mapping", item.registry_key))?;
-    let mut entry = NbtCompound::new();
-    entry.put_string("Name", mapping.bedrock_item.registry_key.to_owned());
-    entry.put_short("Damage", 0);
-    Ok(entry)
 }

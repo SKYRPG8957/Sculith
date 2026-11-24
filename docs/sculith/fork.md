@@ -665,12 +665,14 @@ the source supplies it.
 Biome storage is sampled at the origin of each four-block Java biome cell.
 The import carries the seed and spawn into Sculith. New chunks use Sculith's
 generator, with supported Bedrock flat layers mapped to a flat preset.
-Ordinary single chests and barrels preserve the slots and counts of plain
-items with a shared item mapping. This includes supported block items in their
-default state. The command skips the entire contents of paired chests,
-containers with unsupported metadata and containers with unsupported stacks
-such as potions. It reports excluded database records and shows the first 16
-skipped block entities with their coordinates and reasons.
+Ordinary single chests and barrels preserve the slots and counts of items
+with shared mappings. This includes default block items, standard drinkable,
+splash and lingering potion variants, and mapped enchantments on items and
+enchanted books. Variants with no reversible mapping, such as the Bedrock
+potion of Decay, still cause their container to be skipped as a unit. Paired
+chests and containers with other unsupported metadata are also skipped. The
+command reports excluded database records and shows the first 16 skipped block
+entities with their coordinates and reasons.
 
 The official Bedrock 1.26.63.1 server fixtures covered a flat column and 27
 ordinary terrain columns. Java and Bedrock protocol clients read the same
@@ -686,11 +688,13 @@ stopped Sculith import. Use a new destination outside both inputs. The inputs
 must have the same seed and matching ordinary single chests or barrels at the
 template positions.
 
-The output uses the template's terrain, players and metadata. The transfer
-covers plain mapped item IDs, slots and counts in the template's supported
-containers. The command keeps unsupported template records and reports why it
-preserved them. A missing or incompatible Sculith container blocks the export
-before the destination is published.
+The output uses the template's terrain, players and metadata. Imports record
+their storage conversion version alongside the saved world. New imports can
+transfer mapped potions and enchantments back into supported containers,
+including slot changes and additions. Exports from older imports use the
+plain-item rules used by those imports, preserving template containers that
+were originally skipped. The command reports preserved records. A missing or
+incompatible Sculith container blocks publication of the destination.
 
 ## Region header recovery
 

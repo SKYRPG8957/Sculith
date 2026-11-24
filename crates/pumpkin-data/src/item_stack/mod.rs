@@ -21,6 +21,7 @@ use std::cmp::{max, min};
 use std::num::NonZero;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+pub mod bedrock;
 mod categories;
 
 /// The outcome of a [`ItemStack::damage_item`] call.
