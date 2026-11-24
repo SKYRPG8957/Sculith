@@ -21,18 +21,19 @@ pub(super) fn pickup_body(player: &Player) -> (BoundingBox, bool) {
     }
 }
 
+/// Contact bounds for item and orb collection.
+pub fn pickup_area(player: &Player) -> BoundingBox {
+    let (body, mounted) = pickup_body(player);
+    body.expand(1.0, if mounted { 0.0 } else { 0.5 }, 1.0)
+}
+
 /// Vanilla `Player.aiStep` pickup: touches every entity in the area, then one random orb.
 /// Runs after the player moved and before entities tick, like `doTick` after the level tick.
 pub(super) fn touch_entities(world: &World, player: &Arc<Player>) {
     if player.living_entity.health.load() <= 0.0 || player.is_spectator() {
         return;
     }
-    let (body, mounted) = pickup_body(player);
-    let area = if mounted {
-        body.expand(1.0, 0.0, 1.0)
-    } else {
-        body.expand(1.0, 0.5, 1.0)
-    };
+    let area = pickup_area(player);
     let mut orbs = Vec::new();
     // Removed entities may still be indexed; vanilla's section lookup no longer has them
     for entity in world.get_entities_at_box(&area) {

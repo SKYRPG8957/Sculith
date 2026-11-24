@@ -1098,35 +1098,52 @@ impl LivingEntity {
 
     /// Picks up an item entity or XP orb.
     pub fn pickup(&self, item: &Entity, stack_amount: u32) -> bool {
-        let mut pickup_event =
-            crate::plugin::api::events::entity::entity_pickup_item::EntityPickupItemEvent::new(
-                self.entity.entity_id,
-                item.entity_type.id.to_string(),
-                stack_amount as u8,
-            );
-        if let Some(server) = self.entity.world.load().server.upgrade() {
-            server
-                .plugin_manager
-                .fire_blocking(&server, &mut pickup_event);
-            if pickup_event.cancelled {
-                return false;
-            }
+        if !self.authorize_pickup(|| item.entity_type.id.to_string(), stack_amount as u8) {
+            return false;
         }
+        self.send_pickup(item, stack_amount, true);
+        true
+    }
 
+    pub(super) fn authorize_pickup(&self, item_name: impl FnOnce() -> String, amount: u8) -> bool {
+        use crate::plugin::api::events::entity::EntityPickupItemEvent;
+
+        let Some(server) = self.entity.world.load().server.upgrade() else {
+            return true;
+        };
+        if !server
+            .plugin_manager
+            .has_handlers::<EntityPickupItemEvent>()
+        {
+            return true;
+        }
+        let mut event = EntityPickupItemEvent::new(self.entity.entity_id, item_name(), amount);
+        server.plugin_manager.fire_blocking(&server, &mut event);
+        !event.cancelled
+    }
+
+    pub(super) fn send_pickup(&self, item: &Entity, stack_amount: u32, consumed_actor: bool) {
+        let world = self.entity.world.load();
         let chunk_pos = self.entity.chunk_pos.load();
-        self.entity.world.load().broadcast_to_chunk_editioned(
+        let java = CTakeItemEntity::new(
+            item.entity_id.into(),
+            self.entity.entity_id.into(),
+            VarInt(stack_amount as i32),
+        );
+        if !consumed_actor {
+            // Bedrock's take animation hides the entire actor. The stack size
+            // update keeps the remainder visible on that same actor.
+            world.broadcast_to_chunk(chunk_pos, &java);
+            return;
+        }
+        world.broadcast_to_chunk_editioned(
             chunk_pos,
-            &CTakeItemEntity::new(
-                item.entity_id.into(),
-                self.entity.entity_id.into(),
-                VarInt(stack_amount as i32),
-            ),
+            &java,
             &CTakeItemActor {
                 item_runtime_id: VarULong(item.entity_id as u64),
                 actor_runtime_id: VarULong(self.entity.entity_id as u64),
             },
         );
-        true
     }
 
     /// Sends the Hand animation to all others, used when Eating for example

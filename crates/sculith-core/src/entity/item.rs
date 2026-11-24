@@ -7,6 +7,7 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::{BundleContentsImpl, ContainerImpl};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::game_event::GameEvent;
+use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
 use pumpkin_nbt::compound::NbtCompound;
@@ -471,6 +472,61 @@ impl ItemEntity {
             .send_to_tracking_players_bedrock(&self.entity, &packet);
     }
 
+    fn collect_for_player(&self, player: &Player) -> Option<(&'static Item, u8, bool)> {
+        let world = self.entity.world.load_full();
+        let eligible = || {
+            !self.entity.is_removed()
+                && !self.never_pickup.load(Relaxed)
+                && self.pickup_delay.load(Relaxed) == 0
+                && Arc::ptr_eq(&world, &self.entity.world.load())
+                && player.can_simulate_in(&world)
+                && player.has_stable_world_membership()
+                && !player.living_entity.is_dead_or_dying()
+                && !player.is_spectator()
+                && crate::world::pickup_area(player).intersects(&self.entity.bounding_box.load())
+        };
+        if !eligible() {
+            return None;
+        }
+        let pickup = {
+            let stack = self
+                .item_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            player.inventory.plan_pickup(&stack)?
+        };
+        let item = pickup.item();
+        let count = pickup.count();
+        if !player
+            .living_entity
+            .authorize_pickup(|| item.registry_key.to_string(), count)
+        {
+            return None;
+        }
+
+        let server = world.server.upgrade()?;
+        let _checkpoint = server.try_entity_save_guard()?;
+        let _position = player
+            .client
+            .bedrock()
+            .filter(|client| client.is_current_protocol())
+            .map(|client| client.regional_work().try_lock())
+            .transpose()
+            .ok()?;
+        let _inventory = player.hold_bedrock_inventory_edit();
+        if !eligible() {
+            return None;
+        }
+        let mut stack = self
+            .item_stack
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !player.inventory.commit_pickup(pickup, &mut stack) {
+            return None;
+        }
+        Some((item, count, stack.is_empty()))
+    }
+
     fn decrement_pickup_delay(&self) {
         self.pickup_delay
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |val| {
@@ -931,78 +987,42 @@ impl EntityBase for ItemEntity {
 
     fn on_player_collision(&self, player: &Arc<Player>) {
         let _motion = self.entity.hold_drop_motion();
-        if self.entity.is_removed() || self.pickup_delay.load(Ordering::Relaxed) > 0 {
+        let Some((item, amount, empty)) = self.collect_for_player(player) else {
             return;
-        }
-
-        let (item_id, count_before) = {
-            let stack = self
-                .item_stack
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            (stack.item.id, stack.item_count)
         };
-
-        let mut local_stack = self
-            .item_stack
+        player.inventory_changed.store(true, Relaxed);
+        if let Some(thrower) = self
+            .thrower
+            .load()
+            .and_then(|uuid| self.entity.world.load().get_entity_by_uuid(uuid))
+        {
+            player.trigger_advancement(AdvancementTrigger::ThrownItemPickedUpByPlayer {
+                thrower_type: format!(
+                    "minecraft:{}",
+                    thrower.get_entity().entity_type.resource_name
+                ),
+            });
+        }
+        player.increment_stat(
+            StatisticCategory::PickedUp,
+            i32::from(item.id),
+            i32::from(amount),
+        );
+        player
+            .living_entity
+            .send_pickup(&self.entity, amount.into(), empty);
+        player
+            .current_screen_handler
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let inserted = player.inventory.insert_stack_anywhere(&mut local_stack);
-        let count_after = local_stack.item_count;
-        let is_empty = local_stack.is_empty();
-        *self
-            .item_stack
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = local_stack;
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .send_content_updates();
 
-        if inserted || player.is_creative() {
-            player.inventory_changed.store(true, Ordering::Relaxed);
-
-            let amount_picked_up = if player.is_creative() {
-                count_before
-            } else {
-                count_before - count_after
-            };
-
-            if amount_picked_up > 0 {
-                if inserted
-                    && let Some(thrower) = self
-                        .thrower
-                        .load()
-                        .and_then(|uuid| self.entity.world.load().get_entity_by_uuid(uuid))
-                {
-                    player.trigger_advancement(AdvancementTrigger::ThrownItemPickedUpByPlayer {
-                        thrower_type: format!(
-                            "minecraft:{}",
-                            thrower.get_entity().entity_type.resource_name
-                        ),
-                    });
-                }
-                player.increment_stat(
-                    StatisticCategory::PickedUp,
-                    item_id as i32,
-                    amount_picked_up as i32,
-                );
-            }
-
-            player
-                .living_entity
-                .pickup(&self.entity, amount_picked_up.into());
-
-            player
-                .current_screen_handler
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .send_content_updates();
-
-            if is_empty {
-                self.entity.remove();
-            } else {
-                self.on_count_changed();
-            }
+        if empty {
+            self.entity.remove();
+        } else {
+            self.on_count_changed();
         }
     }
 

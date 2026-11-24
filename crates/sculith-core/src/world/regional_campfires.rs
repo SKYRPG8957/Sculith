@@ -110,7 +110,7 @@ impl World {
         );
         item.init_data_tracker();
 
-        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+        let Some(_checkpoint) = server.try_entity_save_guard() else {
             return;
         };
         let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {

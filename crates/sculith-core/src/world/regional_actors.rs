@@ -373,7 +373,7 @@ impl World {
                 }
             } else if native.is_some()
                 && let Some(orb) = actor_data.downcast_ref::<ExperienceOrbEntity>()
-                && let Some(_checkpoint) = server.try_regional_entity_save_guard()
+                && let Some(_checkpoint) = server.try_entity_save_guard()
             {
                 orb.try_regional_orb_tick(self, chunk, owner, deadline, owns, publish);
                 if orb.has_expired() {
@@ -382,7 +382,7 @@ impl World {
             } else if native.is_some()
                 && base.regional_effects.load(Relaxed)
                 && let Some(living) = actor.get_living_entity()
-                && let Some(_checkpoint) = server.try_regional_entity_save_guard()
+                && let Some(_checkpoint) = server.try_entity_save_guard()
                 && let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk)
             {
                 living.advance_regional_effects(
@@ -423,7 +423,7 @@ impl World {
         let Some(_native) = server.plugin_manager.try_without_native_code() else {
             return;
         };
-        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+        let Some(_checkpoint) = server.try_entity_save_guard() else {
             return;
         };
         let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {

@@ -602,7 +602,7 @@ impl Player {
         if awaiting.is_some() || vehicle.is_some() || !passengers.is_empty() {
             return None;
         }
-        let _checkpoint = server.try_regional_entity_save_guard()?;
+        let _checkpoint = server.try_entity_save_guard()?;
         let world = self.world();
         let chunk = entity.chunk_pos.load();
         let teleport = self.teleport_id_count.load(Ordering::Relaxed);

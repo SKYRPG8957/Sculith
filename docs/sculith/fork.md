@@ -273,6 +273,16 @@ and expiry because native plugins can write live actor fields. Merge and despawn
 handlers use the world clock, as do coordinated steps and sprints. Saved items
 retain their remaining timers and last position.
 
+For a player who touches a drop, the world owner prepares the slots that can
+accept it in normal inventory order. A pickup observer receives the item key
+and the proposed amount before the inventory changes. After the callback the
+owner checks contact, the source stack and each destination, then updates
+the drop and inventory together under their locks. Pickups defer while an
+explicit save is capturing player and entity data. Only the transferred count
+updates pickup statistics. For a partial pickup Java receives the collected
+count and Bedrock receives the new size on the same item actor. A full pickup
+sends the take animation and removes the actor on both editions.
+
 Experience orbs use the same region assignments and motion deadlines. An orb
 with no follow target can advance a short path through loaded air or land on
 inert full blocks if its region owns the sweep and the player index has no

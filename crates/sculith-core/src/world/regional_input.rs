@@ -301,7 +301,7 @@ impl World {
         {
             return false;
         }
-        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+        let Some(_checkpoint) = server.try_entity_save_guard() else {
             return true;
         };
 
@@ -382,7 +382,7 @@ impl World {
         let Ok(_layout) = self.regional_actors.try_read() else {
             return true;
         };
-        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+        let Some(_checkpoint) = server.try_entity_save_guard() else {
             return true;
         };
         // An earlier movement packet might still take the player underwater.
@@ -429,7 +429,7 @@ impl World {
         let Ok(_layout) = self.regional_actors.try_read() else {
             return true;
         };
-        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+        let Some(_checkpoint) = server.try_entity_save_guard() else {
             return true;
         };
         let owns_effects = || owns_player() && player.has_stable_world_membership();

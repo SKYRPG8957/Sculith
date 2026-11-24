@@ -44,6 +44,32 @@ pub struct PlayerInventory {
     pub entity_equipment: Arc<Mutex<EntityEquipment>>,
 }
 
+/// A player inventory change prepared for a still-unmodified dropped stack.
+pub struct PlayerPickup {
+    source: ItemStack,
+    count: u8,
+    selected: u8,
+    slots: Vec<PickupSlot>,
+}
+
+struct PickupSlot {
+    index: usize,
+    before: ItemStack,
+    after: ItemStack,
+}
+
+impl PlayerPickup {
+    #[must_use]
+    pub const fn count(&self) -> u8 {
+        self.count
+    }
+
+    #[must_use]
+    pub const fn item(&self) -> &'static Item {
+        self.source.item
+    }
+}
+
 impl PlayerInventory {
     /// Size of the main inventory (36 slots: 27 storage + 9 hotbar).
     pub const MAIN_SIZE: usize = 36;
@@ -323,6 +349,104 @@ impl PlayerInventory {
     /// `true` if any items were inserted, `false` otherwise.
     pub fn insert_stack_anywhere(&self, stack: &mut ItemStack) -> bool {
         self.insert_stack(-1, stack)
+    }
+
+    /// Stages only the slots that can accept part of a dropped stack.
+    #[must_use]
+    pub fn plan_pickup(&self, source: &ItemStack) -> Option<PlayerPickup> {
+        if source.is_empty() {
+            return None;
+        }
+        let main = self.main_inventory.try_read().ok()?;
+        let equipment = self.entity_equipment.try_lock().ok()?;
+        let selected = self.get_selected_slot();
+        let selected_index = usize::from(selected);
+        let off_hand = self
+            .equipment_slots
+            .get(&Self::OFF_HAND_SLOT)
+            .and_then(|slot| equipment.equipment.get(slot));
+        let merges = std::iter::once((selected_index, main.get(selected_index)?))
+            .chain(off_hand.map(|stack| (Self::OFF_HAND_SLOT, stack)))
+            .chain(
+                main.iter()
+                    .enumerate()
+                    .filter(|(slot, _)| *slot != selected_index),
+            )
+            .filter(|(_, stack)| Self::can_stack_add_more(stack, source));
+        let empty = main
+            .iter()
+            .enumerate()
+            .filter(|(_, stack)| stack.is_empty());
+        let mut count = 0;
+        let mut slots = Vec::new();
+        for (index, before) in merges.chain(empty) {
+            let capacity = if before.is_empty() {
+                source.get_max_stack_size()
+            } else {
+                before
+                    .get_max_stack_size()
+                    .saturating_sub(before.item_count)
+            };
+            let accepted = capacity.min(source.item_count - count);
+            if accepted == 0 {
+                continue;
+            }
+            let after = if before.is_empty() {
+                source.copy_with_count(accepted)
+            } else {
+                let mut after = before.clone();
+                after.increment(accepted);
+                after
+            };
+            slots.push(PickupSlot {
+                index,
+                before: before.clone(),
+                after,
+            });
+            count += accepted;
+            if count == source.item_count {
+                break;
+            }
+        }
+        (count > 0).then(|| PlayerPickup {
+            source: source.clone(),
+            count,
+            selected,
+            slots,
+        })
+    }
+
+    /// The item owner holds the source lock. No writes occur if any planned stack changed.
+    pub fn commit_pickup(&self, pickup: PlayerPickup, source: &mut ItemStack) -> bool {
+        let Ok(mut main) = self.main_inventory.try_write() else {
+            return false;
+        };
+        let Ok(mut equipment) = self.entity_equipment.try_lock() else {
+            return false;
+        };
+        let off_hand = self.equipment_slots.get(&Self::OFF_HAND_SLOT);
+        let equipped = off_hand
+            .and_then(|slot| equipment.equipment.get(slot))
+            .unwrap_or(ItemStack::EMPTY);
+        if self.get_selected_slot() != pickup.selected
+            || source.uid != pickup.source.uid
+            || !source.are_equal(&pickup.source)
+            || pickup.slots.iter().any(|slot| {
+                let current = main.get(slot.index).unwrap_or(equipped);
+                current.uid != slot.before.uid || !current.are_equal(&slot.before)
+            })
+        {
+            return false;
+        }
+        for slot in pickup.slots {
+            if let Some(destination) = main.get_mut(slot.index) {
+                *destination = slot.after;
+            } else if let Some(off_hand) = off_hand {
+                equipment.put(off_hand, slot.after);
+            }
+        }
+        source.decrement(pickup.count);
+        true
     }
 
     /// Inserts a stack into a specific slot or any slot.
@@ -937,6 +1061,47 @@ mod tests {
         assert!(inv.off_hand_item().is_empty());
         assert_eq!(inv.get_slot(0).item.id, Item::ARROW.id);
         assert_eq!(inv.get_slot(0).item_count, 10);
+    }
+
+    #[test]
+    fn planned_pickup_keeps_priority_and_rejects_changed_source_or_slots() {
+        let inventory = create_test_inventory();
+        for index in 0..PlayerInventory::MAIN_SIZE {
+            inventory.set_slot(index, ItemStack::new(64, &Item::DIRT));
+        }
+        inventory.set_held_item(ItemStack::new(63, &Item::ARROW));
+        inventory.set_stack_in_hand(Hand::Left, ItemStack::new(63, &Item::ARROW));
+        inventory.set_slot(9, ItemStack::new(62, &Item::ARROW));
+
+        let mut source = ItemStack::new(6, &Item::ARROW);
+        let plan = inventory.plan_pickup(&source).unwrap();
+        assert_eq!(plan.count(), 4);
+        assert_eq!(
+            plan.slots.iter().map(|slot| slot.index).collect::<Vec<_>>(),
+            [0, PlayerInventory::OFF_HAND_SLOT, 9]
+        );
+        let mut changed_source = source.copy_with_count(6);
+        assert!(!inventory.commit_pickup(plan, &mut changed_source));
+
+        let plan = inventory.plan_pickup(&source).unwrap();
+        inventory.set_slot(9, ItemStack::new(62, &Item::ARROW));
+        let counts = || {
+            [
+                inventory.held_item().item_count,
+                inventory.off_hand_item().item_count,
+                inventory.get_slot(9).item_count,
+            ]
+        };
+        assert!(!inventory.commit_pickup(plan, &mut source));
+        assert_eq!(counts(), [63, 63, 62]);
+        assert_eq!(source.item_count, 6);
+        assert_eq!(changed_source.item_count, 6);
+
+        let plan = inventory.plan_pickup(&source).unwrap();
+        assert!(inventory.commit_pickup(plan, &mut source));
+        assert_eq!(counts(), [64, 64, 64]);
+        assert_eq!(source.item_count, 2);
+        assert!(inventory.plan_pickup(&source).is_none());
     }
 
     /// When the main inventory is completely full and only the off-hand has

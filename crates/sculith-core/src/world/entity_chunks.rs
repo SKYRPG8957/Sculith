@@ -385,7 +385,7 @@ impl World {
         let Some(_native) = server.plugin_manager.try_without_native_code() else {
             return;
         };
-        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+        let Some(_checkpoint) = server.try_entity_save_guard() else {
             return;
         };
         let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {

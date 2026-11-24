@@ -100,7 +100,7 @@ impl BedrockClient {
         if self.food_use_slot().is_some() {
             return None;
         }
-        let _checkpoint = server.try_regional_entity_save_guard()?;
+        let _checkpoint = server.try_entity_save_guard()?;
         player
             .living_entity
             .with_regional_main_hand_change(previous, next, || {

@@ -210,6 +210,7 @@ pub use pumpkin_data::environment_attribute::{Activity, MoonPhase};
 
 use crate::world::natural_spawner::{SpawnState, spawn_for_chunk};
 use crate::world::player_touch::{pickup_body, touch_entities};
+pub(crate) use player_touch::pickup_area;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_world::chunk::ChunkHeightmapType::{self, MotionBlocking, WorldSurface};
 use sculith_config::lighting::LightingEngineConfig;
