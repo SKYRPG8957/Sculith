@@ -25,6 +25,7 @@ bitflags::bitflags! {
         const FOOD_DRAIN = 64;
         const STATUS_EFFECTS = 128;
         const BREATH = 256;
+        const FOOD_USE = 512;
     }
 }
 
@@ -77,6 +78,10 @@ impl RegionalInput {
             .unwrap_or_default()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the dispatch order of a player's regional work together"
+    )]
     pub(super) fn drain(
         &self,
         world: &Arc<World>,
@@ -133,6 +138,11 @@ impl RegionalInput {
                 && client.advance_regional_item_cooldowns(&player, deadline, owns_player)
             {
                 pending |= RegionalWork::ITEM_COOLDOWNS;
+            }
+            if work.contains(RegionalWork::FOOD_USE)
+                && world.advance_regional_food_use(server, &player, client, deadline, owns_player)
+            {
+                pending |= RegionalWork::FOOD_USE;
             }
             if work.contains(RegionalWork::STATUS_EFFECTS)
                 && world.advance_regional_player_effects(
@@ -220,6 +230,36 @@ impl World {
             && self.regional_actors.try_read().map_or(true, |_layout| {
                 player.hunger_manager.drain_on_region(player, client, deadline, owns)
             })
+    }
+
+    fn advance_regional_food_use(
+        &self,
+        server: &Server,
+        player: &Player,
+        client: &BedrockClient,
+        deadline: TickDeadline,
+        owns: impl FnOnce() -> bool,
+    ) -> bool {
+        if client.food_use_slot().is_none()
+            || !client.is_current_protocol()
+            || !player.has_client_loaded()
+            || !player.has_stable_world_membership()
+            || server.tick_rate_manager.is_frozen()
+        {
+            return false;
+        }
+        let Ok(_layout) = self.regional_actors.try_read() else {
+            return true;
+        };
+        client
+            .with_idle_play_ingress(player, || {
+                player
+                    .living_entity
+                    .advance_regional_food_use(player, client, deadline, || {
+                        owns() && player.has_stable_world_membership()
+                    })
+            })
+            .unwrap_or(true)
     }
 
     fn advance_regional_player_breath(
@@ -402,6 +442,10 @@ impl World {
 
     pub(crate) fn offer_regional_breath(&self, id: u64, player: &Arc<Player>) {
         self.offer_regional_work(id, player, RegionalWork::BREATH);
+    }
+
+    pub(crate) fn offer_regional_food_use(&self, id: u64, player: &Arc<Player>) {
+        self.offer_regional_work(id, player, RegionalWork::FOOD_USE);
     }
 
     pub(crate) fn offer_regional_inventory_edits(&self, id: u64, player: &Arc<Player>) {

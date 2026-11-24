@@ -25,6 +25,9 @@ impl BedrockClient {
             return;
         }
 
+        if slot != previous_slot && self.food_use_slot().is_some() {
+            player.living_entity.clear_active_hand();
+        }
         let inv = player.inventory();
         inv.set_selected_slot(slot);
         let stack = inv.held_item();

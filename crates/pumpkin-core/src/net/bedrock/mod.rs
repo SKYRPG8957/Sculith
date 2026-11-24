@@ -71,6 +71,7 @@ mod close_signal;
 pub mod distant_terrain;
 mod experience_pickup;
 mod item_cooldown;
+mod item_use;
 pub mod level_chunk;
 pub mod login;
 mod mining;
@@ -231,6 +232,7 @@ struct ClientActivity {
     regional_air_dirty: AtomicBool,
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
     item_cooldown: AtomicCell<Option<item_cooldown::ItemCooldownClock>>,
+    food_use: AtomicCell<Option<item_use::FoodUseClock>>,
     mining: std::sync::Mutex<Option<mining::MiningClock>>,
 }
 
@@ -378,6 +380,7 @@ impl BedrockClient {
                 regional_air_dirty: AtomicBool::new(false),
                 experience_pickup: AtomicCell::new(None),
                 item_cooldown: AtomicCell::new(None),
+                food_use: AtomicCell::new(None),
                 mining: std::sync::Mutex::default(),
             }),
             incoming_game_packet_send: incoming_send,

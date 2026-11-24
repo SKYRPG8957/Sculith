@@ -236,10 +236,12 @@ impl BedrockClient {
                                     .get_data_component::<FoodImpl>()
                                     .is_none_or(|food| player.can_eat(food.can_always_eat))
                                 {
-                                    player.living_entity.set_active_hand(
+                                    player.living_entity.start_bedrock_consumable(
+                                        &server,
+                                        player,
+                                        self,
                                         hand,
                                         held.clone(),
-                                        held.get_max_use_time(),
                                     );
                                 } else {
                                     // Correct predicted eating when the server's food
