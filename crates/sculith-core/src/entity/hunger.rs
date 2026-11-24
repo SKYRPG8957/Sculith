@@ -215,14 +215,18 @@ impl HungerManager {
 
     pub fn eat(&self, player: &Player, food: u8, saturation: f32) {
         let abilities = player.lock_abilities_and_hunger();
-        let new_level = self.level.load().saturating_add(food).min(MAX_FOOD);
-        let new_sat = (self.saturation.load() + saturation).clamp(0.0, f32::from(new_level));
-
-        self.level.store(new_level);
-        self.saturation.store(new_sat);
+        let (level, saturation) = self.meal_values(food, saturation);
+        self.level.store(level);
+        self.saturation.store(saturation);
         drop(abilities);
 
         player.send_health();
+    }
+
+    pub(super) fn meal_values(&self, food: u8, saturation: f32) -> (u8, f32) {
+        let level = self.level.load().saturating_add(food).min(MAX_FOOD);
+        let saturation = (self.saturation.load() + saturation).clamp(0.0, f32::from(level));
+        (level, saturation)
     }
 
     /// Add exhaustion to trigger hunger decrease

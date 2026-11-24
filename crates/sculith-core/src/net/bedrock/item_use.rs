@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::atomic::Ordering, time::Instant};
 
 use crate::server::TickDeadline;
 
@@ -9,6 +9,15 @@ pub(super) struct FoodUseClock {
     slot: u8,
     started: Instant,
     last_step: Option<Instant>,
+}
+
+impl FoodUseClock {
+    fn can_step(self, deadline: Option<TickDeadline>, regional: bool) -> bool {
+        deadline.is_none_or(|step| {
+            (!regional || step.at > self.started)
+                && self.last_step.is_none_or(|last| step.follows(last))
+        })
+    }
 }
 
 impl BedrockClient {
@@ -26,6 +35,25 @@ impl BedrockClient {
         self.activity.food_use.load().map(|clock| clock.slot)
     }
 
+    pub(crate) fn regional_food_use_due(&self, deadline: TickDeadline) -> bool {
+        self.activity
+            .food_use
+            .load()
+            .is_some_and(|clock| clock.can_step(Some(deadline), true))
+    }
+
+    pub(crate) fn mark_food_use_metadata_dirty(&self) {
+        self.activity
+            .food_use_metadata_dirty
+            .store(true, Ordering::Release);
+    }
+
+    pub(crate) fn take_food_use_metadata_dirty(&self) -> bool {
+        self.activity
+            .food_use_metadata_dirty
+            .swap(false, Ordering::AcqRel)
+    }
+
     pub(crate) fn claim_food_use_tick(
         &self,
         deadline: Option<TickDeadline>,
@@ -34,13 +62,7 @@ impl BedrockClient {
         let Some(mut clock) = self.activity.food_use.load() else {
             return false;
         };
-        if deadline.is_some_and(|step| {
-            clock
-                .last_step
-                .map_or(regional && step.at <= clock.started, |last| {
-                    !step.follows(last)
-                })
-        }) {
+        if !clock.can_step(deadline, regional) {
             return false;
         }
         clock.last_step = deadline.map(|step| step.at);

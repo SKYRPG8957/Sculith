@@ -233,6 +233,7 @@ struct ClientActivity {
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
     item_cooldown: AtomicCell<Option<item_cooldown::ItemCooldownClock>>,
     food_use: AtomicCell<Option<item_use::FoodUseClock>>,
+    food_use_metadata_dirty: AtomicBool,
     mining: std::sync::Mutex<Option<mining::MiningClock>>,
 }
 
@@ -381,6 +382,7 @@ impl BedrockClient {
                 experience_pickup: AtomicCell::new(None),
                 item_cooldown: AtomicCell::new(None),
                 food_use: AtomicCell::new(None),
+                food_use_metadata_dirty: AtomicBool::new(false),
                 mining: std::sync::Mutex::default(),
             }),
             incoming_game_packet_send: incoming_send,

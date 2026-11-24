@@ -78,6 +78,9 @@ use sculith_util::math::vector3::Vector3;
 use sculith_util::text::TextComponent;
 use std::sync::{RwLock, RwLockReadGuard};
 
+mod food_use;
+pub(crate) use food_use::RegionalFoodUseFinish;
+
 #[derive(Clone, Copy)]
 struct LastHurtByMob {
     uuid: Uuid,
@@ -5000,9 +5003,8 @@ impl LivingEntity {
         if remaining == 2 {
             tracing::trace!(
                 entity = self.entity.entity_id,
-                "Food use ready for world completion"
+                "Food use ready for completion"
             );
-            return false;
         }
         true
     }
@@ -5017,9 +5019,6 @@ impl LivingEntity {
         server: &Server,
         deadline: Option<TickDeadline>,
     ) {
-        if self.item_use_time.load(Relaxed) <= 0 {
-            return;
-        }
         let bedrock = caller.get_player().and_then(|player| {
             player
                 .client
@@ -5027,6 +5026,16 @@ impl LivingEntity {
                 .filter(|client| client.is_current_protocol())
                 .map(|client| (player, client))
         });
+        if let Some((_, client)) = bedrock
+            && client.take_food_use_metadata_dirty()
+        {
+            let _edit = self.hold_effect_edit();
+            let using = self.livings_flags.load(Relaxed) & Self::USING_ITEM_FLAG != 0;
+            self.set_living_flag(Self::USING_ITEM_FLAG, using);
+        }
+        if self.item_use_time.load(Relaxed) <= 0 {
+            return;
+        }
         let _edit = bedrock.map(|_| self.hold_effect_edit());
         let food_use = bedrock
             .and_then(|(player, client)| client.food_use_slot().map(|slot| (player, client, slot)));

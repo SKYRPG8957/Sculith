@@ -3,6 +3,29 @@ use crate::entity::player::advancement::PlayerAdvancement;
 use crate::entity::player::advancement::predicate::{self, CriterionConditions};
 use sculith_util::math::position::BlockPos;
 
+const CONSUME_ITEM_TRIGGER: &str = "minecraft:consume_item";
+
+fn matches_consumed_item(condition: &CriterionConditions, item_id: &str) -> bool {
+    match condition {
+        CriterionConditions::ConsumeItem(predicate) => predicate.matches(item_id, 1, &[]),
+        CriterionConditions::Custom { .. } => true,
+        _ => false,
+    }
+}
+
+impl PlayerAdvancement {
+    pub(in crate::entity) fn has_consumption_listener(&self, registry_key: &str) -> bool {
+        self.active_listeners
+            .get(CONSUME_ITEM_TRIGGER)
+            .is_some_and(|listeners| {
+                let item_id = format!("minecraft:{registry_key}");
+                listeners
+                    .iter()
+                    .any(|listener| matches_consumed_item(&listener.conditions, &item_id))
+            })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AdvancementTrigger {
     InventoryChanged,
@@ -358,10 +381,8 @@ impl Player {
             }
 
             AdvancementTrigger::ConsumeItem { item_id } => {
-                self.trigger_criterion_event("minecraft:consume_item", |cond| match cond {
-                    CriterionConditions::ConsumeItem(pred) => pred.matches(&item_id, 1, &[]),
-                    CriterionConditions::Custom { .. } => true,
-                    _ => false,
+                self.trigger_criterion_event(CONSUME_ITEM_TRIGGER, |condition| {
+                    matches_consumed_item(condition, &item_id)
                 });
             }
 

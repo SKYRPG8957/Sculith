@@ -1641,6 +1641,16 @@ impl World {
         position: &Vector3<f64>,
         extra_data: i32,
     ) {
+        self.send_bedrock_level_sound(sound_id, position, extra_data, true);
+    }
+
+    fn send_bedrock_level_sound(
+        &self,
+        sound_id: &str,
+        position: &Vector3<f64>,
+        extra_data: i32,
+        observe: bool,
+    ) {
         let packet = CLevelSoundEvent {
             sound_event: sound_id.to_string(),
             position: Vector3::new(position.x as f32, position.y as f32, position.z as f32),
@@ -1656,9 +1666,14 @@ impl World {
         for player in self.players.load().iter() {
             if is_within_chebyshev_distance(chunk_pos, player.get_entity().chunk_pos.load(), 1)
                 && let ClientPlatform::Bedrock(client) = player.client.as_ref()
+                && (observe || client.is_current_protocol())
                 && let Ok(data) = client.serialize_packet(&packet)
             {
-                client.try_enqueue_packet(data);
+                if observe {
+                    client.try_enqueue_packet(data);
+                } else {
+                    client.try_enqueue_packet_data_unobserved(data);
+                }
             }
         }
     }

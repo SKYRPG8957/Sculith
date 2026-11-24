@@ -423,6 +423,23 @@ impl EntityIndex {
         index.matches(registry).then(|| index.mobs.clone())
     }
 
+    pub(super) fn try_has_game_event_listener(
+        &self,
+        registry: &Arc<Registry>,
+        area: &BoundingBox,
+    ) -> Option<bool> {
+        if registry.is_empty() {
+            return Some(false);
+        }
+        let index = self.inner.try_read().ok()?;
+        index.matches(registry).then(|| {
+            index
+                .listeners
+                .iter()
+                .any(|&slot| index.intersects(slot, area))
+        })
+    }
+
     /// Mobs with game event listeners whose body overlaps `area`, in list order.
     pub fn listeners(
         &self,

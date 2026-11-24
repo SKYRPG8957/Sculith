@@ -5580,6 +5580,18 @@ impl Player {
                 self.hunger_manager.saturation.load(),
             )
         };
+        self.try_enqueue_packet_editioned(
+            &CSetHealth::new(self.living_entity.health.load(), food.into(), saturation),
+            &self.bedrock_health_packet(food, saturation, max_health),
+        );
+    }
+
+    pub(super) fn bedrock_health_packet(
+        &self,
+        food: u8,
+        saturation: f32,
+        max_health: f32,
+    ) -> CBedrockAttributes {
         let attribute = |name: &str, current_value, max_value, default_value| BedrockAttribute {
             min_value: 0.0,
             max_value,
@@ -5591,25 +5603,22 @@ impl Player {
             modifiers: Vec::new(),
         };
 
-        self.try_enqueue_packet_editioned(
-            &CSetHealth::new(self.living_entity.health.load(), food.into(), saturation),
-            &CBedrockAttributes {
-                target_runtime_id: VarULong(self.entity_id() as u64),
-                attribute_list: vec![
-                    attribute(
-                        "minecraft:health",
-                        self.living_entity.health.load(),
-                        max_health,
-                        max_health,
-                    ),
-                    attribute("minecraft:player.hunger", food.into(), 20.0, 20.0),
-                    attribute("minecraft:player.saturation", saturation, 20.0, 5.0),
-                ],
-                // This is a client input tick, not our independent server tick counter.
-                // Zero applies the authoritative values without prediction-history matching.
-                tick: VarULong(0),
-            },
-        );
+        CBedrockAttributes {
+            target_runtime_id: VarULong(self.entity_id() as u64),
+            attribute_list: vec![
+                attribute(
+                    "minecraft:health",
+                    self.living_entity.health.load(),
+                    max_health,
+                    max_health,
+                ),
+                attribute("minecraft:player.hunger", food.into(), 20.0, 20.0),
+                attribute("minecraft:player.saturation", saturation, 20.0, 5.0),
+            ],
+            // This is a client input tick, not our independent server tick counter.
+            // Zero applies the authoritative values without prediction-history matching.
+            tick: VarULong(0),
+        }
     }
 
     fn send_bedrock_respawn_state(&self, state: RespawnState) {
@@ -6055,12 +6064,17 @@ impl Player {
         }
 
         let gamemode = event.new_gamemode;
-        self.gamemode.store(gamemode);
         // TODO: Fix this when mojang fixes it
         // This is intentional to keep the pure vanilla mojang experience
         // self.previous_gamemode.store(self.previous_gamemode.load());
         {
             // Use another scope so that we instantly unlock `abilities`.
+            let _food_edit = self
+                .client
+                .bedrock()
+                .filter(|client| client.is_current_protocol())
+                .map(|_| self.living_entity.hold_effect_edit());
+            self.gamemode.store(gamemode);
             let mut abilities = self
                 .abilities
                 .lock()
@@ -8590,6 +8604,12 @@ impl EntityBase for Player {
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         self.write_shoulders(nbt);
         nbt.put_int("DataVersion", DATA_VERSION);
+        // A regional meal commits its held stack and hunger under the writer.
+        let food_edit = self
+            .client
+            .bedrock()
+            .filter(|client| client.is_current_protocol())
+            .map(|_| self.living_entity.hold_effect_edit());
         {
             // Cursor moves and close restitution take this lock before changing inventory slots.
             let cursor = self
@@ -8603,12 +8623,12 @@ impl EntityBase for Player {
                 nbt.put_compound("SculithCursor", item);
             }
         }
-        self.ender_chest_inventory.write_nbt(nbt);
-
         let abilities = self.lock_abilities_and_hunger();
         abilities.write_nbt(nbt);
         self.hunger_manager.write_nbt(nbt);
         drop(abilities);
+        drop(food_edit);
+        self.ender_chest_inventory.write_nbt(nbt);
 
         let total_exp = experience::points_to_level(self.experience_level.load(Ordering::Relaxed))
             + self.experience_points.load(Ordering::Relaxed);

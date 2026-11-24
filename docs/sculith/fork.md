@@ -358,6 +358,14 @@ advances healing and starvation, and publishes the latest food attributes
 after a regional change. Peaceful regeneration, healing or starvation in
 progress, packet observers and coordinated ticks use the world processing path.
 
+The Bedrock player's region can count down an active main-hand food use.
+With an idle input queue and personal inventory, the region can also finish
+simple food that leaves the held item type in the slot. It validates the use
+deadline and held stack, applies the item count and hunger together for saves,
+and queues the owner HUD and use flags for both editions. The world handles
+foods with completion effects, the last item in a stack, matching advancement
+criteria, and observed game events or packets.
+
 Finite passive effects and finite regeneration on current-protocol Bedrock
 players can advance on the player's region.
 The active effects lock protects the remaining durations and the shared

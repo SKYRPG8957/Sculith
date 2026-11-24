@@ -19,7 +19,9 @@ use sculith_protocol::bedrock::client::move_actor_delta::{
     MOVE_ACTOR_DELTA_FLAG_HAS_Z, MOVE_ACTOR_DELTA_FLAG_ON_GROUND,
 };
 use sculith_protocol::bedrock::client::remove_actor::CRemoveActor;
-use sculith_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
+use sculith_protocol::bedrock::client::set_actor_data::{
+    CSetActorData, PropertySyncData, SyncedActorDataList,
+};
 use sculith_protocol::bedrock::client::{CMovePlayer, CSetActorMotion};
 use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use sculith_protocol::codec::var_int::VarInt;
@@ -38,7 +40,6 @@ use sculith_util::math::{pack_degrees, position::chunk_section_from_pos};
 use uuid::Uuid;
 
 use crate::entity::attributes::bedrock_health_update;
-use crate::entity::breath::BreathManager;
 use crate::entity::effect::bedrock_particles::BedrockEffectParticles;
 use crate::entity::living::{RegionalActorDelivery, RegionalEffectData};
 use crate::entity::player::Player;
@@ -1981,11 +1982,11 @@ impl EntityTracker {
         Some(delivery)
     }
 
-    pub(super) fn try_publish_regional_player_air(
+    pub(super) fn try_publish_regional_player_metadata(
         &self,
         world: &World,
         player: &Player,
-        air: i32,
+        metadata: SyncedActorDataList,
         java: Option<Box<[u8]>>,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) -> Option<RegionalActorDelivery> {
@@ -2003,7 +2004,7 @@ impl EntityTracker {
             };
             let packet = CSetActorData {
                 target_runtime_id: VarULong(entity_id as u64),
-                actor_data: BreathManager::bedrock_air_metadata(air),
+                actor_data: metadata,
                 synced_properties: PropertySyncData::default(),
                 tick: VarULong(0),
             };

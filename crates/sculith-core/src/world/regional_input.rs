@@ -1,12 +1,16 @@
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak, atomic::Ordering::Relaxed};
 
+use pumpkin_data::game_event::GameEvent;
 use rustc_hash::FxHashMap;
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use crate::{
-    entity::{Entity, EntityBase, player::Player},
+    entity::{
+        Entity, EntityBase, breath::BreathManager, living::RegionalFoodUseFinish, player::Player,
+    },
     net::{ClientPlatform, bedrock::BedrockClient},
     plugin::api::events::entity::entity_air_change::EntityAirChangeEvent,
+    plugin::api::events::world::generic_game::GenericGameEvent,
     plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
     server::{Server, TickDeadline},
 };
@@ -129,20 +133,28 @@ impl RegionalInput {
                 pending |= RegionalWork::MINING;
             }
             let owns_player = || owns(player.get_entity().chunk_pos.load());
-            if work.intersects(RegionalWork::INPUT | RegionalWork::FOOD_DRAIN)
-                && world.drain_regional_player_food(server, &player, client, deadline, owns_player)
-            {
-                pending |= RegionalWork::FOOD_DRAIN;
-            }
             if work.contains(RegionalWork::ITEM_COOLDOWNS)
                 && client.advance_regional_item_cooldowns(&player, deadline, owns_player)
             {
                 pending |= RegionalWork::ITEM_COOLDOWNS;
             }
             if work.contains(RegionalWork::FOOD_USE)
-                && world.advance_regional_food_use(server, &player, client, deadline, owns_player)
+                && world.advance_regional_food_use(
+                    server,
+                    &player,
+                    client,
+                    deadline,
+                    owns_player,
+                    &mut java_recipients,
+                )
             {
                 pending |= RegionalWork::FOOD_USE;
+            }
+            // A meal is committed before the same player's exhaustion is spent.
+            if work.intersects(RegionalWork::INPUT | RegionalWork::FOOD_DRAIN)
+                && world.drain_regional_player_food(server, &player, client, deadline, owns_player)
+            {
+                pending |= RegionalWork::FOOD_DRAIN;
             }
             if work.contains(RegionalWork::STATUS_EFFECTS)
                 && world.advance_regional_player_effects(
@@ -239,6 +251,7 @@ impl World {
         client: &BedrockClient,
         deadline: TickDeadline,
         owns: impl FnOnce() -> bool,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) -> bool {
         if client.food_use_slot().is_none()
             || !client.is_current_protocol()
@@ -251,6 +264,16 @@ impl World {
         let Ok(_layout) = self.regional_actors.try_read() else {
             return true;
         };
+        if player.living_entity.item_use_time.load(Relaxed) == 1 {
+            return self.finish_regional_food_use(
+                server,
+                player,
+                client,
+                deadline,
+                owns,
+                java_recipients,
+            );
+        }
         client
             .with_idle_play_ingress(player, || {
                 player
@@ -260,6 +283,76 @@ impl World {
                     })
             })
             .unwrap_or(true)
+    }
+
+    fn finish_regional_food_use(
+        &self,
+        server: &Server,
+        player: &Player,
+        client: &BedrockClient,
+        deadline: TickDeadline,
+        owns: impl FnOnce() -> bool,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) -> bool {
+        let plugins = &server.plugin_manager;
+        if plugins.has_handlers::<GenericGameEvent>()
+            || plugins.has_handlers::<PacketSentEvent>()
+            || plugins.has_handlers::<BedrockConnectionPacketSentEvent>()
+        {
+            return false;
+        }
+        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+            return true;
+        };
+
+        let mut pending = true;
+        client.with_idle_player_inventory(player, || {
+            let result = player.living_entity.finish_food_use_on_region(
+                player,
+                client,
+                deadline,
+                |position| {
+                    if !owns() || !player.has_stable_world_membership() {
+                        return false;
+                    }
+                    let chunk = BlockPos::floored_v(position).chunk_position();
+                    if self.players.load().iter().any(|nearby| {
+                        nearby
+                            .client
+                            .bedrock()
+                            .is_some_and(|client| !client.is_current_protocol())
+                            && super::is_within_chebyshev_distance(
+                                chunk,
+                                nearby.get_entity().chunk_pos.load(),
+                                1,
+                            )
+                    }) {
+                        return false;
+                    }
+                    let area = super::game_event::notified_area(
+                        position,
+                        GameEvent::ItemInteractFinish.notification_radius(),
+                    );
+                    self.entity_index
+                        .try_has_game_event_listener(&self.entities.load_full(), &area)
+                        == Some(false)
+                },
+                |metadata, java| {
+                    self.entity_tracker.try_publish_regional_player_metadata(
+                        self,
+                        player,
+                        metadata,
+                        java,
+                        java_recipients,
+                    )
+                },
+            );
+            if let RegionalFoodUseFinish::Finished(position) = result {
+                self.send_bedrock_level_sound("burp", &position, -1, false);
+            }
+            pending = matches!(result, RegionalFoodUseFinish::Pending);
+        });
+        pending
     }
 
     fn advance_regional_player_breath(
@@ -297,10 +390,10 @@ impl World {
                     deadline,
                     |chunk| owns(chunk) && player.has_stable_world_membership(),
                     |air, java| {
-                        self.entity_tracker.try_publish_regional_player_air(
+                        self.entity_tracker.try_publish_regional_player_metadata(
                             self,
                             player,
-                            air,
+                            BreathManager::bedrock_air_metadata(air),
                             java,
                             java_recipients,
                         )
