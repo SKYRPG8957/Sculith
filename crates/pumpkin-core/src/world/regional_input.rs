@@ -5,7 +5,8 @@ use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use crate::{
     entity::{Entity, EntityBase, player::Player},
-    net::ClientPlatform,
+    net::{ClientPlatform, bedrock::BedrockClient},
+    plugin::api::events::entity::entity_air_change::EntityAirChangeEvent,
     plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
     server::{Server, TickDeadline},
 };
@@ -14,7 +15,7 @@ use super::{RegionChunks, RegionLayout, World, entity_tracker::EntityTracker};
 
 bitflags::bitflags! {
     #[derive(Clone, Copy)]
-    struct RegionalWork: u8 {
+    struct RegionalWork: u16 {
         const INPUT = 1;
         const EXPERIENCE_PICKUP = 2;
         const MINING = 4;
@@ -23,6 +24,7 @@ bitflags::bitflags! {
         const INVENTORY_EDITS = 32;
         const FOOD_DRAIN = 64;
         const STATUS_EFFECTS = 128;
+        const BREATH = 256;
     }
 }
 
@@ -123,14 +125,7 @@ impl RegionalInput {
             }
             let owns_player = || owns(player.get_entity().chunk_pos.load());
             if work.intersects(RegionalWork::INPUT | RegionalWork::FOOD_DRAIN)
-                && player.hunger_manager.has_exhaustion_to_drain()
-                && !server.tick_rate_manager.is_frozen()
-                && !server.plugin_manager.has_handlers::<PacketSentEvent>()
-                && !server.plugin_manager.has_handlers::<BedrockConnectionPacketSentEvent>()
-                // Layout publication takes the writer. A busy layout keeps this work pending.
-                && world.regional_actors.try_read().map_or(true, |_layout| {
-                    player.hunger_manager.drain_on_region(&player, client, deadline, owns_player)
-                })
+                && world.drain_regional_player_food(server, &player, client, deadline, owns_player)
             {
                 pending |= RegionalWork::FOOD_DRAIN;
             }
@@ -140,7 +135,6 @@ impl RegionalInput {
                 pending |= RegionalWork::ITEM_COOLDOWNS;
             }
             if work.contains(RegionalWork::STATUS_EFFECTS)
-                && client.is_current_protocol()
                 && world.advance_regional_player_effects(
                     server,
                     &player,
@@ -150,6 +144,18 @@ impl RegionalInput {
                 )
             {
                 pending |= RegionalWork::STATUS_EFFECTS;
+            }
+            if work.contains(RegionalWork::BREATH)
+                && world.recover_regional_player_air(
+                    server,
+                    &player,
+                    client,
+                    deadline,
+                    owns,
+                    &mut java_recipients,
+                )
+            {
+                pending |= RegionalWork::BREATH;
             }
             if work.contains(RegionalWork::INVENTORY_EDITS)
                 && client.inventory_edits().drain_region(
@@ -198,6 +204,72 @@ impl RegionLayout {
 }
 
 impl World {
+    fn drain_regional_player_food(
+        &self,
+        server: &Server,
+        player: &Player,
+        client: &BedrockClient,
+        deadline: TickDeadline,
+        owns: impl Fn() -> bool,
+    ) -> bool {
+        player.hunger_manager.has_exhaustion_to_drain()
+            && !server.tick_rate_manager.is_frozen()
+            && !server.plugin_manager.has_handlers::<PacketSentEvent>()
+            && !server.plugin_manager.has_handlers::<BedrockConnectionPacketSentEvent>()
+            // Layout publication takes the writer. A busy layout keeps this work pending.
+            && self.regional_actors.try_read().map_or(true, |_layout| {
+                player.hunger_manager.drain_on_region(player, client, deadline, owns)
+            })
+    }
+
+    fn recover_regional_player_air(
+        &self,
+        server: &Server,
+        player: &Player,
+        client: &BedrockClient,
+        deadline: TickDeadline,
+        owns: impl Fn(Vector2<i32>) -> bool,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) -> bool {
+        if !player.has_client_loaded()
+            || !player.has_stable_world_membership()
+            || server.tick_rate_manager.is_frozen()
+            || server.plugin_manager.has_handlers::<EntityAirChangeEvent>()
+            || server.plugin_manager.has_handlers::<PacketSentEvent>()
+            || server
+                .plugin_manager
+                .has_handlers::<BedrockConnectionPacketSentEvent>()
+        {
+            return false;
+        }
+        let Ok(_layout) = self.regional_actors.try_read() else {
+            return true;
+        };
+        let Some(_checkpoint) = server.try_regional_entity_save_guard() else {
+            return true;
+        };
+        // An earlier movement packet might still take the player underwater.
+        client
+            .with_idle_play_ingress(player, || {
+                player.breath_manager.recover_on_region(
+                    self,
+                    player,
+                    deadline,
+                    |chunk| owns(chunk) && player.has_stable_world_membership(),
+                    |air, java| {
+                        self.entity_tracker.try_publish_regional_player_air(
+                            self,
+                            player,
+                            air,
+                            java,
+                            java_recipients,
+                        )
+                    },
+                )
+            })
+            .unwrap_or(true)
+    }
+
     fn advance_regional_player_effects(
         &self,
         server: &Server,
@@ -206,7 +278,11 @@ impl World {
         owns_player: impl Fn() -> bool,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) -> bool {
-        if !player.has_client_loaded()
+        if !player
+            .client
+            .bedrock()
+            .is_some_and(|client| client.is_current_protocol())
+            || !player.has_client_loaded()
             || !player.has_stable_world_membership()
             || server.tick_rate_manager.is_frozen()
         {
@@ -322,6 +398,10 @@ impl World {
 
     pub(crate) fn offer_regional_status_effects(&self, id: u64, player: &Arc<Player>) {
         self.offer_regional_work(id, player, RegionalWork::STATUS_EFFECTS);
+    }
+
+    pub(crate) fn offer_regional_breath(&self, id: u64, player: &Arc<Player>) {
+        self.offer_regional_work(id, player, RegionalWork::BREATH);
     }
 
     pub(crate) fn offer_regional_inventory_edits(&self, id: u64, player: &Arc<Player>) {

@@ -227,6 +227,8 @@ struct ClientActivity {
     last_chunk_step: AtomicCell<Option<Instant>>,
     last_food_drain: AtomicCell<Option<Instant>>,
     regional_food_dirty: AtomicBool,
+    last_breath_step: AtomicCell<Option<Instant>>,
+    regional_air_dirty: AtomicBool,
     experience_pickup: AtomicCell<Option<experience_pickup::PickupClock>>,
     item_cooldown: AtomicCell<Option<item_cooldown::ItemCooldownClock>>,
     mining: std::sync::Mutex<Option<mining::MiningClock>>,
@@ -372,6 +374,8 @@ impl BedrockClient {
                 last_chunk_step: AtomicCell::new(None),
                 last_food_drain: AtomicCell::new(None),
                 regional_food_dirty: AtomicBool::new(false),
+                last_breath_step: AtomicCell::new(None),
+                regional_air_dirty: AtomicBool::new(false),
                 experience_pickup: AtomicCell::new(None),
                 item_cooldown: AtomicCell::new(None),
                 mining: std::sync::Mutex::default(),
@@ -890,6 +894,23 @@ impl BedrockClient {
     pub(crate) fn take_regional_food_dirty(&self) -> bool {
         self.activity
             .regional_food_dirty
+            .swap(false, Ordering::AcqRel)
+    }
+
+    /// Serialized by the player's living entity edit guard.
+    pub(crate) fn breath_deadline(&self) -> &AtomicCell<Option<Instant>> {
+        &self.activity.last_breath_step
+    }
+
+    pub(crate) fn mark_regional_air_dirty(&self) {
+        self.activity
+            .regional_air_dirty
+            .store(true, Ordering::Release);
+    }
+
+    pub(crate) fn take_regional_air_dirty(&self) -> bool {
+        self.activity
+            .regional_air_dirty
             .swap(false, Ordering::AcqRel)
     }
 

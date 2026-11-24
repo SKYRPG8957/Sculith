@@ -860,7 +860,7 @@ mod tests {
             ai::test_support::world,
             decoration::armor_stand::ArmorStandEntity,
             item::RegionalItemStep,
-            living::{LivingEntity, MobEffectDelivery},
+            living::{LivingEntity, RegionalActorDelivery},
             passive::cow::CowEntity,
         },
         world::tick_regions::TickRegions,
@@ -1290,7 +1290,11 @@ mod tests {
             at: deadline.at + deadline.period,
             ..deadline
         };
-        living.advance_regional_effects(next, || true, |_, _| Some(MobEffectDelivery::DELIVERED));
+        living.advance_regional_effects(
+            next,
+            || true,
+            |_, _| Some(RegionalActorDelivery::DELIVERED),
+        );
         living.advance_regional_effects(next, || true, |_, _| panic!("duplicate step"));
         assert_eq!(state(), (7.0, 49));
         drop(snapshot);

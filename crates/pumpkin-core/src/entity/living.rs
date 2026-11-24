@@ -194,12 +194,12 @@ pub(crate) struct RegionalEffectData {
     pub health: Option<RegionalEffectHealth>,
 }
 
-pub(crate) struct MobEffectDelivery {
+pub(crate) struct RegionalActorDelivery {
     pub java_queued: bool,
     pub bedrock_queued: bool,
 }
 
-impl MobEffectDelivery {
+impl RegionalActorDelivery {
     pub(crate) const DELIVERED: Self = Self {
         java_queued: true,
         bedrock_queued: true,
@@ -1928,6 +1928,10 @@ impl LivingEntity {
             .contains_key(&effect)
     }
 
+    pub(super) fn try_has_effect(&self, effect: &'static StatusEffect) -> Option<bool> {
+        Some(self.active_effects.try_lock().ok()?.contains_key(&effect))
+    }
+
     pub fn get_effect(&self, effect: &'static StatusEffect) -> Option<Effect> {
         self.active_effects
             .lock()
@@ -3309,6 +3313,10 @@ impl LivingEntity {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    pub(super) fn try_hold_effect_edit(&self) -> Option<std::sync::RwLockWriteGuard<'_, ()>> {
+        self.effect_edit.try_write().ok()
+    }
+
     pub(super) fn hold_living_effect_edit(&self) -> Option<RwLockReadGuard<'_, ()>> {
         (self.entity.entity_type.mob || self.entity.entity_type == &EntityType::PLAYER)
             .then(|| self.hold_effect_edit())
@@ -3378,7 +3386,10 @@ impl LivingEntity {
         &self,
         deadline: TickDeadline,
         owns: impl FnOnce() -> bool,
-        publish: impl FnOnce(&[&'static StatusEffect], RegionalEffectData) -> Option<MobEffectDelivery>,
+        publish: impl FnOnce(
+            &[&'static StatusEffect],
+            RegionalEffectData,
+        ) -> Option<RegionalActorDelivery>,
     ) -> bool {
         if !self.is_alive() {
             return false;
@@ -3429,7 +3440,10 @@ impl LivingEntity {
         &self,
         effects: &mut FxHashMap<&'static StatusEffect, Effect>,
         regenerates: bool,
-        publish: impl FnOnce(&[&'static StatusEffect], RegionalEffectData) -> Option<MobEffectDelivery>,
+        publish: impl FnOnce(
+            &[&'static StatusEffect],
+            RegionalEffectData,
+        ) -> Option<RegionalActorDelivery>,
     ) -> bool {
         let Ok(_edit) = self.effect_edit.try_write() else {
             return false;

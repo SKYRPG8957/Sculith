@@ -19,6 +19,7 @@ use sculith_protocol::bedrock::client::move_actor_delta::{
     MOVE_ACTOR_DELTA_FLAG_HAS_Z, MOVE_ACTOR_DELTA_FLAG_ON_GROUND,
 };
 use sculith_protocol::bedrock::client::remove_actor::CRemoveActor;
+use sculith_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
 use sculith_protocol::bedrock::client::{CMovePlayer, CSetActorMotion};
 use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use sculith_protocol::codec::var_int::VarInt;
@@ -37,8 +38,9 @@ use sculith_util::math::{pack_degrees, position::chunk_section_from_pos};
 use uuid::Uuid;
 
 use crate::entity::attributes::bedrock_health_update;
+use crate::entity::breath::BreathManager;
 use crate::entity::effect::bedrock_particles::BedrockEffectParticles;
-use crate::entity::living::{MobEffectDelivery, RegionalEffectData};
+use crate::entity::living::{RegionalActorDelivery, RegionalEffectData};
 use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase, bedrock_actor_spawn_packet, item::ItemEntity};
 use crate::net::ClientPlatform;
@@ -1939,7 +1941,7 @@ impl EntityTracker {
         expired: &[&'static StatusEffect],
         data: RegionalEffectData,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
-    ) -> Option<MobEffectDelivery> {
+    ) -> Option<RegionalActorDelivery> {
         if server.plugin_manager.has_handlers::<PacketSentEvent>()
             || server
                 .plugin_manager
@@ -1951,6 +1953,73 @@ impl EntityTracker {
         {
             return None;
         }
+        let entity = subject.get_entity();
+        let owner = subject.get_player();
+        let owner_health = match owner.zip(data.health) {
+            Some((player, health)) => {
+                let client = player.client.bedrock()?;
+                let packet =
+                    bedrock_health_update(entity.entity_id, health.health, health.max_health);
+                let bytes = client.serialize_packet(&packet).ok()?;
+                Some((player, client, bytes, health.health))
+            }
+            None => None,
+        };
+        let mut delivery =
+            self.try_send_regional_actor_packets(world, subject, java_recipients, || {
+                Self::encode_regional_effect_changes(entity, expired, data)
+            })?;
+        if let Some((player, client, bytes, health)) = owner_health {
+            let queued = client.try_enqueue_packet_data_unobserved(bytes);
+            // A failed enqueue must be retried by the world HUD update, even if
+            // the old and new health round to the same value.
+            player
+                .last_sent_health
+                .store(if queued { health as i32 } else { -1 }, Relaxed);
+            delivery.bedrock_queued &= queued;
+        }
+        Some(delivery)
+    }
+
+    pub(super) fn try_publish_regional_player_air(
+        &self,
+        world: &World,
+        player: &Player,
+        air: i32,
+        java: Option<Box<[u8]>>,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) -> Option<RegionalActorDelivery> {
+        self.try_send_regional_actor_packets(world, player, java_recipients, || {
+            let entity_id = player.entity_id();
+            let java_packets = match java {
+                Some(data) => {
+                    let packet = CSetEntityMetadata::new(entity_id.into(), data);
+                    vec![
+                        JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION)
+                            .ok()?,
+                    ]
+                }
+                None => Vec::new(),
+            };
+            let packet = CSetActorData {
+                target_runtime_id: VarULong(entity_id as u64),
+                actor_data: BreathManager::bedrock_air_metadata(air),
+                synced_properties: PropertySyncData::default(),
+                tick: VarULong(0),
+            };
+            let mut bytes = Vec::new();
+            BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
+            Some((java_packets, vec![Bytes::from(bytes)]))
+        })
+    }
+
+    fn try_send_regional_actor_packets(
+        &self,
+        world: &World,
+        subject: &dyn EntityBase,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+        prepare: impl FnOnce() -> Option<(Vec<Bytes>, Vec<Bytes>)>,
+    ) -> Option<RegionalActorDelivery> {
         let entity = subject.get_entity();
         let tracked = match self.entity_map.try_get(&entity.entity_id) {
             TryResult::Present(entry) => Some(entry.value().clone()),
@@ -1980,25 +2049,13 @@ impl EntityTracker {
             return None;
         }
         if recipients.clone().next().is_none() {
-            return Some(MobEffectDelivery::DELIVERED);
+            return Some(RegionalActorDelivery::DELIVERED);
         }
 
-        let owner_health = match owner.zip(data.health) {
-            Some((player, health)) => {
-                let client = player.client.bedrock()?;
-                let packet =
-                    bedrock_health_update(entity.entity_id, health.health, health.max_health);
-                let bytes = client.serialize_packet(&packet).ok()?;
-                Some((player, client, bytes, health.health))
-            }
-            None => None,
-        };
-        let (java_packets, bedrock_packets) =
-            Self::encode_regional_effect_changes(entity, expired, data)?;
-
-        // The caller still holds the active effects and edit guards. Pairing
-        // is pinned until the updates have been queued for the same viewers.
-        let mut delivery = MobEffectDelivery::DELIVERED;
+        let (java_packets, bedrock_packets) = prepare()?;
+        // Keep each pairing pinned through queuing so actor data cannot
+        // overtake a new spawn or an existing despawn.
+        let mut delivery = RegionalActorDelivery::DELIVERED;
         for player in recipients {
             match player.client.as_ref() {
                 ClientPlatform::Java(client) => {
@@ -2015,15 +2072,6 @@ impl EntityTracker {
                     }
                 }
             }
-        }
-        if let Some((player, client, bytes, health)) = owner_health {
-            let queued = client.try_enqueue_packet_data_unobserved(bytes);
-            // A failed enqueue must be retried by the world HUD update, even if
-            // the old and new health round to the same value.
-            player
-                .last_sent_health
-                .store(if queued { health as i32 } else { -1 }, Relaxed);
-            delivery.bedrock_queued &= queued;
         }
         Some(delivery)
     }

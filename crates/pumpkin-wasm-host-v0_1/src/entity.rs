@@ -552,11 +552,7 @@ impl HostEntity for PluginHostState {
     fn set_remaining_air(&mut self, entity: Resource<Entity>, air: i32) -> wasmtime::Result<()> {
         let entity = self.get(&entity)?;
         if let Some(player) = entity.get_player() {
-            player
-                .breath_manager
-                .air_supply
-                .store(air, std::sync::atomic::Ordering::Relaxed);
-            player.breath_manager.send_air_supply(player);
+            player.breath_manager.set_air_supply(player, air);
         }
         Ok(())
     }

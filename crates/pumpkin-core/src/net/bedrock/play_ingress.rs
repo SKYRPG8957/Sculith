@@ -91,6 +91,15 @@ impl BedrockClient {
         &self.activity.inventory_edits
     }
 
+    pub(crate) fn with_idle_play_ingress<R>(
+        &self,
+        player: &Player,
+        apply: impl FnOnce() -> R,
+    ) -> Option<R> {
+        let head = self.activity.inbound_head.try_lock().ok()?;
+        (head.is_none() && player.inbound_packets.is_empty()).then(apply)
+    }
+
     pub(crate) fn with_idle_player_inventory(&self, player: &Player, apply: impl FnOnce()) {
         let Ok(head) = self.activity.inbound_head.try_lock() else {
             return;

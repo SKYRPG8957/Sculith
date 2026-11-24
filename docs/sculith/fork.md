@@ -370,6 +370,17 @@ and the remaining effect duration are captured together for saves. The world
 handles other periodic effects, attribute and flag changes, translated
 connections, heal and packet hooks, and coordinated ticks.
 
+A current-protocol Bedrock player can recover air on the region that owns the
+player and the loaded block at eye height. The region checks that earlier
+input has finished and the eyes are in an air block, then uses the same
+four-unit recovery step as the world. This
+matches the 300-unit supply and 3.75-second inhale time in Mojang's player data.
+The region queues actor data for the Bedrock owner and current viewers and
+metadata for Java viewers. A shared deadline prevents a repeated step after
+movement or a coordinated tick. The world handles underwater exposure,
+drowning, unstable positions, and air-change or packet observers. Saves record
+the remaining air and drowning counter under the same edit guard.
+
 The same passive countdown can run on the region that owns a living mob.
 Its assignment changes with its chunk, and its remaining durations and deadline
 travel with the actor. A loaded mob that returns to simulation distance joins

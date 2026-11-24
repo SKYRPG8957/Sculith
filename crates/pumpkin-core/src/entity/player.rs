@@ -3533,7 +3533,7 @@ impl Player {
             .tick_with_deadline(self, server, deadline);
         self.update_bedrock_shield_sneaking();
 
-        self.breath_manager.tick(self);
+        self.breath_manager.tick_with_deadline(self, deadline);
 
         let level_info = self.world().level_info.load();
         if level_info.difficulty == Difficulty::Peaceful
@@ -8641,20 +8641,22 @@ impl EntityBase for Player {
             self.has_played_before.load(Ordering::Relaxed),
         );
 
-        let air_supply = self
-            .breath_manager
-            .air_supply
-            .load(Ordering::Relaxed)
-            .clamp(0, super::breath::MAX_AIR);
+        let (air_supply, drowning_tick) = {
+            let _edit = self.living_entity.hold_effect_edit();
+            (
+                self.breath_manager
+                    .air_supply
+                    .load(Ordering::Relaxed)
+                    .clamp(0, super::breath::MAX_AIR),
+                self.breath_manager
+                    .drowning_tick
+                    .load(Ordering::Relaxed)
+                    .clamp(0, super::breath::DROWNING_INTERVAL - 1),
+            )
+        };
         nbt.put_short("Air", air_supply as i16);
         nbt.put_int("AirSupply", air_supply);
-        nbt.put_int(
-            "DrowningTick",
-            self.breath_manager
-                .drowning_tick
-                .load(Ordering::Relaxed)
-                .clamp(0, super::breath::DROWNING_INTERVAL - 1),
-        );
+        nbt.put_int("DrowningTick", drowning_tick);
 
         nbt.put_string(
             "Dimension",

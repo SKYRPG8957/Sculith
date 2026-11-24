@@ -498,7 +498,7 @@ mod tests {
     use sculith_util::math::vector3::Vector3;
 
     use crate::data::VanillaData;
-    use crate::entity::living::MobEffectDelivery;
+    use crate::entity::living::RegionalActorDelivery;
 
     use super::*;
 
@@ -828,7 +828,7 @@ mod tests {
         assert!(living.advance_regional_effects(
             deadline,
             || true,
-            |_, _| Some(MobEffectDelivery::DELIVERED)
+            |_, _| Some(RegionalActorDelivery::DELIVERED)
         ));
         assert_eq!(living.health.load(), max_health);
         assert!(!living.has_effect(&StatusEffect::NIGHT_VISION));

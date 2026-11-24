@@ -191,9 +191,6 @@ impl SynchedEntityData {
         health: Option<f32>,
         publish: impl FnOnce(Option<Box<[u8]>>) -> Option<bool>,
     ) -> bool {
-        let Ok(mut items) = self.items.try_lock() else {
-            return false;
-        };
         let (particles, ambient) = particles.map_or((None, None), |(particles, ambient)| {
             (
                 Some(DataItem::new(
@@ -204,19 +201,45 @@ impl SynchedEntityData {
                 ambient,
             )
         });
-        let changes: Vec<_> = [
-            particles,
-            ambient.map(|ambient| DataItem::new(living_entity::EFFECT_AMBIENCE_ID, ambient, false)),
-            health.map(|health| DataItem::new(living_entity::DATA_HEALTH_ID, health, false)),
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|change| {
-            items.get(&change.tracked).is_none_or(|current| {
-                current.dirty || current.canonical_bytes != change.canonical_bytes
+        self.try_publish_items(
+            [
+                particles,
+                ambient.map(|ambient| {
+                    DataItem::new(living_entity::EFFECT_AMBIENCE_ID, ambient, false)
+                }),
+                health.map(|health| DataItem::new(living_entity::DATA_HEALTH_ID, health, false)),
+            ]
+            .into_iter()
+            .flatten(),
+            publish,
+        )
+    }
+
+    pub(super) fn try_publish_value<T: MetadataSerializer + Clone + Send + Sync + 'static>(
+        &self,
+        tracked: TrackedData,
+        value: T,
+        publish: impl FnOnce(Option<Box<[u8]>>) -> Option<bool>,
+    ) -> bool {
+        self.try_publish_items([DataItem::new(tracked, value, false)], publish)
+    }
+
+    fn try_publish_items(
+        &self,
+        changes: impl IntoIterator<Item = DataItem>,
+        publish: impl FnOnce(Option<Box<[u8]>>) -> Option<bool>,
+    ) -> bool {
+        let Ok(mut items) = self.items.try_lock() else {
+            return false;
+        };
+        let changes: Vec<_> = changes
+            .into_iter()
+            .filter(|change| {
+                items.get(&change.tracked).is_none_or(|current| {
+                    current.dirty || current.canonical_bytes != change.canonical_bytes
+                })
             })
-        })
-        .collect();
+            .collect();
         let bytes = Self::pack_values(changes.iter(), CURRENT_MC_VERSION);
         let Some(delivered) = publish(bytes) else {
             return false;
