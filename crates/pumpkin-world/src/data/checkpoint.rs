@@ -34,6 +34,7 @@ use crate::{
 use super::player_data::PlayerDataStorage;
 
 const JOURNAL_NAME: &str = ".sculith-world-checkpoint";
+const ITEM_REMAINDER_MAGIC: &[u8; 8] = b"SCWORLD\x05";
 const ITEM_REMOVAL_MAGIC: &[u8; 8] = b"SCWORLD\x04";
 const ENTITY_MAGIC: &[u8; 8] = b"SCWORLD\x03";
 const MAGIC: &[u8; 8] = b"SCWORLD\x02";
@@ -80,6 +81,15 @@ impl EntityChunkImage {
             _ => None,
         }));
         changed
+    }
+
+    pub(crate) fn apply_records(&self, records: &mut Vec<NbtCompound>) -> bool {
+        let removed = self.remove_saved_items(records);
+        if !self.replace && self.records.is_empty() {
+            return removed;
+        }
+        ChunkEntityData::merge_records(records, self.replace, self.records.clone());
+        true
     }
 }
 
@@ -241,7 +251,15 @@ impl SaveCheckpoint {
             .values()
             .flatten()
             .any(|(_, image)| !image.removed_items.is_empty());
-        let mut bytes = if has_removals {
+        let rewrites_items = has_removals
+            && self
+                .entities
+                .values()
+                .flatten()
+                .any(|(_, image)| !image.removed_items.is_empty() && !image.records.is_empty());
+        let mut bytes = if rewrites_items {
+            ITEM_REMAINDER_MAGIC
+        } else if has_removals {
             ITEM_REMOVAL_MAGIC
         } else if has_entities {
             ENTITY_MAGIC
@@ -369,9 +387,7 @@ pub async fn write_entities(
         .iter()
         .filter_map(|(pos, image)| {
             let mut data = existing.remove(pos).unwrap_or_default();
-            ChunkEntityData::merge_records(&mut data, image.replace, image.records.clone());
-            let removed = image.remove_saved_items(&mut data);
-            if !image.replace && image.records.is_empty() && !removed {
+            if !image.apply_records(&mut data) {
                 return None;
             }
             let chunk = ChunkEntityData {
@@ -473,7 +489,8 @@ fn read_chunk_groups<T>(
 
 fn decode(mut bytes: Bytes, format: RegionFormat) -> io::Result<SaveCheckpoint> {
     let (payload, checksum) = bytes.split_last_chunk::<8>().ok_or_else(invalid)?;
-    let has_removals = payload.starts_with(ITEM_REMOVAL_MAGIC);
+    let has_removals =
+        payload.starts_with(ITEM_REMOVAL_MAGIC) || payload.starts_with(ITEM_REMAINDER_MAGIC);
     let has_entities = has_removals || payload.starts_with(ENTITY_MAGIC);
     if *checksum != xxh64(payload, 0).to_be_bytes()
         || !(has_entities || payload.starts_with(MAGIC) || payload.starts_with(LEGACY_MAGIC))
@@ -699,6 +716,88 @@ mod tests {
             panic!("checkpoint did not preserve the entity chunk");
         };
         assert_eq!(*chunk.data.lock().unwrap(), [neighbor, passenger]);
+    }
+
+    #[tokio::test]
+    async fn checkpoint_replaces_a_nested_saved_stack_with_its_remainder() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = LevelFolder::new(root.path().to_path_buf(), root.path().to_path_buf());
+        let saver = EntitySaver::from_config(&sculith_config::chunk::ChunkConfig::Pump);
+        let pos = Vector2::new(2, 1);
+        let uuid = Uuid::from_u128(1);
+        let stack_record = |count| {
+            let mut item = NbtCompound::new();
+            item.put_string("id", "minecraft:stone".to_owned());
+            item.put_int("count", count);
+            let mut actor = NbtCompound::new();
+            actor.put_string("id", "minecraft:item".to_owned());
+            actor.put_uuid("UUID", uuid);
+            actor.put_compound("Item", item);
+            actor
+        };
+        let mut neighbor = NbtCompound::new();
+        let neighbor_id = Uuid::from_u128(2);
+        neighbor.put_string("id", "minecraft:pig".to_owned());
+        neighbor.put_uuid("UUID", neighbor_id);
+        neighbor.put_list("Passengers", vec![NbtTag::Compound(stack_record(5))]);
+        write_entities(
+            &saver,
+            &folder,
+            &[(
+                pos,
+                EntityChunkImage {
+                    replace: true,
+                    records: vec![neighbor],
+                    ..EntityChunkImage::default()
+                },
+            )],
+        )
+        .await
+        .unwrap();
+
+        let remainder = stack_record(4);
+        let checkpoint = SaveCheckpoint {
+            entities: BTreeMap::from([(
+                PathBuf::new(),
+                vec![(
+                    pos,
+                    EntityChunkImage {
+                        replace: false,
+                        records: vec![remainder.clone()],
+                        removed_items: vec![uuid],
+                    },
+                )],
+            )]),
+            ..SaveCheckpoint::default()
+        };
+        checkpoint.publish(root.path(), RegionFormat::Pump).unwrap();
+        assert!(
+            fs::read(root.path().join(JOURNAL_NAME))
+                .unwrap()
+                .starts_with(ITEM_REMAINDER_MAGIC)
+        );
+        let recovered = SaveCheckpoint::read(root.path(), RegionFormat::Pump)
+            .unwrap()
+            .unwrap();
+        for _ in 0..2 {
+            write_entities(&saver, &folder, &recovered.entities[Path::new("")])
+                .await
+                .unwrap();
+        }
+        let (send, mut receive) = tokio::sync::mpsc::channel(1);
+        saver.fetch_chunks(&folder, &[pos], send).await;
+        let Some(LoadedData::Loaded(chunk)) = receive.recv().await else {
+            panic!("checkpoint did not save the remainder");
+        };
+        let records = chunk.data.lock().unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].get_uuid("UUID"), Some(neighbor_id));
+        assert!(
+            records[0]
+                .get_list("Passengers")
+                .is_none_or(<[_]>::is_empty)
+        );
+        assert_eq!(records[1], remainder);
     }
 
     #[test]

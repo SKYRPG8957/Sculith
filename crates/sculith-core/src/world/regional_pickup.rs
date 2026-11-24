@@ -157,7 +157,8 @@ impl World {
                         if !local() {
                             return false;
                         }
-                        let Ok(permit) = server.prepare_item_pickup(player, item, count) else {
+                        let Ok(permit) = server.prepare_item_pickup(player, item, count, None)
+                        else {
                             return false;
                         };
                         checkpoint = permit;
@@ -171,7 +172,7 @@ impl World {
                         i32::from(count),
                     );
                     if let Some(checkpoint) = checkpoint {
-                        checkpoint.record();
+                        checkpoint.record(item);
                     }
                     Some(())
                 },

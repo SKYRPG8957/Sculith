@@ -755,8 +755,12 @@ captures the player and removes the item's saved records by UUID. The record
 locations follow the item across chunk moves and complete stack merges. The
 writer preserves other actors in those chunks, including passengers of a removed
 item. Entity chunk activation waits for replay so it cannot restore an older
-copy while the group is being applied. Partial transfers and stacks affected by
-them use the ordinary pickup path.
+copy while the group is being applied. A partial player pickup of an unmounted
+saved stack without passengers writes the remaining item with its current
+position and UUID. It does this after removing every older record of that stack,
+including a record at the same position. Later pickups can replace or remove
+that remainder in the same group. Stacks split by other operations and pickups
+without known saved records follow the ordinary path.
 
 The server captures touched players, terrain chunks and saved item removals at
 the end of the tick. One group can hold 256 targets, counting halves in the same
@@ -774,8 +778,8 @@ replays a published group before admitting players.
 Standalone Bedrock world export and conversion of entities, player data and
 other block-entity contents remain open.
 
-Automatic checkpoints for partial ground stack transfers, minecart inventories,
-and automation involving other block types remain open.
+Automatic checkpoints for ground stack splits by mobs and automation, minecart
+inventories, and automation involving other block types remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack

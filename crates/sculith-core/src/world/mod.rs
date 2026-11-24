@@ -8023,7 +8023,7 @@ impl World {
         Some(images)
     }
 
-    pub(super) fn entity_storage_path(&self) -> Option<&Path> {
+    pub(crate) fn entity_storage_path(&self) -> Option<&Path> {
         let folder = &self.level.level_folder;
         folder.dim_folder.strip_prefix(&folder.root_folder).ok()
     }

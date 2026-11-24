@@ -10,6 +10,7 @@ use pumpkin_inventory::{
     Inventory, double::DoubleInventory,
     generic_container_screen_handler::GenericContainerScreenHandler, screen_handler::ScreenHandler,
 };
+use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_world::{
     data::checkpoint::{CheckpointFence, EntityChunkImage, SaveCheckpoint},
     level::SyncChunk,
@@ -25,7 +26,10 @@ use crate::{
     block::{blocks::chests::paired_chest_for_inventory, entities::BlockEntity},
     data::player_server::ServerPlayerData,
     entity::{
-        item::{ItemEntity, storage::SavedItemRecord},
+        item::{
+            ItemEntity,
+            storage::{ItemPickupRemainder, SavedItemRecord},
+        },
         player::Player,
     },
     world::World,
@@ -126,6 +130,7 @@ impl Server {
         player: &'a Arc<Player>,
         item: &ItemEntity,
         count: u8,
+        remainder: Option<ItemPickupRemainder>,
     ) -> Result<Option<ItemPickupCheckpoint<'a>>, StorageTransferError> {
         if !self.player_data_storage.is_save_enabled()
             || !player.world().level.save_enabled.load(Ordering::Relaxed)
@@ -135,7 +140,10 @@ impl Server {
         let records = item
             .saved_item_records(count)
             .ok_or(StorageTransferError::Busy)?;
-        if records.is_empty() || records.len() >= MAX_TARGETS {
+        let new_site = remainder
+            .as_ref()
+            .is_some_and(|remainder| !records.contains(&remainder.site));
+        if records.is_empty() || records.len() + usize::from(new_site) >= MAX_TARGETS {
             return Ok(None);
         }
         self.storage_checkpoint
@@ -145,6 +153,7 @@ impl Server {
                 !self.storage_checkpoint.manual_capture_requested(),
                 player,
                 records,
+                remainder,
             )
             .map(Some)
             .ok_or(StorageTransferError::Busy)
@@ -258,7 +267,7 @@ struct Collecting {
     changed: bool,
     players: FxHashMap<Uuid, Arc<Player>>,
     terrain: FxHashMap<(PathBuf, Vector2<i32>), (Arc<World>, SyncChunk)>,
-    removed_items: FxHashSet<SavedItemRecord>,
+    item_records: FxHashMap<SavedItemRecord, Option<NbtCompound>>,
 }
 
 #[derive(Default)]
@@ -287,7 +296,7 @@ impl Phase {
                 changed: false,
                 players: FxHashMap::default(),
                 terrain: FxHashMap::default(),
-                removed_items: FxHashSet::default(),
+                item_records: FxHashMap::default(),
             });
         }
         match self {
@@ -308,21 +317,30 @@ pub(super) struct TransferCheckpoints {
     state: Mutex<State>,
 }
 
-/// Prevents the checkpoint boundary from passing a regional pickup in progress.
+/// Prevents the checkpoint boundary from passing a pickup in progress.
 pub struct ItemPickupCheckpoint<'a> {
     state: MutexGuard<'a, State>,
     player: &'a Arc<Player>,
     records: Vec<SavedItemRecord>,
+    remainder: Option<ItemPickupRemainder>,
 }
 
 impl ItemPickupCheckpoint<'_> {
-    pub(crate) fn record(mut self) {
+    pub(crate) fn record(mut self, item: &ItemEntity) {
         if let Phase::Collecting(batch) = &mut self.state.phase {
             batch
                 .players
                 .entry(self.player.gameprofile.id)
                 .or_insert_with(|| self.player.clone());
-            batch.removed_items.extend(self.records);
+            batch
+                .item_records
+                .extend(self.records.into_iter().map(|record| (record, None)));
+            if let Some(remainder) = self.remainder {
+                item.remember_pickup_remainder(remainder.site.clone(), remainder.count);
+                batch
+                    .item_records
+                    .insert(remainder.site, Some(remainder.actor));
+            }
             batch.changed = true;
         }
     }
@@ -335,19 +353,25 @@ impl TransferCheckpoints {
         start_allowed: bool,
         player: &'a Arc<Player>,
         records: Vec<SavedItemRecord>,
+        remainder: Option<ItemPickupRemainder>,
     ) -> Option<ItemPickupCheckpoint<'a>> {
         let mut state = self.state.try_lock().ok()?;
         let batch = state.phase.collecting(fence, start_allowed)?;
         let new_player = !batch.players.contains_key(&player.gameprofile.id);
         let new_items = records
             .iter()
-            .filter(|record| !batch.removed_items.contains(*record))
-            .count();
+            .filter(|record| !batch.item_records.contains_key(*record))
+            .count()
+            + usize::from(remainder.as_ref().is_some_and(|remainder| {
+                !records.contains(&remainder.site)
+                    && !batch.item_records.contains_key(&remainder.site)
+            }));
         (batch.target_count() + usize::from(new_player) + new_items <= MAX_TARGETS).then_some(
             ItemPickupCheckpoint {
                 state,
                 player,
                 records,
+                remainder,
             },
         )
     }
@@ -488,7 +512,7 @@ impl TransferCheckpoints {
 
 impl Collecting {
     fn target_count(&self) -> usize {
-        self.players.len() + self.terrain.len() + self.removed_items.len()
+        self.players.len() + self.terrain.len() + self.item_records.len()
     }
 
     fn try_reserve_worlds(&self) -> Option<Vec<OwnedMutexGuard<()>>> {
@@ -518,21 +542,14 @@ impl Collecting {
                 .or_default()
                 .push((pos, world.capture_storage_chunk(&chunk)));
         }
-        let mut removals = FxHashMap::<_, Vec<_>>::default();
-        for item in self.removed_items {
-            removals
-                .entry((item.world, item.chunk))
-                .or_default()
-                .push(item.uuid);
+        let mut updates = FxHashMap::<_, EntityChunkImage>::default();
+        for (item, actor) in self.item_records {
+            let image = updates.entry((item.world, item.chunk)).or_default();
+            image.removed_items.push(item.uuid);
+            image.records.extend(actor);
         }
-        for ((path, pos), removed_items) in removals {
-            data.entities.entry(path).or_default().push((
-                pos,
-                EntityChunkImage {
-                    removed_items,
-                    ..EntityChunkImage::default()
-                },
-            ));
+        for ((path, pos), image) in updates {
+            data.entities.entry(path).or_default().push((pos, image));
         }
         (Arc::new(data), self.access)
     }

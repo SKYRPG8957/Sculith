@@ -1496,7 +1496,11 @@ impl Level {
                     .data
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                image.remove_saved_items(&mut data);
+                if chunk.live.load(Ordering::Relaxed) {
+                    image.remove_saved_items(&mut data);
+                } else {
+                    image.apply_records(&mut data);
+                }
             }
         }
         Ok(())

@@ -533,10 +533,17 @@ impl ItemEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let stack_count = stack.item_count;
+        let remainder_count = stack_count.checked_sub(count)?;
+        let remainder = if remainder_count == 0 {
+            None
+        } else {
+            self.checkpoint_remainder(&world, &stack, remainder_count)
+        };
         let mut checkpoint = None;
         if !player.inventory.commit_pickup(pickup, &mut stack, || {
-            if count == stack_count {
-                let Ok(permit) = server.prepare_item_pickup(player, self, count) else {
+            if remainder_count == 0 || remainder.is_some() {
+                let Ok(permit) = server.prepare_item_pickup(player, self, stack_count, remainder)
+                else {
                     return false;
                 };
                 checkpoint = permit;
@@ -545,11 +552,10 @@ impl ItemEntity {
         }) {
             return None;
         }
-        if let Some(checkpoint) = checkpoint {
-            checkpoint.record();
-        }
         let empty = stack.is_empty();
-        if !empty {
+        if let Some(checkpoint) = checkpoint {
+            checkpoint.record(self);
+        } else if !empty {
             self.mark_partial_item_transfer();
         }
         Some((item, count, empty))
@@ -559,6 +565,26 @@ impl ItemEntity {
         !self.entity.is_removed()
             && !self.never_pickup.load(Relaxed)
             && self.pickup_delay.load(Relaxed) == 0
+    }
+
+    fn write_item_nbt(&self, nbt: &mut NbtCompound, item: &ItemStack) {
+        let mut item_compound = NbtCompound::new();
+        item.write_item_stack(&mut item_compound);
+        nbt.put_compound("Item", item_compound);
+
+        let _clock = self
+            .clock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        nbt.put_short("Age", self.item_age.load(Ordering::Relaxed) as i16);
+        nbt.put_short(
+            "PickupDelay",
+            self.pickup_delay.load(Ordering::Relaxed) as i16,
+        );
+        nbt.put_short("Health", self.health.load(Relaxed) as i16);
+        if let Some(thrower) = self.thrower.load() {
+            nbt.put_uuid("Thrower", thrower);
+        }
     }
 
     pub(crate) fn can_be_picked_up_on_region(&self) -> bool {
@@ -1089,23 +1115,7 @@ impl EntityBase for ItemEntity {
             .item_stack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut item_compound = NbtCompound::new();
-        item.write_item_stack(&mut item_compound);
-        nbt.put_compound("Item", item_compound);
-
-        let _clock = self
-            .clock
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        nbt.put_short("Age", self.item_age.load(Ordering::Relaxed) as i16);
-        nbt.put_short(
-            "PickupDelay",
-            self.pickup_delay.load(Ordering::Relaxed) as i16,
-        );
-        nbt.put_short("Health", self.health.load(Relaxed) as i16);
-        if let Some(thrower) = self.thrower.load() {
-            nbt.put_uuid("Thrower", thrower);
-        }
+        self.write_item_nbt(nbt, &item);
     }
 
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
