@@ -20,7 +20,7 @@ protocol and utility packages are `sculith-core`, `sculith-config`,
 `sculith-protocol` and `sculith-util`. Embedders start `sculith_core::SculithServer`
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
-Native Rust plugins must be rebuilt against ABI 41. The native plugin macro
+Native Rust plugins must be rebuilt against ABI 42. The native plugin macro
 exports `SCULITH_API_VERSION`, and the loader also reads the earlier version
 marker. Wasm plugins load by WIT API version.
 Telemetry and update notifications default to off. The optional update checker
@@ -477,6 +477,13 @@ it with any effect expirations on the same deadline. The world processes other
 periodic effects, removals that alter attributes or entity flags, and changes
 that require heal observers, packet observers or translation. Both paths
 share the same deadline to prevent a second step after a handoff.
+
+The active region can also count an ageable mob toward adulthood and advance
+its breeding cooldown. The remaining age and last step follow the mob across
+region extents. A restored mob begins counting after its registration deadline.
+Age locking preserves a baby's remaining age. The world applies maturation,
+including the size and metadata changes for both editions, and advances growth
+when native plugins or entity tick observers require the world path.
 
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the

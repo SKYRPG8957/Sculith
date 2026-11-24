@@ -3486,7 +3486,7 @@ impl LivingEntity {
     fn offer_regional_effects(&self) {
         let world = self.entity.world.load();
         if self.entity.entity_type.mob {
-            world.offer_mob_effects(&self.entity);
+            world.offer_mob_regional_work(&self.entity);
             return;
         }
         if !self.is_player() {

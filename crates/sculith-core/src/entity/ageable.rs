@@ -1,7 +1,13 @@
 use pumpkin_data::tracked_data;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering::Relaxed};
+use std::{
+    sync::{
+        Mutex, MutexGuard, PoisonError,
+        atomic::{AtomicBool, AtomicI32, Ordering::Relaxed},
+    },
+    time::Instant,
+};
 
-use crate::entity::mob::Mob;
+use crate::{entity::mob::Mob, server::TickDeadline};
 
 pub const BABY_START_AGE: i32 = -24000;
 pub const DEFAULT_BABY_SPAWN_CHANCE: f32 = 0.05;
@@ -18,6 +24,7 @@ pub struct AgeableData {
     pub forced_age_timer: AtomicI32,
     pub age_locked: AtomicBool,
     pub age_lock_particle_timer: AtomicI32,
+    last_growth_step: Mutex<Option<Instant>>,
 }
 
 impl Default for AgeableData {
@@ -27,8 +34,85 @@ impl Default for AgeableData {
             forced_age_timer: AtomicI32::new(0),
             age_locked: AtomicBool::new(false),
             age_lock_particle_timer: AtomicI32::new(0),
+            last_growth_step: Mutex::default(),
         }
     }
+}
+
+impl AgeableData {
+    fn lock_growth(&self) -> MutexGuard<'_, Option<Instant>> {
+        self.last_growth_step
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub(crate) fn start_restored_growth(&self, deadline: TickDeadline) {
+        *self.lock_growth() = Some(deadline.at);
+    }
+}
+
+fn advance_age(
+    mob: &(impl AgeableMob + ?Sized),
+    last_step: &mut Option<Instant>,
+    deadline: Option<TickDeadline>,
+    can_mature: bool,
+) -> Option<(i32, i32)> {
+    if let Some((deadline, previous)) = deadline.zip(*last_step)
+        && !deadline.follows(previous)
+    {
+        return None;
+    }
+    let entity = mob.get_entity();
+    let before = mob.get_age();
+    let after = if before < 0 && mob.can_age_up() {
+        before + 1
+    } else if before > 0 {
+        before - 1
+    } else {
+        before
+    };
+    // Maturation can change dimensions, run species hooks and publish metadata.
+    if !can_mature && (before == after || (before < 0 && after == 0)) {
+        return None;
+    }
+    if before != after {
+        entity
+            .age
+            .compare_exchange(before, after, Relaxed, Relaxed)
+            .ok()?;
+    }
+    *last_step = deadline.map(|step| step.at);
+    (before != after).then_some((before, after))
+}
+
+pub(crate) fn advance_regional_growth(
+    mob: &dyn AgeableMob,
+    deadline: TickDeadline,
+    still_owned: impl FnOnce() -> bool,
+) -> Option<i32> {
+    if !mob.can_be_a_baby() {
+        return None;
+    }
+    let mut last_step = mob.get_ageable_data().last_growth_step.try_lock().ok()?;
+    if !still_owned() {
+        return None;
+    }
+    advance_age(mob, &mut last_step, Some(deadline), false).map(|(_, after)| after)
+}
+
+fn publish_age_boundary(mob: &(impl AgeableMob + ?Sized), before: i32, after: i32) {
+    if (before < 0) == (after < 0) {
+        return;
+    }
+    let entity = mob.get_entity();
+    entity.set_synced_data(tracked_data::ageable_mob::DATA_BABY_ID, after < 0);
+    entity.refresh_dimensions();
+    mob.age_boundary_reached();
+    let mut actor_data = entity.bedrock_metadata();
+    if let Some(meta) = mob.mob_metadata() {
+        actor_data.merge(meta.to_bedrock_actor_data());
+    }
+    entity.send_bedrock_actor_data(&actor_data);
 }
 
 #[must_use]
@@ -106,22 +190,11 @@ pub trait AgeableMob: Mob {
     }
 
     fn set_age(&self, new_age: i32) {
-        let mob = self.get_mob_entity();
-        let entity = &mob.living_entity.entity;
-        let old_age = entity.age.swap(new_age, Relaxed);
-
-        if (old_age < 0 && new_age >= 0) || (old_age >= 0 && new_age < 0) {
-            let is_baby = new_age < 0;
-            entity.set_synced_data(tracked_data::ageable_mob::DATA_BABY_ID, is_baby);
-            entity.refresh_dimensions();
-            self.age_boundary_reached();
-            // Full refresh, so growing up also clears the Bedrock baby flag and scale.
-            let mut actor_data = entity.bedrock_metadata();
-            if let Some(meta) = self.mob_metadata() {
-                actor_data.merge(meta.to_bedrock_actor_data());
-            }
-            entity.send_bedrock_actor_data(&actor_data);
-        }
+        let old_age = {
+            let _growth = self.get_ageable_data().lock_growth();
+            self.get_entity().age.swap(new_age, Relaxed)
+        };
+        publish_age_boundary(self, old_age, new_age);
     }
 
     fn age_boundary_reached(&self) {}
@@ -172,7 +245,10 @@ pub trait AgeableMob: Mob {
     }
 
     fn set_age_locked(&self, locked: bool) {
-        self.get_ageable_data().age_locked.store(locked, Relaxed);
+        let data = self.get_ageable_data();
+        let growth = data.lock_growth();
+        data.age_locked.store(locked, Relaxed);
+        drop(growth);
         self.get_entity()
             .set_synced_data(tracked_data::ageable_mob::AGE_LOCKED, locked);
     }
@@ -221,19 +297,19 @@ pub trait AgeableMob: Mob {
     }
 
     fn age_up(&self, seconds: i32, forced: bool) {
-        let mut age = self.get_age();
-        let old_age = age;
-        age = age.wrapping_add(seconds.wrapping_mul(20));
-        if age > 0 {
-            age = 0;
-        }
-
-        let delta = age.wrapping_sub(old_age);
-        self.set_age(age);
-
         let data = self.get_ageable_data();
+        let (old_age, age) = {
+            let _growth = data.lock_growth();
+            let old_age = self.get_age();
+            let age = old_age.wrapping_add(seconds.wrapping_mul(20)).min(0);
+            self.get_entity().age.store(age, Relaxed);
+            (old_age, age)
+        };
+        publish_age_boundary(self, old_age, age);
+
         if forced {
-            data.forced_age.fetch_add(delta, Relaxed);
+            data.forced_age
+                .fetch_add(age.wrapping_sub(old_age), Relaxed);
             if data.forced_age_timer.load(Relaxed) == 0 {
                 data.forced_age_timer.store(40, Relaxed);
             }
@@ -257,11 +333,19 @@ pub trait AgeableMob: Mob {
 
     fn read_ageable_nbt(&self, nbt: &pumpkin_nbt::compound::NbtCompound) {
         if self.can_be_a_baby() {
-            self.set_age(nbt.get_int("Age").unwrap_or(0));
-            self.get_ageable_data()
-                .forced_age
-                .store(nbt.get_int("ForcedAge").unwrap_or(0), Relaxed);
-            self.set_age_locked(nbt.get_bool("AgeLocked").unwrap_or(false));
+            let data = self.get_ageable_data();
+            let age = nbt.get_int("Age").unwrap_or(0);
+            let locked = nbt.get_bool("AgeLocked").unwrap_or(false);
+            let old_age = {
+                let _growth = data.lock_growth();
+                data.forced_age
+                    .store(nbt.get_int("ForcedAge").unwrap_or(0), Relaxed);
+                data.age_locked.store(locked, Relaxed);
+                self.get_entity().age.swap(age, Relaxed)
+            };
+            publish_age_boundary(self, old_age, age);
+            self.get_entity()
+                .set_synced_data(tracked_data::ageable_mob::AGE_LOCKED, locked);
         }
     }
 
@@ -271,12 +355,13 @@ pub trait AgeableMob: Mob {
 
     fn ageable_ai_step(&self) {
         self.tick_age_lock_particle_timer();
-        if self.can_age_up() {
-            let age = self.get_age() + 1;
-            self.set_age(age);
-        } else if self.get_age() > 0 {
-            let age = self.get_age() - 1;
-            self.set_age(age);
+        let deadline = crate::world::actor_deadline(self.get_entity().entity_id);
+        let advanced = {
+            let mut last_step = self.get_ageable_data().lock_growth();
+            advance_age(self, &mut last_step, deadline, true)
+        };
+        if let Some((before, after)) = advanced {
+            publish_age_boundary(self, before, after);
         }
     }
 }

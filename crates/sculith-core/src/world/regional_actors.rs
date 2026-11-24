@@ -13,6 +13,7 @@ use sculith_util::math::vector2::Vector2;
 use crate::{
     entity::{
         Entity, EntityBase,
+        ageable::advance_regional_growth,
         experience_orb::ExperienceOrbEntity,
         item::{ItemEntity, RegionalItemStep},
     },
@@ -21,8 +22,8 @@ use crate::{
 };
 
 use super::{
-    RegionId, RegionLayout, World, entity_tracker::EntityTracker,
-    regional_campfires::RegionalEntityUpdate,
+    RegionId, RegionLayout, World, entity_islands::plugins_observe_entity_ticks,
+    entity_tracker::EntityTracker, regional_campfires::RegionalEntityUpdate,
 };
 
 bitflags::bitflags! {
@@ -31,6 +32,7 @@ bitflags::bitflags! {
         const ITEM = 1;
         const EXPERIENCE = 2;
         const PASSIVE_EFFECTS = 4;
+        const GROWTH = 8;
     }
 }
 
@@ -38,6 +40,7 @@ impl ActorWork {
     fn enabled(server: &Server) -> Self {
         let mut kinds = Self::EXPERIENCE | Self::PASSIVE_EFFECTS;
         kinds.set(Self::ITEM, ItemEntity::timers_unobserved(server));
+        kinds.set(Self::GROWTH, !plugins_observe_entity_ticks(server));
         kinds
     }
 
@@ -46,12 +49,17 @@ impl ActorWork {
             Self::ITEM
         } else if base.entity_type == &EntityType::EXPERIENCE_ORB {
             Self::EXPERIENCE
-        } else if base.regional_effects.load(Relaxed) {
-            Self::PASSIVE_EFFECTS
         } else {
-            Self::empty()
+            let mut work = Self::empty();
+            work.set(Self::PASSIVE_EFFECTS, base.regional_effects.load(Relaxed));
+            work.set(Self::GROWTH, has_mob_growth(base));
+            work
         }
     }
+}
+
+pub(super) fn has_mob_growth(base: &Entity) -> bool {
+    base.entity_type.mob && base.age.load(Relaxed) != 0
 }
 
 thread_local! {
@@ -249,13 +257,13 @@ impl World {
         }
     }
 
-    pub(crate) fn offer_mob_effects(&self, entity: &Entity) {
+    pub(crate) fn offer_mob_regional_work(&self, entity: &Entity) {
         let mut published = self
             .regional_actors
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         if published.contains(entity.entity_id) {
-            // A world scan may have seen the previous effect set become empty.
+            // A world scan may have observed the actor without pending work.
             Arc::make_mut(&mut published);
         }
         self.refresh_actor_owner(&mut published, entity);
@@ -330,6 +338,7 @@ impl World {
         let item_timers = ItemEntity::timers_unobserved(server);
         let native = server.plugin_manager.try_without_native_code();
         let pickups = native.is_some() && Self::regional_pickups_unobserved(server);
+        let mob_growth = native.is_some() && !plugins_observe_entity_ticks(server);
         let mut expired = Vec::new();
         let mut collected = FxHashSet::default();
         let mut java_recipients = FxHashMap::default();
@@ -405,20 +414,19 @@ impl World {
                     expired.push(actor);
                 }
             } else if native.is_some()
-                && base.regional_effects.load(Relaxed)
+                && (base.regional_effects.load(Relaxed) || mob_growth && has_mob_growth(base))
                 && let Some(living) = actor.get_living_entity()
                 && let Some(_checkpoint) = server.try_entity_save_guard()
                 && let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk)
             {
-                living.advance_regional_effects(
-                    deadline,
-                    || {
-                        !base.is_removed()
-                            && std::ptr::eq(base.world.load().as_ref(), self)
-                            && base.chunk_pos.load() == chunk
-                            && owns(chunk)
-                    },
-                    |expired, data| {
+                let still_owned = || {
+                    !base.is_removed()
+                        && std::ptr::eq(base.world.load().as_ref(), self)
+                        && base.chunk_pos.load() == chunk
+                        && owns(chunk)
+                };
+                if base.regional_effects.load(Relaxed) {
+                    living.advance_regional_effects(deadline, still_owned, |expired, data| {
                         self.entity_tracker.try_publish_regional_effect_changes(
                             self,
                             server,
@@ -427,8 +435,21 @@ impl World {
                             data,
                             &mut java_recipients,
                         )
-                    },
-                );
+                    });
+                }
+                if mob_growth
+                    && has_mob_growth(base)
+                    && let Some(ageable) = actor.get_mob().and_then(|mob| mob.as_ageable())
+                    && let Some(age) = advance_regional_growth(ageable, deadline, || {
+                        still_owned() && living.is_alive() && !living.is_dead_or_dying()
+                    })
+                {
+                    tracing::trace!(
+                        entity = base.entity_id,
+                        age,
+                        "Advanced growth on the mob region"
+                    );
+                }
             }
         }
         EntityTracker::flush_regional_java_packets(java_recipients);
@@ -794,6 +815,102 @@ mod tests {
             pig.tick(pig.as_ref(), &server);
         });
         assert_eq!(remaining(), None);
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn mob_growth_uses_one_deadline_across_world_and_region_handoffs() {
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
+        let world = server.worlds.load()[0].clone();
+        let west = Vector2::new(0, 0);
+        let east = Vector2::new(8, 0);
+        let layout = Arc::new(RegionLayout::from_active(
+            FxHashMap::from_iter([(west, 0), (east, 1)]),
+            FxHashMap::from_iter([(0, [west].into()), (1, [east].into())]),
+        ));
+        world.publish_region_layout(&layout, false);
+        for chunk in [west, east] {
+            world
+                .level
+                .loaded_chunks
+                .insert(chunk, ChunkData::empty_sync(chunk.x, chunk.y));
+        }
+
+        let pig = crate::entity::r#type::from_type(
+            &EntityType::PIG,
+            Vector3::new(8.0, 80.0, 8.0),
+            &world,
+            uuid::Uuid::new_v4(),
+        );
+        let base = pig.get_entity();
+        let mob = pig.get_mob().unwrap();
+        let ageable = mob.as_ageable().unwrap();
+        base.has_no_gravity.store(true, Relaxed);
+        mob.get_mob_entity().set_no_ai(true);
+        ageable.set_age(-3);
+        let baby_height = base.get_dimensions(base.pose.load()).height;
+        world.add_entity_silent(pig.clone());
+        let previous = world.regional_actors.read().unwrap().clone();
+        world.assign_regional_actors(&server, &[(&pig, west)], true, &previous);
+
+        let start = Instant::now();
+        let period = Duration::from_millis(50);
+        let deadline = |step| TickDeadline {
+            at: start + period * step,
+            period,
+        };
+        let region_step = |owner, step| {
+            world.advance_region_time(owner, layout.chunks(owner).unwrap(), deadline(step));
+        };
+        let world_step = |step| {
+            tick_actor_with_deadline(base.entity_id, Some(deadline(step)), || {
+                pig.tick(pig.as_ref(), &server);
+            });
+        };
+
+        region_step(0, 0);
+        world_step(0);
+        assert_eq!(ageable.get_age(), -2);
+        base.set_pos(Vector3::new(136.0, 80.0, 8.0));
+        assert_eq!(
+            world.regional_actors.read().unwrap().assigned[&base.entity_id],
+            1
+        );
+        region_step(0, 1);
+        region_step(1, 0);
+        assert_eq!(ageable.get_age(), -2);
+        region_step(1, 1);
+        region_step(1, 2);
+        assert_eq!(ageable.get_age(), -1);
+        assert_eq!(base.get_dimensions(base.pose.load()).height, baby_height);
+        world_step(2);
+        assert_eq!(ageable.get_age(), 0);
+        assert!(base.get_dimensions(base.pose.load()).height > baby_height);
+
+        ageable.set_age_locked(true);
+        ageable.set_age(-3);
+        region_step(1, 3);
+        world_step(3);
+        assert_eq!(ageable.get_age(), -3);
+        ageable.set_age(2);
+        region_step(1, 4);
+        world_step(4);
+        assert_eq!(ageable.get_age(), 1);
+        region_step(1, 5);
+        assert_eq!(ageable.get_age(), 0);
+
+        world_step(6);
+        ageable.set_age(2);
+        region_step(1, 6);
+        assert_eq!(ageable.get_age(), 2);
+        ageable
+            .get_ageable_data()
+            .start_restored_growth(deadline(7));
+        region_step(1, 7);
+        assert_eq!(ageable.get_age(), 2);
+        region_step(1, 8);
+        assert_eq!(ageable.get_age(), 1);
         server.shutdown().await;
     }
 

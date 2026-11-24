@@ -455,6 +455,7 @@ impl World {
         let schedules_actor = |entity: &dyn EntityBase| {
             let base = entity.get_entity();
             base.regional_effects.load(Relaxed)
+                || super::regional_actors::has_mob_growth(base)
                 || base.entity_type == &EntityType::EXPERIENCE_ORB
                 || item_timers && base.entity_type == &EntityType::ITEM
         };
@@ -496,6 +497,11 @@ impl World {
                 && let Some(living) = entity.get_living_entity()
             {
                 living.start_restored_regional_effects(deadline);
+            }
+            if super::regional_actors::has_mob_growth(entity.get_entity())
+                && let Some(ageable) = entity.get_mob().and_then(|mob| mob.as_ageable())
+            {
+                ageable.get_ageable_data().start_restored_growth(deadline);
             }
             actors.push((pos, entity));
         }

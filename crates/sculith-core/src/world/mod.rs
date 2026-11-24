@@ -5470,8 +5470,8 @@ impl World {
 
     fn finish_entity_registration(&self, entity: &Arc<dyn EntityBase>) {
         let base = entity.get_entity();
-        if base.regional_effects.load(Relaxed) {
-            self.offer_mob_effects(base);
+        if base.regional_effects.load(Relaxed) || regional_actors::has_mob_growth(base) {
+            self.offer_mob_regional_work(base);
         }
         self.record_tick_spawn(base.entity_id);
         self.add_pending_riders(entity);
