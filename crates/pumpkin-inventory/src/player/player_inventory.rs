@@ -242,9 +242,11 @@ impl PlayerInventory {
             .main_inventory
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut stack_count = stack.item_count;
-        let self_stack = &mut inv[slot];
+        Self::add_stack_to_main_slot(&mut inv[slot], &stack)
+    }
 
+    fn add_stack_to_main_slot(self_stack: &mut ItemStack, stack: &ItemStack) -> usize {
+        let mut stack_count = stack.item_count;
         if self_stack.is_empty() {
             *self_stack = stack.copy_with_count(0);
         }
@@ -268,12 +270,9 @@ impl PlayerInventory {
             .main_inventory
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (i, stack) in inv.iter().enumerate() {
-            if stack.is_empty() {
-                return i as i16;
-            }
-        }
-        -1
+        inv.iter()
+            .position(ItemStack::is_empty)
+            .map_or(-1, |i| i as i16)
     }
 
     /// Checks if a stack can be added to an existing stack.
@@ -293,22 +292,26 @@ impl PlayerInventory {
             .main_inventory
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if Self::can_stack_add_more(&inv[selected], stack) {
-            return selected as i16;
-        }
+        Self::find_merge_slot(&inv, selected, stack, || {
+            Self::can_stack_add_more(&self.off_hand_item(), stack)
+        })
+        .map_or(-1, |slot| slot as i16)
+    }
 
-        let off_hand = self.off_hand_item();
-        if Self::can_stack_add_more(&off_hand, stack) {
-            return Self::OFF_HAND_SLOT as i16;
+    fn find_merge_slot(
+        main: &[ItemStack; Self::MAIN_SIZE],
+        selected: usize,
+        stack: &ItemStack,
+        off_hand_has_room: impl FnOnce() -> bool,
+    ) -> Option<usize> {
+        if Self::can_stack_add_more(&main[selected], stack) {
+            return Some(selected);
         }
-
-        for (i, item) in inv.iter().enumerate() {
-            if Self::can_stack_add_more(item, stack) {
-                return i as i16;
-            }
+        if off_hand_has_room() {
+            return Some(Self::OFF_HAND_SLOT);
         }
-
-        -1
+        main.iter()
+            .position(|item| Self::can_stack_add_more(item, stack))
     }
 
     /// Inserts a stack into any available slot.
@@ -540,6 +543,42 @@ impl PlayerInventory {
             }
         }
     }
+
+    /// Plans a complete offer with the usual slot priority, leaving held slots to the caller's
+    /// equipment path. Failure leaves the original cursor and inventory untouched.
+    #[must_use]
+    pub fn plan_offer_to_storage(
+        main: &[ItemStack; Self::MAIN_SIZE],
+        selected_slot: u8,
+        off_hand: &ItemStack,
+        stack: &ItemStack,
+    ) -> Option<Vec<(usize, ItemStack)>> {
+        let selected = usize::from(selected_slot);
+        if !Self::is_valid_hotbar_index(selected) {
+            return None;
+        }
+        let mut remaining = stack.clone();
+        let mut after = main.clone();
+        let mut changes = Vec::new();
+        while !remaining.is_empty() {
+            let index = Self::find_merge_slot(&after, selected, &remaining, || {
+                Self::can_stack_add_more(off_hand, &remaining)
+            })
+            .or_else(|| after.iter().position(ItemStack::is_empty))?;
+            if index == selected {
+                return None;
+            }
+            let target = after.get_mut(index)?;
+            let fits = remaining
+                .get_max_stack_size()
+                .checked_sub(target.item_count)?;
+            if fits == 0 || Self::add_stack_to_main_slot(target, &remaining.split(fits)) != 0 {
+                return None;
+            }
+            changes.push((index, target.clone()));
+        }
+        Some(changes)
+    }
 }
 
 impl Clearable for PlayerInventory {
@@ -709,6 +748,50 @@ mod tests {
         let equipment_slots = Arc::new(build_equipment_slots());
         let entity_equipment = Arc::new(Mutex::new(EntityEquipment::new()));
         PlayerInventory::new(entity_equipment, equipment_slots)
+    }
+
+    #[test]
+    fn storage_offer_keeps_the_world_slot_priority() {
+        let inv = create_test_inventory();
+        inv.set_slot(0, ItemStack::new(1, &Item::DIRT));
+        inv.set_slot(4, ItemStack::new(62, &Item::STONE));
+        inv.set_slot(12, ItemStack::new(63, &Item::STONE));
+        let before = inv.main_inventory.read().unwrap().clone();
+        let mut cursor = ItemStack::new(5, &Item::STONE);
+        let plan =
+            PlayerInventory::plan_offer_to_storage(&before, 0, ItemStack::EMPTY, &cursor).unwrap();
+        let mut world_slots = Vec::new();
+        inv.offer_to_slots(&mut cursor, |slot| world_slots.push(slot as usize));
+        assert!(cursor.is_empty());
+        assert_eq!(world_slots, [4, 12, 1]);
+        assert_eq!(
+            plan.iter().map(|(slot, _)| *slot).collect::<Vec<_>>(),
+            world_slots
+        );
+        for (slot, stack) in plan {
+            assert!(inv.get_slot(slot).are_equal(&stack));
+            if !before[slot].is_empty() {
+                assert_eq!(stack.uid, before[slot].uid);
+            }
+        }
+    }
+
+    #[test]
+    fn storage_offer_rejects_partial_returns_and_held_slots() {
+        let mut main = std::array::from_fn(|_| ItemStack::new(64, &Item::DIRT));
+        main[14] = ItemStack::new(63, &Item::ARROW);
+        let cursor = ItemStack::new(2, &Item::ARROW);
+        let plan = |main: &[ItemStack; PlayerInventory::MAIN_SIZE], off_hand: &ItemStack| {
+            PlayerInventory::plan_offer_to_storage(main, 0, off_hand, &cursor)
+        };
+        assert!(plan(&main, ItemStack::EMPTY).is_none());
+        assert_eq!(main[14].item_count, 63);
+        assert_eq!(cursor.item_count, 2);
+
+        main[15] = ItemStack::EMPTY.clone();
+        assert!(plan(&main, &ItemStack::new(63, &Item::ARROW)).is_none());
+        main[0] = ItemStack::new(63, &Item::ARROW);
+        assert!(plan(&main, ItemStack::EMPTY).is_none());
     }
 
     #[test]

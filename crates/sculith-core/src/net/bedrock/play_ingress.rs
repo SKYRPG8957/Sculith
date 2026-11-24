@@ -666,12 +666,32 @@ mod tests {
             .clone();
         let previous = std::mem::replace(
             &mut *cursor.lock().unwrap(),
-            ItemStack::new(1, &Item::STICK),
+            ItemStack::new(2, &Item::STICK),
         );
+        let inventory = &player.inventory;
+        let selected = inventory.get_selected_slot();
+        inventory.set_selected_slot(0);
+        let previous_slot = inventory.get_slot(9);
+        inventory.set_slot(9, ItemStack::new(1, &Item::STICK));
         client.enqueue_play_input(player, close());
         tick_region(world, destination, at + TICK_PERIOD * 3);
+        assert!(!client.inventory_opened.load(Relaxed));
+        assert!(cursor.lock().unwrap().is_empty());
+        assert_eq!(inventory.get_slot(9).item_count, 3);
+
+        client.enqueue_play_input(player, open());
+        tick_region(world, destination, at + TICK_PERIOD * 4);
+        let held_before = inventory.held_item();
+        inventory.set_held_item(ItemStack::new(1, &Item::STICK));
+        *cursor.lock().unwrap() = ItemStack::new(1, &Item::STICK);
+        client.enqueue_play_input(player, close());
+        tick_region(world, destination, at + TICK_PERIOD * 5);
         assert!(client.inventory_opened.load(Relaxed));
         assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        assert_eq!(cursor.lock().unwrap().item_count, 1);
+        inventory.set_held_item(held_before);
+        inventory.set_slot(9, previous_slot);
+        inventory.set_selected_slot(selected);
         *cursor.lock().unwrap() = previous;
         client.drain_world_input(player, None, Some(world), 8);
         assert!(!client.inventory_opened.load(Relaxed));

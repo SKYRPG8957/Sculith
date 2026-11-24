@@ -56,8 +56,8 @@ impl BedrockClient {
         {
             return None;
         }
-        let handler = screen.try_lock().ok()?;
-        let current = handler.as_any().downcast_ref::<PlayerScreenHandler>()?;
+        let mut handler = screen.try_lock().ok()?;
+        let current = handler.as_any_mut().downcast_mut::<PlayerScreenHandler>()?;
         let can_apply = || owns_player() && player.has_stable_world_membership();
         let mut payload = packet.payload.as_ref();
         if packet.id == SInteract::PACKET_ID {
@@ -83,22 +83,22 @@ impl BedrockClient {
             {
                 return None;
             }
-            self.try_close_empty_regional_inventory(player, current, &input, can_apply)
+            self.try_close_regional_inventory(player, current, &input, can_apply)
         }
     }
 
-    fn try_close_empty_regional_inventory(
+    fn try_close_regional_inventory(
         &self,
         player: &Player,
-        screen: &PlayerScreenHandler,
+        screen: &mut PlayerScreenHandler,
         packet: &SContainerClose,
         can_apply: impl FnOnce() -> bool,
     ) -> Option<()> {
-        let _crafting = screen.try_empty_crafting_grid()?;
-        let cursor = screen.get_behaviour().cursor_stack.try_lock().ok()?;
+        let cursor = screen.get_behaviour().cursor_stack.clone();
+        let crafting = screen.try_empty_crafting_grid()?;
+        let mut cursor = cursor.try_lock().ok()?;
         let active = player.living_entity.item_in_use.try_lock().ok()?;
-        if !cursor.is_empty()
-            || player.get_entity().is_sneaking()
+        if player.get_entity().is_sneaking()
             || active
                 .as_ref()
                 .is_some_and(|stack| stack.get_data_component::<BlocksAttacksImpl>().is_some())
@@ -107,22 +107,62 @@ impl BedrockClient {
         }
         let mut drag = self.cursor_drag.try_lock().ok()?;
         let inventory = &player.inventory;
-        let main = inventory.main_inventory.try_read().ok()?;
+        let mut main = inventory.main_inventory.try_write().ok()?;
         let equipment = inventory.entity_equipment.try_lock().ok()?;
+        let selected = inventory.get_selected_slot();
+        let changes = if cursor.is_empty() {
+            Vec::new()
+        } else {
+            let off_hand = inventory
+                .equipment_slots
+                .get(&PlayerInventory::OFF_HAND_SLOT)
+                .map_or_else(|| ItemStack::EMPTY.clone(), |slot| equipment.get(slot));
+            PlayerInventory::plan_offer_to_storage(&main, selected, &off_hand, &cursor)?
+        };
+        let slots = main.iter().enumerate().map(|(index, stack)| {
+            changes
+                .iter()
+                .find(|(slot, _)| *slot == index)
+                .map_or(stack, |(_, updated)| updated)
+        });
+        let changed_slots = changes
+            .iter()
+            .map(|(slot, stack)| self.encode_player_inventory_slot(*slot, stack))
+            .collect::<Option<Vec<_>>>()?;
         let reply = self.serialize_packet(packet).ok()?;
         let packets =
-            self.encode_personal_inventory(inventory, &equipment, main.iter(), &cursor)?;
-        if !can_apply() {
+            self.encode_personal_inventory(inventory, &equipment, slots, ItemStack::EMPTY)?;
+        if inventory.get_selected_slot() != selected || !can_apply() {
             return None;
+        }
+        let returned_slots = changes.len();
+        if !changes.is_empty() {
+            for (slot, stack) in &changes {
+                main[*slot] = stack.clone();
+            }
+            *cursor = ItemStack::EMPTY.clone();
+            player.inventory_changed.store(true, Ordering::Relaxed);
+            drop(crafting);
+            for (slot, stack) in changes {
+                if let Some(screen_slot) =
+                    map_bedrock_slot_to_screen_handler(WINDOW_ID_INVENTORY, slot as u32)
+                {
+                    screen.set_received_stack(screen_slot, stack);
+                }
+            }
+            screen
+                .get_behaviour_mut()
+                .previous_cursor_stack
+                .set_received_stack(ItemStack::EMPTY.clone());
         }
         *drag = None;
         self.inventory_opened.store(false, Ordering::Relaxed);
-        for bytes in std::iter::once(reply).chain(packets) {
+        for bytes in changed_slots.into_iter().chain([reply]).chain(packets) {
             if !self.try_enqueue_packet_data_unobserved(bytes) {
                 break;
             }
         }
-        tracing::trace!(player = %player.gameprofile.name, "Closed Bedrock personal inventory on its region");
+        tracing::trace!(player = %player.gameprofile.name, returned_slots, "Closed Bedrock personal inventory on its region");
         Some(())
     }
 
