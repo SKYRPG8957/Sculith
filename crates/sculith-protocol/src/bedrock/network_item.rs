@@ -373,8 +373,14 @@ impl PacketRead for NetworkItemStackDescriptor {
                 "extra_data_len exceeds 1MB limit",
             ));
         }
-        let mut extra_data = vec![0u8; extra_data_len];
-        buf.read_exact(&mut extra_data)?;
+        let mut extra_data = Vec::new();
+        if buf
+            .take(extra_data_len as u64)
+            .read_to_end(&mut extra_data)?
+            != extra_data_len
+        {
+            return Err(ErrorKind::UnexpectedEof.into());
+        }
 
         Ok(Self {
             id,

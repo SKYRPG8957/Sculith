@@ -697,6 +697,42 @@ impl LivingEntity {
         }
     }
 
+    pub(crate) fn with_regional_hotbar_selection<R>(
+        &self,
+        previous: &ItemStack,
+        next: &ItemStack,
+        apply: impl FnOnce() -> R,
+    ) -> Option<R> {
+        let _edit = self.try_hold_effect_edit()?;
+        let active = self.item_in_use.try_lock().ok()?;
+        if active.is_some()
+            || !self.is_alive()
+            || self.entity.is_sneaking()
+            || [previous, next].into_iter().any(|stack| {
+                stack
+                    .get_data_component::<AttributeModifiersImpl>()
+                    .is_some_and(|component| !component.attribute_modifiers.is_empty())
+            })
+        {
+            return None;
+        }
+        // The world also clears any previously applied main-hand modifiers.
+        let equipment = self.equipment_attribute_modifier_ids.try_lock().ok()?;
+        let attributes = self.attributes.try_read().ok()?;
+        if equipment.contains_key(&EquipmentSlot::MAIN_HAND)
+            || [Attributes::ATTACK_SPEED, Attributes::ATTACK_DAMAGE]
+                .iter()
+                .any(|attribute| {
+                    attributes
+                        .get(&attribute.id)
+                        .is_none_or(|instance| !instance.modifiers.is_empty())
+                })
+        {
+            return None;
+        }
+        Some(apply())
+    }
+
     pub fn send_equipment_changes(&self, equipment: &[(EquipmentSlot, ItemStack)]) {
         if equipment.is_empty() {
             return;

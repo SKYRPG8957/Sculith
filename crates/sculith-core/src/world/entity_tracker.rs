@@ -1973,10 +1973,13 @@ impl EntityTracker {
             }
             None => None,
         };
-        let mut delivery =
-            self.try_send_regional_actor_packets(world, subject, java_recipients, || {
-                Self::encode_regional_effect_changes(entity, expired, data)
-            })?;
+        let mut delivery = self.try_send_regional_actor_packets(
+            world,
+            subject,
+            java_recipients,
+            || Self::encode_regional_effect_changes(entity, expired, data),
+            || Some(()),
+        )?;
         if let Some((player, client, bytes, health)) = owner_health {
             let queued = client.try_enqueue_packet_data_unobserved(bytes);
             // A failed enqueue must be retried by the world HUD update, even if
@@ -1998,48 +2001,85 @@ impl EntityTracker {
         empty_main_hand: bool,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) -> Option<RegionalActorDelivery> {
-        self.try_send_regional_actor_packets(world, player, java_recipients, || {
-            let entity_id = player.entity_id();
-            let mut java_packets = match java {
-                Some(data) => {
-                    let packet = CSetEntityMetadata::new(entity_id.into(), data);
-                    vec![
-                        JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION)
-                            .ok()?,
-                    ]
-                }
-                None => Vec::new(),
-            };
-            let packet = CSetActorData {
-                target_runtime_id: VarULong(entity_id as u64),
-                actor_data: metadata,
-                synced_properties: PropertySyncData::default(),
-                tick: VarULong(0),
-            };
-            let mut bytes = Vec::new();
-            BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
-            let bedrock_viewer_equipment = if empty_main_hand {
-                let empty = ItemStackSerializer::from(ItemStack::EMPTY.clone());
-                let hand = vec![(EquipmentSlot::MAIN_HAND.discriminant(), empty)];
-                let java = CSetEquipment::new(entity_id.into(), hand);
-                java_packets.push(
-                    JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?,
-                );
-                let bedrock = player
-                    .living_entity
-                    .bedrock_hand_equipment(ItemStack::EMPTY, 0);
-                let mut equipment = Vec::new();
-                BedrockClient::write_raw_packet(&bedrock, &mut equipment).ok()?;
-                Some(Bytes::from(equipment))
-            } else {
-                None
-            };
-            Some(RegionalActorPackets {
-                java: java_packets,
-                bedrock: vec![Bytes::from(bytes)],
-                bedrock_viewer_equipment,
-            })
-        })
+        self.try_send_regional_actor_packets(
+            world,
+            player,
+            java_recipients,
+            || {
+                let entity_id = player.entity_id();
+                let mut java_packets = match java {
+                    Some(data) => {
+                        let packet = CSetEntityMetadata::new(entity_id.into(), data);
+                        vec![
+                            JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION)
+                                .ok()?,
+                        ]
+                    }
+                    None => Vec::new(),
+                };
+                let packet = CSetActorData {
+                    target_runtime_id: VarULong(entity_id as u64),
+                    actor_data: metadata,
+                    synced_properties: PropertySyncData::default(),
+                    tick: VarULong(0),
+                };
+                let mut bytes = Vec::new();
+                BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
+                let bedrock_viewer_equipment = if empty_main_hand {
+                    let (java, bedrock) =
+                        Self::encode_regional_main_hand(player, ItemStack::EMPTY)?;
+                    java_packets.push(java);
+                    Some(bedrock)
+                } else {
+                    None
+                };
+                Some(RegionalActorPackets {
+                    java: java_packets,
+                    bedrock: vec![Bytes::from(bytes)],
+                    bedrock_viewer_equipment,
+                })
+            },
+            || Some(()),
+        )
+    }
+
+    pub(crate) fn try_publish_regional_main_hand(
+        &self,
+        world: &World,
+        player: &Player,
+        stack: &ItemStack,
+        select: impl FnOnce() -> Option<()>,
+    ) -> Option<()> {
+        let mut java_recipients = FxHashMap::default();
+        self.try_send_regional_actor_packets(
+            world,
+            player,
+            &mut java_recipients,
+            || {
+                let (java, bedrock) = Self::encode_regional_main_hand(player, stack)?;
+                Some(RegionalActorPackets {
+                    java: vec![java],
+                    bedrock: Vec::new(),
+                    bedrock_viewer_equipment: Some(bedrock),
+                })
+            },
+            select,
+        )?;
+        Self::flush_regional_java_packets(java_recipients);
+        Some(())
+    }
+
+    fn encode_regional_main_hand(player: &Player, stack: &ItemStack) -> Option<(Bytes, Bytes)> {
+        let hand = vec![(
+            EquipmentSlot::MAIN_HAND.discriminant(),
+            ItemStackSerializer::from(stack.clone()),
+        )];
+        let packet = CSetEquipment::new(player.entity_id().into(), hand);
+        let java = JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION).ok()?;
+        let packet = player.living_entity.bedrock_hand_equipment(stack, 0);
+        let mut bedrock = Vec::new();
+        BedrockClient::write_raw_packet(&packet, &mut bedrock).ok()?;
+        Some((java, Bytes::from(bedrock)))
     }
 
     fn try_send_regional_actor_packets(
@@ -2048,6 +2088,7 @@ impl EntityTracker {
         subject: &dyn EntityBase,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
         prepare: impl FnOnce() -> Option<RegionalActorPackets>,
+        apply: impl FnOnce() -> Option<()>,
     ) -> Option<RegionalActorDelivery> {
         let entity = subject.get_entity();
         let tracked = match self.entity_map.try_get(&entity.entity_id) {
@@ -2078,10 +2119,12 @@ impl EntityTracker {
             return None;
         }
         if recipients.clone().next().is_none() {
+            apply()?;
             return Some(RegionalActorDelivery::DELIVERED);
         }
 
         let packets = prepare()?;
+        apply()?;
         // Keep each pairing pinned through queuing so actor data cannot
         // overtake a new spawn or an existing despawn.
         let mut delivery = RegionalActorDelivery::DELIVERED;
@@ -2099,7 +2142,7 @@ impl EntityTracker {
                         delivery.bedrock_queued &=
                             client.try_enqueue_packet_data_unobserved(packet.clone());
                     }
-                    // The owner gets an inventory slot update for the actual hotbar slot.
+                    // The owner's hotbar is managed by its local UI and inventory packets.
                     if let Some(packet) = &packets.bedrock_viewer_equipment
                         && owner.is_none_or(|owner| !std::ptr::eq(owner, player))
                     {

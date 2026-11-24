@@ -107,6 +107,14 @@ player, and writes the changes together under the locks a player save uses.
 The ordered input queue keeps later packets behind the request. Predictions
 from other requests, other screens or slot types, drag state, and observed
 inventory or packet events use the world dispatcher.
+The same ordered queue lets the owner of a native Bedrock player select a
+hotbar slot when the old and new held items leave equipment attributes and
+active item use as they are. The region checks the personal inventory and
+current owner, selects the slot, and sends the authoritative held item to its
+paired Java and Bedrock viewers. Open containers, sneaking or active item use,
+attribute modifiers, translated viewers and observed changes use the world
+dispatcher. A world step that is applying a block break pins the held item
+through its tool checks, drops and durability changes.
 Transfers reserve the source and destination before changing a player's membership.
 Java and Bedrock logins prepare the player before queuing registration on the target
 world. Registration checks the live connection and membership while holding that owner.

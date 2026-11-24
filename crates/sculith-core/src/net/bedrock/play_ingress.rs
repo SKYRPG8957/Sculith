@@ -125,7 +125,8 @@ impl BedrockClient {
         let ready = (Self::is_regional_reply(packet.id)
             || Self::can_prepare_movement(&packet)
             || Self::can_prepare_attack(&packet)
-            || Self::can_route_inventory(&packet))
+            || Self::can_route_inventory(&packet)
+            || Self::can_route_hotbar(&packet))
             && self.is_current_protocol();
         player.inbound_packets.push(packet);
         if ready {
@@ -236,6 +237,23 @@ impl BedrockClient {
             id,
             NetworkStackLatency::PACKET_ID | SClientCacheBlobStatus::PACKET_ID
         )
+    }
+
+    fn handle_regional_reply(&self, player: &Player, packet: &RawPacket) {
+        let reader = &mut packet.payload.as_ref();
+        let result = if packet.id == NetworkStackLatency::PACKET_ID {
+            NetworkStackLatency::read(reader)
+                .map(|packet| self.apply_network_stack_latency(player, packet, false))
+        } else {
+            SClientCacheBlobStatus::read(reader)
+                .map(|packet| self.apply_client_cache_blob_status(packet, false))
+        };
+        if let Err(error) = result {
+            tracing::error!(
+                packet_id = packet.id,
+                "Failed to handle Bedrock play packet: {error}"
+            );
+        }
     }
 
     const fn can_prepare_movement(packet: &RawPacket) -> bool {
@@ -396,9 +414,17 @@ impl BedrockClient {
             if !Self::is_regional_reply(queued.packet.id) {
                 let owns_player = || owns(player.get_entity().chunk_pos.load());
                 if !was_waiting
-                    && self
-                        .try_regional_inventory_request(player, server, &queued.packet, owns_player)
+                    && (self
+                        .try_regional_hotbar_selection(player, server, &queued.packet, owns_player)
                         .is_some()
+                        || self
+                            .try_regional_inventory_request(
+                                player,
+                                server,
+                                &queued.packet,
+                                owns_player,
+                            )
+                            .is_some())
                 {
                     continue;
                 }
@@ -457,21 +483,7 @@ impl BedrockClient {
                 }
                 return false;
             }
-            let packet = queued.packet;
-            let reader = &mut packet.payload.as_ref();
-            let result = if packet.id == NetworkStackLatency::PACKET_ID {
-                NetworkStackLatency::read(reader)
-                    .map(|packet| self.apply_network_stack_latency(player, packet, false))
-            } else {
-                SClientCacheBlobStatus::read(reader)
-                    .map(|packet| self.apply_client_cache_blob_status(packet, false))
-            };
-            if let Err(error) = result {
-                tracing::error!(
-                    packet_id = packet.id,
-                    "Failed to handle Bedrock play packet: {error}"
-                );
-            }
+            self.handle_regional_reply(player, &queued.packet);
         }
         !player.inbound_packets.is_empty()
     }
@@ -492,8 +504,11 @@ mod tests {
     use sculith_protocol::{
         bedrock::{
             client::{CMobEffect, CMovePlayer, update_attributes::CUpdateAttributes},
-            network_item::NetworkItemDescriptor,
-            server::player_auth_input::InputData,
+            network_item::{NetworkItemDescriptor, NetworkItemStackDescriptor},
+            server::{
+                mob_equipment::SMobEquipment, player_auth_input::InputData,
+                player_hotbar::SPlayerHotbar,
+            },
         },
         codec::{var_int::VarInt, var_uint::VarUInt, var_ulong::VarULong},
         serial::PacketWrite,
@@ -583,6 +598,90 @@ mod tests {
                 period: TICK_PERIOD,
             },
         );
+    }
+
+    fn verify_hotbar_selection_after_handoff(
+        world: &Arc<World>,
+        server: &Arc<Server>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        origin: Vector2<i32>,
+        destination: Vector2<i32>,
+    ) {
+        let position = |chunk: Vector2<i32>| {
+            Vector3::new(
+                f64::from(chunk.x) * 16.0 + 8.0,
+                100.0,
+                f64::from(chunk.y) * 16.0 + 8.0,
+            )
+        };
+        let saved_position = player.get_entity().pos.load();
+        let was_loaded = player.has_client_loaded();
+        player.set_client_loaded(true);
+        player.get_entity().set_pos(position(origin));
+        let inventory = &player.inventory;
+        let old_slot = inventory.get_selected_slot();
+        let saved: [ItemStack; 4] = {
+            let mut main = inventory.main_inventory.write().unwrap();
+            let stocks = [
+                &Item::STONE,
+                &Item::DIRT,
+                &Item::COBBLESTONE,
+                &Item::IRON_SWORD,
+            ];
+            std::array::from_fn(|slot| {
+                std::mem::replace(&mut main[slot], ItemStack::new(1, stocks[slot]))
+            })
+        };
+        inventory.set_selected_slot(0);
+        let hotbar = |slot| RawPacket {
+            id: SPlayerHotbar::PACKET_ID,
+            payload: vec![slot, 0, 1].into(),
+        };
+        client.enqueue_play_input(player, hotbar(1));
+        player.get_entity().set_pos(position(destination));
+        let at = Instant::now();
+        tick_region(world, origin, at);
+        assert_eq!(inventory.get_selected_slot(), 0);
+        tick_region(world, destination, at);
+        assert_eq!(inventory.get_selected_slot(), 1);
+        assert_eq!(inventory.held_item().item, &Item::DIRT);
+
+        let mut equipment = Vec::new();
+        VarULong(player.entity_id() as u64)
+            .write(&mut equipment)
+            .unwrap();
+        NetworkItemStackDescriptor::default()
+            .write(&mut equipment)
+            .unwrap();
+        equipment.extend([2, 2, 0]);
+        client.enqueue_play_input(
+            player,
+            RawPacket {
+                id: SMobEquipment::PACKET_ID,
+                payload: equipment.into(),
+            },
+        );
+        client.enqueue_play_input(player, hotbar(3));
+        tick_region(world, destination, at + TICK_PERIOD);
+        assert_eq!(inventory.get_selected_slot(), 2);
+        assert_eq!(inventory.held_item().item, &Item::COBBLESTONE);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 8);
+        assert_eq!(inventory.get_selected_slot(), 3);
+
+        for (current, previous) in inventory
+            .main_inventory
+            .write()
+            .unwrap()
+            .iter_mut()
+            .zip(saved)
+        {
+            *current = previous;
+        }
+        client.select_hotbar_slot(server, player, old_slot, 0);
+        player.set_client_loaded(was_loaded);
+        player.get_entity().set_pos(saved_position);
     }
 
     fn verify_food_finish_refreshes_index_after_handoff(
@@ -1615,6 +1714,7 @@ mod tests {
         assert_eq!(pending_with_lock, 1);
         advance(east);
         check();
+        verify_hotbar_selection_after_handoff(&world, &server, &player, &client, east, west);
         verify_food_finish_refreshes_index_after_handoff(
             &world, &server, &player, &client, west, east,
         );

@@ -3494,13 +3494,17 @@ impl Player {
             self.reset_mining();
         }
 
-        if self.has_delayed_destroy.load(Ordering::Relaxed)
-            && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id)
-        {
+        let delayed_destroy = self.has_delayed_destroy.load(Ordering::Relaxed);
+        let mining = self.mining.load(Ordering::Relaxed);
+        // A regional hotbar selection must wait through tool checks, drops and damage.
+        let held_item = self
+            .client
+            .bedrock()
+            .filter(|client| (delayed_destroy || mining) && client.is_current_protocol())
+            .map(|_| self.living_entity.hold_effect_edit());
+        if delayed_destroy && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id) {
             p.tick_delayed_destroy();
-        } else if self.mining.load(Ordering::Relaxed)
-            && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id)
-        {
+        } else if mining && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id) {
             let pos = *p
                 .mining_pos
                 .lock()
@@ -3527,6 +3531,7 @@ impl Player {
                 }
             }
         }
+        drop(held_item);
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
 
         self.living_entity

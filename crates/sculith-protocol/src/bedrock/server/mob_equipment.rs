@@ -32,7 +32,12 @@ mod tests {
 
     #[test]
     fn mob_equipment_reads_network_item_stack_descriptor() {
-        let item = NetworkItemStackDescriptor::default();
+        let item = NetworkItemStackDescriptor {
+            id: 1,
+            stack_size: 2,
+            extra_data: vec![0; 10],
+            ..Default::default()
+        };
         let mut encoded = Vec::new();
         VarULong(42).write(&mut encoded).unwrap();
         item.write(&mut encoded).unwrap();
@@ -42,7 +47,9 @@ mod tests {
         let packet = SMobEquipment::read(&mut reader).unwrap();
 
         assert_eq!(packet.entity_runtime_id.0, 42);
-        assert_eq!(packet.item.id, 0);
+        assert_eq!(packet.item.id, item.id);
+        assert_eq!(packet.item.stack_size, item.stack_size);
+        assert_eq!(packet.item.extra_data, item.extra_data);
         assert_eq!(packet.slot, 3);
         assert_eq!(packet.selected_slot, 4);
         assert_eq!(packet.container_id, 5);
