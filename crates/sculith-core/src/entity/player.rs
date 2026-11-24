@@ -273,6 +273,7 @@ use pumpkin_data::tag::Taggable;
 use pumpkin_data::{
     Block, BlockState, BlockStateId, Enchantment, screen::WindowType, tag, translation,
 };
+use pumpkin_inventory::crafting::crafting_inventory::CraftingInventory;
 use pumpkin_inventory::generic_container_screen_handler::GenericContainerScreenHandler;
 use pumpkin_inventory::mount_screen_handler::MountScreenHandler;
 use pumpkin_inventory::player::{
@@ -361,6 +362,41 @@ use super::{Entity, EntityBase, GearDamage, NBTStorage, NBTStorageInit};
 use pumpkin_data::potion::Effect;
 const MAX_CACHED_SIGNATURES: u8 = 128; // Vanilla: 128
 const MAX_PREVIOUS_MESSAGES: u8 = 20; // Vanilla: 20
+
+const PERSONAL_CRAFTING_INPUTS_TAG: &str = "SculithCraftingInputs";
+
+fn write_personal_crafting_inputs(nbt: &mut NbtCompound, inputs: &[ItemStack]) {
+    let items: Vec<_> = inputs
+        .iter()
+        .enumerate()
+        .filter(|(_, stack)| !stack.is_empty())
+        .map(|(index, stack)| {
+            let mut item = NbtCompound::new();
+            item.put_byte("Slot", index as i8);
+            stack.write_item_stack(&mut item);
+            NbtTag::Compound(item)
+        })
+        .collect();
+    if !items.is_empty() {
+        nbt.put(PERSONAL_CRAFTING_INPUTS_TAG, NbtTag::List(items));
+    }
+}
+
+fn read_personal_crafting_inputs(nbt: &NbtCompound, inputs: &mut [ItemStack]) {
+    inputs.fill_with(|| ItemStack::EMPTY.clone());
+    if let Some(items) = nbt.get_list(PERSONAL_CRAFTING_INPUTS_TAG) {
+        for tag in items {
+            if let Some(item) = tag.extract_compound()
+                && let Some(slot) = item.get_byte("Slot")
+                && let Ok(index) = usize::try_from(slot)
+                && let Some(input) = inputs.get_mut(index)
+                && let Some(stack) = ItemStack::read_item_stack(item)
+            {
+                *input = stack;
+            }
+        }
+    }
+}
 
 fn write_root_vehicle(nbt: &mut NbtCompound, uuid: Uuid) {
     let value = uuid.as_u128();
@@ -817,6 +853,8 @@ pub struct Player {
     pub signature_cache: Mutex<MessageCache>,
     pub player_screen_handler: Arc<std::sync::Mutex<PlayerScreenHandler>>,
     pub current_screen_handler: std::sync::Mutex<Arc<std::sync::Mutex<dyn ScreenHandler>>>,
+    /// The temporary inputs in this player's personal 2×2 crafting grid.
+    pub(crate) personal_crafting_inventory: Arc<CraftingInventory>,
     /// One carried stack follows the player through every inventory screen.
     inventory_cursor: Arc<Mutex<ItemStack>>,
     pub screen_handler_sync_id: AtomicU8,
@@ -1047,6 +1085,7 @@ impl Player {
         let player_screen_handler =
             PlayerScreenHandler::new(&inventory, None, 0, Some(server.recipe_manager.clone()));
         let inventory_cursor = player_screen_handler.get_behaviour().cursor_stack.clone();
+        let personal_crafting_inventory = player_screen_handler.crafting_inventory();
         let player_screen_handler = Arc::new(Mutex::new(player_screen_handler));
 
         // Initialize abilities based on gamemode (like vanilla's GameMode.setAbilities())
@@ -1169,6 +1208,7 @@ impl Player {
             signature_cache: Mutex::new(MessageCache::default()),
             player_screen_handler: player_screen_handler.clone(),
             current_screen_handler: std::sync::Mutex::new(player_screen_handler),
+            personal_crafting_inventory,
             inventory_cursor,
             screen_handler_sync_id: AtomicU8::new(0),
             screen_handler_listener: Arc::new(ScreenListener(inventory_changed.clone())),
@@ -8632,12 +8672,18 @@ impl EntityBase for Player {
             .bedrock()
             .filter(|client| client.is_current_protocol())
             .map(|_| self.living_entity.hold_effect_edit());
-        // The region holds the cursor lock across inventory edits and crafting statistics.
+        // Regional edits take these locks in the same order.
         let cursor = self
             .inventory_cursor
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let inputs = self
+            .personal_crafting_inventory
+            .items
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.inventory.write_nbt(nbt);
+        write_personal_crafting_inputs(nbt, &inputs);
         if !cursor.is_empty() {
             let mut item = NbtCompound::new();
             cursor.write_item_stack(&mut item);
@@ -8647,6 +8693,7 @@ impl EntityBase for Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .write_nbt(nbt);
+        drop(inputs);
         drop(cursor);
         let abilities = self.lock_abilities_and_hunger();
         abilities.write_nbt(nbt);
@@ -8772,6 +8819,14 @@ impl EntityBase for Player {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = cursor;
         }
+        read_personal_crafting_inputs(
+            nbt,
+            &mut self
+                .personal_crafting_inventory
+                .items
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
         self.ender_chest_inventory.read_nbt_non_mut(nbt);
         self.living_entity
             .apply_current_equipment_attribute_modifiers();
@@ -9974,14 +10029,49 @@ impl InventoryPlayer for Player {
 #[cfg(test)]
 mod tests {
     use super::{
-        bedrock_container_slot, bedrock_container_type, read_last_death_location,
-        read_root_vehicle, write_last_death_location, write_root_vehicle,
+        PERSONAL_CRAFTING_INPUTS_TAG, bedrock_container_slot, bedrock_container_type,
+        read_last_death_location, read_personal_crafting_inputs, read_root_vehicle,
+        write_last_death_location, write_personal_crafting_inputs, write_root_vehicle,
     };
-    use pumpkin_data::{Block, screen::WindowType};
+    use pumpkin_data::{Block, item::Item, item_stack::ItemStack, screen::WindowType};
     use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
     use sculith_protocol::bedrock::network_item::ContainerName;
     use sculith_util::math::{position::BlockPos, vector3::Vector3};
     use uuid::Uuid;
+
+    #[test]
+    fn personal_crafting_checkpoint_preserves_cells_and_reads_old_saves() {
+        let inputs = [
+            ItemStack::new(3, &Item::STONE),
+            ItemStack::EMPTY.clone(),
+            ItemStack::EMPTY.clone(),
+            ItemStack::new(1, &Item::OAK_LOG),
+        ];
+        let mut nbt = NbtCompound::new();
+        write_personal_crafting_inputs(&mut nbt, &inputs);
+        let mut entries = nbt.get_list(PERSONAL_CRAFTING_INPUTS_TAG).unwrap().to_vec();
+        assert_eq!(entries.len(), 2);
+        let mut invalid = NbtCompound::new();
+        invalid.put_byte("Slot", 4);
+        ItemStack::new(64, &Item::STONE).write_item_stack(&mut invalid);
+        entries.push(NbtTag::Compound(invalid));
+        nbt.put(PERSONAL_CRAFTING_INPUTS_TAG, NbtTag::List(entries));
+
+        let mut restored: [ItemStack; 4] = std::array::from_fn(|_| ItemStack::EMPTY.clone());
+        read_personal_crafting_inputs(&nbt, &mut restored);
+        assert!(
+            restored
+                .iter()
+                .zip(&inputs)
+                .all(|(got, old)| got.are_equal(old))
+        );
+
+        let mut legacy = NbtCompound::new();
+        read_personal_crafting_inputs(&legacy, &mut restored);
+        assert!(restored.iter().all(ItemStack::is_empty));
+        write_personal_crafting_inputs(&mut legacy, &restored);
+        assert!(legacy.get_list(PERSONAL_CRAFTING_INPUTS_TAG).is_none());
+    }
 
     #[test]
     fn bedrock_container_types_and_slots_map_consistently() {

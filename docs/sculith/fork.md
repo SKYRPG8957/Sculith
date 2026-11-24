@@ -125,6 +125,10 @@ inventory requests, closing and the inventory refresh.
 World screen transitions share the guard used by the region, from sending the
 screen packet through replacing the handler. The world handles mounted and
 shared containers, close observers, and returns that need held slots or drops.
+Player checkpoints capture the four personal crafting inputs in the same
+snapshot as the inventory, cursor and crafting statistics. The inputs return
+to their saved cells on either edition. Bedrock publishes a nonempty grid
+with the personal screen's open response, before later inventory requests.
 The same ordered queue lets the owner of a native Bedrock player select a
 hotbar slot when the old and new held items leave equipment attributes and
 active item use as they are. The region checks the personal inventory and

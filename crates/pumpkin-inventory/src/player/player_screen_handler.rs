@@ -69,7 +69,13 @@ impl PlayerScreenHandler {
         self.behaviour.slots[slot].clone()
     }
 
-    /// Keeps the crafting inputs stable while the region prepares and applies a close.
+    /// Gets the same crafting inventory used by the personal screen's input slots.
+    #[must_use]
+    pub fn crafting_inventory(&self) -> Arc<CraftingInventory> {
+        self.crafting_inventory.clone()
+    }
+
+    /// Keeps the crafting inputs stable while the region prepares and applies an edit.
     #[must_use]
     pub fn try_crafting_inputs(&self) -> Option<RwLockWriteGuard<'_, Vec<ItemStack>>> {
         self.crafting_inventory.items.try_write().ok()

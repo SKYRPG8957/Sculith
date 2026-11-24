@@ -4,6 +4,7 @@ use super::*;
 use crate::plugin::{
     player::inventory_close::InventoryCloseEvent, server::packet::BedrockConnectionPacketSentEvent,
 };
+use bytes::Bytes;
 use pumpkin_data::data_component_impl::BlocksAttacksImpl;
 use pumpkin_inventory::player::player_screen_handler::PlayerScreenHandler;
 use sculith_protocol::{RawPacket, packet::Packet, serial::PacketRead};
@@ -18,6 +19,37 @@ const fn personal_inventory_open_packet() -> CContainerOpen {
 }
 
 impl BedrockClient {
+    fn encode_personal_inventory_open(
+        &self,
+        inputs: &[ItemStack],
+    ) -> std::io::Result<(Bytes, Vec<Bytes>)> {
+        let open = self.serialize_packet(&personal_inventory_open_packet())?;
+        let updates = if inputs.iter().any(|stack| !stack.is_empty()) {
+            inputs
+                .iter()
+                .enumerate()
+                .map(|(index, stack)| self.encode_personal_crafting_input(index, stack))
+                .collect::<std::io::Result<_>>()?
+        } else {
+            Vec::new()
+        };
+        Ok((open, updates))
+    }
+
+    fn send_personal_inventory_open(&self, open: Bytes, updates: Vec<Bytes>, observe: bool) {
+        self.inventory_opened.store(true, Ordering::Relaxed);
+        for packet in std::iter::once(open).chain(updates) {
+            let sent = if observe {
+                self.try_enqueue_packet_data(packet)
+            } else {
+                self.try_enqueue_packet_data_unobserved(packet)
+            };
+            if !sent {
+                break;
+            }
+        }
+    }
+
     pub(in crate::net::bedrock) fn can_route_inventory_screen(packet: &RawPacket) -> bool {
         // Action, runtime ID and optional hit position, or three close fields.
         (packet.id == SInteract::PACKET_ID
@@ -62,18 +94,19 @@ impl BedrockClient {
         let mut payload = packet.payload.as_ref();
         if packet.id == SInteract::PACKET_ID {
             let input = SInteract::read(&mut payload).ok()?;
-            if !payload.is_empty() || !matches!(input.action, Action::OpenInventory) || !can_apply()
-            {
+            if !payload.is_empty() || !matches!(input.action, Action::OpenInventory) {
                 return None;
             }
-            if !self.inventory_opened.load(Ordering::Relaxed) {
-                let reply = self
-                    .serialize_packet(&personal_inventory_open_packet())
-                    .ok()?;
-                self.inventory_opened.store(true, Ordering::Relaxed);
-                self.try_enqueue_packet_data_unobserved(reply);
-                tracing::trace!(player = %player.gameprofile.name, "Opened Bedrock personal inventory on its region");
+            if self.inventory_opened.load(Ordering::Relaxed) {
+                return can_apply().then_some(());
             }
+            let inputs = player.personal_crafting_inventory.items.try_read().ok()?;
+            let (open, updates) = self.encode_personal_inventory_open(&inputs).ok()?;
+            if !can_apply() {
+                return None;
+            }
+            self.send_personal_inventory_open(open, updates, false);
+            tracing::trace!(player = %player.gameprofile.name, "Opened Bedrock personal inventory on its region");
             Some(())
         } else {
             let input = SContainerClose::read(&mut payload).ok()?;
@@ -95,8 +128,8 @@ impl BedrockClient {
         can_apply: impl FnOnce() -> bool,
     ) -> Option<()> {
         let cursor = screen.get_behaviour().cursor_stack.clone();
-        let mut crafting = screen.try_crafting_inputs()?;
         let mut cursor = cursor.try_lock().ok()?;
+        let mut crafting = screen.try_crafting_inputs()?;
         let active = player.living_entity.item_in_use.try_lock().ok()?;
         if player.get_entity().is_sneaking()
             || active
@@ -187,8 +220,34 @@ impl BedrockClient {
                 if self.inventory_opened.load(Ordering::Relaxed) {
                     return;
                 }
-                self.inventory_opened.store(true, Ordering::Relaxed);
-                self.try_enqueue_client_packet(&personal_inventory_open_packet());
+                let personal = {
+                    let current = player
+                        .current_screen_handler
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    std::ptr::addr_eq(
+                        Arc::as_ptr(&current),
+                        Arc::as_ptr(&player.player_screen_handler),
+                    )
+                };
+                let encoded = if personal {
+                    let inputs = player
+                        .personal_crafting_inventory
+                        .items
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    self.encode_personal_inventory_open(&inputs)
+                } else {
+                    self.encode_personal_inventory_open(&[])
+                };
+                let (open, updates) = match encoded {
+                    Ok(packets) => packets,
+                    Err(err) => {
+                        tracing::error!("Failed to encode Bedrock personal inventory: {err}");
+                        return;
+                    }
+                };
+                self.send_personal_inventory_open(open, updates, true);
             }
             Action::StopRiding => {
                 if let Some(vehicle) = player.get_entity().get_vehicle() {

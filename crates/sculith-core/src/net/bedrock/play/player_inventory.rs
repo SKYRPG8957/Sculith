@@ -1180,6 +1180,21 @@ impl InventoryPlan {
 }
 
 impl BedrockClient {
+    pub(super) fn encode_personal_crafting_input(
+        &self,
+        index: usize,
+        stack: &ItemStack,
+    ) -> std::io::Result<Bytes> {
+        self.serialize_inventory_slot(
+            (
+                CURSOR_SLOT.0,
+                ContainerName::CraftingInput,
+                u32::from(CraftGrid::PERSONAL.first_slot) + index as u32,
+            ),
+            stack,
+        )
+    }
+
     pub(super) fn encode_personal_inventory<'a>(
         &self,
         inventory: &PlayerInventory,
@@ -1231,15 +1246,10 @@ impl BedrockClient {
             after(PersonalSlot::Cursor),
         )?;
         if plan.crafted.is_some() {
-            let grid = CraftGrid::PERSONAL;
-            for index in 0..grid.len() {
+            for index in 0..CraftGrid::PERSONAL.len() {
                 packets.push(
-                    self.serialize_inventory_slot(
-                        (
-                            CURSOR_SLOT.0,
-                            ContainerName::CraftingInput,
-                            u32::from(grid.first_slot) + index as u32,
-                        ),
+                    self.encode_personal_crafting_input(
+                        index,
                         after(PersonalSlot::Crafting(index)),
                     )
                     .ok()?,
@@ -1313,8 +1323,8 @@ impl BedrockClient {
         // Player checkpoints take these locks in the same order, so they see
         // the stacks before the move or after it, including the cursor.
         let cursor = handler.get_behaviour().cursor_stack.clone();
-        let mut crafting = handler.try_crafting_inputs()?;
         let mut cursor = cursor.try_lock().ok()?;
+        let mut crafting = handler.try_crafting_inputs()?;
         let mut main = player.inventory.main_inventory.try_write().ok()?;
         let equipment = player.inventory.entity_equipment.try_lock().ok()?;
         let inventory = PersonalInventoryContents {
