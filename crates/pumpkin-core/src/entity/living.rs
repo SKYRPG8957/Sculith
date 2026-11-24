@@ -183,15 +183,15 @@ struct EffectParticle {
 struct EffectParticles(Vec<EffectParticle>);
 
 #[derive(Clone, Copy)]
-pub(crate) struct RegionalMobHealth {
+pub(crate) struct RegionalEffectHealth {
     pub health: f32,
     pub max_health: f32,
 }
 
-pub(crate) struct RegionalMobEffectData {
+pub(crate) struct RegionalEffectData {
     pub java: Option<Box<[u8]>>,
     pub bedrock_particles: Option<i64>,
-    pub health: Option<RegionalMobHealth>,
+    pub health: Option<RegionalEffectHealth>,
 }
 
 pub(crate) struct MobEffectDelivery {
@@ -1283,7 +1283,7 @@ impl LivingEntity {
     /// Kept for parity, the tick and respawn paths already treat 0 health like vanilla.
     // TODO: config option to prevent this (clamp the amount or run the real death flow).
     pub fn heal(&self, additional_health: f32) {
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         if self.health.load() <= 0.0 || additional_health == 0.0 {
             return;
         }
@@ -1306,7 +1306,7 @@ impl LivingEntity {
     }
 
     pub fn set_health(&self, health: f32) {
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         // Clamp to [0, max_health]
         let max_health = self.get_max_health();
         let clamped = health.max(0.0).min(max_health);
@@ -1318,7 +1318,7 @@ impl LivingEntity {
 
     /// Records health for a caller that owns its clamping and metadata updates.
     pub fn record_health(&self, health: f32) {
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         self.health.store(health);
     }
 
@@ -1343,7 +1343,7 @@ impl LivingEntity {
     }
 
     fn update_max_health(&self, max_health: f32, updated_attribute: impl FnOnce()) {
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         // Update base attribute
         self.set_attribute_base(&Attributes::MAX_HEALTH, max_health as f64);
         updated_attribute();
@@ -1825,7 +1825,7 @@ impl LivingEntity {
         }
         // Order the ordinary tracker publication with region expiry. Effects
         // changed by packet observers leave their new value pending.
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         if let Some(packed) = self.bedrock_effect_particles.take_dirty() {
             publish(packed);
         }
@@ -3301,7 +3301,7 @@ impl LivingEntity {
         }
     }
 
-    fn hold_effect_edit(&self) -> RwLockReadGuard<'_, ()> {
+    pub(super) fn hold_effect_edit(&self) -> RwLockReadGuard<'_, ()> {
         // World callers may reenter through an observer. Regional effect writes
         // take the writer with a nonblocking acquisition and no callbacks.
         self.effect_edit
@@ -3309,8 +3309,9 @@ impl LivingEntity {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    pub(super) fn hold_mob_effect_edit(&self) -> Option<RwLockReadGuard<'_, ()>> {
-        self.entity.entity_type.mob.then(|| self.hold_effect_edit())
+    pub(super) fn hold_living_effect_edit(&self) -> Option<RwLockReadGuard<'_, ()>> {
+        (self.entity.entity_type.mob || self.entity.entity_type == &EntityType::PLAYER)
+            .then(|| self.hold_effect_edit())
     }
 
     fn effect_can_expire_on_region(effect: &Effect) -> bool {
@@ -3322,14 +3323,11 @@ impl LivingEntity {
             && kind != &StatusEffect::GLOWING
     }
 
-    fn effects_can_advance_on_region(
-        effects: &FxHashMap<&'static StatusEffect, Effect>,
-        mob: bool,
-    ) -> bool {
+    fn effects_can_advance_on_region(effects: &FxHashMap<&'static StatusEffect, Effect>) -> bool {
         let mut finite = false;
         for effect in effects.values() {
             let regional_regeneration =
-                mob && effect.effect_type == &StatusEffect::REGENERATION && effect.duration >= 0;
+                effect.effect_type == &StatusEffect::REGENERATION && effect.duration >= 0;
             if effect.duration < -1
                 || (effect.duration == 0 && !Self::effect_can_expire_on_region(effect))
                 || (!regional_regeneration
@@ -3346,7 +3344,7 @@ impl LivingEntity {
         if !self.entity.entity_type.mob {
             return false;
         }
-        let ready = Self::effects_can_advance_on_region(effects, true);
+        let ready = Self::effects_can_advance_on_region(effects);
         let previous = self.entity.regional_effects.swap(ready, Relaxed);
         ready && !previous
     }
@@ -3380,10 +3378,7 @@ impl LivingEntity {
         &self,
         deadline: TickDeadline,
         owns: impl FnOnce() -> bool,
-        publish: impl FnOnce(
-            &[&'static StatusEffect],
-            RegionalMobEffectData,
-        ) -> Option<MobEffectDelivery>,
+        publish: impl FnOnce(&[&'static StatusEffect], RegionalEffectData) -> Option<MobEffectDelivery>,
     ) -> bool {
         if !self.is_alive() {
             return false;
@@ -3392,19 +3387,18 @@ impl LivingEntity {
             return true;
         };
         let mob = self.entity.entity_type.mob;
-        if !Self::effects_can_advance_on_region(&effects, mob) {
+        if !Self::effects_can_advance_on_region(&effects) {
             return false;
         }
         let previous = self.last_effect_step.load();
         if !owns() || !TickDeadline::claim(&self.last_effect_step, Some(deadline)) {
             return true;
         }
-        let regenerates = mob
-            && effects
-                .get(&StatusEffect::REGENERATION)
-                .is_some_and(|effect| {
-                    REGENERATION.should_apply_effect_tick(effect.duration, effect.amplifier)
-                });
+        let regenerates = effects
+            .get(&StatusEffect::REGENERATION)
+            .is_some_and(|effect| {
+                REGENERATION.should_apply_effect_tick(effect.duration, effect.amplifier)
+            });
         if (regenerates || effects.values().any(|effect| effect.duration == 0))
             && !self.commit_regional_effects(&mut effects, regenerates, publish)
         {
@@ -3414,7 +3408,7 @@ impl LivingEntity {
         for effect in effects.values_mut().filter(|effect| effect.duration > 0) {
             effect.duration -= 1;
         }
-        let ready = Self::effects_can_advance_on_region(&effects, mob);
+        let ready = Self::effects_can_advance_on_region(&effects);
         if mob {
             self.entity.regional_effects.store(ready, Relaxed);
             tracing::trace!(
@@ -3435,10 +3429,7 @@ impl LivingEntity {
         &self,
         effects: &mut FxHashMap<&'static StatusEffect, Effect>,
         regenerates: bool,
-        publish: impl FnOnce(
-            &[&'static StatusEffect],
-            RegionalMobEffectData,
-        ) -> Option<MobEffectDelivery>,
+        publish: impl FnOnce(&[&'static StatusEffect], RegionalEffectData) -> Option<MobEffectDelivery>,
     ) -> bool {
         let Ok(_edit) = self.effect_edit.try_write() else {
             return false;
@@ -3455,7 +3446,7 @@ impl LivingEntity {
             let health = self.health.load();
             let max_health = Self::attribute_value_from(attributes, &Attributes::MAX_HEALTH) as f32;
             (!self.is_dead_or_dying() && RegenerationMobEffect::can_heal(health, max_health))
-                .then_some(RegionalMobHealth {
+                .then_some(RegionalEffectHealth {
                     health: (health + RegenerationMobEffect::HEAL_AMOUNT).min(max_health),
                     max_health,
                 })
@@ -3480,17 +3471,21 @@ impl LivingEntity {
         let queue = |java| {
             let delivery = publish(
                 &expired,
-                RegionalMobEffectData {
+                RegionalEffectData {
                     java,
                     bedrock_particles,
                     health,
                 },
             )?;
             bedrock_queued = delivery.bedrock_queued;
-            Some(delivery.java_queued && (health.is_none() || bedrock_queued))
+            // Player health retries through the owner's HUD update. Mob health
+            // can be retried by the tracker with the dirty Java fields.
+            let retry_mob_health =
+                self.entity.entity_type.mob && health.is_some() && !bedrock_queued;
+            Some(delivery.java_queued && !retry_mob_health)
         };
         let published = if particles.is_some() || health.is_some() {
-            self.entity.synched_data.try_publish_mob_effect_data(
+            self.entity.synched_data.try_publish_effect_data(
                 particles,
                 health.map(|health| health.health),
                 queue,
@@ -3505,12 +3500,17 @@ impl LivingEntity {
             self.bedrock_effect_particles
                 .finish_publication(packed, bedrock_queued);
         }
+        let actor = if self.entity.entity_type.mob {
+            "mob"
+        } else {
+            "player"
+        };
         if let Some(update) = health {
             self.health.store(update.health);
             tracing::trace!(
                 entity = self.entity.entity_id,
                 health = update.health,
-                "Regenerated health on the mob region"
+                "Regenerated health on the {actor} region"
             );
         }
         drop(attributes);
@@ -3518,21 +3518,12 @@ impl LivingEntity {
             for kind in &expired {
                 effects.remove(kind);
             }
-            if self.entity.entity_type.mob {
-                tracing::trace!(
-                    entity = self.entity.entity_id,
-                    chunk = ?self.entity.chunk_pos.load(),
-                    count = expired.len(),
-                    "Expired status effects on the mob region"
-                );
-            } else {
-                tracing::trace!(
-                    entity = self.entity.entity_id,
-                    chunk = ?self.entity.chunk_pos.load(),
-                    count = expired.len(),
-                    "Expired status effects on the player region"
-                );
-            }
+            tracing::trace!(
+                entity = self.entity.entity_id,
+                chunk = ?self.entity.chunk_pos.load(),
+                count = expired.len(),
+                "Expired status effects on the {actor} region"
+            );
         }
         true
     }
@@ -3582,7 +3573,7 @@ impl LivingEntity {
             let mob_ready = self.refresh_mob_effect_work(&effects);
             deadline.is_some()
                 && (mob_ready
-                    || (regional_bedrock && Self::effects_can_advance_on_region(&effects, false)))
+                    || (regional_bedrock && Self::effects_can_advance_on_region(&effects)))
         };
 
         // Call the central removal function for each expired effect
@@ -4047,7 +4038,7 @@ impl LivingEntity {
     }
 
     pub fn reset_state(&self) {
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         self.entity.reset_state();
 
         // Restore to maximum health for this entity type
@@ -4140,28 +4131,29 @@ impl LivingEntity {
         if invulnerable_time > 0 {
             nbt.put_int("invulnerable_time", invulnerable_time);
         }
-        nbt.put("Health", NbtTag::Float(self.health.load()));
+        // Regional regeneration changes health and the effect clock together.
+        let (health, effects) = {
+            let effects = self
+                .active_effects
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (
+                self.health.load(),
+                effects.values().cloned().collect::<Vec<_>>(),
+            )
+        };
+        nbt.put("Health", NbtTag::Float(health));
         nbt.put_short("DeathTime", i16::from(self.death_time.load(Relaxed)));
         nbt.put("AbsorptionAmount", NbtTag::Float(self.absorption.load()));
         nbt.put_list("attributes", pack_attributes(self));
-        {
-            let effects_vec: Vec<pumpkin_data::potion::Effect> = {
-                let effects = self
-                    .active_effects
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                effects.values().cloned().collect()
-            };
-            if !effects_vec.is_empty() {
-                // Iterate effects and create Box<[NbtTag]>
-                let mut effects_list = Vec::with_capacity(effects_vec.len());
-                for effect in effects_vec {
-                    let mut effect_nbt = pumpkin_nbt::compound::NbtCompound::new();
-                    effect.write_nbt(&mut effect_nbt);
-                    effects_list.push(NbtTag::Compound(effect_nbt));
-                }
-                nbt.put("active_effects", NbtTag::List(effects_list));
+        if !effects.is_empty() {
+            let mut effects_list = Vec::with_capacity(effects.len());
+            for effect in effects {
+                let mut effect_nbt = NbtCompound::new();
+                effect.write_nbt(&mut effect_nbt);
+                effects_list.push(NbtTag::Compound(effect_nbt));
             }
+            nbt.put("active_effects", NbtTag::List(effects_list));
         }
         nbt.put_bool("FallFlying", self.entity.is_fall_flying());
         nbt.put_int(
@@ -4224,7 +4216,7 @@ impl LivingEntity {
                 }
             }
         }
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         let mut active_effects = self
             .active_effects
             .lock()
@@ -4242,7 +4234,7 @@ impl LivingEntity {
     }
 
     pub fn read_living_nbt_non_mut(&self, nbt: &NbtCompound) {
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         // Load fall distance, but if this entity is currently marked dead ensure we don't restore
         // a lethal fall distance that would immediately re-kill on spawn.
         let fall_distance = nbt
@@ -4464,7 +4456,7 @@ impl LivingEntity {
             return false;
         }
 
-        let _effect_edit = self.hold_mob_effect_edit();
+        let _effect_edit = self.hold_living_effect_edit();
         if self.health.load() <= 0.0 || self.dead.load(Relaxed) {
             return false; // Dying or dead
         }

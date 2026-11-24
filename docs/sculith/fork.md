@@ -356,16 +356,19 @@ advances healing and starvation, and publishes the latest food attributes
 after a regional change. Peaceful regeneration, healing or starvation in
 progress, packet observers and coordinated ticks use the world processing path.
 
-Finite status effects on current-protocol Bedrock players can count down on
-the player's region while they have no periodic effects to apply.
+Finite passive effects and finite regeneration on current-protocol Bedrock
+players can advance on the player's region.
 The active effects lock protects the remaining durations and the shared
 deadline stamp. Pending work and the stamp follow the connection across region
 changes. The region can expire passive effects with no attribute or actor flag
 changes. It sends the removal to the player and existing viewers, including
 updated particle metadata for Java viewers. Effect changes from the world and
-the regional removal use the same edit guard. The world handles periodic
-effects, attribute and flag changes, translated connections and packet hooks.
-Coordinated ticks advance the same duration state, which also supplies saves.
+the regional removal use the same edit guard. On a regeneration pulse, the
+region clamps the heal to the player's current maximum and queues the health
+attribute for the Bedrock owner and health metadata for Java viewers. Health
+and the remaining effect duration are captured together for saves. The world
+handles other periodic effects, attribute and flag changes, translated
+connections, heal and packet hooks, and coordinated ticks.
 
 The same passive countdown can run on the region that owns a living mob.
 Its assignment changes with its chunk, and its remaining durations and deadline

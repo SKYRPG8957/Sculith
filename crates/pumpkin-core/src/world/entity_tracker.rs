@@ -36,9 +36,9 @@ use sculith_util::math::vector3::Vector3;
 use sculith_util::math::{pack_degrees, position::chunk_section_from_pos};
 use uuid::Uuid;
 
-use crate::entity::attributes::bedrock_mob_health_update;
+use crate::entity::attributes::bedrock_health_update;
 use crate::entity::effect::bedrock_particles::BedrockEffectParticles;
-use crate::entity::living::{MobEffectDelivery, RegionalMobEffectData};
+use crate::entity::living::{MobEffectDelivery, RegionalEffectData};
 use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase, bedrock_actor_spawn_packet, item::ItemEntity};
 use crate::net::ClientPlatform;
@@ -1937,7 +1937,7 @@ impl EntityTracker {
         server: &Server,
         subject: &dyn EntityBase,
         expired: &[&'static StatusEffect],
-        data: RegionalMobEffectData,
+        data: RegionalEffectData,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) -> Option<MobEffectDelivery> {
         if server.plugin_manager.has_handlers::<PacketSentEvent>()
@@ -1964,10 +1964,11 @@ impl EntityTracker {
             Some(_) => return None,
             None => None,
         };
+        let owner = subject.get_player();
         let recipients = viewers
             .iter()
             .flat_map(|viewers| viewers.players.values().map(Arc::as_ref))
-            .chain(subject.get_player())
+            .chain(owner)
             .filter(|player| player.can_simulate_in(world));
         if recipients
             .clone()
@@ -1982,6 +1983,16 @@ impl EntityTracker {
             return Some(MobEffectDelivery::DELIVERED);
         }
 
+        let owner_health = match owner.zip(data.health) {
+            Some((player, health)) => {
+                let client = player.client.bedrock()?;
+                let packet =
+                    bedrock_health_update(entity.entity_id, health.health, health.max_health);
+                let bytes = client.serialize_packet(&packet).ok()?;
+                Some((player, client, bytes, health.health))
+            }
+            None => None,
+        };
         let (java_packets, bedrock_packets) =
             Self::encode_regional_effect_changes(entity, expired, data)?;
 
@@ -2005,13 +2016,22 @@ impl EntityTracker {
                 }
             }
         }
+        if let Some((player, client, bytes, health)) = owner_health {
+            let queued = client.try_enqueue_packet_data_unobserved(bytes);
+            // A failed enqueue must be retried by the world HUD update, even if
+            // the old and new health round to the same value.
+            player
+                .last_sent_health
+                .store(if queued { health as i32 } else { -1 }, Relaxed);
+            delivery.bedrock_queued &= queued;
+        }
         Some(delivery)
     }
 
     fn encode_regional_effect_changes(
         entity: &Entity,
         expired: &[&'static StatusEffect],
-        data: RegionalMobEffectData,
+        data: RegionalEffectData,
     ) -> Option<(Vec<Bytes>, Vec<Bytes>)> {
         let mut java_packets = Vec::with_capacity(expired.len() + usize::from(data.java.is_some()));
         let mut bedrock_packets = Vec::with_capacity(usize::from(data.bedrock_particles.is_some()));
@@ -2040,8 +2060,7 @@ impl EntityTracker {
         if entity.entity_type == &EntityType::HORSE
             && let Some(health) = data.health
         {
-            let packet =
-                bedrock_mob_health_update(entity.entity_id, health.health, health.max_health);
+            let packet = bedrock_health_update(entity.entity_id, health.health, health.max_health);
             let mut bytes = Vec::new();
             BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
             bedrock_packets.push(Bytes::from(bytes));

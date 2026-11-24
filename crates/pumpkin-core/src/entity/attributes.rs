@@ -316,10 +316,10 @@ fn bedrock_attribute_update(value: SyncedAttribute, default_value: f32) -> Bedro
 
 pub(super) fn bedrock_horse_health_update(living: &LivingEntity) -> BedrockAttributeUpdate {
     let max_health = living.get_max_health();
-    bedrock_mob_health_update(living.entity_id(), living.health.load(), max_health)
+    bedrock_health_update(living.entity_id(), living.health.load(), max_health)
 }
 
-pub(crate) fn bedrock_mob_health_update(
+pub(crate) fn bedrock_health_update(
     entity_id: i32,
     health: f32,
     max_health: f32,

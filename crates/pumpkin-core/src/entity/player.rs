@@ -5563,6 +5563,11 @@ impl Player {
     }
 
     pub fn send_health(&self) {
+        let _effect_edit = self.living_entity.hold_effect_edit();
+        self.send_health_inner();
+    }
+
+    fn send_health_inner(&self) {
         if !self.has_client_loaded() {
             return;
         }
@@ -5622,6 +5627,7 @@ impl Player {
             return;
         }
 
+        let _effect_edit = self.living_entity.hold_effect_edit();
         let regional = self
             .client
             .bedrock()
@@ -5643,7 +5649,7 @@ impl Player {
             self.last_sent_food.store(food, Ordering::Relaxed);
             self.last_food_saturation
                 .store(saturation == 0.0, Ordering::Relaxed);
-            self.send_health();
+            self.send_health_inner();
         }
     }
 

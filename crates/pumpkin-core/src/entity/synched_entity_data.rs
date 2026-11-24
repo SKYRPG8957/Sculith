@@ -183,11 +183,9 @@ impl SynchedEntityData {
         (bytes, watched_dirty)
     }
 
-    /// Commits the changed mob effect fields after the sender accepts the batch.
+    /// Commits the changed effect and health fields after the sender accepts the batch.
     /// Fields whose publication failed stay dirty for the ordinary tracker pass.
-    pub(super) fn try_publish_mob_effect_data<
-        T: MetadataSerializer + Clone + Send + Sync + 'static,
-    >(
+    pub(super) fn try_publish_effect_data<T: MetadataSerializer + Clone + Send + Sync + 'static>(
         &self,
         particles: Option<(T, Option<bool>)>,
         health: Option<f32>,
@@ -306,11 +304,7 @@ mod test {
         data.set(ambient, false);
         let before = data.pack_dirty_for_version(&CURRENT_MC_VERSION);
 
-        assert!(!data.try_publish_mob_effect_data(
-            Some((VarInt(0), Some(true))),
-            Some(7.0),
-            |_| None
-        ));
+        assert!(!data.try_publish_effect_data(Some((VarInt(0), Some(true))), Some(7.0), |_| None));
         assert_eq!(data.pack_dirty_for_version(&CURRENT_MC_VERSION), before);
 
         let mut expected = DataItem::new(particles, VarInt(0), false).canonical_bytes;
@@ -318,24 +312,22 @@ mod test {
         let health = living_entity::DATA_HEALTH_ID;
         expected.extend(DataItem::new(health, 7.0f32, false).canonical_bytes);
         expected.push(255);
-        assert!(data.try_publish_mob_effect_data(
-            Some((VarInt(0), Some(true))),
-            Some(7.0),
-            |bytes| {
+        assert!(
+            data.try_publish_effect_data(Some((VarInt(0), Some(true))), Some(7.0), |bytes| {
                 assert_eq!(bytes.as_deref(), Some(expected.as_slice()));
                 Some(true)
-            }
-        ));
+            })
+        );
         let items = data.items.lock().unwrap();
         assert!(items[&PLAYER_MODE_CUSTOMISATION].dirty);
         assert!(!items[&particles].dirty && !items[&ambient].dirty && !items[&health].dirty);
         drop(items);
 
-        assert!(data.try_publish_mob_effect_data(
-            Some((VarInt(0), Some(false))),
-            Some(8.0),
-            |_| Some(false)
-        ));
+        assert!(
+            data.try_publish_effect_data(Some((VarInt(0), Some(false))), Some(8.0), |_| Some(
+                false
+            ))
+        );
         let items = data.items.lock().unwrap();
         assert!(items[&PLAYER_MODE_CUSTOMISATION].dirty && items[&ambient].dirty);
         assert!(!items[&particles].dirty && items[&health].dirty);

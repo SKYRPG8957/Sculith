@@ -949,7 +949,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         }
         let _effect_edit = self
             .get_living_entity()
-            .and_then(LivingEntity::hold_mob_effect_edit);
+            .and_then(LivingEntity::hold_living_effect_edit);
         let packet = bedrock_actor_spawn_packet(self, client.is_current_protocol());
         if let Ok(data) = client.serialize_packet(&packet) {
             client.try_enqueue_packet(data);
@@ -4744,19 +4744,18 @@ impl Entity {
         }
 
         let world = self.world.load();
-        let tracked = (self.entity_type != &EntityType::PLAYER)
-            .then(|| world.entity_tracker.get_tracked_entity(self.entity_id))
-            .flatten();
-        // Order the world metadata snapshot and send with regional effect expiry.
+        let tracked = world.entity_tracker.get_tracked_entity(self.entity_id);
+        // Order the world metadata snapshot and send with regional effect changes.
         let _effect_edit = tracked
             .as_ref()
             .and_then(|tracked| tracked.entity.get_living_entity())
-            .and_then(LivingEntity::hold_mob_effect_edit);
+            .and_then(LivingEntity::hold_living_effect_edit);
 
         // Unwatched, skip the player scan.
-        if tracked
-            .as_ref()
-            .is_some_and(|tracked| !tracked.has_viewers())
+        if self.entity_type != &EntityType::PLAYER
+            && tracked
+                .as_ref()
+                .is_some_and(|tracked| !tracked.has_viewers())
         {
             self.synched_data.clear_dirty();
             return;
