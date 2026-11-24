@@ -32,7 +32,7 @@ pub(super) enum RegionalEntityUpdate {
         fire: Arc<dyn BlockEntity>,
         item: Arc<dyn EntityBase>,
     },
-    Expired(Arc<dyn EntityBase>),
+    Removed(Arc<dyn EntityBase>),
 }
 
 #[derive(Default)]
@@ -189,7 +189,7 @@ impl World {
                     }
                     changed_fires.insert(position, fire);
                 }
-                RegionalEntityUpdate::Expired(entity) => {
+                RegionalEntityUpdate::Removed(entity) => {
                     self.spawn_state.load().remove_entity(self, entity.as_ref());
                     self.entity_tracker.remove_entity(entity.as_ref(), self);
                 }

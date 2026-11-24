@@ -202,6 +202,7 @@ pub mod environment;
 mod game_rules;
 pub mod natural_spawner;
 mod player_touch;
+mod regional_pickup;
 pub mod scoreboard;
 pub mod weather;
 

@@ -68,6 +68,18 @@ impl PlayerPickup {
     pub const fn item(&self) -> &'static Item {
         self.source.item
     }
+
+    /// Complete transfer into one slot that does not change the held equipment.
+    #[must_use]
+    pub fn single_storage_update(&self) -> Option<(usize, &ItemStack)> {
+        let [slot] = self.slots.as_slice() else {
+            return None;
+        };
+        (self.count == self.source.item_count
+            && slot.index < PlayerInventory::MAIN_SIZE
+            && slot.index != usize::from(self.selected))
+        .then_some((slot.index, &slot.after))
+    }
 }
 
 impl PlayerInventory {
@@ -416,8 +428,14 @@ impl PlayerInventory {
         })
     }
 
-    /// The item owner holds the source lock. No writes occur if any planned stack changed.
-    pub fn commit_pickup(&self, pickup: PlayerPickup, source: &mut ItemStack) -> bool {
+    /// The item owner holds the source lock. It approves the transfer after the
+    /// inventory and source checks, while all affected stacks are pinned.
+    pub fn commit_pickup(
+        &self,
+        pickup: PlayerPickup,
+        source: &mut ItemStack,
+        approve: impl FnOnce() -> bool,
+    ) -> bool {
         let Ok(mut main) = self.main_inventory.try_write() else {
             return false;
         };
@@ -435,6 +453,7 @@ impl PlayerInventory {
                 let current = main.get(slot.index).unwrap_or(equipped);
                 current.uid != slot.before.uid || !current.are_equal(&slot.before)
             })
+            || !approve()
         {
             return false;
         }
@@ -1081,7 +1100,7 @@ mod tests {
             [0, PlayerInventory::OFF_HAND_SLOT, 9]
         );
         let mut changed_source = source.copy_with_count(6);
-        assert!(!inventory.commit_pickup(plan, &mut changed_source));
+        assert!(!inventory.commit_pickup(plan, &mut changed_source, || true));
 
         let plan = inventory.plan_pickup(&source).unwrap();
         inventory.set_slot(9, ItemStack::new(62, &Item::ARROW));
@@ -1092,13 +1111,18 @@ mod tests {
                 inventory.get_slot(9).item_count,
             ]
         };
-        assert!(!inventory.commit_pickup(plan, &mut source));
+        assert!(!inventory.commit_pickup(plan, &mut source, || true));
         assert_eq!(counts(), [63, 63, 62]);
         assert_eq!(source.item_count, 6);
         assert_eq!(changed_source.item_count, 6);
 
         let plan = inventory.plan_pickup(&source).unwrap();
-        assert!(inventory.commit_pickup(plan, &mut source));
+        assert!(!inventory.commit_pickup(plan, &mut source, || false));
+        assert_eq!(counts(), [63, 63, 62]);
+        assert_eq!(source.item_count, 6);
+
+        let plan = inventory.plan_pickup(&source).unwrap();
+        assert!(inventory.commit_pickup(plan, &mut source, || true));
         assert_eq!(counts(), [64, 64, 64]);
         assert_eq!(source.item_count, 2);
         assert!(inventory.plan_pickup(&source).is_none());

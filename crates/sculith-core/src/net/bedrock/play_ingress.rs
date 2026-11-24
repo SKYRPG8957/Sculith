@@ -1,5 +1,6 @@
 use std::sync::{Arc, Weak, atomic::Ordering::Relaxed};
 
+use pumpkin_inventory::screen_handler::ScreenHandler;
 use sculith_protocol::{
     RawPacket,
     bedrock::{
@@ -100,25 +101,26 @@ impl BedrockClient {
         (head.is_none() && player.inbound_packets.is_empty()).then(apply)
     }
 
-    pub(crate) fn with_idle_player_inventory(&self, player: &Player, apply: impl FnOnce()) {
-        let Ok(head) = self.activity.inbound_head.try_lock() else {
-            return;
-        };
-        let Ok(screen) = player.current_screen_handler.try_lock() else {
-            return;
-        };
-        if head.is_none()
-            && player.inbound_packets.is_empty()
-            && player.has_client_loaded()
-            && !self.inventory_opened.load(Relaxed)
-            && std::ptr::addr_eq(
+    pub(crate) fn with_idle_player_inventory<R>(
+        &self,
+        player: &Player,
+        apply: impl FnOnce(&mut dyn ScreenHandler) -> R,
+    ) -> Option<R> {
+        let head = self.activity.inbound_head.try_lock().ok()?;
+        let screen = player.current_screen_handler.try_lock().ok()?;
+        if head.is_some()
+            || !player.inbound_packets.is_empty()
+            || !player.has_client_loaded()
+            || self.inventory_opened.load(Relaxed)
+            || !std::ptr::addr_eq(
                 Arc::as_ptr(&screen),
                 Arc::as_ptr(&player.player_screen_handler),
             )
-            && let Ok(_handler) = screen.try_lock()
         {
-            apply();
+            return None;
         }
+        let mut handler = screen.try_lock().ok()?;
+        Some(apply(&mut *handler))
     }
 
     pub(super) fn enqueue_play_input(&self, player: &Arc<Player>, packet: RawPacket) {

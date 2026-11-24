@@ -267,7 +267,7 @@ guard. A region can publish the removal to current-protocol Bedrock and Java
 viewers once their spawn has been queued. Java flushes once per viewer for
 the region's expiry batch. The tracker retains connections
 that still need the world's translated or plugin-observed publication.
-Movement outside the region, ground and fluid contact, pickup and merging
+Movement outside the region, complex ground and fluid contact, and merging
 are handled by the world. Native library loading disables regional item motion
 and expiry because native plugins can write live actor fields. Merge and despawn event
 handlers use the world clock, as do coordinated steps and sprints. Saved items
@@ -282,6 +282,16 @@ explicit save is capturing player and entity data. Only the transferred count
 updates pickup statistics. For a partial pickup Java receives the collected
 count and Bedrock receives the new size on the same item actor. A full pickup
 sends the take animation and removes the actor on both editions.
+
+A region can complete a full pickup into one regular inventory slot for an
+unmounted current-protocol Bedrock player. The collector and drop must share
+the chunk and region, with no competing collector, merge or hopper in the
+contact area. It pins the live actor assignment, collector bounds, inventory
+and save access while transferring the stack and recording the statistic.
+Current Java and Bedrock viewers receive the take packet with both actor IDs
+already paired, then the removal packet. The world finalizes tracker cleanup.
+Observed, partial or equipment-changing pickups and contacts that cross
+ownership boundaries use the world path.
 
 Experience orbs use the same region assignments and motion deadlines. An orb
 with no follow target can advance a short path through loaded air or land on

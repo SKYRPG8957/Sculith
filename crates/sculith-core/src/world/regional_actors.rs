@@ -16,6 +16,7 @@ use crate::{
         experience_orb::ExperienceOrbEntity,
         item::{ItemEntity, RegionalItemStep},
     },
+    net::ClientPlatform,
     server::{Server, TickDeadline},
 };
 
@@ -307,6 +308,10 @@ impl World {
             .active_chunks_changed();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Orders actor steps and their packets under the same assignment guards"
+    )]
     pub(super) fn advance_regional_actors(
         &self,
         server: &Server,
@@ -324,7 +329,9 @@ impl World {
         };
         let item_timers = ItemEntity::timers_unobserved(server);
         let native = server.plugin_manager.try_without_native_code();
+        let pickups = native.is_some() && Self::regional_pickups_unobserved(server);
         let mut expired = Vec::new();
+        let mut collected = FxHashSet::default();
         let mut java_recipients = FxHashMap::default();
         for actor in actors {
             let base = actor.get_entity();
@@ -342,13 +349,13 @@ impl World {
             if published.assigned.get(&base.entity_id) != Some(&owner) {
                 continue;
             }
-            let publish = || {
+            let publish = |java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>| {
                 if owns(base.chunk_pos.load()) {
                     self.entity_tracker.try_publish_regional_drop_move(
                         self,
                         server,
                         actor,
-                        &mut java_recipients,
+                        java_recipients,
                     );
                 }
             };
@@ -366,7 +373,23 @@ impl World {
                 drop(loaded);
                 match step {
                     RegionalItemStep::Advanced if native.is_some() => {
-                        item.try_regional_motion(self, chunk, owner, deadline, owns, publish);
+                        if pickups
+                            && self
+                                .try_collect_regional_drop(
+                                    server,
+                                    actor,
+                                    item,
+                                    owns,
+                                    &mut java_recipients,
+                                )
+                                .is_some()
+                        {
+                            collected.insert(base.entity_id);
+                        } else {
+                            item.try_regional_motion(self, chunk, owner, deadline, owns, || {
+                                publish(&mut java_recipients);
+                            });
+                        }
                     }
                     RegionalItemStep::Expired => expired.push(actor),
                     _ => {}
@@ -375,7 +398,9 @@ impl World {
                 && let Some(orb) = actor_data.downcast_ref::<ExperienceOrbEntity>()
                 && let Some(_checkpoint) = server.try_entity_save_guard()
             {
-                orb.try_regional_orb_tick(self, chunk, owner, deadline, owns, publish);
+                orb.try_regional_orb_tick(self, chunk, owner, deadline, owns, || {
+                    publish(&mut java_recipients);
+                });
                 if orb.has_expired() {
                     expired.push(actor);
                 }
@@ -407,6 +432,7 @@ impl World {
             }
         }
         EntityTracker::flush_regional_java_packets(java_recipients);
+        self.finish_regional_drop_removals(server, collected);
         drop(native);
         if !expired.is_empty() {
             self.expire_regional_drops(server, owner, &expired, owns);
@@ -446,7 +472,7 @@ impl World {
             let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk) else {
                 continue;
             };
-            base.try_with_unmounted_drop(|| {
+            let _ = base.try_with_unmounted_drop(|| {
                 let actor_data = actor.as_ref() as &dyn Any;
                 let expired = actor_data.downcast_ref::<ItemEntity>().is_some_and(|item| {
                     item.has_expired() && ItemEntity::timers_unobserved(server)
@@ -459,23 +485,28 @@ impl World {
                     && base.mark_discarded()
                 {
                     discarded.insert(base.entity_id);
-                    pending.push(RegionalEntityUpdate::Expired(actor.clone()));
+                    pending.push(RegionalEntityUpdate::Removed(actor.clone()));
                 }
             });
         }
-        if !discarded.is_empty() {
-            // One registry update for the batch. Flush the viewers we can serve
-            // without callbacks before the world drains their queued cleanup.
-            self.entities.rcu(|current| {
-                current
-                    .iter()
-                    .filter(|actor| !discarded.contains(&actor.get_entity().entity_id))
-                    .cloned()
-                    .collect::<Vec<_>>()
-            });
-            self.entity_tracker
-                .try_publish_regional_drop_expiries(self, server, discarded);
+        self.finish_regional_drop_removals(server, discarded);
+    }
+
+    fn finish_regional_drop_removals(&self, server: &Server, removed: FxHashSet<i32>) {
+        if removed.is_empty() {
+            return;
         }
+        // One registry update for the batch. Viewers that require translation
+        // or an observer remain paired for the world's queued cleanup.
+        self.entities.rcu(|current| {
+            current
+                .iter()
+                .filter(|actor| !removed.contains(&actor.get_entity().entity_id))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
+        self.entity_tracker
+            .try_publish_regional_drop_removals(self, server, removed);
     }
 }
 

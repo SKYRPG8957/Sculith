@@ -640,6 +640,47 @@ impl EntityIndex {
         Some(result)
     }
 
+    /// Pins the cell memberships of an isolated drop and its only possible collector.
+    pub(super) fn try_with_pickup_contact<R>(
+        &self,
+        world: &World,
+        item: i32,
+        area: &BoundingBox,
+        collect: impl FnOnce(&Player, &dyn Fn() -> bool) -> Option<R>,
+    ) -> Option<R> {
+        let range = Index::entity_range(area)?;
+        let (players, player_index) = Self::try_read_current(
+            &self.players,
+            &world.players,
+            PlayerIndex::matches,
+            PlayerIndex::rebuild,
+        )?;
+        let mut candidates = range.indexed_members(&player_index.cells);
+        let collector = candidates.next()?;
+        if !player_index.oversized.is_empty()
+            || candidates.any(|slot| slot != collector)
+            || !player_index.intersects(collector, area)
+        {
+            return None;
+        }
+        let (entities, index) =
+            Self::try_read_current(&self.inner, &world.entities, Index::matches, Index::rebuild)?;
+        let &source = index.slots.get(&item)?;
+        // A same-cell bounds change can introduce a contact under the read guard.
+        // Reserve the whole cells, including possible vehicles, merges and mob collectors.
+        if !index.oversized.is_empty()
+            || range
+                .indexed_members(&index.cells)
+                .any(|slot| slot != source && !entities[slot].get_entity().is_removed())
+        {
+            return None;
+        }
+        collect(&players[collector], &|| {
+            Arc::ptr_eq(&players, &world.players.load())
+                && Arc::ptr_eq(&entities, &world.entities.load())
+        })
+    }
+
     pub fn set_player_bounds(
         &self,
         entity_id: i32,

@@ -24,6 +24,7 @@ use sculith_protocol::bedrock::client::remove_actor::CRemoveActor;
 use sculith_protocol::bedrock::client::set_actor_data::{
     CSetActorData, PropertySyncData, SyncedActorDataList,
 };
+use sculith_protocol::bedrock::client::take_item_actor::CTakeItemActor;
 use sculith_protocol::bedrock::client::{CMovePlayer, CSetActorMotion};
 use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use sculith_protocol::codec::var_int::VarInt;
@@ -31,8 +32,8 @@ use sculith_protocol::codec::var_long::VarLong;
 use sculith_protocol::codec::var_ulong::VarULong;
 use sculith_protocol::java::client::play::{
     CEntityPositionSync, CEntityVelocity, CHeadRot, CRemoveEntities, CSetEntityMetadata,
-    CSetEquipment, CSetPassengers, CUpdateEntityPos, CUpdateEntityPosRot, CUpdateEntityRot,
-    Metadata,
+    CSetEquipment, CSetPassengers, CTakeItemEntity, CUpdateEntityPos, CUpdateEntityPosRot,
+    CUpdateEntityRot, Metadata,
 };
 use sculith_protocol::{BClientPacket, ClientPacket};
 use sculith_util::GameMode;
@@ -1447,7 +1448,7 @@ impl TrackedEntity {
         self.teleport_delay.store(0, Relaxed);
     }
 
-    fn try_publish_drop_expiry(
+    fn try_publish_drop_removal(
         &self,
         world: &World,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
@@ -1508,7 +1509,7 @@ impl TrackedEntity {
                 entity = self.entity_id,
                 actor_type = self.entity.get_entity().entity_type.resource_name,
                 sent,
-                "Published regional drop expiry"
+                "Published regional drop removal"
             );
         }
     }
@@ -1920,7 +1921,7 @@ impl EntityTracker {
         }
     }
 
-    pub(super) fn try_publish_regional_drop_expiries(
+    pub(super) fn try_publish_regional_drop_removals(
         &self,
         world: &World,
         server: &Server,
@@ -1936,9 +1937,80 @@ impl EntityTracker {
             };
             let tracked = entry.value().clone();
             drop(entry);
-            tracked.try_publish_drop_expiry(world, &mut java_recipients);
+            tracked.try_publish_drop_removal(world, &mut java_recipients);
         }
         Self::flush_regional_java_packets(java_recipients);
+    }
+
+    pub(super) fn try_publish_regional_item_pickup(
+        &self,
+        world: &World,
+        item: &Entity,
+        collector: &Player,
+        count: u8,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+        commit: impl FnOnce() -> Option<()>,
+    ) -> Option<()> {
+        let tracking = |entity: &Entity| match self.entity_map.try_get(&entity.entity_id) {
+            TryResult::Present(entry)
+                if std::ptr::eq(entry.value().entity.get_entity(), entity) =>
+            {
+                Some(entry.value().clone())
+            }
+            _ => None,
+        };
+        let chunk = item.chunk_pos.load();
+        let item_tracking = tracking(item)?;
+        let viewers = item_tracking.try_regional_move_viewers(chunk)?;
+        let paired_collector = viewers.players.get(&collector.gameprofile.id)?;
+        if !std::ptr::eq(paired_collector.as_ref(), collector) {
+            return None;
+        }
+        let _ready = try_ready_regional_viewer(collector, world, chunk)?;
+        let collector_tracking = tracking(collector.get_entity())?;
+        let collector_viewers = collector_tracking.try_regional_pairings()?;
+        // A pickup refers to two runtime IDs. Both spawns must precede the animation.
+        if viewers.players.values().any(|viewer| {
+            viewer.can_simulate_in(world)
+                && !std::ptr::eq(viewer.as_ref(), collector)
+                && collector_viewers
+                    .players
+                    .get(&viewer.gameprofile.id)
+                    .is_none_or(|paired| !Arc::ptr_eq(paired, viewer))
+        }) {
+            return None;
+        }
+        Self::send_regional_to_viewers(
+            world,
+            None,
+            Some(&viewers),
+            java_recipients,
+            || {
+                let take = CTakeItemEntity::new(
+                    item.entity_id.into(),
+                    collector.entity_id().into(),
+                    VarInt(i32::from(count)),
+                );
+                let java =
+                    JavaClient::serialize_packet_for_version(&take, CURRENT_MC_VERSION).ok()?;
+                let mut bedrock = Vec::new();
+                BedrockClient::write_raw_packet(
+                    &CTakeItemActor {
+                        item_runtime_id: VarULong(item.entity_id as u64),
+                        actor_runtime_id: VarULong(collector.entity_id() as u64),
+                    },
+                    &mut bedrock,
+                )
+                .ok()?;
+                Some(RegionalActorPackets {
+                    java: vec![java],
+                    bedrock: vec![Bytes::from(bedrock)],
+                    bedrock_viewer_equipment: None,
+                })
+            },
+            commit,
+        )?;
+        Some(())
     }
 
     pub(super) fn try_publish_regional_effect_changes(
@@ -2103,7 +2175,24 @@ impl EntityTracker {
             Some(_) => return None,
             None => None,
         };
-        let owner = subject.get_player();
+        Self::send_regional_to_viewers(
+            world,
+            subject.get_player(),
+            viewers.as_deref(),
+            java_recipients,
+            prepare,
+            apply,
+        )
+    }
+
+    fn send_regional_to_viewers(
+        world: &World,
+        owner: Option<&Player>,
+        viewers: Option<&Viewers>,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+        prepare: impl FnOnce() -> Option<RegionalActorPackets>,
+        apply: impl FnOnce() -> Option<()>,
+    ) -> Option<RegionalActorDelivery> {
         let recipients = viewers
             .iter()
             .flat_map(|viewers| viewers.players.values().map(Arc::as_ref))

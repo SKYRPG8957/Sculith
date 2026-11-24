@@ -475,9 +475,7 @@ impl ItemEntity {
     fn collect_for_player(&self, player: &Player) -> Option<(&'static Item, u8, bool)> {
         let world = self.entity.world.load_full();
         let eligible = || {
-            !self.entity.is_removed()
-                && !self.never_pickup.load(Relaxed)
-                && self.pickup_delay.load(Relaxed) == 0
+            self.can_be_picked_up()
                 && Arc::ptr_eq(&world, &self.entity.world.load())
                 && player.can_simulate_in(&world)
                 && player.has_stable_world_membership()
@@ -521,10 +519,20 @@ impl ItemEntity {
             .item_stack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !player.inventory.commit_pickup(pickup, &mut stack) {
+        if !player.inventory.commit_pickup(pickup, &mut stack, || true) {
             return None;
         }
         Some((item, count, stack.is_empty()))
+    }
+
+    fn can_be_picked_up(&self) -> bool {
+        !self.entity.is_removed()
+            && !self.never_pickup.load(Relaxed)
+            && self.pickup_delay.load(Relaxed) == 0
+    }
+
+    pub(crate) fn can_be_picked_up_on_region(&self) -> bool {
+        self.can_be_picked_up() && !self.has_expired() && self.thrower.load().is_none()
     }
 
     fn decrement_pickup_delay(&self) {

@@ -1788,6 +1788,16 @@ impl EntityBoundingBox {
         self.value.load()
     }
 
+    /// Prevents position or bounds writes until the contact is applied.
+    pub(crate) fn try_with_current_world<R>(
+        &self,
+        world: &World,
+        apply: impl FnOnce() -> R,
+    ) -> Option<R> {
+        let index = self.index.try_write().ok()?;
+        std::ptr::eq(index.as_ptr(), Arc::as_ptr(&world.entity_index)).then(apply)
+    }
+
     /// Publishes bounds and their spatial index membership together.
     pub fn store(&self, bounds: BoundingBox) {
         let index = self

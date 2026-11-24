@@ -133,27 +133,21 @@ impl Entity {
                 .claim(DropTickOwner::Region(owner), deadline);
         }
     }
-    pub(crate) fn try_with_unmounted_drop(&self, use_drop: impl FnOnce()) {
-        let Some(motion) = self.drop_motion.as_deref() else {
-            return;
-        };
-        let Ok(motion) = motion.try_lock() else {
-            return;
-        };
+    pub(crate) fn try_with_unmounted_drop<R>(&self, use_drop: impl FnOnce() -> R) -> Option<R> {
+        let motion = self.drop_motion.as_deref()?.try_lock().ok()?;
         if motion.world_users != 0 {
-            return;
+            return None;
         }
-        let (Ok(vehicle), Ok(passengers)) = (self.vehicle.try_lock(), self.passengers.try_lock())
-        else {
-            return;
-        };
-        if vehicle.is_none() && passengers.is_empty() {
-            // Live attachments take the world motion guard. Release these locks
-            // so packet construction can read mount metadata under motion ownership.
-            drop(vehicle);
-            drop(passengers);
-            use_drop();
+        let vehicle = self.vehicle.try_lock().ok()?;
+        let passengers = self.passengers.try_lock().ok()?;
+        if vehicle.is_some() || !passengers.is_empty() {
+            return None;
         }
+        // Live attachments take the world motion guard. Release these locks
+        // so packet construction can read mount metadata under motion ownership.
+        drop(vehicle);
+        drop(passengers);
+        Some(use_drop())
     }
 
     fn with_regional_drop_motion(

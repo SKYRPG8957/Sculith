@@ -224,7 +224,7 @@ impl PlayerInventoryEdits {
         {
             return false;
         }
-        client.with_idle_player_inventory(player, || {
+        let _ = client.with_idle_player_inventory(player, |_| {
             edit.try_apply_in_region(world, player, client, owns);
         });
         self.front().is_some()

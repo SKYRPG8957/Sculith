@@ -306,7 +306,7 @@ impl World {
         };
 
         let mut pending = true;
-        client.with_idle_player_inventory(player, || {
+        let _ = client.with_idle_player_inventory(player, |_| {
             let result = player.living_entity.finish_food_use_on_region(
                 player,
                 client,
