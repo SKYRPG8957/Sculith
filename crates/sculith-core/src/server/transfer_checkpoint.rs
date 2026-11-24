@@ -2,7 +2,7 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, PoisonError, atomic::Ordering},
+    sync::{Arc, Mutex, MutexGuard, PoisonError, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -11,7 +11,7 @@ use pumpkin_inventory::{
     generic_container_screen_handler::GenericContainerScreenHandler, screen_handler::ScreenHandler,
 };
 use pumpkin_world::{
-    data::checkpoint::{CheckpointFence, SaveCheckpoint},
+    data::checkpoint::{CheckpointFence, EntityChunkImage, SaveCheckpoint},
     level::SyncChunk,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -24,13 +24,16 @@ use uuid::Uuid;
 use crate::{
     block::{blocks::chests::paired_chest_for_inventory, entities::BlockEntity},
     data::player_server::ServerPlayerData,
-    entity::player::Player,
+    entity::{
+        item::{ItemEntity, storage::SavedItemRecord},
+        player::Player,
+    },
     world::World,
 };
 
 use super::{Server, storage_checkpoint::persist};
 
-/// Bound the combined number of players and terrain chunks captured in a tick.
+/// Bound players, terrain chunks and saved item removals captured in a tick.
 const MAX_TARGETS: usize = 256;
 const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -118,6 +121,35 @@ fn is_checkpoint_container(entity: &dyn BlockEntity) -> bool {
 }
 
 impl Server {
+    pub(crate) fn prepare_item_pickup<'a>(
+        &'a self,
+        player: &'a Arc<Player>,
+        item: &ItemEntity,
+        count: u8,
+    ) -> Result<Option<ItemPickupCheckpoint<'a>>, StorageTransferError> {
+        if !self.player_data_storage.is_save_enabled()
+            || !player.world().level.save_enabled.load(Ordering::Relaxed)
+        {
+            return Ok(None);
+        }
+        let records = item
+            .saved_item_records(count)
+            .ok_or(StorageTransferError::Busy)?;
+        if records.is_empty() || records.len() >= MAX_TARGETS {
+            return Ok(None);
+        }
+        self.storage_checkpoint
+            .transfers
+            .prepare_item_pickup(
+                &self.player_data_storage.checkpoint,
+                !self.storage_checkpoint.manual_capture_requested(),
+                player,
+                records,
+            )
+            .map(Some)
+            .ok_or(StorageTransferError::Busy)
+    }
+
     pub(crate) fn prepare_storage_transfer(
         &self,
         player: &Arc<Player>,
@@ -226,6 +258,7 @@ struct Collecting {
     changed: bool,
     players: FxHashMap<Uuid, Arc<Player>>,
     terrain: FxHashMap<(PathBuf, Vector2<i32>), (Arc<World>, SyncChunk)>,
+    removed_items: FxHashSet<SavedItemRecord>,
 }
 
 #[derive(Default)]
@@ -240,6 +273,30 @@ enum Phase {
     },
 }
 
+impl Phase {
+    fn collecting(
+        &mut self,
+        fence: &CheckpointFence,
+        start_allowed: bool,
+    ) -> Option<&mut Collecting> {
+        if matches!(self, Self::Idle) && start_allowed && !fence.is_pending() {
+            let access = fence.try_write()?;
+            fence.set_pending(true);
+            *self = Self::Collecting(Collecting {
+                access,
+                changed: false,
+                players: FxHashMap::default(),
+                terrain: FxHashMap::default(),
+                removed_items: FxHashSet::default(),
+            });
+        }
+        match self {
+            Self::Collecting(batch) => Some(batch),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Default)]
 struct State {
     phase: Phase,
@@ -251,7 +308,50 @@ pub(super) struct TransferCheckpoints {
     state: Mutex<State>,
 }
 
+/// Prevents the checkpoint boundary from passing a regional pickup in progress.
+pub struct ItemPickupCheckpoint<'a> {
+    state: MutexGuard<'a, State>,
+    player: &'a Arc<Player>,
+    records: Vec<SavedItemRecord>,
+}
+
+impl ItemPickupCheckpoint<'_> {
+    pub(crate) fn record(mut self) {
+        if let Phase::Collecting(batch) = &mut self.state.phase {
+            batch
+                .players
+                .entry(self.player.gameprofile.id)
+                .or_insert_with(|| self.player.clone());
+            batch.removed_items.extend(self.records);
+            batch.changed = true;
+        }
+    }
+}
+
 impl TransferCheckpoints {
+    fn prepare_item_pickup<'a>(
+        &'a self,
+        fence: &CheckpointFence,
+        start_allowed: bool,
+        player: &'a Arc<Player>,
+        records: Vec<SavedItemRecord>,
+    ) -> Option<ItemPickupCheckpoint<'a>> {
+        let mut state = self.state.try_lock().ok()?;
+        let batch = state.phase.collecting(fence, start_allowed)?;
+        let new_player = !batch.players.contains_key(&player.gameprofile.id);
+        let new_items = records
+            .iter()
+            .filter(|record| !batch.removed_items.contains(*record))
+            .count();
+        (batch.target_count() + usize::from(new_player) + new_items <= MAX_TARGETS).then_some(
+            ItemPickupCheckpoint {
+                state,
+                player,
+                records,
+            },
+        )
+    }
+
     pub(super) fn admit(
         &self,
         fence: &CheckpointFence,
@@ -261,19 +361,7 @@ impl TransferCheckpoints {
         transfer: &StorageTransfer,
     ) -> bool {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if matches!(state.phase, Phase::Idle) && start_allowed && !fence.is_pending() {
-            let Some(access) = fence.try_write() else {
-                return false;
-            };
-            fence.set_pending(true);
-            state.phase = Phase::Collecting(Collecting {
-                access,
-                changed: false,
-                players: FxHashMap::default(),
-                terrain: FxHashMap::default(),
-            });
-        }
-        let Phase::Collecting(batch) = &mut state.phase else {
+        let Some(batch) = state.phase.collecting(fence, start_allowed) else {
             return false;
         };
         let targets = transfer.targets();
@@ -295,7 +383,7 @@ impl TransferCheckpoints {
                 .clone()
                 .filter(|(key, _)| !batch.terrain.contains_key(key))
                 .count();
-        if batch.players.len() + batch.terrain.len() + new_targets > MAX_TARGETS {
+        if batch.target_count() + new_targets > MAX_TARGETS {
             return false;
         }
         if let Some(player) = player {
@@ -399,6 +487,10 @@ impl TransferCheckpoints {
 }
 
 impl Collecting {
+    fn target_count(&self) -> usize {
+        self.players.len() + self.terrain.len() + self.removed_items.len()
+    }
+
     fn try_reserve_worlds(&self) -> Option<Vec<OwnedMutexGuard<()>>> {
         let mut reserved = FxHashSet::default();
         self.terrain
@@ -425,6 +517,22 @@ impl Collecting {
                 .entry(path)
                 .or_default()
                 .push((pos, world.capture_storage_chunk(&chunk)));
+        }
+        let mut removals = FxHashMap::<_, Vec<_>>::default();
+        for item in self.removed_items {
+            removals
+                .entry((item.world, item.chunk))
+                .or_default()
+                .push(item.uuid);
+        }
+        for ((path, pos), removed_items) in removals {
+            data.entities.entry(path).or_default().push((
+                pos,
+                EntityChunkImage {
+                    removed_items,
+                    ..EntityChunkImage::default()
+                },
+            ));
         }
         (Arc::new(data), self.access)
     }

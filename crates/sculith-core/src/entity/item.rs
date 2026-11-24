@@ -46,6 +46,8 @@ use crate::server::TickDeadline;
 use crate::world::RegionId;
 use crate::world::entity_islands::{self, AuditedReach};
 
+pub(crate) mod storage;
+
 #[derive(Clone, Copy)]
 pub(crate) enum ItemTimerStep {
     World(Option<TickDeadline>),
@@ -71,6 +73,7 @@ pub struct ItemEntity {
     never_despawn: AtomicBool,
     never_pickup: AtomicBool,
     merge_reserved: AtomicBool,
+    saved_records: Mutex<storage::SavedItemHistory>,
 }
 
 struct ItemMergeReservation<'a> {
@@ -144,6 +147,7 @@ impl ItemEntity {
             never_despawn: AtomicBool::new(false),
             never_pickup: AtomicBool::new(false),
             merge_reserved: AtomicBool::new(false),
+            saved_records: Mutex::default(),
         }
     }
 
@@ -168,6 +172,7 @@ impl ItemEntity {
             never_despawn: AtomicBool::new(false),
             never_pickup: AtomicBool::new(false),
             merge_reserved: AtomicBool::new(false),
+            saved_records: Mutex::default(),
         }
     }
 
@@ -185,6 +190,7 @@ impl ItemEntity {
             never_despawn: AtomicBool::new(false),
             never_pickup: AtomicBool::new(false),
             merge_reserved: AtomicBool::new(false),
+            saved_records: Mutex::default(),
         }
     }
 
@@ -387,6 +393,12 @@ impl ItemEntity {
         stack1.increment(moved);
         stack2.decrement(moved);
         let source_empty = stack2.is_empty();
+        if source_empty {
+            target.inherit_saved_item_records(source, stack1.item_count - moved, moved);
+        } else if moved != 0 {
+            target.mark_partial_item_transfer();
+            source.mark_partial_item_transfer();
+        }
         drop(stack1);
         drop(stack2);
 
@@ -472,7 +484,7 @@ impl ItemEntity {
             .send_to_tracking_players_bedrock(&self.entity, &packet);
     }
 
-    fn collect_for_player(&self, player: &Player) -> Option<(&'static Item, u8, bool)> {
+    fn collect_for_player(&self, player: &Arc<Player>) -> Option<(&'static Item, u8, bool)> {
         let world = self.entity.world.load_full();
         let eligible = || {
             self.can_be_picked_up()
@@ -504,6 +516,7 @@ impl ItemEntity {
 
         let server = world.server.upgrade()?;
         let _checkpoint = server.try_entity_save_guard()?;
+        let _snapshot = world.try_entity_snapshot()?;
         let _position = player
             .client
             .bedrock()
@@ -519,10 +532,27 @@ impl ItemEntity {
             .item_stack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !player.inventory.commit_pickup(pickup, &mut stack, || true) {
+        let stack_count = stack.item_count;
+        let mut checkpoint = None;
+        if !player.inventory.commit_pickup(pickup, &mut stack, || {
+            if count == stack_count {
+                let Ok(permit) = server.prepare_item_pickup(player, self, count) else {
+                    return false;
+                };
+                checkpoint = permit;
+            }
+            true
+        }) {
             return None;
         }
-        Some((item, count, stack.is_empty()))
+        if let Some(checkpoint) = checkpoint {
+            checkpoint.record();
+        }
+        let empty = stack.is_empty();
+        if !empty {
+            self.mark_partial_item_transfer();
+        }
+        Some((item, count, empty))
     }
 
     fn can_be_picked_up(&self) -> bool {

@@ -646,7 +646,7 @@ impl EntityIndex {
         world: &World,
         item: i32,
         area: &BoundingBox,
-        collect: impl FnOnce(&Player, &dyn Fn() -> bool) -> Option<R>,
+        collect: impl FnOnce(&Arc<Player>, &dyn Fn() -> bool) -> Option<R>,
     ) -> Option<R> {
         let range = Index::entity_range(area)?;
         let (players, player_index) = Self::try_read_current(

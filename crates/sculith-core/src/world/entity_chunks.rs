@@ -309,7 +309,7 @@ impl World {
         let Ok(snapshot) = self.entity_chunk_changes.snapshot.try_write() else {
             return;
         };
-        let pending = {
+        let (pending, access) = {
             let mut changes = self
                 .entity_chunk_changes
                 .pending
@@ -318,8 +318,11 @@ impl World {
             if changes.is_empty() {
                 return;
             }
+            let Some(access) = self.level.try_entity_storage_access() else {
+                return;
+            };
             self.region_layout.load().clear_entity_chunk_work();
-            std::mem::take(&mut *changes)
+            (std::mem::take(&mut *changes), access)
         };
         let active = self
             .active_chunks
@@ -338,8 +341,10 @@ impl World {
                 retire.insert(pos, chunk);
             }
         }
-        let retired = self.retire_chunk_entities(retire);
+        let (retired, cleaned) = self.retire_chunk_entities(retire);
         let actors = self.register_chunk_actors(&activate);
+        self.level
+            .clean_entity_chunks_with_retirement(cleaned, access);
         drop(snapshot);
 
         // Packet observers may request a save. The registry and saved cache
@@ -385,6 +390,9 @@ impl World {
             return;
         };
         let Some(_checkpoint) = server.try_entity_save_guard() else {
+            return;
+        };
+        let Some(_access) = self.level.try_entity_storage_access() else {
             return;
         };
         let Ok(_snapshot) = self.entity_chunk_changes.snapshot.try_read() else {
@@ -464,6 +472,11 @@ impl World {
                 return false;
             }
             init_loaded_actor(entity.as_ref());
+            if let (Some(item), Some(storage)) =
+                (entity.get_item_entity(), self.entity_storage_path())
+            {
+                item.restore_saved_item_records(storage, pos, record);
+            }
             if can_pair
                 && restored_mob
                 && let Some(spawn) = RestoredMobSpawn::prepare(&entity)
@@ -714,6 +727,11 @@ impl World {
             };
             for entity in self_and_passengers(&root) {
                 init_loaded_actor(entity.as_ref());
+                if let (Some(item), Some(storage)) =
+                    (entity.get_item_entity(), self.entity_storage_path())
+                {
+                    item.restore_saved_item_records(storage, pos, record);
+                }
                 actors.push((pos, entity));
             }
         }
@@ -748,14 +766,10 @@ impl World {
     fn retire_chunk_entities(
         &self,
         chunks: FxHashMap<Vector2<i32>, SyncEntityChunk>,
-    ) -> Vec<Arc<dyn EntityBase>> {
+    ) -> (Vec<Arc<dyn EntityBase>>, Vec<Vector2<i32>>) {
         if chunks.is_empty() {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
-        let Some(access) = self.level.try_entity_retirement() else {
-            self.queue_entity_chunk_changes(chunks.into_keys());
-            return Vec::new();
-        };
         // NBT preparation can touch actor locks. Do it before pinning the view
         // so an arriving watcher does not have to wait for serialization.
         let mut by_chunk = FxHashMap::<_, Vec<_>>::default();
@@ -771,7 +785,7 @@ impl World {
         let mut retry = Vec::new();
         for (pos, chunk) in chunks {
             let entities = by_chunk.remove(&pos).unwrap_or_default();
-            let mut grouped = entity_save_records(&entities);
+            let mut grouped = entity_save_records(self, &entities);
             let records = grouped.remove(&pos).unwrap_or_default();
             if !grouped.is_empty() {
                 retry.push(pos);
@@ -838,10 +852,8 @@ impl World {
                     .collect::<Vec<_>>()
             });
         }
-        self.level
-            .clean_entity_chunks_with_retirement(cleaned, access);
         self.queue_entity_chunk_changes(retry);
-        retired
+        (retired, cleaned)
     }
 }
 
@@ -934,7 +946,7 @@ mod tests {
         });
         world.add_entity_silent(actor.clone());
 
-        let records = entity_save_records(std::slice::from_ref(&actor));
+        let records = entity_save_records(&world, std::slice::from_ref(&actor));
         assert_eq!(actor.get_entity().pos.load(), destination);
         assert_eq!(records.len(), 1);
         let records = &records[&Vector2::new(-1, 0)];

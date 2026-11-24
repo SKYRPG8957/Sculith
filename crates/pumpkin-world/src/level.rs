@@ -758,8 +758,8 @@ impl Level {
         !self.mark_chunks_as_not_watched([chunk]).is_empty()
     }
 
-    /// Reserves the storage handoff before retirement consumes a live entity chunk.
-    pub fn try_entity_retirement(&self) -> Option<tokio::sync::OwnedRwLockReadGuard<()>> {
+    /// Keeps entity chunk activation and retirement behind checkpoint replay.
+    pub fn try_entity_storage_access(&self) -> Option<tokio::sync::OwnedRwLockReadGuard<()>> {
         self.checkpoint_fence.try_read()
     }
 
@@ -767,7 +767,7 @@ impl Level {
         self: &Arc<Self>,
         chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
     ) {
-        if let Some(access) = self.try_entity_retirement() {
+        if let Some(access) = self.try_entity_storage_access() {
             self.clean_entity_chunks_with_retirement(chunks, access);
         }
     }
@@ -1487,7 +1487,19 @@ impl Level {
         &self,
         images: &[(Vector2<i32>, EntityChunkImage)],
     ) -> Result<(), String> {
-        write_entities(&self.entity_saver, &self.level_folder, images).await
+        write_entities(&self.entity_saver, &self.level_folder, images).await?;
+        for (pos, image) in images {
+            if !image.removed_items.is_empty()
+                && let Some(chunk) = self.get_entity_chunk_sync(pos)
+            {
+                let mut data = chunk
+                    .data
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                image.remove_saved_items(&mut data);
+            }
+        }
+        Ok(())
     }
 
     pub async fn get_or_fetch_entity_chunk<R, F: Fn(&SyncEntityChunk) -> R>(

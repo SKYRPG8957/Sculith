@@ -18,7 +18,7 @@ use sculith_protocol::bedrock::network_item::NetworkItemDescriptor;
 use sculith_protocol::codec::data_component::data_to_proto_sound;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, RwLock, Weak};
-use std::{collections::HashMap, sync::atomic::Ordering};
+use std::{collections::HashMap, path::Path, sync::atomic::Ordering};
 use tracing::{debug, error, info};
 
 mod active_chunks;
@@ -771,7 +771,7 @@ impl World {
         entities: &[Arc<dyn EntityBase>],
         snapshot_chunks: impl IntoIterator<Item = Vector2<i32>>,
     ) {
-        let mut groups = entity_save_records(entities);
+        let mut groups = entity_save_records(self, entities);
         for pos in snapshot_chunks {
             groups.entry(pos).or_default();
         }
@@ -7980,7 +7980,7 @@ impl World {
         &self,
     ) -> Option<Vec<(Vector2<i32>, EntityChunkImage)>> {
         let _snapshot = self.entity_chunk_changes.snapshot.try_read().ok()?;
-        let mut grouped = entity_save_records(&self.entities.load());
+        let mut grouped = entity_save_records(self, &self.entities.load());
         let mut images: Vec<_> = self
             .level
             .entity_chunks_for_checkpoint()
@@ -8004,6 +8004,7 @@ impl World {
                     EntityChunkImage {
                         replace: true,
                         records,
+                        ..EntityChunkImage::default()
                     },
                 )
             })
@@ -8015,10 +8016,20 @@ impl World {
                 EntityChunkImage {
                     replace: false,
                     records,
+                    ..EntityChunkImage::default()
                 },
             )
         }));
         Some(images)
+    }
+
+    pub(super) fn entity_storage_path(&self) -> Option<&Path> {
+        let folder = &self.level.level_folder;
+        folder.dim_folder.strip_prefix(&folder.root_folder).ok()
+    }
+
+    pub(crate) fn try_entity_snapshot(&self) -> Option<tokio::sync::RwLockReadGuard<'_, ()>> {
+        self.entity_chunk_changes.snapshot.try_read().ok()
     }
 
     /// Records the edited container in the chunk that owned it when the transfer started.
@@ -8538,9 +8549,19 @@ pub fn calculate_celestial_angle(time_of_day: i64) -> f32 {
 }
 
 fn entity_save_records(
+    world: &World,
     entities: &[Arc<dyn EntityBase>],
 ) -> FxHashMap<Vector2<i32>, Vec<NbtCompound>> {
     let mut groups: FxHashMap<_, Vec<_>> = FxHashMap::default();
+    let items: FxHashMap<_, _> = entities
+        .iter()
+        .filter_map(|actor| {
+            actor
+                .get_item_entity()
+                .map(|item| (item.get_entity().entity_uuid, item))
+        })
+        .collect();
+    let storage = world.entity_storage_path();
     for entity in entities {
         let base = entity.get_entity();
         if base.is_removed() || is_saved_as_passenger(entity.as_ref()) {
@@ -8554,6 +8575,16 @@ fn entity_save_records(
             || base.chunk_pos.load(),
             |position| BlockPos::floored_v(position).chunk_position(),
         );
+        if let Some(storage) = storage
+            && !items.is_empty()
+        {
+            crate::entity::item::storage::annotate_saved_item_records(
+                &mut record,
+                &items,
+                storage,
+                pos,
+            );
+        }
         groups.entry(pos).or_default().push(record);
     }
     groups

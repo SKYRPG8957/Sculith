@@ -20,7 +20,7 @@ protocol and utility packages are `sculith-core`, `sculith-config`,
 `sculith-protocol` and `sculith-util`. Embedders start `sculith_core::SculithServer`
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
-Native Rust plugins must be rebuilt against ABI 40. The native plugin macro
+Native Rust plugins must be rebuilt against ABI 41. The native plugin macro
 exports `SCULITH_API_VERSION`, and the loader also reads the earlier version
 marker. Wasm plugins load by WIT API version.
 Telemetry and update notifications default to off. The optional update checker
@@ -750,10 +750,18 @@ both live halves of a double chest. A group containing only block inventories
 can be saved without a player session. Hopper transfers retry on later ticks
 when the writer is busy.
 
-The server captures touched players and terrain chunks at the end of the tick.
-One group can hold 256 distinct player and chunk targets, counting halves in the
-same chunk once. Clients get the resulting slots in memory, and the checkpoint
-journal records when the group becomes durable.
+When Java or Bedrock collects a whole saved ground stack, the group also
+captures the player and removes the item's saved records by UUID. The record
+locations follow the item across chunk moves and complete stack merges. The
+writer preserves other actors in those chunks, including passengers of a removed
+item. Entity chunk activation waits for replay so it cannot restore an older
+copy while the group is being applied. Partial transfers and stacks affected by
+them use the ordinary pickup path.
+
+The server captures touched players, terrain chunks and saved item removals at
+the end of the tick. One group can hold 256 targets, counting halves in the same
+terrain chunk once. Clients get the resulting slots in memory, and the
+checkpoint journal records when the group becomes durable.
 
 The writer attempts a failed group again after one second and keeps the
 captured data available for replay. Supported transfers that arrive while the
@@ -766,8 +774,8 @@ replays a published group before admitting players.
 Standalone Bedrock world export and conversion of entities, player data and
 other block-entity contents remain open.
 
-Automatic checkpoints for item entities, minecart inventories, and automation
-involving other block types remain open.
+Automatic checkpoints for partial ground stack transfers, minecart inventories,
+and automation involving other block types remain open.
 
 Pumpkin is a Java-oriented engine with Bedrock support still in development.
 Using this base does not establish Bedrock gameplay parity, arbitrary Bedrock pack

@@ -107,6 +107,7 @@ impl World {
                             },
                             |(), _| {
                                 self.commit_regional_pickup(
+                                    server,
                                     player,
                                     actor,
                                     item,
@@ -123,7 +124,8 @@ impl World {
 
     fn commit_regional_pickup(
         &self,
-        player: &Player,
+        server: &Server,
+        player: &Arc<Player>,
         actor: &Arc<dyn EntityBase>,
         item: &ItemEntity,
         local: impl FnOnce() -> bool,
@@ -150,17 +152,30 @@ impl World {
                 count,
                 java_recipients,
                 || {
-                    player
-                        .inventory
-                        .commit_pickup(pickup, &mut stack, || local() && source.mark_discarded())
-                        .then_some(())
+                    let mut checkpoint = None;
+                    if !player.inventory.commit_pickup(pickup, &mut stack, || {
+                        if !local() {
+                            return false;
+                        }
+                        let Ok(permit) = server.prepare_item_pickup(player, item, count) else {
+                            return false;
+                        };
+                        checkpoint = permit;
+                        source.mark_discarded()
+                    }) {
+                        return None;
+                    }
+                    stats.increment(
+                        StatisticCategory::PickedUp,
+                        i32::from(item_type.id),
+                        i32::from(count),
+                    );
+                    if let Some(checkpoint) = checkpoint {
+                        checkpoint.record();
+                    }
+                    Some(())
                 },
             )?;
-            stats.increment(
-                StatisticCategory::PickedUp,
-                i32::from(item_type.id),
-                i32::from(count),
-            );
             player.inventory_changed.store(true, Relaxed);
             if client.try_enqueue_packet_data_unobserved(packet) {
                 handler.set_received_stack(screen_slot, after);
