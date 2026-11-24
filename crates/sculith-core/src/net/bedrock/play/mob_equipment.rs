@@ -25,7 +25,6 @@ impl BedrockClient {
         if !Self::can_route_hotbar(packet)
             || !player.has_client_loaded()
             || self.inventory_opened.load(Ordering::Relaxed)
-            || self.food_use_slot().is_some()
             || server.stop_token.is_cancelled()
             || server.tick_rate_manager.is_frozen()
             || server.plugin_manager.has_handlers::<PlayerItemHeldEvent>()
@@ -57,7 +56,7 @@ impl BedrockClient {
             return None;
         }
 
-        let _checkpoint = server.try_regional_entity_save_guard()?;
+        let _edit = player.try_regional_inventory_edit()?;
         let screen = player.current_screen_handler.try_lock().ok()?;
         if !std::ptr::addr_eq(
             Arc::as_ptr(&screen),
@@ -70,22 +69,49 @@ impl BedrockClient {
         let main = inventory.main_inventory.try_read().ok()?;
         let previous = inventory.get_selected_slot();
         let stack = &main[usize::from(slot)];
-        let world = player.world();
-        player.living_entity.with_regional_hotbar_selection(
+        self.commit_regional_main_hand(
+            player,
+            server,
             &main[usize::from(previous)],
             stack,
+            true,
             || {
-                world.entity_tracker.try_publish_regional_main_hand(&world, player, stack, || {
-                    if !owns_player() || !player.has_stable_world_membership() {
-                        return None;
-                    }
-                    inventory.set_selected_slot(slot);
-                    player.update_last_action_time();
-                    tracing::trace!(player = %player.gameprofile.name, slot, "Selected Bedrock hotbar slot on its region");
-                    Some(())
-                })
+                if !owns_player() || !player.has_stable_world_membership() {
+                    return None;
+                }
+                inventory.set_selected_slot(slot);
+                player.update_last_action_time();
+                tracing::trace!(player = %player.gameprofile.name, slot, "Selected Bedrock hotbar slot on its region");
+                Some(())
             },
-        )?
+        )
+    }
+
+    /// Applies a simple held item change while the region holds the player's inventory edit guard.
+    pub(super) fn commit_regional_main_hand(
+        &self,
+        player: &Player,
+        server: &Server,
+        previous: &ItemStack,
+        next: &ItemStack,
+        publish_equipment: bool,
+        apply: impl FnOnce() -> Option<()>,
+    ) -> Option<()> {
+        if self.food_use_slot().is_some() {
+            return None;
+        }
+        let _checkpoint = server.try_regional_entity_save_guard()?;
+        player
+            .living_entity
+            .with_regional_main_hand_change(previous, next, || {
+                if !publish_equipment {
+                    return apply();
+                }
+                let world = player.world();
+                world
+                    .entity_tracker
+                    .try_publish_regional_main_hand(&world, player, next, apply)
+            })?
     }
 
     pub fn select_hotbar_slot(

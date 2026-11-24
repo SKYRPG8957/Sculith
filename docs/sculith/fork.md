@@ -99,10 +99,10 @@ world path. Per-tick inventory component updates also check the original stack
 before replacing it.
 On its personal inventory screen, a current Bedrock client can also finish a
 request with up to eight `Take`, `Place` and `Swap` actions on its region. Each
-slot must be in ordinary storage, the cursor, or the player's 2×2 crafting
-inputs. Both supported Bedrock addresses for a crafting cell refer to the
-same staged stack. The region checks each stack ID as it processes the actions
-in order. A prediction can reference a slot already touched within that
+slot must be in storage, in the hotbar, on the cursor, or in the player's 2×2
+crafting inputs. Bedrock aliases for a hotbar slot or a crafting cell refer to
+the same staged stack. The region checks each stack ID as it processes the
+actions in order. A prediction can reference a slot already touched within that
 request. The region prepares the reply and inventory refresh for the final
 state, checks that it still owns the player, and writes the changes together
 under the locks a player save uses.
@@ -110,8 +110,11 @@ The ordered input queue keeps later packets behind the request. Predictions
 from other requests, other screens or slot types, drag state, and observed
 inventory or packet events use the world dispatcher.
 For a built-in 2×2 recipe, the same region can consume the ingredients, give
-the full result to one ordinary storage slot or the cursor, and record the
-crafted statistic. Player saves read the inventory and statistics under the
+the full result to a storage slot, hotbar slot or the cursor, and record the
+crafted statistic. A change to the held item uses the same regional equipment
+publication as hotbar selection. World durability changes, Mending, and
+commands that replace or enchant an item pin the inventory through their
+last update. Player saves read the inventory and statistics under the
 same cursor lock. The region sends the result and refreshed four crafting
 inputs before the connection processes more requests. Recipes needing remainder
 placement, a matching advancement criterion, or an inventory, recipe or

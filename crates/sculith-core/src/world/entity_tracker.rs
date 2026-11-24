@@ -2048,7 +2048,7 @@ impl EntityTracker {
         world: &World,
         player: &Player,
         stack: &ItemStack,
-        select: impl FnOnce() -> Option<()>,
+        apply: impl FnOnce() -> Option<()>,
     ) -> Option<()> {
         let mut java_recipients = FxHashMap::default();
         self.try_send_regional_actor_packets(
@@ -2063,7 +2063,7 @@ impl EntityTracker {
                     bedrock_viewer_equipment: Some(bedrock),
                 })
             },
-            select,
+            apply,
         )?;
         Self::flush_regional_java_packets(java_recipients);
         Some(())

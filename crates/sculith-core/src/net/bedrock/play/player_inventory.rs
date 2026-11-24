@@ -255,8 +255,11 @@ impl PersonalSlot {
         }
         let index = usize::from(slot.slot_id);
         match slot.container_name.container_name {
+            ContainerName::HotBar if PlayerInventory::is_valid_hotbar_index(index) => {
+                Some(Self::Storage(index))
+            }
             ContainerName::Inventory | ContainerName::CombinedHotBarAndInventory
-                if (PlayerInventory::HOTBAR_SIZE..PlayerInventory::MAIN_SIZE).contains(&index) =>
+                if index < PlayerInventory::MAIN_SIZE =>
             {
                 Some(Self::Storage(index))
             }
@@ -289,9 +292,11 @@ impl PersonalSlot {
         )
     }
 
-    const fn screen_index(self) -> Option<usize> {
+    fn screen_index(self, handler: &PlayerScreenHandler) -> Option<usize> {
         match self {
-            Self::Storage(index) => Some(index),
+            Self::Storage(index) => {
+                map_bedrock_container_slot(handler, ContainerName::Inventory, index as u8)
+            }
             Self::Crafting(index) => Some(index + 1),
             Self::Cursor => None,
         }
@@ -403,7 +408,7 @@ impl RegionalInventoryPlan {
             }
             let [first, second] = move_personal_stacks(first, second, count)?;
             for (target, info, stack) in [(from_target, from, first), (to_target, to, second)] {
-                let slot = if let Some(index) = target.screen_index() {
+                let slot = if let Some(index) = target.screen_index(handler) {
                     Some(handler.get_behaviour().slots.get(index)?.as_ref())
                 } else {
                     None
@@ -499,7 +504,7 @@ impl RegionalInventoryPlan {
                     }
                     let output = merge_stacks(&craft.output, before.clone(), *count)?;
                     let slot = target
-                        .screen_index()
+                        .screen_index(handler)
                         .map(|index| handler.get_behaviour().slots[index].as_ref());
                     if !stack_fits(slot, &output) {
                         return None;
@@ -1282,6 +1287,10 @@ impl BedrockClient {
             })
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Inventory and equipment guards span preparation, commit and publication"
+    )]
     pub(in crate::net::bedrock) fn try_regional_inventory_request(
         &self,
         player: &Player,
@@ -1302,7 +1311,7 @@ impl BedrockClient {
         {
             return None;
         }
-        let _screen_edit = player.try_regional_screen_edit()?;
+        let _inventory_edit = player.try_regional_inventory_edit()?;
         if !self.inventory_request_can_run_on_region(player, server) {
             return None;
         }
@@ -1354,23 +1363,50 @@ impl BedrockClient {
             &player.inventory,
             &equipment,
         )?;
-        if player.gamemode.load() != mode || !player.has_stable_world_membership() || !owns_player()
-        {
-            return None;
-        }
-        let inventory_changed = plan.apply(&mut main, &mut crafting, &mut cursor);
-        if let (Some(output), Some((_, stats))) = (&plan.crafted, &mut craft_accounting) {
-            stats.increment(
-                StatisticCategory::Crafted,
-                i32::from(output.item.id),
-                i32::from(output.item_count),
-            );
-        } else if inventory_changed {
-            player.inventory_changed.store(true, Relaxed);
+
+        let selected = player.inventory.get_selected_slot();
+        let hand = PersonalSlot::Storage(usize::from(selected));
+        let held = hand.stack(inventory, &[]);
+        let hand_change = plan.changes.iter().find_map(|(target, next)| {
+            (*target == hand && !same_stack(held, next)).then(|| (held.clone(), next.clone()))
+        });
+        let commit = || {
+            if player.gamemode.load() != mode
+                || player.inventory.get_selected_slot() != selected
+                || !player.has_stable_world_membership()
+                || !owns_player()
+            {
+                return None;
+            }
+            let inventory_changed = plan.apply(&mut main, &mut crafting, &mut cursor);
+            if let (Some(output), Some((_, stats))) = (&plan.crafted, &mut craft_accounting) {
+                stats.increment(
+                    StatisticCategory::Crafted,
+                    i32::from(output.item.id),
+                    i32::from(output.item_count),
+                );
+            } else if inventory_changed {
+                player.inventory_changed.store(true, Relaxed);
+            }
+            Some(())
+        };
+        if let Some((held, next)) = hand_change {
+            // Item use tracks stack identity even when viewers would see the same item.
+            let publish_equipment = !held.are_equal(&next);
+            self.commit_regional_main_hand(
+                player,
+                server,
+                &held,
+                &next,
+                publish_equipment,
+                commit,
+            )?;
+        } else {
+            commit()?;
         }
         drop(crafting);
         for (target, stack) in plan.changes {
-            if let Some(index) = target.screen_index() {
+            if let Some(index) = target.screen_index(handler) {
                 handler.set_received_stack(index, stack);
             }
         }
@@ -1757,6 +1793,72 @@ mod tests {
         assert!(prepare(request_id, 4, main[11].uid.get()).is_none());
         assert!(prepare(request_id, 2, request_id).is_none());
         assert_eq!((main[10].item_count, main[11].item_count), (11, 7));
+    }
+
+    #[test]
+    fn regional_hotbar_request_stages_aliases_as_one_screen_slot() {
+        let inventory = Arc::new(PlayerInventory::new(
+            Arc::new(Mutex::new(EntityEquipment::new())),
+            Arc::new(build_equipment_slots()),
+        ));
+        let handler = PlayerScreenHandler::new(&inventory, None, 0, None);
+        let mut main = inventory.main_inventory.write().unwrap();
+        main[9] = ItemStack::new(5, &Item::STONE);
+        let mut crafting = handler.try_crafting_inputs().unwrap();
+        let mut cursor = ItemStack::EMPTY.clone();
+        let slot = |container_name, slot_id, stack_id| SlotInfo {
+            container_name: FullContainerName {
+                container_name,
+                dynamic_id: None,
+            },
+            slot_id,
+            stack_id,
+        };
+        let request_id = -21;
+        let mut request = ItemStackRequest {
+            request_id: VarInt(request_id),
+            filter_strings: Vec::new(),
+            filter_cause: 0,
+            actions: vec![
+                Action::Take {
+                    count: 4,
+                    source: slot(ContainerName::Inventory, 9, main[9].uid.get()),
+                    destination: slot(ContainerName::HotBar, 3, 0),
+                },
+                Action::Place {
+                    count: 1,
+                    source: slot(ContainerName::CombinedHotBarAndInventory, 3, request_id),
+                    destination: slot(ContainerName::Cursor, 0, 0),
+                },
+            ],
+        };
+        let contents = PersonalInventoryContents {
+            main: &main,
+            crafting: &crafting,
+            cursor: &cursor,
+        };
+        let plan = RegionalInventoryPlan::prepare(&request, &handler, contents).unwrap();
+        let hotbar = PersonalSlot::Storage(3);
+        assert_eq!(hotbar.screen_index(&handler), Some(39));
+        assert_eq!(
+            plan.updates
+                .iter()
+                .filter(|update| update.slot_id == 3)
+                .map(|update| update.count)
+                .collect::<Vec<_>>(),
+            [3, 3]
+        );
+        request.actions.push(Action::Swap {
+            slot1: slot(ContainerName::HotBar, 3, request_id),
+            slot2: slot(ContainerName::Inventory, 3, request_id),
+        });
+        assert!(RegionalInventoryPlan::prepare(&request, &handler, contents).is_none());
+        assert!(main[3].is_empty());
+        assert!(plan.apply(&mut main, &mut crafting, &mut cursor));
+        assert_eq!(
+            (main[3].item_count, main[9].item_count, cursor.item_count),
+            (3, 1, 1)
+        );
     }
 
     #[test]

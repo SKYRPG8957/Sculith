@@ -137,6 +137,7 @@ impl CommandExecutor for EntityReplaceExecutor {
                             modified_count += 1;
                         }
                     } else {
+                        let _inventory_edit = player.hold_bedrock_inventory_edit();
                         let inventory = player.inventory();
                         let mapped_slot = if mojang_slot == 98 {
                             Some(inventory.get_selected_slot() as usize)

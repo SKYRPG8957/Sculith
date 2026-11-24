@@ -76,7 +76,7 @@ impl BedrockClient {
         {
             return None;
         }
-        let _screen_edit = player.try_regional_screen_edit()?;
+        let _screen_edit = player.try_regional_inventory_edit()?;
         let vehicle = player.get_entity().vehicle.try_lock().ok()?;
         let screen = player.current_screen_handler.try_lock().ok()?;
         if vehicle.is_some()

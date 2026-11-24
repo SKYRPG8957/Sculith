@@ -48,6 +48,7 @@ fn enchant_target(
         return Err(ERROR_FAILED.create_without_context());
     };
 
+    let _inventory_edit = player.hold_bedrock_inventory_edit();
     let mut item = player.inventory().held_item();
 
     if item.is_empty() {

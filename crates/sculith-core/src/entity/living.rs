@@ -697,13 +697,13 @@ impl LivingEntity {
         }
     }
 
-    pub(crate) fn with_regional_hotbar_selection<R>(
+    /// The caller holds the player's exclusive regional edit guard.
+    pub(crate) fn with_regional_main_hand_change<R>(
         &self,
         previous: &ItemStack,
         next: &ItemStack,
         apply: impl FnOnce() -> R,
     ) -> Option<R> {
-        let _edit = self.try_hold_effect_edit()?;
         let active = self.item_in_use.try_lock().ok()?;
         if active.is_some()
             || !self.is_alive()
