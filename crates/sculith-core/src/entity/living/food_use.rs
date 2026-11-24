@@ -1,6 +1,7 @@
 use pumpkin_data::data_component_impl::{
-    BlocksAttacksImpl, EquippableImpl, FoodImpl, KineticWeaponImpl, OminousBottleAmplifierImpl,
-    PotionContentsImpl, SuspiciousStewEffectsImpl, UseRemainderImpl, food::ConsumableImpl,
+    AttributeModifiersImpl, BlocksAttacksImpl, EquippableImpl, FoodImpl, KineticWeaponImpl,
+    OminousBottleAmplifierImpl, PotionContentsImpl, SuspiciousStewEffectsImpl, UseRemainderImpl,
+    food::ConsumableImpl,
 };
 use pumpkin_data::{item_stack::ItemStack, tracked_data};
 use sculith_protocol::bedrock::client::set_actor_data::{
@@ -30,7 +31,11 @@ impl LivingEntity {
         client: &BedrockClient,
         deadline: TickDeadline,
         can_finish: impl FnOnce(Vector3<f64>) -> bool,
-        publish: impl FnOnce(SyncedActorDataList, Option<Box<[u8]>>) -> Option<RegionalActorDelivery>,
+        publish: impl FnOnce(
+            SyncedActorDataList,
+            Option<Box<[u8]>>,
+            bool,
+        ) -> Option<RegionalActorDelivery>,
     ) -> RegionalFoodUseFinish {
         use RegionalFoodUseFinish::{Finished, Pending, World};
 
@@ -40,12 +45,10 @@ impl LivingEntity {
         let Some(slot) = client.food_use_slot() else {
             return World;
         };
+        let mode = player.gamemode.load();
         if self.item_use_time.load(Relaxed) != 1
             || !self.is_alive()
-            || !matches!(
-                player.gamemode.load(),
-                GameMode::Survival | GameMode::Adventure
-            )
+            || !matches!(mode, GameMode::Survival | GameMode::Adventure)
         {
             return World;
         }
@@ -82,15 +85,20 @@ impl LivingEntity {
             return Pending;
         };
         let held = &mut inventory[usize::from(slot)];
-        if player.inventory.get_selected_slot() != slot
-            || held.item_count <= 1
-            || !Self::is_held_food(item, held)
-        {
+        if player.inventory.get_selected_slot() != slot || !Self::is_held_food(item, held) {
             return World;
         }
 
         let mut replacement = held.clone();
-        replacement.decrement(1);
+        replacement.decrement_unless_creative(mode, 1);
+        let empty_main_hand = replacement.is_empty();
+        if empty_main_hand
+            && held
+                .get_data_component::<AttributeModifiersImpl>()
+                .is_some_and(|modifiers| !modifiers.attribute_modifiers.is_empty())
+        {
+            return World;
+        }
         let (level, saturation) = player
             .hunger_manager
             .meal_values(food.nutrition as u8, food.saturation);
@@ -108,7 +116,9 @@ impl LivingEntity {
         if !can_finish(position) {
             return World;
         }
-        if !self.try_publish_food_use_end(client, flags, publish) {
+        if !self.try_publish_food_use_end(client, flags, |metadata, java| {
+            publish(metadata, java, empty_main_hand)
+        }) {
             return Pending;
         }
 

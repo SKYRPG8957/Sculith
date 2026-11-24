@@ -337,12 +337,13 @@ impl World {
                         .try_has_game_event_listener(&self.entities.load_full(), &area)
                         == Some(false)
                 },
-                |metadata, java| {
+                |metadata, java, empty_main_hand| {
                     self.entity_tracker.try_publish_regional_player_metadata(
                         self,
                         player,
                         metadata,
                         java,
+                        empty_main_hand,
                         java_recipients,
                     )
                 },
@@ -395,6 +396,7 @@ impl World {
                             player,
                             BreathManager::bedrock_air_metadata(air),
                             java,
+                            false,
                             java_recipients,
                         )
                     },

@@ -7,8 +7,10 @@ use std::sync::{Arc, MutexGuard, RwLock, RwLockReadGuard};
 use bytes::{BufMut, Bytes};
 use crossbeam::atomic::AtomicCell;
 use dashmap::{DashMap, mapref::entry::Entry, try_result::TryResult};
+use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 use rayon::prelude::*;
@@ -92,6 +94,12 @@ struct PlayerViewSnapshot<'a> {
     pos: Vector3<f64>,
     watched: Cylindrical,
     view_distance: i32,
+}
+
+struct RegionalActorPackets {
+    java: Vec<Bytes>,
+    bedrock: Vec<Bytes>,
+    bedrock_viewer_equipment: Option<Bytes>,
 }
 
 #[derive(Default)]
@@ -1057,7 +1065,6 @@ impl TrackedEntity {
                             }
                         }
                         ClientPlatform::Bedrock(client) => {
-                            use pumpkin_data::data_component_impl::EquipmentSlot;
                             use sculith_protocol::bedrock::{
                                 client::{
                                     mob_armor_equipment::CMobArmorEquipment,
@@ -1988,11 +1995,12 @@ impl EntityTracker {
         player: &Player,
         metadata: SyncedActorDataList,
         java: Option<Box<[u8]>>,
+        empty_main_hand: bool,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) -> Option<RegionalActorDelivery> {
         self.try_send_regional_actor_packets(world, player, java_recipients, || {
             let entity_id = player.entity_id();
-            let java_packets = match java {
+            let mut java_packets = match java {
                 Some(data) => {
                     let packet = CSetEntityMetadata::new(entity_id.into(), data);
                     vec![
@@ -2010,7 +2018,27 @@ impl EntityTracker {
             };
             let mut bytes = Vec::new();
             BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
-            Some((java_packets, vec![Bytes::from(bytes)]))
+            let bedrock_viewer_equipment = if empty_main_hand {
+                let empty = ItemStackSerializer::from(ItemStack::EMPTY.clone());
+                let hand = vec![(EquipmentSlot::MAIN_HAND.discriminant(), empty)];
+                let java = CSetEquipment::new(entity_id.into(), hand);
+                java_packets.push(
+                    JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?,
+                );
+                let bedrock = player
+                    .living_entity
+                    .bedrock_hand_equipment(ItemStack::EMPTY, 0);
+                let mut equipment = Vec::new();
+                BedrockClient::write_raw_packet(&bedrock, &mut equipment).ok()?;
+                Some(Bytes::from(equipment))
+            } else {
+                None
+            };
+            Some(RegionalActorPackets {
+                java: java_packets,
+                bedrock: vec![Bytes::from(bytes)],
+                bedrock_viewer_equipment,
+            })
         })
     }
 
@@ -2019,7 +2047,7 @@ impl EntityTracker {
         world: &World,
         subject: &dyn EntityBase,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
-        prepare: impl FnOnce() -> Option<(Vec<Bytes>, Vec<Bytes>)>,
+        prepare: impl FnOnce() -> Option<RegionalActorPackets>,
     ) -> Option<RegionalActorDelivery> {
         let entity = subject.get_entity();
         let tracked = match self.entity_map.try_get(&entity.entity_id) {
@@ -2053,21 +2081,28 @@ impl EntityTracker {
             return Some(RegionalActorDelivery::DELIVERED);
         }
 
-        let (java_packets, bedrock_packets) = prepare()?;
+        let packets = prepare()?;
         // Keep each pairing pinned through queuing so actor data cannot
         // overtake a new spawn or an existing despawn.
         let mut delivery = RegionalActorDelivery::DELIVERED;
         for player in recipients {
             match player.client.as_ref() {
                 ClientPlatform::Java(client) => {
-                    if client.try_enqueue_current_packet_batch(&java_packets) {
+                    if client.try_enqueue_current_packet_batch(&packets.java) {
                         java_recipients.insert(client.id, player.client.clone());
                     } else {
                         delivery.java_queued = false;
                     }
                 }
                 ClientPlatform::Bedrock(client) => {
-                    for packet in &bedrock_packets {
+                    for packet in &packets.bedrock {
+                        delivery.bedrock_queued &=
+                            client.try_enqueue_packet_data_unobserved(packet.clone());
+                    }
+                    // The owner gets an inventory slot update for the actual hotbar slot.
+                    if let Some(packet) = &packets.bedrock_viewer_equipment
+                        && owner.is_none_or(|owner| !std::ptr::eq(owner, player))
+                    {
                         delivery.bedrock_queued &=
                             client.try_enqueue_packet_data_unobserved(packet.clone());
                     }
@@ -2081,7 +2116,7 @@ impl EntityTracker {
         entity: &Entity,
         expired: &[&'static StatusEffect],
         data: RegionalEffectData,
-    ) -> Option<(Vec<Bytes>, Vec<Bytes>)> {
+    ) -> Option<RegionalActorPackets> {
         let mut java_packets = Vec::with_capacity(expired.len() + usize::from(data.java.is_some()));
         let mut bedrock_packets = Vec::with_capacity(usize::from(data.bedrock_particles.is_some()));
         for effect in expired {
@@ -2114,7 +2149,11 @@ impl EntityTracker {
             BedrockClient::write_raw_packet(&packet, &mut bytes).ok()?;
             bedrock_packets.push(Bytes::from(bytes));
         }
-        Some((java_packets, bedrock_packets))
+        Some(RegionalActorPackets {
+            java: java_packets,
+            bedrock: bedrock_packets,
+            bedrock_viewer_equipment: None,
+        })
     }
 
     pub(super) fn try_publish_regional_drop_move(

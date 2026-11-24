@@ -360,11 +360,12 @@ progress, packet observers and coordinated ticks use the world processing path.
 
 The Bedrock player's region can count down an active main-hand food use.
 With an idle input queue and personal inventory, the region can also finish
-simple food that leaves the held item type in the slot. It validates the use
-deadline and held stack, applies the item count and hunger together for saves,
-and queues the owner HUD and use flags for both editions. The world handles
-foods with completion effects, the last item in a stack, matching advancement
-criteria, and observed game events or packets.
+simple food. It validates the use deadline and held stack, applies the item
+count and hunger together for saves, and queues the owner HUD and use flags
+for both editions. Consuming the last item clears the hotbar slot and sends
+the empty hand to Java and Bedrock viewers. The world handles foods with
+completion effects, depletion of a stack with equipment attributes, matching
+advancement criteria, and observed game events or packets.
 
 Finite passive effects and finite regeneration on current-protocol Bedrock
 players can advance on the player's region.

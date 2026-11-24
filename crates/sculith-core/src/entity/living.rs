@@ -5,6 +5,7 @@ use pumpkin_data::tracked_data;
 use pumpkin_inventory::build_equipment_slots;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use rustc_hash::FxHashMap;
+use sculith_protocol::bedrock::client::CMobEquipment;
 use sculith_protocol::bedrock::client::take_item_actor::CTakeItemActor;
 use sculith_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
 use sculith_protocol::codec::var_ulong::VarULong;
@@ -752,15 +753,7 @@ impl LivingEntity {
                     0
                 };
 
-                let be_packet = sculith_protocol::bedrock::client::CMobEquipment {
-                    target_runtime_id: (self.entity_id() as u64).into(),
-                    item: sculith_protocol::bedrock::network_item::NetworkItemStackDescriptor::from(
-                        stack,
-                    ),
-                    slot: 0,
-                    selected_slot: 0,
-                    container_id: window_id,
-                };
+                let be_packet = self.bedrock_hand_equipment(stack, window_id);
                 world.send_to_tracking_players_bedrock(&self.entity, &be_packet);
             } else if slot.is_armor_slot() || matches!(slot, EquipmentSlot::Body(_)) {
                 armor_changed = true;
@@ -871,6 +864,20 @@ impl LivingEntity {
         };
         drop(equipment_guard);
         packet
+    }
+
+    pub(crate) fn bedrock_hand_equipment(
+        &self,
+        stack: &ItemStack,
+        container_id: u8,
+    ) -> CMobEquipment {
+        CMobEquipment {
+            target_runtime_id: (self.entity_id() as u64).into(),
+            item: stack.into(),
+            slot: 0,
+            selected_slot: 0,
+            container_id,
+        }
     }
 
     /// Applies the held item's attack attribute modifiers to this entity's
@@ -5130,6 +5137,11 @@ impl LivingEntity {
                 return;
             }
             held.decrement_unless_creative(player.gamemode.load(), 1);
+            let depleted = held.is_empty();
+            drop(inventory);
+            if depleted {
+                player.sync_hand_slot(usize::from(slot), ItemStack::EMPTY.clone());
+            }
         }
 
         // Consume item
