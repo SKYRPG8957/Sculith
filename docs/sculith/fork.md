@@ -107,6 +107,12 @@ player, and writes the changes together under the locks a player save uses.
 The ordered input queue keeps later packets behind the request. Predictions
 from other requests, other screens or slot types, drag state, and observed
 inventory or packet events use the world dispatcher.
+An unmounted native Bedrock player can open the personal inventory and close
+it with an empty cursor and crafting grid on the current region. The same
+queue orders opening, inventory requests, closing and the inventory refresh.
+World screen transitions share the guard used by the region, from sending the
+screen packet through replacing the handler. The world handles mounted and
+shared containers, close observers, and item return from the cursor or grid.
 The same ordered queue lets the owner of a native Bedrock player select a
 hotbar slot when the old and new held items leave equipment attributes and
 active item use as they are. The region checks the personal inventory and

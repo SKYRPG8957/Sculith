@@ -69,6 +69,19 @@ impl PlayerScreenHandler {
         self.behaviour.slots[slot].clone()
     }
 
+    /// Keeps an empty crafting grid stable until an uncontended close completes.
+    #[must_use]
+    pub fn try_empty_crafting_grid(
+        &self,
+    ) -> Option<std::sync::RwLockReadGuard<'_, Vec<ItemStack>>> {
+        let grid = self
+            .crafting_inventory
+            .as_any()
+            .downcast_ref::<CraftingInventory>()?;
+        let items = grid.items.try_read().ok()?;
+        items.iter().all(ItemStack::is_empty).then_some(items)
+    }
+
     /// Creates a new player screen handler.
     ///
     /// # Arguments

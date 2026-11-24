@@ -7027,7 +7027,20 @@ impl Player {
             .store(current_id % 100 + 1, Ordering::Relaxed);
     }
 
+    /// Keeps world screen packets and handler replacement together against regional edits.
+    fn hold_bedrock_screen_edit(&self) -> Option<std::sync::RwLockReadGuard<'_, ()>> {
+        self.client
+            .bedrock()
+            .filter(|client| client.is_current_protocol())
+            .map(|_| self.living_entity.hold_effect_edit())
+    }
+
+    pub(crate) fn try_regional_screen_edit(&self) -> Option<std::sync::RwLockWriteGuard<'_, ()>> {
+        self.living_entity.try_hold_effect_edit()
+    }
+
     pub fn close_handled_screen(&self) {
+        let _screen_edit = self.hold_bedrock_screen_edit();
         let (sync_id, bedrock_window_type) = {
             let current_handler_guard = self
                 .current_screen_handler
@@ -7063,6 +7076,7 @@ impl Player {
     }
 
     pub fn on_handled_screen_closed(&self) {
+        let _screen_edit = self.hold_bedrock_screen_edit();
         if let Some(client) = self.client.bedrock() {
             client.clear_cursor_drag();
         }
@@ -7166,6 +7180,7 @@ impl Player {
         screen_handler_factory: &dyn ScreenHandlerFactory,
         block_pos: Option<BlockPos>,
     ) -> Option<u8> {
+        let _screen_edit = self.hold_bedrock_screen_edit();
         let custom_name = block_pos
             .and_then(|pos| self.world().get_block_entity(&pos))
             .and_then(|be| be.get_custom_name());
@@ -7334,6 +7349,7 @@ impl Player {
         bedrock_slots: NbtCompound,
         create_handler: impl FnOnce(u8, &Arc<PlayerInventory>) -> SharedScreenHandler,
     ) -> bool {
+        let _screen_edit = self.hold_bedrock_screen_edit();
         if !self
             .current_screen_handler
             .lock()
@@ -7397,6 +7413,7 @@ impl Player {
         screen_handler: Arc<std::sync::Mutex<dyn ScreenHandler>>,
         title: &TextComponent,
     ) {
+        let _screen_edit = self.hold_bedrock_screen_edit();
         if !self
             .current_screen_handler
             .lock()

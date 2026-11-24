@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex, atomic::Ordering::Relaxed};
 
+use bytes::Bytes;
 use pumpkin_data::{
     data_component_impl::BlocksAttacksImpl, item_stack::ItemStack, statistic::StatisticCategory,
 };
@@ -10,6 +11,7 @@ use pumpkin_inventory::{
         crafting_screen_handler::{CraftingTableScreenHandler, match_crafting_recipe},
     },
     double::DoubleInventory,
+    entity_equipment::EntityEquipment,
     generic_container_screen_handler::GenericContainerScreenHandler,
     inventory::Inventory,
     player::{player_inventory::PlayerInventory, player_screen_handler::PlayerScreenHandler},
@@ -994,6 +996,32 @@ impl InventoryPlan {
 }
 
 impl BedrockClient {
+    pub(super) fn encode_personal_inventory<'a>(
+        &self,
+        inventory: &PlayerInventory,
+        equipment: &EntityEquipment,
+        slots: impl Iterator<Item = &'a ItemStack>,
+        cursor: &ItemStack,
+    ) -> Option<Vec<Bytes>> {
+        let content = self
+            .serialize_packet(&inventory_content_packet(
+                WINDOW_ID_INVENTORY as u32,
+                ContainerName::Inventory,
+                slots.map(NetworkItemStackDescriptor::from).collect(),
+            ))
+            .ok()?;
+        let cursor_packet = self.serialize_inventory_slot(CURSOR_SLOT, cursor).ok()?;
+        let mut packets = vec![content, cursor_packet];
+        for index in PlayerInventory::MAIN_SIZE..=PlayerInventory::OFF_HAND_SLOT {
+            let stack = inventory
+                .equipment_slots
+                .get(&index)
+                .map_or_else(|| ItemStack::EMPTY.clone(), |slot| equipment.get(slot));
+            packets.push(self.encode_player_inventory_slot(index, &stack)?);
+        }
+        Some(packets)
+    }
+
     pub(in crate::net::bedrock) const fn can_route_inventory(packet: &RawPacket) -> bool {
         packet.id == SItemStackRequest::PACKET_ID
             && packet.payload.len() <= REGIONAL_INVENTORY_BYTES
@@ -1033,11 +1061,12 @@ impl BedrockClient {
             return None;
         };
         let mode = player.gamemode.load();
-        if !payload.is_empty()
-            || !request.filter_strings.is_empty()
-            || mode == GameMode::Spectator
-            || !self.inventory_request_can_run_on_region(player, server)
+        if !payload.is_empty() || !request.filter_strings.is_empty() || mode == GameMode::Spectator
         {
+            return None;
+        }
+        let _screen_edit = player.try_regional_screen_edit()?;
+        if !self.inventory_request_can_run_on_region(player, server) {
             return None;
         }
         let current = player.current_screen_handler.try_lock().ok()?;
@@ -1065,30 +1094,12 @@ impl BedrockClient {
                 responses: vec![build_stack_response(request.request_id, 0, updates)],
             })
             .ok()?;
-        let content = self
-            .serialize_packet(&inventory_content_packet(
-                WINDOW_ID_INVENTORY as u32,
-                ContainerName::Inventory,
-                (0..PlayerInventory::MAIN_SIZE)
-                    .map(|index| {
-                        NetworkItemStackDescriptor::from(after(PersonalSlot::Storage(index)))
-                    })
-                    .collect(),
-            ))
-            .ok()?;
-        let cursor_packet = self
-            .serialize_inventory_slot(CURSOR_SLOT, after(PersonalSlot::Cursor))
-            .ok()?;
-        let equipment_packets = (PlayerInventory::MAIN_SIZE..=PlayerInventory::OFF_HAND_SLOT)
-            .map(|index| {
-                let stack = player
-                    .inventory
-                    .equipment_slots
-                    .get(&index)
-                    .map_or_else(|| ItemStack::EMPTY.clone(), |slot| equipment.get(slot));
-                self.encode_player_inventory_slot(index, &stack)
-            })
-            .collect::<Option<Vec<_>>>()?;
+        let inventory_packets = self.encode_personal_inventory(
+            &player.inventory,
+            &equipment,
+            (0..PlayerInventory::MAIN_SIZE).map(|index| after(PersonalSlot::Storage(index))),
+            after(PersonalSlot::Cursor),
+        )?;
         if player.gamemode.load() != mode || !player.has_stable_world_membership() || !owns_player()
         {
             return None;
@@ -1105,10 +1116,7 @@ impl BedrockClient {
                 PersonalSlot::Cursor => *cursor = stack,
             }
         }
-        for packet in [response, content, cursor_packet]
-            .into_iter()
-            .chain(equipment_packets)
-        {
+        for packet in std::iter::once(response).chain(inventory_packets) {
             if !self.try_enqueue_packet_data_unobserved(packet) {
                 break;
             }

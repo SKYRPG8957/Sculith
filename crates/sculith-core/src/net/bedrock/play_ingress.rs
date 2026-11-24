@@ -126,6 +126,7 @@ impl BedrockClient {
             || Self::can_prepare_movement(&packet)
             || Self::can_prepare_attack(&packet)
             || Self::can_route_inventory(&packet)
+            || Self::can_route_inventory_screen(&packet)
             || Self::can_route_hotbar(&packet))
             && self.is_current_protocol();
         player.inbound_packets.push(packet);
@@ -383,6 +384,22 @@ impl BedrockClient {
         RegionalMovePreparation::Deferred
     }
 
+    fn try_regional_inventory_input(
+        &self,
+        player: &Player,
+        server: &Server,
+        packet: &RawPacket,
+        owns_player: impl FnOnce() -> bool,
+    ) -> Option<()> {
+        if Self::can_route_inventory_screen(packet) {
+            self.try_regional_inventory_screen(player, server, packet, owns_player)
+        } else if Self::can_route_hotbar(packet) {
+            self.try_regional_hotbar_selection(player, server, packet, owns_player)
+        } else {
+            self.try_regional_inventory_request(player, server, packet, owns_player)
+        }
+    }
+
     pub(crate) fn drain_regional_input(
         &self,
         player: &Player,
@@ -414,17 +431,9 @@ impl BedrockClient {
             if !Self::is_regional_reply(queued.packet.id) {
                 let owns_player = || owns(player.get_entity().chunk_pos.load());
                 if !was_waiting
-                    && (self
-                        .try_regional_hotbar_selection(player, server, &queued.packet, owns_player)
+                    && self
+                        .try_regional_inventory_input(player, server, &queued.packet, owns_player)
                         .is_some()
-                        || self
-                            .try_regional_inventory_request(
-                                player,
-                                server,
-                                &queued.packet,
-                                owns_player,
-                            )
-                            .is_some())
                 {
                     continue;
                 }
@@ -497,6 +506,7 @@ mod tests {
         Block, effect::StatusEffect, entity::EntityType, item::Item, item_stack::ItemStack,
         potion::Effect,
     };
+    use pumpkin_inventory::screen_handler::ScreenHandler;
     use pumpkin_world::world::BlockFlags;
     use sculith_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
@@ -506,7 +516,10 @@ mod tests {
             client::{CMobEffect, CMovePlayer, update_attributes::CUpdateAttributes},
             network_item::{NetworkItemDescriptor, NetworkItemStackDescriptor},
             server::{
-                mob_equipment::SMobEquipment, player_auth_input::InputData,
+                container_close::SContainerClose,
+                interact::{Action, SInteract},
+                mob_equipment::SMobEquipment,
+                player_auth_input::InputData,
                 player_hotbar::SPlayerHotbar,
             },
         },
@@ -598,6 +611,74 @@ mod tests {
                 period: TICK_PERIOD,
             },
         );
+    }
+
+    fn verify_personal_inventory_after_handoff(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        origin: Vector2<i32>,
+        destination: Vector2<i32>,
+    ) {
+        let position = |chunk: Vector2<i32>| {
+            Vector3::new(
+                f64::from(chunk.x) * 16.0 + 8.0,
+                100.0,
+                f64::from(chunk.y) * 16.0 + 8.0,
+            )
+        };
+        let open = || RawPacket {
+            id: SInteract::PACKET_ID,
+            payload: vec![Action::OpenInventory as u8, 0, 0].into(),
+        };
+        let close = || RawPacket {
+            id: SContainerClose::PACKET_ID,
+            payload: vec![0, 0xff, 0].into(),
+        };
+        let saved = player.get_entity().pos.load();
+        let was_loaded = player.has_client_loaded();
+        let was_open = client.inventory_opened.swap(false, Relaxed);
+        player.set_client_loaded(true);
+        player.get_entity().set_pos(position(origin));
+
+        client.enqueue_play_input(player, open());
+        player.get_entity().set_pos(position(destination));
+        let at = Instant::now();
+        tick_region(world, origin, at);
+        assert!(!client.inventory_opened.load(Relaxed));
+        tick_region(world, destination, at);
+        assert!(client.inventory_opened.load(Relaxed));
+
+        client.enqueue_play_input(player, open());
+        client.enqueue_play_input(player, close());
+        tick_region(world, destination, at + TICK_PERIOD);
+        assert!(!client.inventory_opened.load(Relaxed));
+        client.enqueue_play_input(player, open());
+        tick_region(world, destination, at + TICK_PERIOD * 2);
+        assert!(client.inventory_opened.load(Relaxed));
+
+        let cursor = player
+            .player_screen_handler
+            .lock()
+            .unwrap()
+            .get_behaviour()
+            .cursor_stack
+            .clone();
+        let previous = std::mem::replace(
+            &mut *cursor.lock().unwrap(),
+            ItemStack::new(1, &Item::STICK),
+        );
+        client.enqueue_play_input(player, close());
+        tick_region(world, destination, at + TICK_PERIOD * 3);
+        assert!(client.inventory_opened.load(Relaxed));
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        *cursor.lock().unwrap() = previous;
+        client.drain_world_input(player, None, Some(world), 8);
+        assert!(!client.inventory_opened.load(Relaxed));
+
+        client.inventory_opened.store(was_open, Relaxed);
+        player.set_client_loaded(was_loaded);
+        player.get_entity().set_pos(saved);
     }
 
     fn verify_hotbar_selection_after_handoff(
@@ -1714,6 +1795,7 @@ mod tests {
         assert_eq!(pending_with_lock, 1);
         advance(east);
         check();
+        verify_personal_inventory_after_handoff(&world, &player, &client, east, west);
         verify_hotbar_selection_after_handoff(&world, &server, &player, &client, east, west);
         verify_food_finish_refreshes_index_after_handoff(
             &world, &server, &player, &client, west, east,
