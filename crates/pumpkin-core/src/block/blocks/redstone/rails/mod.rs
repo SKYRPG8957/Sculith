@@ -6,7 +6,7 @@ use pumpkin_data::block_properties::RailShape;
 use pumpkin_data::block_properties::RailShapeStraight;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, tag};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::world::World;
 

@@ -185,7 +185,6 @@ mod resource_with {
         server::{RecipeManager, Server},
         world::World,
     };
-    use pumpkin_util::text::TextComponent;
     use pumpkin_wasm_host_common::{
         args::OwnedArg,
         state::{
@@ -193,6 +192,7 @@ mod resource_with {
             WasmCommandNode,
         },
     };
+    use sculith_util::text::TextComponent;
     use std::collections::HashMap;
     use std::sync::{Arc, Weak};
     use tokio::sync::Mutex;
@@ -564,10 +564,10 @@ pub async fn init_plugin(
 mod tests {
     use crate::generated_packets::{clientbound_java_any_to_wit, serialize_java_packet};
     use crate::pumpkin::plugin::java_packets::{CSetBlockDestroyStage, ClientboundPacket};
-    use pumpkin_protocol::VarInt;
-    use pumpkin_protocol::java::client::play::CSetBlockDestroyStage as ProtocolCSetBlockDestroyStage;
-    use pumpkin_util::math::position::BlockPos;
-    use pumpkin_util::version::JavaMinecraftVersion;
+    use sculith_protocol::VarInt;
+    use sculith_protocol::java::client::play::CSetBlockDestroyStage as ProtocolCSetBlockDestroyStage;
+    use sculith_util::math::position::BlockPos;
+    use sculith_util::version::JavaMinecraftVersion;
 
     #[test]
     fn serializes_destroy_stage() {
@@ -608,9 +608,9 @@ mod tests {
     #[test]
     fn sound_packet_mapping_preserves_optional_wire_fields() {
         use crate::generated_packets::{clientbound_bedrock_any_to_wit, serialize_bedrock_packet};
-        use pumpkin_protocol::bedrock::client::CPlaySound;
-        use pumpkin_protocol::serial::PacketWrite;
-        use pumpkin_util::math::vector3::Vector3;
+        use sculith_protocol::bedrock::client::CPlaySound;
+        use sculith_protocol::serial::PacketWrite;
+        use sculith_util::math::vector3::Vector3;
 
         let mut packet = CPlaySound::new(
             "sculith.demo_tone".into(),
@@ -635,7 +635,7 @@ mod tests {
         use crate::generated_packets::{clientbound_bedrock_any_to_wit, serialize_bedrock_packet};
         use crate::pumpkin::plugin::bedrock_packets::ClientboundPacket as BedrockPacket;
         use bytes::Bytes;
-        use pumpkin_protocol::bedrock::client::CAvailableActorIdentifiers;
+        use sculith_protocol::bedrock::client::CAvailableActorIdentifiers;
 
         let nbt = b"\x0a\x00\x09\x06idlist\x0a\x00\x00";
         let packet = CAvailableActorIdentifiers {
@@ -655,11 +655,11 @@ mod tests {
     fn actor_pick_preserves_the_signed_id_in_the_plugin_view() {
         use crate::generated_packets::deserialize_bedrock_serverbound_packet;
         use crate::pumpkin::plugin::bedrock_packets::ServerboundPacket as BedrockPacket;
-        use pumpkin_protocol::codec::var_uint::VarUInt;
-        use pumpkin_protocol::serial::PacketRead;
+        use sculith_protocol::codec::var_uint::VarUInt;
+        use sculith_protocol::serial::PacketRead;
 
         let mut payload =
-            include_bytes!("../../pumpkin-protocol/tests/fixtures/actor_pick_2225.bin").as_slice();
+            include_bytes!("../../sculith-protocol/tests/fixtures/actor_pick_2225.bin").as_slice();
         let id = VarUInt::read(&mut payload).unwrap().0 as i32;
         let Some(BedrockPacket::SActorPickRequest(data)) =
             deserialize_bedrock_serverbound_packet(id, payload)

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::Rotation;
-use pumpkin_util::{
+use sculith_util::{
     math::{block_box::BlockBox, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
 };
@@ -559,7 +559,7 @@ impl EndCityLayout {
 #[cfg(test)]
 mod tests {
     use pumpkin_data::Mirror;
-    use pumpkin_util::random::legacy_rand::LegacyRand;
+    use sculith_util::random::legacy_rand::LegacyRand;
 
     use crate::generation::structure::{
         structures::create_chunk_random, template::BlockStateResolver,

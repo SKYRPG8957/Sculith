@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use pumpkin_data::BlockStateId;
 use pumpkin_nbt::NbtCompound;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::error::{GameTestError, GameTestResult};
 use crate::model::GameTestRotation;

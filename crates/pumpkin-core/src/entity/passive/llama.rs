@@ -16,12 +16,12 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{BlockState, tracked_data};
 use pumpkin_inventory::mount_screen_handler::MountScreenHandler;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::client::set_actor_data::{
+use rand::RngExt;
+use sculith_protocol::bedrock::client::set_actor_data::{
     MetadataValue, SyncedActorDataList, entity_data_key,
 };
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::position::BlockPos;
-use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::ai::goal::llama_follow_caravan::LlamaFollowCaravanGoal;

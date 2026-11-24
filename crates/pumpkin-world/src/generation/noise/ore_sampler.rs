@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, BlockState};
-use pumpkin_util::{
+use sculith_util::{
     math::{clamped_map, vector3::Vector3},
     random::{RandomImpl, xoroshiro128::XoroshiroSplitter},
 };

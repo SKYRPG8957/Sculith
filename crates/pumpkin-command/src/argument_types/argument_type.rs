@@ -1,4 +1,4 @@
-use pumpkin_protocol::java::client::play::SuggestionProviders;
+use sculith_protocol::java::client::play::SuggestionProviders;
 
 use crate::context::command_context::CommandContext;
 use crate::source::{CommandSource, DummySource};
@@ -7,7 +7,7 @@ use crate::suggestion::suggestions::SuggestionsBuilder;
 use crate::{errors::command_syntax_error::CommandSyntaxError, string_reader::StringReader};
 use std::any::Any;
 
-pub type JavaClientArgumentType = pumpkin_protocol::java::client::play::ArgumentType;
+pub type JavaClientArgumentType = sculith_protocol::java::client::play::ArgumentType;
 pub type ParseWithSourceAnyResult = Result<Box<dyn Any + Send + Sync>, CommandSyntaxError>;
 
 /// Represents an argument type that parses a particular type `Item`.

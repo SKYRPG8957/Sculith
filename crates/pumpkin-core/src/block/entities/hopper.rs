@@ -13,10 +13,10 @@ use pumpkin_data::{Block, BlockDirection, BlockId, BlockStateId};
 use pumpkin_inventory::{Clearable, Inventory, sync_write_items_to_nbt};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::any::Any;
 use std::array::from_fn;
 use std::sync::Arc;
@@ -216,7 +216,7 @@ impl BlockEntity for HopperBlockEntity {
         self.metadata.get_lock()
     }
 
-    fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         self.metadata.get_custom_name()
     }
 }

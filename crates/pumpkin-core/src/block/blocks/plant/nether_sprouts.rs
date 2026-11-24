@@ -26,7 +26,7 @@ impl PlantBlockBase for NetherSproutsBlock {
     fn can_plant_on_top(
         &self,
         block_accessor: &dyn pumpkin_world::world::BlockAccessor,
-        pos: &pumpkin_util::math::position::BlockPos,
+        pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         let block = block_accessor.get_block(pos);
         block.has_tag(&tag::Block::MINECRAFT_SUPPORTS_NETHER_SPROUTS)

@@ -15,7 +15,7 @@ use crate::sound::Sound;
 use crate::tag::{RegistryKey, Taggable};
 use crate::{AttributeModifierSlot, tag};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 #[derive(Clone)]

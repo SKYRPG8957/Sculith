@@ -14,7 +14,7 @@ use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_codecs::Number;
 use pumpkin_data::translation;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 pub const NUMBER_PARSE_FAILURE: CommandErrorType<1> = CommandErrorType::new(
     translation::java::SNBT_PARSER_NUMBER_PARSE_FAILURE,

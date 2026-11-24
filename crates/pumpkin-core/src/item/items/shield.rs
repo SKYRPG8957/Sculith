@@ -4,7 +4,7 @@ use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::net::ClientPlatform;
 use pumpkin_data::item::Item;
-use pumpkin_util::Hand;
+use sculith_util::Hand;
 
 pub struct ShieldItem;
 

@@ -7,10 +7,10 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 const MAX_COOLDOWN: i32 = 20;

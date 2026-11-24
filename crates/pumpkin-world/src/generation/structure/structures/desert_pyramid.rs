@@ -5,7 +5,7 @@ use pumpkin_data::{
     block_properties::{HorizontalFacing, WhiteWoolStairsLikeProperties},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection, HeightMap,
     math::{block_box::BlockBox, position::BlockPos},
     random::{
@@ -110,7 +110,7 @@ impl DesertPyramidPiece {
         x: i32,
         y: i32,
         z: i32,
-        potential_positions: &mut Vec<pumpkin_util::math::vector3::Vector3<i32>>,
+        potential_positions: &mut Vec<sculith_util::math::vector3::Vector3<i32>>,
     ) {
         self.piece
             .add_block(chunk, Block::SAND.default_state, x, y, z, bb);
@@ -129,7 +129,7 @@ impl DesertPyramidPiece {
         x1: i32,
         y1: i32,
         z1: i32,
-        potential_positions: &mut Vec<pumpkin_util::math::vector3::Vector3<i32>>,
+        potential_positions: &mut Vec<sculith_util::math::vector3::Vector3<i32>>,
     ) {
         for y in y0..=y1 {
             for x in x0..=x1 {
@@ -169,7 +169,7 @@ impl DesertPyramidPiece {
         z0: i32,
         x1: i32,
         z1: i32,
-        potential_positions: &mut Vec<pumpkin_util::math::vector3::Vector3<i32>>,
+        potential_positions: &mut Vec<sculith_util::math::vector3::Vector3<i32>>,
     ) {
         for x in x0..=x1 {
             for z in z0..=z1 {
@@ -253,7 +253,7 @@ impl DesertPyramidPiece {
         chunk: &mut ProtoChunk,
         bb: &BlockBox,
         random: &mut RandomGenerator,
-        potential_positions: &mut Vec<pumpkin_util::math::vector3::Vector3<i32>>,
+        potential_positions: &mut Vec<sculith_util::math::vector3::Vector3<i32>>,
     ) {
         let west_stairs = Self::sandstone_stairs(HorizontalFacing::West);
         self.piece.add_block(chunk, west_stairs, 13, -1, 17, bb);
@@ -298,7 +298,7 @@ impl DesertPyramidPiece {
         chunk: &mut ProtoChunk,
         bb: &BlockBox,
         random: &mut RandomGenerator,
-        potential_positions: &mut Vec<pumpkin_util::math::vector3::Vector3<i32>>,
+        potential_positions: &mut Vec<sculith_util::math::vector3::Vector3<i32>>,
     ) {
         let (x, y, z) = (16, -4, 13);
         let cut = Block::CUT_SANDSTONE.default_state;
@@ -539,7 +539,7 @@ impl StructurePieceBase for DesertPyramidPiece {
         seed: i64,
         chunk_box: &BlockBox,
     ) {
-        use pumpkin_util::random::xoroshiro128::Xoroshiro;
+        use sculith_util::random::xoroshiro128::Xoroshiro;
 
         if !self.adjust_height(chunk, random) {
             return;

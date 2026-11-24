@@ -3,7 +3,7 @@ use pumpkin_data::{
     fluid::Fluid,
     tag::{self, Taggable},
 };
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
 use crate::{
     entity::ai::pathfinder::{

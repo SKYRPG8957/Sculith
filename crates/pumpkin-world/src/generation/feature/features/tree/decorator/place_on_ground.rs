@@ -2,7 +2,7 @@ use super::TreeDecorator;
 use crate::generation::proto_chunk::GenerationCache;
 use crate::{generation::block_state_provider::BlockStateProvider, world::WorldPortalExt};
 use pumpkin_data::Block;
-use pumpkin_util::{
+use sculith_util::{
     HeightMap,
     math::{block_box::BlockBox, position::BlockPos},
     random::{RandomGenerator, RandomImpl},

@@ -2,7 +2,7 @@ use crate::generation::proto_chunk::GenerationCache;
 use bitflags::bitflags;
 use pumpkin_data::{Block, BlockState, BlockStateId, Mirror, Rotation, chunk::Biome};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_util::math::{position::BlockPos, vector2::Vector2};
 use thiserror::Error;
 
 bitflags! {

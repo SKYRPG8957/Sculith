@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::java::server::play::{PlayResourcePackResult, SPlayResourcePack};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::java::server::play::{PlayResourcePackResult, SPlayResourcePack};
+use sculith_util::text::TextComponent;
 
 use crate::plugin::api::events::player::player_resource_pack_status::PlayerResourcePackStatusEvent;
 

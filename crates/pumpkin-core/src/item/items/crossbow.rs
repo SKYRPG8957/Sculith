@@ -11,7 +11,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
-use pumpkin_util::{GameMode, Hand};
+use sculith_util::{GameMode, Hand};
 
 pub struct CrossbowItem;
 

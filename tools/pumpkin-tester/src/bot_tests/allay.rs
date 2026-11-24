@@ -7,8 +7,8 @@ use pumpkin_core::{
 use pumpkin_data::{
     entity::EntityType, item::Item, item_stack::ItemStack, statistic::StatisticCategory,
 };
-use pumpkin_protocol::{codec::var_int::VarInt, java::server::play::SInteract};
-use pumpkin_util::{GameMode, Hand, math::vector3::Vector3};
+use sculith_protocol::{codec::var_int::VarInt, java::server::play::SInteract};
+use sculith_util::{GameMode, Hand, math::vector3::Vector3};
 
 use crate::bot::{HeadlessBot, MAX_POLL_TICKS};
 

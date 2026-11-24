@@ -14,9 +14,9 @@ use pumpkin_data::{
     world::WorldEvent,
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_util::math::vector3::Vector3;
 
 use crate::{
     entity::{

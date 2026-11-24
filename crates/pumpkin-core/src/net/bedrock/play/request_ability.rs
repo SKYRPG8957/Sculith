@@ -5,14 +5,14 @@ impl BedrockClient {
     pub fn handle_request_ability(
         &self,
         player: &Arc<Player>,
-        packet: &pumpkin_protocol::bedrock::server::request_ability::SRequestAbility,
+        packet: &sculith_protocol::bedrock::server::request_ability::SRequestAbility,
     ) {
         player.update_last_action_time();
         let ability_id = packet.ability.0;
         match ability_id {
             9 => {
                 // Flying
-                if let pumpkin_protocol::bedrock::server::request_ability::AbilityValue::Bool(
+                if let sculith_protocol::bedrock::server::request_ability::AbilityValue::Bool(
                     requested_flying,
                 ) = packet.value
                 {

@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering::Relaxed;
 
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use super::super::BrainTick;
 use super::super::memory::{MemoryModuleId, MemoryStatus, types, walk_target::WalkTarget};

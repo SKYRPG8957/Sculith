@@ -6,8 +6,8 @@ use crate::source::CommandSource;
 use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_data::translation;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 
 pub const INVALID_ERROR_TYPE: CommandErrorType<1> = CommandErrorType::new(
     translation::java::ARGUMENT_ANCHOR_INVALID,

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::enchantment::LevelBasedValue;
 use pumpkin_data::potion::Effect;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomGenerator, RandomImpl, get_seed, xoroshiro128::Xoroshiro};
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomGenerator, RandomImpl, get_seed, xoroshiro128::Xoroshiro};
 
 use super::EnchantmentEntityEffectExt;
 use crate::entity::Entity;

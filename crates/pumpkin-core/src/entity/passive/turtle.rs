@@ -17,10 +17,10 @@ use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockState};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::block::blocks::turtle_egg::TurtleEggBlock;
 use crate::entity::ai::brain::memory::codec::{block_pos_from_tag, block_pos_to_tag};

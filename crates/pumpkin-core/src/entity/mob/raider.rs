@@ -9,8 +9,8 @@ use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 
 use crate::entity::ai::behavior::fleeing::Flee;
 use crate::entity::ai::goal::revenge::RevengeGoal;

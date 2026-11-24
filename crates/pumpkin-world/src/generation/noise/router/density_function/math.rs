@@ -1,7 +1,7 @@
 use pumpkin_data::noise_router::{
     BinaryData, BinaryOperation, ClampData, LinearData, RoundingData, RoundingOperation, UnaryData,
 };
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::generation::noise::router::{
     chunk_noise_router::{ChunkNoiseFunctionComponent, StaticChunkNoiseFunctionComponentImpl},

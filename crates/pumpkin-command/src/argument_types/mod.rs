@@ -4,9 +4,9 @@ use crate::errors::error_types::{
 };
 use crate::string_reader::StringReader;
 use pumpkin_data::translation;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::math::bounds::{Bounds, DoubleBounds, FloatDegreeBounds, IntBounds};
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::math::bounds::{Bounds, DoubleBounds, FloatDegreeBounds, IntBounds};
+use sculith_util::text::TextComponent;
 use std::str::FromStr;
 
 /// Creates a [`Vec<String>`] of examples from

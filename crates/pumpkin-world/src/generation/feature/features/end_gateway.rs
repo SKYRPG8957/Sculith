@@ -1,6 +1,6 @@
 use pumpkin_data::Block;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::generation::proto_chunk::GenerationCache;
 

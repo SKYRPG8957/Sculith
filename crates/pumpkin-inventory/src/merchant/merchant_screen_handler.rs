@@ -26,7 +26,7 @@ pub struct MerchantScreenHandler {
     behaviour: ScreenHandlerBehaviour,
     selected_offer: usize,
     active_offer: Option<usize>,
-    pub offers: Vec<pumpkin_protocol::java::client::play::MerchantOffer>,
+    pub offers: Vec<sculith_protocol::java::client::play::MerchantOffer>,
     pub on_trade: Option<Box<dyn Fn(usize) + Send + Sync>>,
     pub on_trade_updated: Option<Box<dyn Fn(bool) + Send + Sync>>,
     pub on_close: Option<Box<dyn Fn() + Send + Sync>>,
@@ -39,7 +39,7 @@ impl MerchantScreenHandler {
         sync_id: u8,
         player_inventory: &Arc<PlayerInventory>,
         inventory: Arc<dyn Inventory>,
-        offers: Vec<pumpkin_protocol::java::client::play::MerchantOffer>,
+        offers: Vec<sculith_protocol::java::client::play::MerchantOffer>,
     ) -> Self {
         let result_taken = Arc::new(AtomicBool::new(false));
         let mut behaviour = ScreenHandlerBehaviour::new(sync_id, Some(WindowType::Merchant));
@@ -108,7 +108,7 @@ impl MerchantScreenHandler {
         }
     }
 
-    fn adjusted_cost_a(offer: &pumpkin_protocol::java::client::play::MerchantOffer) -> ItemStack {
+    fn adjusted_cost_a(offer: &sculith_protocol::java::client::play::MerchantOffer) -> ItemStack {
         let mut cost = offer.base_cost_a.0.as_ref().clone();
         let demand = i32::from(cost.item_count).saturating_mul(offer.demand) as f32;
         let demand_bonus = (demand * offer.price_multiplier).floor().max(0.0) as i32;
@@ -127,7 +127,7 @@ impl MerchantScreenHandler {
     }
 
     fn satisfies(
-        offer: &pumpkin_protocol::java::client::play::MerchantOffer,
+        offer: &sculith_protocol::java::client::play::MerchantOffer,
         input_a: &ItemStack,
         input_b: &ItemStack,
     ) -> bool {
@@ -139,7 +139,7 @@ impl MerchantScreenHandler {
     }
 
     fn input_order(
-        offer: &pumpkin_protocol::java::client::play::MerchantOffer,
+        offer: &sculith_protocol::java::client::play::MerchantOffer,
         input_a: &ItemStack,
         input_b: &ItemStack,
     ) -> Option<bool> {
@@ -422,7 +422,7 @@ impl ScreenHandler for MerchantScreenHandler {
         &mut self,
         slot_index: i32,
         button: i32,
-        action_type: pumpkin_protocol::java::server::play::SlotActionType,
+        action_type: sculith_protocol::java::server::play::SlotActionType,
         player: &dyn InventoryPlayer,
     ) {
         if slot_index == 2 {
@@ -497,7 +497,7 @@ mod tests {
 
     use crate::inventory::SimpleInventory;
     use pumpkin_data::{data_component_impl::EquipmentSlot, item::Item};
-    use pumpkin_protocol::{
+    use sculith_protocol::{
         codec::item_stack_seralizer::ItemStackSerializer,
         java::{
             client::play::{
@@ -518,8 +518,8 @@ mod tests {
         cost_count: u8,
         output: &'static Item,
         max_uses: i32,
-    ) -> pumpkin_protocol::java::client::play::MerchantOffer {
-        pumpkin_protocol::java::client::play::MerchantOffer {
+    ) -> sculith_protocol::java::client::play::MerchantOffer {
+        sculith_protocol::java::client::play::MerchantOffer {
             base_cost_a: ItemStackSerializer(Cow::Owned(ItemStack::new(cost_count, cost))),
             output: ItemStackSerializer(Cow::Owned(ItemStack::new(1, output))),
             cost_b: None,
@@ -533,7 +533,7 @@ mod tests {
         }
     }
 
-    fn bookshelf_offer() -> pumpkin_protocol::java::client::play::MerchantOffer {
+    fn bookshelf_offer() -> sculith_protocol::java::client::play::MerchantOffer {
         single_cost_offer(&Item::EMERALD, 9, &Item::BOOKSHELF, 12)
     }
 

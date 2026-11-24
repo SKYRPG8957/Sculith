@@ -7,7 +7,7 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::Difficulty;
+use sculith_util::Difficulty;
 
 use crate::block::{BlockBehaviour, CanPlaceAtArgs, OnEntityCollisionArgs};
 #[pumpkin_block("minecraft:wither_rose")]
@@ -59,7 +59,7 @@ impl PlantBlockBase for WitherRoseBlock {
     fn can_plant_on_top(
         &self,
         block_accessor: &dyn pumpkin_world::world::BlockAccessor,
-        pos: &pumpkin_util::math::position::BlockPos,
+        pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         let support_block = block_accessor.get_block(pos);
         support_block.has_tag(&tag::Block::MINECRAFT_SUPPORTS_WITHER_ROSE)

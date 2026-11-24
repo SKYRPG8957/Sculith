@@ -4,7 +4,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::potion::Effect;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 use crate::entity::mob::equipment::RegionalDifficulty;

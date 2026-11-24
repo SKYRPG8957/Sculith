@@ -8,15 +8,15 @@ use tracing::warn;
 
 use crate::net::java::chunk_data::CChunkData;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{CChunkBatchEnd, CChunkBatchStart, CUnloadChunk};
-use pumpkin_protocol::ser::NetworkWriteExt;
-use pumpkin_protocol::{ClientPacket, MultiVersionJavaPacket};
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::version::JavaMinecraftVersion;
 use pumpkin_world::chunk::ChunkData;
 use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 use pumpkin_world::level::{Level, SyncChunk};
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::{CChunkBatchEnd, CChunkBatchStart, CUnloadChunk};
+use sculith_protocol::ser::NetworkWriteExt;
+use sculith_protocol::{ClientPacket, MultiVersionJavaPacket};
+use sculith_util::math::vector2::Vector2;
+use sculith_util::version::JavaMinecraftVersion;
 
 use crate::net::ClientPlatform;
 

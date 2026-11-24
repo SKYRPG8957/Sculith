@@ -2,11 +2,11 @@ use pumpkin_data::{
     Block, BlockDirection, BlockStateId, block_properties::PaleHangingMossLikeProperties,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
+use sculith_util::math::position::BlockPos;
 
 use crate::block::{
     BlockBehaviour, BonemealArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,

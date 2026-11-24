@@ -1,5 +1,5 @@
 use pumpkin_data::translation::java::ARGUMENT_UUID_INVALID;
-use pumpkin_util::uuid::parse_uuid;
+use sculith_util::uuid::parse_uuid;
 use uuid::Uuid;
 
 use crate::{

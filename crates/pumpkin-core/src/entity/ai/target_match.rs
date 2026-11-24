@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use pumpkin_data::entity::{EntityType, MobCategory};
 use pumpkin_data::tag::{self, Tag, Taggable};
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::{Entity, EntityBase};
 use crate::world::{World, entity_islands};

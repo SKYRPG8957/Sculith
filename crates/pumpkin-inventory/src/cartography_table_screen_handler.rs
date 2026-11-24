@@ -15,7 +15,7 @@ use pumpkin_data::screen::WindowType;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_protocol::java::server::play::SlotActionType;
+use sculith_protocol::java::server::play::SlotActionType;
 
 #[must_use]
 pub fn is_map_item(stack: &ItemStack) -> bool {

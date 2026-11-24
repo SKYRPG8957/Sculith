@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use pumpkin_data::{effect::StatusEffect, potion::Effect};
-use pumpkin_protocol::bedrock::client::set_actor_data::{
+use sculith_protocol::bedrock::client::set_actor_data::{
     CSetActorData, MetadataValue, PropertySyncData, SyncedActorDataList, entity_data_key,
 };
 

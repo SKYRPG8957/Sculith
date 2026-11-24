@@ -26,10 +26,10 @@ use pumpkin_data::statistic::{CustomStatistic, StatisticCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockId, BlockState, BlockStateId};
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
 
 const RAIN_FILL_CHANCE: f32 = 0.05;
 const POWDER_SNOW_FILL_CHANCE: f32 = 0.1;
@@ -785,7 +785,7 @@ mod tests {
     use super::*;
     use pumpkin_data::data_component_impl::{BannerPatternLayer, CustomNameImpl};
     use pumpkin_data::dye_color::DyeColor;
-    use pumpkin_util::text::TextComponent;
+    use sculith_util::text::TextComponent;
 
     #[test]
     fn water_potion_detection_rejects_non_water_potions() {

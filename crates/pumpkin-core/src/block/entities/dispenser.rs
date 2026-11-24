@@ -2,8 +2,8 @@ use crate::block::entities::BlockEntity;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::{Clearable, Inventory, sync_write_items_to_nbt};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
 use rand::{RngExt, rng};
+use sculith_util::math::position::BlockPos;
 use std::any::Any;
 use std::array::from_fn;
 use std::sync::Arc;
@@ -73,7 +73,7 @@ impl BlockEntity for DispenserBlockEntity {
         self.metadata.get_lock()
     }
 
-    fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         self.metadata.get_custom_name()
     }
 

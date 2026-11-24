@@ -4,8 +4,8 @@ use pumpkin_data::tag::{RegistryKey, get_tag_ids};
 use pumpkin_data::{Block, BlockStateId, Property, translation};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
 
 use crate::argument_types::FromStringReader;
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};

@@ -6,12 +6,12 @@ use crossbeam::atomic::AtomicCell;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::java::client::play::CEntityVelocity;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::signum;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::block::BlockStateCodec;
 use pumpkin_world::clip::{ClipBlock, ClipContext, ClipFluid};
+use sculith_protocol::java::client::play::CEntityVelocity;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::signum;
+use sculith_util::math::vector3::Vector3;
 
 use super::owner::ProjectileOwner;
 use super::{HitOutcome, ProjectileHit, compute_margin, hit_target_or_deflect_self};

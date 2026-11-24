@@ -7,12 +7,12 @@ use pumpkin_data::{
     world::WorldEvent,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
 use rand::RngExt;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use super::chorus_plant;
 use crate::entity::projectile::{may_break, may_interact};

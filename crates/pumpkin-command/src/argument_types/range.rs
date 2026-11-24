@@ -1,4 +1,4 @@
-use pumpkin_util::math::bounds::{DoubleBounds, IntBounds};
+use sculith_util::math::bounds::{DoubleBounds, IntBounds};
 
 use crate::{
     argument_types::{
@@ -61,7 +61,7 @@ impl_copy_get!(FloatRangeArgumentType, DoubleBounds);
 
 #[cfg(test)]
 mod test {
-    use pumpkin_util::math::bounds::{DoubleBounds, IntBounds};
+    use sculith_util::math::bounds::{DoubleBounds, IntBounds};
 
     use crate::{
         argument_types::{

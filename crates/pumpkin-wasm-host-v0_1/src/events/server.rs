@@ -20,9 +20,9 @@ use pumpkin_core::plugin::server::{
     server_tick_end::ServerTickEndEvent,
     server_tick_start::ServerTickStartEvent,
 };
-use pumpkin_protocol::ConnectionState;
 use pumpkin_wasm_host_common::state::PluginHostState;
 use pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
+use sculith_protocol::ConnectionState;
 use std::sync::atomic::Ordering;
 
 fn has_current_bedrock_packet_layout(client: &pumpkin_core::net::bedrock::BedrockClient) -> bool {
@@ -312,8 +312,8 @@ impl ToFromWasmEvent for MapInitializeEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_protocol::packet::MultiVersionJavaPacket;
-    use pumpkin_util::text::TextComponent;
+    use sculith_protocol::packet::MultiVersionJavaPacket;
+    use sculith_util::text::TextComponent;
     use wasmtime::component::Resource;
 
     #[test]
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn play_packet_is_not_decoded_as_config_packet_with_the_same_id() {
         let version = pumpkin_data::packet::CURRENT_MC_VERSION;
-        let id = pumpkin_protocol::java::server::play::SConfirmTeleport::to_id(version);
+        let id = sculith_protocol::java::server::play::SConfirmTeleport::to_id(version);
 
         let packet = generated_packets::deserialize_java_serverbound_packet(
             ConnectionState::Play,
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn out_of_range_field_leaves_packet_undecoded() {
         let version = pumpkin_data::packet::CURRENT_MC_VERSION;
-        let id = pumpkin_protocol::java::server::play::SClientInformationPlay::to_id(version);
+        let id = sculith_protocol::java::server::play::SClientInformationPlay::to_id(version);
         let view_distance_minus_one = [5, b'e', b'n', b'_', b'u', b's', 0xFF, 0, 1, 0x7F, 1, 0, 1];
 
         let packet = generated_packets::deserialize_java_serverbound_packet(

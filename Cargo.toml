@@ -18,8 +18,8 @@ members = [
     "crates/pumpkin-plugin-api",
     "crates/pumpkin-plugin-runtime",
     "crates/pumpkin-plugin-utils",
-    "crates/pumpkin-protocol",
-    "crates/pumpkin-util",
+    "crates/sculith-protocol",
+    "crates/sculith-util",
     "crates/pumpkin-wasm-host",
     "crates/pumpkin-wasm-host-common",
     "crates/pumpkin-wasm-host-v0_1",
@@ -142,7 +142,7 @@ codegen-units = 16
 [profile.release.package.pumpkin-world]
 codegen-units = 16
 
-[profile.release.package.pumpkin-protocol]
+[profile.release.package.sculith-protocol]
 codegen-units = 16
 
 [profile.release.package.pumpkin-wasm-host]
@@ -225,8 +225,8 @@ pumpkin-macros = { path = "crates/pumpkin-macros", default-features = false }
 pumpkin-nbt = { path = "crates/pumpkin-nbt", default-features = false }
 pumpkin-plugin-api = { path = "crates/pumpkin-plugin-api", default-features = false }
 pumpkin-plugin-runtime = { path = "crates/pumpkin-plugin-runtime", default-features = false }
-pumpkin-protocol = { path = "crates/pumpkin-protocol", default-features = false }
-pumpkin-util = { path = "crates/pumpkin-util", default-features = false }
+sculith-protocol = { path = "crates/sculith-protocol", default-features = false }
+sculith-util = { path = "crates/sculith-util", default-features = false }
 pumpkin-wasm-host = { path = "crates/pumpkin-wasm-host", default-features = false }
 pumpkin-wasm-host-common = { path = "crates/pumpkin-wasm-host-common", default-features = false }
 pumpkin-wasm-host-v0_1 = { path = "crates/pumpkin-wasm-host-v0_1", default-features = false }

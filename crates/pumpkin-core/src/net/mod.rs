@@ -16,8 +16,8 @@ use std::{
 };
 
 use pumpkin_data::translation;
-use pumpkin_protocol::{BClientPacket, ClientPacket, Property};
-use pumpkin_util::{
+use sculith_protocol::{BClientPacket, ClientPacket, Property};
+use sculith_util::{
     Hand, ProfileAction,
     text::TextComponent,
     version::{BedrockMinecraftVersion, JavaMinecraftVersion},

@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use pumpkin_data::{Mirror, Rotation};
 use pumpkin_nbt::{compound::NbtCompound, nbt_compress::read_gzip_compound_tag, tag::NbtTag};
-use pumpkin_util::math::{block_box::BlockBox, vector3::Vector3};
+use sculith_util::math::{block_box::BlockBox, vector3::Vector3};
 use thiserror::Error;
 
 use super::processor::StructureProcessor;

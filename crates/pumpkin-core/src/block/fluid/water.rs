@@ -11,8 +11,8 @@ use pumpkin_data::{
     BlockDirection, BlockStateId,
     fluid::{Fluid, FluidProperties, Level},
 };
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::{chunk::DownwardWaterTick, tick::TickPriority};
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 pub struct FlowingWater;

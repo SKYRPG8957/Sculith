@@ -17,10 +17,10 @@ use pumpkin_data::recipes::{
 use pumpkin_data::{Block, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::chunk::io::Dirtiable;
 use rand::{RngExt, rng};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::{Arc, Mutex};
 
 pub struct CampfireBlockEntity {

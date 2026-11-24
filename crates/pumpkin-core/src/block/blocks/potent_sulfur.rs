@@ -8,7 +8,7 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::{
     block::{

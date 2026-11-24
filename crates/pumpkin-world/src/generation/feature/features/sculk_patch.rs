@@ -6,11 +6,11 @@
 //! algorithm lives in the [`sculk`] sub-module.
 
 use pumpkin_data::Block;
-use pumpkin_util::math::int_provider::IntProvider;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::RandomGenerator;
-use pumpkin_util::random::RandomImpl;
+use sculith_util::math::int_provider::IntProvider;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::RandomGenerator;
+use sculith_util::random::RandomImpl;
 
 use crate::generation::feature::features::sculk;
 use crate::generation::feature::features::sculk::ProtoChunkSculkView;

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use pumpkin_data::{BlockDirection, Mirror, Rotation, item::Item, item_stack::ItemStack};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::{
+use sculith_util::{
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
 };
@@ -300,7 +300,7 @@ fn entity_nbt(id: &str, position: Vector3<f64>) -> NbtCompound {
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_util::random::legacy_rand::LegacyRand;
+    use sculith_util::random::legacy_rand::LegacyRand;
 
     use crate::generation::structure::{structures::HeightSampler, template::get_template};
 

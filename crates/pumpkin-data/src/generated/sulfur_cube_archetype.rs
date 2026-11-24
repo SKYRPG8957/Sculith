@@ -4,7 +4,7 @@ use crate::damage::DamageType;
 use crate::data_component_impl::Operation;
 use crate::sound::Sound;
 use crate::tag::Tag;
-use pumpkin_util::math::float_provider::FloatProvider;
+use sculith_util::math::float_provider::FloatProvider;
 pub struct SulfurCubeAttributeModifier {
     pub attribute: &'static Attributes,
     pub id: &'static str,

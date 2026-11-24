@@ -6,7 +6,7 @@ use std::sync::{
 
 use pumpkin_data::{damage::DamageType, entity::EntityType};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{
+use sculith_util::math::{
     boundingbox::BoundingBox,
     vector3::{Axis, Vector3},
 };
@@ -487,8 +487,8 @@ mod tests {
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
     use pumpkin_data::Block;
-    use pumpkin_util::math::position::BlockPos;
     use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
+    use sculith_util::math::position::BlockPos;
     use std::time::{Duration, Instant};
 
     #[tokio::test]

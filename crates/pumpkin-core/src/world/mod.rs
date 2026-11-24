@@ -5,17 +5,17 @@ use pumpkin_data::chunk::Biome;
 use pumpkin_data::item::{BedrockItem, BedrockItemVersion};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_data::poi_type::PoiType;
-use pumpkin_protocol::bedrock::client::item_registry::{CItemRegistry, ItemData};
-use pumpkin_protocol::bedrock::client::level_event::{CLevelEvent, LevelEvent};
-use pumpkin_protocol::bedrock::client::{
-    CAvailableActorIdentifiers, CBiomeDefinitionList, CJigsawStructureData, CVoxelShapes,
-    VANILLA_ACTOR_IDENTIFIERS, block_actor_data::CBlockActorData,
-};
-use pumpkin_protocol::bedrock::network_item::NetworkItemDescriptor;
-use pumpkin_protocol::codec::data_component::data_to_proto_sound;
 use pumpkin_world::generation::proto_chunk::GenerationCache;
 use pumpkin_world::poi::{PoiStorage, SectionPos};
 use rayon::prelude::*;
+use sculith_protocol::bedrock::client::item_registry::{CItemRegistry, ItemData};
+use sculith_protocol::bedrock::client::level_event::{CLevelEvent, LevelEvent};
+use sculith_protocol::bedrock::client::{
+    CAvailableActorIdentifiers, CBiomeDefinitionList, CJigsawStructureData, CVoxelShapes,
+    VANILLA_ACTOR_IDENTIFIERS, block_actor_data::CBlockActorData,
+};
+use sculith_protocol::bedrock::network_item::NetworkItemDescriptor;
+use sculith_protocol::codec::data_component::data_to_proto_sound;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, RwLock, Weak};
 use std::{collections::HashMap, sync::atomic::Ordering};
@@ -114,17 +114,32 @@ use pumpkin_inventory::Inventory;
 use pumpkin_inventory::crafting::recipe_provider::RecipeProvider;
 use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
-use pumpkin_protocol::bedrock::client::start_game::{CStartGame, ServerTelemetryData};
-use pumpkin_protocol::java::client::play::{
+use pumpkin_world::world::{GetBlockError, WorldPortalExt};
+use pumpkin_world::world_info::clock::WorldClockSnapshot;
+use pumpkin_world::{
+    CURRENT_BEDROCK_MC_VERSION, biome,
+    chunk::{io::Dirtiable, palette::bedrock_water_state},
+};
+use pumpkin_world::{chunk::ChunkData, chunk_system::ChunkPos, world::BlockAccessor};
+use pumpkin_world::{
+    level::{Level, SyncChunk, apply_regional_block_properties},
+    tick::{TickPriority, order},
+};
+pub use pumpkin_world::{world::BlockFlags, world_info::LevelData};
+use rand::seq::{IndexedRandom, SliceRandom};
+use rand::{RngExt, rng};
+use scoreboard::Scoreboard;
+use sculith_protocol::bedrock::client::set_actor_data::{CSetActorData, PropertySyncData};
+use sculith_protocol::bedrock::client::start_game::{CStartGame, ServerTelemetryData};
+use sculith_protocol::java::client::play::{
     CBlockUpdate, CDisguisedChatMessage, CExplosion, CSetBlockDestroyStage, CWorldEvent,
     PlayerSpawnData,
 };
-use pumpkin_protocol::java::client::play::{
+use sculith_protocol::java::client::play::{
     CPlayerSpawnPosition, CRecipeBookAdd, CRecipeBookSettings, CSystemChatMessage,
 };
-use pumpkin_protocol::java::client::play::{CSetEntityMetadata, Metadata};
-use pumpkin_protocol::{
+use sculith_protocol::java::client::play::{CSetEntityMetadata, Metadata};
+use sculith_protocol::{
     BClientPacket, ClientPacket, IdOr, SoundEvent,
     bedrock::{
         client::{
@@ -157,38 +172,23 @@ use pumpkin_protocol::{
         server::play::SChatMessage,
     },
 };
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
     java::client::play::{
         CBlockEvent, CParticle, CRemoveMobEffect, CSetEquipment, CUpdateMobEffect,
     },
 };
-use pumpkin_util::resource_location::ResourceLocation;
-use pumpkin_util::text::{TextComponent, color::NamedColor};
-use pumpkin_util::version::JavaMinecraftVersion;
-use pumpkin_util::{
+use sculith_util::resource_location::ResourceLocation;
+use sculith_util::text::{TextComponent, color::NamedColor};
+use sculith_util::version::JavaMinecraftVersion;
+use sculith_util::{
     Difficulty,
     math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3},
 };
-use pumpkin_util::{
+use sculith_util::{
     math::vector2::Vector2,
     random::{RandomImpl, get_seed, xoroshiro128::Xoroshiro},
 };
-use pumpkin_world::world::{GetBlockError, WorldPortalExt};
-use pumpkin_world::world_info::clock::WorldClockSnapshot;
-use pumpkin_world::{
-    CURRENT_BEDROCK_MC_VERSION, biome,
-    chunk::{io::Dirtiable, palette::bedrock_water_state},
-};
-use pumpkin_world::{chunk::ChunkData, chunk_system::ChunkPos, world::BlockAccessor};
-use pumpkin_world::{
-    level::{Level, SyncChunk, apply_regional_block_properties},
-    tick::{TickPriority, order},
-};
-pub use pumpkin_world::{world::BlockFlags, world_info::LevelData};
-use rand::seq::{IndexedRandom, SliceRandom};
-use rand::{RngExt, rng};
-use scoreboard::Scoreboard;
 use time::LevelTime;
 
 pub mod block_placer;
@@ -698,7 +698,7 @@ impl World {
 
     #[must_use]
     pub fn is_in_spawn_protection(&self, player: &Player, position: &BlockPos) -> bool {
-        if player.permission_lvl.load() == pumpkin_util::permission::PermissionLvl::Four {
+        if player.permission_lvl.load() == sculith_util::permission::PermissionLvl::Four {
             return false;
         }
 
@@ -909,9 +909,9 @@ impl World {
             flags,
         );
 
-        let be_packet = pumpkin_protocol::bedrock::client::CMobEffect {
+        let be_packet = sculith_protocol::bedrock::client::CMobEffect {
             target_runtime_id: VarULong(entity.entity_id as u64),
-            event_id: pumpkin_protocol::bedrock::client::CMobEffect::EVENT_ADD,
+            event_id: sculith_protocol::bedrock::client::CMobEffect::EVENT_ADD,
             effect_id: VarInt(effect.effect_type.to_bedrock_id()),
             effect_amplifier: VarInt(i32::from(effect.amplifier)),
             show_particles: effect.show_particles,
@@ -1133,7 +1133,7 @@ impl World {
                 None => {
                     match JavaClient::serialize_packet_for_version(packet, CURRENT_MC_VERSION) {
                         Ok(data) => packet_data.insert(data),
-                        Err(pumpkin_protocol::ser::WritingError::UnsupportedVersion(_)) => return,
+                        Err(sculith_protocol::ser::WritingError::UnsupportedVersion(_)) => return,
                         Err(err) => {
                             error!(
                                 "Failed to serialize packet {} for version {:?}: {}",
@@ -1219,7 +1219,7 @@ impl World {
 
     fn component_to_bedrock_text(message: &TextComponent) -> SText<'static> {
         match &*message.0.content {
-            pumpkin_util::text::TextContent::Translate {
+            sculith_util::text::TextContent::Translate {
                 translate,
                 bedrock_translate,
                 with,
@@ -1227,14 +1227,14 @@ impl World {
                 let key = bedrock_translate.as_deref().unwrap_or(translate.as_ref());
                 let parameters = with
                     .iter()
-                    .map(pumpkin_util::text::TextComponentBase::to_bedrock_string)
+                    .map(sculith_util::text::TextComponentBase::to_bedrock_string)
                     .collect();
                 SText::translation(key.to_string(), parameters)
             }
             _ => SText::system_message(
                 message
                     .0
-                    .to_bedrock_legacy(pumpkin_util::translation::Locale::EnUs),
+                    .to_bedrock_legacy(sculith_util::translation::Locale::EnUs),
             ),
         }
     }
@@ -1292,7 +1292,7 @@ impl World {
         if was_fully_filtered && let Some(sender) = sender_player {
             let filter_notice =
                 TextComponent::translate(pumpkin_data::translation::java::CHAT_FILTERED_FULL, [])
-                    .color_named(pumpkin_util::text::color::NamedColor::Red)
+                    .color_named(sculith_util::text::color::NamedColor::Red)
                     .italic();
             sender.send_system_message(&filter_notice);
         }
@@ -1588,7 +1588,7 @@ impl World {
     ) {
         let seed = rand::random::<i64>();
         let packet = CSoundEffect::new(
-            pumpkin_protocol::IdOr::Value(pumpkin_protocol::SoundEvent {
+            sculith_protocol::IdOr::Value(sculith_protocol::SoundEvent {
                 sound_name: sound_name.into(),
                 range: None,
             }),
@@ -1606,7 +1606,7 @@ impl World {
             .and_then(|server| server.shared_resources.as_ref())
             .map_or(sound_name, |shared| shared.bedrock_sound_name(sound_name));
         if let Some(packet) =
-            pumpkin_protocol::bedrock::client::CPlaySound::new(name.into(), position, volume, pitch)
+            sculith_protocol::bedrock::client::CPlaySound::new(name.into(), position, volume, pitch)
         {
             self.broadcast_bedrock_all(&packet);
         }
@@ -2165,14 +2165,14 @@ impl World {
                     java(),
                 );
                 Self::broadcast_bedrock_grouped(
-                    &pumpkin_protocol::bedrock::client::CUpdateBlock::new(block_pos, be_block_id),
+                    &sculith_protocol::bedrock::client::CUpdateBlock::new(block_pos, be_block_id),
                     bedrock(),
                 );
             } else {
                 let mut bedrock_packets = Vec::new();
                 for (block_pos, block_state_id) in &updates {
                     let be_block_id = BlockState::to_be_network_id(*block_state_id);
-                    let update_packet = pumpkin_protocol::bedrock::client::CUpdateBlock::new(
+                    let update_packet = sculith_protocol::bedrock::client::CUpdateBlock::new(
                         *block_pos,
                         be_block_id,
                     );
@@ -2221,7 +2221,7 @@ impl World {
             let mut bedrock_water_packets = Vec::new();
             for (block_pos, block_state_id) in &updates {
                 let water_state = bedrock_water_state(*block_state_id);
-                let packet = pumpkin_protocol::bedrock::client::CUpdateBlock::with_layer(
+                let packet = sculith_protocol::bedrock::client::CUpdateBlock::with_layer(
                     *block_pos,
                     BlockState::to_be_network_id(water_state),
                     1,
@@ -3796,7 +3796,7 @@ impl World {
             client.send_game_packet(data).await;
         }
 
-        let crafting_data = pumpkin_protocol::bedrock::client::CCraftingData {
+        let crafting_data = sculith_protocol::bedrock::client::CCraftingData {
             recipes: crate::net::bedrock::recipe::crafting_data(&server.recipe_manager),
             clean_recipes: true,
         };
@@ -4003,7 +4003,7 @@ impl World {
             PlayerAction::UpdateListOrder(VarInt(0)),
             PlayerAction::UpdateHat(true),
         ];
-        let java_player = [pumpkin_protocol::java::client::play::Player {
+        let java_player = [sculith_protocol::java::client::play::Player {
             uuid: gameprofile.id,
             actions: &player_actions,
         }];
@@ -4014,7 +4014,7 @@ impl World {
         // If the player has a custom tab_list_name, send an update for it
         if let Some(tab_list_name) = player.get_tab_list_name() {
             let actions = [PlayerAction::UpdateDisplayName(Some(&tab_list_name))];
-            let java_player = [pumpkin_protocol::java::client::play::Player {
+            let java_player = [sculith_protocol::java::client::play::Player {
                 uuid: gameprofile.id,
                 actions: &actions,
             }];
@@ -4111,7 +4111,7 @@ impl World {
             for (player_id, tab_list_name) in &players_tab_list_names {
                 if let Some(name) = tab_list_name {
                     let actions = [PlayerAction::UpdateDisplayName(Some(name))];
-                    let java_player = [pumpkin_protocol::java::client::play::Player {
+                    let java_player = [sculith_protocol::java::client::play::Player {
                         uuid: *player_id,
                         actions: &actions,
                     }];
@@ -4150,7 +4150,7 @@ impl World {
                     tags.push(key);
                 }
             }
-            let packet = pumpkin_protocol::java::client::play::CUpdateTagsPlay::new(&tags);
+            let packet = sculith_protocol::java::client::play::CUpdateTagsPlay::new(&tags);
             client.send_packet(&packet).await;
         }
 
@@ -4218,7 +4218,7 @@ impl World {
 
                 let je_packet = CSetEquipment::new(existing_player.entity_id().into(), equipment);
 
-                let be_mob_equipment = pumpkin_protocol::bedrock::client::CMobEquipment {
+                let be_mob_equipment = sculith_protocol::bedrock::client::CMobEquipment {
                     target_runtime_id: (existing_player.entity_id() as u64).into(),
                     item: (&held_item).into(),
                     slot: 0,
@@ -4390,14 +4390,14 @@ impl World {
             .collect();
         let je_packet = CSetEquipment::new(from.entity_id().into(), equipment);
 
-        let be_mob_equipment = pumpkin_protocol::bedrock::client::CMobEquipment {
+        let be_mob_equipment = sculith_protocol::bedrock::client::CMobEquipment {
             target_runtime_id: (from.entity_id() as u64).into(),
             item: (&held_item).into(),
             slot: 0,
             selected_slot: 0,
             container_id: 0,
         };
-        let be_offhand_equipment = pumpkin_protocol::bedrock::client::CMobEquipment {
+        let be_offhand_equipment = sculith_protocol::bedrock::client::CMobEquipment {
             target_runtime_id: (from.entity_id() as u64).into(),
             item: (&from.inventory.get_slot(
                 pumpkin_inventory::player::player_inventory::PlayerInventory::OFF_HAND_SLOT,
@@ -5094,7 +5094,7 @@ impl World {
             PlayerAction::UpdateListOrder(VarInt(player.tab_list_order.load(Ordering::Relaxed))),
             PlayerAction::UpdateHat(true),
         ];
-        let entry = [pumpkin_protocol::java::client::play::Player {
+        let entry = [sculith_protocol::java::client::play::Player {
             uuid: profile.id,
             actions: &actions,
         }];
@@ -5847,7 +5847,7 @@ impl World {
 
         let mut flags = flags;
         if flags.contains(BlockFlags::SKIP_DROPS)
-            && cause.is_some_and(|p| p.gamemode.load() == pumpkin_util::GameMode::Creative)
+            && cause.is_some_and(|p| p.gamemode.load() == sculith_util::GameMode::Creative)
             && self
                 .get_block_entity(position)
                 .is_some_and(|entity| entity.drops_for_creative_player())
@@ -8539,8 +8539,8 @@ mod tests {
         fluid::Fluid,
     };
     use pumpkin_nbt::compound::NbtCompound;
-    use pumpkin_util::math::position::BlockPos;
-    use pumpkin_util::math::vector2::Vector2;
+    use sculith_util::math::position::BlockPos;
+    use sculith_util::math::vector2::Vector2;
     use uuid::Uuid;
 
     use super::{
@@ -8716,8 +8716,8 @@ mod tests {
         // The ray always starts inside a block, usually air, and that block must not
         // count as a hit or every raycast would stop where it began.
         let pos = BlockPos::new(10, 64, 10);
-        let from = pumpkin_util::math::vector3::Vector3::new(10.5, 64.5, 10.5);
-        let to = pumpkin_util::math::vector3::Vector3::new(20.5, 64.5, 10.5);
+        let from = sculith_util::math::vector3::Vector3::new(10.5, 64.5, 10.5);
+        let to = sculith_util::math::vector3::Vector3::new(20.5, 64.5, 10.5);
 
         assert!(
             super::World::clip_outline_shapes(Block::AIR.default_state, &pos, from, to).is_none()
@@ -8798,8 +8798,8 @@ mod tests {
             passive::cow::CowEntity,
         };
         use pumpkin_data::entity::EntityType;
-        use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
         use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
+        use sculith_util::math::{vector2::Vector2, vector3::Vector3};
         use std::sync::Arc;
 
         let folder = tempfile::tempdir()?;
@@ -8891,7 +8891,7 @@ mod tests {
             passive::cow::CowEntity,
         };
         use pumpkin_data::{dimension::Dimension, entity::EntityType};
-        use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
+        use sculith_util::math::{vector2::Vector2, vector3::Vector3};
         use std::sync::Arc;
         for unload in [false, true] {
             let folder = tempfile::tempdir()?;
@@ -8951,7 +8951,7 @@ mod tests {
             Entity, EntityBase, ai::test_support::world, boss::wither::WitherEntity,
         };
         use pumpkin_data::entity::EntityType;
-        use pumpkin_util::math::vector3::Vector3;
+        use sculith_util::math::vector3::Vector3;
         use std::sync::Arc;
         let folder = tempfile::tempdir()?;
         let world = world(&folder);

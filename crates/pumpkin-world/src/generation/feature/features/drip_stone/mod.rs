@@ -4,7 +4,7 @@ use pumpkin_data::block_properties::{
 };
 use pumpkin_data::tag;
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockState};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 pub mod cluster;
 pub mod large;

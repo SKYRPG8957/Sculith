@@ -1,6 +1,6 @@
 use std::num::NonZero;
 
-use pumpkin_util::{
+use sculith_util::{
     random::{RandomGenerator, RandomImpl},
     y_offset::YOffset,
 };
@@ -95,8 +95,8 @@ impl TrapezoidHeightProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::random::xoroshiro128::Xoroshiro;
-    use pumpkin_util::y_offset::{AboveBottom, BelowTop};
+    use sculith_util::random::xoroshiro128::Xoroshiro;
+    use sculith_util::y_offset::{AboveBottom, BelowTop};
 
     #[test]
     fn very_biased_to_bottom_parity() {

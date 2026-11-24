@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use pumpkin_protocol::bedrock::server::text::SText;
-use pumpkin_protocol::codec::bit_set::BitSet;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{CDisguisedChatMessage, CPlayerChatMessage, FilterType};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::bedrock::server::text::SText;
+use sculith_protocol::codec::bit_set::BitSet;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::{CDisguisedChatMessage, CPlayerChatMessage, FilterType};
+use sculith_util::text::TextComponent;
 use uuid::Uuid;
 
 use crate::entity::player::Player;
@@ -83,7 +83,7 @@ impl FilterMask {
                 let text = component.clone().get_text();
                 self.apply(&text).map(|filtered_str| {
                     let mut comp = component.clone();
-                    comp.0.content = Box::new(pumpkin_util::text::TextContent::Text {
+                    comp.0.content = Box::new(sculith_util::text::TextContent::Text {
                         text: filtered_str.into(),
                     });
                     comp
@@ -210,7 +210,7 @@ impl PlayerChatMessage {
     #[must_use]
     pub fn with_unsigned_content(mut self, content: TextComponent) -> Self {
         let is_same = match &*content.0.content {
-            pumpkin_util::text::TextContent::Text { text } => text == &self.signed_body.content,
+            sculith_util::text::TextContent::Text { text } => text == &self.signed_body.content,
             _ => false,
         };
         self.unsigned_content = if is_same { None } else { Some(content) };

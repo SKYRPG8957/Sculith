@@ -3,8 +3,8 @@ use crate::entity::mob::Mob;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
-use pumpkin_util::Hand;
 use rand::RngExt;
+use sculith_util::Hand;
 use std::sync::Arc;
 
 pub type CanUsePredicate = Arc<dyn Fn(&dyn Mob) -> bool + Send + Sync>;

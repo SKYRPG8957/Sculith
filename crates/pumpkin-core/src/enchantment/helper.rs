@@ -12,8 +12,8 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 /// Data-driven helper for enchantment effects matching vanilla `EnchantmentHelper`.
 pub struct EnchantmentHelper;
@@ -500,7 +500,7 @@ impl EnchantmentHelper {
     pub fn on_location_changed(
         entity: &Entity,
         item: &ItemStack,
-        position: pumpkin_util::math::vector3::Vector3<f64>,
+        position: sculith_util::math::vector3::Vector3<f64>,
     ) {
         let world = entity.world.load_full();
         Self::run_iteration_on_item(item, |enchantment, level| {
@@ -516,7 +516,7 @@ impl EnchantmentHelper {
     pub fn on_hit_block(
         weapon: &ItemStack,
         projectile_entity: &Entity,
-        position: pumpkin_util::math::vector3::Vector3<f64>,
+        position: sculith_util::math::vector3::Vector3<f64>,
     ) {
         let world = projectile_entity.world.load_full();
         Self::run_iteration_on_item(weapon, |enchantment, level| {

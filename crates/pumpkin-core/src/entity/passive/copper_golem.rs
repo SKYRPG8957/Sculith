@@ -11,8 +11,8 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::position::BlockPos;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::{
     Entity, EntityBase,
@@ -205,7 +205,7 @@ impl CopperGolemEntity {
         self.mob_entity
             .set_item_slot(&EQUIPMENT_SLOT_ANTENNA, ItemStack::EMPTY.clone());
         if !antenna_item.is_empty() {
-            let drop_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, pos.y + 1.5, pos.z);
+            let drop_pos = sculith_util::math::vector3::Vector3::new(pos.x, pos.y + 1.5, pos.z);
             let item_entity = Arc::new(crate::entity::item::ItemEntity::new(
                 Entity::new(world.clone(), drop_pos, &EntityType::ITEM),
                 antenna_item,

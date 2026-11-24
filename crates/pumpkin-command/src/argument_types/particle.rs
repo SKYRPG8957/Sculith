@@ -7,8 +7,8 @@ use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_data::particle::Particle;
 use pumpkin_data::translation;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
 
 pub const ERROR_UNKNOWN_PARTICLE: CommandErrorType<1> = CommandErrorType::new(
     translation::java::PARTICLE_NOTFOUND,

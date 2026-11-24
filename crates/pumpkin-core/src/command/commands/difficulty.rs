@@ -4,9 +4,9 @@ use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::{Difficulty, PermissionLvl};
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
+use sculith_util::{Difficulty, PermissionLvl};
 
 const DESCRIPTION: &str = "Query or change the difficulty of the world.";
 const PERMISSION: &str = "minecraft:command.difficulty";

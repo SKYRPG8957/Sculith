@@ -6,7 +6,7 @@ use crate::errors::error_types::CommandErrorType;
 use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder, TextCoordinates};
 use pumpkin_data::translation;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 pub const NOT_LOADED_ERROR_TYPE: CommandErrorType<0> = CommandErrorType::new(
     translation::java::ARGUMENT_POS_UNLOADED,

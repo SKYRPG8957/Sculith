@@ -3,7 +3,7 @@ use crate::generation::{
     surface::terrain::SurfaceTerrainBuilder,
 };
 use pumpkin_data::{Block, dimension::Dimension};
-use pumpkin_util::{math::vector3::Vector3, random::xoroshiro128::Xoroshiro, world_seed::Seed};
+use sculith_util::{math::vector3::Vector3, random::xoroshiro128::Xoroshiro, world_seed::Seed};
 
 use super::surface_biomes;
 

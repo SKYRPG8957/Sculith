@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use pumpkin_data::game_rules::GameRule;
-use pumpkin_protocol::java::client::play::CGameRuleValues;
+use sculith_protocol::java::client::play::CGameRuleValues;
 
 impl JavaClient {
     pub fn handle_client_status(&self, player: &Arc<Player>, client_status: &SClientCommand) {

@@ -120,8 +120,8 @@ pub fn build() -> TokenStream {
                 HeightProvider, TrapezoidHeightProvider, UniformHeightProvider,
                 VeryBiasedToBottomHeightProvider,
             };
-            use pumpkin_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
-            use pumpkin_util::math::int_provider::{
+            use sculith_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
+            use sculith_util::math::int_provider::{
                 BiasedToBottomIntProvider, ClampedIntProvider, TrapezoidIntProvider, ClampedNormalIntProvider,
                 ConstantIntProvider, IntProvider, NormalIntProvider, UniformIntProvider,
                 WeightedEntry, WeightedListIntProvider,
@@ -134,8 +134,8 @@ pub fn build() -> TokenStream {
                 RandomizedIntBlockStateProvider, RuleBasedBlockStateProvider, SimpleStateProvider,
                 WeightedBlockStateProvider,
             };
-            use pumpkin_util::math::pool::Weighted;
-            use pumpkin_util::DoublePerlinNoiseParametersCodec;
+            use sculith_util::math::pool::Weighted;
+            use sculith_util::DoublePerlinNoiseParametersCodec;
             use crate::generation::rule::{
                 RuleTest,
                 block_match::BlockMatchRuleTest,
@@ -227,8 +227,8 @@ pub fn build() -> TokenStream {
             };
             use crate::generation::feature::size::{FeatureSize, FeatureSizeType, ThreeLayersFeatureSize, TwoLayersFeatureSize};
             use pumpkin_data::{Block, BlockDirection};
-            use pumpkin_util::math::vector3::Vector3;
-            use pumpkin_util::HeightMap;
+            use sculith_util::math::vector3::Vector3;
+            use sculith_util::HeightMap;
             use crate::generation::feature::features::drip_stone::small::SmallDripstoneFeature;
             let mut map = std::collections::HashMap::new();
             #(#entries)*
@@ -651,10 +651,10 @@ pub fn value_to_configured_feature(v: &Value) -> TokenStream {
             let vegetation_feature = value_to_inline_placed_feature(&config["vegetation_feature"]);
             let surface = match config["surface"].as_str().unwrap_or("floor") {
                 "ceiling" => {
-                    quote! { pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Ceiling }
+                    quote! { sculith_util::math::vertical_surface_type::VerticalSurfaceType::Ceiling }
                 }
                 _ => {
-                    quote! { pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Floor }
+                    quote! { sculith_util::math::vertical_surface_type::VerticalSurfaceType::Floor }
                 }
             };
             let depth = value_to_int_provider(&config["depth"]);
@@ -919,7 +919,7 @@ pub fn value_to_configured_feature(v: &Value) -> TokenStream {
                 let x = exit_arr[0].as_i64().unwrap_or(0) as i32;
                 let y = exit_arr[1].as_i64().unwrap_or(0) as i32;
                 let z = exit_arr[2].as_i64().unwrap_or(0) as i32;
-                quote! { Some(pumpkin_util::math::position::BlockPos::new(#x, #y, #z)) }
+                quote! { Some(sculith_util::math::position::BlockPos::new(#x, #y, #z)) }
             } else {
                 quote! { None }
             };

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::entity::player::Player;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_protocol::java::server::play::ActionType;
+use sculith_protocol::java::server::play::ActionType;
 
 use super::PlayerEvent;
 

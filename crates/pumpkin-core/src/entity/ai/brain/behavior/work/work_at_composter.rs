@@ -5,7 +5,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::types;

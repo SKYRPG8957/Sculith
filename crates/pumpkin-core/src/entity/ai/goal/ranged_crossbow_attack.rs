@@ -5,7 +5,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_util::Hand;
+use sculith_util::Hand;
 
 use crate::entity::ai::goal::{Controls, Goal};
 use crate::entity::ai::pathfinder::NavigatorGoal;

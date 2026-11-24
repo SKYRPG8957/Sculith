@@ -15,9 +15,11 @@ The fork reuses the standalone item-use decoder and routes the decoded
 transaction through the existing inventory handler. It preserves the bounded
 input reader and the existing transaction fields and game rules.
 
-The executable and discovery name are Sculith. Internal Pumpkin crate names,
-Wasm interfaces, configuration names and upstream history are retained. Upstream
-telemetry and update notifications default to off. CI builds and tests source;
+The executable and discovery name are Sculith. The protocol and utility packages
+are `sculith-protocol` and `sculith-util`, with Rust imports `sculith_protocol`
+and `sculith_util`. Native Rust plugins for this engine revision build against
+ABI 38 and use the Sculith dependency names. Wasm plugins load by WIT API version.
+Upstream telemetry and update notifications default to off. CI builds and tests source;
 it has no release, artifact-upload, container-push or automatic publication job.
 The upstream Docker downloader and compose file are removed because they ran
 upstream release binaries. This branch currently supports source builds.

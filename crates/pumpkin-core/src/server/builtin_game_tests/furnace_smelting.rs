@@ -1,6 +1,6 @@
 use pumpkin_data::{Block, block_properties::FurnaceLikeProperties};
 use pumpkin_gametest::{GameTestHelper, GameTestResult};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::build_stone_floor;
 

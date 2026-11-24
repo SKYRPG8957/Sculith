@@ -10,7 +10,7 @@ compatibility test.
 Build the fixture and server with the same Rust toolchain and source revision:
 
 ```sh
-cargo build --locked -p sculith-interop-connections -p pumpkin
+cargo build --locked -p sculith-interop-connections -p sculith
 ```
 
 Pass the resulting shared library to the resource harness:

@@ -1,6 +1,6 @@
 use pumpkin_data::translation;
 use pumpkin_nbt::{nbt_ops::NbtOps, tag::NbtTag};
-use pumpkin_util::uuid::parse_uuid_vec;
+use sculith_util::uuid::parse_uuid_vec;
 
 use crate::{errors::error_types::CommandErrorType, parser::Parser, snbt::SnbtParser};
 use pumpkin_codecs::DynamicOps;

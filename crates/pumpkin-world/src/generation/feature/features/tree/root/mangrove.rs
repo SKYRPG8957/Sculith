@@ -1,5 +1,5 @@
 use pumpkin_data::{BlockDirection, BlockState, block_properties::HorizontalFacing, fluid::Fluid};
-use pumpkin_util::{
+use sculith_util::{
     math::{int_provider::IntProvider, position::BlockPos},
     random::{RandomGenerator, RandomImpl},
 };

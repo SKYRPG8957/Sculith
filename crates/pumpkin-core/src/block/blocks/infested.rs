@@ -5,7 +5,7 @@ use pumpkin_data::{
     block_properties::{Axis, PaleOakWoodLikeProperties},
     entity::EntityType,
 };
-use pumpkin_util::{GameMode, math::vector3::Vector3};
+use sculith_util::{GameMode, math::vector3::Vector3};
 
 use crate::{
     block::{BlockBehaviour, BlockMetadata, BrokenArgs, OnPlaceArgs},

@@ -15,8 +15,8 @@ use pumpkin_data::item_stack::{DamageResult, ItemStack};
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::{GameMode, Hand};
+use sculith_util::math::vector3::Vector3;
+use sculith_util::{GameMode, Hand};
 
 pub struct TridentItem;
 

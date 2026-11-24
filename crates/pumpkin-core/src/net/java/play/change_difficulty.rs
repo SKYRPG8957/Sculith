@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::java::server::play::SChangeDifficulty;
+use sculith_protocol::java::server::play::SChangeDifficulty;
 
 impl JavaClient {
     pub fn handle_change_difficulty(

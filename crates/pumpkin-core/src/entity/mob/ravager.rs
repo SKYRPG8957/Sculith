@@ -4,7 +4,7 @@ use pumpkin_data::BlockState;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::ageable::AgeableMob;
 use crate::entity::ai::behavior::hunting::{self, Hunt};
@@ -92,7 +92,7 @@ impl Mob for RavagerEntity {
     fn get_attack_bounding_box(
         &self,
         horizontal_expansion: f64,
-    ) -> pumpkin_util::math::boundingbox::BoundingBox {
+    ) -> sculith_util::math::boundingbox::BoundingBox {
         // Vanilla `Ravager.getAttackBoundingBox`
         super::attack_bounding_box(&self.mob_entity.living_entity.entity, horizontal_expansion)
             .expand(-0.05, 0.0, -0.05)

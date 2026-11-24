@@ -30,9 +30,9 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_inventory::Inventory;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::GameMode;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::GameMode;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::vehicle::vehicle::VehicleEntity;
 use chest::ChestMinecart;
@@ -866,7 +866,7 @@ impl EntityBase for MinecartEntity {
 mod tests {
     use super::*;
     use crate::entity::ai::test_support::world;
-    use pumpkin_util::text::TextComponent;
+    use sculith_util::text::TextComponent;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 

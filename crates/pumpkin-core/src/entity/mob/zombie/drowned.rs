@@ -12,10 +12,10 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::Hand;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::Hand;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::ai::control::move_control::{MoveControl, Operation};

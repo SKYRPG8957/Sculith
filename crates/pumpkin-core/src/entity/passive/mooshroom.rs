@@ -20,10 +20,10 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::suspicious_effects::get_suspicious_effects;
 use pumpkin_data::tag::Taggable;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 use crate::entity::{

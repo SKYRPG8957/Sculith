@@ -4,10 +4,10 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockDirection, tag};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::random::RandomGenerator;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::random::RandomGenerator;
+use sculith_util::random::xoroshiro128::Xoroshiro;
 use soul_fire::SoulFireBlock;
 
 use crate::block::blocks::fire::fire::FireBlock;

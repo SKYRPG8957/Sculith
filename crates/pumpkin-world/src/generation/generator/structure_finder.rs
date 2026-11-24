@@ -2,7 +2,7 @@ use pumpkin_data::structures::{
     ConcentricRingsStructurePlacement, RandomSpreadStructurePlacement, StructurePlacement,
     StructurePlacementType, StructureSet,
 };
-use pumpkin_util::math::{floor_div, position::BlockPos};
+use sculith_util::math::{floor_div, position::BlockPos};
 
 use crate::generation::structure::placement::{
     GlobalStructureCache, StrongholdLayout, get_structure_chunk_in_region,

@@ -24,8 +24,8 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::registry::RegistryEntryData;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_nbt::{NbtCompound, nbt_compress::read_gzip_compound_tag};
-use pumpkin_protocol::codec::recipe::DynamicRecipe;
-use pumpkin_util::loot_table::DynamicLootTable;
+use sculith_protocol::codec::recipe::DynamicRecipe;
+use sculith_util::loot_table::DynamicLootTable;
 
 use crate::command::context::command_source::CommandSource;
 use crate::server::Server;
@@ -833,8 +833,8 @@ impl DatapackManager {
         server: &Server,
         server_version: &'a str,
         loaded_packs: &'a [LoadedDatapack],
-    ) -> Vec<pumpkin_protocol::KnownPack<'a>> {
-        use pumpkin_protocol::KnownPack;
+    ) -> Vec<sculith_protocol::KnownPack<'a>> {
+        use sculith_protocol::KnownPack;
 
         let mut known_packs = Vec::new();
 

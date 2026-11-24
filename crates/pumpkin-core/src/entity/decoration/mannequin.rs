@@ -11,8 +11,8 @@ use pumpkin_data::{
     tracked_data,
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::{text::TextComponent, version::JavaMinecraftVersion};
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::{text::TextComponent, version::JavaMinecraftVersion};
 
 use crate::entity::{Entity, EntityBase, living::LivingEntity};
 
@@ -329,7 +329,7 @@ mod tests {
     use super::*;
     use crate::entity::ai::test_support::world;
     use pumpkin_data::{data_component_impl::ProfileProperty, entity::EntityType};
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 

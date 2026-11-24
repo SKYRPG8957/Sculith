@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pumpkin_data::Block;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::world::World;
 

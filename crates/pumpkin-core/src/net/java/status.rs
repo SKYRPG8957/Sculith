@@ -1,4 +1,4 @@
-use pumpkin_protocol::{
+use sculith_protocol::{
     Players,
     java::client::status::{CPingResponse, CStatusResponse},
     java::server::status::SStatusPingRequest,

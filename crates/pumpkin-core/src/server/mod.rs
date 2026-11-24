@@ -26,18 +26,13 @@ use key_store::KeyStore;
 use pumpkin_config::world::WorldPreset;
 use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::permission::PermissionManager;
-use pumpkin_util::text::color::NamedColor;
 use pumpkin_world::generation::generator::GeneratorInit;
 use pumpkin_world::level::{Level, LevelFolder};
 use pumpkin_world::world::WorldPortalExt;
+use sculith_util::permission::PermissionManager;
+use sculith_util::text::color::NamedColor;
 use tracing::{debug, error, info, warn};
 
-use pumpkin_protocol::java::client::login::CEncryptionRequest;
-use pumpkin_protocol::java::client::play::{CChangeDifficulty, CTabList};
-use pumpkin_protocol::{ClientPacket, java::client::config::CPluginMessage};
-use pumpkin_util::Difficulty;
-use pumpkin_util::text::TextComponent;
 use pumpkin_world::data::checkpoint::CheckpointFence;
 use pumpkin_world::world_info::anvil::{
     AnvilLevelInfo, LEVEL_DAT_BACKUP_FILE_NAME, LEVEL_DAT_FILE_NAME,
@@ -50,6 +45,11 @@ use pumpkin_world::world_info::{
 use rand::seq::IndexedRandom;
 use rayon::prelude::*;
 use rsa::PublicKey as RsaPublicKey;
+use sculith_protocol::java::client::login::CEncryptionRequest;
+use sculith_protocol::java::client::play::{CChangeDifficulty, CTabList};
+use sculith_protocol::{ClientPacket, java::client::config::CPluginMessage};
+use sculith_util::Difficulty;
+use sculith_util::text::TextComponent;
 use std::fs;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -779,7 +779,7 @@ impl Server {
         let dynamic_recipes = self.recipe_manager.get_dynamic_recipes_internal();
         for player in self.get_all_players() {
             if let crate::net::ClientPlatform::Java(java_client) = player.client.as_ref() {
-                let add_packet = pumpkin_protocol::java::client::play::CRecipeBookAdd::new(
+                let add_packet = sculith_protocol::java::client::play::CRecipeBookAdd::new(
                     true,
                     &dynamic_recipes,
                 );
@@ -795,7 +795,7 @@ impl Server {
         &self,
         server_version: &'a str,
         loaded_packs: &'a [crate::data::datapack::LoadedDatapack],
-    ) -> Vec<pumpkin_protocol::KnownPack<'a>> {
+    ) -> Vec<sculith_protocol::KnownPack<'a>> {
         self.datapack_manager
             .get_known_packs(self, server_version, loaded_packs)
     }
@@ -1189,8 +1189,8 @@ impl Server {
     }
 
     /// Broadcasts custom server links to all players on the server.
-    pub fn broadcast_server_links(&self, links: &[pumpkin_protocol::Link<'_>]) {
-        let packet = pumpkin_protocol::java::client::play::CPlayServerLinks::new(links);
+    pub fn broadcast_server_links(&self, links: &[sculith_protocol::Link<'_>]) {
+        let packet = sculith_protocol::java::client::play::CPlayServerLinks::new(links);
         self.broadcast_packet_all(&packet);
     }
 
@@ -1232,7 +1232,7 @@ impl Server {
         message: &crate::net::chat::PlayerChatMessage,
         is_filtered: impl Fn(&crate::entity::player::Player) -> bool,
         sender_player: Option<&Arc<crate::entity::player::Player>>,
-        chat_type: pumpkin_protocol::codec::var_int::VarInt,
+        chat_type: sculith_protocol::codec::var_int::VarInt,
         sender_name: &TextComponent,
         target_name: Option<&TextComponent>,
     ) {
@@ -1294,7 +1294,7 @@ impl Server {
             }
             world.broadcast_editioned(
                 &CChangeDifficulty::new(new_difficulty as u8, locked),
-                &pumpkin_protocol::bedrock::client::CSetDifficulty {
+                &sculith_protocol::bedrock::client::CSetDifficulty {
                     difficulty: (new_difficulty as u32).into(),
                 },
             );
@@ -1313,7 +1313,7 @@ impl Server {
         for world in self.worlds.load().iter() {
             world.broadcast_editioned(
                 &CChangeDifficulty::new(difficulty as u8, locked),
-                &pumpkin_protocol::bedrock::client::CSetDifficulty {
+                &sculith_protocol::bedrock::client::CSetDifficulty {
                     difficulty: (difficulty as u32).into(),
                 },
             );
@@ -1676,9 +1676,9 @@ impl Server {
             0,
             idle_nanos,
         ];
-        let packet = pumpkin_protocol::java::client::play::CDebugSample::new(
+        let packet = sculith_protocol::java::client::play::CDebugSample::new(
             &sample_slice,
-            pumpkin_protocol::codec::var_int::VarInt(0),
+            sculith_protocol::codec::var_int::VarInt(0),
         );
         for world in self.worlds.load().iter() {
             let players = world.players.load();
@@ -1686,7 +1686,7 @@ impl Server {
                 .iter()
                 .filter(|player| {
                     player.subscribed_debug_sample.load(Ordering::Relaxed)
-                        && player.permission_lvl.load() >= pumpkin_util::PermissionLvl::Two
+                        && player.permission_lvl.load() >= sculith_util::PermissionLvl::Two
                 })
                 .filter_map(|player| player.client.java());
             World::broadcast_java_clients(&packet, recipients);

@@ -1,4 +1,4 @@
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::pathfinder::node::PathType;
 use rustc_hash::FxHashMap;

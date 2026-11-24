@@ -1,7 +1,7 @@
 use crate::entity::ai::control::Control;
 use crate::entity::ai::control::move_control::MoveControl;
 use crate::entity::mob::Mob;
-use pumpkin_util::math::rotate_if_necessary;
+use sculith_util::math::rotate_if_necessary;
 
 pub struct BodyRotationControl {
     head_stable_time: i32,

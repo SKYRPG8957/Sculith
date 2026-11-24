@@ -6,9 +6,9 @@ use pumpkin_data::BlockId;
 use pumpkin_data::BlockState;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::GlowLichenLikeProperties;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::random::RandomGenerator;
-use pumpkin_util::random::RandomImpl;
+use sculith_util::math::position::BlockPos;
+use sculith_util::random::RandomGenerator;
+use sculith_util::random::RandomImpl;
 
 use super::SculkLevel;
 use super::is_sculk_replaceable;
@@ -479,7 +479,7 @@ impl VeinRules {
 mod tests {
     use super::*;
     use crate::generation::feature::features::sculk::test_utils::MockSculkLevel;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     #[test]
     fn spread_all_ignores_faces_added_during_call() {
@@ -520,7 +520,7 @@ mod tests {
         use crate::generation::get_world_gen;
         use crate::generation::proto_chunk::ProtoChunk;
         use pumpkin_data::dimension::Dimension;
-        use pumpkin_util::world_seed::Seed;
+        use sculith_util::world_seed::Seed;
 
         let world_gen = get_world_gen(
             Seed(1),

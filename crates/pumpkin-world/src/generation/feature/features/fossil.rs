@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, BlockState, Mirror, Rotation, tag};
-use pumpkin_util::{
+use sculith_util::{
     HeightMap,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},

@@ -275,11 +275,11 @@ mod tests {
     use pumpkin_data::item::Item;
     use pumpkin_data::sound::Sound;
     use pumpkin_data::statistic::StatisticCategory;
-    use pumpkin_protocol::java::client::play::{
+    use sculith_protocol::java::client::play::{
         CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem,
         CSetPlayerInventory, CSetSelectedSlot,
     };
-    use pumpkin_protocol::java::server::play::SlotActionType;
+    use sculith_protocol::java::server::play::SlotActionType;
     use std::borrow::Cow;
     use std::sync::Mutex;
 

@@ -9,8 +9,8 @@ use crate::node::{
 };
 use crate::source::{CommandSource, DummySource};
 use crate::string_reader::StringReader;
-use pumpkin_util::text::TextComponent;
 use rustc_hash::FxHashMap;
+use sculith_util::text::TextComponent;
 use std::num::NonZero;
 
 /// Represents the unique integral number

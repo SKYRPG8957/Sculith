@@ -1,8 +1,8 @@
 use std::time::Instant;
 
-use pumpkin_protocol::java::client::login::CEncryptionRequest;
 use rsa::pkcs8::EncodePublicKey;
 use rsa::{Pkcs1v15Encrypt, PrivateKey as RsaPrivateKey};
+use sculith_protocol::java::client::login::CEncryptionRequest;
 use sha1::Sha1;
 use sha2::Digest;
 use tracing::{debug, error};

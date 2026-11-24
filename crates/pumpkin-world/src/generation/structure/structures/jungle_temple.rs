@@ -9,7 +9,7 @@ use pumpkin_data::{
         VineLikeProperties, WestRedstone, WhiteWoolStairsLikeProperties,
     },
 };
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection, HeightMap,
     math::{block_box::BlockBox, position::BlockPos},
     random::{RandomGenerator, RandomImpl},

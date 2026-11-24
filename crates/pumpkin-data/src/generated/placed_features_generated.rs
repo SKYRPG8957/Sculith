@@ -15,14 +15,14 @@ fn build_placed_features()
         VeryBiasedToBottomHeightProvider,
     };
     use pumpkin_data::{Block, BlockDirection};
-    use pumpkin_util::HeightMap;
-    use pumpkin_util::math::int_provider::{
+    use sculith_util::HeightMap;
+    use sculith_util::math::int_provider::{
         BiasedToBottomIntProvider, ClampedIntProvider, ClampedNormalIntProvider,
         ConstantIntProvider, IntProvider, NormalIntProvider, TrapezoidIntProvider,
         UniformIntProvider, WeightedEntry, WeightedListIntProvider,
     };
-    use pumpkin_util::math::vector3::Vector3;
-    use pumpkin_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
+    use sculith_util::math::vector3::Vector3;
+    use sculith_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
     let mut map = std::collections::HashMap::new();
     map.insert(
         pumpkin_data::placed_feature::PlacedFeature::Acacia,

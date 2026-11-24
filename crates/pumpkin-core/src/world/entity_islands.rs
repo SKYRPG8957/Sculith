@@ -7,11 +7,11 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use pumpkin_data::{Block, attributes::Attributes, entity::EntityType, tag, tag::Taggable};
-use pumpkin_util::math::{
+use rustc_hash::FxHashMap;
+use sculith_util::math::{
     boundingbox::BoundingBox, get_section_cord, position::BlockPos, vector2::Vector2,
     vector3::Vector3,
 };
-use rustc_hash::FxHashMap;
 
 use pumpkin_config::world::EntityIslandsConfig;
 use pumpkin_world::chunk::CHUNK_WIDTH;
@@ -664,12 +664,12 @@ fn finish(audited: AuditedReach, extra: f64) -> TickReach {
 
 const fn union(a: &BoundingBox, b: &BoundingBox) -> BoundingBox {
     BoundingBox::new(
-        pumpkin_util::math::vector3::Vector3::new(
+        sculith_util::math::vector3::Vector3::new(
             a.min.x.min(b.min.x),
             a.min.y.min(b.min.y),
             a.min.z.min(b.min.z),
         ),
-        pumpkin_util::math::vector3::Vector3::new(
+        sculith_util::math::vector3::Vector3::new(
             a.max.x.max(b.max.x),
             a.max.y.max(b.max.y),
             a.max.z.max(b.max.z),
@@ -1076,7 +1076,7 @@ impl DisjointSets {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     #[test]
     fn serial_schedule_retries_after_twenty_ticks_or_a_count_change() {

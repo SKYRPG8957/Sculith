@@ -337,7 +337,7 @@ pub fn build() -> TokenStream {
     }
 
     quote!(
-        use pumpkin_util::math::int_provider::{
+        use sculith_util::math::int_provider::{
             BiasedToBottomIntProvider, ClampedIntProvider, TrapezoidIntProvider, ClampedNormalIntProvider,
             ConstantIntProvider, IntProvider, NormalIntProvider, UniformIntProvider,
             WeightedEntry, WeightedListIntProvider,

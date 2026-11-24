@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use pumpkin_config::chunk::{AnvilChunkConfig, ChunkConfig};
-use pumpkin_util::math::vector2::Vector2;
 use rayon::prelude::*;
+use sculith_util::math::vector2::Vector2;
 use thiserror::Error;
 use tracing::warn;
 

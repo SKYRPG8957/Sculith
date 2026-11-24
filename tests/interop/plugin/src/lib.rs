@@ -104,10 +104,10 @@ impl EventHandler<DialogClickActionEvent> for DialogReplies {
             return event;
         }
         let small = include_bytes!(
-            "../../../../crates/pumpkin-protocol/tests/fixtures/java_custom_click_small_777.bin"
+            "../../../../crates/sculith-protocol/tests/fixtures/java_custom_click_small_777.bin"
         );
         let large = include_bytes!(
-            "../../../../crates/pumpkin-protocol/tests/fixtures/java_custom_click_large_777.bin"
+            "../../../../crates/sculith-protocol/tests/fixtures/java_custom_click_large_777.bin"
         );
         let case = match (event.id.as_str(), event.payload.as_deref()) {
             ("sculith:form/7/cancel", None) => "none",

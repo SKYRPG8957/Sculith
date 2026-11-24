@@ -4,8 +4,8 @@ use pumpkin_data::{
     Block, BlockDirection, BlockStateId,
     block_properties::{HorizontalFacing, RailShape, RailShapeStraight},
 };
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
+use sculith_util::math::position::BlockPos;
 
 use crate::world::World;
 

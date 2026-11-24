@@ -2,10 +2,10 @@ use pumpkin_data::block_properties::BarrelLikeProperties;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, FacingExt, item_stack::ItemStack};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
-use pumpkin_util::random::{RandomImpl, get_seed};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::xoroshiro128::Xoroshiro;
+use sculith_util::random::{RandomImpl, get_seed};
 use std::any::Any;
 use std::sync::RwLock;
 use std::{
@@ -97,7 +97,7 @@ impl BlockEntity for BarrelBlockEntity {
         self.metadata.get_lock()
     }
 
-    fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         self.metadata.get_custom_name()
     }
 

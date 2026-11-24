@@ -3,7 +3,7 @@ use std::sync::{Arc, Weak};
 use super::{Controls, Goal};
 use crate::entity::ai::util::default_random_pos;
 use crate::entity::{EntityBase, ai::pathfinder::NavigatorGoal, mob::Mob};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 const HORIZONTAL_RANGE: i32 = 16;
 const VERTICAL_RANGE: i32 = 7;

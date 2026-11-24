@@ -16,8 +16,8 @@ use crate::{
 use pumpkin_data::block_properties::{CommandBlockLikeProperties, Facing};
 use pumpkin_data::{Block, BlockId, BlockState, BlockStateId, FacingExt, Rotation};
 
-use pumpkin_util::{GameMode, PermissionLvl, math::position::BlockPos};
 use pumpkin_world::tick::TickPriority;
+use sculith_util::{GameMode, PermissionLvl, math::position::BlockPos};
 use tracing::warn;
 
 pub struct CommandBlock;

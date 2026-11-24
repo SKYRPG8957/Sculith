@@ -1,4 +1,4 @@
-use pumpkin_util::{
+use sculith_util::{
     math::{int_provider::IntProvider, position::BlockPos},
     random::{RandomGenerator, RandomImpl},
 };
@@ -103,7 +103,7 @@ impl CherryFoliagePlacer {
 impl LeaveValidator for CherryFoliagePlacer {
     fn is_invalid_for_leaves(
         &self,
-        random: &mut pumpkin_util::random::RandomGenerator,
+        random: &mut sculith_util::random::RandomGenerator,
         dx: i32,
         y: i32,
         dz: i32,

@@ -4,9 +4,9 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{CMapItemData, MapPatch};
-use pumpkin_util::math::position::BlockPos;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::{CMapItemData, MapPatch};
+use sculith_util::math::position::BlockPos;
 
 use crate::block::entities::BlockEntity;
 
@@ -225,7 +225,7 @@ fn rgb_to_map_color(r: u8, g: u8, b: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
 
     #[test]
     fn map_block_entity_pixels_and_colors() {

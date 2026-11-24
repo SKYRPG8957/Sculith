@@ -4,7 +4,7 @@ use crate::data_component_impl::{
 use crate::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq)]

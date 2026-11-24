@@ -13,10 +13,10 @@ use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::world::scoreboard::{CollisionRule, NameTagVisibility, Team};
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::color::NamedColor;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
+use sculith_util::text::color::NamedColor;
 
 const DESCRIPTION: &str = "Manages teams.";
 const PERMISSION: &str = "minecraft:command.team";

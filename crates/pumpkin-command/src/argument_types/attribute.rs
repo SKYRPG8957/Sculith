@@ -9,8 +9,8 @@ use crate::{
 };
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::translation;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
 
 pub const INVALID_ATTRIBUTE_ERROR_TYPE: CommandErrorType<1> = CommandErrorType::new(
     translation::java::ARGUMENT_ID_INVALID,

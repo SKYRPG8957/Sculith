@@ -8,7 +8,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::any::Any;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};

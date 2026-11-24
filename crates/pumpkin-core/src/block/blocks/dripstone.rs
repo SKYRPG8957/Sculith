@@ -22,12 +22,12 @@ use pumpkin_data::{
     world::WorldEvent,
 };
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos};
 use pumpkin_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
 use rand::RngExt;
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos};
 
 const MAX_SEARCH_LENGTH_WHEN_CHECKING_DRIP_TYPE: i32 = 11;
 const MAX_SEARCH_LENGTH_BETWEEN_STALACTITE_TIP_AND_CAULDRON: i32 = 11;

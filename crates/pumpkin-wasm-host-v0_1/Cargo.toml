@@ -17,8 +17,8 @@ pumpkin-data = { workspace = true, features = ["default"] }
 pumpkin-inventory.workspace = true
 pumpkin-macros.workspace = true
 pumpkin-nbt.workspace = true
-pumpkin-protocol = { workspace = true, features = ["default"] }
-pumpkin-util.workspace = true
+sculith-protocol = { workspace = true, features = ["default"] }
+sculith-util.workspace = true
 pumpkin-world.workspace = true
 bytes.workspace = true
 rand.workspace = true

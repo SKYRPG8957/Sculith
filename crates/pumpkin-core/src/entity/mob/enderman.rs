@@ -23,10 +23,10 @@ use pumpkin_data::{
     world::WorldEvent,
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::block::BlockStateCodec;
 use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::entity::{
     Entity, EntityBase,

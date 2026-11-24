@@ -4,9 +4,9 @@ use crate::block::entities::structure_block::{
     StructureBlockBlockEntity, mirror_from_packet_id, mode_from_packet_id, rotation_from_packet_id,
 };
 use pumpkin_data::translation::java as translation;
-use pumpkin_protocol::java::server::play::SSetStructureBlock;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::java::server::play::SSetStructureBlock;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 
 fn apply_structure_block_settings(
     structure_block: &StructureBlockBlockEntity,

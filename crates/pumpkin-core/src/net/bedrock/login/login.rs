@@ -1,6 +1,6 @@
 use pumpkin_data::translation;
-use pumpkin_protocol::bedrock::client::PackIdVersion;
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::bedrock::client::PackIdVersion;
+use sculith_util::text::TextComponent;
 
 #[allow(clippy::wildcard_imports)]
 use super::*;

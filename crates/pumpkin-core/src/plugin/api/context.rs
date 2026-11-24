@@ -9,7 +9,7 @@ use crate::{
     plugin_log,
 };
 use arc_swap::ArcSwap;
-use pumpkin_util::{
+use sculith_util::{
     PermissionLvl,
     permission::{Permission, PermissionManager},
 };

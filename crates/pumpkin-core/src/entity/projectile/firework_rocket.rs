@@ -10,10 +10,10 @@ use pumpkin_data::entity::EntityStatus;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_protocol::codec::optional_int::OptionalInt;
-use pumpkin_util::{
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_protocol::codec::optional_int::OptionalInt;
+use sculith_util::{
     math::vector3::Vector3,
     random::{RandomGenerator, RandomImpl, get_seed, xoroshiro128::Xoroshiro},
 };

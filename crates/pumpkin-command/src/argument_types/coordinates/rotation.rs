@@ -5,7 +5,7 @@ use crate::errors::command_syntax_error::CommandSyntaxError;
 use crate::errors::error_types::CommandErrorType;
 use crate::string_reader::StringReader;
 use pumpkin_data::translation;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 pub const NOT_COMPLETE_ERROR_TYPE: CommandErrorType<0> = CommandErrorType::new(
     translation::java::ARGUMENT_ROTATION_INCOMPLETE,

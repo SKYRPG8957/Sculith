@@ -12,14 +12,14 @@ use crate::pumpkin::plugin::{
 };
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::{Clearable, Inventory};
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_protocol::java::client::play::{CSetContainerSlot, CSetPlayerInventory};
 use pumpkin_wasm_host_common::state::{InventoryProvider, PluginHostState};
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_protocol::java::client::play::{CSetContainerSlot, CSetPlayerInventory};
 
-const fn from_wasm_hand(hand: WitHand) -> pumpkin_util::Hand {
+const fn from_wasm_hand(hand: WitHand) -> sculith_util::Hand {
     match hand {
-        WitHand::Right => pumpkin_util::Hand::Right,
-        WitHand::Left => pumpkin_util::Hand::Left,
+        WitHand::Right => sculith_util::Hand::Right,
+        WitHand::Left => sculith_util::Hand::Left,
     }
 }
 
@@ -321,8 +321,8 @@ impl HostPlayerInventory for PluginHostState {
 
         let hand = from_wasm_hand(hand);
         let slot = match hand {
-            pumpkin_util::Hand::Right => player.inventory().get_selected_slot() as usize,
-            pumpkin_util::Hand::Left => PlayerInventory::OFF_HAND_SLOT,
+            sculith_util::Hand::Right => player.inventory().get_selected_slot() as usize,
+            sculith_util::Hand::Left => PlayerInventory::OFF_HAND_SLOT,
         };
 
         player.inventory().set_stack(slot, stack.clone());

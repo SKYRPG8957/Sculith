@@ -6,7 +6,7 @@ use pumpkin_data::BlockState;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::potion::Effect;
 use pumpkin_data::sound::Sound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::{
     Entity, EntityBase,

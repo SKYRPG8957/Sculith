@@ -1,8 +1,8 @@
 use pumpkin_data::structures::StructureKeys;
 use pumpkin_data::tag::{self, RegistryKey};
 use pumpkin_data::translation;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
 
 use crate::argument_types::FromStringReader;
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};

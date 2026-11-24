@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use uuid::Uuid;
 
 use crate::world::World;

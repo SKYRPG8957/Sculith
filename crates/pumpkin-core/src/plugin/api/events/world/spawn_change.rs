@@ -1,6 +1,6 @@
 use crate::world::World;
 use pumpkin_macros::Event;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 /// An event that occurs when the world spawn point changes.

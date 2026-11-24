@@ -1,8 +1,8 @@
 use heck::{ToPascalCase, ToShoutySnakeCase, ToUpperCamelCase};
 use proc_macro2::{Literal, Span, TokenStream};
 use pumpkin_nbt::deserializer::{NbtReadHelper, NbtReadHelperBedrock};
-use pumpkin_util::math::{experience::Experience, vector3::Vector3};
 use quote::{ToTokens, format_ident, quote};
+use sculith_util::math::{experience::Experience, vector3::Vector3};
 use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashSet},
@@ -1623,7 +1623,7 @@ pub fn build() -> TokenStream {
 
     quote! {
         #[allow(clippy::wildcard_imports, clippy::enum_glob_use, clippy::too_many_lines, clippy::match_same_arms)]
-        use pumpkin_util::math::boundingbox::BoundingBox;
+        use sculith_util::math::boundingbox::BoundingBox;
 
         use crate::{
             BlockState, BlockStateId, Block, BlockId,
@@ -1631,9 +1631,9 @@ pub fn build() -> TokenStream {
         };
         use crate::block_state::{PistonBehavior, SoundType};
         use crate::sound::Sound;
-        use pumpkin_util::math::int_provider::{UniformIntProvider, IntProvider, NormalIntProvider};
-        use pumpkin_util::math::experience::Experience;
-        use pumpkin_util::math::vector3::Vector3;
+        use sculith_util::math::int_provider::{UniformIntProvider, IntProvider, NormalIntProvider};
+        use sculith_util::math::experience::Experience;
+        use sculith_util::math::vector3::Vector3;
         use std::collections::BTreeMap;
 
         #items

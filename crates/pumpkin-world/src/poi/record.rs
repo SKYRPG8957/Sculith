@@ -1,5 +1,5 @@
 use pumpkin_data::poi_type::PoiType;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PoiRecord {

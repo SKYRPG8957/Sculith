@@ -10,11 +10,11 @@ use crate::command::errors::error_types::{
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::command::string_reader::StringReader;
-use pumpkin_protocol::java::client::play::StringProtoArgBehavior;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::click::ClickEvent;
-use pumpkin_util::text::color::{Color, NamedColor};
+use sculith_protocol::java::client::play::StringProtoArgBehavior;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
+use sculith_util::text::click::ClickEvent;
+use sculith_util::text::color::{Color, NamedColor};
 
 const NO_COMMANDS_ERROR_TYPE: LiteralCommandErrorType =
     LiteralCommandErrorType::new("No commands are available to show help for");

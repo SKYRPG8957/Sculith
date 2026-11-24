@@ -1,8 +1,8 @@
 use crate::entity::player::Player;
 use crate::server::Server;
 use crate::world::bossbar::{Bossbar, BossbarColor, BossbarDivisions};
-use pumpkin_util::text::TextComponent;
 use rustc_hash::FxHashMap;
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 use thiserror::Error;
 use uuid::Uuid;

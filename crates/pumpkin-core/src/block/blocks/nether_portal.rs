@@ -7,8 +7,8 @@ use pumpkin_data::{
     entity::EntityType,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::{Difficulty, GameMode, math::vector3::Vector3};
 use rand::RngExt;
+use sculith_util::{Difficulty, GameMode, math::vector3::Vector3};
 use uuid::Uuid;
 
 use crate::{

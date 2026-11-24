@@ -1,7 +1,7 @@
 use super::BlockEntity;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Mutex;
 
 pub struct BrushableBlockBlockEntity {

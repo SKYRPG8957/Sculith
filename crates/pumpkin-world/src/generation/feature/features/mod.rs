@@ -63,7 +63,7 @@ pub mod waterlogged_vegetation_patch;
 pub mod weeping_vines;
 pub mod weighted_random_selector;
 
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 /// A hash set of [`BlockPos`] that preserves `OpenJDK` `java.util.HashSet<BlockPos>` iteration order.
 #[derive(Clone, Debug)]

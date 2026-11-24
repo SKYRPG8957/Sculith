@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockState, BlockStateId};
-use pumpkin_util::{
+use sculith_util::{
     math::{int_provider::IntProvider, position::BlockPos},
     random::RandomGenerator,
 };
@@ -10,7 +10,7 @@ use crate::generation::feature::features::spring_feature::BlockWrapper;
 use crate::{
     block::BlockStateCodec, generation::proto_chunk::GenerationCache, world::WorldPortalExt,
 };
-use pumpkin_util::random::RandomImpl;
+use sculith_util::random::RandomImpl;
 use std::cmp::Ordering;
 
 /// Minimal wrapper around the perlin sampler used for geode generation, to avoid exposing the entire noise module to this file.

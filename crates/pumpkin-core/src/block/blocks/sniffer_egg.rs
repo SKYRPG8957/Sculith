@@ -19,7 +19,7 @@ pub struct SnifferEggBlock;
 impl SnifferEggBlock {
     fn hatch_boost(
         world: &dyn pumpkin_world::world::BlockAccessor,
-        pos: &pumpkin_util::math::position::BlockPos,
+        pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         world
             .get_block(&pos.down())

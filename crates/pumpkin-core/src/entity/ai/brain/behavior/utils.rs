@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 use crate::entity::ai::pathfinder::node::PathComputationType;
@@ -119,7 +119,7 @@ pub fn set_walk_and_look_target_memories_to_entity(
 
 pub fn set_walk_and_look_target_memories_to_block(
     brain: &mut BrainState,
-    target: pumpkin_util::math::position::BlockPos,
+    target: sculith_util::math::position::BlockPos,
     speed_modifier: f32,
     close_enough_dist: i32,
 ) {

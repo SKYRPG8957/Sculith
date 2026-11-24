@@ -58,7 +58,7 @@ fn generate_structure_position_checked(
     key: StructureKeys,
     structure: &Structure,
     context: StructureGeneratorContext<'_>,
-    is_valid_biome: impl FnOnce(pumpkin_util::math::position::BlockPos) -> bool,
+    is_valid_biome: impl FnOnce(sculith_util::math::position::BlockPos) -> bool,
 ) -> Option<StructurePosition> {
     match key {
         StructureKeys::BuriedTreasure => {

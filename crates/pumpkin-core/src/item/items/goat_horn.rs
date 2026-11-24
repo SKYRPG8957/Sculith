@@ -8,7 +8,7 @@ use pumpkin_data::instrument::Instrument;
 use pumpkin_data::item::Item;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::statistic::StatisticCategory;
-use pumpkin_util::Hand;
+use sculith_util::Hand;
 
 pub struct GoatHornItem;
 

@@ -10,8 +10,8 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockDirection};
 use pumpkin_inventory::screen_handler::ScreenHandler;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 pub struct CompassItem;
 
@@ -53,7 +53,7 @@ impl ItemBehaviour for CompassItem {
             };
 
             let gamemode = player.gamemode.load();
-            if gamemode != pumpkin_util::GameMode::Creative && item.item_count == 1 {
+            if gamemode != sculith_util::GameMode::Creative && item.item_count == 1 {
                 item.set_data_component(tracker);
             } else {
                 let mut new_compass = item.transmute_copy(&Item::COMPASS, 1);

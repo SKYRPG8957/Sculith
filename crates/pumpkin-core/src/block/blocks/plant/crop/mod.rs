@@ -8,9 +8,9 @@ use pumpkin_data::{
     block_properties::{BlockProperties, FarmlandLikeProperties, WheatLikeProperties},
     entity::EntityType,
 };
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::{
     block::{CanPlaceAtArgs, OnEntityCollisionArgs, blocks::plant::PlantBlockBase},

@@ -5,11 +5,11 @@ use pumpkin_data::attributes::Attributes;
 use pumpkin_data::entity::EntityPose;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
 use rand::seq::SliceRandom;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use super::super::BrainTick;
 use super::super::memory::{
@@ -474,7 +474,7 @@ pub fn calculate_jump_vector_for_angle(
 
 fn is_clear_transition(
     mob: &dyn Mob,
-    dimensions: &pumpkin_util::math::boundingbox::EntityDimensions,
+    dimensions: &sculith_util::math::boundingbox::EntityDimensions,
     from: Vector3<f64>,
     to: Vector3<f64>,
 ) -> bool {

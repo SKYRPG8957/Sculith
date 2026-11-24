@@ -11,7 +11,7 @@ use pumpkin_nbt::{
     nbt_compress::{read_gzip_compound_tag, write_gzip_compound_tag},
     tag::NbtTag,
 };
-use pumpkin_util::{Difficulty, world_seed::Seed};
+use sculith_util::{Difficulty, world_seed::Seed};
 use serde::{Deserialize, Serialize};
 
 use crate::world_info::{
@@ -563,7 +563,7 @@ mod test {
         nbt_compress::{read_gzip_compound_tag, write_gzip_compound_tag},
         tag::NbtTag,
     };
-    use pumpkin_util::{Difficulty, world_seed::Seed};
+    use sculith_util::{Difficulty, world_seed::Seed};
     use std::{
         fs::{self, File},
         io::ErrorKind,

@@ -17,7 +17,7 @@ use crate::{server::Server, world::World};
 use pumpkin_data::BlockDirection;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::{fluid::Fluid, item::Item};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 pub trait FluidBehaviour: Send + Sync {

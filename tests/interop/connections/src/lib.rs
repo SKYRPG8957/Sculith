@@ -33,7 +33,7 @@ use pumpkin_data::{
     data_component_impl::EquipmentSlot, entity::EntityType, item::Item, item_stack::ItemStack,
 };
 use pumpkin_inventory::screen_handler::ScreenHandler;
-use pumpkin_protocol::{
+use sculith_protocol::{
     ConnectionState, ServerPacket,
     bedrock::server::{login::SLogin, request_network_settings::SRequestNetworkSettings},
     codec::var_long::VarLong,

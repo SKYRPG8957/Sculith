@@ -1,4 +1,4 @@
-use pumpkin_util::math::{block_box::BlockBox, lerp, vector3::Vector3};
+use sculith_util::math::{block_box::BlockBox, lerp, vector3::Vector3};
 
 use super::{
     chunk_noise_router::{ChunkNoiseFunctionComponent, MutableChunkNoiseFunctionComponentImpl},

@@ -4,7 +4,7 @@ use pumpkin_data::{
         HorizontalFacing, LadderLikeProperties, OakFenceLikeProperties, WallTorchLikeProperties,
     },
 };
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::block_box::BlockBox,
     random::{RandomGenerator, RandomImpl},
@@ -353,9 +353,9 @@ mod tests {
     use crate::world::{BlockAccessor, WorldPortalExt};
     use pumpkin_data::BlockId;
     use pumpkin_data::dimension::Dimension;
-    use pumpkin_util::math::position::BlockPos;
-    use pumpkin_util::random::legacy_rand::LegacyRand;
-    use pumpkin_util::world_seed::Seed;
+    use sculith_util::math::position::BlockPos;
+    use sculith_util::random::legacy_rand::LegacyRand;
+    use sculith_util::world_seed::Seed;
 
     struct DummyPortalExt;
     impl WorldPortalExt for DummyPortalExt {

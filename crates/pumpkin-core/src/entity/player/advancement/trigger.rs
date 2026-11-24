@@ -1,7 +1,7 @@
 use crate::entity::player::Player;
 use crate::entity::player::advancement::PlayerAdvancement;
 use crate::entity::player::advancement::predicate::{self, CriterionConditions};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 #[derive(Debug, Clone)]
 pub enum AdvancementTrigger {

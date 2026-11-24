@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityStatus;
 use pumpkin_data::sound::Sound;
-use pumpkin_protocol::bedrock::server::ActorEventID;
+use sculith_protocol::bedrock::server::ActorEventID;
 
 use crate::{
     entity::{Entity, EntityBase, projectile::owner::EntityReference},

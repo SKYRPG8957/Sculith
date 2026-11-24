@@ -249,7 +249,7 @@ pub fn remember_positives<T>(
 mod tests {
     use pumpkin_data::damage::DamageType;
     use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     use super::*;
     use crate::entity::Entity;

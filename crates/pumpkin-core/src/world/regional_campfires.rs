@@ -5,9 +5,9 @@ use std::{
 
 use dashmap::try_result::TryResult;
 use pumpkin_data::{item::Item, item_stack::ItemStack, recipes::RecipeResultStruct};
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_world::chunk::io::Dirtiable;
 use rustc_hash::FxHashMap;
+use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use crate::{
     block::entities::{BlockEntity, campfire::CampfireBlockEntity},

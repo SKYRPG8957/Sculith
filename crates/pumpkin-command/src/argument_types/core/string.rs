@@ -1,4 +1,4 @@
-use pumpkin_protocol::java::client::play::StringProtoArgBehavior;
+use sculith_protocol::java::client::play::StringProtoArgBehavior;
 
 use crate::context::command_context::CommandContext;
 use crate::{

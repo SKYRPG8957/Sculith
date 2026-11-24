@@ -3,7 +3,7 @@ use crate::generation::noise::router::chunk_noise_router::{
 };
 use crate::generation::noise::router::density_volume::DensityVolume;
 pub use pumpkin_data::structures::TerrainAdaptation;
-use pumpkin_util::math::{block_box::BlockBox, vector3::Vector3};
+use sculith_util::math::{block_box::BlockBox, vector3::Vector3};
 use std::sync::OnceLock;
 
 use super::{NoiseFunctionComponentRange, StaticIndependentChunkNoiseFunctionComponentImpl};
@@ -63,7 +63,7 @@ fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> f32 {
         let distance_sqr =
             (dx as f32) * (dx as f32) + dy_with_offset * dy_with_offset + (dz as f32) * (dz as f32);
         let value = -dy_with_offset
-            * (pumpkin_util::math::fast_inv_sqrt((distance_sqr / 2.0) as f64) as f32)
+            * (sculith_util::math::fast_inv_sqrt((distance_sqr / 2.0) as f64) as f32)
             / 2.0;
         let kernel = get_beard_kernel();
         value * kernel[(zi * 24 * 24 + xi * 24 + yi) as usize]

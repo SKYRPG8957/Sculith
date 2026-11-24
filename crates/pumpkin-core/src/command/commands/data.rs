@@ -16,11 +16,11 @@ use std::sync::Arc;
 use pumpkin_data::translation;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::color::NamedColor;
+use sculith_util::PermissionLvl;
+use sculith_util::math::position::BlockPos;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
+use sculith_util::text::color::NamedColor;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::coordinates::block_pos::BlockPosArgumentType;
@@ -512,7 +512,7 @@ impl TargetKind {
                 Ok(Box::new(accessor))
             }
             Self::Storage => {
-                let id = context.get_argument::<pumpkin_util::identifier::Identifier>(prefix)?;
+                let id = context.get_argument::<sculith_util::identifier::Identifier>(prefix)?;
                 let server = context.server().clone();
                 Ok(Box::new(StorageDataAccessor::new(id.to_string(), server)))
             }

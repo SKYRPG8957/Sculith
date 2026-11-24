@@ -1,6 +1,6 @@
 use pumpkin_data::BlockDirection;
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use rustc_hash::FxHashMap;
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
 use crate::entity::ai::pathfinder::{
     node::{Coordinate, Node, PathType, Target},
@@ -102,7 +102,7 @@ impl WalkNodeEvaluator {
             mob_data.position.x,
             mob_data.position.y,
             mob_data.position.z,
-            &pumpkin_util::math::boundingbox::EntityDimensions::new(
+            &sculith_util::math::boundingbox::EntityDimensions::new(
                 mob_data.width,
                 mob_data.height,
                 0.0,

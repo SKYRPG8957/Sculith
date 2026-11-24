@@ -22,11 +22,11 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Enchantment, tag};
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::{GameMode, Hand};
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::{GameMode, Hand};
 
 pub struct SpearItem;
 

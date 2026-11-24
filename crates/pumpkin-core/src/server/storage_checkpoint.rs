@@ -8,7 +8,6 @@ use std::{
 };
 
 use pumpkin_config::chunk::ChunkConfig;
-use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::{
     chunk::io::converter::RegionFormat,
     data::{
@@ -18,6 +17,7 @@ use pumpkin_world::{
     level::{ChunkSaver, LevelFolder},
 };
 use rustc_hash::FxHashSet;
+use sculith_util::math::vector2::Vector2;
 use tokio::sync::{OwnedRwLockWriteGuard, oneshot};
 use tracing::info;
 

@@ -2,9 +2,9 @@
 use crate::advancement_data::*;
 use crate::item::Item;
 use crate::item_stack::ItemStack;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::{color::Color, color::NamedColor, hover::HoverEvent, style::Style};
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
+use sculith_util::text::{color::Color, color::NamedColor, hover::HoverEvent, style::Style};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};

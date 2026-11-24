@@ -14,8 +14,8 @@ use crate::tag::Taggable;
 use crate::{Block, Enchantment};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::GameMode;
 use rand;
+use sculith_util::GameMode;
 use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::num::NonZero;
@@ -268,7 +268,7 @@ impl ItemStack {
         }
     }
 
-    pub fn set_lore(&mut self, lines: Vec<pumpkin_util::text::TextComponent>) {
+    pub fn set_lore(&mut self, lines: Vec<sculith_util::text::TextComponent>) {
         let lore = Some(Box::new(crate::data_component_impl::LoreImpl { lines }) as _);
         if let Some((_, component)) = self
             .patch
@@ -308,7 +308,7 @@ impl ItemStack {
         }
     }
 
-    pub fn add_lore(&mut self, line: pumpkin_util::text::TextComponent) {
+    pub fn add_lore(&mut self, line: sculith_util::text::TextComponent) {
         let mut lines = self
             .get_data_component::<crate::data_component_impl::LoreImpl>()
             .map_or_else(Vec::new, |lore| lore.lines.clone());
@@ -579,7 +579,7 @@ impl ItemStack {
         use crate::data_component_impl::CustomNameImpl;
         let component = Some(
             CustomNameImpl {
-                name: pumpkin_util::text::TextComponent::text(name),
+                name: sculith_util::text::TextComponent::text(name),
             }
             .to_dyn(),
         );
@@ -601,7 +601,7 @@ impl ItemStack {
     }
 
     #[must_use]
-    pub fn get_custom_name(&self) -> Option<&pumpkin_util::text::TextComponent> {
+    pub fn get_custom_name(&self) -> Option<&sculith_util::text::TextComponent> {
         self.get_data_component::<crate::data_component_impl::CustomNameImpl>()
             .map(|c| &c.name)
     }
@@ -1213,7 +1213,7 @@ mod tests {
             DataComponent::CustomName,
             Some(
                 CustomNameImpl {
-                    name: pumpkin_util::text::TextComponent::text("Marked Item"),
+                    name: sculith_util::text::TextComponent::text("Marked Item"),
                 }
                 .to_dyn(),
             ),
@@ -1236,8 +1236,8 @@ mod tests {
     #[test]
     fn lore_can_be_set_and_appended() {
         let mut stack = ItemStack::new(1, &Item::WOODEN_AXE);
-        stack.set_lore(vec![pumpkin_util::text::TextComponent::text("First line")]);
-        stack.add_lore(pumpkin_util::text::TextComponent::text("Second line"));
+        stack.set_lore(vec![sculith_util::text::TextComponent::text("First line")]);
+        stack.add_lore(sculith_util::text::TextComponent::text("Second line"));
 
         let lore = stack
             .get_data_component::<LoreImpl>()

@@ -11,7 +11,7 @@ use pumpkin_data::{
     particle::Particle,
     sound::{Sound, SoundCategory},
 };
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::{
     entity::{Entity, player::Player},
@@ -374,8 +374,8 @@ pub struct CombatEntry {
     pub timestamp: i64,
     pub source_id: Option<i32>,
     pub attacker_id: Option<i32>,
-    pub attacker_name: Option<pumpkin_util::text::TextComponent>,
-    pub attacker_item_name: Option<pumpkin_util::text::TextComponent>,
+    pub attacker_name: Option<sculith_util::text::TextComponent>,
+    pub attacker_item_name: Option<sculith_util::text::TextComponent>,
     pub attacker_is_living: bool,
     pub attacker_is_player: bool,
 }
@@ -424,7 +424,7 @@ impl CombatTracker {
                 if let Some(player) = e.get_player() {
                     let hand_stack = player
                         .inventory()
-                        .get_stack_in_hand(pumpkin_util::Hand::Right);
+                        .get_stack_in_hand(sculith_util::Hand::Right);
                     if !hand_stack.is_empty()
                     && let Some(custom_name) = hand_stack
                         .get_data_component::<pumpkin_data::data_component_impl::CustomNameImpl>()
@@ -537,11 +537,11 @@ impl CombatTracker {
     #[must_use]
     pub fn get_death_message(
         &self,
-        victim_name: pumpkin_util::text::TextComponent,
-        kill_credit_name: Option<pumpkin_util::text::TextComponent>,
-    ) -> pumpkin_util::text::TextComponent {
+        victim_name: sculith_util::text::TextComponent,
+        kill_credit_name: Option<sculith_util::text::TextComponent>,
+    ) -> sculith_util::text::TextComponent {
         if self.entries.is_empty() {
-            return pumpkin_util::text::TextComponent::translate_cross(
+            return sculith_util::text::TextComponent::translate_cross(
                 "death.attack.generic",
                 "death.attack.generic",
                 [victim_name],
@@ -558,7 +558,7 @@ impl CombatTracker {
                     Self::get_fall_message(victim_name, knock_off, killing_blow)
                 } else {
                     let loc = killing_blow.fall_location.unwrap_or(FallLocation::Generic);
-                    pumpkin_util::text::TextComponent::translate_cross(
+                    sculith_util::text::TextComponent::translate_cross(
                         loc.language_key(),
                         loc.language_key(),
                         [victim_name],
@@ -567,21 +567,21 @@ impl CombatTracker {
             }
             pumpkin_data::damage::DeathMessageType::IntentionalGameDesign => {
                 let death_msg = format!("death.attack.{}", killing_damage_type.message_id);
-                let link = pumpkin_util::text::TextComponent::text("[")
-                    .add_child(pumpkin_util::text::TextComponent::translate_cross(
+                let link = sculith_util::text::TextComponent::text("[")
+                    .add_child(sculith_util::text::TextComponent::translate_cross(
                         format!("{death_msg}.link"),
                         format!("{death_msg}.link"),
                         [],
                     ))
-                    .add_child(pumpkin_util::text::TextComponent::text("]"))
-                    .click_event(pumpkin_util::text::click::ClickEvent::OpenUrl {
+                    .add_child(sculith_util::text::TextComponent::text("]"))
+                    .click_event(sculith_util::text::click::ClickEvent::OpenUrl {
                         url: "https://bugs.mojang.com/browse/MCPE-28723".into(),
                     })
-                    .hover_event(pumpkin_util::text::hover::HoverEvent::show_text(
-                        pumpkin_util::text::TextComponent::text("MCPE-28723"),
+                    .hover_event(sculith_util::text::hover::HoverEvent::show_text(
+                        sculith_util::text::TextComponent::text("MCPE-28723"),
                     ));
 
-                pumpkin_util::text::TextComponent::translate_cross(
+                sculith_util::text::TextComponent::translate_cross(
                     format!("{death_msg}.message"),
                     format!("{death_msg}.message"),
                     [victim_name, link],
@@ -641,10 +641,10 @@ impl CombatTracker {
     }
 
     fn get_fall_message(
-        victim_name: pumpkin_util::text::TextComponent,
+        victim_name: sculith_util::text::TextComponent,
         knock_off_entry: &CombatEntry,
         killing_blow: &CombatEntry,
-    ) -> pumpkin_util::text::TextComponent {
+    ) -> sculith_util::text::TextComponent {
         let knock_off_type = knock_off_entry.damage_type;
         if !knock_off_type.has_tag(&pumpkin_data::tag::DamageType::MINECRAFT_IS_FALL)
             && !knock_off_type
@@ -673,7 +673,7 @@ impl CombatTracker {
                     "death.fell.finish",
                 )
             } else {
-                pumpkin_util::text::TextComponent::translate_cross(
+                sculith_util::text::TextComponent::translate_cross(
                     "death.fell.killer",
                     "death.fell.killer",
                     [victim_name],
@@ -683,7 +683,7 @@ impl CombatTracker {
             let loc = knock_off_entry
                 .fall_location
                 .unwrap_or(FallLocation::Generic);
-            pumpkin_util::text::TextComponent::translate_cross(
+            sculith_util::text::TextComponent::translate_cross(
                 loc.language_key(),
                 loc.language_key(),
                 [victim_name],
@@ -692,20 +692,20 @@ impl CombatTracker {
     }
 
     fn get_message_for_assisted_fall(
-        victim_name: pumpkin_util::text::TextComponent,
-        attacker_name: pumpkin_util::text::TextComponent,
-        attacker_item: Option<pumpkin_util::text::TextComponent>,
+        victim_name: sculith_util::text::TextComponent,
+        attacker_name: sculith_util::text::TextComponent,
+        attacker_item: Option<sculith_util::text::TextComponent>,
         message_with_item: &'static str,
         message_without_item: &'static str,
-    ) -> pumpkin_util::text::TextComponent {
+    ) -> sculith_util::text::TextComponent {
         if let Some(item_name) = attacker_item {
-            pumpkin_util::text::TextComponent::translate_cross(
+            sculith_util::text::TextComponent::translate_cross(
                 message_with_item,
                 message_with_item,
                 [victim_name, attacker_name, item_name],
             )
         } else {
-            pumpkin_util::text::TextComponent::translate_cross(
+            sculith_util::text::TextComponent::translate_cross(
                 message_without_item,
                 message_without_item,
                 [victim_name, attacker_name],
@@ -715,22 +715,22 @@ impl CombatTracker {
 
     fn get_default_death_message(
         &self,
-        victim_name: pumpkin_util::text::TextComponent,
+        victim_name: sculith_util::text::TextComponent,
         killing_blow: &CombatEntry,
-        kill_credit_name: Option<pumpkin_util::text::TextComponent>,
-    ) -> pumpkin_util::text::TextComponent {
+        kill_credit_name: Option<sculith_util::text::TextComponent>,
+    ) -> sculith_util::text::TextComponent {
         let damage_type = killing_blow.damage_type;
         let msg_id = damage_type.message_id;
 
         if let Some(attacker_name) = &killing_blow.attacker_name {
             if let Some(item_name) = &killing_blow.attacker_item_name {
-                pumpkin_util::text::TextComponent::translate_cross(
+                sculith_util::text::TextComponent::translate_cross(
                     format!("death.attack.{msg_id}.item"),
                     format!("death.attack.{msg_id}.item"),
                     [victim_name, attacker_name.clone(), item_name.clone()],
                 )
             } else {
-                pumpkin_util::text::TextComponent::translate_cross(
+                sculith_util::text::TextComponent::translate_cross(
                     format!("death.attack.{msg_id}"),
                     format!("death.attack.{msg_id}"),
                     [victim_name, attacker_name.clone()],
@@ -740,13 +740,13 @@ impl CombatTracker {
             self.get_killer_entry()
                 .and_then(|k| k.attacker_name.clone())
         }) {
-            pumpkin_util::text::TextComponent::translate_cross(
+            sculith_util::text::TextComponent::translate_cross(
                 format!("death.attack.{msg_id}.player"),
                 format!("death.attack.{msg_id}.player"),
                 [victim_name, killer_name],
             )
         } else {
-            pumpkin_util::text::TextComponent::translate_cross(
+            sculith_util::text::TextComponent::translate_cross(
                 format!("death.attack.{msg_id}"),
                 format!("death.attack.{msg_id}"),
                 [victim_name],

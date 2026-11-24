@@ -1,5 +1,5 @@
 use pumpkin_macros::Event;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 use crate::{entity::player::Player, world::World};

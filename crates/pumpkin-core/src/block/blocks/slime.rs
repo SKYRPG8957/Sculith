@@ -1,5 +1,5 @@
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::block::{BlockBehaviour, OnEntityStepArgs, OnLandedUponArgs};
 

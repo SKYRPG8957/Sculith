@@ -1,16 +1,16 @@
 use crate::entity::player::Player;
 use crate::net::ClientPlatform;
 use bitflags::bitflags;
-use pumpkin_protocol::bedrock::client::boss_event::{
+use sculith_protocol::bedrock::client::boss_event::{
     BOSS_EVENT_COLOUR_BLUE, BOSS_EVENT_COLOUR_GREEN, BOSS_EVENT_COLOUR_PINK,
     BOSS_EVENT_COLOUR_PURPLE, BOSS_EVENT_COLOUR_RED, BOSS_EVENT_COLOUR_WHITE,
     BOSS_EVENT_COLOUR_YELLOW, BOSS_EVENT_OVERLAY_NOTCHED_6, BOSS_EVENT_OVERLAY_NOTCHED_10,
     BOSS_EVENT_OVERLAY_NOTCHED_12, BOSS_EVENT_OVERLAY_NOTCHED_20, BOSS_EVENT_OVERLAY_PROGRESS,
     CBossEvent as BBossEvent,
 };
-use pumpkin_protocol::codec::var_long::VarLong;
-use pumpkin_protocol::java::client::play::{BosseventAction, CBossEvent};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::codec::var_long::VarLong;
+use sculith_protocol::java::client::play::{BosseventAction, CBossEvent};
+use sculith_util::text::TextComponent;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, PartialEq, Eq)]

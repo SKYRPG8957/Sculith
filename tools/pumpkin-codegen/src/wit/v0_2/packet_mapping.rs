@@ -20,14 +20,14 @@ pub fn build_java_mapping() -> String {
     output.push_str(
         "use crate::pumpkin::plugin::java_packets::{ClientboundPacket, ServerboundPacket};\n",
     );
-    output.push_str("use pumpkin_protocol::codec::var_int::VarInt;\n");
-    output.push_str("use pumpkin_protocol::ConnectionState;\n");
-    output.push_str("use pumpkin_util::version::JavaMinecraftVersion;\n");
+    output.push_str("use sculith_protocol::codec::var_int::VarInt;\n");
+    output.push_str("use sculith_protocol::ConnectionState;\n");
+    output.push_str("use sculith_util::version::JavaMinecraftVersion;\n");
     output.push_str("use bytes::Bytes;\n");
     output.push_str("use std::io::Cursor;\n");
     output.push_str("use std::any::Any;\n");
-    output.push_str("use pumpkin_protocol::packet::MultiVersionJavaPacket;\n");
-    output.push_str("use pumpkin_protocol::packet::Packet;\n\n");
+    output.push_str("use sculith_protocol::packet::MultiVersionJavaPacket;\n");
+    output.push_str("use sculith_protocol::packet::Packet;\n\n");
 
     output.push_str("#[must_use]\n");
     output.push_str("pub fn serialize_java_packet(packet: &ClientboundPacket, version: JavaMinecraftVersion) -> Option<Bytes> {\n");
@@ -37,12 +37,12 @@ pub fn build_java_mapping() -> String {
 
     for state in client_states {
         process_packets(
-            &format!("../../crates/pumpkin-protocol/src/java/client/{}", state),
+            &format!("../../crates/sculith-protocol/src/java/client/{}", state),
             state,
             &mut output,
             "java_packet",
             "ClientboundPacket",
-            &format!("pumpkin_protocol::java::client::{}", state),
+            &format!("sculith_protocol::java::client::{}", state),
             MappingMode::Serialize,
         );
     }
@@ -65,12 +65,12 @@ pub fn build_java_mapping() -> String {
     for (state, variant) in server_state_variants {
         let mut arms = String::new();
         process_packets(
-            &format!("../../crates/pumpkin-protocol/src/java/server/{}", state),
+            &format!("../../crates/sculith-protocol/src/java/server/{}", state),
             state,
             &mut arms,
             "java_packet",
             "ServerboundPacket",
-            &format!("pumpkin_protocol::java::server::{}", state),
+            &format!("sculith_protocol::java::server::{}", state),
             MappingMode::Deserialize,
         );
         if arms.is_empty() {
@@ -95,12 +95,12 @@ pub fn build_java_mapping() -> String {
 
     for state in client_states {
         process_packets(
-            &format!("../../crates/pumpkin-protocol/src/java/client/{}", state),
+            &format!("../../crates/sculith-protocol/src/java/client/{}", state),
             state,
             &mut output,
             "java_packet",
             "ClientboundPacket",
-            &format!("pumpkin_protocol::java::client::{}", state),
+            &format!("sculith_protocol::java::client::{}", state),
             MappingMode::ToWit,
         );
     }
@@ -111,12 +111,12 @@ pub fn build_java_mapping() -> String {
     );
     for state in client_states {
         process_packets(
-            &format!("../../crates/pumpkin-protocol/src/java/client/{}", state),
+            &format!("../../crates/sculith-protocol/src/java/client/{}", state),
             state,
             &mut output,
             "java_packet",
             "ClientboundPacket",
-            &format!("pumpkin_protocol::java::client::{}", state),
+            &format!("sculith_protocol::java::client::{}", state),
             MappingMode::Downcast,
         );
     }
@@ -136,12 +136,12 @@ pub fn build_bedrock_mapping() -> String {
     output.push_str("    match packet {\n");
 
     process_packets(
-        "../../crates/pumpkin-protocol/src/bedrock/client",
+        "../../crates/sculith-protocol/src/bedrock/client",
         "",
         &mut output,
         "packet",
         "BClientboundPacket",
-        "pumpkin_protocol::bedrock::client",
+        "sculith_protocol::bedrock::client",
         MappingMode::Serialize,
     );
 
@@ -156,12 +156,12 @@ pub fn build_bedrock_mapping() -> String {
     output.push_str("}\n\n");
 
     process_packets(
-        "../../crates/pumpkin-protocol/src/bedrock/client",
+        "../../crates/sculith-protocol/src/bedrock/client",
         "",
         &mut output,
         "packet",
         "BClientboundPacket",
-        "pumpkin_protocol::bedrock::client",
+        "sculith_protocol::bedrock::client",
         MappingMode::ToWit,
     );
 
@@ -170,12 +170,12 @@ pub fn build_bedrock_mapping() -> String {
         "pub fn clientbound_bedrock_any_to_wit(any: &dyn Any) -> Option<BClientboundPacket> {\n",
     );
     process_packets(
-        "../../crates/pumpkin-protocol/src/bedrock/client",
+        "../../crates/sculith-protocol/src/bedrock/client",
         "",
         &mut output,
         "packet",
         "BClientboundPacket",
-        "pumpkin_protocol::bedrock::client",
+        "sculith_protocol::bedrock::client",
         MappingMode::Downcast,
     );
     output.push_str("    None\n");
@@ -200,12 +200,12 @@ fn append_bedrock_readers_for_interface(
     ] {
         output.push_str(&format!("#[must_use]\npub fn deserialize_bedrock_{direction}_packet(id: i32, payload: &[u8]) -> Option<{packet_type}> {{\n    match id {{\n"));
         process_filtered_packets(
-            &format!("../../crates/pumpkin-protocol/src/bedrock/{side}"),
+            &format!("../../crates/sculith-protocol/src/bedrock/{side}"),
             "",
             output,
             "packet",
             packet_type,
-            &format!("pumpkin_protocol::bedrock::{side}"),
+            &format!("sculith_protocol::bedrock::{side}"),
             MappingMode::Deserialize,
             allowed,
             Some(&values),
@@ -217,7 +217,7 @@ fn append_bedrock_readers_for_interface(
                 output,
                 "packet",
                 packet_type,
-                "pumpkin_protocol::bedrock::network_stack_latency",
+                "sculith_protocol::bedrock::network_stack_latency",
                 MappingMode::Deserialize,
                 None,
                 Some(&values),
@@ -228,12 +228,12 @@ fn append_bedrock_readers_for_interface(
                     .map(ToString::to_string)
                     .collect();
                 process_filtered_packets(
-                    "../../crates/pumpkin-protocol/src/bedrock/server",
+                    "../../crates/sculith-protocol/src/bedrock/server",
                     "",
                     output,
                     "packet",
                     packet_type,
-                    "pumpkin_protocol::bedrock::server",
+                    "sculith_protocol::bedrock::server",
                     MappingMode::Deserialize,
                     Some(&cases),
                     Some(&values),
@@ -421,7 +421,7 @@ fn emit_bedrock_read(
     field_reader: Option<&str>,
 ) {
     output.push_str(&format!(
-        "        id if id == <{path}::{name} as pumpkin_protocol::Packet>::PACKET_ID => {{\n"
+        "        id if id == <{path}::{name} as sculith_protocol::Packet>::PACKET_ID => {{\n"
     ));
     output.push_str("            let mut body = payload;\n");
     if let Some(fields) = field_reader {
@@ -430,8 +430,8 @@ fn emit_bedrock_read(
         output.push_str("            };\n");
     } else {
         let decoder = match reader {
-            BedrockReader::Read => "pumpkin_protocol::BServerPacket>::read",
-            BedrockReader::Slice => "pumpkin_protocol::serial::PacketReadSlice>::read_slice",
+            BedrockReader::Read => "sculith_protocol::BServerPacket>::read",
+            BedrockReader::Slice => "sculith_protocol::serial::PacketReadSlice>::read_slice",
         };
         output.push_str(&format!(
             "            let p = <{path}::{name} as {decoder}(&mut body).ok()?;\n"
@@ -517,7 +517,7 @@ fn derived_bedrock_fields(packet: &syn::ItemStruct, local_items: &[Item]) -> Opt
             .ok()?;
         }
         reads.push_str(&format!(
-            "                {}: pumpkin_protocol::serial::PacketRead::{read}(&mut body).ok()?,\n",
+            "                {}: sculith_protocol::serial::PacketRead::{read}(&mut body).ok()?,\n",
             field.ident.as_ref()?
         ));
     }
@@ -798,7 +798,7 @@ fn convert_value(
         "Identifier" => match mode {
             MappingMode::Serialize => {
                 format!(
-                    "pumpkin_util::identifier::Identifier::try_from({}).unwrap()",
+                    "sculith_util::identifier::Identifier::try_from({}).unwrap()",
                     src
                 )
             }
@@ -809,7 +809,7 @@ fn convert_value(
         },
         "VarUInt" if is_slice && !is_ref => match mode {
             MappingMode::Serialize => format!(
-                "{src}.iter().map(|value| pumpkin_protocol::codec::var_uint::VarUInt(*value as _)).collect()"
+                "{src}.iter().map(|value| sculith_protocol::codec::var_uint::VarUInt(*value as _)).collect()"
             ),
             MappingMode::Deserialize | MappingMode::ToWit => {
                 format!("{src}.iter().map(|value| value.0 as _).collect()")
@@ -818,7 +818,7 @@ fn convert_value(
         },
         "VarUInt" => match mode {
             MappingMode::Serialize => {
-                format!("pumpkin_protocol::codec::var_uint::VarUInt({src} as _)")
+                format!("sculith_protocol::codec::var_uint::VarUInt({src} as _)")
             }
             // The WIT field is signed. Preserve the wire bits for IDs with bit 31 set.
             MappingMode::Deserialize | MappingMode::ToWit => format!("{src}.0 as _"),
@@ -826,7 +826,7 @@ fn convert_value(
         },
         "VarULong" if !is_ref && !is_slice => match mode {
             MappingMode::Serialize => {
-                format!("pumpkin_protocol::codec::var_ulong::VarULong({src} as _)")
+                format!("sculith_protocol::codec::var_ulong::VarULong({src} as _)")
             }
             MappingMode::Deserialize | MappingMode::ToWit => format!("{src}.0 as _"),
             MappingMode::Downcast => String::new(),
@@ -834,9 +834,9 @@ fn convert_value(
         "VarLong" | "VarULong" => {
             let is_ulong = type_ident == "VarULong";
             let path = if is_ulong {
-                "pumpkin_protocol::codec::var_ulong::VarULong"
+                "sculith_protocol::codec::var_ulong::VarULong"
             } else {
-                "pumpkin_protocol::codec::var_long::VarLong"
+                "sculith_protocol::codec::var_long::VarLong"
             };
 
             if mode == MappingMode::Serialize {
@@ -881,7 +881,7 @@ fn convert_value(
             MappingMode::Serialize => {
                 let tmp = dst.unwrap_or("tmp").replace('.', "_");
                 prep.push_str(&format!(
-                    "{}let component_{} = pumpkin_util::text::TextComponent::text({}.clone());\n",
+                    "{}let component_{} = sculith_util::text::TextComponent::text({}.clone());\n",
                     prep_prefix, tmp, src
                 ));
                 if is_ref {
@@ -899,7 +899,7 @@ fn convert_value(
         "BlockPos" => match mode {
             MappingMode::Serialize => {
                 format!(
-                    "pumpkin_util::math::position::BlockPos::new({}.0, {}.1, {}.2)",
+                    "sculith_util::math::position::BlockPos::new({}.0, {}.1, {}.2)",
                     src, src, src
                 )
             }
@@ -911,7 +911,7 @@ fn convert_value(
 
         "Vector2" => match mode {
             MappingMode::Serialize => {
-                format!("pumpkin_util::math::vector2::Vector2::new({src}.0 as _, {src}.1 as _)")
+                format!("sculith_util::math::vector2::Vector2::new({src}.0 as _, {src}.1 as _)")
             }
             MappingMode::Deserialize | MappingMode::ToWit => {
                 format!("({src}.x as _, {src}.y as _)")
@@ -921,7 +921,7 @@ fn convert_value(
         "Vector3" => match mode {
             MappingMode::Serialize => {
                 format!(
-                    "pumpkin_util::math::vector3::Vector3::new({}.0 as _, {}.1 as _, {}.2 as _)",
+                    "sculith_util::math::vector3::Vector3::new({}.0 as _, {}.1 as _, {}.2 as _)",
                     src, src, src
                 )
             }
@@ -939,7 +939,7 @@ fn convert_value(
                     prep_prefix, tmp, src
                 ));
                 format!(
-                    "pumpkin_protocol::codec::lp_vector_3d::LpVector3d(pumpkin_util::math::vector3::Vector3::new(parsed_{0}[0], parsed_{0}[1], parsed_{0}[2]))",
+                    "sculith_protocol::codec::lp_vector_3d::LpVector3d(sculith_util::math::vector3::Vector3::new(parsed_{0}[0], parsed_{0}[1], parsed_{0}[2]))",
                     tmp
                 )
             }
@@ -1224,7 +1224,7 @@ fn parse_packet_file(
         .to_string_lossy()
         .split_once("/src/bedrock/")
         .and_then(|(_, relative)| relative.strip_suffix(".rs"))
-        .map(|relative| format!("pumpkin_protocol::bedrock::{}", relative.replace('/', "::")));
+        .map(|relative| format!("sculith_protocol::bedrock::{}", relative.replace('/', "::")));
     let include = |name: &syn::Ident| {
         allowed.is_none_or(|allowed| allowed.contains(&name.to_string().to_kebab_case()))
     };
@@ -1462,9 +1462,9 @@ fn emit_struct_output(
                     "        id if id == {}::{}::to_id(version) => {{\n",
                     rust_path_prefix, struct_name
                 ));
-                output.push_str("            use pumpkin_protocol::ServerPacket;\n");
+                output.push_str("            use sculith_protocol::ServerPacket;\n");
                 output.push_str(&format!(
-                    "            let p = <{}::{} as pumpkin_protocol::ServerPacket>::read(&mut payload, &version).ok()?;\n",
+                    "            let p = <{}::{} as sculith_protocol::ServerPacket>::read(&mut payload, &version).ok()?;\n",
                     rust_path_prefix, struct_name
                 ));
             } else {
@@ -1596,9 +1596,9 @@ fn process_enum(
                     "        id if id == {}::{}::to_id(version) => {{\n",
                     rust_path_prefix, enum_name
                 ));
-                output.push_str("            use pumpkin_protocol::ServerPacket;\n");
+                output.push_str("            use sculith_protocol::ServerPacket;\n");
                 output.push_str(&format!(
-                    "            let p = <{}::{} as pumpkin_protocol::ServerPacket>::read(&mut payload, &version).ok()?;\n",
+                    "            let p = <{}::{} as sculith_protocol::ServerPacket>::read(&mut payload, &version).ok()?;\n",
                     rust_path_prefix, enum_name
                 ));
             } else {

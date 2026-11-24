@@ -10,11 +10,11 @@ use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::net::java::chunk_data::CChunkData;
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
 use rustc_hash::FxHashMap;
+use sculith_util::PermissionLvl;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 const DESCRIPTION: &str = "Changes biomes of an area.";
 const PERMISSION: &str = "minecraft:command.fillbiome";

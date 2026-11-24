@@ -2,8 +2,8 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::environment_attribute::Activity;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use super::FrogEntity;
 use super::shoot_tongue::ShootTongue;

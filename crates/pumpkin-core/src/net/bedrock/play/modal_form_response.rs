@@ -6,7 +6,7 @@ impl BedrockClient {
         &self,
         player: &Arc<Player>,
         server: &Arc<Server>,
-        packet: pumpkin_protocol::bedrock::server::modal_form_response::SModalFormResponse<'_>,
+        packet: sculith_protocol::bedrock::server::modal_form_response::SModalFormResponse<'_>,
     ) {
         match player.bedrock_form_response(packet.form_id.0, packet.json_response.as_deref()) {
             crate::entity::player::forms::FormReply::Valid { id, data } => {

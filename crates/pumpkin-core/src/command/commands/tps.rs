@@ -1,6 +1,6 @@
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::{TextComponent, color::NamedColor};
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::{TextComponent, color::NamedColor};
 
 use crate::command::argument_builder::{ArgumentBuilder, command};
 use crate::command::context::command_context::CommandContext;

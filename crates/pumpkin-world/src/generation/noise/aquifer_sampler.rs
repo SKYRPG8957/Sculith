@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, BlockState, noise_settings::NoiseSettings};
-use pumpkin_util::{
+use sculith_util::{
     math::{clamped_map, floor_div, vector3::Vector3},
     random::{RandomImpl, xoroshiro128::XoroshiroSplitter},
 };
@@ -562,8 +562,8 @@ impl WorldAquiferSampler {
             };
 
             let g = router.fluid_level_floodedness_noise(&pos).clamp(-1.0, 1.0);
-            let h = pumpkin_util::math::map(f, 1.0, 0.0, -0.3, 0.8);
-            let k = pumpkin_util::math::map(f, 1.0, 0.0, -0.8, 0.4);
+            let h = sculith_util::math::map(f, 1.0, 0.0, -0.3, 0.8);
+            let k = sculith_util::math::map(f, 1.0, 0.0, -0.8, 0.4);
 
             (g - k, g - h)
         };
@@ -883,7 +883,7 @@ mod random_positions_and_hypot {
         BlockStateId, dimension::Dimension, noise_router::OVERWORLD_BASE_NOISE_ROUTER,
         noise_settings::NoiseSettings,
     };
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     use crate::generation::{
         GlobalRandomConfig,

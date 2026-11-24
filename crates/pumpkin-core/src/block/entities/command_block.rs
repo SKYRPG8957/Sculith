@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::BlockEntity;
 

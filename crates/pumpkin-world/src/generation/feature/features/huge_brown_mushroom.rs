@@ -1,6 +1,6 @@
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockState, block_properties::BrownMushroomBlockLikeProperties, tag};
-use pumpkin_util::{
+use sculith_util::{
     math::position::BlockPos,
     random::{RandomGenerator, RandomImpl},
 };

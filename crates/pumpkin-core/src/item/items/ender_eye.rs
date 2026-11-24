@@ -18,13 +18,13 @@ use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::structures::StructureSet;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockDirection};
-use pumpkin_util::Hand;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::generation::generator::structure_finder::{
     StructureSearch, find_nearest_structure,
 };
 use pumpkin_world::world::BlockFlags;
+use sculith_util::Hand;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::player::Player;
 

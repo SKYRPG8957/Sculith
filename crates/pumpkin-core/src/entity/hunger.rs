@@ -2,7 +2,7 @@ use super::{NBTStorage, NBTStorageInit, player::Player};
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::damage::DamageType;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::Difficulty;
+use sculith_util::Difficulty;
 
 use crate::{net::bedrock::BedrockClient, server::TickDeadline};
 

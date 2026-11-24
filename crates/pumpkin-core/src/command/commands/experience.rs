@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::math::experience;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::math::experience;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::core::integer::IntegerArgumentType;

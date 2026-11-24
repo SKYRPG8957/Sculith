@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::entities::BlockEntity;
 use crate::world::World;
@@ -337,7 +337,7 @@ impl BlockEntity for BeaconBlockEntity {
         self.metadata.get_lock()
     }
 
-    fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         self.metadata.get_custom_name()
     }
 

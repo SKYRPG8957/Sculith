@@ -1,6 +1,6 @@
 use pumpkin_data::fluid::Fluid;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::pathfinder::pathfinding_context::PathfindingContext;
 use crate::entity::mob::Mob;

@@ -1,6 +1,6 @@
 use std::sync::{Arc, PoisonError};
 
-use pumpkin_protocol::bedrock::server::player_auth_input::{InputData, SPlayerAuthInput};
+use sculith_protocol::bedrock::server::player_auth_input::{InputData, SPlayerAuthInput};
 
 use super::BedrockClient;
 use crate::entity::{EntityBase, player::Player};

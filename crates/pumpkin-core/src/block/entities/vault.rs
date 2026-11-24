@@ -1,7 +1,7 @@
 use super::BlockEntity;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
 use rustc_hash::FxHashSet;
+use sculith_util::math::position::BlockPos;
 use std::sync::Mutex;
 use uuid::Uuid;
 

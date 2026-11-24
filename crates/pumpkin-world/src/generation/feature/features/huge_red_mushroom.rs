@@ -1,6 +1,6 @@
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockState, block_properties::BrownMushroomBlockLikeProperties, tag};
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
+use sculith_util::{math::position::BlockPos, random::RandomGenerator};
 
 use super::huge_brown_mushroom::place_mushroom_block;
 use crate::generation::proto_chunk::GenerationCache;

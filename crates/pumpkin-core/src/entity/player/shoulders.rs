@@ -2,9 +2,9 @@ use super::Player;
 use crate::entity::{EntityBase, passive::parrot::ParrotEntity};
 use pumpkin_data::{entity::EntityType, entity_variant::ParrotVariant, tracked_data::player};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering::Relaxed;
 
 const SHOULDER_AMBIENT_INTERVAL: i32 = 200;

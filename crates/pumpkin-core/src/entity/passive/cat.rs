@@ -14,12 +14,12 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::custom_sound::CustomSound;
 use crate::entity::item::ItemEntity;

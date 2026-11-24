@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use pumpkin_inventory::stonecutter_screen_handler::StonecutterScreenHandler;
-use pumpkin_protocol::bedrock::server::stonecutter_set_recipe::SStonecutterSetRecipe;
+use sculith_protocol::bedrock::server::stonecutter_set_recipe::SStonecutterSetRecipe;
 
 impl BedrockClient {
     pub fn handle_stonecutter_set_recipe(

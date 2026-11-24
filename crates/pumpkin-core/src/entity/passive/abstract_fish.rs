@@ -11,8 +11,8 @@ use crate::entity::{
 };
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{boundingbox::EntityDimensions, vector3::Vector3};
 use rand::RngExt;
+use sculith_util::math::{boundingbox::EntityDimensions, vector3::Vector3};
 
 use super::water_animal::WaterAnimal;
 
@@ -243,7 +243,7 @@ macro_rules! fish_mob_hooks {
         /// Vanilla `AbstractFish` steps silently.
         fn mob_play_step_sound(
             &self,
-            _pos: &pumpkin_util::math::position::BlockPos,
+            _pos: &sculith_util::math::position::BlockPos,
             _state: &pumpkin_data::BlockState,
         ) {
         }
@@ -276,7 +276,7 @@ macro_rules! fish_mob_hooks {
             &self,
             player: &std::sync::Arc<$crate::entity::player::Player>,
             stack: &mut pumpkin_data::item_stack::ItemStack,
-            _hand: pumpkin_util::Hand,
+            _hand: sculith_util::Hand,
         ) -> Option<bool> {
             $crate::entity::bucketable::bucket_mob_pickup(player, stack, self)
         }

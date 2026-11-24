@@ -3,7 +3,7 @@ use crate::entity::ai::pathfinder::node::PathType;
 use crate::entity::mob::Mob;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
+use sculith_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
 use std::sync::atomic::Ordering;
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]

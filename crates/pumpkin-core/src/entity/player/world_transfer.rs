@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use pumpkin_inventory::screen_handler::InventoryPlayer;
-use pumpkin_protocol::java::client::play::CSetSelectedSlot;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::java::client::play::CSetSelectedSlot;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
 use tokio::sync::{OwnedMutexGuard, oneshot};
 use tokio::task::JoinHandle;
 

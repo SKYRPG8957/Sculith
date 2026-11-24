@@ -19,7 +19,7 @@ impl super::EnchantmentEntityEffectExt for AllOf<'_> {
         enchantment_level: i32,
         owner: Option<&std::sync::Arc<crate::entity::player::Player>>,
         entity: Option<&crate::entity::Entity>,
-        position: pumpkin_util::math::vector3::Vector3<f64>,
+        position: sculith_util::math::vector3::Vector3<f64>,
     ) {
         for effect in self.effects {
             effect.apply(world, enchantment_level, owner, entity, position);

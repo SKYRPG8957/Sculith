@@ -6,25 +6,25 @@ use crate::{
     server::Server,
 };
 use pumpkin_data::effect::StatusEffect;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::vector3::Vector3;
 
 type EffectEntry = (&'static StatusEffect, i32, u8, bool, bool, bool);
 use pumpkin_data::item_stack::ItemStack;
 
 #[derive(Clone)]
 struct ParticleMeta {
-    particle_id: pumpkin_protocol::codec::var_int::VarInt,
+    particle_id: sculith_protocol::codec::var_int::VarInt,
     data: Box<[u8]>,
 }
 
-impl pumpkin_protocol::java::client::play::MetadataSerializer for ParticleMeta {
+impl sculith_protocol::java::client::play::MetadataSerializer for ParticleMeta {
     fn write_metadata(
         &self,
         writer: &mut impl std::io::Write,
-        _version: &pumpkin_util::version::JavaMinecraftVersion,
-    ) -> Result<(), pumpkin_protocol::ser::WritingError> {
-        use pumpkin_protocol::ser::NetworkWriteExt;
+        _version: &sculith_util::version::JavaMinecraftVersion,
+    ) -> Result<(), sculith_protocol::ser::WritingError> {
+        use sculith_protocol::ser::NetworkWriteExt;
         writer.write_var_int(&self.particle_id)?;
         writer.write_slice(&self.data)
     }
@@ -216,7 +216,7 @@ impl EntityBase for AreaEffectCloudEntity {
 
         let meta = if stack.item.id == pumpkin_data::item::Item::DRAGON_BREATH.id {
             ParticleMeta {
-                particle_id: pumpkin_protocol::codec::var_int::VarInt(
+                particle_id: sculith_protocol::codec::var_int::VarInt(
                     pumpkin_data::particle::Particle::DragonBreath as i32,
                 ),
                 data: Box::new(1.0f32.to_be_bytes()),
@@ -225,7 +225,7 @@ impl EntityBase for AreaEffectCloudEntity {
             // Build raw particle option bytes for ENTITY_EFFECT
             let data_bytes = color.to_be_bytes();
             ParticleMeta {
-                particle_id: pumpkin_protocol::codec::var_int::VarInt(
+                particle_id: sculith_protocol::codec::var_int::VarInt(
                     pumpkin_data::particle::Particle::EntityEffect as i32,
                 ),
                 data: Box::new(data_bytes),

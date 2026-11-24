@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use wasmtime::component::{Access, HasSelf, Resource};
 
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::{
     pumpkin::plugin::{
@@ -767,10 +767,10 @@ impl HostMob for PluginHostState {
                             .villager_data
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        vdata.profession = pumpkin_protocol::codec::var_int::VarInt(
+                        vdata.profession = sculith_protocol::codec::var_int::VarInt(
                             from_wit_villager_profession(villager_data.profession) as i32,
                         );
-                        vdata.level = pumpkin_protocol::codec::var_int::VarInt(i32::from(
+                        vdata.level = sculith_protocol::codec::var_int::VarInt(i32::from(
                             villager_data.level,
                         ));
                     };

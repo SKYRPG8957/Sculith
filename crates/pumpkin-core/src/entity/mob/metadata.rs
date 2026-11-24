@@ -1,12 +1,12 @@
 use pumpkin_data::dye_color::DyeColor;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_data::tracked_data::{self, TrackedData};
-use pumpkin_protocol::VarInt;
-use pumpkin_protocol::bedrock::client::set_actor_data::{
+use sculith_protocol::VarInt;
+use sculith_protocol::bedrock::client::set_actor_data::{
     MetadataValue, SyncedActorDataList, entity_data_flag, entity_data_key,
 };
-use pumpkin_protocol::java::client::play::{CSetEntityMetadata, Metadata};
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_protocol::java::client::play::{CSetEntityMetadata, Metadata};
+use sculith_util::version::JavaMinecraftVersion;
 
 use crate::entity::Entity;
 use crate::entity::passive::villager::VillagerData;

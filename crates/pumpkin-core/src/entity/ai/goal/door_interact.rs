@@ -1,5 +1,5 @@
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::atomic::Ordering;
 
 use super::{Controls, Goal};

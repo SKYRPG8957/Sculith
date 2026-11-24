@@ -8,9 +8,9 @@ use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::translation;
-use pumpkin_protocol::java::client::play::SuggestionProviders;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::java::client::play::SuggestionProviders;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
 use std::any::Any;
 use std::iter::Iterator;
 

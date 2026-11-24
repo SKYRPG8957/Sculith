@@ -5,7 +5,7 @@ pub use state::GameTestState;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::block_based::BlockBasedTest;
 use crate::error::{GameTestError, GameTestResult};

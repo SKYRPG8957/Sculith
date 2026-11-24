@@ -1,8 +1,8 @@
 use super::cave::get_height;
 use super::{Carver, CarverOutput};
 use pumpkin_data::carver::{CarverAdditionalConfig, CarverConfig};
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use sculith_util::math::vector2::Vector2;
+use sculith_util::random::{RandomGenerator, RandomImpl};
 use std::f32::consts::PI;
 
 pub struct CanyonCarver;
@@ -91,7 +91,7 @@ impl CanyonCarver {
         for current_step in step..distance {
             let progress = current_step as f32 * PI / distance as f32;
             let mut horizontal_radius =
-                1.5 + f64::from(pumpkin_util::math::sin(progress) * thickness);
+                1.5 + f64::from(sculith_util::math::sin(progress) * thickness);
             let mut vertical_radius = horizontal_radius * y_scale;
             horizontal_radius *= canyon_config
                 .shape
@@ -105,11 +105,11 @@ impl CanyonCarver {
                 current_step as f32,
             );
 
-            let xc = pumpkin_util::math::cos(vertical_rotation);
-            let xs = pumpkin_util::math::sin(vertical_rotation);
-            x += f64::from(pumpkin_util::math::cos(horizontal_rotation) * xc);
+            let xc = sculith_util::math::cos(vertical_rotation);
+            let xs = sculith_util::math::sin(vertical_rotation);
+            x += f64::from(sculith_util::math::cos(horizontal_rotation) * xc);
             y += xs as f64;
-            z += f64::from(pumpkin_util::math::sin(horizontal_rotation) * xc);
+            z += f64::from(sculith_util::math::sin(horizontal_rotation) * xc);
 
             vertical_rotation = (vertical_rotation * 0.7) + (x_rota * 0.05);
             horizontal_rotation += y_rota * 0.05;
@@ -203,7 +203,7 @@ mod tests {
     use super::*;
     use crate::generation::carver::mask::CarvingMask;
     use pumpkin_data::carver::CANYON;
-    use pumpkin_util::random::RandomGenerator;
+    use sculith_util::random::RandomGenerator;
 
     #[test]
     fn canyon_carve() {
@@ -211,7 +211,7 @@ mod tests {
         let carver_chunk_pos = Vector2::new(0, 0);
         let mut mask = CarvingMask::new(-64, 320);
         let mut random = RandomGenerator::Legacy(
-            pumpkin_util::random::legacy_rand::LegacyRand::from_seed(12345),
+            sculith_util::random::legacy_rand::LegacyRand::from_seed(12345),
         );
 
         CanyonCarver.carve(

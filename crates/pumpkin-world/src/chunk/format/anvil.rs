@@ -2,8 +2,8 @@ use bytes::{Buf, BufMut, Bytes};
 use flate2::read::{GzDecoder, GzEncoder, ZlibDecoder, ZlibEncoder};
 use lz4_java_wrc::Context;
 use pumpkin_config::chunk::AnvilChunkConfig;
-use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::vector2::Vector2;
 use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Write},
@@ -907,7 +907,7 @@ mod tests {
     use crate::chunk::io::RegionFile;
     use bytes::{BufMut, Bytes, BytesMut};
     use pumpkin_config::chunk::AnvilChunkConfig;
-    use pumpkin_util::math::vector2::Vector2;
+    use sculith_util::math::vector2::Vector2;
     use std::io;
     use tempfile::TempDir;
 

@@ -11,10 +11,10 @@ use pumpkin_data::{
     structures::{StructureKeys, StructureSet},
     tag::{self, Taggable},
 };
-use pumpkin_protocol::bedrock::server::ActorEventID;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
 use pumpkin_world::generation::generator::structure_finder::find_nearest_structure_start_in_sets;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::ActorEventID;
+use sculith_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
 
 use super::DolphinEntity;
 use crate::entity::{
@@ -538,13 +538,13 @@ fn drop_item(mob: &dyn Mob) -> bool {
     let pitch = entity.pitch.load().to_radians();
     let velocity = Vector3::new(
         f64::from(
-            -0.3 * pumpkin_util::math::sin(yaw) * pumpkin_util::math::cos(pitch)
-                + pumpkin_util::math::cos(direction) * spread,
+            -0.3 * sculith_util::math::sin(yaw) * sculith_util::math::cos(pitch)
+                + sculith_util::math::cos(direction) * spread,
         ),
-        f64::from(0.3 * pumpkin_util::math::sin(pitch) * 1.5),
+        f64::from(0.3 * sculith_util::math::sin(pitch) * 1.5),
         f64::from(
-            0.3 * pumpkin_util::math::cos(yaw) * pumpkin_util::math::cos(pitch)
-                + pumpkin_util::math::sin(direction) * spread,
+            0.3 * sculith_util::math::cos(yaw) * sculith_util::math::cos(pitch)
+                + sculith_util::math::sin(direction) * spread,
         ),
     );
     let pos = entity.pos.load();

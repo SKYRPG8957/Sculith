@@ -1,9 +1,9 @@
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 

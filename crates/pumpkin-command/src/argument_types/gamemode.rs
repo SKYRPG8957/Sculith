@@ -5,8 +5,8 @@ use crate::errors::error_types::CommandErrorType;
 use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_data::translation;
-use pumpkin_util::GameMode;
-use pumpkin_util::text::TextComponent;
+use sculith_util::GameMode;
+use sculith_util::text::TextComponent;
 use std::str::FromStr;
 
 pub const INVALID_ERROR_TYPE: CommandErrorType<1> = CommandErrorType::new(

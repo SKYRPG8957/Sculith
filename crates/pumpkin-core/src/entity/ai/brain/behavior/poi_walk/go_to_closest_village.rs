@@ -1,5 +1,5 @@
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::poi::SectionPos;
+use sculith_util::math::position::BlockPos;
 
 use super::super::OneShot;
 use crate::entity::ai::brain::memory::{MemoryStatus, types, walk_target::WalkTarget};

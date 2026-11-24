@@ -371,7 +371,7 @@ mod tests {
     use pumpkin_data::{
         data_component_impl::EquipmentSlot, item::Item, sound::Sound, statistic::StatisticCategory,
     };
-    use pumpkin_protocol::java::{
+    use sculith_protocol::java::{
         client::play::{
             CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem,
             CSetPlayerInventory, CSetSelectedSlot,

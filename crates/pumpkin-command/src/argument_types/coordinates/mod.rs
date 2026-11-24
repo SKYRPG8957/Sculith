@@ -3,8 +3,8 @@ use crate::errors::error_types::{CommandErrorType, READER_EXPECTED_DOUBLE, READE
 use crate::source::CommandSource;
 use crate::string_reader::StringReader;
 use pumpkin_data::translation;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::{Axis, Vector3};
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::{Axis, Vector3};
 
 pub mod angle;
 pub mod block_pos;

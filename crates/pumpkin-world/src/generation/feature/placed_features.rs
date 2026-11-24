@@ -1,15 +1,15 @@
 use pumpkin_data::block_properties::is_air;
 use pumpkin_data::{Block, BlockDirection, BlockStateId};
-use pumpkin_util::HeightMap;
+use sculith_util::HeightMap;
 use std::collections::HashMap;
 use std::iter;
 use std::sync::LazyLock;
 
-use pumpkin_util::biome::FOLIAGE_NOISE;
-use pumpkin_util::math::int_provider::IntProvider;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use sculith_util::biome::FOLIAGE_NOISE;
+use sculith_util::math::int_provider::IntProvider;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomGenerator, RandomImpl};
 
 use crate::generation::block_predicate::BlockPredicate;
 use crate::generation::height_provider::HeightProvider;
@@ -623,7 +623,7 @@ include!("../../../../pumpkin-data/src/generated/placed_features_generated.rs");
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_util::random::xoroshiro128::Xoroshiro;
+    use sculith_util::random::xoroshiro128::Xoroshiro;
 
     use super::*;
 

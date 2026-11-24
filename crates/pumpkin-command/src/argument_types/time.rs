@@ -5,7 +5,7 @@ use crate::errors::error_types::CommandErrorType;
 use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_data::translation;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 pub const INVALID_UNIT_ERROR_TYPE: CommandErrorType<0> = CommandErrorType::new(
     translation::java::ARGUMENT_TIME_INVALID_UNIT,

@@ -2,9 +2,9 @@ use crate::net::chunk_sender::PreparedChunk;
 use crate::server::Server;
 use crate::world::World;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::chunk::ChunkData;
 use pumpkin_world::level::SyncChunk;
+use sculith_util::math::vector2::Vector2;
 use std::sync::Arc;
 
 /// An event that occurs when a chunk is sent to a client.

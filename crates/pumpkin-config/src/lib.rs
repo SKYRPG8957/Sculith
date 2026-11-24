@@ -6,9 +6,9 @@
 use fun::FunConfig;
 
 use logging::LoggingConfig;
-use pumpkin_util::world_seed::Seed;
-use pumpkin_util::{Difficulty, GameMode, PermissionLvl, random};
 use recipe::RecipeConfig;
+use sculith_util::world_seed::Seed;
+use sculith_util::{Difficulty, GameMode, PermissionLvl, random};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use std::path::PathBuf;

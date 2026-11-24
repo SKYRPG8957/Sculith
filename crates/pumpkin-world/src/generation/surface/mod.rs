@@ -6,7 +6,7 @@ use pumpkin_data::{
         WaterMaterialCondition,
     },
 };
-use pumpkin_util::{
+use sculith_util::{
     math::{lerp2, vertical_surface_type::VerticalSurfaceType},
     random::{RandomImpl, xoroshiro128::XoroshiroSplitter},
 };
@@ -125,7 +125,7 @@ impl VeinContext<'_> {
 
     pub fn get_filler_gap(&mut self, x: i32, y: i32, z: i32) -> f32 {
         self.router
-            .vein_gap(&pumpkin_util::math::vector3::Vector3::new(x, y, z))
+            .vein_gap(&sculith_util::math::vector3::Vector3::new(x, y, z))
     }
 }
 
@@ -220,7 +220,7 @@ impl<'a> MaterialRuleContext<'a> {
             self.block_pos_z as f64,
         ));
         let rand_val = if self.legacy_random_source {
-            use pumpkin_util::random::{RandomImpl, hash_block_pos, legacy_rand::LegacyRand};
+            use sculith_util::random::{RandomImpl, hash_block_pos, legacy_rand::LegacyRand};
             let mut root = LegacyRand::from_seed(self.world_seed);
             let factory_seed = root.next_i64() as u64;
             let pos_seed = hash_block_pos(self.block_pos_x, 0, self.block_pos_z) as u64;
@@ -559,9 +559,9 @@ pub fn test_vertical_gradient(
     if block_y >= false_at {
         return false;
     }
-    let mapped = pumpkin_util::math::map(block_y as f32, true_at as f32, false_at as f32, 1.0, 0.0);
+    let mapped = sculith_util::math::map(block_y as f32, true_at as f32, false_at as f32, 1.0, 0.0);
     if context.legacy_random_source {
-        use pumpkin_util::random::{RandomImpl, hash_block_pos, legacy_rand::LegacyRand};
+        use sculith_util::random::{RandomImpl, hash_block_pos, legacy_rand::LegacyRand};
         let name_hash = match condition.random_lo {
             13544455532117611141 => 2042456806i32, // minecraft:bedrock_floor
             10285458612719284684 => 343340730i32,  // minecraft:bedrock_roof

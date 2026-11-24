@@ -11,9 +11,9 @@ use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
+use sculith_util::math::position::BlockPos;
 
 #[pumpkin_block("minecraft:big_dripleaf_stem")]
 pub struct BigDripleafStemBlock;

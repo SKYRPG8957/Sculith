@@ -1,9 +1,9 @@
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::difficulty::Difficulty;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::difficulty::Difficulty;
+use sculith_util::math::position::BlockPos;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 use uuid::Uuid;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};

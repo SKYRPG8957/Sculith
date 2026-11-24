@@ -1,8 +1,8 @@
 use std::fmt;
 use std::sync::Arc;
 
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::EntityBase;
 use crate::entity::ai::brain::VisibilityContext;

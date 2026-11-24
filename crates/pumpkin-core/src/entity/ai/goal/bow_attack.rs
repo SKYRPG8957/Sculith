@@ -3,8 +3,8 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_util::Hand;
 use rand::RngExt;
+use sculith_util::Hand;
 use std::sync::Arc;
 
 use crate::entity::ai::goal::{Controls, Goal};

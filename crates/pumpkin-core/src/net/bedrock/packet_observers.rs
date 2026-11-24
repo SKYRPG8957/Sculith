@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use pumpkin_protocol::RawPacket;
+use sculith_protocol::RawPacket;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 
 use crate::entity::player::Player;

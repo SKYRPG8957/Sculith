@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::{block::entities::BlockEntity, world::World};
 

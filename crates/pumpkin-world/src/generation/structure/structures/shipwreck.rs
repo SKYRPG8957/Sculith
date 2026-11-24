@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pumpkin_data::{Mirror, Rotation};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use sculith_util::{
     HeightMap,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl, hash_block_pos, legacy_rand::LegacyRand},

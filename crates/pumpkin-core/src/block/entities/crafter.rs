@@ -8,8 +8,8 @@ use pumpkin_inventory::{
 };
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
 use std::any::Any;
 use std::array::from_fn;
 use std::sync::Arc;
@@ -219,7 +219,7 @@ impl BlockEntity for CrafterBlockEntity {
         self.metadata.get_lock()
     }
 
-    fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         self.metadata.get_custom_name()
     }
 }

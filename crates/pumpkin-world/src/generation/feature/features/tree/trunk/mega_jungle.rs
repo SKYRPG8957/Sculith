@@ -1,5 +1,5 @@
 use pumpkin_data::BlockState;
-use pumpkin_util::{
+use sculith_util::{
     math::{cos, position::BlockPos, sin},
     random::{RandomGenerator, RandomImpl},
 };

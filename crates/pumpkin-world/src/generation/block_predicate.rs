@@ -1,8 +1,8 @@
 use pumpkin_data::fluid::{Fluid, FluidState};
 use pumpkin_data::tag::{self};
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
-use pumpkin_util::y_offset::YOffset;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::y_offset::YOffset;
 
 use crate::generation::proto_chunk::GenerationCache;
 use crate::world::BlockAccessor;

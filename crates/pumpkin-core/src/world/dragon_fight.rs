@@ -9,11 +9,11 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use pumpkin_data::{Block, entity::EntityType, world::WorldEvent};
-use pumpkin_util::{
+use pumpkin_world::world::BlockFlags;
+use sculith_util::{
     math::{position::BlockPos, vector2::Vector2, vector3::Vector3},
     text::TextComponent,
 };
-use pumpkin_world::world::BlockFlags;
 
 use super::{
     World,

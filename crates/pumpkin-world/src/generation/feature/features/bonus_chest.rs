@@ -1,6 +1,6 @@
 use pumpkin_data::{Block, BlockDirection};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use sculith_util::{
     HeightMap,
     math::{position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},

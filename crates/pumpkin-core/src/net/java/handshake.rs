@@ -2,8 +2,8 @@ use pumpkin_data::{
     packet::{CURRENT_MC_VERSION, LOWEST_SUPPORTED_MC_VERSION},
     translation,
 };
-use pumpkin_protocol::{ConnectionState, java::server::handshake::SHandShake};
-use pumpkin_util::{text::TextComponent, version::JavaMinecraftVersion};
+use sculith_protocol::{ConnectionState, java::server::handshake::SHandShake};
+use sculith_util::{text::TextComponent, version::JavaMinecraftVersion};
 use tracing::debug;
 
 use crate::{net::java::pending::PendingConnection, server::Server};

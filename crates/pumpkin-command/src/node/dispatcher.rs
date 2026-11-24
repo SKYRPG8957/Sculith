@@ -13,11 +13,11 @@ use crate::source::{CommandSource, DummySource, ReturnValue};
 use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_data::translation::java::COMMAND_CONTEXT_HERE;
-use pumpkin_protocol::java::client::play::CommandSuggestion;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::click::ClickEvent;
-use pumpkin_util::text::color::{Color, NamedColor};
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_protocol::java::client::play::CommandSuggestion;
+use sculith_util::text::TextComponent;
+use sculith_util::text::click::ClickEvent;
+use sculith_util::text::color::{Color, NamedColor};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -963,7 +963,7 @@ impl<S: CommandSource> CommandDispatcher<S> {
 
 #[cfg(test)]
 mod test {
-    use pumpkin_util::text::TextComponent;
+    use sculith_util::text::TextComponent;
 
     use crate::argument_builder::{
         ArgumentBuilder, CommandArgumentBuilder, LiteralArgumentBuilder, RequiredArgumentBuilder,
@@ -988,7 +988,7 @@ mod test {
 
     #[test]
     fn unknown_command_message_includes_command_name() {
-        use pumpkin_util::translation::Locale;
+        use sculith_util::translation::Locale;
 
         for (input, registered, disabled) in [
             ("x", false, false),

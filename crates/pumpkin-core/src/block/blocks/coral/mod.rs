@@ -1,8 +1,8 @@
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::tag::Taggable;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use crate::world::World;
 

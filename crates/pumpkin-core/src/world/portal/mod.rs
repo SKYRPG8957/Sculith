@@ -3,10 +3,10 @@ use std::sync::Arc;
 use pumpkin_data::Block;
 use pumpkin_data::block_properties::HorizontalAxis;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
 
 use super::World;
 
@@ -57,7 +57,7 @@ impl PortalType {
                     id if id == pumpkin_data::entity::EntityType::PLAYER.id => (current_world
                         .get_player_by_id(entity.get_entity().entity_id))
                     .map_or(80, |player| match player.gamemode.load() {
-                        pumpkin_util::GameMode::Creative => {
+                        sculith_util::GameMode::Creative => {
                             level_info.game_rules.players_nether_portal_creative_delay as u32
                         }
                         _ => level_info.game_rules.players_nether_portal_default_delay as u32,
@@ -135,8 +135,8 @@ impl PortalType {
                         {
                             match player.client.as_ref() {
                                 crate::net::ClientPlatform::Java(client) => {
-                                    if let Ok(data) = client.serialize_packet(&pumpkin_protocol::java::client::play::CGameEvent::new(
-                                        pumpkin_protocol::java::client::play::GameEvent::WinGame,
+                                    if let Ok(data) = client.serialize_packet(&sculith_protocol::java::client::play::CGameEvent::new(
+                                        sculith_protocol::java::client::play::GameEvent::WinGame,
                                         1.0,
                                     )) {
                                         client.try_enqueue_packet(data);
@@ -144,7 +144,7 @@ impl PortalType {
                                 }
                                 crate::net::ClientPlatform::Bedrock(client) => {
                                     if let Ok(data) = client.serialize_packet(
-                                        &pumpkin_protocol::bedrock::client::CShowCredits {
+                                        &sculith_protocol::bedrock::client::CShowCredits {
                                             player_runtime_id: (caller.get_entity().entity_id
                                                 as u64)
                                                 .into(),

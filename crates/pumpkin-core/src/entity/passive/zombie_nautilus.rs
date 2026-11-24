@@ -16,8 +16,8 @@ use pumpkin_data::{
     zombie_nautilus_variant::ZombieNautilusVariant,
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::position::BlockPos;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::position::BlockPos;
 
 use crate::{
     entity::{
@@ -371,7 +371,7 @@ impl Mob for ZombieNautilusEntity {
         &self,
         _player: &Arc<Player>,
         _item_stack: &mut ItemStack,
-        _hand: pumpkin_util::Hand,
+        _hand: sculith_util::Hand,
     ) -> Option<bool> {
         self.mob_entity
             .persistence_required
@@ -396,7 +396,7 @@ mod tests {
     use super::*;
     use crate::entity::ai::test_support::world;
     use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 

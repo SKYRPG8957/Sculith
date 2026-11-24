@@ -1,6 +1,6 @@
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 /// Fluent builder for constructing Bedrock block-actor NBT compounds.
 pub struct BedrockBlockActorBuilder {

@@ -1,6 +1,6 @@
 use crate::world::World;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 /// An event that occurs when an entity is spawned into a world.

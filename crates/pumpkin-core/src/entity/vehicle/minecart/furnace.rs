@@ -5,8 +5,8 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::{Entity, EntityBase, player::Player};
 

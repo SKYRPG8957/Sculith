@@ -1,7 +1,7 @@
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::poi_type::PoiType;
 use pumpkin_data::villager::VillagerProfession;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::super::super::memory::{GlobalPos, MemoryStatus, types};
 use super::super::{OneShot, utils};

@@ -6,16 +6,16 @@ use std::sync::{
 
 use pumpkin_data::block_properties::{JigsawLikeProperties, Orientation};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
-    math::position::BlockPos,
-    random::{RandomGenerator, xoroshiro128::Xoroshiro},
-};
 use pumpkin_world::generation::structure::structures::{
     StructureGeneratorContext, StructurePosition,
     jigsaw::{JigsawJointType, PoolElementStructurePiece},
     jigsaw_placement::{
         DimensionPadding, JigsawPlacement, LiquidSettings, MaxDistance, PoolAliasLookup,
     },
+};
+use sculith_util::{
+    math::position::BlockPos,
+    random::{RandomGenerator, xoroshiro128::Xoroshiro},
 };
 
 use crate::block::blocks::jigsaw::JigsawBlock;

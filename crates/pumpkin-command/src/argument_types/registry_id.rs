@@ -1,5 +1,5 @@
-use pumpkin_protocol::java::client::play::SuggestionProviders;
-use pumpkin_util::identifier::Identifier;
+use sculith_protocol::java::client::play::SuggestionProviders;
+use sculith_util::identifier::Identifier;
 
 use crate::argument_types::FromStringReader;
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};

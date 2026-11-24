@@ -3,9 +3,9 @@ use std::sync::Arc;
 use pumpkin_data::block_properties::BrownMushroomBlockLikeProperties;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockId, BlockState, BlockStateId, tag};
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::{
     BlockBehaviour, BlockMetadata, BonemealArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,

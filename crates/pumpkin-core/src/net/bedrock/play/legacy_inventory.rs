@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pumpkin_data::{BlockDirection, item_stack::ItemStack};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_protocol::bedrock::{
+use sculith_protocol::bedrock::{
     client::item_stack_response::CItemStackResponse,
     network_item::{ContainerName, FullContainerName, NetworkItemDescriptor},
     server::inventory_transaction::{
@@ -10,7 +10,7 @@ use pumpkin_protocol::bedrock::{
         WINDOW_ID_INVENTORY, WINDOW_ID_OFF_HAND,
     },
 };
-use pumpkin_util::GameMode;
+use sculith_util::GameMode;
 
 use crate::{entity::player::Player, net::bedrock::BedrockClient};
 

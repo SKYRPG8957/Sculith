@@ -7,12 +7,12 @@ use std::{
     thread::{self, Thread},
 };
 
-use pumpkin_util::text::{
+use pumpkin_world::CURRENT_MC_VERSION;
+use rustc_hash::FxHashMap;
+use sculith_util::text::{
     TextComponent,
     color::{Color, NamedColor},
 };
-use pumpkin_world::CURRENT_MC_VERSION;
-use rustc_hash::FxHashMap;
 use sysinfo::{Cpu, System};
 use time::OffsetDateTime;
 use tracing::error;

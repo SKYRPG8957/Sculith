@@ -1,5 +1,5 @@
 use pumpkin_data::item::{Item, JavaToBedrockItemMapping};
-use pumpkin_protocol::{
+use sculith_protocol::{
     bedrock::{
         client::{
             BedrockRecipe, BedrockShapedRecipe, BedrockShapelessRecipe, ItemDescriptorCount,
@@ -352,7 +352,7 @@ fn append_dynamic_cooking_recipe(
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_protocol::{
+    use sculith_protocol::{
         bedrock::client::{ItemDescriptorCount, RecipeItemDescriptor},
         codec::recipe::OwnedRecipeIngredient,
     };

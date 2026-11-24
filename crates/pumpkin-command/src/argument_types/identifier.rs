@@ -1,4 +1,4 @@
-use pumpkin_util::identifier::Identifier;
+use sculith_util::identifier::Identifier;
 
 use crate::{
     argument_types::{

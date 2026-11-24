@@ -1,5 +1,5 @@
 use crate::entity::player::{Player, TitleMode};
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 /// A fluent Builder for constructing and displaying titles, subtitles, and action bar text with animation timings.
 #[derive(Debug, Clone, Default)]

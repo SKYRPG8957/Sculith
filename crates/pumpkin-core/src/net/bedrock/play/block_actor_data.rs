@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::bedrock::server::block_actor_data::SBlockActorData;
+use sculith_protocol::bedrock::server::block_actor_data::SBlockActorData;
 use tracing::warn;
 
 fn parse_bedrock_sign_lines(text: &str) -> [Box<str>; 4] {
@@ -15,7 +15,7 @@ fn apply_sign_text(
     player: &Arc<Player>,
     world: &Arc<crate::world::World>,
     sign_entity: &crate::block::entities::sign::SignEntityRef,
-    block_pos: pumpkin_util::math::position::BlockPos,
+    block_pos: sculith_util::math::position::BlockPos,
     is_front: bool,
     text_comp: &pumpkin_nbt::compound::NbtCompound,
 ) {

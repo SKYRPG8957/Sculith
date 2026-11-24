@@ -1,5 +1,5 @@
 /* This file is generated. Do not edit manually. */
-pub use pumpkin_util::loot_table::*;
+pub use sculith_util::loot_table::*;
 static LOOT_PREDICATE_0: std::sync::LazyLock<LootPredicateValue> = std::sync::LazyLock::new(|| {
     LootPredicateValue::Object(
         [

@@ -2,7 +2,7 @@ use std::sync::{Arc, PoisonError, atomic::Ordering};
 
 use pumpkin_config::PVPConfig;
 use pumpkin_data::game_rules::{GameRule, GameRuleValue};
-use pumpkin_protocol::bedrock::client::{
+use sculith_protocol::bedrock::client::{
     CGamerulesChanged, GameRule as BedrockGameRule, RuleValue,
 };
 

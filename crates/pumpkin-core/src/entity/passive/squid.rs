@@ -8,9 +8,9 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
     tag::{self, Taggable},
 };
-use pumpkin_protocol::bedrock::server::ActorEventID;
-use pumpkin_util::math::{cos, sin, vector3::Vector3};
 use rand::RngExt;
+use sculith_protocol::bedrock::server::ActorEventID;
+use sculith_util::math::{cos, sin, vector3::Vector3};
 
 use super::ageable_water_creature::AgeableWaterCreature;
 use crate::entity::{

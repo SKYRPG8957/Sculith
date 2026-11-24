@@ -5,7 +5,7 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::potion::Effect;
-use pumpkin_protocol::java::client::play::{CGameEvent, GameEvent};
+use sculith_protocol::java::client::play::{CGameEvent, GameEvent};
 
 use crate::entity::ai::behavior::hunting;
 use crate::entity::mob::guardian::GUARDIAN_HUNTS;

@@ -7,8 +7,8 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::jukebox_song::JukeboxSong;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::entities::BlockEntity;
 use crate::world::World;
@@ -111,12 +111,12 @@ impl BlockEntity for JukeboxBlockEntity {
                     );
                     let random_color = rand::rng().random_range(0..4) as f32 / 24.0;
                     world.spawn_particle(
-                        pumpkin_util::math::vector3::Vector3::new(
+                        sculith_util::math::vector3::Vector3::new(
                             f64::from(self.position.0.x) + 0.5,
                             f64::from(self.position.0.y) + 1.2,
                             f64::from(self.position.0.z) + 0.5,
                         ),
-                        pumpkin_util::math::vector3::Vector3::new(random_color, 0.0, 0.0),
+                        sculith_util::math::vector3::Vector3::new(random_color, 0.0, 0.0),
                         1.0,
                         0,
                         pumpkin_data::particle::Particle::Note,
@@ -185,7 +185,7 @@ impl BlockEntity for JukeboxBlockEntity {
         self.world.get_or_init(|| Arc::downgrade(world));
         let record = self.clear_record();
         if !record.is_empty() {
-            let spawn_pos = pumpkin_util::math::vector3::Vector3::new(
+            let spawn_pos = sculith_util::math::vector3::Vector3::new(
                 f64::from(position.0.x) + 0.5 + rand::rng().random_range(-0.35..0.35),
                 f64::from(position.0.y) + 1.01,
                 f64::from(position.0.z) + 0.5 + rand::rng().random_range(-0.35..0.35),
@@ -488,7 +488,7 @@ mod tests {
     use super::*;
     use crate::entity::{Entity, ai::test_support::world, passive::allay::AllayEntity};
     use pumpkin_data::{entity::EntityType, item::Item};
-    use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
+    use sculith_util::math::{vector2::Vector2, vector3::Vector3};
 
     #[test]
     fn jukebox_actor_builder() {

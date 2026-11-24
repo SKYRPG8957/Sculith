@@ -1,10 +1,10 @@
 /* This file is generated. Do not edit manually. */
-use pumpkin_util::math::floor_div;
-use pumpkin_util::random::{
+use sculith_util::math::floor_div;
+use sculith_util::random::{
     RandomGenerator, RandomImpl, get_carver_seed, get_region_seed, legacy_rand::LegacyRand,
     xoroshiro128::Xoroshiro,
 };
-use pumpkin_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
+use sculith_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum StructureKeys {
     PillagerOutpost,

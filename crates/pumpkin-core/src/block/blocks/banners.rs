@@ -6,8 +6,8 @@ use crate::entity::EntityBase;
 use pumpkin_data::block_properties::{Facing, WallTorchLikeProperties, WhiteBannerLikeProperties};
 use pumpkin_data::{Block, BlockDirection, BlockStateId, FacingExt, HorizontalFacingExt};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockAccessor;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::entities::banner::BannerBlockEntity;
 use std::sync::Arc;

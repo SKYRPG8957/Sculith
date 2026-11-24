@@ -1,8 +1,8 @@
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
-use pumpkin_util::random::{RandomImpl, get_seed};
+use sculith_util::math::position::BlockPos;
+use sculith_util::random::xoroshiro128::Xoroshiro;
+use sculith_util::random::{RandomImpl, get_seed};
 use std::any::Any;
 use std::sync::Arc;
 

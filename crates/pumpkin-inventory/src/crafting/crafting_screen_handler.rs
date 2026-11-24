@@ -46,7 +46,7 @@ use pumpkin_data::screen::WindowType;
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tag;
 use pumpkin_data::tag::Taggable;
-use pumpkin_protocol::codec::recipe::{DynamicRecipe, OwnedCraftingRecipe};
+use sculith_protocol::codec::recipe::{DynamicRecipe, OwnedCraftingRecipe};
 
 /// The result slot in a crafting screen.
 pub struct ResultSlot {
@@ -1341,11 +1341,11 @@ mod tests {
     use pumpkin_data::data_component_impl::EquipmentSlot;
     use pumpkin_data::item::Item;
     use pumpkin_data::sound::Sound;
-    use pumpkin_protocol::java::client::play::{
+    use sculith_protocol::java::client::play::{
         CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem,
         CSetPlayerInventory, CSetSelectedSlot,
     };
-    use pumpkin_protocol::java::server::play::SlotActionType;
+    use sculith_protocol::java::server::play::SlotActionType;
 
     use crate::entity_equipment::EntityEquipment;
     use crate::screen_handler::InventoryPlayer;
@@ -1588,7 +1588,7 @@ mod tests {
     #[test]
     fn transmute_recipes_preserve_components_and_clone_maps() {
         use pumpkin_data::data_component_impl::{ContainerImpl, CustomNameImpl};
-        use pumpkin_util::text::TextComponent;
+        use sculith_util::text::TextComponent;
 
         let (handler, _, _) = test_handler();
         let mut shulker = ItemStack::new(1, &Item::SHULKER_BOX);
@@ -1716,7 +1716,7 @@ mod tests {
 
     #[test]
     fn special_crafting_book_cloning() {
-        use pumpkin_util::text::TextComponent;
+        use sculith_util::text::TextComponent;
 
         // 4. Book cloning increments generation and leaves source remainder, rejecting gen >= 2
         let (mut handler, _, player) = test_handler();

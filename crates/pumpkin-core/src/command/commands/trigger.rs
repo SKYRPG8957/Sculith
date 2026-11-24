@@ -7,9 +7,9 @@ use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::world::scoreboard::ScoreboardScore;
 use pumpkin_data::translation;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 const DESCRIPTION: &str = "Modifies a trigger scoreboard objective.";
 const PERMISSION: &str = "minecraft:command.trigger";

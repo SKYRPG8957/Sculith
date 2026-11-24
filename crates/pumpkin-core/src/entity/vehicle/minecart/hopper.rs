@@ -5,10 +5,10 @@ use crate::block::entities::hopper::HopperBlockEntity;
 use crate::entity::{Entity, player::Player};
 use pumpkin_data::translation;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 
 use super::container::{self, MinecartInventory};
 

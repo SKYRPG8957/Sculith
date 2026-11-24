@@ -5,12 +5,12 @@ use std::sync::{
 
 use pumpkin_data::{damage::DamageType, item_stack::ItemStack};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::{item_stack_seralizer::ItemStackSerializer, var_int::VarInt},
     java::client::play::MetadataSerializer,
     ser::{NetworkWriteExt, WritingError},
 };
-use pumpkin_util::{math::vector3::Vector3, text::TextComponent};
+use sculith_util::{math::vector3::Vector3, text::TextComponent};
 
 use crate::{
     entity::{Entity, EntityBase, living::LivingEntity},
@@ -24,7 +24,7 @@ impl MetadataSerializer for Vector3fSerializer {
     fn write_metadata(
         &self,
         writer: &mut impl std::io::Write,
-        _version: &pumpkin_util::version::JavaMinecraftVersion,
+        _version: &sculith_util::version::JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
         writer.write_f32(self.0)?;
         writer.write_f32(self.1)?;
@@ -39,7 +39,7 @@ impl MetadataSerializer for QuaternionfSerializer {
     fn write_metadata(
         &self,
         writer: &mut impl std::io::Write,
-        _version: &pumpkin_util::version::JavaMinecraftVersion,
+        _version: &sculith_util::version::JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
         writer.write_f32(self.0)?;
         writer.write_f32(self.1)?;
@@ -1061,7 +1061,7 @@ impl TextDisplayEntity {
 impl EntityBase for TextDisplayEntity {
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         self.display.write_display_nbt(nbt);
-        let text_json_res = pumpkin_util::serde_json::to_string(
+        let text_json_res = sculith_util::serde_json::to_string(
             &*self
                 .text
                 .lock()
@@ -1091,7 +1091,7 @@ impl EntityBase for TextDisplayEntity {
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
         self.display.read_display_nbt(nbt);
         if let Some(text_json) = nbt.get_string("text")
-            && let Ok(component) = pumpkin_util::serde_json::from_str(text_json)
+            && let Ok(component) = sculith_util::serde_json::from_str(text_json)
         {
             *self
                 .text

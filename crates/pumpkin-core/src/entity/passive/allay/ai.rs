@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::{Block, environment_attribute::Activity};
-use pumpkin_util::{
+use sculith_util::{
     GameMode,
     math::{position::BlockPos, vector3::Vector3},
 };

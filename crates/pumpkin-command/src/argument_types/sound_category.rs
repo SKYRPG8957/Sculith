@@ -1,6 +1,6 @@
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::translation;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};
 use crate::context::command_context::CommandContext;
@@ -48,7 +48,7 @@ impl<S: crate::source::CommandSource> ArgumentType<S> for SoundCategoryArgumentT
 
     fn client_side_parser(&'_ self) -> JavaClientArgumentType {
         JavaClientArgumentType::String(
-            pumpkin_protocol::java::client::play::StringProtoArgBehavior::SingleWord,
+            sculith_protocol::java::client::play::StringProtoArgBehavior::SingleWord,
         )
     }
 

@@ -4,8 +4,8 @@ use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_util::math::position::BlockPos;
 use rand::{Rng, RngExt};
+use sculith_util::math::position::BlockPos;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::position_tracker::{BlockPosTracker, PositionTracker};

@@ -16,14 +16,6 @@ use crate::{
     world::chunker::get_view_distance,
 };
 use bytes::Bytes;
-use pumpkin_protocol::{
-    bedrock::client::{
-        CAddActor, CMoveActorAbsolute, CRemoveActor, MetadataValue, SyncedActorDataList,
-        entity_data_key,
-    },
-    codec::{var_long::VarLong, var_ulong::VarULong},
-};
-use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
 use pumpkin_world::{
     chunk::{
         ChunkData,
@@ -31,6 +23,14 @@ use pumpkin_world::{
     },
     level::Level,
 };
+use sculith_protocol::{
+    bedrock::client::{
+        CAddActor, CMoveActorAbsolute, CRemoveActor, MetadataValue, SyncedActorDataList,
+        entity_data_key,
+    },
+    codec::{var_long::VarLong, var_ulong::VarULong},
+};
+use sculith_util::math::{vector2::Vector2, vector3::Vector3};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     io,
@@ -267,7 +267,7 @@ fn packet(client: &BedrockClient, tile: Tile, action: Action) -> io::Result<Byte
                 y_head_rotation: 0.0,
                 attributes_list: Vec::new(),
                 actor_data: data,
-                synced_properties: pumpkin_protocol::bedrock::client::PropertySyncData::default(),
+                synced_properties: sculith_protocol::bedrock::client::PropertySyncData::default(),
                 actor_links: Vec::new(),
                 passenger_of_block: None,
             })

@@ -13,7 +13,7 @@ use pumpkin_inventory::{
     player::player_inventory::PlayerInventory,
     screen_handler::{InventoryPlayer, ScreenHandler},
 };
-use pumpkin_protocol::{
+use sculith_protocol::{
     bedrock::{
         client::{
             chunk_radius_updated::CChunkRadiusUpdated, container_open::CContainerOpen,
@@ -50,7 +50,7 @@ use pumpkin_protocol::{
         server::play::ActionType,
     },
 };
-use pumpkin_util::{GameMode, Hand, math::position::BlockPos, text::TextComponent};
+use sculith_util::{GameMode, Hand, math::position::BlockPos, text::TextComponent};
 
 use pumpkin_inventory::Inventory;
 

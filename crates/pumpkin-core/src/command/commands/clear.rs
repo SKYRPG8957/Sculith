@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};
 use crate::command::argument_types::core::integer::IntegerArgumentType;

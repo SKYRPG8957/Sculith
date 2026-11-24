@@ -17,8 +17,8 @@ use pumpkin_data::sound::Sound;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
+use sculith_util::math::position::BlockPos;
 
 pub(crate) fn ring_bell(
     position: BlockPos,

@@ -1,7 +1,7 @@
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::chunk::ChunkHeightmapType;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::{MemoryModuleId, MemoryStatus, types, walk_target::WalkTarget};

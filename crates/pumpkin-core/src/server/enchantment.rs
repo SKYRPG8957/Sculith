@@ -1,6 +1,6 @@
 use pumpkin_data::enchantment::AttributeModifierSlot;
-use pumpkin_util::text::TextComponent;
 use rustc_hash::FxHashMap;
+use sculith_util::text::TextComponent;
 use tokio::sync::RwLock;
 
 #[derive(Clone, Debug)]

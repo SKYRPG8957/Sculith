@@ -1,7 +1,7 @@
 use pumpkin_data::BlockState;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 use crate::entity::{

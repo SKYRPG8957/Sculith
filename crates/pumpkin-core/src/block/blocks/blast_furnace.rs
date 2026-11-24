@@ -65,7 +65,7 @@ impl ScreenHandlerFactory for BlastingFurnaceScreenFactory {
         Some(concrete_arc as SharedScreenHandler)
     }
 
-    fn get_display_name(&self) -> pumpkin_util::text::TextComponent {
+    fn get_display_name(&self) -> sculith_util::text::TextComponent {
         pumpkin_macros::translate_cross!(
             translation::java::CONTAINER_BLAST_FURNACE,
             translation::bedrock::TILE_BLAST_FURNACE_NAME

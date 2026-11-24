@@ -254,7 +254,7 @@ mod tests {
     use super::*;
     use pumpkin_data::{item::Item, item_stack::ItemStack};
     use pumpkin_inventory::Inventory;
-    use pumpkin_util::text::TextComponent;
+    use sculith_util::text::TextComponent;
 
     #[test]
     fn nine_slot_gui_keeps_items_in_the_last_slot() {

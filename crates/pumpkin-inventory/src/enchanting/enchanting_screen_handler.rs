@@ -10,7 +10,7 @@ use pumpkin_data::screen::WindowType;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::statistic::{CustomStatistic, StatisticCategory};
 use pumpkin_data::tag::{Enchantment as EnchantmentTag, Taggable};
-use pumpkin_util::random::{RandomImpl, legacy_rand::LegacyRand};
+use sculith_util::random::{RandomImpl, legacy_rand::LegacyRand};
 
 use crate::{
     player::player_inventory::PlayerInventory,
@@ -449,7 +449,7 @@ impl ScreenHandler for EnchantingTableScreenHandler {
         &mut self,
         slot_index: i32,
         button: i32,
-        action_type: pumpkin_protocol::java::server::play::SlotActionType,
+        action_type: sculith_protocol::java::server::play::SlotActionType,
         player: &dyn InventoryPlayer,
     ) {
         self.internal_on_slot_click(slot_index, button, action_type, player);

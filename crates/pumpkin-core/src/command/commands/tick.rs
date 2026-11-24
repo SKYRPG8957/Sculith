@@ -9,9 +9,9 @@ use crate::command::suggestion::provider::{SuggestionProvider, SuggestionProvide
 use crate::command::suggestion::suggestions::SuggestionsBuilder;
 use crate::server::Server;
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::{
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::{
     TextComponent,
     color::{Color, NamedColor},
 };

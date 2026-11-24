@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_util::GameMode;
+use sculith_util::GameMode;
 
 use crate::plugin::inventory::inventory_creative::InventoryCreativeEvent;
 

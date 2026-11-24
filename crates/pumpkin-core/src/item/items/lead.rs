@@ -13,9 +13,9 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
-use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::boundingbox::{BoundingBox, EntityDimensions};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 pub struct LeadItem;
 

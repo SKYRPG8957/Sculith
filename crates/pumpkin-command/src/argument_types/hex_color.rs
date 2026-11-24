@@ -5,8 +5,8 @@ use crate::errors::error_types::{CommandErrorType, DISPATCHER_PARSE_EXCEPTION};
 use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_data::translation::java::ARGUMENT_HEXCOLOR_INVALID;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::color::RGBColor;
+use sculith_util::text::TextComponent;
+use sculith_util::text::color::RGBColor;
 
 pub const INVALID_HEX_ERROR_TYPE: CommandErrorType<1> =
     CommandErrorType::new(ARGUMENT_HEXCOLOR_INVALID, ARGUMENT_HEXCOLOR_INVALID);

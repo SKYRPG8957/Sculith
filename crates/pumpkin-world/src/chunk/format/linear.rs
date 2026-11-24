@@ -6,9 +6,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::chunk::io::{RegionFile, sync_file, sync_parent, write_file_atomically};
 use crate::chunk::{ChunkReadingError, ChunkWritingError};
 use bytes::{Buf, BufMut, Bytes};
-use pumpkin_util::math::vector2::Vector2;
 use ruzstd::decoding::StreamingDecoder;
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
+use sculith_util::math::vector2::Vector2;
 use tracing::{error, warn};
 use xxhash_rust::xxh64::xxh64;
 

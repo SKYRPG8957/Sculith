@@ -1,7 +1,7 @@
 use crate::entity::ai::control::{Control, LookControlTrait};
 use crate::entity::mob::{Mob, MobEntity};
-use pumpkin_util::math::clamp_angle;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::clamp_angle;
+use sculith_util::math::vector3::Vector3;
 
 // Please keep the atomic values out of here!!!
 #[derive(Default)]

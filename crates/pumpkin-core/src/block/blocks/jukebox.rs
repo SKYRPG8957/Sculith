@@ -17,10 +17,10 @@ use pumpkin_data::jukebox_song::JukeboxSong;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockStateId, block_properties::JukeboxLikeProperties};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
 use rand::{RngExt, rng};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use tracing::error;
 

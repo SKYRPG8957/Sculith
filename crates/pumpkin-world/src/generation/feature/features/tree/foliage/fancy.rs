@@ -1,6 +1,6 @@
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::square_f32;
-use pumpkin_util::random::RandomGenerator;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::square_f32;
+use sculith_util::random::RandomGenerator;
 
 use super::{FoliagePlacer, LeaveValidator};
 use crate::generation::block_state_provider::BlockStateProvider;
@@ -50,7 +50,7 @@ impl LargeOakFoliagePlacer {
 impl LeaveValidator for LargeOakFoliagePlacer {
     fn is_invalid_for_leaves(
         &self,
-        _random: &mut pumpkin_util::random::RandomGenerator,
+        _random: &mut sculith_util::random::RandomGenerator,
         dx: i32,
         _y: i32,
         dz: i32,

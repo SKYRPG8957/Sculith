@@ -3,7 +3,7 @@ use crate::entity::boss::ender_dragon::{DEATH_TIMER_MAX, EnderDragonEntity, Vect
 use crate::entity::experience_orb::ExperienceOrbEntity;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
+use sculith_util::math::{vector2::Vector2, vector3::Vector3};
 
 pub struct DyingPhase;
 

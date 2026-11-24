@@ -1,4 +1,4 @@
-use pumpkin_util::math::{floor_log2, smallest_encompassing_power_of_two};
+use sculith_util::math::{floor_log2, smallest_encompassing_power_of_two};
 
 pub mod block_pos {
     use super::{
@@ -36,7 +36,7 @@ pub mod block_pos {
 }
 
 pub mod chunk_pos {
-    use pumpkin_util::math::vector2::Vector2;
+    use sculith_util::math::vector2::Vector2;
 
     use crate::generation::section_coords::get_offset_pos;
 

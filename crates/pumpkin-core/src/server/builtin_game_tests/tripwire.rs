@@ -3,7 +3,7 @@ use pumpkin_data::{
     block_properties::{HorizontalFacing, TripwireHookLikeProperties, TripwireLikeProperties},
 };
 use pumpkin_gametest::{GameTestHelper, GameTestResult};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use super::build_stone_floor;
 

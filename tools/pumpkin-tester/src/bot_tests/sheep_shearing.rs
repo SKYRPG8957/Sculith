@@ -22,11 +22,11 @@ use pumpkin_data::{
     dimension::Dimension, dye_color::DyeColor, entity::EntityType, item::Item,
     item_stack::ItemStack,
 };
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::var_int::VarInt,
     java::server::play::{ActionType, SInteract},
 };
-use pumpkin_util::{
+use sculith_util::{
     GameMode,
     math::{boundingbox::BoundingBox, vector3::Vector3},
 };

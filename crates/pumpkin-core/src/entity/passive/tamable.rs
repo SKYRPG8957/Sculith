@@ -183,7 +183,7 @@ pub trait TamableAnimal: Animal {
 
     fn spawn_taming_particles(&self, success: bool) {
         use pumpkin_data::particle::Particle;
-        use pumpkin_util::math::vector3::Vector3;
+        use sculith_util::math::vector3::Vector3;
         let mob_entity = self.get_mob_entity();
         let entity = &mob_entity.living_entity.entity;
         let world = entity.world.load();

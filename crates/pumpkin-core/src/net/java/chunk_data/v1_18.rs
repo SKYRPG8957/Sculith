@@ -1,13 +1,13 @@
 use super::util::write_compound_nbt;
-use pumpkin_protocol::codec::bit_set::BitSet;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::ser::NetworkWriteExt;
-use pumpkin_protocol::ser::WritingError;
-use pumpkin_util::math::position::get_local_cord;
-use pumpkin_util::version::JavaMinecraftVersion;
 use pumpkin_world::chunk::ChunkData;
 use pumpkin_world::chunk::format::LightContainer;
 use pumpkin_world::chunk::palette::NetworkPalette;
+use sculith_protocol::codec::bit_set::BitSet;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::ser::NetworkWriteExt;
+use sculith_protocol::ser::WritingError;
+use sculith_util::math::position::get_local_cord;
+use sculith_util::version::JavaMinecraftVersion;
 use std::io::Write;
 
 /// Serializes chunk data for Minecraft 1.18+ through 26.2+.

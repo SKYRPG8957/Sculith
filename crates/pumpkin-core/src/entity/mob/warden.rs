@@ -10,8 +10,8 @@ use pumpkin_data::{
     potion::Effect,
     sound::{Sound, SoundCategory},
 };
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::{GameMode, math::vector3::Vector3};
+use sculith_util::math::position::BlockPos;
+use sculith_util::{GameMode, math::vector3::Vector3};
 
 use crate::entity::{
     Entity, EntityBase,

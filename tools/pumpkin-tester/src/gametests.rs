@@ -13,7 +13,7 @@ use pumpkin_core::{
 };
 use pumpkin_data::{Block, dimension::Dimension};
 use pumpkin_gametest::{GameTestReporter, GameTestRunner};
-use pumpkin_util::{
+use sculith_util::{
     math::{position::BlockPos, vector2::Vector2},
     text::TextComponent,
 };

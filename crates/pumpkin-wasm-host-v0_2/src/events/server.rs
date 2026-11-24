@@ -26,9 +26,9 @@ use pumpkin_core::plugin::server::{
     server_tick_end::ServerTickEndEvent,
     server_tick_start::ServerTickStartEvent,
 };
-use pumpkin_protocol::ConnectionState as ProtoConnectionState;
 use pumpkin_wasm_host_common::state::PluginHostState;
 use pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
+use sculith_protocol::ConnectionState as ProtoConnectionState;
 use std::sync::atomic::Ordering;
 
 fn read_bedrock_received(
@@ -515,16 +515,16 @@ impl ToFromWasmEvent for MapInitializeEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_protocol::packet::MultiVersionJavaPacket;
-    use pumpkin_util::text::TextComponent;
+    use sculith_protocol::packet::MultiVersionJavaPacket;
+    use sculith_util::text::TextComponent;
     use wasmtime::component::Resource;
 
     #[test]
     fn decodes_current_bedrock_form_packets_and_checks_the_entire_body() {
-        use pumpkin_protocol::bedrock::client::CModalFormRequest;
-        use pumpkin_protocol::bedrock::server::SModalFormResponse;
-        use pumpkin_protocol::codec::var_uint::VarUInt;
-        use pumpkin_protocol::{Packet, serial::PacketWrite};
+        use sculith_protocol::bedrock::client::CModalFormRequest;
+        use sculith_protocol::bedrock::server::SModalFormResponse;
+        use sculith_protocol::codec::var_uint::VarUInt;
+        use sculith_protocol::{Packet, serial::PacketWrite};
 
         let form_id = 0x8000_0000;
         let mut outbound = Vec::new();
@@ -571,8 +571,8 @@ mod tests {
 
     #[test]
     fn projects_resource_pack_chunk_fields_during_connection() {
-        use pumpkin_protocol::bedrock::client::CResourcePackChunkData;
-        use pumpkin_protocol::{Packet, serial::PacketWrite};
+        use sculith_protocol::bedrock::client::CResourcePackChunkData;
+        use sculith_protocol::{Packet, serial::PacketWrite};
 
         let mut payload = Vec::new();
         CResourcePackChunkData {
@@ -586,7 +586,7 @@ mod tests {
         let event = BedrockConnectionPacketSentEvent::new(
             1,
             CURRENT_BEDROCK_MC_PROTOCOL,
-            pumpkin_util::version::BedrockMinecraftVersion::V_1_26_60,
+            sculith_util::version::BedrockMinecraftVersion::V_1_26_60,
             CResourcePackChunkData::PACKET_ID,
             payload.clone().into(),
         );
@@ -692,7 +692,7 @@ mod tests {
     #[test]
     fn play_packet_is_not_decoded_as_config_packet_with_the_same_id() {
         let version = pumpkin_data::packet::CURRENT_MC_VERSION;
-        let id = pumpkin_protocol::java::server::play::SConfirmTeleport::to_id(version);
+        let id = sculith_protocol::java::server::play::SConfirmTeleport::to_id(version);
 
         let packet = generated_packets::deserialize_java_serverbound_packet(
             ProtoConnectionState::Play,
@@ -738,7 +738,7 @@ mod tests {
         let payload = bytes::Bytes::from_static(&[1, 2, 3, 4]);
         let mut event = JavaConnectionPacketReceivedEvent::new(
             42,
-            pumpkin_util::version::JavaMinecraftVersion::V_1_20_2,
+            sculith_util::version::JavaMinecraftVersion::V_1_20_2,
             ProtoConnectionState::Login,
             0x00,
             payload,
@@ -781,7 +781,7 @@ mod tests {
         let payload = bytes::Bytes::from_static(&[10, 20]);
         let mut event = JavaConnectionPacketSentEvent::new(
             99,
-            pumpkin_util::version::JavaMinecraftVersion::V_1_16_4,
+            sculith_util::version::JavaMinecraftVersion::V_1_16_4,
             ProtoConnectionState::HandShake,
             0x01,
             payload,
@@ -828,7 +828,7 @@ mod tests {
 
     #[test]
     fn java_version_bijection() {
-        use pumpkin_util::version::JavaMinecraftVersion as J;
+        use sculith_util::version::JavaMinecraftVersion as J;
         let versions = [
             J::V_1_7_2,
             J::V_1_7_6,
@@ -898,7 +898,7 @@ mod tests {
         let mut event = BedrockConnectionPacketReceivedEvent::new(
             77,
             671,
-            pumpkin_util::version::BedrockMinecraftVersion::V_1_21,
+            sculith_util::version::BedrockMinecraftVersion::V_1_21,
             1,
             payload,
         );
@@ -941,7 +941,7 @@ mod tests {
         let mut event = BedrockConnectionPacketSentEvent::new(
             88,
             2193,
-            pumpkin_util::version::BedrockMinecraftVersion::V_1_26_51,
+            sculith_util::version::BedrockMinecraftVersion::V_1_26_51,
             143,
             payload,
         );

@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use pumpkin_data::{data_component_impl::EquipmentSlot, item_stack::ItemStack};
 use pumpkin_inventory::{player::player_inventory::PlayerInventory, screen_handler::ScreenHandler};
-use pumpkin_protocol::{
+use sculith_protocol::{
     bedrock::{
         client::{inventory_content::CInventoryContent, player_hotbar::CPlayerHotbar},
         network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
@@ -10,7 +10,7 @@ use pumpkin_protocol::{
     codec::var_uint::VarUInt,
     java::client::play::CSetSelectedSlot,
 };
-use pumpkin_util::GameMode;
+use sculith_util::GameMode;
 
 use crate::{net::ClientPlatform, plugin::player::item_held::PlayerItemHeldEvent};
 

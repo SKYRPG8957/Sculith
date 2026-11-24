@@ -6,12 +6,12 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
 use rand::RngExt;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 use uuid::Uuid;
 
 use crate::{

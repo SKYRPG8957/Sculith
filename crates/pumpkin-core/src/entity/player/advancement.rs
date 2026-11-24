@@ -10,12 +10,12 @@ use pumpkin_data::advancement_data::{
     AdvancementNode, AdvancementProgressData, AdvancementRequirement, AdvancementReward, Criteria,
 };
 use pumpkin_data::{ADVANCEMENT_TREE, Advancement, translation};
-use pumpkin_protocol::bedrock::server::text::SText;
-use pumpkin_protocol::java::client::play::{
+use sculith_protocol::bedrock::server::text::SText;
+use sculith_protocol::java::client::play::{
     CSelectAdvancementsTab, CSystemChatMessage, CUpdateAdvancements,
 };
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::to_string_pretty;

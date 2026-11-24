@@ -8,9 +8,9 @@ use crate::generation::proto_chunk::GenerationCache;
 use blending_data::BlendingData;
 use pumpkin_data::chunk::Biome;
 use pumpkin_data::noise_parameter::DoublePerlinNoiseParameters;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
 use rustc_hash::FxHashMap;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::xoroshiro128::Xoroshiro;
 
 pub struct BlendingOutput {
     pub alpha: f64,

@@ -6,9 +6,9 @@ use crossbeam::atomic::AtomicCell;
 use pumpkin_data::Block;
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::{
     f64::consts::TAU,
     sync::{
@@ -185,13 +185,13 @@ impl EntityBase for TNTEntity {
 
     fn entity_bedrock_spawn_metadata(
         &self,
-    ) -> Option<pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
+    ) -> Option<sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
         let mut meta =
-            pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
+            sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
         let fuse = self.fuse.load(Ordering::Relaxed) as i32;
         meta.set(
-            pumpkin_protocol::bedrock::client::set_actor_data::entity_data_key::FUSE_TIME,
-            pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Int(fuse),
+            sculith_protocol::bedrock::client::set_actor_data::entity_data_key::FUSE_TIME,
+            sculith_protocol::bedrock::client::set_actor_data::MetadataValue::Int(fuse),
         );
         Some(meta)
     }

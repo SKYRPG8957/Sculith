@@ -6,7 +6,7 @@ use crate::entity::{
     projectile::dragon_fireball::DragonFireballEntity,
 };
 use pumpkin_data::{entity::EntityType, world::WorldEvent};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::{Arc, atomic::Ordering};
 
 pub struct StrafingPhase;

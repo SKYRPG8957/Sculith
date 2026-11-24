@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use pumpkin_data::entity::EntityType;
-use pumpkin_util::math::boundingbox::BoundingBox;
 use rand::RngExt;
+use sculith_util::math::boundingbox::BoundingBox;
 
 use crate::entity::{EntityBase, player::Player};
 

@@ -5,8 +5,8 @@ use pumpkin_data::BlockState;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::ai::goal::revenge::RevengeGoal;
@@ -114,12 +114,12 @@ impl Mob for EndermiteEntity {
         let position = entity.pos.load();
         let mut rng = self.get_random();
         for _ in 0..2 {
-            let particle_position = pumpkin_util::math::vector3::Vector3::new(
+            let particle_position = sculith_util::math::vector3::Vector3::new(
                 position.x + (rng.random::<f64>() - 0.5) * f64::from(dimensions.width),
                 position.y + rng.random::<f64>() * f64::from(dimensions.height),
                 position.z + (rng.random::<f64>() - 0.5) * f64::from(dimensions.width),
             );
-            let velocity = pumpkin_util::math::vector3::Vector3::new(
+            let velocity = sculith_util::math::vector3::Vector3::new(
                 (rng.random::<f64>() - 0.5) * 2.0,
                 -rng.random::<f64>(),
                 (rng.random::<f64>() - 0.5) * 2.0,

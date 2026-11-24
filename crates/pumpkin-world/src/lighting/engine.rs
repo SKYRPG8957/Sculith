@@ -6,9 +6,9 @@ use crate::generation::proto_chunk::GenerationCache;
 use crate::lighting::storage::{get_block_light, get_sky_light, set_block_light, set_sky_light};
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::{BlockDirection, BlockState, BlockStateId};
-use pumpkin_util::HeightMap;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::HeightMap;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::collections::VecDeque;
 
 use crate::ProtoChunk;

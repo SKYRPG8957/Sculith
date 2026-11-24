@@ -7,10 +7,10 @@ use pumpkin_data::tag::Taggable;
 use pumpkin_data::tag::{self};
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::{
     BlockBehaviour, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
@@ -251,7 +251,7 @@ impl PlantBlockBase for BambooBlock {
     fn can_plant_on_top(
         &self,
         block_accessor: &dyn pumpkin_world::world::BlockAccessor,
-        pos: &pumpkin_util::math::position::BlockPos,
+        pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         let block = block_accessor.get_block(pos);
         block.has_tag(&tag::Block::MINECRAFT_SUPPORTS_BAMBOO)

@@ -3,8 +3,8 @@ use pumpkin_data::data_component_impl::{DataComponentImpl, read_data};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::translation;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
 
 use crate::argument_types::FromStringReader;
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};

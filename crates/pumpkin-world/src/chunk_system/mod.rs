@@ -10,7 +10,7 @@ TODO
 
 pub type HashMapType<K, V> = rustc_hash::FxHashMap<K, V>;
 pub type HashSetType<K> = rustc_hash::FxHashSet<K>;
-pub type ChunkPos = pumpkin_util::math::vector2::Vector2<i32>;
+pub type ChunkPos = sculith_util::math::vector2::Vector2<i32>;
 pub type ChunkLevel = HashMapType<ChunkPos, i8>;
 pub type IOLock = std::sync::Arc<(
     std::sync::Mutex<HashMapType<ChunkPos, u8>>,

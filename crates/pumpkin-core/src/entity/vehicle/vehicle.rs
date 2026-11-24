@@ -2,11 +2,11 @@ use crossbeam::atomic::AtomicCell;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use crate::entity::Entity;
-use pumpkin_protocol::java::client::play::Metadata;
+use sculith_protocol::java::client::play::Metadata;
 
 use crate::entity::EntityBase;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::GameMode;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::GameMode;
 
 pub struct VehicleEntity {
     pub entity: Entity,
@@ -70,8 +70,8 @@ impl VehicleEntity {
 
     pub async fn move_vehicle(
         &self,
-        from: pumpkin_util::math::vector3::Vector3<f64>,
-        to: pumpkin_util::math::vector3::Vector3<f64>,
+        from: sculith_util::math::vector3::Vector3<f64>,
+        to: sculith_util::math::vector3::Vector3<f64>,
     ) {
         let mut move_event =
             crate::plugin::api::events::vehicle::vehicle_move::VehicleMoveEvent::new(
@@ -102,7 +102,7 @@ impl VehicleEntity {
         }
     }
 
-    pub async fn collide_block(&self, block_pos: pumpkin_util::math::position::BlockPos) {
+    pub async fn collide_block(&self, block_pos: sculith_util::math::position::BlockPos) {
         let mut base_event =
             crate::plugin::api::events::vehicle::vehicle_collision::VehicleCollisionEvent::new(
                 self.entity.entity_id,
@@ -264,9 +264,9 @@ impl VehicleEntity {
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_protocol::codec::var_int::VarInt;
-    use pumpkin_protocol::java::client::play::Metadata;
-    use pumpkin_util::version::JavaMinecraftVersion;
+    use sculith_protocol::codec::var_int::VarInt;
+    use sculith_protocol::java::client::play::Metadata;
+    use sculith_util::version::JavaMinecraftVersion;
 
     fn wobble_metadata(version: JavaMinecraftVersion) -> Vec<u8> {
         let mut bytes = Vec::new();

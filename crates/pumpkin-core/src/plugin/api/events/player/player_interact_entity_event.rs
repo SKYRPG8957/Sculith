@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::entity::EntityBase;
 use crate::entity::player::Player;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_protocol::java::server::play::ActionType;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::java::server::play::ActionType;
+use sculith_util::math::vector3::Vector3;
 
 use super::PlayerEvent;
 

@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use pumpkin_protocol::java::client::dialog::{
+use sculith_protocol::java::client::dialog::{
     ActionButton as ProtocolActionButton, Dialog as ProtocolDialog, DialogAction,
     DialogBody as ProtocolDialogBody, DialogInput as ProtocolDialogInput, DialogLink,
 };
@@ -101,22 +101,22 @@ pub(crate) fn protocol_dialog_from_wasm(
             let label = match &l.label {
                 LinkLabel::BuiltIn(t) => {
                     let link_type = match t {
-                        LinkType::BugReport => pumpkin_protocol::LinkType::BugReport,
+                        LinkType::BugReport => sculith_protocol::LinkType::BugReport,
                         LinkType::CommunityGuidelines => {
-                            pumpkin_protocol::LinkType::CommunityGuidelines
+                            sculith_protocol::LinkType::CommunityGuidelines
                         }
-                        LinkType::Support => pumpkin_protocol::LinkType::Support,
-                        LinkType::Status => pumpkin_protocol::LinkType::Status,
-                        LinkType::Feedback => pumpkin_protocol::LinkType::Feedback,
-                        LinkType::Community => pumpkin_protocol::LinkType::Community,
-                        LinkType::Website => pumpkin_protocol::LinkType::Website,
-                        LinkType::Forums => pumpkin_protocol::LinkType::Forums,
-                        LinkType::News => pumpkin_protocol::LinkType::News,
-                        LinkType::Announcements => pumpkin_protocol::LinkType::Announcements,
+                        LinkType::Support => sculith_protocol::LinkType::Support,
+                        LinkType::Status => sculith_protocol::LinkType::Status,
+                        LinkType::Feedback => sculith_protocol::LinkType::Feedback,
+                        LinkType::Community => sculith_protocol::LinkType::Community,
+                        LinkType::Website => sculith_protocol::LinkType::Website,
+                        LinkType::Forums => sculith_protocol::LinkType::Forums,
+                        LinkType::News => sculith_protocol::LinkType::News,
+                        LinkType::Announcements => sculith_protocol::LinkType::Announcements,
                     };
-                    pumpkin_protocol::Label::BuiltIn(link_type)
+                    sculith_protocol::Label::BuiltIn(link_type)
                 }
-                LinkLabel::Custom(c) => pumpkin_protocol::Label::TextComponent(Box::new(
+                LinkLabel::Custom(c) => sculith_protocol::Label::TextComponent(Box::new(
                     text_component_from_resource(state, c),
                 )),
             };
@@ -297,21 +297,21 @@ pub(crate) fn protocol_dialog_to_wasm(
         .iter()
         .map(|l| {
             let label = match &l.label {
-                pumpkin_protocol::Label::BuiltIn(t) => LinkLabel::BuiltIn(match t {
-                    pumpkin_protocol::LinkType::BugReport => LinkType::BugReport,
-                    pumpkin_protocol::LinkType::CommunityGuidelines => {
+                sculith_protocol::Label::BuiltIn(t) => LinkLabel::BuiltIn(match t {
+                    sculith_protocol::LinkType::BugReport => LinkType::BugReport,
+                    sculith_protocol::LinkType::CommunityGuidelines => {
                         LinkType::CommunityGuidelines
                     }
-                    pumpkin_protocol::LinkType::Support => LinkType::Support,
-                    pumpkin_protocol::LinkType::Status => LinkType::Status,
-                    pumpkin_protocol::LinkType::Feedback => LinkType::Feedback,
-                    pumpkin_protocol::LinkType::Community => LinkType::Community,
-                    pumpkin_protocol::LinkType::Website => LinkType::Website,
-                    pumpkin_protocol::LinkType::Forums => LinkType::Forums,
-                    pumpkin_protocol::LinkType::News => LinkType::News,
-                    pumpkin_protocol::LinkType::Announcements => LinkType::Announcements,
+                    sculith_protocol::LinkType::Support => LinkType::Support,
+                    sculith_protocol::LinkType::Status => LinkType::Status,
+                    sculith_protocol::LinkType::Feedback => LinkType::Feedback,
+                    sculith_protocol::LinkType::Community => LinkType::Community,
+                    sculith_protocol::LinkType::Website => LinkType::Website,
+                    sculith_protocol::LinkType::Forums => LinkType::Forums,
+                    sculith_protocol::LinkType::News => LinkType::News,
+                    sculith_protocol::LinkType::Announcements => LinkType::Announcements,
                 }),
-                pumpkin_protocol::Label::TextComponent(c) => {
+                sculith_protocol::Label::TextComponent(c) => {
                     let comp = state
                         .add((**c).clone())
                         .expect("failed to add text component");

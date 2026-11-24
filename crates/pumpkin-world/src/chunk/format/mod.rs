@@ -10,8 +10,8 @@ use std::{
 use bytes::{Buf, BufMut, Bytes};
 use pumpkin_data::{Block, BlockId, BlockStateId, chunk::ChunkStatus, fluid::Fluid};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::resource_location::{FromResourceLocation, ResourceLocation, ToResourceLocation};
 use rustc_hash::FxHashMap;
+use sculith_util::resource_location::{FromResourceLocation, ResourceLocation, ToResourceLocation};
 
 use crate::{
     chunk::{
@@ -23,8 +23,8 @@ use crate::{
     level::LevelFolder,
     tick::{ScheduledTick, TickPriority, scheduler::ChunkTickScheduler},
 };
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector2::Vector2;
 
 use super::{
     ChunkData, ChunkHeightmaps, ChunkLight, ChunkParsingError, ChunkSections,
@@ -1623,7 +1623,7 @@ mod tests {
     #[test]
     fn chunk_without_y_pos_uses_the_lowest_biome_section() {
         use crate::chunk::ChunkData;
-        use pumpkin_util::math::vector2::Vector2;
+        use sculith_util::math::vector2::Vector2;
 
         // The datafixer writes Y as an int, so the test must too.
         let bytes = test_chunk(vec![test_section(-4, "minecraft:stone", true)]).write();
@@ -1638,7 +1638,7 @@ mod tests {
     #[test]
     fn chunk_with_int_y_sections_keeps_every_section() {
         use crate::chunk::ChunkData;
-        use pumpkin_util::math::vector2::Vector2;
+        use sculith_util::math::vector2::Vector2;
 
         let bytes = test_chunk(vec![
             test_section(-4, "minecraft:stone", true),
@@ -1659,7 +1659,7 @@ mod tests {
     #[test]
     fn chunk_with_mixed_numeric_y_tags_keeps_sections() {
         use crate::chunk::ChunkData;
-        use pumpkin_util::math::vector2::Vector2;
+        use sculith_util::math::vector2::Vector2;
 
         // What a real upgraded chunk looks like: the map's own sections store Y
         // as a byte, the datafixer writes ints. The int section must still land
@@ -1688,7 +1688,7 @@ mod tests {
     #[test]
     fn fallback_ignores_light_only_sections_below_zero() {
         use crate::chunk::ChunkData;
-        use pumpkin_util::math::vector2::Vector2;
+        use sculith_util::math::vector2::Vector2;
 
         // Old worlds keep a light grid at Y = -1 after the upgrade. It has no
         // biomes and must not decide where the chunk starts.
@@ -1716,7 +1716,7 @@ mod tests {
     #[test]
     fn fallback_never_goes_above_zero() {
         use crate::chunk::ChunkData;
-        use pumpkin_util::math::vector2::Vector2;
+        use sculith_util::math::vector2::Vector2;
 
         let bytes = test_chunk(vec![test_section(1, "minecraft:stone", true)]).write();
         let chunk = ChunkData::from_bytes(&bytes, Vector2::new(0, 0)).expect("caps at zero");
@@ -1736,7 +1736,7 @@ mod tests {
     #[test]
     fn chunk_without_y_pos_or_biomes_still_fails() {
         use crate::chunk::ChunkData;
-        use pumpkin_util::math::vector2::Vector2;
+        use sculith_util::math::vector2::Vector2;
 
         let mut light_section = NbtCompound::new();
         light_section.put_byte("Y", -1);

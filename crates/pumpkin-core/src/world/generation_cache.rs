@@ -6,10 +6,6 @@ use pumpkin_data::{
     fluid::{Fluid, FluidState},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
-    HeightMap,
-    math::{position::BlockPos, vector2::Vector2, vector3::Vector3},
-};
 use pumpkin_world::{
     ProtoChunk,
     chunk::ChunkHeightmapType,
@@ -20,6 +16,10 @@ use pumpkin_world::{
     world::{BlockAccessor, BlockFlags},
 };
 use rustc_hash::FxHashMap;
+use sculith_util::{
+    HeightMap,
+    math::{position::BlockPos, vector2::Vector2, vector3::Vector3},
+};
 
 use crate::block::entities::block_entity_from_nbt;
 use crate::world::World;

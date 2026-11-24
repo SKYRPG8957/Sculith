@@ -2,7 +2,7 @@ use super::{AccessorExt, in_active_context, run_blocking};
 use crate::RequireServer;
 use crate::RwLockIgnorePoison;
 
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use wasmtime::component::{Accessor, HasSelf, Resource};
 
 use crate::pumpkin::plugin::enchantments::{
@@ -83,10 +83,10 @@ impl pumpkin::plugin::server::HostServer for PluginHostState {
         let server = self.require_server()?;
 
         Ok(match server.get_difficulty() {
-            pumpkin_util::Difficulty::Peaceful => Difficulty::Peaceful,
-            pumpkin_util::Difficulty::Easy => Difficulty::Easy,
-            pumpkin_util::Difficulty::Normal => Difficulty::Normal,
-            pumpkin_util::Difficulty::Hard => Difficulty::Hard,
+            sculith_util::Difficulty::Peaceful => Difficulty::Peaceful,
+            sculith_util::Difficulty::Easy => Difficulty::Easy,
+            sculith_util::Difficulty::Normal => Difficulty::Normal,
+            sculith_util::Difficulty::Hard => Difficulty::Hard,
         })
     }
 
@@ -226,7 +226,7 @@ impl pumpkin::plugin::server::HostServer for PluginHostState {
         signature: Vec<u8>,
     ) -> wasmtime::Result<()> {
         let server = self.require_server()?;
-        let packet = pumpkin_protocol::java::client::play::CDeleteChat::from_signature(&signature);
+        let packet = sculith_protocol::java::client::play::CDeleteChat::from_signature(&signature);
         server.broadcast_packet_all(&packet);
         Ok(())
     }
@@ -237,7 +237,7 @@ impl pumpkin::plugin::server::HostServer for PluginHostState {
         signature_id: i32,
     ) -> wasmtime::Result<()> {
         let server = self.require_server()?;
-        let packet = pumpkin_protocol::java::client::play::CDeleteChat::from_cache_id(signature_id);
+        let packet = sculith_protocol::java::client::play::CDeleteChat::from_cache_id(signature_id);
         server.broadcast_packet_all(&packet);
         Ok(())
     }
@@ -416,9 +416,9 @@ impl pumpkin::plugin::server::HostServer for PluginHostState {
         for link in links {
             converted.push(super::player::from_wit_server_link(self, link)?);
         }
-        let protocol_links: Vec<pumpkin_protocol::Link<'_>> = converted
+        let protocol_links: Vec<sculith_protocol::Link<'_>> = converted
             .iter()
-            .map(|(label, url)| pumpkin_protocol::Link::new(label.clone(), url))
+            .map(|(label, url)| sculith_protocol::Link::new(label.clone(), url))
             .collect();
         server.broadcast_server_links(&protocol_links);
         Ok(())
@@ -446,10 +446,10 @@ impl pumpkin::plugin::server::HostServerWithStore<PluginHostState> for HasSelf<P
     ) -> wasmtime::Result<()> {
         let server = accessor.server()?;
         let internal_diff = match difficulty {
-            Difficulty::Peaceful => pumpkin_util::Difficulty::Peaceful,
-            Difficulty::Easy => pumpkin_util::Difficulty::Easy,
-            Difficulty::Normal => pumpkin_util::Difficulty::Normal,
-            Difficulty::Hard => pumpkin_util::Difficulty::Hard,
+            Difficulty::Peaceful => sculith_util::Difficulty::Peaceful,
+            Difficulty::Easy => sculith_util::Difficulty::Easy,
+            Difficulty::Normal => sculith_util::Difficulty::Normal,
+            Difficulty::Hard => sculith_util::Difficulty::Hard,
         };
         run_blocking(accessor, move || {
             server.set_difficulty(internal_diff, true);
@@ -739,7 +739,7 @@ impl pumpkin::plugin::server::HostOpManagerWithStore<PluginHostState> for HasSel
                 let command_dispatcher = server.command_dispatcher.load();
                 player.set_permission_lvl(
                     &server,
-                    pumpkin_util::PermissionLvl::Zero,
+                    sculith_util::PermissionLvl::Zero,
                     &command_dispatcher,
                 );
             }
@@ -967,7 +967,7 @@ impl pumpkin::plugin::server::HostBanManagerWithStore<PluginHostState>
                 .transpose()?
                 .map_or_else(
                     || "Banned by plugin.".to_string(),
-                    pumpkin_util::text::TextComponent::to_pretty_console,
+                    sculith_util::text::TextComponent::to_pretty_console,
                 );
             Ok((server, reason_text))
         })?;
@@ -1001,7 +1001,7 @@ impl pumpkin::plugin::server::HostBanManagerWithStore<PluginHostState>
             if kick_if_online && let Some(player) = server.get_player_by_uuid(uuid) {
                 player.kick(
                     pumpkin_core::net::DisconnectReason::Kicked,
-                    &pumpkin_util::text::TextComponent::text(reason_text.clone()),
+                    &sculith_util::text::TextComponent::text(reason_text.clone()),
                 );
             }
 
@@ -1030,7 +1030,7 @@ impl pumpkin::plugin::server::HostBanManagerWithStore<PluginHostState>
                 .transpose()?
                 .map_or_else(
                     || "Banned by plugin.".to_string(),
-                    pumpkin_util::text::TextComponent::to_pretty_console,
+                    sculith_util::text::TextComponent::to_pretty_console,
                 );
             Ok(reason_text)
         })?;
@@ -1063,7 +1063,7 @@ impl pumpkin::plugin::server::HostBanManagerWithStore<PluginHostState>
                     if player.client.address().ip() == ip_addr {
                         player.kick(
                             pumpkin_core::net::DisconnectReason::Kicked,
-                            &pumpkin_util::text::TextComponent::text(reason_text.clone()),
+                            &sculith_util::text::TextComponent::text(reason_text.clone()),
                         );
                     }
                 }

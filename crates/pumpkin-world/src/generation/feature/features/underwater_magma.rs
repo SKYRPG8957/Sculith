@@ -1,6 +1,6 @@
 use crate::generation::proto_chunk::GenerationCache;
 use pumpkin_data::{Block, BlockDirection, BlockState};
-use pumpkin_util::{
+use sculith_util::{
     math::position::BlockPos,
     random::{RandomGenerator, RandomImpl},
 };

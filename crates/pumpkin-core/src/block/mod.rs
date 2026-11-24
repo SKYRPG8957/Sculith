@@ -2,8 +2,8 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockId, BlockState};
 
 use pumpkin_data::BlockStateId;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::random::{RandomGenerator, get_seed, xoroshiro128::Xoroshiro};
+use sculith_util::math::position::BlockPos;
+use sculith_util::random::{RandomGenerator, get_seed, xoroshiro128::Xoroshiro};
 
 use crate::entity::experience_orb::ExperienceOrbEntity;
 use crate::entity::player::Player;
@@ -25,10 +25,10 @@ use pumpkin_data::block_rotation::{Mirror, Rotation};
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::screen_handler::ScreenHandlerFactory;
-use pumpkin_util::Hand;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
+use sculith_util::Hand;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::vector3::Vector3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PathComputationType {

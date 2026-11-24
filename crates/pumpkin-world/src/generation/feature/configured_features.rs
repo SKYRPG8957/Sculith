@@ -3,7 +3,7 @@ use std::{
     sync::LazyLock,
 };
 
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
+use sculith_util::{math::position::BlockPos, random::RandomGenerator};
 
 use super::features::{
     bamboo::BambooFeature,
@@ -548,7 +548,7 @@ include!("../../../../pumpkin-data/src/generated/configured_features_generated.r
 #[cfg(test)]
 mod tests {
     use super::{BONE_MEAL_FEATURES, CONFIGURED_FEATURES, ConfiguredFeature};
-    use pumpkin_util::{
+    use sculith_util::{
         math::position::BlockPos,
         random::{RandomGenerator, xoroshiro128::Xoroshiro},
     };

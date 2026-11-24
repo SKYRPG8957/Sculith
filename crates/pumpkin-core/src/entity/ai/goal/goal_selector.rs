@@ -436,7 +436,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     use super::*;
     use crate::entity::{Entity, ai::test_support::world, mob::MobEntity};

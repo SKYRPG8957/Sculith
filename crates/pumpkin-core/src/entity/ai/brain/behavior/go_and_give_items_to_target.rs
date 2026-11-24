@@ -1,4 +1,4 @@
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use super::super::BrainTick;
 use super::super::memory::{MemoryModuleId, MemoryModuleType, MemoryStatus, types};

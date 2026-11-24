@@ -8,13 +8,13 @@ use crate::pumpkin::{
 };
 use pumpkin_wasm_host_common::state::PluginHostState;
 
-use pumpkin_util::text::{
+use sculith_util::text::{
     TextComponent as InternalTextComponent,
     click::ClickEvent,
     color::{self, Color},
     hover::HoverEvent,
 };
-use pumpkin_util::translation::Locale;
+use sculith_util::translation::Locale;
 
 impl pumpkin::plugin::text::Host for PluginHostState {}
 

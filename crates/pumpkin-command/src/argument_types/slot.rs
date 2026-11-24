@@ -8,7 +8,7 @@ use pumpkin_data::slot_ranges::{
     SLOT_RANGE_ALL_NAMES, SLOT_RANGE_SINGLE_SLOT_NAMES, get_slot_range,
 };
 use pumpkin_data::translation;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 pub const UNKNOWN_SLOT_ERROR_TYPE: CommandErrorType<1> = CommandErrorType::new(
     translation::java::SLOT_UNKNOWN,

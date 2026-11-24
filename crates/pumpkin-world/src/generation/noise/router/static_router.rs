@@ -1,4 +1,4 @@
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 /// Zero-cost static trait for monomorphized density function pipeline evaluation.
 pub trait StaticDensityFunction {
@@ -99,7 +99,7 @@ pub struct ClampedYGradient {
 impl StaticDensityFunction for ClampedYGradient {
     #[inline]
     fn sample(&self, pos: &Vector3<i32>) -> f64 {
-        pumpkin_util::math::clamped_map(
+        sculith_util::math::clamped_map(
             pos.y as f64,
             self.from_y,
             self.to_y,

@@ -6,9 +6,9 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::ai::target_match::TargetMatch;
@@ -95,7 +95,7 @@ impl GhastEntity {
 
     #[must_use]
     pub fn check_ghast_spawn_rules(world: &World, pos: &BlockPos) -> bool {
-        if world.level_info.load().difficulty == pumpkin_util::Difficulty::Peaceful {
+        if world.level_info.load().difficulty == sculith_util::Difficulty::Peaceful {
             return false;
         }
         if rand::random_range(0..20) != 0 {

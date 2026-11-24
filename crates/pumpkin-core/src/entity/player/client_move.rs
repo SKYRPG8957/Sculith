@@ -4,15 +4,15 @@ use std::sync::atomic::Ordering;
 use dashmap::try_result::TryResult;
 use pumpkin_data::data_component_impl::{EnchantmentsImpl, EquipmentSlot};
 use pumpkin_data::{Block, BlockStateId, entity::EntityPose, tag::Taggable, translation};
-use pumpkin_protocol::bedrock::client::CMovePlayer;
-use pumpkin_protocol::java::client::play::{
+use rustc_hash::FxHashSet;
+use sculith_protocol::bedrock::client::CMovePlayer;
+use sculith_protocol::java::client::play::{
     CEntityPositionSync, CHeadRot, CPlayerPosition, CSetCamera, CUpdateEntityPos,
     CUpdateEntityPosRot, CUpdateEntityRot,
 };
-use pumpkin_util::GameMode;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
-use pumpkin_util::text::TextComponent;
-use rustc_hash::FxHashSet;
+use sculith_util::GameMode;
+use sculith_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
+use sculith_util::text::TextComponent;
 
 use crate::entity::{Entity, EntityBase};
 use crate::net::{ClientPlatform, DisconnectReason};
@@ -249,7 +249,7 @@ impl Player {
         if !matches!(
             self.client.as_ref(),
             ClientPlatform::Java(c)
-                if c.version.load() < pumpkin_util::version::JavaMinecraftVersion::V_1_9
+                if c.version.load() < sculith_util::version::JavaMinecraftVersion::V_1_9
         ) {
             *self
                 .awaiting_teleport

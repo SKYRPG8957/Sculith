@@ -4,9 +4,9 @@ use pumpkin_data::entity::EntityStatus;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::boundingbox::BoundingBox;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::boundingbox::BoundingBox;
 
 use super::{Controls, Goal};
 use crate::entity::EntityBase;

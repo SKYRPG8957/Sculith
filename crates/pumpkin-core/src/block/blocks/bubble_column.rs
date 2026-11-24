@@ -4,10 +4,10 @@ use pumpkin_data::block_properties::BubbleColumnLikeProperties;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockId, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::block::{
     BlockBehaviour, BlockMetadata, OnEntityCollisionArgs, OnNeighborUpdateArgs,

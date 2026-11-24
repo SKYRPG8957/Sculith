@@ -97,16 +97,16 @@ fn build_configured_features()
         random_block_state_match::RandomBlockStateMatchRuleTest, tag_match::TagMatchRuleTest,
     };
     use pumpkin_data::{Block, BlockDirection};
-    use pumpkin_util::DoublePerlinNoiseParametersCodec;
-    use pumpkin_util::HeightMap;
-    use pumpkin_util::math::int_provider::{
+    use sculith_util::DoublePerlinNoiseParametersCodec;
+    use sculith_util::HeightMap;
+    use sculith_util::math::int_provider::{
         BiasedToBottomIntProvider, ClampedIntProvider, ClampedNormalIntProvider,
         ConstantIntProvider, IntProvider, NormalIntProvider, TrapezoidIntProvider,
         UniformIntProvider, WeightedEntry, WeightedListIntProvider,
     };
-    use pumpkin_util::math::pool::Weighted;
-    use pumpkin_util::math::vector3::Vector3;
-    use pumpkin_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
+    use sculith_util::math::pool::Weighted;
+    use sculith_util::math::vector3::Vector3;
+    use sculith_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
     let mut map = std::collections::HashMap::new();
     map . insert (pumpkin_data :: configured_feature :: ConfiguredFeature :: Acacia , ConfiguredFeature :: Tree (Box :: new (TreeFeature { trunk_provider : BlockStateProvider :: Simple (SimpleStateProvider { state : { let mut props = std :: collections :: HashMap :: new () ; props . insert ("axis" . to_string () , "y" . to_string ()) ; BlockStateCodec { name : & pumpkin_data :: Block :: ACACIA_LOG , properties : Some (props) , } . get_state () } }) , trunk_placer : TrunkPlacer { base_height : 5u8 , height_rand_a : 2u8 , height_rand_b : 2u8 , r#type : TrunkType :: Forking (ForkingTrunkPlacer) , } , foliage_provider : BlockStateProvider :: Simple (SimpleStateProvider { state : { let mut props = std :: collections :: HashMap :: new () ; props . insert ("distance" . to_string () , "7" . to_string ()) ; props . insert ("persistent" . to_string () , "false" . to_string ()) ; props . insert ("waterlogged" . to_string () , "false" . to_string ()) ; BlockStateCodec { name : & pumpkin_data :: Block :: ACACIA_LEAVES , properties : Some (props) , } . get_state () } }) , foliage_placer : FoliagePlacer { radius : IntProvider :: Constant (2i32) , offset : IntProvider :: Constant (0i32) , r#type : FoliageType :: Acacia (AcaciaFoliagePlacer) } , minimum_size : FeatureSize { min_clipped_height : None , r#type : FeatureSizeType :: TwoLayersFeatureSize (TwoLayersFeatureSize { limit : 1u8 , lower_size : 0u8 , upper_size : 2u8 , }) } , ignore_vines : true , below_trunk_provider : BlockStateProvider :: Rule (RuleBasedBlockStateProvider { fallback : None , rules : vec ! [BlockStateRule { if_true : BlockPredicate :: Not (NotBlockPredicate { predicate : Box :: new (BlockPredicate :: MatchingBlockTag (MatchingBlockTagPredicate { offset : OffsetBlocksBlockPredicate { offset : None } , tag : pumpkin_data :: tag :: Block :: MINECRAFT_CANNOT_REPLACE_BELOW_TREE_TRUNK , })) , }) , then : BlockStateProvider :: Simple (SimpleStateProvider { state : pumpkin_data :: Block :: DIRT . default_state }) }] , }) , decorators : vec ! [] , root_placer : None , }))) ;
     map.insert(
@@ -703,7 +703,7 @@ fn build_configured_features()
                         ),
                         placement: vec![],
                     }),
-                    surface: pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
+                    surface: sculith_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
                     depth: IntProvider::Constant(3i32),
                     extra_bottom_block_chance: 0.8f32,
                     vertical_range: 5i32,
@@ -735,7 +735,7 @@ fn build_configured_features()
                 ),
                 placement: vec![],
             }),
-            surface: pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
+            surface: sculith_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
             depth: IntProvider::Constant(3i32),
             extra_bottom_block_chance: 0.8f32,
             vertical_range: 2i32,
@@ -1613,7 +1613,7 @@ fn build_configured_features()
         pumpkin_data::configured_feature::ConfiguredFeature::EndGatewayReturn,
         ConfiguredFeature::EndGateway(
             crate::generation::feature::features::end_gateway::EndGatewayFeature {
-                exit: Some(pumpkin_util::math::position::BlockPos::new(
+                exit: Some(sculith_util::math::position::BlockPos::new(
                     100i32, 50i32, 0i32,
                 )),
                 exact: true,
@@ -2967,7 +2967,7 @@ fn build_configured_features()
                 ),
                 placement: vec![],
             }),
-            surface: pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
+            surface: sculith_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
             depth: IntProvider::Constant(1i32),
             extra_bottom_block_chance: 0f32,
             vertical_range: 5i32,
@@ -2995,7 +2995,7 @@ fn build_configured_features()
                 ),
                 placement: vec![],
             }),
-            surface: pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
+            surface: sculith_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
             depth: IntProvider::Constant(1i32),
             extra_bottom_block_chance: 0f32,
             vertical_range: 5i32,
@@ -3023,7 +3023,7 @@ fn build_configured_features()
                 ),
                 placement: vec![],
             }),
-            surface: pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Ceiling,
+            surface: sculith_util::math::vertical_surface_type::VerticalSurfaceType::Ceiling,
             depth: IntProvider::Object(NormalIntProvider::Uniform(UniformIntProvider {
                 min_inclusive: 1i32,
                 max_inclusive: 2i32,
@@ -3365,7 +3365,7 @@ fn build_configured_features()
                 ),
                 placement: vec![],
             }),
-            surface: pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
+            surface: sculith_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
             depth: IntProvider::Constant(1i32),
             extra_bottom_block_chance: 0f32,
             vertical_range: 5i32,
@@ -3393,7 +3393,7 @@ fn build_configured_features()
                 ),
                 placement: vec![],
             }),
-            surface: pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
+            surface: sculith_util::math::vertical_surface_type::VerticalSurfaceType::Floor,
             depth: IntProvider::Constant(1i32),
             extra_bottom_block_chance: 0f32,
             vertical_range: 5i32,

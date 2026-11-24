@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::java::server::play::SSpectateEntity;
-use pumpkin_util::GameMode;
+use sculith_protocol::java::server::play::SSpectateEntity;
+use sculith_util::GameMode;
 
 impl JavaClient {
     pub fn handle_spectate_entity(&self, player: &Arc<Player>, packet: &SSpectateEntity) {

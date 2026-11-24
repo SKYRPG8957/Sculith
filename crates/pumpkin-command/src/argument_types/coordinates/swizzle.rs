@@ -1,5 +1,5 @@
 use pumpkin_data::translation;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};
 use crate::context::command_context::CommandContext;

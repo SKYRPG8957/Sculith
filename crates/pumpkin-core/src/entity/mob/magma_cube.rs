@@ -73,7 +73,7 @@ impl Mob for MagmaCubeEntity {
         &self,
         passenger: &dyn crate::entity::EntityBase,
         index: usize,
-    ) -> Option<pumpkin_util::math::vector3::Vector3<f64>> {
+    ) -> Option<sculith_util::math::vector3::Vector3<f64>> {
         self.slime.mob_passenger_attachment_point(passenger, index)
     }
 

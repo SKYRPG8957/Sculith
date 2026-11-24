@@ -2,7 +2,7 @@ use crate::{
     BlockState, BlockStateId,
     tag::{RegistryKey, Tag, Taggable},
 };
-use pumpkin_util::{
+use sculith_util::{
     loot_table::LootTable,
     math::{experience::Experience, position::BlockPos, vector3::Vector3},
     random::hash_block_pos,
@@ -477,7 +477,7 @@ pub struct Flammable {
 #[cfg(test)]
 mod tests {
     use super::{Block, BlockId, ShapeOffsetType};
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
 
     fn assert_close(actual: f64, expected: f64) {
         assert!((actual - expected).abs() < 1.0e-6, "{actual} != {expected}");

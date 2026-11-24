@@ -10,13 +10,13 @@ use crate::command::suggestion::suggestions::SuggestionsBuilder;
 use crate::entity::EntityBase;
 use pumpkin_data::recipes::{CraftingRecipeTypes, RECIPES_COOKING, RECIPES_CRAFTING};
 use pumpkin_data::translation;
-use pumpkin_protocol::codec::recipe::DynamicRecipe;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{CRecipeBookAdd, CRecipeBookRemove};
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::codec::recipe::DynamicRecipe;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::{CRecipeBookAdd, CRecipeBookRemove};
+use sculith_util::PermissionLvl;
+use sculith_util::identifier::Identifier;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 const DESCRIPTION: &str = "Gives or takes player recipes.";
 const PERMISSION: &str = "minecraft:command.recipe";
@@ -28,8 +28,8 @@ fn get_recipe_id(recipe: &DynamicRecipe) -> String {
     recipe.recipe_id().map_or_else(
         || match recipe {
             DynamicRecipe::Crafting(
-                pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shaped { result, .. }
-                | pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless { result, .. },
+                sculith_protocol::codec::recipe::OwnedCraftingRecipe::Shaped { result, .. }
+                | sculith_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless { result, .. },
             ) => result.item_id.clone(),
             _ => String::new(),
         },

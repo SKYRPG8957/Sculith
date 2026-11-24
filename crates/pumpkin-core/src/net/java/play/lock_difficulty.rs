@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::java::server::play::SLockDifficulty;
+use sculith_protocol::java::server::play::SLockDifficulty;
 
 impl JavaClient {
     pub fn handle_lock_difficulty(

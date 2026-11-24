@@ -190,7 +190,7 @@ macro_rules! impl_block_entity_for_chest {
                 self.metadata.get_lock()
             }
 
-            fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+            fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
                 self.metadata.get_custom_name()
             }
         }
@@ -304,7 +304,7 @@ macro_rules! impl_viewer_count_listener_for_chest {
             fn on_container_open(
                 &self,
                 world: &Arc<$crate::world::World>,
-                _position: &pumpkin_util::math::position::BlockPos,
+                _position: &sculith_util::math::position::BlockPos,
             ) {
                 self.play_sound(world, true);
             }
@@ -312,7 +312,7 @@ macro_rules! impl_viewer_count_listener_for_chest {
             fn on_container_close(
                 &self,
                 world: &Arc<$crate::world::World>,
-                _position: &pumpkin_util::math::position::BlockPos,
+                _position: &sculith_util::math::position::BlockPos,
             ) {
                 self.play_sound(world, false);
             }
@@ -320,7 +320,7 @@ macro_rules! impl_viewer_count_listener_for_chest {
             fn on_viewer_count_update(
                 &self,
                 world: &Arc<$crate::world::World>,
-                position: &pumpkin_util::math::position::BlockPos,
+                position: &sculith_util::math::position::BlockPos,
                 old: u16,
                 new: u16,
             ) {
@@ -357,7 +357,7 @@ macro_rules! impl_chest_helper_methods {
             }
 
             #[must_use]
-            pub fn new(position: pumpkin_util::math::position::BlockPos) -> Self {
+            pub fn new(position: sculith_util::math::position::BlockPos) -> Self {
                 use std::array::from_fn;
                 use std::sync::Mutex as StdMutex;
                 use std::sync::RwLock;
@@ -376,8 +376,8 @@ macro_rules! impl_chest_helper_methods {
             }
 
             fn play_sound(&self, world: &Arc<$crate::world::World>, open: bool) {
-                let mut rng = pumpkin_util::random::xoroshiro128::Xoroshiro::from_seed(
-                    pumpkin_util::random::get_seed(),
+                let mut rng = sculith_util::random::xoroshiro128::Xoroshiro::from_seed(
+                    sculith_util::random::get_seed(),
                 );
 
                 let (block, state) = world.get_block_and_state(&self.position);
@@ -386,7 +386,7 @@ macro_rules! impl_chest_helper_methods {
                 let position = match properties.r#type {
                     pumpkin_data::block_properties::ChestType::Left => return,
                     pumpkin_data::block_properties::ChestType::Single => {
-                        pumpkin_util::math::vector3::Vector3::new(
+                        sculith_util::math::vector3::Vector3::new(
                             self.position.0.x as f64 + 0.5,
                             self.position.0.y as f64 + 0.5,
                             self.position.0.z as f64 + 0.5,
@@ -397,7 +397,7 @@ macro_rules! impl_chest_helper_methods {
                             &properties.facing.rotate_counter_clockwise(),
                         )
                         .to_offset();
-                        pumpkin_util::math::vector3::Vector3::new(
+                        sculith_util::math::vector3::Vector3::new(
                             self.position.0.x as f64 + 0.5 + direction.x as f64 * 0.5,
                             self.position.0.y as f64 + 0.5,
                             self.position.0.z as f64 + 0.5 + direction.z as f64 * 0.5,
@@ -421,7 +421,7 @@ macro_rules! impl_chest_helper_methods {
                     pumpkin_data::sound::SoundCategory::Blocks,
                     &position,
                     0.5,
-                    pumpkin_util::random::RandomImpl::next_f32(&mut rng) * 0.1 + 0.9,
+                    sculith_util::random::RandomImpl::next_f32(&mut rng) * 0.1 + 0.9,
                 );
                 let bedrock_sound = if open { "chest.open" } else { "chest.closed" };
                 world.play_bedrock_level_sound(bedrock_sound, &position, 0);
@@ -433,7 +433,7 @@ macro_rules! impl_chest_helper_methods {
 /// Builds the Bedrock block-actor NBT for chests and trapped chests with double-chest pairing.
 #[must_use]
 pub fn build_chest_actor(
-    position: pumpkin_util::math::position::BlockPos,
+    position: sculith_util::math::position::BlockPos,
     state_id: pumpkin_data::BlockStateId,
     custom_name: Option<&str>,
 ) -> Option<pumpkin_nbt::compound::NbtCompound> {
@@ -476,7 +476,7 @@ pub fn build_chest_actor(
 mod tests {
     use super::*;
     use pumpkin_data::Block;
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
 
     #[test]
     fn chest_actor_builder() {

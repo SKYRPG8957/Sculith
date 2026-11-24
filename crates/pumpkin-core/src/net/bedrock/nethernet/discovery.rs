@@ -11,11 +11,11 @@ use aes::{
     cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit},
 };
 use hmac::{Hmac, Mac};
-use pumpkin_protocol::{
+use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
+use sculith_protocol::{
     codec::{var_int::VarInt, var_uint::VarUInt},
     serial::PacketWrite,
 };
-use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
 use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, trace, warn};

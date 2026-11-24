@@ -1,6 +1,6 @@
 /* This file is generated. Do not edit manually. */
-use pumpkin_util::resource_location::ResourceLocation;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::resource_location::ResourceLocation;
+use sculith_util::version::JavaMinecraftVersion;
 pub struct StaticRegistryEntry {
     pub name: &'static str,
     pub data: &'static [u8],

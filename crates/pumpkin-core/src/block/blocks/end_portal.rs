@@ -7,8 +7,8 @@ use crate::block::PlacedArgs;
 use crate::block::entities::end_portal::EndPortalBlockEntity;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::vector3::Vector3;
 
 #[pumpkin_block("minecraft:end_portal")]
 pub struct EndPortalBlock;

@@ -1,5 +1,5 @@
 use crate::block_properties::{Axis, Facing, HorizontalAxis, HorizontalFacing};
-use pumpkin_util::{
+use sculith_util::{
     math::vector3::{Axis as MathAxis, Vector3},
     random::{RandomGenerator, RandomImpl},
 };
@@ -36,20 +36,20 @@ impl From<Axis> for MathAxis {
     }
 }
 
-impl From<pumpkin_util::BlockDirection> for BlockDirection {
-    fn from(d: pumpkin_util::BlockDirection) -> Self {
+impl From<sculith_util::BlockDirection> for BlockDirection {
+    fn from(d: sculith_util::BlockDirection) -> Self {
         match d {
-            pumpkin_util::BlockDirection::Down => Self::Down,
-            pumpkin_util::BlockDirection::Up => Self::Up,
-            pumpkin_util::BlockDirection::North => Self::North,
-            pumpkin_util::BlockDirection::South => Self::South,
-            pumpkin_util::BlockDirection::West => Self::West,
-            pumpkin_util::BlockDirection::East => Self::East,
+            sculith_util::BlockDirection::Down => Self::Down,
+            sculith_util::BlockDirection::Up => Self::Up,
+            sculith_util::BlockDirection::North => Self::North,
+            sculith_util::BlockDirection::South => Self::South,
+            sculith_util::BlockDirection::West => Self::West,
+            sculith_util::BlockDirection::East => Self::East,
         }
     }
 }
 
-impl From<BlockDirection> for pumpkin_util::BlockDirection {
+impl From<BlockDirection> for sculith_util::BlockDirection {
     fn from(d: BlockDirection) -> Self {
         match d {
             BlockDirection::Down => Self::Down,
@@ -375,8 +375,8 @@ impl HorizontalFacingExt for HorizontalFacing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::random::legacy_rand::LegacyRand;
-    use pumpkin_util::random::xoroshiro128::Xoroshiro;
+    use sculith_util::random::legacy_rand::LegacyRand;
+    use sculith_util::random::xoroshiro128::Xoroshiro;
 
     fn legacy(seed: u64) -> RandomGenerator {
         RandomGenerator::Legacy(LegacyRand::from_seed(seed))
@@ -418,7 +418,7 @@ mod tests {
     /// Every production caller reaches these functions through the `Xoroshiro` variant
     /// (feature-stage worldgen RNG, fire spread, gourd stems), while the parity tests above use
     /// `Legacy`. These sequences are pinned from pumpkin's Xoroshiro implementation (whose
-    /// generator core is bit-verified against vanilla in `pumpkin-util`) to guard the enum dispatch
+    /// generator core is bit-verified against vanilla in `sculith-util`) to guard the enum dispatch
     /// and the small-bound `next_bounded_i32` path against regressions.
     #[test]
     fn random_pinned_through_xoroshiro() {

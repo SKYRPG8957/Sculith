@@ -26,7 +26,7 @@ proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "3.0", features = ["full", "extra-traits"] }
 
-pumpkin-util = { path = "../../crates/pumpkin-util", features = ["codegen"] }
+sculith-util = { path = "../../crates/sculith-util", features = ["codegen"] }
 pumpkin-nbt = { path = "../../crates/pumpkin-nbt" }
 
 [lints.cargo]

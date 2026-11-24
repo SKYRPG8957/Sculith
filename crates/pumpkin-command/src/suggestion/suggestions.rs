@@ -1,6 +1,6 @@
 use crate::context::string_range::StringRange;
 use crate::suggestion::{Suggestion, SuggestionText};
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 

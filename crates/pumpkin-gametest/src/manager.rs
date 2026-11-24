@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use pumpkin_data::translation::java;
-use pumpkin_util::text::{TextComponent, color::NamedColor};
+use sculith_util::text::{TextComponent, color::NamedColor};
 
 use crate::{GameTestError, GameTestSession, GameTestState};
 

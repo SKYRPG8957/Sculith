@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 use uuid::Uuid;
 
 use crate::entity::ai::pathfinder::node::Node;

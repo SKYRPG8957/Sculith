@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use rustc_hash::FxHashMap;
+use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use crate::{
     entity::{Entity, EntityBase, player::Player},

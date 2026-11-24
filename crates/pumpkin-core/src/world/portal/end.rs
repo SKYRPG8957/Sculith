@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use pumpkin_data::{Block, BlockDirection, BlockId, world::WorldEvent};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::world::World;
 

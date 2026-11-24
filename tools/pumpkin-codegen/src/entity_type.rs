@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, fs};
 
 use heck::ToPascalCase;
 use proc_macro2::TokenStream;
-use pumpkin_util::HeightMap;
 use quote::{ToTokens, format_ident, quote};
+use sculith_util::HeightMap;
 use serde::Deserialize;
 use syn::LitInt;
 
@@ -473,9 +473,9 @@ pub fn build() -> TokenStream {
         use crate::attributes::Attributes;
         use crate::entity_pose::EntityPose;
         use crate::sound::{Sound, SoundCategory};
-        use pumpkin_util::HeightMap;
-        use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
-        use pumpkin_util::math::vector3::Vector3;
+        use sculith_util::HeightMap;
+        use sculith_util::math::boundingbox::{BoundingBox, EntityDimensions};
+        use sculith_util::math::vector3::Vector3;
         use std::hash::Hash;
 
         #[derive(Debug, Clone)]

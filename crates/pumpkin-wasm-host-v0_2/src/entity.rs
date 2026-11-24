@@ -5,7 +5,7 @@ use crate::pumpkin::plugin::world::HostEntityWithStore;
 use std::sync::Arc;
 use wasmtime::component::{Accessor, HasSelf, Resource};
 
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::{
     events::to_wasm_position,
@@ -147,7 +147,7 @@ impl HostEntity for PluginHostState {
         let entity = self.get(&entity)?;
         entity
             .get_entity()
-            .store_velocity(pumpkin_util::math::vector3::Vector3::new(
+            .store_velocity(sculith_util::math::vector3::Vector3::new(
                 velocity.0, velocity.1, velocity.2,
             ));
         Ok(())
@@ -377,7 +377,7 @@ impl HostEntity for PluginHostState {
     ) -> wasmtime::Result<Vec<Resource<Entity>>> {
         let entity = self.get(&entity)?.clone();
         let pos = entity.get_entity().pos.load();
-        let box_range = pumpkin_util::math::boundingbox::BoundingBox::new(
+        let box_range = sculith_util::math::boundingbox::BoundingBox::new(
             Vector3::new(pos.x - x, pos.y - y, pos.z - z),
             Vector3::new(pos.x + x, pos.y + y, pos.z + z),
         );

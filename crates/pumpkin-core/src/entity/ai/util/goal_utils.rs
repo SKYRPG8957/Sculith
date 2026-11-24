@@ -1,6 +1,6 @@
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::pathfinder::pathfinding_context::PathfindingContext;
 use crate::entity::mob::Mob;
@@ -75,7 +75,7 @@ const ALERT_RANGE_Y: f64 = 10.0;
 pub fn nearby_same_type(mob: &dyn Mob) -> Vec<std::sync::Arc<dyn crate::entity::EntityBase>> {
     use crate::entity::predicate::EntityPredicate;
     use pumpkin_data::attributes::Attributes;
-    use pumpkin_util::math::boundingbox::BoundingBox;
+    use sculith_util::math::boundingbox::BoundingBox;
 
     let mob_entity = mob.get_mob_entity();
     let entity = &mob_entity.living_entity.entity;

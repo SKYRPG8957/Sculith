@@ -1,6 +1,6 @@
 use std::f64::consts::FRAC_PI_2;
 
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::super::OneShot;
 use super::release_poi::release_poi;

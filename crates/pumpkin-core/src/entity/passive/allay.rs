@@ -12,12 +12,12 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_protocol::bedrock::server::ActorEventID;
-use pumpkin_util::{
+use rand::RngExt;
+use sculith_protocol::bedrock::server::ActorEventID;
+use sculith_util::{
     Hand,
     math::{position::BlockPos, vector3::Vector3},
 };
-use rand::RngExt;
 
 use crate::entity::{
     Entity, EntityBase,

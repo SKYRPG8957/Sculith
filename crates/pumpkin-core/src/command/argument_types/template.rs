@@ -5,8 +5,8 @@ use pumpkin_command::errors::command_syntax_error::CommandSyntaxError;
 use pumpkin_command::source::CommandSource;
 use pumpkin_command::string_reader::StringReader;
 use pumpkin_command::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
-use pumpkin_protocol::java::client::play::SuggestionProviders;
-use pumpkin_util::identifier::Identifier;
+use sculith_protocol::java::client::play::SuggestionProviders;
+use sculith_util::identifier::Identifier;
 
 pub struct TemplateNameArgumentType;
 

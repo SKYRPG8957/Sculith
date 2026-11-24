@@ -7,8 +7,8 @@ use pumpkin_data::dye_color::DyeColor;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::vector3::Vector3;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::{MemoryModuleId, MemoryStatus};

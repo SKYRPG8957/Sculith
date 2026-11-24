@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::blocks::redstone::daylight_detector::DaylightDetectorBlock;
 use crate::world::World;

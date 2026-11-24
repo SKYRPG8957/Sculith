@@ -8,9 +8,9 @@ use crate::world::game_event::GameEventContext;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 pub struct PickUpBlockGoal {
     enderman: Weak<EndermanEntity>,

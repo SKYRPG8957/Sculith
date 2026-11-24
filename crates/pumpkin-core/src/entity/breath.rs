@@ -2,8 +2,8 @@ use crate::entity::EntityBase;
 use crate::entity::player::Player;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::effect::StatusEffect;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::GameMode;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::GameMode;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 pub const MAX_AIR: i32 = 300;
@@ -112,10 +112,10 @@ impl BreathManager {
         let air = self.air_supply.load(Ordering::Relaxed).clamp(0, MAX_AIR);
 
         let mut bedrock_meta =
-            pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
+            sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
         bedrock_meta.set(
-            pumpkin_protocol::bedrock::client::set_actor_data::entity_data_key::AIR_SUPPLY,
-            pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Short(air as i16),
+            sculith_protocol::bedrock::client::set_actor_data::entity_data_key::AIR_SUPPLY,
+            sculith_protocol::bedrock::client::set_actor_data::MetadataValue::Short(air as i16),
         );
 
         player.get_entity().set_synced_data(

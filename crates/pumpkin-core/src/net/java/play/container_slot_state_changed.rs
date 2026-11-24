@@ -2,8 +2,8 @@
 use super::*;
 use crate::block::entities::crafter::CrafterBlockEntity;
 use pumpkin_inventory::crafter_screen_handler::CrafterScreenHandler;
-use pumpkin_protocol::java::server::play::SContainerSlotStateChanged;
-use pumpkin_util::GameMode;
+use sculith_protocol::java::server::play::SContainerSlotStateChanged;
+use sculith_util::GameMode;
 
 impl JavaClient {
     pub fn handle_container_slot_state_changed(

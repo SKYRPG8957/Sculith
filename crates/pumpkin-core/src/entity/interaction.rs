@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use pumpkin_data::{damage::DamageType, item_stack::ItemStack};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::math::{boundingbox::EntityDimensions, vector3::Vector3};
+use sculith_util::math::{boundingbox::EntityDimensions, vector3::Vector3};
 
 use crate::{
     entity::{Entity, EntityBase, living::LivingEntity, player::Player},

@@ -1,16 +1,16 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use pumpkin_data::entity::EntityType;
-use pumpkin_protocol::bedrock::client::set_actor_data::{
+use sculith_protocol::bedrock::client::set_actor_data::{
     CSetActorData, MetadataValue, PropertySyncData, SyncedActorDataList, entity_data_key,
 };
-use pumpkin_protocol::bedrock::client::{CMoveActorAbsolute, CMovePlayer};
-use pumpkin_protocol::bedrock::server::player_auth_input::{InputMode, InteractionModel};
-use pumpkin_protocol::packet::Packet;
-use pumpkin_protocol::serial::PacketRead;
-use pumpkin_util::math::pack_degrees;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::bedrock::client::{CMoveActorAbsolute, CMovePlayer};
+use sculith_protocol::bedrock::server::player_auth_input::{InputMode, InteractionModel};
+use sculith_protocol::packet::Packet;
+use sculith_protocol::serial::PacketRead;
+use sculith_util::math::pack_degrees;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::EntityBase;
 use crate::entity::player::{
@@ -206,7 +206,7 @@ impl BedrockClient {
         if let Some(request) = packet.item_stack_request {
             self.handle_item_stack_request(
                 player,
-                pumpkin_protocol::bedrock::server::item_stack_request::SItemStackRequest {
+                sculith_protocol::bedrock::server::item_stack_request::SItemStackRequest {
                     requests: vec![request],
                 },
             );
@@ -569,7 +569,7 @@ impl BedrockClient {
 
 fn sneaking_from_auth(
     player: &Player,
-    flags: &pumpkin_protocol::codec::bitset::Bitset<66>,
+    flags: &sculith_protocol::codec::bitset::Bitset<66>,
 ) -> bool {
     if player.is_flying() {
         return flags.get(InputData::Descend as usize) || flags.get(InputData::SneakDown as usize);
@@ -615,7 +615,7 @@ fn player_input_from_auth(packet: &SPlayerAuthInput, sneaking: bool) -> PlayerIn
 }
 
 fn digital_move(
-    flags: &pumpkin_protocol::codec::bitset::Bitset<66>,
+    flags: &sculith_protocol::codec::bitset::Bitset<66>,
     classic_touch: bool,
 ) -> (bool, bool, bool, bool) {
     let mut up = flags.get(InputData::Up as usize);

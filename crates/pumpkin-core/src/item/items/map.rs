@@ -9,7 +9,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_util::{GameMode, Hand};
+use sculith_util::{GameMode, Hand};
 use std::any::Any;
 
 pub struct MapItem;

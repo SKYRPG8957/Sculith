@@ -10,9 +10,9 @@ use pumpkin_data::{
     sound::Sound,
     tag::{Tag, Taggable},
 };
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use pumpkin_world::chunk::ChunkData;
 use rustc_hash::FxHashMap;
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
 use crate::{
     block::{ExplodeArgs, drop_loot},
@@ -360,7 +360,7 @@ impl<'a> Explosion<'a> {
         let mut map = FxHashMap::default();
 
         let mut chunk_cache: FxHashMap<
-            pumpkin_util::math::vector2::Vector2<i32>,
+            sculith_util::math::vector2::Vector2<i32>,
             Option<Arc<ChunkData>>,
         > = FxHashMap::default();
 
@@ -727,7 +727,7 @@ impl<'a> Explosion<'a> {
                         let params = LootContextParameters {
                             block_state: Some(state),
                             explosion_radius,
-                            position: Some(pumpkin_util::math::vector3::Vector3::new(
+                            position: Some(sculith_util::math::vector3::Vector3::new(
                                 pos.0.x as f64,
                                 pos.0.y as f64,
                                 pos.0.z as f64,
@@ -765,7 +765,7 @@ mod tests {
         BlockInteraction, Explosion, ExplosionDamageCalculator, SimpleExplosionDamageCalculator,
     };
     use pumpkin_data::{Block, fluid::Fluid, particle::Particle, sound::Sound, tag};
-    use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+    use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
     #[test]
     fn tnt_minecart_rail_protection_covers_every_rail_type() {

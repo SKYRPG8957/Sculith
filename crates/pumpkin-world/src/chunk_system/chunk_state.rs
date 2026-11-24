@@ -317,7 +317,7 @@ impl Chunk {
                 && let Some(z) = nbt.get_int("z")
             {
                 pending_block_entities
-                    .insert(pumpkin_util::math::position::BlockPos::new(x, y, z), nbt);
+                    .insert(sculith_util::math::position::BlockPos::new(x, y, z), nbt);
             }
         }
 

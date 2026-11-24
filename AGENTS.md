@@ -44,11 +44,11 @@ Things worth knowing before you start:
 
 ## Layout
 
-Crates live in `crates/` and are named after what they do (`pumpkin-world` for chunks and generation, `pumpkin-protocol` for packets, and so on). `crates/pumpkin-core` is the server itself, `crates/pumpkin-wasm-host` (with `-common`, `-v0_1` and `-v0_2`) is the Wasm plugin host, and `crates/pumpkin` is the binary that wires them together. `assets/` holds the extracted vanilla data and `tools/pumpkin-codegen` turns it into `pumpkin-data`. The server is GPL-3.0; the plugin crates have their own licenses (see Plugin API below).
+Crates live in `crates/` and are named after what they do (`pumpkin-world` for chunks and generation, `sculith-protocol` for packets, and so on). `crates/pumpkin-core` is the server itself, `crates/pumpkin-wasm-host` (with `-common`, `-v0_1` and `-v0_2`) is the Wasm plugin host, and `crates/sculith` is the binary that wires them together. `assets/` holds the extracted vanilla data and `tools/pumpkin-codegen` turns it into `pumpkin-data`. The server is GPL-3.0; the plugin crates have their own licenses (see Plugin API below).
 
 Some directories have their own `AGENTS.md` with details for that area. Read it when you work there:
 
-- `crates/pumpkin-protocol/AGENTS.md`: adding and changing packets.
+- `crates/sculith-protocol/AGENTS.md`: adding and changing packets.
 - `crates/pumpkin-world/AGENTS.md`: chunk loading, world generation and how to check it against vanilla.
 - `tools/pumpkin-codegen/AGENTS.md`: generators, regenerating and generated-file churn.
 

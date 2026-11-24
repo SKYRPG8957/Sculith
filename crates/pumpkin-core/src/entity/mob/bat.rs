@@ -9,10 +9,10 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::chunk::ChunkHeightmapType;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::target_predicate::TargetPredicate;
 use crate::entity::custom_sound::CustomSound;
@@ -169,18 +169,18 @@ impl BatEntity {
         let vertical_speed = f64::from(0.7f32);
 
         let new_velocity = Vector3::new(
-            velocity.x + (pumpkin_util::math::signum(dx) * 0.5 - velocity.x) * acceleration,
+            velocity.x + (sculith_util::math::signum(dx) * 0.5 - velocity.x) * acceleration,
             velocity.y
-                + (pumpkin_util::math::signum(dy) * vertical_speed - velocity.y) * acceleration,
-            velocity.z + (pumpkin_util::math::signum(dz) * 0.5 - velocity.z) * acceleration,
+                + (sculith_util::math::signum(dy) * vertical_speed - velocity.y) * acceleration,
+            velocity.z + (sculith_util::math::signum(dz) * 0.5 - velocity.z) * acceleration,
         );
         entity.velocity.store(new_velocity);
 
-        let yaw = (pumpkin_util::math::atan2(new_velocity.z, new_velocity.x) * 180.0
+        let yaw = (sculith_util::math::atan2(new_velocity.z, new_velocity.x) * 180.0
             / f64::from(std::f32::consts::PI)) as f32
             - 90.0;
         let old_yaw = entity.yaw.load();
-        let yaw_diff = pumpkin_util::math::wrap_degrees(yaw - old_yaw);
+        let yaw_diff = sculith_util::math::wrap_degrees(yaw - old_yaw);
 
         let input = self.mob_entity.living_entity.movement_input.load();
         self.mob_entity
@@ -367,7 +367,7 @@ mod tests {
         world.add_entity_silent(bat.clone());
         assert_eq!(
             world
-                .get_entities_at_box(&pumpkin_util::math::boundingbox::BoundingBox::from_block(
+                .get_entities_at_box(&sculith_util::math::boundingbox::BoundingBox::from_block(
                     &pos
                 ))
                 .len(),

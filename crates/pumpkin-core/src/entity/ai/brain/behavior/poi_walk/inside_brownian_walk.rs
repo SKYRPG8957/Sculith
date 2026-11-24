@@ -1,6 +1,6 @@
 use pumpkin_data::BlockDirection;
-use pumpkin_util::math::position::BlockPos;
 use rand::seq::SliceRandom;
+use sculith_util::math::position::BlockPos;
 
 use super::super::OneShot;
 use crate::entity::ai::brain::memory::{MemoryStatus, types, walk_target::WalkTarget};

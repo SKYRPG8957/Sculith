@@ -1,6 +1,6 @@
 use pumpkin_data::tag::{Block as BlockTag, Taggable};
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::{MemoryModuleId, MemoryStatus, types, walk_target::WalkTarget};

@@ -8,9 +8,9 @@ use std::{
 };
 
 use futures::future::{BoxFuture, join_all};
-use pumpkin_util::math::vector2::Vector2;
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
+use sculith_util::math::vector2::Vector2;
 use tokio::sync::{OnceCell, mpsc};
 use tracing::error;
 use xxhash_rust::xxh64::xxh64;

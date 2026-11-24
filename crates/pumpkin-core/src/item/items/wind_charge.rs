@@ -27,7 +27,7 @@ const THROW_SOUND_VOLUME: f32 = 0.5;
 impl ItemBehaviour for WindChargeItem {
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+        self.normal_use_with_hand(item, player, yaw, pitch, sculith_util::Hand::Right);
     }
 
     fn normal_use_with_hand(
@@ -36,11 +36,11 @@ impl ItemBehaviour for WindChargeItem {
         player: &Player,
         yaw: f32,
         pitch: f32,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
     ) {
         let mut stack = match hand {
-            pumpkin_util::Hand::Right => player.inventory.held_item(),
-            pumpkin_util::Hand::Left => player.inventory.off_hand_item(),
+            sculith_util::Hand::Right => player.inventory.held_item(),
+            sculith_util::Hand::Left => player.inventory.off_hand_item(),
         };
         if stack.is_empty() || stack.item.id != Item::WIND_CHARGE.id {
             return;
@@ -68,10 +68,10 @@ impl ItemBehaviour for WindChargeItem {
         let item_id = stack.item.id;
         stack.decrement_unless_creative(player.gamemode.load(), 1);
         match hand {
-            pumpkin_util::Hand::Right => player.inventory.set_held_item(stack),
-            pumpkin_util::Hand::Left => player
+            sculith_util::Hand::Right => player.inventory.set_held_item(stack),
+            sculith_util::Hand::Left => player
                 .inventory
-                .set_stack_in_hand(pumpkin_util::Hand::Left, stack),
+                .set_stack_in_hand(sculith_util::Hand::Left, stack),
         }
         player.increment_stat(StatisticCategory::Used, i32::from(item_id), 1);
     }

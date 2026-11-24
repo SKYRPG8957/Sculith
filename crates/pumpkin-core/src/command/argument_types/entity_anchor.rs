@@ -1,6 +1,6 @@
 use crate::entity::Entity;
 pub use pumpkin_command::argument_types::entity_anchor::*;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 pub trait EntityAnchorExt {
     fn transform_position(self, position: Vector3<f64>, entity: &Entity) -> Vector3<f64>;

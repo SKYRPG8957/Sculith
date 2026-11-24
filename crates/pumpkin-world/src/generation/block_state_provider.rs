@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, BlockState};
-use pumpkin_util::{
+use sculith_util::{
     DoublePerlinNoiseParametersCodec,
     math::{
         clamped_map,

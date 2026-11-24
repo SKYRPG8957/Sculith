@@ -20,10 +20,10 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, tag};
-use pumpkin_util::GameMode;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::GameMode;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 pub struct PotionItem;
 pub struct SplashPotionItem;
@@ -145,7 +145,7 @@ impl ItemBehaviour for SplashPotionItem {
 
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+        self.normal_use_with_hand(item, player, yaw, pitch, sculith_util::Hand::Right);
     }
 
     fn normal_use_with_hand(
@@ -154,11 +154,11 @@ impl ItemBehaviour for SplashPotionItem {
         player: &Player,
         yaw: f32,
         pitch: f32,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
     ) {
         let mut stack = match hand {
-            pumpkin_util::Hand::Right => player.inventory.held_item(),
-            pumpkin_util::Hand::Left => player.inventory.off_hand_item(),
+            sculith_util::Hand::Right => player.inventory.held_item(),
+            sculith_util::Hand::Left => player.inventory.off_hand_item(),
         };
         if stack.is_empty() || stack.item.id != Item::SPLASH_POTION.id {
             return;
@@ -186,10 +186,10 @@ impl ItemBehaviour for SplashPotionItem {
         let item_id = stack.item.id;
         stack.decrement_unless_creative(player.gamemode.load(), 1);
         match hand {
-            pumpkin_util::Hand::Right => player.inventory.set_held_item(stack),
-            pumpkin_util::Hand::Left => player
+            sculith_util::Hand::Right => player.inventory.set_held_item(stack),
+            sculith_util::Hand::Left => player
                 .inventory
-                .set_stack_in_hand(pumpkin_util::Hand::Left, stack),
+                .set_stack_in_hand(sculith_util::Hand::Left, stack),
         }
         player.increment_stat(StatisticCategory::Used, i32::from(item_id), 1);
     }
@@ -215,7 +215,7 @@ impl ItemBehaviour for LingeringPotionItem {
 
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+        self.normal_use_with_hand(item, player, yaw, pitch, sculith_util::Hand::Right);
     }
 
     fn normal_use_with_hand(
@@ -224,11 +224,11 @@ impl ItemBehaviour for LingeringPotionItem {
         player: &Player,
         yaw: f32,
         pitch: f32,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
     ) {
         let mut stack = match hand {
-            pumpkin_util::Hand::Right => player.inventory.held_item(),
-            pumpkin_util::Hand::Left => player.inventory.off_hand_item(),
+            sculith_util::Hand::Right => player.inventory.held_item(),
+            sculith_util::Hand::Left => player.inventory.off_hand_item(),
         };
         if stack.is_empty() || stack.item.id != Item::LINGERING_POTION.id {
             return;
@@ -255,10 +255,10 @@ impl ItemBehaviour for LingeringPotionItem {
         let item_id = stack.item.id;
         stack.decrement_unless_creative(player.gamemode.load(), 1);
         match hand {
-            pumpkin_util::Hand::Right => player.inventory.set_held_item(stack),
-            pumpkin_util::Hand::Left => player
+            sculith_util::Hand::Right => player.inventory.set_held_item(stack),
+            sculith_util::Hand::Left => player
                 .inventory
-                .set_stack_in_hand(pumpkin_util::Hand::Left, stack),
+                .set_stack_in_hand(sculith_util::Hand::Left, stack),
         }
         player.increment_stat(StatisticCategory::Used, i32::from(item_id), 1);
     }

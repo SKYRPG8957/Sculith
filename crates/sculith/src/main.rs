@@ -39,11 +39,11 @@ use pumpkin_core::{PumpkinServer, stop_server};
 
 use pumpkin_config::{LoadConfiguration, PumpkinConfig};
 use pumpkin_core::plugin::loader::PluginLoader;
-use pumpkin_util::text::{
+use pumpkin_wasm_host::WasmPluginLoader;
+use sculith_util::text::{
     TextComponent,
     color::{Color, NamedColor},
 };
-use pumpkin_wasm_host::WasmPluginLoader;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};

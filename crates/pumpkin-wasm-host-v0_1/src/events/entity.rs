@@ -196,7 +196,7 @@ impl ToFromWasmEvent for EntitySpawnEvent {
                 Self {
                     entity_id: data.entity_id,
                     entity_type: data.entity_type,
-                    position: pumpkin_util::math::vector3::Vector3::new(
+                    position: sculith_util::math::vector3::Vector3::new(
                         data.position.0,
                         data.position.1,
                         data.position.2,
@@ -393,7 +393,7 @@ impl ToFromWasmEvent
         match event {
             Event::EntityExplodeEvent(data) => Self {
                 entity_id: data.entity_id,
-                position: pumpkin_util::math::vector3::Vector3::new(
+                position: sculith_util::math::vector3::Vector3::new(
                     data.position.0,
                     data.position.1,
                     data.position.2,
@@ -593,12 +593,12 @@ impl ToFromWasmEvent
         match event {
             Event::EntityTeleportEvent(data) => Self {
                 entity_id: data.entity_id,
-                from_position: pumpkin_util::math::vector3::Vector3::new(
+                from_position: sculith_util::math::vector3::Vector3::new(
                     data.from_position.0,
                     data.from_position.1,
                     data.from_position.2,
                 ),
-                to_position: pumpkin_util::math::vector3::Vector3::new(
+                to_position: sculith_util::math::vector3::Vector3::new(
                     data.to_position.0,
                     data.to_position.1,
                     data.to_position.2,

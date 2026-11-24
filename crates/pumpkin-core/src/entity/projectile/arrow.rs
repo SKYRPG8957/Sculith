@@ -18,10 +18,10 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
-use pumpkin_protocol::java::client::play::{CGameEvent, GameEvent, Metadata};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_protocol::java::client::play::{CGameEvent, GameEvent, Metadata};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::version::JavaMinecraftVersion;
 
 /// Represents the pickup rules for arrows
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

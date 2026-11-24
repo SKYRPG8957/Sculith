@@ -2,12 +2,12 @@ use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::translation;
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::screen_handler::InventoryPlayer;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_protocol::java::client::play::CSetContainerSlot;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::hover::HoverEvent;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_protocol::java::client::play::CSetContainerSlot;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
+use sculith_util::text::hover::HoverEvent;
 
 use crate::command::argument_builder::{
     ArgumentBuilder, RequiredArgumentBuilder, argument, command, literal,

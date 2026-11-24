@@ -1,5 +1,5 @@
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
@@ -7,8 +7,8 @@ use crate::block::{BlockBehaviour, OnNeighborUpdateArgs, PlacedArgs};
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
 
 #[pumpkin_block("minecraft:sponge")]
 pub struct SpongeBlock;

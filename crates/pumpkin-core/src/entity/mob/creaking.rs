@@ -12,9 +12,9 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::java::client::play::CEntityStatus;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::java::client::play::CEntityStatus;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::block::entities::creaking_heart::CreakingHeartBlockEntity;
 use crate::entity::{
@@ -323,8 +323,8 @@ impl CreakingEntity {
         let mut has_potential_target = false;
         for player in players {
             if player.living_entity.entity.is_alive()
-                && player.gamemode.load() != pumpkin_util::GameMode::Creative
-                && player.gamemode.load() != pumpkin_util::GameMode::Spectator
+                && player.gamemode.load() != sculith_util::GameMode::Creative
+                && player.gamemode.load() != sculith_util::GameMode::Spectator
             {
                 has_potential_target = true;
                 let is_disguised = Self::is_player_disguised(&player);

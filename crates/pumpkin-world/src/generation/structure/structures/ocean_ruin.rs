@@ -5,7 +5,7 @@ use pumpkin_data::{
     block_properties::{ChestLikeProperties, HorizontalFacing},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use sculith_util::{
     HeightMap,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl, hash_block_pos, legacy_rand::LegacyRand},

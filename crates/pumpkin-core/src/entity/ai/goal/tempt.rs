@@ -10,7 +10,7 @@ use crate::entity::{ai::pathfinder::NavigatorGoal, mob::Mob, player::Player};
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::item::Item;
 use pumpkin_data::tag::{Tag, Taggable};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 const DEFAULT_STOP_DISTANCE: f64 = 2.5;
 /// Following stops once the player moves further than this while being watched.

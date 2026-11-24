@@ -2,7 +2,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{RegistryKey, get_tag_ids};
 use pumpkin_data::translation;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};
 use crate::context::command_context::CommandContext;

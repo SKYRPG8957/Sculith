@@ -1,7 +1,7 @@
 use crate::data_component_impl::DataComponentImpl;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 /// Reads a filterable text, which vanilla stores either as a plain string or as
 /// a compound with a `raw` field, e.g. `{raw: "A Partner"}`. The raw value is a
@@ -155,7 +155,7 @@ impl DataComponentImpl for DebugStickStateImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::text::color::{Color, NamedColor};
+    use sculith_util::text::color::{Color, NamedColor};
 
     fn page_texts(pages: &[TextComponent]) -> Vec<String> {
         pages.iter().map(|page| page.clone().get_text()).collect()

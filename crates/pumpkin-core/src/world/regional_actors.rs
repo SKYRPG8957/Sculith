@@ -7,8 +7,8 @@ use std::{
 
 use dashmap::try_result::TryResult;
 use pumpkin_data::entity::EntityType;
-use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::vector2::Vector2;
 
 use crate::{
     entity::{
@@ -494,8 +494,8 @@ mod tests {
         effect::StatusEffect, entity::EntityType, item::Item, item_stack::ItemStack, potion::Effect,
     };
     use pumpkin_nbt::NbtCompound;
-    use pumpkin_util::math::vector3::Vector3;
     use pumpkin_world::chunk::ChunkData;
+    use sculith_util::math::vector3::Vector3;
 
     use crate::data::VanillaData;
     use crate::entity::living::MobEffectDelivery;

@@ -1,8 +1,8 @@
 use crate::pumpkin::plugin::forms::{
     CustomForm, CustomFormElement, Host, ImageType, ModalForm, SimpleForm,
 };
-use pumpkin_util::translation::Locale;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_util::translation::Locale;
 use serde_json::{Value, json};
 use wasmtime::component::Resource;
 

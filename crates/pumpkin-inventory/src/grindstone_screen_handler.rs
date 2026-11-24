@@ -12,7 +12,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::screen::WindowType;
 use pumpkin_data::tag::Enchantment as EnchantmentTag;
 use pumpkin_data::tag::Taggable;
-use pumpkin_protocol::java::server::play::SlotActionType;
+use sculith_protocol::java::server::play::SlotActionType;
 
 use crate::{
     anvil::anvil_screen_handler::calculate_increased_repair_cost,

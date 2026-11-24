@@ -2,7 +2,7 @@ use super::BlockEntity;
 use crate::block::blocks::sculk::sculk_shrieker::SculkShriekerBlock;
 use crate::world::World;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 

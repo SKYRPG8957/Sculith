@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::block::entities::mob_spawner::MobSpawnerBlockEntity;
 use crate::entity::experience_orb::ExperienceOrbEntity;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::GameMode;
+use sculith_util::GameMode;
 
 use crate::block::{BlockBehaviour, BrokenArgs, OnSyncedBlockEventArgs, PlacedArgs};
 

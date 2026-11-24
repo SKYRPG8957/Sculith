@@ -1,7 +1,7 @@
 use crate::entity::player::Player;
 use crate::entity::player::advancement::{AdvancementDataError, PlayerAdvancement};
 use pumpkin_data::Advancement;
-use pumpkin_util::identifier::Identifier;
+use sculith_util::identifier::Identifier;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::slice;

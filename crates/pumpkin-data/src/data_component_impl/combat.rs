@@ -131,7 +131,7 @@ pub enum ModifierDisplay {
     #[default]
     Default,
     Hidden,
-    Override(pumpkin_util::text::TextComponent),
+    Override(sculith_util::text::TextComponent),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -200,7 +200,7 @@ impl AttributeModifiersImpl {
                             .get("value")
                             .map_or(ModifierDisplay::Default, |v| {
                                 ModifierDisplay::Override(
-                                    pumpkin_util::text::TextComponent::from_nbt(v),
+                                    sculith_util::text::TextComponent::from_nbt(v),
                                 )
                             })
                     }

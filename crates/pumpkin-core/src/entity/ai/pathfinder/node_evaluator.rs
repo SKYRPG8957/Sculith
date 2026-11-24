@@ -2,7 +2,7 @@ use pumpkin_data::attributes::Attributes;
 use rustc_hash::FxHashMap;
 use std::sync::atomic::Ordering;
 
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::entity::ai::pathfinder::{
     node::{Node, PATH_TYPE_COUNT, PathType, Target},

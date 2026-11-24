@@ -1,8 +1,8 @@
 use super::{Controls, Goal, GoalReach, to_goal_ticks};
 use crate::entity::ai::util::{default_random_pos, land_random_pos};
 use crate::entity::{ai::pathfinder::NavigatorGoal, mob::Mob};
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::vector3::Vector3;
 
 type PositionProvider = fn(&dyn Mob) -> Option<Vector3<f64>>;
 

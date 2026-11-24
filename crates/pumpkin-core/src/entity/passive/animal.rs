@@ -12,9 +12,9 @@ use pumpkin_inventory::crafting::recipe_provider::RecipeProvider;
 
 use crate::entity::{EntityBase, mob::Mob, player::Player, r#type::from_type};
 use crate::world::World;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::vector3::Vector3;
 
 pub trait Animal: Mob {
     fn is_food(&self, item_stack: &ItemStack) -> bool;
@@ -70,7 +70,7 @@ pub trait Animal: Mob {
     }
 
     /// Animals prefer grass, then bright spots.
-    fn animal_walk_target_value(&self, pos: &pumpkin_util::math::position::BlockPos) -> f32 {
+    fn animal_walk_target_value(&self, pos: &sculith_util::math::position::BlockPos) -> f32 {
         let world = self.get_mob_entity().living_entity.entity.world.load();
         if world.get_block(&pos.down()).id == pumpkin_data::Block::GRASS_BLOCK.id {
             return 10.0;

@@ -7,11 +7,11 @@ use crate::{
 };
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::{Block, BlockId};
-use pumpkin_protocol::java::client::play::CWorldEvent;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::math::{boundingbox::BoundingBox, vector2::Vector2};
-use pumpkin_util::math::{position::BlockPos, vector2::to_chunk_pos};
 use pumpkin_world::world::BlockFlags;
+use sculith_protocol::java::client::play::CWorldEvent;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::math::{boundingbox::BoundingBox, vector2::Vector2};
+use sculith_util::math::{position::BlockPos, vector2::to_chunk_pos};
 
 const GRAVITY: f64 = 0.05;
 
@@ -132,7 +132,7 @@ impl EntityBase for SplashPotionEntity {
         // Sync the item stack
         entity.set_synced_data(
             pumpkin_data::tracked_data::splash_potion::ITEM_STACK,
-            pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer::from(stack.clone()),
+            sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer::from(stack.clone()),
         );
     }
 
@@ -168,7 +168,7 @@ impl EntityBase for SplashPotionEntity {
         world.send_entity_status(
             self.get_entity(),
             pumpkin_data::entity::EntityStatus::Death,
-            pumpkin_protocol::bedrock::server::actor_event::ActorEventID::Death,
+            sculith_protocol::bedrock::server::actor_event::ActorEventID::Death,
         );
 
         let effects = crate::item::potion::PotionContents::read_potion_effects(&stack);

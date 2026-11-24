@@ -6,8 +6,8 @@ use crate::node::dispatcher::{CommandDispatcher, ResultConsumer};
 use crate::node::tree::Tree;
 use crate::node::{Command, RedirectModifier};
 use crate::source::{CommandSource, DummySource, ReturnValue};
-use pumpkin_util::text::TextComponent;
 use rustc_hash::FxHashMap;
+use sculith_util::text::TextComponent;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -545,7 +545,7 @@ mod test {
     use crate::node::tree::ROOT_NODE_ID;
     use crate::node::{CommandExecutor, CommandExecutorResult, RedirectModifier, Redirection};
     use crate::source::DummySource;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
     use std::sync::Arc;
 
     struct TenExecutor;

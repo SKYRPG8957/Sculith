@@ -2,7 +2,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::recipes::RecipeIngredientTypes;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_protocol::codec::recipe::OwnedRecipeIngredient;
+use sculith_protocol::codec::recipe::OwnedRecipeIngredient;
 
 #[derive(Clone, Copy)]
 pub enum GenericIngredient<'a> {

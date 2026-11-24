@@ -4,7 +4,7 @@ use pumpkin_data::noise_router::{
     Axis, ClampedYGradientData, DistanceMetric, DistanceToPointData, GradientData, RangeChoiceData,
     Tiling,
 };
-use pumpkin_util::{
+use sculith_util::{
     math::{clamped_map, vector3::Vector3},
     noise::simplex::SimplexNoiseSampler,
     random::{RandomImpl, legacy_rand::LegacyRand},

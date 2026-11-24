@@ -10,11 +10,11 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::painting_variant::PaintingVariant;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::Metadata;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::Metadata;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::version::JavaMinecraftVersion;
 
 /// The world stores a painting facing as a horizontal value: 0 south, 1 west,
 /// 2 north, 3 east (`Direction.get2DDataValue`). The entity data, and the spawn

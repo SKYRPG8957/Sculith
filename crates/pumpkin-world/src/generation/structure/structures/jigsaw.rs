@@ -7,10 +7,10 @@ use crate::generation::structure::structures::{
 use crate::generation::structure::template::{
     BlockMirror, BlockPlacer, BlockRotation, PaletteEntry, StructureTemplate,
 };
-use pumpkin_util::math::block_box::BlockBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomDeriverImpl, RandomImpl};
+use sculith_util::math::block_box::BlockBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomDeriverImpl, RandomImpl};
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -392,7 +392,7 @@ impl PoolElementKind {
         &self,
         offset: BlockPos,
         rotation: pumpkin_data::Rotation,
-        random: &mut pumpkin_util::random::RandomGenerator,
+        random: &mut sculith_util::random::RandomGenerator,
     ) -> Vec<JigsawBlock> {
         match self {
             Self::Single {
@@ -438,8 +438,8 @@ impl PoolElementKind {
                 pool: "minecraft:empty".to_string(),
                 final_state: "minecraft:air".to_string(),
                 joint: JigsawJointType::Rollable,
-                facing: pumpkin_util::BlockDirection::Down,
-                up: pumpkin_util::BlockDirection::South,
+                facing: sculith_util::BlockDirection::Down,
+                up: sculith_util::BlockDirection::South,
                 selection_priority: 0,
                 placement_priority: 0,
             }],
@@ -477,7 +477,7 @@ impl PoolElement {
         &self,
         offset: BlockPos,
         rotation: pumpkin_data::Rotation,
-        random: &mut pumpkin_util::random::RandomGenerator,
+        random: &mut sculith_util::random::RandomGenerator,
     ) -> Vec<JigsawBlock> {
         self.kind
             .get_shuffled_jigsaw_blocks(offset, rotation, random)
@@ -495,7 +495,7 @@ impl TemplatePool {
     }
     pub fn get_random_element(
         &self,
-        random: &mut pumpkin_util::random::RandomGenerator,
+        random: &mut sculith_util::random::RandomGenerator,
     ) -> Arc<PoolElement> {
         let total_weight: u32 = self.elements.iter().map(|e| e.weight).sum();
         if total_weight == 0 {
@@ -623,7 +623,7 @@ impl TemplatePool {
     #[must_use]
     pub fn get_shuffled_elements(
         &self,
-        random: &mut pumpkin_util::random::RandomGenerator,
+        random: &mut sculith_util::random::RandomGenerator,
     ) -> Vec<Arc<PoolElement>> {
         let mut elements = self
             .elements
@@ -671,8 +671,8 @@ pub struct JigsawBlock {
     pub pool: String,
     pub final_state: String,
     pub joint: JigsawJointType,
-    pub facing: pumpkin_util::BlockDirection,
-    pub up: pumpkin_util::BlockDirection,
+    pub facing: sculith_util::BlockDirection,
+    pub up: sculith_util::BlockDirection,
     pub selection_priority: i32,
     pub placement_priority: i32,
 }
@@ -684,7 +684,7 @@ impl JigsawBlock {
         palette: &PaletteEntry,
     ) -> Option<Self> {
         use pumpkin_data::block_properties::{Orientation, Property};
-        use pumpkin_util::BlockDirection;
+        use sculith_util::BlockDirection;
 
         if palette.name != "minecraft:jigsaw" {
             return None;
@@ -737,7 +737,7 @@ impl JigsawBlock {
     #[must_use]
     pub fn can_attach(
         source: &Self,
-        target_facing: pumpkin_util::BlockDirection,
+        target_facing: sculith_util::BlockDirection,
         target_name: &str,
     ) -> bool {
         source.facing.opposite() == target_facing && source.target == target_name
@@ -747,7 +747,7 @@ impl JigsawBlock {
 impl From<&pumpkin_data::structure_metadata::StaticJigsawBlock> for JigsawBlock {
     fn from(static_jigsaw: &pumpkin_data::structure_metadata::StaticJigsawBlock) -> Self {
         Self {
-            pos: BlockPos(pumpkin_util::math::vector3::Vector3::new(
+            pos: BlockPos(sculith_util::math::vector3::Vector3::new(
                 static_jigsaw.pos[0],
                 static_jigsaw.pos[1],
                 static_jigsaw.pos[2],
@@ -812,12 +812,12 @@ impl StructurePieceBase for PoolElementStructurePiece {
         &mut self,
         chunk: &mut crate::ProtoChunk,
         block_registry: &dyn crate::world::WorldPortalExt,
-        random: &mut pumpkin_util::random::RandomGenerator,
+        random: &mut sculith_util::random::RandomGenerator,
         _seed: i64,
-        chunk_box: &pumpkin_util::math::block_box::BlockBox,
+        chunk_box: &sculith_util::math::block_box::BlockBox,
     ) {
         let origin =
-            pumpkin_util::math::vector3::Vector3::new(self.pos.0.x, self.pos.0.y, self.pos.0.z);
+            sculith_util::math::vector3::Vector3::new(self.pos.0.x, self.pos.0.y, self.pos.0.z);
 
         self.element
             .for_each_template(|_name, processor_list, legacy, template| {
@@ -825,7 +825,7 @@ impl StructurePieceBase for PoolElementStructurePiece {
                     template.size.x.saturating_sub(1),
                     template.size.z.saturating_sub(1),
                 );
-                let placement_origin = pumpkin_util::math::vector3::Vector3::new(
+                let placement_origin = sculith_util::math::vector3::Vector3::new(
                     origin.x + corner.0.min(0),
                     origin.y,
                     origin.z + corner.1.min(0),
@@ -1037,7 +1037,7 @@ impl JigsawGenerator {
         };
 
         let mut alias_random =
-            pumpkin_util::random::legacy_rand::LegacyRand::from_seed(context.seed as u64)
+            sculith_util::random::legacy_rand::LegacyRand::from_seed(context.seed as u64)
                 .next_splitter()
                 .split_pos(start_pos.0.x, start_pos.0.y, start_pos.0.z);
         let pool_alias_lookup = PoolAliasLookup::from_bindings(pool_aliases, &mut alias_random);
@@ -1269,7 +1269,7 @@ mod tests {
     fn pillager_outpost_builds_the_vanilla_jigsaw_graph() {
         const SEED: i64 = 1_782_124_772_053_846_960;
         let world_gen = crate::generation::get_world_gen(
-            pumpkin_util::world_seed::Seed(SEED as u64),
+            sculith_util::world_seed::Seed(SEED as u64),
             pumpkin_data::dimension::Dimension::OVERWORLD,
             false,
             Vec::new(),

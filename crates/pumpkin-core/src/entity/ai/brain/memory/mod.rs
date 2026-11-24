@@ -400,7 +400,7 @@ impl PackedMemories {
 #[cfg(test)]
 mod tests {
     use pumpkin_data::dimension::Dimension;
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
 
     use super::*;
 

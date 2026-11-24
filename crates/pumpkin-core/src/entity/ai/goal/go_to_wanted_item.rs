@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::{Controls, Goal};
 use crate::entity::EntityBase;

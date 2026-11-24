@@ -22,9 +22,9 @@ use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::text::TextComponent;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
+use sculith_util::text::TextComponent;
 
 struct HopperBlockScreenFactory(Arc<dyn Inventory>);
 

@@ -6,10 +6,10 @@ use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 const DESCRIPTION: &str = "Constantly load chunks in the world.";
 const PERMISSION: &str = "minecraft:command.forceload";

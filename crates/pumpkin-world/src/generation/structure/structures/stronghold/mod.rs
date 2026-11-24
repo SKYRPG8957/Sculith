@@ -7,7 +7,7 @@ use pumpkin_data::{
         OakFenceLikeProperties,
     },
 };
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::{block_box::BlockBox, position::BlockPos},
     random::{RandomGenerator, RandomImpl},

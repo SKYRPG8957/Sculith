@@ -23,8 +23,8 @@ use pumpkin_data::screen::WindowType;
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::codec::recipe::DynamicRecipe;
-use pumpkin_protocol::java::server::play::SlotActionType;
+use sculith_protocol::codec::recipe::DynamicRecipe;
+use sculith_protocol::java::server::play::SlotActionType;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SmithingInputSlotKind {

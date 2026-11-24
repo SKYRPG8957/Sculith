@@ -1730,19 +1730,19 @@ impl pumpkin::plugin::context::HostContext for PluginHostState {
             children.insert(child.node, child.value);
         }
 
-        let util_permission = pumpkin_util::permission::Permission {
+        let util_permission = sculith_util::permission::Permission {
             node: permission.node,
             description: permission.description,
             default: match permission.default {
-                PermissionDefault::Deny => pumpkin_util::permission::PermissionDefault::Deny,
-                PermissionDefault::Allow => pumpkin_util::permission::PermissionDefault::Allow,
+                PermissionDefault::Deny => sculith_util::permission::PermissionDefault::Deny,
+                PermissionDefault::Allow => sculith_util::permission::PermissionDefault::Allow,
                 PermissionDefault::Op(lvl) => {
-                    pumpkin_util::permission::PermissionDefault::Op(match lvl {
-                        PermissionLevel::Zero => pumpkin_util::permission::PermissionLvl::Zero,
-                        PermissionLevel::One => pumpkin_util::permission::PermissionLvl::One,
-                        PermissionLevel::Two => pumpkin_util::permission::PermissionLvl::Two,
-                        PermissionLevel::Three => pumpkin_util::permission::PermissionLvl::Three,
-                        PermissionLevel::Four => pumpkin_util::permission::PermissionLvl::Four,
+                    sculith_util::permission::PermissionDefault::Op(match lvl {
+                        PermissionLevel::Zero => sculith_util::permission::PermissionLvl::Zero,
+                        PermissionLevel::One => sculith_util::permission::PermissionLvl::One,
+                        PermissionLevel::Two => sculith_util::permission::PermissionLvl::Two,
+                        PermissionLevel::Three => sculith_util::permission::PermissionLvl::Three,
+                        PermissionLevel::Four => sculith_util::permission::PermissionLvl::Four,
                     })
                 }
             },
@@ -1759,7 +1759,7 @@ impl pumpkin::plugin::context::HostContext for PluginHostState {
         versions: Vec<pumpkin::plugin::player::JavaMinecraftVersion>,
     ) -> wasmtime::Result<()> {
         let context_res = self.get(&context)?;
-        let native_versions: Vec<pumpkin_util::version::JavaMinecraftVersion> = versions
+        let native_versions: Vec<sculith_util::version::JavaMinecraftVersion> = versions
             .into_iter()
             .map(crate::player::from_wasm_java_version)
             .collect();

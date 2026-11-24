@@ -7,7 +7,7 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tag;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_util::Hand;
+use sculith_util::Hand;
 
 pub struct BundleItem;
 

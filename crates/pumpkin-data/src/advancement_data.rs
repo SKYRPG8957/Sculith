@@ -4,9 +4,9 @@ use crate::translation::java::{
     CHAT_TYPE_ADVANCEMENT_CHALLENGE, CHAT_TYPE_ADVANCEMENT_GOAL, CHAT_TYPE_ADVANCEMENT_TASK,
 };
 use crate::{ADVANCEMENT_TREE, Advancement};
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::color::NamedColor;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
+use sculith_util::text::color::NamedColor;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Display;

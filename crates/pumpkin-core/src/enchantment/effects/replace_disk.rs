@@ -3,9 +3,9 @@ use std::sync::Arc;
 use pumpkin_data::BlockState;
 use pumpkin_data::enchantment::{LevelBasedValue, ReplaceDiskPredicate};
 use pumpkin_data::game_event::GameEvent;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::world::World;
 

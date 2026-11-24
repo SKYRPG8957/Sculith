@@ -20,7 +20,7 @@ pub(super) struct BedrockValues<'a> {
 
 impl<'a> BedrockValues<'a> {
     pub(super) fn load(legacy: Option<&'a HashMap<&'a str, Vec<&'a str>>>) -> Self {
-        let root = Path::new("../../crates/pumpkin-protocol/src/bedrock");
+        let root = Path::new("../../crates/sculith-protocol/src/bedrock");
         let paths = [
             root.join("server"),
             root.join("client"),
@@ -35,7 +35,7 @@ impl<'a> BedrockValues<'a> {
                 relative.with_extension("")
             };
             let module = format!(
-                "pumpkin_protocol::bedrock::{}",
+                "sculith_protocol::bedrock::{}",
                 relative.to_string_lossy().replace('/', "::")
             );
             let file = syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap();

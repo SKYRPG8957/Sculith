@@ -13,7 +13,7 @@ use pumpkin_world::chunk::{
     palette::{BeNetworkSerialization, NetworkPalette},
 };
 
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::{var_int::VarInt, var_uint::VarUInt},
     serial::PacketWrite,
 };
@@ -55,7 +55,7 @@ pub struct CLevelChunk<'a> {
     pub block_actors: &'a [NbtCompound],
 }
 
-impl pumpkin_protocol::packet::Packet for CLevelChunk<'_> {
+impl sculith_protocol::packet::Packet for CLevelChunk<'_> {
     const PACKET_ID: i32 = pumpkin_data::bedrock_packet::LEVEL_CHUNK;
 }
 
@@ -277,7 +277,7 @@ mod tests {
     use pumpkin_world::chunk::ChunkData;
 
     use super::{CLevelChunk, VERSION};
-    use pumpkin_protocol::serial::PacketWrite;
+    use sculith_protocol::serial::PacketWrite;
 
     fn read_var_uint(data: &[u8], offset: &mut usize) -> u32 {
         let mut value = 0;
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn inline_frame_tracks_both_palettes_and_the_loaded_chunk() {
         use crate::net::bedrock::frame_raw_packet;
-        use pumpkin_protocol::packet::Packet;
+        use sculith_protocol::packet::Packet;
         use std::sync::Arc;
 
         let cache = super::InlineChunkCache::default();

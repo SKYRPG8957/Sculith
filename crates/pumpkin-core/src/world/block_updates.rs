@@ -5,16 +5,16 @@ use std::{
 
 use bytes::Bytes;
 use pumpkin_data::{BlockState, BlockStateId, packet::CURRENT_MC_VERSION};
-use pumpkin_protocol::{
+use pumpkin_world::chunk::palette::bedrock_water_state;
+use sculith_protocol::{
     bedrock::client::CUpdateBlock,
     java::client::play::{CBlockUpdate, CMultiBlockUpdate},
 };
-use pumpkin_util::math::{
+use sculith_util::math::{
     position::{BlockPos, chunk_section_from_pos},
     vector2::Vector2,
     vector3::Vector3,
 };
-use pumpkin_world::chunk::palette::bedrock_water_state;
 
 use crate::{
     entity::player::Player,
@@ -288,7 +288,7 @@ impl World {
 
 fn encode_java_updates(
     updates: &[(BlockPos, BlockStateId)],
-) -> Result<Bytes, pumpkin_protocol::ser::WritingError> {
+) -> Result<Bytes, sculith_protocol::ser::WritingError> {
     if let [(pos, state)] = updates {
         let packet = CBlockUpdate::new(*pos, i32::from(state.as_u16()).into());
         JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION)

@@ -1,4 +1,4 @@
-use pumpkin_util::permission::PermissionLvl;
+use sculith_util::permission::PermissionLvl;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

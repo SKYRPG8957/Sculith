@@ -8,9 +8,9 @@ use pumpkin_data::block_properties::{Facing, LanternLikeProperties};
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockAccessor;
+use sculith_util::math::position::BlockPos;
 
 #[pumpkin_block_from_tag("minecraft:lanterns")]
 pub struct LanternBlock;

@@ -6,8 +6,8 @@ use crate::errors::error_types::CommandErrorType;
 use crate::string_reader::StringReader;
 use crate::suggestion::suggestions::{Suggestions, SuggestionsBuilder, TextCoordinates};
 use pumpkin_data::translation;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
 
 pub const INCOMPLETE_2D_ERROR_TYPE: CommandErrorType<0> = CommandErrorType::new(
     translation::java::ARGUMENT_POS2D_INCOMPLETE,

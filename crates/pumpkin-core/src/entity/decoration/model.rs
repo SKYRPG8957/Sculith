@@ -10,15 +10,15 @@ use pumpkin_data::{
     entity::EntityType, item::Item, item_stack::ItemStack,
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_protocol::{
+use sculith_packs::ModelMapping;
+use sculith_protocol::{
     bedrock::client::{
         move_actor_absolute::CMoveActorAbsolute,
         set_actor_data::{MetadataValue, SyncedActorDataList, entity_data_flag, entity_data_key},
     },
     codec::var_ulong::VarULong,
 };
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
-use sculith_packs::ModelMapping;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::{
     entity::{Entity, EntityBase, living::LivingEntity},
@@ -220,9 +220,9 @@ impl ModelDisplayEntity {
                 actor_runtime_id: VarULong(self.get_entity().entity_id as u64),
                 header: CMoveActorAbsolute::FLAG_TELEPORT,
                 position: position.to_f32_lossy(),
-                rotation_x: pumpkin_util::math::pack_degrees(self.get_entity().pitch.load()),
-                rotation_y: pumpkin_util::math::pack_degrees(self.get_entity().yaw.load()),
-                rotation_y_head: pumpkin_util::math::pack_degrees(
+                rotation_x: sculith_util::math::pack_degrees(self.get_entity().pitch.load()),
+                rotation_y: sculith_util::math::pack_degrees(self.get_entity().yaw.load()),
+                rotation_y_head: sculith_util::math::pack_degrees(
                     self.get_entity().head_yaw.load(),
                 ),
             };

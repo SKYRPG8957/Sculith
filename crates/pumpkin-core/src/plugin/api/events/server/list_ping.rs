@@ -4,7 +4,7 @@ use std::{
 };
 
 use pumpkin_macros::Event;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerListPingAddress {

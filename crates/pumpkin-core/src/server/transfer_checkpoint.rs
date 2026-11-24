@@ -10,13 +10,13 @@ use pumpkin_inventory::{
     Inventory, double::DoubleInventory,
     generic_container_screen_handler::GenericContainerScreenHandler, screen_handler::ScreenHandler,
 };
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::{
     data::checkpoint::{CheckpointFence, SaveCheckpoint},
     level::SyncChunk,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector2::Vector2;
 use tokio::sync::{OwnedMutexGuard, OwnedRwLockWriteGuard};
 use tracing::{debug, error};
 use uuid::Uuid;

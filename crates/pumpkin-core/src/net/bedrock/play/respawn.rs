@@ -1,4 +1,4 @@
-use pumpkin_protocol::bedrock::server::RespawnState;
+use sculith_protocol::bedrock::server::RespawnState;
 
 #[allow(clippy::wildcard_imports)]
 use super::*;

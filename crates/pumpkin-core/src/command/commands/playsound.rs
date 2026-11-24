@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::translation;
-use pumpkin_protocol::IdOr;
-use pumpkin_protocol::java::client::play::CSoundEffect;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::IdOr;
+use sculith_protocol::java::client::play::CSoundEffect;
+use sculith_util::PermissionLvl;
+use sculith_util::identifier::Identifier;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 use crate::command::argument_builder::{
     ArgumentBuilder, LiteralArgumentBuilder, argument, command, literal,
@@ -67,7 +67,7 @@ fn play_sound(
         .or_else(|| Sound::from_name(&sound.to_string()))
         .map_or_else(
             || {
-                IdOr::Value(pumpkin_protocol::SoundEvent {
+                IdOr::Value(sculith_protocol::SoundEvent {
                     sound_name: sound.to_string(),
                     range: None,
                 })

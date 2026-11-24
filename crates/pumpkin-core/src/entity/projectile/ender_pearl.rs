@@ -1,7 +1,7 @@
 use crate::block::blocks::bubble_column;
 use crate::entity::mob::spawn::{EntitySpawnReason, finalize_spawn};
 use crate::entity::projectile::owner::ProjectileOwner;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::projectile::ProjectileHit;
 use crate::{
@@ -15,8 +15,8 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::{EntityPose, EntityStatus};
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::vector3::Vector3;
 
 const GRAVITY: f64 = 0.03;
 const PARTICLE_COUNT: i32 = 32;

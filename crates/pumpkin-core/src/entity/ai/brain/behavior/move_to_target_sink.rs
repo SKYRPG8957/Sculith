@@ -1,9 +1,9 @@
 use std::f64::consts::FRAC_PI_2;
 use std::sync::Arc;
 
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use super::super::BrainTick;
 use super::super::memory::position_tracker::PositionTracker;

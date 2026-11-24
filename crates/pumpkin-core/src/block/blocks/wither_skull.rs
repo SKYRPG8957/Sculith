@@ -4,8 +4,8 @@ use pumpkin_data::{
     tag::{self, Taggable},
     world::WorldEvent,
 };
-use pumpkin_util::{Difficulty, math::position::BlockPos};
 use pumpkin_world::world::BlockFlags;
+use sculith_util::{Difficulty, math::position::BlockPos};
 use std::sync::Arc;
 
 use crate::block::entities::skull::SkullBlockEntity;

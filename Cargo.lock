@@ -3007,7 +3007,7 @@ dependencies = [
  "md5",
  "proc-macro2",
  "pumpkin-nbt",
- "pumpkin-util",
+ "sculith-util",
  "quote",
  "rayon",
  "semver",
@@ -3026,8 +3026,8 @@ dependencies = [
  "pumpkin-codecs",
  "pumpkin-data",
  "pumpkin-nbt",
- "pumpkin-protocol",
- "pumpkin-util",
+ "sculith-protocol",
+ "sculith-util",
  "rustc-hash",
  "serde_json",
  "tracing",
@@ -3038,7 +3038,7 @@ dependencies = [
 name = "pumpkin-config"
 version = "0.2.2+26.3-26.63"
 dependencies = [
- "pumpkin-util",
+ "sculith-util",
  "rand 0.10.3",
  "serde",
  "toml",
@@ -3078,8 +3078,8 @@ dependencies = [
  "pumpkin-inventory",
  "pumpkin-macros",
  "pumpkin-nbt",
- "pumpkin-protocol",
- "pumpkin-util",
+ "sculith-protocol",
+ "sculith-util",
  "pumpkin-world",
  "rand 0.10.3",
  "rayon",
@@ -3119,7 +3119,7 @@ dependencies = [
  "flate2",
  "phf",
  "pumpkin-nbt",
- "pumpkin-util",
+ "sculith-util",
  "rand 0.10.3",
  "reqwest",
  "rustls",
@@ -3146,7 +3146,7 @@ dependencies = [
  "pumpkin-data",
  "pumpkin-macros",
  "pumpkin-nbt",
- "pumpkin-util",
+ "sculith-util",
  "pumpkin-world",
  "serde",
  "serde_json",
@@ -3160,8 +3160,8 @@ version = "0.2.2+26.3-26.63"
 dependencies = [
  "pumpkin-data",
  "pumpkin-nbt",
- "pumpkin-protocol",
- "pumpkin-util",
+ "sculith-protocol",
+ "sculith-util",
  "rand 0.10.3",
  "rustc-hash",
  "thiserror 2.0.21",
@@ -3235,7 +3235,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pumpkin-protocol"
+name = "sculith-protocol"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "aes 0.9.4",
@@ -3248,7 +3248,7 @@ dependencies = [
  "pumpkin-data",
  "pumpkin-macros",
  "pumpkin-nbt",
- "pumpkin-util",
+ "sculith-util",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -3276,8 +3276,8 @@ dependencies = [
  "pumpkin-core",
  "pumpkin-data",
  "pumpkin-gametest",
- "pumpkin-protocol",
- "pumpkin-util",
+ "sculith-protocol",
+ "sculith-util",
  "rayon",
  "rustls",
  "serde_json",
@@ -3288,7 +3288,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pumpkin-util"
+name = "sculith-util"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "bytes",
@@ -3339,7 +3339,7 @@ dependencies = [
  "pumpkin-data",
  "pumpkin-inventory",
  "pumpkin-plugin-runtime",
- "pumpkin-util",
+ "sculith-util",
  "pumpkin-world",
  "serde",
  "serde_json",
@@ -3365,8 +3365,8 @@ dependencies = [
  "pumpkin-inventory",
  "pumpkin-macros",
  "pumpkin-nbt",
- "pumpkin-protocol",
- "pumpkin-util",
+ "sculith-protocol",
+ "sculith-util",
  "pumpkin-wasm-host-common",
  "pumpkin-world",
  "rand 0.10.3",
@@ -3390,8 +3390,8 @@ dependencies = [
  "pumpkin-inventory",
  "pumpkin-macros",
  "pumpkin-nbt",
- "pumpkin-protocol",
- "pumpkin-util",
+ "sculith-protocol",
+ "sculith-util",
  "pumpkin-wasm-host-common",
  "pumpkin-world",
  "rand 0.10.3",
@@ -3423,7 +3423,7 @@ dependencies = [
  "pumpkin-config",
  "pumpkin-data",
  "pumpkin-nbt",
- "pumpkin-util",
+ "sculith-util",
  "rand 0.10.3",
  "rayon",
  "rustc-hash",
@@ -4213,7 +4213,7 @@ dependencies = [
  "pumpkin-config",
  "pumpkin-core",
  "pumpkin-data",
- "pumpkin-util",
+ "sculith-util",
  "pumpkin-wasm-host",
  "pumpkin-world",
  "rayon",
@@ -4229,7 +4229,7 @@ dependencies = [
  "pumpkin-core",
  "pumpkin-data",
  "pumpkin-inventory",
- "pumpkin-protocol",
+ "sculith-protocol",
  "pumpkin-world",
  "serde_json",
 ]

@@ -5,11 +5,11 @@ use crate::pumpkin::plugin::recipe::{
     ShapelessRecipe as WitShapelessRecipe,
 };
 use pumpkin_data::recipes::RecipeCategoryTypes;
-use pumpkin_protocol::codec::recipe::{
+use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_protocol::codec::recipe::{
     DynamicRecipe, OwnedCookingRecipe, OwnedCookingRecipeType, OwnedCraftingRecipe,
     OwnedRecipeIngredient, OwnedRecipeResult,
 };
-use pumpkin_wasm_host_common::state::PluginHostState;
 use wasmtime::component::Resource;
 
 impl RecipeHost for PluginHostState {}

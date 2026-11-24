@@ -20,11 +20,11 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use pumpkin_world::{tick::TickPriority, world::BlockFlags};
+use sculith_util::{
     GameMode, Hand,
     math::{position::BlockPos, vector3::Vector3},
 };
-use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 use uuid::Uuid;
 
 use crate::world::World;

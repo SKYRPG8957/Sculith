@@ -9,7 +9,7 @@ use crate::block_properties::{
     NorthWall, Orientation, Property, RailShape, SouthRedstone, SouthWall, StairsShape,
     WestRedstone, WestWall,
 };
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use serde::Deserialize;
 
 /// Rotation around the Y axis in 90-degree increments.
@@ -181,10 +181,10 @@ impl Rotation {
 
     /// Converts rotation to a primary axis for bounding box creation.
     #[must_use]
-    pub const fn to_axis(self) -> pumpkin_util::math::vector3::Axis {
+    pub const fn to_axis(self) -> sculith_util::math::vector3::Axis {
         match self {
-            Self::None | Self::Rotate180 => pumpkin_util::math::vector3::Axis::Z,
-            Self::Clockwise90 | Self::CounterClockwise90 => pumpkin_util::math::vector3::Axis::X,
+            Self::None | Self::Rotate180 => sculith_util::math::vector3::Axis::Z,
+            Self::Clockwise90 | Self::CounterClockwise90 => sculith_util::math::vector3::Axis::X,
         }
     }
 

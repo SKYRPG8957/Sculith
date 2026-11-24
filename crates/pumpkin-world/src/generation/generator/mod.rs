@@ -115,7 +115,7 @@ impl WorldGenerator {
     #[must_use]
     pub fn has_structure_piece_at(
         &self,
-        pos: pumpkin_util::math::position::BlockPos,
+        pos: sculith_util::math::position::BlockPos,
         wanted: &[StructureKeys],
     ) -> bool {
         match self {
@@ -136,10 +136,10 @@ impl WorldGenerator {
     }
 
     #[must_use]
-    pub fn find_spawn_position(&self) -> pumpkin_util::math::position::BlockPos {
+    pub fn find_spawn_position(&self) -> sculith_util::math::position::BlockPos {
         match self {
             Self::Noise(noise_gen) => noise_gen.find_spawn_position(),
-            _ => pumpkin_util::math::position::BlockPos::ZERO,
+            _ => sculith_util::math::position::BlockPos::ZERO,
         }
     }
 }
@@ -181,7 +181,7 @@ impl VanillaGenerator {
     #[must_use]
     pub fn has_structure_piece_at(
         &self,
-        pos: pumpkin_util::math::position::BlockPos,
+        pos: sculith_util::math::position::BlockPos,
         wanted: &[StructureKeys],
     ) -> bool {
         let dimension = &self.dimension;
@@ -212,9 +212,9 @@ impl VanillaGenerator {
     }
 
     #[must_use]
-    pub fn find_spawn_position(&self) -> pumpkin_util::math::position::BlockPos {
+    pub fn find_spawn_position(&self) -> sculith_util::math::position::BlockPos {
         if self.settings.spawn_target.is_empty() {
-            return pumpkin_util::math::position::BlockPos::ZERO;
+            return sculith_util::math::position::BlockPos::ZERO;
         }
         let mut sampler =
             crate::generation::noise::router::multi_noise_sampler::MultiNoiseSampler::generate(

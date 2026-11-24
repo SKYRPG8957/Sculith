@@ -129,7 +129,7 @@ mod tests {
     use super::*;
     use crate::entity::{ai::test_support::world, r#type::from_type};
     use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
     use uuid::Uuid;
 
     #[tokio::test]

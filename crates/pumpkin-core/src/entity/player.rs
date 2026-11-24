@@ -40,14 +40,15 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::player::ender_chest_inventory::EnderChestInventory;
-use pumpkin_protocol::RawPacket;
-use pumpkin_protocol::bedrock::client::play_status::CPlayStatus;
-use pumpkin_protocol::bedrock::client::set_time::CSetTime;
-use pumpkin_protocol::bedrock::client::update_abilities::{Ability, CUpdateAbilities};
-use pumpkin_protocol::bedrock::client::{
+use pumpkin_world::chunk::ChunkData;
+use sculith_protocol::RawPacket;
+use sculith_protocol::bedrock::client::play_status::CPlayStatus;
+use sculith_protocol::bedrock::client::set_time::CSetTime;
+use sculith_protocol::bedrock::client::update_abilities::{Ability, CUpdateAbilities};
+use sculith_protocol::bedrock::client::{
     CSetActorMotion, CommandPermissionLevel, PlayerPermissionLevel, SerializedAbilitiesData,
 };
-use pumpkin_protocol::bedrock::client::{
+use sculith_protocol::bedrock::client::{
     SerializedAbilitiesDataSerializedLayer,
     add_player::CAddPlayer,
     common::BuildPlatform,
@@ -58,14 +59,13 @@ use pumpkin_protocol::bedrock::client::{
         AttributeData as BedrockAttribute, CUpdateAttributes as CBedrockAttributes,
     },
 };
-use pumpkin_protocol::bedrock::server::{
+use sculith_protocol::bedrock::server::{
     respawn::{RespawnState, SRespawn as SBedrockRespawn},
     text::{SText, TextPacketType},
 };
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_util::translation::Locale;
-use pumpkin_util::version::JavaMinecraftVersion;
-use pumpkin_world::chunk::ChunkData;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_util::translation::Locale;
+use sculith_util::version::JavaMinecraftVersion;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -92,7 +92,7 @@ impl From<BedrockScoreboard> for CustomScoreboard {
 pub struct JavaPlayer<'a>(pub &'a Player);
 
 impl JavaPlayer<'_> {
-    pub async fn send_packet<C: pumpkin_protocol::ClientPacket + Sync>(&self, packet: &C) {
+    pub async fn send_packet<C: sculith_protocol::ClientPacket + Sync>(&self, packet: &C) {
         if let ClientPlatform::Java(client) = self.0.client.as_ref()
             && let Ok(data) = client.serialize_packet(packet)
         {
@@ -141,7 +141,7 @@ impl JavaPlayer<'_> {
 pub struct BedrockPlayer<'a>(pub &'a Player);
 
 impl BedrockPlayer<'_> {
-    pub async fn send_packet<P: pumpkin_protocol::BClientPacket + Sync>(&self, packet: &P) {
+    pub async fn send_packet<P: sculith_protocol::BClientPacket + Sync>(&self, packet: &P) {
         if let ClientPlatform::Bedrock(client) = self.0.client.as_ref()
             && let Ok(data) = client.serialize_packet(packet)
         {
@@ -182,7 +182,7 @@ impl BedrockPlayer<'_> {
     }
 
     #[must_use]
-    pub fn client_data(&self) -> Option<Arc<pumpkin_protocol::bedrock::server::login::ClientData>> {
+    pub fn client_data(&self) -> Option<Arc<sculith_protocol::bedrock::server::login::ClientData>> {
         if let ClientPlatform::Bedrock(client) = self.0.client.as_ref() {
             let data = client.client_data.load();
             (**data).clone()
@@ -287,15 +287,18 @@ use pumpkin_inventory::sync_handler::SyncHandler;
 use pumpkin_macros::send_cancellable;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::IdOr;
-use pumpkin_protocol::SoundEvent;
-use pumpkin_protocol::bedrock::client::container_open::CContainerOpen;
-use pumpkin_protocol::bedrock::client::{CUpdateEquip, HORSE_CONTAINER_TYPE};
-use pumpkin_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::codec::var_long::VarLong;
-use pumpkin_protocol::codec::var_ulong::VarULong;
-use pumpkin_protocol::java::client::play::{
+use pumpkin_world::biome;
+use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
+use pumpkin_world::world::BlockFlags;
+use sculith_protocol::IdOr;
+use sculith_protocol::SoundEvent;
+use sculith_protocol::bedrock::client::container_open::CContainerOpen;
+use sculith_protocol::bedrock::client::{CUpdateEquip, HORSE_CONTAINER_TYPE};
+use sculith_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::codec::var_long::VarLong;
+use sculith_protocol::codec::var_ulong::VarULong;
+use sculith_protocol::java::client::play::{
     Animation, CAcknowledgeBlockChange, CActionBar, CAwardStats, CBlockUpdate, CChangeDifficulty,
     CCloseContainer, CCombatDeath, CCustomPayload, CDisguisedChatMessage, CEntityAnimation,
     CEntityPositionSync, CEntityVelocity, CGameEvent, CHurtAnimation, CItemCooldown, CMapItemData,
@@ -307,23 +310,20 @@ use pumpkin_protocol::java::client::play::{
     CUpdateMobEffect, CUpdateTime, GameEvent, MapIcon, MapPatch, PlayerAction, PlayerInfoFlags,
     PlayerSpawnData, PreviousMessage, Statistic,
 };
-use pumpkin_protocol::java::server::play::{
+use sculith_protocol::java::server::play::{
     SClickSlot, SContainerButtonClick, SRenameItem, SlotActionType,
 };
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::math::{
+use sculith_util::identifier::Identifier;
+use sculith_util::math::{
     boundingbox::BoundingBox, experience, position::BlockPos, vector2::Vector2, vector3::Vector3,
 };
-use pumpkin_util::permission::PermissionLvl;
-use pumpkin_util::resource_location::ResourceLocation;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::click::ClickEvent;
-use pumpkin_util::text::color::NamedColor;
-use pumpkin_util::text::hover::HoverEvent;
-use pumpkin_util::{Difficulty, GameMode, Hand};
-use pumpkin_world::biome;
-use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
-use pumpkin_world::world::BlockFlags;
+use sculith_util::permission::PermissionLvl;
+use sculith_util::resource_location::ResourceLocation;
+use sculith_util::text::TextComponent;
+use sculith_util::text::click::ClickEvent;
+use sculith_util::text::color::NamedColor;
+use sculith_util::text::hover::HoverEvent;
+use sculith_util::{Difficulty, GameMode, Hand};
 
 use crate::block;
 use crate::block::blocks::straw_bed::StrawBedBlock;
@@ -442,8 +442,8 @@ pub const MINE_BLOCK_EXHAUSTION: f32 = 0.005; // Vanilla: 0.005F
 const fn bedrock_container_slot(
     window_type: Option<WindowType>,
     slot_idx: usize,
-) -> Option<(pumpkin_protocol::bedrock::network_item::ContainerName, u8)> {
-    use pumpkin_protocol::bedrock::network_item::ContainerName;
+) -> Option<(sculith_protocol::bedrock::network_item::ContainerName, u8)> {
+    use sculith_protocol::bedrock::network_item::ContainerName;
     match window_type {
         Some(WindowType::Crafting) => match slot_idx {
             0 => Some((ContainerName::CreatedOutput, 0)),
@@ -546,8 +546,8 @@ const fn bedrock_container_slot(
 const fn bedrock_mount_slot(
     equip_slot: usize,
     slot_idx: usize,
-) -> Option<(pumpkin_protocol::bedrock::network_item::ContainerName, u8)> {
-    use pumpkin_protocol::bedrock::network_item::ContainerName;
+) -> Option<(sculith_protocol::bedrock::network_item::ContainerName, u8)> {
+    use sculith_protocol::bedrock::network_item::ContainerName;
     if slot_idx == equip_slot {
         Some((ContainerName::HorseEquip, 0))
     } else if slot_idx >= MountScreenHandler::SLOT_INVENTORY_START {
@@ -833,16 +833,16 @@ pub struct Player {
     pub per_player_time: AtomicCell<Option<(u64, bool)>>,
     pub per_player_weather: AtomicCell<Option<PlayerWeather>>,
     pub custom_scoreboard: std::sync::Mutex<Option<CustomScoreboard>>,
-    pub compass_target: AtomicCell<Option<pumpkin_util::math::position::BlockPos>>,
-    pub respawn_location: AtomicCell<Option<pumpkin_util::math::position::BlockPos>>,
+    pub compass_target: AtomicCell<Option<sculith_util::math::position::BlockPos>>,
+    pub respawn_location: AtomicCell<Option<sculith_util::math::position::BlockPos>>,
     pub hidden_players: Mutex<std::collections::HashSet<uuid::Uuid>>,
     pub advancements: Arc<Mutex<PlayerAdvancement>>,
     pub enchantment_seed: AtomicI32,
     /// Ticks spent gliding, vanilla `fallFlyTicks`
     pub fall_fly_ticks: AtomicI32,
     pub fishing_bobber: AtomicI32,
-    pub bedrock_skin: arc_swap::ArcSwap<pumpkin_protocol::bedrock::client::Skin>,
-    bedrock_roster: std::sync::Mutex<Option<(Arc<pumpkin_protocol::bedrock::client::Skin>, Bytes)>>,
+    pub bedrock_skin: arc_swap::ArcSwap<sculith_protocol::bedrock::client::Skin>,
+    bedrock_roster: std::sync::Mutex<Option<(Arc<sculith_protocol::bedrock::client::Skin>, Bytes)>>,
     pub seen_credits: AtomicBool,
     pub warden_spawn_tracker: std::sync::Mutex<WardenSpawnTracker>,
     pub score: AtomicI32,
@@ -855,7 +855,7 @@ pub struct Player {
 }
 
 use base64::prelude::*;
-use pumpkin_protocol::Property;
+use sculith_protocol::Property;
 use serde::Deserialize;
 
 // Bit masks for the Java skin pixels that Bedrock requires to be opaque.
@@ -945,7 +945,7 @@ impl Player {
 
     pub async fn fetch_skin(
         properties: &[Property],
-    ) -> Option<pumpkin_protocol::bedrock::client::Skin> {
+    ) -> Option<sculith_protocol::bedrock::client::Skin> {
         let textures_prop = properties.iter().find(|p| &*p.name == "textures")?;
         let decoded = BASE64_STANDARD
             .decode(textures_prop.value.as_bytes())
@@ -976,7 +976,7 @@ impl Player {
             }
         }
 
-        let mut skin = pumpkin_protocol::bedrock::client::Skin::steve();
+        let mut skin = sculith_protocol::bedrock::client::Skin::steve();
         skin.set_slim(is_slim);
         skin.image_width = width;
         skin.image_height = height;
@@ -1053,7 +1053,7 @@ impl Player {
         let mut abilities = Abilities::default();
         abilities.set_for_gamemode(gamemode);
 
-        let mut bedrock_skin = pumpkin_protocol::bedrock::client::Skin::steve();
+        let mut bedrock_skin = sculith_protocol::bedrock::client::Skin::steve();
 
         // Standard_Custom is a shared placeholder. Give fallback skins a stable,
         // per-player identity so Bedrock never sees duplicate skin IDs.
@@ -1226,7 +1226,7 @@ impl Player {
             return false;
         }
         effects.push(effect);
-        self.try_send_client_packet(&pumpkin_protocol::java::client::play::CPostEffects::new(
+        self.try_send_client_packet(&sculith_protocol::java::client::play::CPostEffects::new(
             &effects,
         ));
         true
@@ -1239,7 +1239,7 @@ impl Player {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         effects.iter().position(|e| e == effect).is_some_and(|pos| {
             effects.remove(pos);
-            self.try_send_client_packet(&pumpkin_protocol::java::client::play::CPostEffects::new(
+            self.try_send_client_packet(&sculith_protocol::java::client::play::CPostEffects::new(
                 &effects,
             ));
             true
@@ -1256,7 +1256,7 @@ impl Player {
         }
         let count = effects.len();
         effects.clear();
-        self.try_send_client_packet(&pumpkin_protocol::java::client::play::CPostEffects::new(
+        self.try_send_client_packet(&sculith_protocol::java::client::play::CPostEffects::new(
             &effects,
         ));
         count
@@ -1267,7 +1267,7 @@ impl Player {
             .post_effects
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.try_send_client_packet(&pumpkin_protocol::java::client::play::CPostEffects::new(
+        self.try_send_client_packet(&sculith_protocol::java::client::play::CPostEffects::new(
             &effects,
         ));
     }
@@ -1350,7 +1350,7 @@ impl Player {
                 .unwrap_or(&group)
                 .to_owned();
             client.try_enqueue_client_packet(
-                &pumpkin_protocol::bedrock::client::CStartItemCooldown {
+                &sculith_protocol::bedrock::client::CStartItemCooldown {
                     category,
                     duration: VarInt(duration.max(0)),
                 },
@@ -1408,7 +1408,7 @@ impl Player {
         let world = self.world();
         world.broadcast_packet_all(&CPlayerInfoUpdate::new(
             PlayerInfoFlags::UPDATE_DISPLAY_NAME.bits(),
-            &[pumpkin_protocol::java::client::play::Player {
+            &[sculith_protocol::java::client::play::Player {
                 uuid: self.gameprofile.id,
                 actions: &[PlayerAction::UpdateDisplayName(guard.as_ref())],
             }],
@@ -1431,7 +1431,7 @@ impl Player {
         let world = self.world();
         world.broadcast_packet_all(&CPlayerInfoUpdate::new(
             PlayerInfoFlags::UPDATE_DISPLAY_NAME.bits(),
-            &[pumpkin_protocol::java::client::play::Player {
+            &[sculith_protocol::java::client::play::Player {
                 uuid: self.gameprofile.id,
                 actions: &[PlayerAction::UpdateDisplayName(guard.as_ref())],
             }],
@@ -1443,7 +1443,7 @@ impl Player {
         let world = self.world();
         world.broadcast_packet_all(&CPlayerInfoUpdate::new(
             PlayerInfoFlags::UPDATE_LIST_PRIORITY.bits(),
-            &[pumpkin_protocol::java::client::play::Player {
+            &[sculith_protocol::java::client::play::Player {
                 uuid: self.gameprofile.id,
                 actions: &[PlayerAction::UpdateListOrder(VarInt(order))],
             }],
@@ -1455,7 +1455,7 @@ impl Player {
         let world = self.world();
         world.broadcast_packet_all(&CPlayerInfoUpdate::new(
             PlayerInfoFlags::UPDATE_LATENCY.bits(),
-            &[pumpkin_protocol::java::client::play::Player {
+            &[sculith_protocol::java::client::play::Player {
                 uuid: self.gameprofile.id,
                 actions: &[PlayerAction::UpdateLatency(VarInt(latency))],
             }],
@@ -1467,7 +1467,7 @@ impl Player {
         let world = self.world();
         world.broadcast_packet_all(&CPlayerInfoUpdate::new(
             PlayerInfoFlags::UPDATE_LISTED.bits(),
-            &[pumpkin_protocol::java::client::play::Player {
+            &[sculith_protocol::java::client::play::Player {
                 uuid: self.gameprofile.id,
                 actions: &[PlayerAction::UpdateListed(listed)],
             }],
@@ -1491,7 +1491,7 @@ impl Player {
     fn pair_entities_in_chunks(
         &self,
         world: &crate::world::World,
-        chunks: &[pumpkin_util::math::vector2::Vector2<i32>],
+        chunks: &[sculith_util::math::vector2::Vector2<i32>],
     ) {
         if chunks.is_empty() {
             return;
@@ -1511,7 +1511,7 @@ impl Player {
 
     fn bedrock_player_list_for(
         &self,
-        skin: &pumpkin_protocol::bedrock::client::Skin,
+        skin: &sculith_protocol::bedrock::client::Skin,
     ) -> CPlayerList {
         CPlayerList {
             action: CPlayerList::ACTION_ADD,
@@ -1565,8 +1565,8 @@ impl Player {
         let mut entity_data = entity.bedrock_metadata();
         // name tag only shows on the crosshair without this.
         entity_data.set(
-            pumpkin_protocol::bedrock::client::set_actor_data::entity_data_key::ALWAYS_SHOW_NAME_TAG,
-            pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Byte(1),
+            sculith_protocol::bedrock::client::set_actor_data::entity_data_key::ALWAYS_SHOW_NAME_TAG,
+            sculith_protocol::bedrock::client::set_actor_data::MetadataValue::Byte(1),
         );
         CAddPlayer {
             uuid: profile.id,
@@ -2041,8 +2041,8 @@ impl Player {
         if matches!(attack_type, AttackType::Critical) {
             let je_packet =
                 CEntityAnimation::new(victim_entity.entity_id.into(), Animation::CriticalEffect);
-            let be_packet = pumpkin_protocol::bedrock::server::animate::SAnimate {
-                action: pumpkin_protocol::bedrock::server::animate::AnimateAction::CriticalHit,
+            let be_packet = sculith_protocol::bedrock::server::animate::SAnimate {
+                action: sculith_protocol::bedrock::server::animate::AnimateAction::CriticalHit,
                 target_actor_runtime_id: VarULong(victim_entity.entity_id as u64),
                 data: 0.0,
                 swing_source: None,
@@ -2472,9 +2472,9 @@ impl Player {
                 pitch,
                 dimension.minecraft_name.to_owned(),
             ),
-            &pumpkin_protocol::bedrock::client::CSetSpawnPosition {
+            &sculith_protocol::bedrock::client::CSetSpawnPosition {
                 spawn_position_type:
-                    pumpkin_protocol::bedrock::client::SpawnPositionType::PlayerRespawn,
+                    sculith_protocol::bedrock::client::SpawnPositionType::PlayerRespawn,
                 block_position: final_block_pos,
                 dimension_type: bedrock_dimension.into(),
                 spawn_block_pos: final_block_pos,
@@ -2918,8 +2918,8 @@ impl Player {
             TitleMode::Title => {
                 self.client.try_enqueue_packet_editioned(
                     &CTitleText::new(text),
-                    &pumpkin_protocol::bedrock::client::set_title::CSetTitle::new(
-                        pumpkin_protocol::bedrock::client::TitleType::Title,
+                    &sculith_protocol::bedrock::client::set_title::CSetTitle::new(
+                        sculith_protocol::bedrock::client::TitleType::Title,
                         text.clone().get_text(),
                         0,
                         0,
@@ -2930,8 +2930,8 @@ impl Player {
             TitleMode::SubTitle => {
                 self.client.try_enqueue_packet_editioned(
                     &CSubtitle::new(text),
-                    &pumpkin_protocol::bedrock::client::set_title::CSetTitle::new(
-                        pumpkin_protocol::bedrock::client::TitleType::Subtitle,
+                    &sculith_protocol::bedrock::client::set_title::CSetTitle::new(
+                        sculith_protocol::bedrock::client::TitleType::Subtitle,
                         text.clone().get_text(),
                         0,
                         0,
@@ -2942,8 +2942,8 @@ impl Player {
             TitleMode::ActionBar => {
                 self.client.try_enqueue_packet_editioned(
                     &CActionBar::new(text),
-                    &pumpkin_protocol::bedrock::client::set_title::CSetTitle::new(
-                        pumpkin_protocol::bedrock::client::TitleType::Actionbar,
+                    &sculith_protocol::bedrock::client::set_title::CSetTitle::new(
+                        sculith_protocol::bedrock::client::TitleType::Actionbar,
                         text.clone().get_text(),
                         0,
                         0,
@@ -2957,8 +2957,8 @@ impl Player {
     pub fn send_title_animation(&self, fade_in: i32, stay: i32, fade_out: i32) {
         self.try_enqueue_packet_editioned(
             &CTitleAnimation::new(fade_in, stay, fade_out),
-            &pumpkin_protocol::bedrock::client::set_title::CSetTitle::new(
-                pumpkin_protocol::bedrock::client::TitleType::Times,
+            &sculith_protocol::bedrock::client::set_title::CSetTitle::new(
+                sculith_protocol::bedrock::client::TitleType::Times,
                 String::new(),
                 fade_in,
                 stay,
@@ -3044,7 +3044,7 @@ impl Player {
                     .as_ref()
                     .and_then(|server| server.shared_resources.as_ref())
                     .map_or(name, |shared| shared.bedrock_sound_name(name));
-                client.try_enqueue_client_packet(&pumpkin_protocol::bedrock::client::CStopSound {
+                client.try_enqueue_client_packet(&sculith_protocol::bedrock::client::CStopSound {
                     sound_name: name.into(),
                     stop_all: sound_id.is_none(),
                     stop_music_legacy: false,
@@ -3069,7 +3069,7 @@ impl Player {
                 .as_ref()
                 .and_then(|server| server.shared_resources.as_ref())
                 .map_or(sound_name, |shared| shared.bedrock_sound_name(sound_name));
-            if let Some(packet) = pumpkin_protocol::bedrock::client::CPlaySound::new(
+            if let Some(packet) = sculith_protocol::bedrock::client::CPlaySound::new(
                 name.into(),
                 position,
                 volume,
@@ -3080,7 +3080,7 @@ impl Player {
             return;
         }
         self.play_sound_event(
-            pumpkin_protocol::SoundEvent {
+            sculith_protocol::SoundEvent {
                 sound_name: sound_name.into(),
                 range: None,
             },
@@ -3115,7 +3115,7 @@ impl Player {
 
     pub fn send_block_change(&self, location: BlockPos, state_id: u16) {
         let je_packet = CBlockUpdate::new(location, (state_id as i32).into());
-        let be_packet = pumpkin_protocol::bedrock::client::update_block::CUpdateBlock::new(
+        let be_packet = sculith_protocol::bedrock::client::update_block::CUpdateBlock::new(
             location,
             pumpkin_data::BlockState::to_be_network_id(pumpkin_data::BlockStateId::new_or_air(
                 state_id,
@@ -3176,7 +3176,7 @@ impl Player {
         }
         self.try_enqueue_packet_editioned(
             &COpenSignEditor::new(location, is_front_text),
-            &pumpkin_protocol::bedrock::client::open_sign::COpenSign::new(location, is_front_text),
+            &sculith_protocol::bedrock::client::open_sign::COpenSign::new(location, is_front_text),
         );
     }
 
@@ -3276,7 +3276,7 @@ impl Player {
 
     pub fn send_game_event(
         &self,
-        event: pumpkin_protocol::java::client::play::GameEvent,
+        event: sculith_protocol::java::client::play::GameEvent,
         value: f32,
     ) {
         let packet = CGameEvent::new(event, value);
@@ -3284,7 +3284,7 @@ impl Player {
     }
 
     /// Sends custom server links to the player (displayed in the client Esc pause menu).
-    pub fn set_server_links(&self, links: &[pumpkin_protocol::Link<'_>]) {
+    pub fn set_server_links(&self, links: &[sculith_protocol::Link<'_>]) {
         if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
             && let Some(server) = self.world().server.upgrade()
         {
@@ -4460,7 +4460,7 @@ impl Player {
         // The player may not have a tracking entry yet after changing dimensions.
         // Permission levels belong to this connection, not to tracking clients.
         if let ClientPlatform::Java(java) = self.client.as_ref() {
-            let packet = pumpkin_protocol::java::client::play::CEntityStatus::new(
+            let packet = sculith_protocol::java::client::play::CEntityStatus::new(
                 self.living_entity.entity.entity_id,
                 status as i8,
             );
@@ -4476,7 +4476,7 @@ impl Player {
         let level_info = world.level_info.load();
         self.client.try_enqueue_packet_editioned(
             &CChangeDifficulty::new(level_info.difficulty as u8, level_info.difficulty_locked),
-            &pumpkin_protocol::bedrock::client::CSetDifficulty {
+            &sculith_protocol::bedrock::client::CSetDifficulty {
                 difficulty: (level_info.difficulty as u32).into(),
             },
         );
@@ -4591,8 +4591,8 @@ impl Player {
     }
 
     pub async fn send_editioned<
-        J: pumpkin_protocol::ClientPacket + Sync,
-        B: pumpkin_protocol::BClientPacket + Sync,
+        J: sculith_protocol::ClientPacket + Sync,
+        B: sculith_protocol::BClientPacket + Sync,
     >(
         &self,
         je_packet: &J,
@@ -4604,8 +4604,8 @@ impl Player {
     }
 
     pub async fn enqueue_packet_editioned<
-        J: pumpkin_protocol::ClientPacket + Sync,
-        B: pumpkin_protocol::BClientPacket + Sync,
+        J: sculith_protocol::ClientPacket + Sync,
+        B: sculith_protocol::BClientPacket + Sync,
     >(
         &self,
         je_packet: &J,
@@ -4617,8 +4617,8 @@ impl Player {
     }
 
     pub fn try_enqueue_packet_editioned<
-        J: pumpkin_protocol::ClientPacket + Sync,
-        B: pumpkin_protocol::BClientPacket + Sync,
+        J: sculith_protocol::ClientPacket + Sync,
+        B: sculith_protocol::BClientPacket + Sync,
     >(
         &self,
         je_packet: &J,
@@ -4629,8 +4629,8 @@ impl Player {
     }
 
     pub async fn send_packet_now_editioned<
-        J: pumpkin_protocol::ClientPacket + Sync,
-        B: pumpkin_protocol::BClientPacket + Sync,
+        J: sculith_protocol::ClientPacket + Sync,
+        B: sculith_protocol::BClientPacket + Sync,
     >(
         &self,
         je_packet: &J,
@@ -4641,7 +4641,7 @@ impl Player {
             .await;
     }
 
-    pub fn try_send_client_packet<C: pumpkin_protocol::ClientPacket + Sync>(&self, packet: &C) {
+    pub fn try_send_client_packet<C: sculith_protocol::ClientPacket + Sync>(&self, packet: &C) {
         if let ClientPlatform::Java(client) = self.client.as_ref()
             && let Ok(data) = client.serialize_packet(packet)
         {
@@ -4649,7 +4649,7 @@ impl Player {
         }
     }
 
-    pub async fn send_client_packet<C: pumpkin_protocol::ClientPacket + Sync>(&self, packet: &C) {
+    pub async fn send_client_packet<C: sculith_protocol::ClientPacket + Sync>(&self, packet: &C) {
         if let ClientPlatform::Java(client) = self.client.as_ref()
             && let Ok(data) = client.serialize_packet(packet)
         {
@@ -4749,21 +4749,21 @@ impl Player {
             .map(|team| team.name.clone())
     }
 
-    pub fn set_compass_target(&self, pos: pumpkin_util::math::position::BlockPos) {
-        use pumpkin_protocol::java::client::play::CPlayerSpawnPosition;
+    pub fn set_compass_target(&self, pos: sculith_util::math::position::BlockPos) {
+        use sculith_protocol::java::client::play::CPlayerSpawnPosition;
         self.compass_target.store(Some(pos));
         self.try_send_client_packet(&CPlayerSpawnPosition::new(pos, 0.0, 0.0, String::new()));
     }
 
-    pub fn get_compass_target(&self) -> Option<pumpkin_util::math::position::BlockPos> {
+    pub fn get_compass_target(&self) -> Option<sculith_util::math::position::BlockPos> {
         self.compass_target.load()
     }
 
-    pub fn set_respawn_location(&self, pos: pumpkin_util::math::position::BlockPos) {
+    pub fn set_respawn_location(&self, pos: sculith_util::math::position::BlockPos) {
         self.respawn_location.store(Some(pos));
     }
 
-    pub fn get_respawn_location(&self) -> Option<pumpkin_util::math::position::BlockPos> {
+    pub fn get_respawn_location(&self) -> Option<sculith_util::math::position::BlockPos> {
         self.respawn_location.load()
     }
 
@@ -4870,7 +4870,7 @@ impl Player {
         &self,
         world: &Arc<World>,
         max_distance: f64,
-    ) -> Option<pumpkin_util::math::position::BlockPos> {
+    ) -> Option<sculith_util::math::position::BlockPos> {
         let (yaw, pitch) = (
             self.living_entity.entity.yaw.load(),
             self.living_entity.entity.pitch.load(),
@@ -4878,7 +4878,7 @@ impl Player {
         let eye_pos = self.living_entity.entity.get_eye_pos();
         let yaw_rad = f64::from(yaw + 90.0).to_radians();
         let pitch_rad = f64::from(-pitch).to_radians();
-        let dir = pumpkin_util::math::vector3::Vector3::new(
+        let dir = sculith_util::math::vector3::Vector3::new(
             pitch_rad.cos() * yaw_rad.cos(),
             pitch_rad.sin(),
             pitch_rad.cos() * yaw_rad.sin(),
@@ -4909,20 +4909,20 @@ impl Player {
         let eye_pos = self.living_entity.entity.get_eye_pos();
         let yaw_rad = f64::from(yaw + 90.0).to_radians();
         let pitch_rad = f64::from(-pitch).to_radians();
-        let dir = pumpkin_util::math::vector3::Vector3::new(
+        let dir = sculith_util::math::vector3::Vector3::new(
             pitch_rad.cos() * yaw_rad.cos(),
             pitch_rad.sin(),
             pitch_rad.cos() * yaw_rad.sin(),
         );
         let ray = dir * max_distance;
         let end_pos = eye_pos + ray;
-        let search_box = pumpkin_util::math::boundingbox::BoundingBox::new(
-            pumpkin_util::math::vector3::Vector3::new(
+        let search_box = sculith_util::math::boundingbox::BoundingBox::new(
+            sculith_util::math::vector3::Vector3::new(
                 eye_pos.x.min(end_pos.x),
                 eye_pos.y.min(end_pos.y),
                 eye_pos.z.min(end_pos.z),
             ),
-            pumpkin_util::math::vector3::Vector3::new(
+            sculith_util::math::vector3::Vector3::new(
                 eye_pos.x.max(end_pos.x),
                 eye_pos.y.max(end_pos.y),
                 eye_pos.z.max(end_pos.z),
@@ -5090,7 +5090,7 @@ impl Player {
         respawn: bool,
     ) {
         if let ClientPlatform::Bedrock(client) = self.client.as_ref() {
-            let packet = pumpkin_protocol::bedrock::client::CChangeDimension {
+            let packet = sculith_protocol::bedrock::client::CChangeDimension {
                 dimension_id: respawn::bedrock_dimension_id(&world.dimension).into(),
                 position: position.to_f32_lossy(),
                 respawn,
@@ -5830,7 +5830,7 @@ impl Player {
     ) {
         let string_reason = reason.clone().map_or_else(
             || "Banned by an operator.".to_string(),
-            pumpkin_util::text::TextComponent::get_text,
+            sculith_util::text::TextComponent::get_text,
         );
         let source_str = source.unwrap_or_else(|| "Plugin".to_string());
 
@@ -5894,7 +5894,7 @@ impl Player {
     ) {
         let string_reason = reason.clone().map_or_else(
             || "Banned by an operator.".to_string(),
-            pumpkin_util::text::TextComponent::get_text,
+            sculith_util::text::TextComponent::get_text,
         );
         let source_str = source.unwrap_or_else(|| "Plugin".to_string());
         let target_ip = self.client.address().ip();
@@ -6102,7 +6102,7 @@ impl Player {
             .load()
             .broadcast_packet_all(&CPlayerInfoUpdate::new(
                 PlayerInfoFlags::UPDATE_GAME_MODE.bits(),
-                &[pumpkin_protocol::java::client::play::Player {
+                &[sculith_protocol::java::client::play::Player {
                     uuid: self.gameprofile.id,
                     actions: &[PlayerAction::UpdateGameMode((gamemode as i32).into())],
                 }],
@@ -6110,7 +6110,7 @@ impl Player {
 
         self.client.try_enqueue_packet_editioned(
             &CGameEvent::new(GameEvent::ChangeGameMode, gamemode as i32 as f32),
-            &pumpkin_protocol::bedrock::client::set_player_gamemode::CSetPlayerGameType {
+            &sculith_protocol::bedrock::client::set_player_gamemode::CSetPlayerGameType {
                 player_game_type: gamemode.into(),
             },
         );
@@ -6450,7 +6450,7 @@ impl Player {
         self: &Arc<Self>,
         tracked: &crate::net::chat::OutgoingChatMessage,
         filtered: bool,
-        chat_type: pumpkin_protocol::codec::var_int::VarInt,
+        chat_type: sculith_protocol::codec::var_int::VarInt,
         sender_name: &TextComponent,
         target_name: Option<&TextComponent>,
     ) {
@@ -6465,7 +6465,7 @@ impl Player {
         let je_packet = CSystemChatMessage::new(text, overlay);
         let locale = Locale::from_str(&self.config.load().locale).unwrap_or(Locale::EnUs);
         let be_packet = match &*text.0.content {
-            pumpkin_util::text::TextContent::Translate {
+            sculith_util::text::TextContent::Translate {
                 translate,
                 bedrock_translate,
                 with,
@@ -6473,7 +6473,7 @@ impl Player {
                 let key = bedrock_translate.as_deref().unwrap_or(translate.as_ref());
                 let parameters = with
                     .iter()
-                    .map(pumpkin_util::text::TextComponentBase::to_bedrock_string)
+                    .map(sculith_util::text::TextComponentBase::to_bedrock_string)
                     .collect();
                 SText::translation(key.to_string(), parameters)
             }
@@ -6816,9 +6816,9 @@ impl Player {
             effect.duration.into(),
             flag,
         );
-        let be_packet = pumpkin_protocol::bedrock::client::CMobEffect {
+        let be_packet = sculith_protocol::bedrock::client::CMobEffect {
             target_runtime_id: VarULong(self.entity_id() as u64),
-            event_id: pumpkin_protocol::bedrock::client::CMobEffect::EVENT_ADD,
+            event_id: sculith_protocol::bedrock::client::CMobEffect::EVENT_ADD,
             effect_id: VarInt(effect.effect_type.to_bedrock_id()),
             effect_amplifier: VarInt(i32::from(effect.amplifier)),
             show_particles: effect.show_particles,
@@ -6832,7 +6832,7 @@ impl Player {
     pub fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
         let effect_id = VarInt(i32::from(effect_type.id));
         self.try_send_client_packet(
-            &pumpkin_protocol::java::client::play::CRemoveMobEffect::new(
+            &sculith_protocol::java::client::play::CRemoveMobEffect::new(
                 self.entity_id().into(),
                 effect_id,
             ),
@@ -6858,7 +6858,7 @@ impl Player {
             effect_list.push(effect);
             let effect_id = VarInt(i32::from(effect.id));
             self.try_send_client_packet(
-                &pumpkin_protocol::java::client::play::CRemoveMobEffect::new(
+                &sculith_protocol::java::client::play::CRemoveMobEffect::new(
                     self.entity_id().into(),
                     effect_id,
                 ),
@@ -7028,7 +7028,7 @@ impl Player {
 
         self.try_enqueue_packet_editioned(
             &CCloseContainer::new(sync_id.into()),
-            &pumpkin_protocol::bedrock::server::container_close::SContainerClose {
+            &sculith_protocol::bedrock::server::container_close::SContainerClose {
                 container_id: sync_id,
                 container_type: bedrock_window_type,
                 server_initiated_close: true,
@@ -7669,7 +7669,7 @@ impl Player {
             let mut extract_event =
                 crate::plugin::api::events::inventory::furnace_extract::FurnaceExtractEvent::new(
                     self.clone(),
-                    pumpkin_util::math::position::BlockPos::new(0, 0, 0),
+                    sculith_util::math::position::BlockPos::new(0, 0, 0),
                     stack.item.registry_key.to_string(),
                     stack.item_count as u32,
                     0.0,
@@ -7859,14 +7859,14 @@ impl Player {
         let world = self.world();
         let entity_id = self.entity_id();
 
-        let je_packet = pumpkin_protocol::java::client::play::CSwingArm::new(
+        let je_packet = sculith_protocol::java::client::play::CSwingArm::new(
             VarInt(entity_id),
             hand == Hand::Left,
         );
 
-        let be_packet = pumpkin_protocol::bedrock::server::animate::SAnimate {
-            action: pumpkin_protocol::bedrock::server::animate::AnimateAction::SwingArm,
-            target_actor_runtime_id: pumpkin_protocol::codec::var_ulong::VarULong(entity_id as u64),
+        let be_packet = sculith_protocol::bedrock::server::animate::SAnimate {
+            action: sculith_protocol::bedrock::server::animate::AnimateAction::SwingArm,
+            target_actor_runtime_id: sculith_protocol::codec::var_ulong::VarULong(entity_id as u64),
             data: 0.0,
             swing_source: None,
             hand: u8::from(hand == Hand::Left),
@@ -8485,14 +8485,14 @@ impl EntityBase for Player {
     fn send_bedrock_spawn_packet(&self, client: &crate::net::bedrock::BedrockClient) {
         client.ensure_listed(self);
         let add_player = self.bedrock_add_player();
-        let main_hand = pumpkin_protocol::bedrock::client::CMobEquipment {
+        let main_hand = sculith_protocol::bedrock::client::CMobEquipment {
             target_runtime_id: (self.entity_id() as u64).into(),
             item: (&self.inventory.held_item()).into(),
             slot: 0,
             selected_slot: 0,
             container_id: 0,
         };
-        let off_hand = pumpkin_protocol::bedrock::client::CMobEquipment {
+        let off_hand = sculith_protocol::bedrock::client::CMobEquipment {
             target_runtime_id: (self.entity_id() as u64).into(),
             item: (&self.inventory.get_slot(PlayerInventory::OFF_HAND_SLOT)).into(),
             slot: 0,
@@ -9364,13 +9364,13 @@ impl InventoryPlayer for Player {
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
-                use pumpkin_protocol::bedrock::{
+                use sculith_protocol::bedrock::{
                     client::{
                         inventory_content::CInventoryContent, inventory_slot::CInventorySlot,
                     },
                     network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
                 };
-                use pumpkin_protocol::codec::var_uint::VarUInt;
+                use sculith_protocol::codec::var_uint::VarUInt;
 
                 let window_id = packet.window_id.0 as u32;
                 if window_id == 0 {
@@ -9541,11 +9541,11 @@ impl InventoryPlayer for Player {
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
-                use pumpkin_protocol::bedrock::{
+                use sculith_protocol::bedrock::{
                     client::inventory_slot::CInventorySlot,
                     network_item::{ContainerName, FullContainerName, NetworkItemStackDescriptor},
                 };
-                use pumpkin_protocol::codec::var_uint::VarUInt;
+                use sculith_protocol::codec::var_uint::VarUInt;
 
                 let window_id = packet.window_id;
                 if window_id == 0 {
@@ -9631,7 +9631,7 @@ impl InventoryPlayer for Player {
                 }
             }
             ClientPlatform::Bedrock(bedrock) => {
-                use pumpkin_protocol::bedrock::client::container_set_data::CContainerSetData;
+                use sculith_protocol::bedrock::client::container_set_data::CContainerSetData;
 
                 let container_id = packet.window_id.0 as u8;
                 let value = i32::from(packet.value);
@@ -9698,8 +9698,8 @@ impl InventoryPlayer for Player {
     fn enqueue_set_held_item_packet(&self, packet: &CSetSelectedSlot) {
         self.try_enqueue_packet_editioned(
             packet,
-            &pumpkin_protocol::bedrock::client::CPlayerHotbar {
-                selected_slot: pumpkin_protocol::codec::var_uint::VarUInt(packet.slot as u32),
+            &sculith_protocol::bedrock::client::CPlayerHotbar {
+                selected_slot: sculith_protocol::codec::var_uint::VarUInt(packet.slot as u32),
                 container_id: 0,
                 should_select_slot: true,
             },
@@ -9930,8 +9930,8 @@ mod tests {
     };
     use pumpkin_data::{Block, screen::WindowType};
     use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-    use pumpkin_protocol::bedrock::network_item::ContainerName;
-    use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+    use sculith_protocol::bedrock::network_item::ContainerName;
+    use sculith_util::math::{position::BlockPos, vector3::Vector3};
     use uuid::Uuid;
 
     #[test]

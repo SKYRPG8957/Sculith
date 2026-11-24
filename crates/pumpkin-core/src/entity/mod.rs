@@ -38,9 +38,9 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_protocol::bedrock::client::{CAddActor, CSetActorMotion};
-use pumpkin_protocol::codec::var_long::VarLong;
-use pumpkin_protocol::{
+use sculith_protocol::bedrock::client::{CAddActor, CSetActorMotion};
+use sculith_protocol::codec::var_long::VarLong;
+use sculith_protocol::{
     PositionFlag,
     bedrock::client::set_actor_data::{
         CSetActorData, MetadataValue, PropertySyncData, SyncedActorDataList, entity_data_flag,
@@ -53,8 +53,8 @@ use pumpkin_protocol::{
         CSpawnEntity, Metadata, MetadataSerializer,
     },
 };
-use pumpkin_util::math::vector3::Axis;
-use pumpkin_util::math::{
+use sculith_util::math::vector3::Axis;
+use sculith_util::math::{
     boundingbox::{BoundingBox, EntityDimensions},
     get_section_cord, pack_degrees,
     position::BlockPos,
@@ -62,9 +62,9 @@ use pumpkin_util::math::{
     vector3::Vector3,
     wrap_degrees,
 };
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::hover::HoverEvent;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::text::TextComponent;
+use sculith_util::text::hover::HoverEvent;
+use sculith_util::version::JavaMinecraftVersion;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{
     Arc, Weak,
@@ -976,7 +976,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
             .get_leash_holder()
             .map(|holder| holder.get_entity().entity_id);
         if let Some(holder_id) = holder {
-            let link_packet = pumpkin_protocol::java::client::play::CSetEntityLink::new(
+            let link_packet = sculith_protocol::java::client::play::CSetEntityLink::new(
                 entity.entity_id,
                 holder_id,
                 true,
@@ -1020,7 +1020,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         &self,
         _player: &Arc<Player>,
         _item_stack: &mut ItemStack,
-        _hand: pumpkin_util::Hand,
+        _hand: sculith_util::Hand,
     ) -> Option<bool> {
         None
     }
@@ -2197,7 +2197,7 @@ impl Entity {
     }
 
     #[must_use]
-    pub fn bedrock_actor_links(&self) -> Vec<pumpkin_protocol::bedrock::client::common::ActorLink> {
+    pub fn bedrock_actor_links(&self) -> Vec<sculith_protocol::bedrock::client::common::ActorLink> {
         let Ok(passengers) = self.passengers.try_lock() else {
             return Vec::new();
         };
@@ -2205,7 +2205,7 @@ impl Entity {
             .iter()
             .enumerate()
             .map(
-                |(idx, p)| pumpkin_protocol::bedrock::client::common::ActorLink {
+                |(idx, p)| sculith_protocol::bedrock::client::common::ActorLink {
                     ridden_unique_id: VarLong(i64::from(self.entity_id)),
                     rider_unique_id: VarLong(i64::from(p.get_entity().entity_id)),
                     link_type: if idx == 0 { 1 } else { 2 },
@@ -5081,7 +5081,7 @@ impl Entity {
         }
         // Update cache so we don't send rubberbanding deltas
         self.last_sent_pos.store(position);
-        // TODO: use `pumpkin_util::math::pack_degrees`.
+        // TODO: use `sculith_util::math::pack_degrees`.
         if let Some(yaw) = yaw {
             self.last_sent_yaw
                 .store((yaw * 256.0 / 360.0).rem_euclid(256.0) as u8, Relaxed);
@@ -5275,7 +5275,7 @@ impl Entity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 
-        let je_packet = pumpkin_protocol::java::client::play::CSetEntityLink::new(
+        let je_packet = sculith_protocol::java::client::play::CSetEntityLink::new(
             self.entity_id,
             holder_entity_id,
             true,
@@ -5436,7 +5436,7 @@ impl Entity {
 
     fn send_leash_removed(&self) {
         let je_packet =
-            pumpkin_protocol::java::client::play::CSetEntityLink::new(self.entity_id, -1, true);
+            sculith_protocol::java::client::play::CSetEntityLink::new(self.entity_id, -1, true);
         self.bedrock_flags
             .fetch_and(!(1i64 << entity_data_flag::LEASHED), Ordering::Relaxed);
         let mut bedrock_meta = SyncedActorDataList::new();
@@ -5863,8 +5863,8 @@ impl Entity {
             .collect();
         drop(passengers);
 
-        let be_link = pumpkin_protocol::bedrock::client::CSetActorLink {
-            link: pumpkin_protocol::bedrock::client::common::ActorLink {
+        let be_link = sculith_protocol::bedrock::client::CSetActorLink {
+            link: sculith_protocol::bedrock::client::common::ActorLink {
                 ridden_unique_id: VarLong(i64::from(self.entity_id)),
                 rider_unique_id: VarLong(i64::from(passenger_entity_id)),
                 link_type,
@@ -5948,8 +5948,8 @@ impl Entity {
             .collect();
         drop(passengers);
 
-        let be_unlink = pumpkin_protocol::bedrock::client::CSetActorLink {
-            link: pumpkin_protocol::bedrock::client::common::ActorLink {
+        let be_unlink = sculith_protocol::bedrock::client::CSetActorLink {
+            link: sculith_protocol::bedrock::client::common::ActorLink {
                 ridden_unique_id: VarLong(i64::from(self.entity_id)),
                 rider_unique_id: VarLong(i64::from(passenger_id)),
                 link_type: 0,
@@ -5976,8 +5976,8 @@ impl Entity {
         {
             world.broadcast_to_chunk_bedrock(
                 self.chunk_pos.load(),
-                &pumpkin_protocol::bedrock::client::CSetActorLink {
-                    link: pumpkin_protocol::bedrock::client::common::ActorLink {
+                &sculith_protocol::bedrock::client::CSetActorLink {
+                    link: sculith_protocol::bedrock::client::common::ActorLink {
                         ridden_unique_id: VarLong(i64::from(self.entity_id)),
                         rider_unique_id: VarLong(i64::from(rider.0)),
                         link_type: 1,
@@ -6096,8 +6096,8 @@ impl Entity {
             // Send CSetPassengers directly to the dismounting player before broadcasting it.
             let world = self.world.load();
             let passengers_packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
-            let be_unlink = pumpkin_protocol::bedrock::client::CSetActorLink {
-                link: pumpkin_protocol::bedrock::client::common::ActorLink {
+            let be_unlink = sculith_protocol::bedrock::client::CSetActorLink {
+                link: sculith_protocol::bedrock::client::common::ActorLink {
                     ridden_unique_id: VarLong(i64::from(self.entity_id)),
                     rider_unique_id: VarLong(i64::from(passenger_id)),
                     link_type: 0,
@@ -6489,7 +6489,7 @@ impl Entity {
         nbt.put_int("PortalCooldown", self.portal_cooldown.load(Relaxed) as i32);
         if let Some(custom_name) = &**self.custom_name.load() {
             let mut tag = custom_name
-                .to_nbt_tag_for_version(&pumpkin_util::version::JavaMinecraftVersion::V_26_3);
+                .to_nbt_tag_for_version(&sculith_util::version::JavaMinecraftVersion::V_26_3);
             // A literal string starting with '{' would read back as legacy JSON, so keep it a compound.
             if let NbtTag::String(text) = &tag
                 && text.starts_with('{')
@@ -6584,7 +6584,7 @@ impl Entity {
             let pitch = rotation[1].extract_float().unwrap_or(0.0);
             if yaw.is_finite() && pitch.is_finite() {
                 self.set_rotation(yaw, pitch);
-                // TODO: use `pumpkin_util::math::pack_degrees`.
+                // TODO: use `sculith_util::math::pack_degrees`.
                 let yaw_byte = (yaw * 256.0 / 360.0).rem_euclid(256.0) as u8;
                 let pitch_byte = (pitch * 256.0 / 360.0).rem_euclid(256.0) as u8;
                 self.last_sent_yaw.store(yaw_byte, Relaxed);
@@ -6625,7 +6625,7 @@ impl Entity {
             // apart by version); the writer never emits a literal starting with '{'.
             let component = match name {
                 NbtTag::String(json) if json.starts_with('{') => {
-                    pumpkin_util::serde_json::from_str(json)
+                    sculith_util::serde_json::from_str(json)
                         .unwrap_or_else(|_| TextComponent::from_nbt(name))
                 }
                 _ => TextComponent::from_nbt(name),
@@ -6894,7 +6894,7 @@ mod tests {
 #[cfg(test)]
 mod dimension_tests {
     use pumpkin_data::entity::{EntityPose, EntityType};
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     use super::{Entity, EntityBase};
     use crate::entity::ai::test_support::world;
@@ -6967,7 +6967,7 @@ mod dimension_tests {
 #[cfg(test)]
 mod velocity_sync_tests {
     use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     use super::Entity;
     use crate::entity::ai::test_support::world;

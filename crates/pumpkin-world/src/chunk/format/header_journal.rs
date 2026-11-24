@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use pumpkin_util::math::vector2::Vector2;
+use sculith_util::math::vector2::Vector2;
 use tracing::warn;
 use xxhash_rust::xxh64::xxh64;
 

@@ -1,6 +1,6 @@
 use crate::entity::player::Player;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 /// An event that occurs when a sign's text is changed.

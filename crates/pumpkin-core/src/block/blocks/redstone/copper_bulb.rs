@@ -14,8 +14,8 @@ use pumpkin_data::Block;
 use pumpkin_data::BlockId;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
 
 type CopperBulbLikeProperties = pumpkin_data::block_properties::CopperBulbLikeProperties;
 

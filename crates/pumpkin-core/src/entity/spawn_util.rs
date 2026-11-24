@@ -5,12 +5,12 @@ use pumpkin_data::{
     entity::EntityType,
     tag::{Block as BlockTag, Taggable},
 };
-use pumpkin_util::math::{
+use rand::RngExt;
+use sculith_util::math::{
     boundingbox::{BoundingBox, EntityDimensions},
     position::BlockPos,
     vector3::Vector3,
 };
-use rand::RngExt;
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, mob::Mob};

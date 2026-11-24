@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use rustc_hash::FxHashSet;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use super::super::OneShot;
 use crate::block::blocks::doors::DoorBlock;

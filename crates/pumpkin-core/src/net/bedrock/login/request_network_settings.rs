@@ -124,7 +124,7 @@ impl BedrockClient {
 mod tests {
     use super::*;
     use crate::net::{PacketRateLimiter, bedrock::split_raw_packet};
-    use pumpkin_protocol::{
+    use sculith_protocol::{
         bedrock::{SubClient, packet_encoder::BedrockBatchEncoder},
         packet::Packet,
     };

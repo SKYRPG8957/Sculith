@@ -219,13 +219,13 @@ fn parse_template_nbt(id: String, path: &Path) -> Option<ParsedTemplate> {
 
 fn direction_to_tokens(dir: &str) -> TokenStream {
     match dir {
-        "down" => quote!(pumpkin_util::BlockDirection::Down),
-        "up" => quote!(pumpkin_util::BlockDirection::Up),
-        "north" => quote!(pumpkin_util::BlockDirection::North),
-        "south" => quote!(pumpkin_util::BlockDirection::South),
-        "west" => quote!(pumpkin_util::BlockDirection::West),
-        "east" => quote!(pumpkin_util::BlockDirection::East),
-        _ => quote!(pumpkin_util::BlockDirection::North),
+        "down" => quote!(sculith_util::BlockDirection::Down),
+        "up" => quote!(sculith_util::BlockDirection::Up),
+        "north" => quote!(sculith_util::BlockDirection::North),
+        "south" => quote!(sculith_util::BlockDirection::South),
+        "west" => quote!(sculith_util::BlockDirection::West),
+        "east" => quote!(sculith_util::BlockDirection::East),
+        _ => quote!(sculith_util::BlockDirection::North),
     }
 }
 
@@ -324,8 +324,8 @@ pub fn build() -> TokenStream {
             pub pool: &'static str,
             pub final_state: &'static str,
             pub joint: StaticJigsawJointType,
-            pub facing: pumpkin_util::BlockDirection,
-            pub up: pumpkin_util::BlockDirection,
+            pub facing: sculith_util::BlockDirection,
+            pub up: sculith_util::BlockDirection,
             pub selection_priority: i32,
             pub placement_priority: i32,
         }

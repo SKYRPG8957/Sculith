@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::BlockEntity;
 

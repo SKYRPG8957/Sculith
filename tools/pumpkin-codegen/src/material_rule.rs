@@ -46,13 +46,13 @@ impl ToTokens for YOffsetStruct {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
             Self::Absolute { absolute } => {
-                tokens.extend(quote!(YOffset::Absolute(pumpkin_util::y_offset::Absolute { absolute: #absolute })));
+                tokens.extend(quote!(YOffset::Absolute(sculith_util::y_offset::Absolute { absolute: #absolute })));
             }
             Self::AboveBottom { above_bottom } => {
-                tokens.extend(quote!(YOffset::AboveBottom(pumpkin_util::y_offset::AboveBottom { above_bottom: #above_bottom })));
+                tokens.extend(quote!(YOffset::AboveBottom(sculith_util::y_offset::AboveBottom { above_bottom: #above_bottom })));
             }
             Self::BelowTop { below_top } => {
-                tokens.extend(quote!(YOffset::BelowTop(pumpkin_util::y_offset::BelowTop { below_top: #below_top })));
+                tokens.extend(quote!(YOffset::BelowTop(sculith_util::y_offset::BelowTop { below_top: #below_top })));
             }
         }
     }
@@ -353,10 +353,10 @@ impl ToTokens for MaterialConditionStruct {
             } => {
                 let surface_type_token = match surface_type.as_str() {
                     "ceiling" => quote!(
-                        pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Ceiling
+                        sculith_util::math::vertical_surface_type::VerticalSurfaceType::Ceiling
                     ),
                     "floor" => quote!(
-                        pumpkin_util::math::vertical_surface_type::VerticalSurfaceType::Floor
+                        sculith_util::math::vertical_surface_type::VerticalSurfaceType::Floor
                     ),
                     _ => quote!(panic!("Unknown surface type")),
                 };
@@ -629,8 +629,8 @@ pub fn build() -> TokenStream {
         use crate::BlockState;
         use crate::biome::Biome;
         use crate::dimension::Dimension;
-        use pumpkin_util::y_offset::YOffset;
-        use pumpkin_util::y_offset::Absolute;
+        use sculith_util::y_offset::YOffset;
+        use sculith_util::y_offset::Absolute;
 
         pub struct BlockMaterialRule {
             pub result_state: &'static BlockState,
@@ -734,7 +734,7 @@ pub fn build() -> TokenStream {
             pub offset: i32,
             pub add_surface_depth: bool,
             pub secondary_depth_range: i32,
-            pub surface_type: pumpkin_util::math::vertical_surface_type::VerticalSurfaceType,
+            pub surface_type: sculith_util::math::vertical_surface_type::VerticalSurfaceType,
         }
 
         pub enum MaterialCondition {

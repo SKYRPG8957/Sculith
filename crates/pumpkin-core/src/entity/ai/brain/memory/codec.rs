@@ -1,7 +1,7 @@
 use pumpkin_data::dimension::Dimension;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use rustc_hash::FxHashSet;
 use uuid::Uuid;

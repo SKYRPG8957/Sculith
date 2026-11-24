@@ -1,4 +1,4 @@
-use pumpkin_util::ProfileAction;
+use sculith_util::ProfileAction;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for server authentication.

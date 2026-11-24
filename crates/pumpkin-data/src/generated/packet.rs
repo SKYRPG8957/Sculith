@@ -1,9 +1,9 @@
 /* This file is generated. Do not edit manually. */
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::version::JavaMinecraftVersion;
 pub const CURRENT_MC_VERSION: JavaMinecraftVersion =
-    pumpkin_util::version::JavaMinecraftVersion::V_26_3;
+    sculith_util::version::JavaMinecraftVersion::V_26_3;
 pub const LOWEST_SUPPORTED_MC_VERSION: JavaMinecraftVersion =
-    pumpkin_util::version::JavaMinecraftVersion::V_26_3;
+    sculith_util::version::JavaMinecraftVersion::V_26_3;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PacketId(pub i32);
 impl PacketId {

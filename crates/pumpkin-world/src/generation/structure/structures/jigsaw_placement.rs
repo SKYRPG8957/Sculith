@@ -4,10 +4,10 @@ use crate::generation::structure::{
     piece::StructurePieceType,
     structures::{HeightSampler, StructureGeneratorContext, StructurePiece, StructurePosition},
 };
-use pumpkin_util::math::block_box::BlockBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use sculith_util::math::block_box::BlockBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomGenerator, RandomImpl};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::rc::Rc;
@@ -795,10 +795,10 @@ pub fn rotated_box(origin: BlockPos, size: Vector3<i32>, rotation: Rotation) -> 
 
 #[must_use]
 pub const fn rotate_direction(
-    dir: pumpkin_util::BlockDirection,
+    dir: sculith_util::BlockDirection,
     rotation: Rotation,
-) -> pumpkin_util::BlockDirection {
-    use pumpkin_util::BlockDirection;
+) -> sculith_util::BlockDirection {
+    use sculith_util::BlockDirection;
     match rotation {
         Rotation::None => dir,
         Rotation::Clockwise90 => match dir {

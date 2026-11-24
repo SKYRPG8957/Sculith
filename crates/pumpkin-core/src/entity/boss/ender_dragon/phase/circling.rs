@@ -1,6 +1,6 @@
 use super::EnderDragonPhase;
 use crate::entity::boss::ender_dragon::{EnderDragonEntity, Vector3Ext, find_path};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering;
 
 pub struct CirclingPhase;

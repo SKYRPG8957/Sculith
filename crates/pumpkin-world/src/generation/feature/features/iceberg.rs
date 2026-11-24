@@ -1,7 +1,7 @@
 use std::f64::consts;
 
 use pumpkin_data::{Block, BlockId, BlockState, block_properties::is_air};
-use pumpkin_util::{
+use sculith_util::{
     math::{position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
 };

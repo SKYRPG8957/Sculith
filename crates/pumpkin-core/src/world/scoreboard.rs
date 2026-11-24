@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 
 use pumpkin_data::scoreboard::ScoreboardDisplaySlot;
-use pumpkin_protocol::{
+use sculith_protocol::{
     BClientPacket, ClientPacket, NumberFormat,
     bedrock::client::{
         remove_objective::CRemoveObjective as BRemoveObjective,
@@ -14,7 +14,7 @@ use pumpkin_protocol::{
         RenderType, TeamMethod, TeamParameters,
     },
 };
-use pumpkin_util::text::{TextComponent, color::NamedColor};
+use sculith_util::text::{TextComponent, color::NamedColor};
 use tracing::warn;
 
 use super::World;
@@ -892,11 +892,11 @@ impl BedrockScoreboard {
             }),
         };
         player.try_enqueue_packet_editioned(
-            &pumpkin_protocol::java::client::play::CUpdateObjectives::new(
+            &sculith_protocol::java::client::play::CUpdateObjectives::new(
                 objective.name.clone(),
-                pumpkin_protocol::java::client::play::Mode::Add,
+                sculith_protocol::java::client::play::Mode::Add,
                 TextComponent::text(objective.display_name.clone()),
-                pumpkin_protocol::java::client::play::RenderType::Integer,
+                sculith_protocol::java::client::play::RenderType::Integer,
                 None,
             ),
             &be_update,
@@ -917,11 +917,11 @@ impl BedrockScoreboard {
             }),
         };
         player.try_enqueue_packet_editioned(
-            &pumpkin_protocol::java::client::play::CUpdateObjectives::new(
+            &sculith_protocol::java::client::play::CUpdateObjectives::new(
                 objective.name.clone(),
-                pumpkin_protocol::java::client::play::Mode::Update,
+                sculith_protocol::java::client::play::Mode::Update,
                 TextComponent::text(objective.display_name.clone()),
-                pumpkin_protocol::java::client::play::RenderType::Integer,
+                sculith_protocol::java::client::play::RenderType::Integer,
                 None,
             ),
             &be_update,
@@ -935,11 +935,11 @@ impl BedrockScoreboard {
             objective_name: name.to_string(),
         };
         player.try_enqueue_packet_editioned(
-            &pumpkin_protocol::java::client::play::CUpdateObjectives::new(
+            &sculith_protocol::java::client::play::CUpdateObjectives::new(
                 name.to_string(),
-                pumpkin_protocol::java::client::play::Mode::Remove,
+                sculith_protocol::java::client::play::Mode::Remove,
                 TextComponent::text(""),
-                pumpkin_protocol::java::client::play::RenderType::Integer,
+                sculith_protocol::java::client::play::RenderType::Integer,
                 None,
             ),
             &be_remove,
@@ -968,7 +968,7 @@ impl BedrockScoreboard {
             sort_order: VarInt(0),
         };
         player.try_enqueue_packet_editioned(
-            &pumpkin_protocol::java::client::play::CDisplayObjective::new(
+            &sculith_protocol::java::client::play::CDisplayObjective::new(
                 match slot {
                     BedrockDisplaySlot::PlayerList => ScoreboardDisplaySlot::List,
                     BedrockDisplaySlot::Sidebar => ScoreboardDisplaySlot::Sidebar,
@@ -1009,7 +1009,7 @@ impl BedrockScoreboard {
             entries: vec![],
         };
         player.try_enqueue_packet_editioned(
-            &pumpkin_protocol::java::client::play::CUpdateScore::new(
+            &sculith_protocol::java::client::play::CUpdateScore::new(
                 score.entity_name.clone(),
                 score.objective_name.clone(),
                 score.value,
@@ -1048,7 +1048,7 @@ impl BedrockScoreboard {
             entries: vec![],
         };
         player.try_enqueue_packet_editioned(
-            &pumpkin_protocol::java::client::play::CResetScore::new(
+            &sculith_protocol::java::client::play::CResetScore::new(
                 entity_name.to_string(),
                 Some(objective_name.to_string()),
             ),
@@ -1064,7 +1064,7 @@ impl BedrockScoreboard {
             entries: vec![],
         };
         player.try_enqueue_packet_editioned(
-            &pumpkin_protocol::java::client::play::CResetScore::new(entity_name.to_string(), None),
+            &sculith_protocol::java::client::play::CResetScore::new(entity_name.to_string(), None),
             &be_score,
         );
         self.scores.retain(|(entity, _), _| entity != entity_name);
@@ -1083,11 +1083,11 @@ impl BedrockScoreboard {
                 }),
             };
             player.try_enqueue_packet_editioned(
-                &pumpkin_protocol::java::client::play::CUpdateObjectives::new(
+                &sculith_protocol::java::client::play::CUpdateObjectives::new(
                     objective.name.clone(),
-                    pumpkin_protocol::java::client::play::Mode::Add,
+                    sculith_protocol::java::client::play::Mode::Add,
                     TextComponent::text(objective.display_name.clone()),
-                    pumpkin_protocol::java::client::play::RenderType::Integer,
+                    sculith_protocol::java::client::play::RenderType::Integer,
                     None,
                 ),
                 &be_update,
@@ -1107,7 +1107,7 @@ impl BedrockScoreboard {
                 sort_order: VarInt(0),
             };
             player.try_enqueue_packet_editioned(
-                &pumpkin_protocol::java::client::play::CDisplayObjective::new(
+                &sculith_protocol::java::client::play::CDisplayObjective::new(
                     match slot {
                         BedrockDisplaySlot::PlayerList => ScoreboardDisplaySlot::List,
                         BedrockDisplaySlot::Sidebar => ScoreboardDisplaySlot::Sidebar,
@@ -1132,7 +1132,7 @@ impl BedrockScoreboard {
                 entries: vec![],
             };
             player.try_enqueue_packet_editioned(
-                &pumpkin_protocol::java::client::play::CUpdateScore::new(
+                &sculith_protocol::java::client::play::CUpdateScore::new(
                     score.entity_name,
                     score.objective_name,
                     score.value,

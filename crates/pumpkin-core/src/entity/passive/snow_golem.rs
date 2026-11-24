@@ -190,7 +190,7 @@ impl Mob for SnowGolemEntity {
                 pumpkin_data::game_event::GameEvent::Shear.name(),
                 entity.pos.load(),
             );
-            if player.gamemode.load() != pumpkin_util::GameMode::Creative {
+            if player.gamemode.load() != sculith_util::GameMode::Creative {
                 let _ = item_stack.damage_item(1);
             }
             return true;

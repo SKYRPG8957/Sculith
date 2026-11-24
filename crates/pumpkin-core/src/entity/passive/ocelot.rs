@@ -7,8 +7,8 @@ use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
 
 use crate::entity::{
     Entity, EntityBase,

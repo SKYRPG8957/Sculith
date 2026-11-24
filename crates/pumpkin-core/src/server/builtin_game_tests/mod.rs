@@ -38,7 +38,7 @@ use pumpkin_data::Block;
 use pumpkin_gametest::{
     GameTestHelper, GameTestResult, register_flaky_function_test, register_function_test,
 };
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 static REGISTER_BUILTIN_TESTS: Once = Once::new();
 

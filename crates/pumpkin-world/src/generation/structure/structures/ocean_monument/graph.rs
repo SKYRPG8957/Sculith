@@ -1,4 +1,4 @@
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     random::{RandomGenerator, RandomImpl},
 };
@@ -247,7 +247,7 @@ fn shuffle(values: &mut [usize], random: &mut RandomGenerator) {
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_util::random::{RandomGenerator, legacy_rand::LegacyRand};
+    use sculith_util::random::{RandomGenerator, legacy_rand::LegacyRand};
 
     use super::RoomGraph;
 

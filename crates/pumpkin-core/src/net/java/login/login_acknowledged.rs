@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::version::JavaMinecraftVersion;
 
 impl PendingConnection {
     #[expect(

@@ -5,10 +5,10 @@ use pumpkin_data::attributes::Attributes;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::Difficulty;
-use pumpkin_util::math::boundingbox::EntityDimensions;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::Difficulty;
+use sculith_util::math::boundingbox::EntityDimensions;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::ai::target_match::TargetMatch;
@@ -26,8 +26,8 @@ use crate::entity::{
     },
 };
 use crate::world::World;
-use pumpkin_util::random::RandomImpl;
 use rand::RngExt;
+use sculith_util::random::RandomImpl;
 
 const PASSENGER_SINK_PER_SIZE: f64 = 0.015_625;
 
@@ -194,13 +194,13 @@ impl SlimeEntity {
         // Slime Chunk Spawning
         let chunk_pos = pos.chunk_position();
         let world_seed = world.level.seed.0;
-        let slime_seed = pumpkin_util::random::seed_slime_chunk(
+        let slime_seed = sculith_util::random::seed_slime_chunk(
             chunk_pos.x,
             chunk_pos.y,
             world_seed,
             987_234_911,
         );
-        let mut slime_rand = pumpkin_util::random::legacy_rand::LegacyRand::from_seed(slime_seed);
+        let mut slime_rand = sculith_util::random::legacy_rand::LegacyRand::from_seed(slime_seed);
 
         let mut rng = rand::rng();
         if rng.random_range(0..10) == 0 && slime_rand.next_bounded_i32(10) == 0 && pos.0.y < 40 {
@@ -351,7 +351,7 @@ impl Mob for SlimeEntity {
                 let xd = ((i % 2) as f32 - 0.5) * xz_offset;
                 let zd = ((i / 2) as f32 - 0.5) * xz_offset;
 
-                let new_pos = pumpkin_util::math::vector3::Vector3::new(
+                let new_pos = sculith_util::math::vector3::Vector3::new(
                     pos.x + xd as f64,
                     pos.y + 0.5,
                     pos.z + zd as f64,

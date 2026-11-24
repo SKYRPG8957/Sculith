@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::bedrock::network_stack_latency::NetworkStackLatency;
+use sculith_protocol::bedrock::network_stack_latency::NetworkStackLatency;
 use std::time::{Duration, Instant};
 
 const LATENCY_INTERVAL: Duration = Duration::from_secs(1);

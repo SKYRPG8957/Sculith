@@ -4,7 +4,7 @@ use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::{Clearable, Inventory, sync_write_items_to_nbt};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::any::Any;
 use std::array::from_fn;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering::Relaxed;
 
 use pumpkin_data::item_stack::DamageResult;
-use pumpkin_protocol::bedrock::server::ActorEventID;
+use sculith_protocol::bedrock::server::ActorEventID;
 
 use crate::entity::mob::Mob;
 use crate::entity::{Entity, EntityBase, equipment_break_status};

@@ -10,9 +10,9 @@ use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::item::Item;
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_util::Hand;
-use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::Hand;
+use sculith_util::math::boundingbox::{BoundingBox, EntityDimensions};
+use sculith_util::math::vector3::Vector3;
 
 pub struct BoatItem;
 

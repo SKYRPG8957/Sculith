@@ -3,7 +3,7 @@ use pumpkin_data::{
     block_properties::{BambooLeaves, BambooLikeProperties},
     tag,
 };
-use pumpkin_util::{
+use sculith_util::{
     math::position::BlockPos,
     random::{RandomGenerator, RandomImpl},
 };

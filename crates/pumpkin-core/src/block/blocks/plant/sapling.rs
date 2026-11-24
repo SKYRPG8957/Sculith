@@ -5,9 +5,9 @@ use pumpkin_data::{
     block_properties::{BlockProperties, OakSaplingLikeProperties},
 };
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
-use pumpkin_util::random::{RandomGenerator, xoroshiro128::Xoroshiro};
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::random::{RandomGenerator, xoroshiro128::Xoroshiro};
 
 use crate::block::blocks::plant::PlantBlockBase;
 use crate::block::blocks::plant::tree_grower::TreeGrower;

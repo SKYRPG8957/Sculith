@@ -11,13 +11,13 @@ use std::{
 use bytes::Bytes;
 use pumpkin_config::{AdvancedConfiguration, resource_pack::BedrockPack};
 use pumpkin_nbt::{Nbt, NbtCompound, deserializer::NbtReadHelperBedrock, tag::NbtTag};
-use pumpkin_protocol::bedrock::{
-    SubClient, client::VANILLA_ACTOR_IDENTIFIERS, packet_encoder::BedrockBatchEncoder,
-};
 pub use sculith_packs::bundle::PackEdit;
 use sculith_packs::{
     ModelMapping, SoundMapping,
     bundle::{Bundle, PackSource},
+};
+use sculith_protocol::bedrock::{
+    SubClient, client::VANILLA_ACTOR_IDENTIFIERS, packet_encoder::BedrockBatchEncoder,
 };
 use sha2::{Digest, Sha256};
 use tokio::{

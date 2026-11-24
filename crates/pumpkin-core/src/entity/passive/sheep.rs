@@ -6,8 +6,8 @@ use std::sync::{
 use pumpkin_data::BlockState;
 use pumpkin_data::{entity::EntityType, item::Item};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::{
     Entity, EntityBase,

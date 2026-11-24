@@ -5,7 +5,7 @@ use std::{
 
 use pumpkin_core::server::Server;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_protocol::java::server::play::Action;
+use sculith_protocol::java::server::play::Action;
 
 use crate::bot::{HeadlessBot, MAX_POLL_TICKS};
 

@@ -5,10 +5,10 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
 use rand::{RngExt, rng};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 use crate::block::registry::BlockActionResult;
@@ -85,7 +85,7 @@ impl ItemBehaviour for FireChargeItem {
         );
 
         if ignited {
-            if player.gamemode.load() != pumpkin_util::GameMode::Creative {
+            if player.gamemode.load() != sculith_util::GameMode::Creative {
                 item.decrement(1);
             }
             BlockActionResult::Success

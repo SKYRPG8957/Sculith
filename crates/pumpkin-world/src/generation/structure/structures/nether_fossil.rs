@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::{Block, BlockDirection, BlockState, Mirror, Rotation};
-use pumpkin_util::{
+use sculith_util::{
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{
         RandomDeriverImpl, RandomGenerator, RandomImpl, hash_block_pos, legacy_rand::LegacyRand,
@@ -220,7 +220,7 @@ impl NetherFossilPiece {
         fossil_bb: &BlockBox,
         chunk_bb: &BlockBox,
     ) {
-        use pumpkin_util::random::xoroshiro128::Xoroshiro;
+        use sculith_util::random::xoroshiro128::Xoroshiro;
 
         let center_x = i32::midpoint(fossil_bb.min.x, fossil_bb.max.x);
         let center_y = i32::midpoint(fossil_bb.min.y, fossil_bb.max.y);

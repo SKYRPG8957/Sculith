@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::{Block, BlockState, Mirror, Rotation};
-use pumpkin_util::{
+use sculith_util::{
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl, hash_block_pos, legacy_rand::LegacyRand},
 };
@@ -330,7 +330,7 @@ impl StructurePieceBase for IglooPiece {
         );
         let entrance_pos = self.template_position + entrance_rel;
         let height = chunk.get_top_y(
-            &pumpkin_util::HeightMap::WorldSurfaceWg,
+            &sculith_util::HeightMap::WorldSurfaceWg,
             entrance_pos.x,
             entrance_pos.z,
         );

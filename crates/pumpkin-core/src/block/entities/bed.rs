@@ -4,7 +4,7 @@ use pumpkin_data::{
     tag::{Block as BlockTag, Taggable},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::BlockEntity;
 
@@ -65,7 +65,7 @@ impl BedBlockEntity {
 #[cfg(test)]
 mod tests {
     use pumpkin_data::Block;
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
 
     use super::{BedBlockEntity, BlockEntity};
 

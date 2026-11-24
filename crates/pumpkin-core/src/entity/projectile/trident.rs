@@ -14,10 +14,10 @@ use pumpkin_data::sound::Sound;
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::java::client::play::Metadata;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_protocol::java::client::play::Metadata;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::version::JavaMinecraftVersion;
 
 use super::ProjectileHit;
 use super::abstract_arrow::{self, AbstractArrow, ArrowFlight, get_entity_hit_result};

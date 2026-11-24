@@ -1,5 +1,5 @@
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 /// The type of structure growing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

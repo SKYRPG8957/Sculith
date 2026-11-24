@@ -10,7 +10,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
-use pumpkin_util::Hand;
+use sculith_util::Hand;
 
 const ROLL: f32 = -20.0;
 const POWER: f32 = 0.7;

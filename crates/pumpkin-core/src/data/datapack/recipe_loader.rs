@@ -1,5 +1,5 @@
 use pumpkin_data::recipes::RecipeCategoryTypes;
-use pumpkin_protocol::codec::recipe::{
+use sculith_protocol::codec::recipe::{
     DynamicRecipe, OwnedBrewingRecipe, OwnedCookingRecipe, OwnedCookingRecipeType,
     OwnedCraftingRecipe, OwnedRecipeIngredient, OwnedRecipeResult, OwnedSmithingTransformRecipe,
     OwnedSmithingTrimRecipe, OwnedSpecialCraftingRecipe, OwnedStonecutterRecipe,

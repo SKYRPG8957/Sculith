@@ -4,7 +4,7 @@ use pumpkin_data::environment_attribute::{
     VillagerScheduleTimeline, sample_activity_track, sample_bool_track, sample_float_track,
     sample_moon_phase_track, sample_step_float_track, sample_unbounded_bool_track,
 };
-use pumpkin_util::math::{lerp, position::BlockPos};
+use sculith_util::math::{lerp, position::BlockPos};
 
 use super::World;
 

@@ -10,17 +10,17 @@ use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::client::CAddItemActor;
-use pumpkin_protocol::bedrock::network_item::ItemStackWrapper;
-use pumpkin_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::codec::var_long::VarLong;
-use pumpkin_protocol::codec::var_ulong::VarULong;
-use pumpkin_protocol::java::client::play::{CSetEntityMetadata, Metadata};
-use pumpkin_util::math::atomic_f32::AtomicF32;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::bedrock::client::CAddItemActor;
+use sculith_protocol::bedrock::network_item::ItemStackWrapper;
+use sculith_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::codec::var_long::VarLong;
+use sculith_protocol::codec::var_ulong::VarULong;
+use sculith_protocol::java::client::play::{CSetEntityMetadata, Metadata};
+use sculith_util::math::atomic_f32::AtomicF32;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering::{AcqRel, Relaxed};
 
 use std::sync::{
@@ -1129,7 +1129,7 @@ mod tests {
     use pumpkin_data::item_stack::ItemStack;
     use pumpkin_data::{Enchantment, damage::DamageType};
     use pumpkin_nbt::compound::NbtCompound;
-    use pumpkin_util::text::TextComponent;
+    use sculith_util::text::TextComponent;
     use std::time::{Duration, Instant};
 
     #[test]

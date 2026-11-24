@@ -3,7 +3,7 @@
 use crate::chunk_system::chunk_state::StagedChunkEnum;
 use crate::generation::{generator::WorldGenerator, get_world_gen, proto_chunk::ProtoChunk};
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::world_seed::Seed;
+use sculith_util::world_seed::Seed;
 
 use super::surface_biomes;
 

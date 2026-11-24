@@ -8,7 +8,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::Entity;
 use crate::entity::EntityBase;
@@ -312,7 +312,7 @@ impl Mob for TraderLlamaEntity {
 
     fn mob_bedrock_spawn_metadata(
         &self,
-    ) -> Option<pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
+    ) -> Option<sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
         self.llama.mob_bedrock_spawn_metadata()
     }
 

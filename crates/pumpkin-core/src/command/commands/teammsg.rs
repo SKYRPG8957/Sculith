@@ -7,8 +7,8 @@ use crate::command::node::Redirection;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use pumpkin_data::translation;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 const DESCRIPTION: &str = "Sends a message to your team.";
 const PERMISSION: &str = "minecraft:command.teammsg";

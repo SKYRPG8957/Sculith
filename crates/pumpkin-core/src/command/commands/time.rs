@@ -1,9 +1,9 @@
 use std::sync::LazyLock;
 
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::core::float::FloatArgumentType;
@@ -14,7 +14,7 @@ use crate::command::context::command_context::CommandContext;
 use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
-use pumpkin_util::identifier::Identifier;
+use sculith_util::identifier::Identifier;
 
 const DESCRIPTION: &str = "Query or modify the world time and clocks.";
 const PERMISSION: &str = "minecraft:command.time";

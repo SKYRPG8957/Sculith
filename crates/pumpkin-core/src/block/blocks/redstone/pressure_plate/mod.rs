@@ -3,11 +3,11 @@ use std::sync::Arc;
 use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId};
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos};
 use pumpkin_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos};
 
 use crate::{
     block::{OnEntityCollisionArgs, OnStateReplacedArgs},

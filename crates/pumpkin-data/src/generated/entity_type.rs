@@ -5,9 +5,9 @@ use crate::entity_pose::EntityPose;
 use crate::sound::{Sound, SoundCategory};
 use crate::tag::RegistryKey;
 use crate::tag::Taggable;
-use pumpkin_util::HeightMap;
-use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::HeightMap;
+use sculith_util::math::boundingbox::{BoundingBox, EntityDimensions};
+use sculith_util::math::vector3::Vector3;
 use std::hash::Hash;
 #[derive(Debug, Clone)]
 pub struct EntityType {

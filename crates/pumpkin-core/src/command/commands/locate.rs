@@ -4,17 +4,17 @@ use pumpkin_data::biome::Biome;
 use pumpkin_data::structures::{StructureKeys, StructurePlacementType, StructureSet};
 use pumpkin_data::tag::{self, RegistryKey};
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::click::ClickEvent;
-use pumpkin_util::text::hover::HoverEvent;
-use pumpkin_util::text::{TextComponent, color::NamedColor};
 use pumpkin_world::generation::generator::biome_finder::find_closest_biome_3d;
 use pumpkin_world::generation::generator::structure_finder::{
     StructureSearch, find_nearest_structure, find_nearest_structure_start,
 };
 use rustc_hash::FxHashSet;
+use sculith_util::PermissionLvl;
+use sculith_util::math::position::BlockPos;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::click::ClickEvent;
+use sculith_util::text::hover::HoverEvent;
+use sculith_util::text::{TextComponent, color::NamedColor};
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::resource_key::BIOME_REGISTRY;
@@ -458,7 +458,7 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::identifier::Identifier;
+    use sculith_util::identifier::Identifier;
 
     fn resource(path: &'static str) -> ResourceOrTag {
         ResourceOrTag::Resource(Identifier::vanilla_static(path))

@@ -2,9 +2,9 @@ use crate::block::BlockBehaviour;
 use pumpkin_data::block_state::BlockStateId;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, tag};
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 use rand::random;
+use sculith_util::math::position::BlockPos;
 
 #[pumpkin_block("minecraft:netherrack")]
 pub struct NetherrackBlock;

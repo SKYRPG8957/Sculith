@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::java::server::play::SPlayPong;
+use sculith_protocol::java::server::play::SPlayPong;
 
 impl JavaClient {
     pub fn handle_play_pong(&self, player: &Player, packet: &SPlayPong) {

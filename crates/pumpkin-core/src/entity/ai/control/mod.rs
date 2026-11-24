@@ -1,6 +1,6 @@
 use crate::entity::{EntityBase, mob::Mob};
-use pumpkin_util::math::subtract_angles;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::subtract_angles;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 pub mod body_rotation_control;

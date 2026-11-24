@@ -16,7 +16,7 @@ use pumpkin_nbt::{
     deserializer::{NbtReadHelper, NbtReadHelperBedrockDisk},
     tag::NbtTag,
 };
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::{
     Error, ImportStats, MAX_TABLE_BLOCK_BYTES, OVERWORLD, invalid, terrain::TerrainRegistry,

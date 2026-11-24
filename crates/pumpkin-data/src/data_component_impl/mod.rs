@@ -1232,7 +1232,7 @@ mod tests {
     fn lock_predicate_and_written_book_roundtrips() {
         use crate::item::Item;
         use crate::item_stack::ItemStack;
-        use pumpkin_util::text::TextComponent;
+        use sculith_util::text::TextComponent;
 
         let mut comp_pred = NbtCompound::new();
         comp_pred.put_string("minecraft:custom_name", "Secret Key".to_string());

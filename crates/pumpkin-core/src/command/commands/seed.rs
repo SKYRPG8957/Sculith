@@ -4,11 +4,11 @@ use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::click::ClickEvent;
-use pumpkin_util::text::hover::HoverEvent;
-use pumpkin_util::text::{TextComponent, color::NamedColor};
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::click::ClickEvent;
+use sculith_util::text::hover::HoverEvent;
+use sculith_util::text::{TextComponent, color::NamedColor};
 use std::borrow::Cow;
 use std::sync::LazyLock;
 

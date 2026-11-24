@@ -11,10 +11,10 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::{BlockDirection, BlockState};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::server::ActorEventID;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::ActorEventID;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::enchantment::EnchantmentHelper;
 use crate::entity::ai::behavior::hunting::{self, Hunt};

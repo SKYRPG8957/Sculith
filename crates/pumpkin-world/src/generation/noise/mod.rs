@@ -4,7 +4,7 @@ pub mod perlin;
 pub mod router;
 
 use pumpkin_data::{Block, BlockState, noise_settings::GenerationShapeConfig};
-use pumpkin_util::{math::vector3::Vector3, random::xoroshiro128::XoroshiroSplitter};
+use sculith_util::{math::vector3::Vector3, random::xoroshiro128::XoroshiroSplitter};
 
 use crate::generation::{
     noise::{
@@ -137,7 +137,7 @@ impl<'a> ChunkNoiseGenerator<'a> {
         beardifier_junctions: Vec<
             crate::generation::noise::router::density_function::beardifier::BeardifierJunction,
         >,
-        affected_box: Option<pumpkin_util::math::block_box::BlockBox>,
+        affected_box: Option<sculith_util::math::block_box::BlockBox>,
     ) -> Self {
         let builder_options = ChunkNoiseFunctionBuilderOptions::new(
             beardifier_structures,

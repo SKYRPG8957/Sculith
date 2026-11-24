@@ -5,9 +5,9 @@ use crate::entity::ai::pathfinder::pathfinding_context::PathfindingContext;
 use crate::entity::mob::Mob;
 use crate::entity::player::Player;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::{Arc, Weak};
 
 const TELEPORT_DISTANCE_SQ: f64 = 144.0;

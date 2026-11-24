@@ -4,11 +4,11 @@ use pumpkin_data::{
     fluid::Fluid,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
+use sculith_util::math::position::BlockPos;
 
 use crate::block::{
     BlockBehaviour, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, PlacedArgs,

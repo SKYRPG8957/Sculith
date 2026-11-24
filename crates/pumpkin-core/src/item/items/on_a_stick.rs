@@ -20,7 +20,7 @@ impl ItemMetadata for CarrotOnAStickItem {
 fn boost_vehicle(
     player: &Player,
     item: &Item,
-    hand: pumpkin_util::Hand,
+    hand: sculith_util::Hand,
     entity_type_id: u16,
     damage: i32,
 ) {
@@ -35,7 +35,7 @@ fn boost_vehicle(
         && let Some(steerable) = vehicle.get_item_steerable()
         && steerable.boost()
     {
-        if player.gamemode.load() == pumpkin_util::GameMode::Creative {
+        if player.gamemode.load() == sculith_util::GameMode::Creative {
             return;
         }
         let mut stack = player.inventory.get_stack_in_hand(hand);
@@ -52,7 +52,7 @@ fn boost_vehicle(
 impl ItemBehaviour for CarrotOnAStickItem {
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+        self.normal_use_with_hand(item, player, yaw, pitch, sculith_util::Hand::Right);
     }
 
     fn normal_use_with_hand(
@@ -61,7 +61,7 @@ impl ItemBehaviour for CarrotOnAStickItem {
         player: &Player,
         _yaw: f32,
         _pitch: f32,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
     ) {
         boost_vehicle(player, item, hand, EntityType::PIG.id, 7);
     }
@@ -80,7 +80,7 @@ impl ItemMetadata for WarpedFungusOnAStickItem {
 impl ItemBehaviour for WarpedFungusOnAStickItem {
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+        self.normal_use_with_hand(item, player, yaw, pitch, sculith_util::Hand::Right);
     }
 
     fn normal_use_with_hand(
@@ -89,7 +89,7 @@ impl ItemBehaviour for WarpedFungusOnAStickItem {
         player: &Player,
         _yaw: f32,
         _pitch: f32,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
     ) {
         boost_vehicle(player, item, hand, EntityType::STRIDER.id, 1);
     }

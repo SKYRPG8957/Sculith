@@ -1,6 +1,6 @@
 /* This file is generated. Do not edit manually. */
 use crate::meta_data_type::MetaDataType;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::version::JavaMinecraftVersion;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TrackedId(pub u8);
 impl TrackedId {

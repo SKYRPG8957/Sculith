@@ -1,7 +1,7 @@
 use pumpkin_data::item::Item;
 pub use pumpkin_data::villager::{VillagerProfession, VillagerType};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
+use sculith_protocol::codec::var_int::VarInt;
 use serde::Serialize;
 
 pub const BREEDING_FOOD_THRESHOLD: i32 = 12;
@@ -154,13 +154,13 @@ pub struct VillagerData {
     pub level: VarInt,
 }
 
-impl pumpkin_protocol::java::client::play::MetadataSerializer for VillagerData {
+impl sculith_protocol::java::client::play::MetadataSerializer for VillagerData {
     fn write_metadata(
         &self,
         writer: &mut impl std::io::Write,
-        _version: &pumpkin_util::version::JavaMinecraftVersion,
-    ) -> Result<(), pumpkin_protocol::ser::WritingError> {
-        use pumpkin_protocol::ser::NetworkWriteExt;
+        _version: &sculith_util::version::JavaMinecraftVersion,
+    ) -> Result<(), sculith_protocol::ser::WritingError> {
+        use sculith_protocol::ser::NetworkWriteExt;
         writer.write_var_int(&self.r#type)?;
         writer.write_var_int(&self.profession)?;
         writer.write_var_int(&self.level)

@@ -1,5 +1,5 @@
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};
 use crate::command::argument_types::component::ComponentArgumentType;

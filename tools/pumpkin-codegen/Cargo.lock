@@ -773,7 +773,7 @@ dependencies = [
  "md5",
  "proc-macro2",
  "pumpkin-nbt",
- "pumpkin-util",
+ "sculith-util",
  "quote",
  "rayon",
  "semver",
@@ -799,7 +799,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pumpkin-util"
+name = "sculith-util"
 version = "0.1.0-dev+26.2-26.40"
 dependencies = [
  "base64 0.23.1",

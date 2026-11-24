@@ -19,7 +19,7 @@ mod test {
     fn sample_value() {
         use crate::generation::generator::{GeneratorInit, VanillaGenerator, WorldGenerator};
         use crate::generation::noise::router::multi_noise_sampler::MultiNoiseSampler;
-        use pumpkin_util::world_seed::Seed;
+        use sculith_util::world_seed::Seed;
         type PosToPoint = (i32, i32, i32, i64, i64, i64, i64, i64, i64);
         let expected_data: Vec<PosToPoint> =
             include_json!("../../../../assets/multi_noise_sample_no_blend_no_beard_0_0_0.json");
@@ -56,7 +56,7 @@ mod test {
     // #[test]
     // fn sample_multinoise_biome() {
     //     use crate::generation::generator::{GeneratorInit, VanillaGenerator};
-    //     use pumpkin_util::world_seed::Seed;
+    //     use sculith_util::world_seed::Seed;
 
     //     let expected_data: Vec<(i32, i32, i32, u8)> =
     //         read_data_from_file!("../../../assets/multi_noise_biome_source_test.json");

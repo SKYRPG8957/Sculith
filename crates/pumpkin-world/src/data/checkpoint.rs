@@ -12,7 +12,7 @@ use std::{
 
 use bytes::{Buf, BufMut, Bytes};
 use pumpkin_nbt::{Nbt, compound::NbtCompound};
-use pumpkin_util::math::vector2::Vector2;
+use sculith_util::math::vector2::Vector2;
 use tokio::sync::{Notify, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;

@@ -61,7 +61,7 @@ impl MetaDataType {
     pub const PROFILE: MetaDataType = Self::RESOLVABLE_PROFILE;
     pub const ARM: MetaDataType = Self::HUMANOID_ARM;
     #[must_use]
-    pub const fn id(&self, _version: pumpkin_util::version::JavaMinecraftVersion) -> i32 {
+    pub const fn id(&self, _version: sculith_util::version::JavaMinecraftVersion) -> i32 {
         self.id
     }
 }

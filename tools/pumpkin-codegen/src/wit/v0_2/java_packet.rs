@@ -43,7 +43,7 @@ pub fn build() -> String {
     for state in &server_states {
         dirs.push((
             PathBuf::from(format!(
-                "../../crates/pumpkin-protocol/src/java/server/{}",
+                "../../crates/sculith-protocol/src/java/server/{}",
                 state
             )),
             *state,
@@ -54,7 +54,7 @@ pub fn build() -> String {
     for state in &client_states {
         dirs.push((
             PathBuf::from(format!(
-                "../../crates/pumpkin-protocol/src/java/client/{}",
+                "../../crates/sculith-protocol/src/java/client/{}",
                 state
             )),
             *state,

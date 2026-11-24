@@ -16,7 +16,7 @@
 //! for packet format details.
 
 use crate::InventoryError;
-use pumpkin_protocol::java::server::play::SlotActionType;
+use sculith_protocol::java::server::play::SlotActionType;
 
 /// A parsed container click event.
 ///

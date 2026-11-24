@@ -8,12 +8,12 @@ use std::{
 use dashmap::try_result::TryResult;
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use pumpkin_world::{
     chunk::{ChunkEntityData, io::Dirtiable},
     level::SyncEntityChunk,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use uuid::Uuid;
 
 use crate::{

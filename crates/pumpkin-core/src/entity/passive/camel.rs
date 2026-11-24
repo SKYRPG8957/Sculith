@@ -15,9 +15,9 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::wrap_degrees;
+use sculith_util::math::boundingbox::{BoundingBox, EntityDimensions};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::wrap_degrees;
 
 use crate::entity::{
     Entity, EntityBase,
@@ -34,7 +34,7 @@ use crate::entity::{
 };
 use crate::world::World;
 use pumpkin_data::entity::EntityPose;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 const CAMEL_AGE_UP_SECONDS: i32 = 10;
 const MAX_PASSENGERS: usize = 2;
@@ -465,7 +465,7 @@ impl Mob for CamelEntity {
         &self,
         _player: &Arc<Player>,
         _item_stack: &mut ItemStack,
-        _hand: pumpkin_util::Hand,
+        _hand: sculith_util::Hand,
     ) -> Option<bool> {
         if self.is_husk() {
             self.mob_entity

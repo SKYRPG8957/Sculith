@@ -15,9 +15,9 @@ use crate::entity::player::Player;
 use crate::entity::player::advancement::{AdvancementAward, PlayerAdvancement};
 use pumpkin_data::advancement_data::AdvancementNode;
 use pumpkin_data::{ADVANCEMENT_TREE, Advancement, translation};
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 
 const NAME: &str = "advancement";

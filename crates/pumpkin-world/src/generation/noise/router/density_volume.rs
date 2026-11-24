@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 
-pub use pumpkin_util::noise::volume::DensityVolume;
+pub use sculith_util::noise::volume::DensityVolume;
 
 const BUFFER_SIZE_INCREMENT: usize = 16;
 const MAX_REUSE_SIZE_FACTOR: usize = 2;

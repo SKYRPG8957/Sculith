@@ -4,9 +4,9 @@ use pumpkin_data::entity::EntityPose;
 use pumpkin_data::tag::{Block as BlockTag, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_data::{Block, BlockState};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::math::wrap_degrees;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::math::wrap_degrees;
 
 use crate::block::blocks::bed::BedBlock;
 use crate::entity::EntityBase;

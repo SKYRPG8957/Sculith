@@ -3,13 +3,13 @@ use std::sync::Arc;
 use pumpkin_data::{
     Block, BlockStateId, configured_feature::ConfiguredFeature as FeatureKey, tag, tag::Taggable,
 };
-use pumpkin_util::{
-    math::{position::BlockPos, vector3::Vector3},
-    random::{RandomGenerator, RandomImpl},
-};
 use pumpkin_world::{
     generation::feature::configured_features::{CONFIGURED_FEATURES, ConfiguredFeature},
     world::BlockFlags,
+};
+use sculith_util::{
+    math::{position::BlockPos, vector3::Vector3},
+    random::{RandomGenerator, RandomImpl},
 };
 
 use crate::world::{World, generation_cache::WorldGenerationCache};

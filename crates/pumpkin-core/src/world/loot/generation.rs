@@ -475,7 +475,7 @@ impl Generator<'_, '_> {
                     && let Some(world) = self.params.world
                     && let Some(pos) = self.params.position
                     && let Some(entity) =
-                        world.get_block_entity(&pumpkin_util::math::position::BlockPos::floored_v(
+                        world.get_block_entity(&sculith_util::math::position::BlockPos::floored_v(
                             pos,
                         ))
                     && let Some(pot) = entity

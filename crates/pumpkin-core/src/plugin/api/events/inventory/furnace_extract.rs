@@ -1,6 +1,6 @@
 use crate::entity::player::Player;
 use pumpkin_macros::Event;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 /// An event that occurs when a player extracts items from a furnace output slot.

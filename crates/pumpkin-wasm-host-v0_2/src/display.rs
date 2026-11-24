@@ -7,7 +7,7 @@ use wasmtime::component::{Accessor, HasSelf, Resource};
 use crate::pumpkin::plugin::display::{HostModelDisplayEntity, ModelDisplayEntity};
 use pumpkin_core::entity::decoration::model::ModelDisplayEntity as InternalModelDisplayEntity;
 
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::{
     pumpkin::plugin::{

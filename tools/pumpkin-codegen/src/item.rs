@@ -3,10 +3,10 @@ use crate::enchantments::AttributeModifierSlot;
 use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::{Span, TokenStream};
 use pumpkin_nbt::{Nbt, compound::NbtCompound};
-use pumpkin_util::registry::TagType;
-use pumpkin_util::text::TextContent;
-use pumpkin_util::{registry::RegistryEntryList, text::TextComponent};
 use quote::{ToTokens, format_ident, quote};
+use sculith_util::registry::TagType;
+use sculith_util::text::TextContent;
+use sculith_util::{registry::RegistryEntryList, text::TextComponent};
 use serde::Deserialize;
 use serde_repr::Deserialize_repr;
 use std::{
@@ -2359,7 +2359,7 @@ pub fn build() -> TokenStream {
         use crate::data_component::DataComponent::*;
         use crate::data_component_impl::*;
         use crate::tag::{RegistryKey, Taggable};
-        use pumpkin_util::text::TextComponent;
+        use sculith_util::text::TextComponent;
         use std::borrow::Cow;
         use std::hash::{Hash, Hasher};
         use crate::{tag, AttributeModifierSlot};

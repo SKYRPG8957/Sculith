@@ -2,9 +2,9 @@ use pumpkin_data::block_properties::WhiteBedLikeProperties as BedProperties;
 use pumpkin_data::entity::EntityPose;
 use pumpkin_data::poi_type::PoiType;
 use pumpkin_data::tag::{Block as BlockTag, Taggable};
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use super::super::super::memory::{GlobalPos, MemoryModuleType, MemoryStatus};
 use super::super::OneShot;

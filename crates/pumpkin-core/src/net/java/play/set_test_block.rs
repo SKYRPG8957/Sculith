@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::block::entities::test_block::{TestBlockBlockEntity, TestBlockMode};
-use pumpkin_protocol::java::server::play::TestBlockMode as PacketTestBlockMode;
+use sculith_protocol::java::server::play::TestBlockMode as PacketTestBlockMode;
 
 const fn test_block_mode_from_packet(mode: PacketTestBlockMode) -> TestBlockMode {
     match mode {

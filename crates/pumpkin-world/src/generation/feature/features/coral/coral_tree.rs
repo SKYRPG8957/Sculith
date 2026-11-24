@@ -1,6 +1,6 @@
 use crate::{generation::proto_chunk::GenerationCache, world::WorldPortalExt};
 use pumpkin_data::{BlockDirection, tag};
-use pumpkin_util::{
+use sculith_util::{
     math::position::BlockPos,
     random::{RandomGenerator, RandomImpl},
 };

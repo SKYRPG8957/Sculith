@@ -20,7 +20,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::screen::WindowType;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, BannerPattern, RegistryKey, Taggable, get_tag_values};
-use pumpkin_protocol::java::server::play::SlotActionType;
+use sculith_protocol::java::server::play::SlotActionType;
 
 pub const NO_ITEM_REQUIRED_PATTERNS: &[&str] = BannerPattern::MINECRAFT_NO_ITEM_REQUIRED.0;
 

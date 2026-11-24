@@ -1,6 +1,6 @@
 use arc_swap::ArcSwap;
 use pumpkin_data::{packet::CURRENT_MC_VERSION, translation};
-use pumpkin_protocol::{
+use sculith_protocol::{
     ConnectionState, Label, Link, LinkType,
     java::client::{
         config::{
@@ -13,7 +13,7 @@ use pumpkin_protocol::{
         SEncryptionResponse, SLoginCookieResponse, SLoginPluginResponse, SLoginStart,
     },
 };
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 use tracing::debug;
 use uuid::Uuid;

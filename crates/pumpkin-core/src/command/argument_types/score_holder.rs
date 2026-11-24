@@ -14,8 +14,8 @@ use crate::command::{
 };
 use crate::entity::EntityBase;
 use pumpkin_data::translation;
-use pumpkin_util::text::TextComponent;
 use rustc_hash::FxHashSet;
+use sculith_util::text::TextComponent;
 use uuid::Uuid;
 
 const NO_WILDCARD_RESULTS: CommandErrorType<0> = CommandErrorType::new(

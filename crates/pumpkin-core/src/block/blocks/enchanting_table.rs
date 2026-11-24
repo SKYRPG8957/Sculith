@@ -18,8 +18,8 @@ use pumpkin_inventory::screen_handler::{
 };
 use pumpkin_inventory::{Inventory, SimpleInventory};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::text::TextComponent;
+use sculith_util::math::position::BlockPos;
+use sculith_util::text::TextComponent;
 
 #[pumpkin_block("minecraft:enchanting_table")]
 pub struct EnchantingTableBlock;

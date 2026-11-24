@@ -305,7 +305,7 @@ pub fn java_packet(args: TokenStream, item: TokenStream) -> TokenStream {
         impl #impl_generics crate::packet::MultiVersionJavaPacket for #name #ty_generics #where_clause {
             #[must_use]
             #[inline]
-            fn to_id(version: pumpkin_util::version::JavaMinecraftVersion) -> i32 {
+            fn to_id(version: sculith_util::version::JavaMinecraftVersion) -> i32 {
                 #packet_id_expr.to_id(version)
             }
         }
@@ -1085,7 +1085,7 @@ pub fn translate_cross(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         {
             #[allow(deprecated)]
-            pumpkin_util::text::TextComponent::translate_cross(#java_expr, #bedrock_expr, vec![#(#args),*])
+            sculith_util::text::TextComponent::translate_cross(#java_expr, #bedrock_expr, vec![#(#args),*])
         }
     };
 
@@ -1143,7 +1143,7 @@ pub fn translate_java(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         {
             #[allow(deprecated)]
-            pumpkin_util::text::TextComponent::translate(#java_expr, vec![#(#args),*])
+            sculith_util::text::TextComponent::translate(#java_expr, vec![#(#args),*])
         }
     };
 

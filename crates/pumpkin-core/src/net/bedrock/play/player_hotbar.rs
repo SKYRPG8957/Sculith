@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::bedrock::server::player_hotbar::SPlayerHotbar;
+use sculith_protocol::bedrock::server::player_hotbar::SPlayerHotbar;
 
 impl BedrockClient {
     pub fn handle_player_hotbar(
@@ -20,7 +20,7 @@ impl BedrockClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_protocol::serial::PacketRead;
+    use sculith_protocol::serial::PacketRead;
     use std::io::Cursor;
 
     #[test]

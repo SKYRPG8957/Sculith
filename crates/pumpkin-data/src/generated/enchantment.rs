@@ -6,8 +6,8 @@ use crate::tag::Enchantment as EnchantmentTag;
 use crate::tag::EntityType as EntityTypeTag;
 use crate::tag::Item as ItemTag;
 use crate::tag::{RegistryKey, Tag, Taggable};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::color::NamedColor;
+use sculith_util::text::TextComponent;
+use sculith_util::text::color::NamedColor;
 use std::hash::{Hash, Hasher};
 use std::slice::Iter;
 #[derive(Clone, Debug, PartialEq)]
@@ -85,15 +85,15 @@ pub struct ConditionalEffect<T> {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ReplaceDiskPredicate {
     MatchingBlockTag {
-        offset: pumpkin_util::math::vector3::Vector3<i32>,
+        offset: sculith_util::math::vector3::Vector3<i32>,
         tag: &'static crate::tag::Tag,
     },
     MatchingBlocks {
-        offset: pumpkin_util::math::vector3::Vector3<i32>,
+        offset: sculith_util::math::vector3::Vector3<i32>,
         blocks: &'static [&'static str],
     },
     MatchingFluids {
-        offset: pumpkin_util::math::vector3::Vector3<i32>,
+        offset: sculith_util::math::vector3::Vector3<i32>,
         fluids: &'static [&'static str],
     },
     Unobstructed,
@@ -148,7 +148,7 @@ pub enum EnchantmentEntityEffect {
         vertical_position: PositionSource,
         horizontal_velocity: VelocitySource,
         vertical_velocity: VelocitySource,
-        speed: pumpkin_util::math::float_provider::FloatProvider,
+        speed: sculith_util::math::float_provider::FloatProvider,
     },
     RunFunction {
         function: &'static str,
@@ -157,8 +157,8 @@ pub enum EnchantmentEntityEffect {
         amount: LevelBasedValue,
     },
     ApplyImpulse {
-        direction: pumpkin_util::math::vector3::Vector3<f64>,
-        coordinate_scale: pumpkin_util::math::vector3::Vector3<f64>,
+        direction: sculith_util::math::vector3::Vector3<f64>,
+        coordinate_scale: sculith_util::math::vector3::Vector3<f64>,
         magnitude: LevelBasedValue,
     },
     ApplyMobEffect {
@@ -199,7 +199,7 @@ impl PositionSourceType {
         position: f64,
         center: f64,
         bounding_box_span: f32,
-        random: &mut impl pumpkin_util::random::RandomImpl,
+        random: &mut impl sculith_util::random::RandomImpl,
     ) -> f64 {
         match self {
             Self::EntityPosition => position,
@@ -247,7 +247,7 @@ impl PositionSource {
         position: f64,
         center: f64,
         bounding_box_span: f32,
-        random: &mut impl pumpkin_util::random::RandomImpl,
+        random: &mut impl sculith_util::random::RandomImpl,
     ) -> f64 {
         self.source_type
             .get_coordinate(position, center, bounding_box_span * self.scale, random)
@@ -257,13 +257,13 @@ impl PositionSource {
 #[derive(Clone, Debug, PartialEq)]
 pub struct VelocitySource {
     pub movement_scale: f32,
-    pub base: pumpkin_util::math::float_provider::FloatProvider,
+    pub base: sculith_util::math::float_provider::FloatProvider,
 }
 impl VelocitySource {
     #[must_use]
     pub const fn new(
         movement_scale: f32,
-        base: pumpkin_util::math::float_provider::FloatProvider,
+        base: sculith_util::math::float_provider::FloatProvider,
     ) -> Self {
         Self {
             movement_scale,
@@ -274,12 +274,12 @@ impl VelocitySource {
     pub const fn movement_scaled(scale: f32) -> Self {
         Self {
             movement_scale: scale,
-            base: pumpkin_util::math::float_provider::FloatProvider::Constant(0.0),
+            base: sculith_util::math::float_provider::FloatProvider::Constant(0.0),
         }
     }
     #[must_use]
     pub const fn fixed_velocity(
-        provider: pumpkin_util::math::float_provider::FloatProvider,
+        provider: sculith_util::math::float_provider::FloatProvider,
     ) -> Self {
         Self {
             movement_scale: 0.0,
@@ -289,7 +289,7 @@ impl VelocitySource {
     pub fn get_velocity(
         &self,
         movement: f64,
-        random: &mut impl pumpkin_util::random::RandomImpl,
+        random: &mut impl sculith_util::random::RandomImpl,
     ) -> f64 {
         f64::from(self.movement_scale).mul_add(movement, f64::from(self.base.get(random)))
     }
@@ -1272,15 +1272,15 @@ impl Enchantment {
                     offset_z: 0i32,
                     predicate: Some(ReplaceDiskPredicate::AllOf(&[
                         ReplaceDiskPredicate::MatchingBlockTag {
-                            offset: pumpkin_util::math::vector3::Vector3::new(0i32, 1i32, 0i32),
+                            offset: sculith_util::math::vector3::Vector3::new(0i32, 1i32, 0i32),
                             tag: &crate::tag::Block::MINECRAFT_AIR,
                         },
                         ReplaceDiskPredicate::MatchingBlocks {
-                            offset: pumpkin_util::math::vector3::Vector3::new(0i32, 0i32, 0i32),
+                            offset: sculith_util::math::vector3::Vector3::new(0i32, 0i32, 0i32),
                             blocks: &["minecraft:water"],
                         },
                         ReplaceDiskPredicate::MatchingFluids {
-                            offset: pumpkin_util::math::vector3::Vector3::new(0i32, 0i32, 0i32),
+                            offset: sculith_util::math::vector3::Vector3::new(0i32, 0i32, 0i32),
                             fluids: &["minecraft:water"],
                         },
                         ReplaceDiskPredicate::Unobstructed,

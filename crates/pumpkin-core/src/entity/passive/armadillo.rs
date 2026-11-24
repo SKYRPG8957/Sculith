@@ -11,8 +11,8 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::position::BlockPos;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::{
     Entity, EntityBase,
@@ -457,7 +457,7 @@ impl Mob for ArmadilloEntity {
         if item_stack.item == &Item::BRUSH
             && self.brush_off_scute(Some(player.as_ref()), item_stack)
         {
-            if player.gamemode.load() != pumpkin_util::GameMode::Creative {
+            if player.gamemode.load() != sculith_util::GameMode::Creative {
                 let _ = item_stack.damage_item(16);
             }
             return true;

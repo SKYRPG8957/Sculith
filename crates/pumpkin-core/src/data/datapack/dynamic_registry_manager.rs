@@ -3,7 +3,7 @@ use std::sync::RwLock;
 
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_data::registry::{Registry, RegistryEntryData};
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::version::JavaMinecraftVersion;
 
 /// Represents a single dynamic registry holding all its entries in canonical network order.
 #[derive(Clone, Debug, Default)]

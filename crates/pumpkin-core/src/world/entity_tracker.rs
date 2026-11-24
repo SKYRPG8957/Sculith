@@ -10,30 +10,30 @@ use dashmap::{DashMap, mapref::entry::Entry, try_result::TryResult};
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_protocol::bedrock::client::move_actor_delta::{
+use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
+use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_protocol::bedrock::client::move_actor_delta::{
     CMoveActorDelta, MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW, MOVE_ACTOR_DELTA_FLAG_HAS_PITCH,
     MOVE_ACTOR_DELTA_FLAG_HAS_X, MOVE_ACTOR_DELTA_FLAG_HAS_Y, MOVE_ACTOR_DELTA_FLAG_HAS_YAW,
     MOVE_ACTOR_DELTA_FLAG_HAS_Z, MOVE_ACTOR_DELTA_FLAG_ON_GROUND,
 };
-use pumpkin_protocol::bedrock::client::remove_actor::CRemoveActor;
-use pumpkin_protocol::bedrock::client::{CMovePlayer, CSetActorMotion};
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::codec::var_long::VarLong;
-use pumpkin_protocol::codec::var_ulong::VarULong;
-use pumpkin_protocol::java::client::play::{
+use sculith_protocol::bedrock::client::remove_actor::CRemoveActor;
+use sculith_protocol::bedrock::client::{CMovePlayer, CSetActorMotion};
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::codec::var_long::VarLong;
+use sculith_protocol::codec::var_ulong::VarULong;
+use sculith_protocol::java::client::play::{
     CEntityPositionSync, CEntityVelocity, CHeadRot, CRemoveEntities, CSetEntityMetadata,
     CSetEquipment, CSetPassengers, CUpdateEntityPos, CUpdateEntityPosRot, CUpdateEntityRot,
     Metadata,
 };
-use pumpkin_protocol::{BClientPacket, ClientPacket};
-use pumpkin_util::GameMode;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::math::{pack_degrees, position::chunk_section_from_pos};
-use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
-use rayon::prelude::*;
-use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_protocol::{BClientPacket, ClientPacket};
+use sculith_util::GameMode;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::math::{pack_degrees, position::chunk_section_from_pos};
 use uuid::Uuid;
 
 use crate::entity::attributes::bedrock_mob_health_update;
@@ -983,7 +983,7 @@ impl TrackedEntity {
                 }
 
                 let head_yaw = target_entity.head_yaw.load();
-                // TODO: use `pumpkin_util::math::pack_degrees`.
+                // TODO: use `sculith_util::math::pack_degrees`.
                 let head_rot_packet = CHeadRot::new(
                     target_id.into(),
                     (head_yaw * 256.0 / 360.0).rem_euclid(256.0) as u8,
@@ -1012,7 +1012,7 @@ impl TrackedEntity {
                 }
                 ClientPlatform::Bedrock(client) => {
                     let motion =
-                        pumpkin_protocol::bedrock::client::set_actor_motion::CSetActorMotion {
+                        sculith_protocol::bedrock::client::set_actor_motion::CSetActorMotion {
                             target_runtime_id: (self.entity_id as u64).into(),
                             motion: vel.to_f32_lossy(),
                             tick: 0u64.into(),
@@ -1055,7 +1055,7 @@ impl TrackedEntity {
                         }
                         ClientPlatform::Bedrock(client) => {
                             use pumpkin_data::data_component_impl::EquipmentSlot;
-                            use pumpkin_protocol::bedrock::{
+                            use sculith_protocol::bedrock::{
                                 client::{
                                     mob_armor_equipment::CMobArmorEquipment,
                                     mob_equipment::CMobEquipment,
@@ -1145,7 +1145,7 @@ impl TrackedEntity {
                             if effect.show_icon {
                                 flags |= 0x04;
                             }
-                            let pkt = pumpkin_protocol::java::client::play::CUpdateMobEffect::new(
+                            let pkt = sculith_protocol::java::client::play::CUpdateMobEffect::new(
                                 self.entity_id.into(),
                                 i32::from(effect.effect_type.id).into(),
                                 i32::from(effect.amplifier).into(),
@@ -1171,9 +1171,9 @@ impl TrackedEntity {
                             {
                                 continue;
                             }
-                            let pkt = pumpkin_protocol::bedrock::client::CMobEffect {
+                            let pkt = sculith_protocol::bedrock::client::CMobEffect {
                                 target_runtime_id: (self.entity_id as u64).into(),
-                                event_id: pumpkin_protocol::bedrock::client::CMobEffect::EVENT_ADD,
+                                event_id: sculith_protocol::bedrock::client::CMobEffect::EVENT_ADD,
                                 effect_id: native_id
                                     .unwrap_or_else(|| effect.effect_type.to_bedrock_id())
                                     .into(),
@@ -1208,8 +1208,8 @@ impl TrackedEntity {
                 }
                 ClientPlatform::Bedrock(client) => {
                     for (idx, p) in passengers.iter().enumerate() {
-                        let link = pumpkin_protocol::bedrock::client::CSetActorLink {
-                            link: pumpkin_protocol::bedrock::client::common::ActorLink {
+                        let link = sculith_protocol::bedrock::client::CSetActorLink {
+                            link: sculith_protocol::bedrock::client::common::ActorLink {
                                 ridden_unique_id: i64::from(self.entity_id).into(),
                                 rider_unique_id: i64::from(p.get_entity().entity_id).into(),
                                 link_type: if idx == 0 { 1 } else { 2 },
@@ -1246,8 +1246,8 @@ impl TrackedEntity {
                     let vehicle_id = vehicle.get_entity().entity_id;
                     for (idx, p) in vehicle_passengers.iter().enumerate() {
                         if p.get_entity().entity_id == self.entity_id {
-                            let link = pumpkin_protocol::bedrock::client::CSetActorLink {
-                                link: pumpkin_protocol::bedrock::client::common::ActorLink {
+                            let link = sculith_protocol::bedrock::client::CSetActorLink {
+                                link: sculith_protocol::bedrock::client::common::ActorLink {
                                     ridden_unique_id: i64::from(vehicle_id).into(),
                                     rider_unique_id: i64::from(self.entity_id).into(),
                                     link_type: if idx == 0 { 1 } else { 2 },

@@ -2,7 +2,7 @@
 
 use crate::generation::{generator::WorldGenerator, get_world_gen, proto_chunk::ProtoChunk};
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::world_seed::Seed;
+use sculith_util::world_seed::Seed;
 
 use super::surface_biomes;
 
@@ -14,7 +14,7 @@ impl crate::world::WorldPortalExt for TestBlockRegistry {
         block: &pumpkin_data::Block,
         state: &pumpkin_data::BlockState,
         block_accessor: &dyn crate::world::BlockAccessor,
-        block_pos: &pumpkin_util::math::position::BlockPos,
+        block_pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         use pumpkin_data::Block;
         use pumpkin_data::tag::Taggable;
@@ -336,25 +336,25 @@ impl crate::generation::height_limit::HeightLimitView for TestGridCache {
 impl crate::world::BlockAccessor for TestGridCache {
     fn get_block(
         &self,
-        position: &pumpkin_util::math::position::BlockPos,
+        position: &sculith_util::math::position::BlockPos,
     ) -> &'static pumpkin_data::Block {
         self.get_block_state_id(position).to_block()
     }
     fn get_block_state(
         &self,
-        position: &pumpkin_util::math::position::BlockPos,
+        position: &sculith_util::math::position::BlockPos,
     ) -> &'static pumpkin_data::BlockState {
         self.get_block_state_id(position).to_state()
     }
     fn get_block_state_id(
         &self,
-        position: &pumpkin_util::math::position::BlockPos,
+        position: &sculith_util::math::position::BlockPos,
     ) -> pumpkin_data::BlockStateId {
         crate::generation::proto_chunk::GenerationCache::get_block_state(self, &position.0)
     }
     fn get_block_and_state(
         &self,
-        position: &pumpkin_util::math::position::BlockPos,
+        position: &sculith_util::math::position::BlockPos,
     ) -> (
         &'static pumpkin_data::Block,
         &'static pumpkin_data::BlockState,
@@ -382,7 +382,7 @@ impl crate::generation::proto_chunk::GenerationCache for TestGridCache {
     }
     fn get_block_state(
         &self,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
     ) -> pumpkin_data::BlockStateId {
         let cx = pos.x >> 4;
         let cz = pos.z >> 4;
@@ -394,7 +394,7 @@ impl crate::generation::proto_chunk::GenerationCache for TestGridCache {
     }
     fn get_fluid_and_fluid_state(
         &self,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
     ) -> (pumpkin_data::fluid::Fluid, pumpkin_data::fluid::FluidState) {
         use pumpkin_data::fluid::Fluid;
         let id = crate::generation::proto_chunk::GenerationCache::get_block_state(self, pos);
@@ -420,7 +420,7 @@ impl crate::generation::proto_chunk::GenerationCache for TestGridCache {
     }
     fn set_block_state(
         &mut self,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         block_state: &pumpkin_data::BlockState,
     ) {
         let cx = pos.x >> 4;
@@ -434,7 +434,7 @@ impl crate::generation::proto_chunk::GenerationCache for TestGridCache {
     }
     fn add_block_entity(
         &mut self,
-        _pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        _pos: &sculith_util::math::vector3::Vector3<i32>,
         nbt: pumpkin_nbt::compound::NbtCompound,
     ) {
         self.chunks
@@ -456,7 +456,7 @@ impl crate::generation::proto_chunk::GenerationCache for TestGridCache {
             chunk.top_motion_blocking_block_no_leaves_height_exclusive(x, z)
         })
     }
-    fn get_top_y(&self, heightmap: &pumpkin_util::HeightMap, x: i32, z: i32) -> i32 {
+    fn get_top_y(&self, heightmap: &sculith_util::HeightMap, x: i32, z: i32) -> i32 {
         let cx = x >> 4;
         let cz = z >> 4;
         self.chunks
@@ -491,7 +491,7 @@ impl crate::generation::proto_chunk::GenerationCache for TestGridCache {
             .get(&(cx, cz))
             .map_or(-64, |chunk| chunk.ocean_floor_wg_height_exclusive(x, z))
     }
-    fn is_air(&self, local_pos: &pumpkin_util::math::vector3::Vector3<i32>) -> bool {
+    fn is_air(&self, local_pos: &sculith_util::math::vector3::Vector3<i32>) -> bool {
         pumpkin_data::block_properties::is_air(
             crate::generation::proto_chunk::GenerationCache::get_block_state(self, local_pos),
         )

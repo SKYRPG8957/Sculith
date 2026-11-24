@@ -5,11 +5,11 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use pumpkin_util::world_seed::Seed;
 use pumpkin_world::world_info::{
     LevelData, WorldInfoError, WorldInfoReader, WorldInfoWriter,
     anvil::{AnvilLevelInfo, LEVEL_DAT_BACKUP_FILE_NAME},
 };
+use sculith_util::world_seed::Seed;
 use tempfile::TempDir;
 
 #[test]

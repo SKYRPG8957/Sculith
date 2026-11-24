@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::entity::boss::wither::WitherEntity;
 use pumpkin_data::{Block, damage::DamageType, effect::StatusEffect, potion::Effect, tracked_data};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{Difficulty, math::vector3::Vector3};
+use sculith_util::{Difficulty, math::vector3::Vector3};
 
 use crate::{
     entity::{

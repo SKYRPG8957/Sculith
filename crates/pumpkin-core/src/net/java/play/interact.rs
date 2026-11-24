@@ -74,7 +74,7 @@ impl JavaClient {
                                 }
                             }
                             let packet_hand = interact.hand.map_or(0, |hand| hand.0);
-                            let Ok(mut hand) = pumpkin_util::Hand::from_packet_id(packet_hand)
+                            let Ok(mut hand) = sculith_util::Hand::from_packet_id(packet_hand)
                             else {
                                 return;
                             };
@@ -85,7 +85,7 @@ impl JavaClient {
                             let interacted = if let Some(handled) = native_interaction {
                                 handled
                             } else {
-                                hand = pumpkin_util::Hand::Right;
+                                hand = sculith_util::Hand::Right;
                                 stack = player.inventory().held_item();
                                 before = stack.clone();
                                 event.target.interact(player, &mut stack)

@@ -1,5 +1,5 @@
 use pumpkin_data::{BlockDirection, BlockState};
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
+use sculith_util::{math::position::BlockPos, random::RandomGenerator};
 
 use crate::generation::proto_chunk::GenerationCache;
 use crate::world::WorldPortalExt;

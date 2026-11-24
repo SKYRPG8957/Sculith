@@ -1,6 +1,6 @@
 use pumpkin_data::BlockStateId;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 use crate::{entity::EntityBase, world::World};

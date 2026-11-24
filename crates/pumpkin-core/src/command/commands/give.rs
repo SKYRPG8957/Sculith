@@ -1,7 +1,7 @@
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::hover::HoverEvent;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
+use sculith_util::text::hover::HoverEvent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};
 use crate::command::argument_types::core::integer::IntegerArgumentType;

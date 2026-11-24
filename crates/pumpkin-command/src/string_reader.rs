@@ -2,7 +2,7 @@ use crate::errors::command_syntax_error::{
     CommandSyntaxError, CommandSyntaxErrorContext, ContextProvider,
 };
 use crate::errors::error_types::{self, CommandErrorType};
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::borrow::Cow;
 use std::str::FromStr;
 

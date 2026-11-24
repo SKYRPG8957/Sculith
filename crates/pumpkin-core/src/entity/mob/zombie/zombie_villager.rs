@@ -16,9 +16,9 @@ use pumpkin_data::tracked_data;
 use pumpkin_data::villager::{VillagerProfession, VillagerType};
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::server::ActorEventID;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::ActorEventID;
+use sculith_util::math::position::BlockPos;
 use uuid::Uuid;
 
 use crate::entity::custom_sound::CustomSound;

@@ -10,9 +10,9 @@ use pumpkin_data::{
     Block, BlockDirection, BlockId, BlockState, BlockStateId, FacingExt,
     block_properties::GlowLichenLikeProperties,
 };
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
+use sculith_util::math::position::BlockPos;
 
 pub struct MultifaceBlock;
 

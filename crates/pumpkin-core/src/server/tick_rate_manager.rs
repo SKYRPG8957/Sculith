@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::translation;
-use pumpkin_protocol::java::client::play::{CSystemChatMessage, CTickingState, CTickingStep};
-use pumpkin_util::text::{TextComponent, color::NamedColor};
+use sculith_protocol::java::client::play::{CSystemChatMessage, CTickingState, CTickingStep};
+use sculith_util::text::{TextComponent, color::NamedColor};
 
 use crate::entity::player::Player;
 use crate::server::Server;
@@ -225,7 +225,7 @@ impl ServerTickRateManager {
         ));
     }
     pub async fn update_joining_player(&self, player: &Player) {
-        if player.client.java_version() >= pumpkin_util::version::JavaMinecraftVersion::V_1_20_3 {
+        if player.client.java_version() >= sculith_util::version::JavaMinecraftVersion::V_1_20_3 {
             player
                 .send_client_packet(&CTickingState::new(self.tickrate(), self.is_frozen()))
                 .await;

@@ -9,8 +9,8 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use rand::{RngExt, seq::IndexedRandom};
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicI64, Ordering},

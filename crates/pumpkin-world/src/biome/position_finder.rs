@@ -1,7 +1,7 @@
 use pumpkin_data::chunk::{
     Parameter, ParameterPoint, TargetPoint, quantize_coord, unquantize_coord,
 };
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::generation::biome_coords;
 use crate::generation::noise::router::multi_noise_sampler::MultiNoiseSampler;

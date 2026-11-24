@@ -7,10 +7,10 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
 };
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockAccessor;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
 
 use crate::{
     block::{

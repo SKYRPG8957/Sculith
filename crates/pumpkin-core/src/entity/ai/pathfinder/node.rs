@@ -1,4 +1,4 @@
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 pub use crate::block::PathComputationType;
 

@@ -6,12 +6,12 @@ use crate::block::entities::test_instance_block::{
     TestInstanceStatus, describe_test_instance, lookup_test_instance, resolve_test_structure_size,
 };
 use pumpkin_data::translation::java as translation;
-use pumpkin_protocol::java::client::play::CTestInstanceBlockStatus;
-use pumpkin_protocol::java::server::play::{
+use sculith_protocol::java::client::play::CTestInstanceBlockStatus;
+use sculith_protocol::java::server::play::{
     TestInstanceBlockAction, TestInstanceBlockData,
     TestInstanceBlockStatus as PacketTestInstanceBlockStatus,
 };
-use pumpkin_util::text::color::NamedColor;
+use sculith_util::text::color::NamedColor;
 
 const fn status_from_packet(status: PacketTestInstanceBlockStatus) -> TestInstanceStatus {
     match status {

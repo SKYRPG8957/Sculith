@@ -7,10 +7,10 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockAccessor;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
 
 #[pumpkin_block("minecraft:dirt_path")]
 pub struct DirtPathBlock;

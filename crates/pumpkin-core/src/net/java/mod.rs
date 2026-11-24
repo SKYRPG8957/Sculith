@@ -1,5 +1,5 @@
-use pumpkin_protocol::java::client::play::{CChunkBatchEnd, CChunkBatchStart, CPlayDisconnect};
 use pumpkin_world::level::SyncChunk;
+use sculith_protocol::java::client::play::{CChunkBatchEnd, CChunkBatchStart, CPlayDisconnect};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -9,7 +9,7 @@ use bytes::Bytes;
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_data::translation;
-use pumpkin_protocol::java::server::play::{
+use sculith_protocol::java::server::play::{
     SAttack, SBlockEntityTagQuery, SBundleItemSelected, SChangeDifficulty, SChangeGameMode,
     SChatAck, SChatCommand, SChatCommandSigned, SChatMessage, SChunkBatch, SClickSlot,
     SClientCommand, SClientInformationPlay, SClientTickEnd, SCloseContainer, SCommandSuggestion,
@@ -25,8 +25,8 @@ use pumpkin_protocol::java::server::play::{
     SSetStructureBlock, SSetTestBlock, SSpectateEntity, SSwingArm, STeleportToEntity,
     STestInstanceBlockAction, SUpdateSign, SUseItem, SUseItemOn,
 };
-use pumpkin_protocol::packet::MultiVersionJavaPacket;
-use pumpkin_protocol::{
+use sculith_protocol::packet::MultiVersionJavaPacket;
+use sculith_protocol::{
     ClientPacket, ConnectionState, PacketDecodeError, RawPacket, ServerPacket,
     codec::var_int::VarInt,
     java::{
@@ -36,9 +36,9 @@ use pumpkin_protocol::{
     },
     ser::{NetworkReadExt, NetworkWriteExt, WritingError},
 };
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::text::TextComponent;
+use sculith_util::version::JavaMinecraftVersion;
 use tokio::{
     io::{AsyncRead, AsyncWrite, BufReader, BufWriter},
     sync::oneshot,
@@ -292,7 +292,7 @@ impl JavaClient {
                             pending.remove(0);
                         }
                     }
-                    let packet = pumpkin_protocol::java::client::play::CKeepAlive::new(keep_alive_id);
+                    let packet = sculith_protocol::java::client::play::CKeepAlive::new(keep_alive_id);
                     self.enqueue_client_packet(&packet).await;
                 }
 
@@ -767,14 +767,14 @@ impl JavaClient {
         version: JavaMinecraftVersion,
         write: impl Write,
     ) -> Result<(), WritingError> {
-        pumpkin_protocol::java::packet_encoder::write_packet(packet, &version, write)
+        sculith_protocol::java::packet_encoder::write_packet(packet, &version, write)
     }
 
     pub fn serialize_packet_for_version<P: ClientPacket>(
         packet: &P,
         version: JavaMinecraftVersion,
     ) -> Result<Bytes, WritingError> {
-        pumpkin_protocol::java::packet_encoder::serialize_packet(packet, &version)
+        sculith_protocol::java::packet_encoder::serialize_packet(packet, &version)
     }
 
     pub fn serialize_packet<P: ClientPacket>(&self, packet: &P) -> Result<Bytes, WritingError> {
@@ -1009,10 +1009,10 @@ impl JavaClient {
                     server,
                 );
             }
-            id if id == pumpkin_protocol::java::server::play::SKeepAlive::to_id(version) => {
+            id if id == sculith_protocol::java::server::play::SKeepAlive::to_id(version) => {
                 self.handle_keep_alive(
                     player,
-                    &pumpkin_protocol::java::server::play::SKeepAlive::read(
+                    &sculith_protocol::java::server::play::SKeepAlive::read(
                         &mut payload,
                         &version,
                     )?,
@@ -1077,11 +1077,11 @@ impl JavaClient {
                 );
             }
             id if id
-                == pumpkin_protocol::java::server::play::SPickItemFromEntity::to_id(version) =>
+                == sculith_protocol::java::server::play::SPickItemFromEntity::to_id(version) =>
             {
                 self.handle_pick_item_from_entity(
                     player,
-                    &pumpkin_protocol::java::server::play::SPickItemFromEntity::read(
+                    &sculith_protocol::java::server::play::SPickItemFromEntity::read(
                         &mut payload,
                         &version,
                     )?,
@@ -1246,7 +1246,7 @@ impl JavaClient {
                         }
                     }
                 } else if channel_str == "minecraft:brand" {
-                    use pumpkin_protocol::ser::NetworkReadSliceExt;
+                    use sculith_protocol::ser::NetworkReadSliceExt;
                     let mut brand_slice = payload.data;
                     if let Ok(brand) = brand_slice.get_str_bounded_borrowed(256) {
                         self.brand.store(Arc::new(Some(brand.to_string())));
@@ -1275,9 +1275,9 @@ impl JavaClient {
                 self.handle_place_recipe(server, player, &packet);
             }
             id if id
-                == pumpkin_protocol::java::server::play::SCustomClickAction::to_id(version) =>
+                == sculith_protocol::java::server::play::SCustomClickAction::to_id(version) =>
             {
-                let packet = pumpkin_protocol::java::server::play::SCustomClickAction::read(
+                let packet = sculith_protocol::java::server::play::SCustomClickAction::read(
                     &mut payload,
                     &version,
                 )?;

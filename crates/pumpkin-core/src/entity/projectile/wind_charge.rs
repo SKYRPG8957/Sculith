@@ -2,7 +2,7 @@ use crate::entity::projectile::owner::ProjectileOwner;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::tag;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::LazyLock;
 use std::{
     f64,

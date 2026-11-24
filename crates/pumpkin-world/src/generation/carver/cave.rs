@@ -1,9 +1,9 @@
 use super::CarverOutput;
 use super::{Carver, overworld_carve_state, place_carved_block};
 use pumpkin_data::carver::{CarverAdditionalConfig, CarverConfig, HeightProvider};
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomGenerator, RandomImpl};
 use std::f32::consts::PI;
 
 pub struct CaveCarver;
@@ -105,7 +105,7 @@ impl CaveCarver {
         floor_level: f64,
     ) {
         let horizontal_radius =
-            1.5 + f64::from(pumpkin_util::math::sin(std::f32::consts::FRAC_PI_2) * thickness);
+            1.5 + f64::from(sculith_util::math::sin(std::f32::consts::FRAC_PI_2) * thickness);
         let vertical_radius = horizontal_radius * y_scale;
         super::carve_ellipsoid(
             &chunk_pos,
@@ -147,12 +147,12 @@ impl CaveCarver {
         for current_step in step..dist {
             let progress_arg = PI * current_step as f32 / dist as f32;
             let horizontal_radius =
-                1.5 + f64::from(pumpkin_util::math::sin(progress_arg) * thickness);
+                1.5 + f64::from(sculith_util::math::sin(progress_arg) * thickness);
             let vertical_radius = horizontal_radius * y_scale;
-            let cos_x = pumpkin_util::math::cos(vertical_rotation);
-            x += f64::from(pumpkin_util::math::cos(horizontal_rotation) * cos_x);
-            y += f64::from(pumpkin_util::math::sin(vertical_rotation));
-            z += f64::from(pumpkin_util::math::sin(horizontal_rotation) * cos_x);
+            let cos_x = sculith_util::math::cos(vertical_rotation);
+            x += f64::from(sculith_util::math::cos(horizontal_rotation) * cos_x);
+            y += f64::from(sculith_util::math::sin(vertical_rotation));
+            z += f64::from(sculith_util::math::sin(horizontal_rotation) * cos_x);
 
             vertical_rotation =
                 (vertical_rotation * if is_steep { 0.92 } else { 0.7 }) + (x_rota * 0.1);
@@ -321,7 +321,7 @@ mod tests {
         let carver_chunk_pos = Vector2::new(0, 0);
         let mut mask = crate::generation::carver::mask::CarvingMask::new(-64, 320);
         let mut random = RandomGenerator::Legacy(
-            pumpkin_util::random::legacy_rand::LegacyRand::from_seed(12345),
+            sculith_util::random::legacy_rand::LegacyRand::from_seed(12345),
         );
 
         CaveCarver.carve(

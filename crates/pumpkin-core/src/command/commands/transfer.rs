@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use pumpkin_protocol::bedrock::client::transfer::CTransfer as BedrockCTransfer;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::CTransfer as JavaCTransfer;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::bedrock::client::transfer::CTransfer as BedrockCTransfer;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::CTransfer as JavaCTransfer;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 use tracing::info;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};

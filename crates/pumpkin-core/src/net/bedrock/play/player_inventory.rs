@@ -16,7 +16,7 @@ use pumpkin_inventory::{
     screen_handler::{ClickType, InventoryPlayer, ScreenHandler},
     slot::Slot,
 };
-use pumpkin_protocol::{
+use sculith_protocol::{
     RawPacket,
     bedrock::{
         client::{inventory_slot::CInventorySlot, item_stack_response::CItemStackResponse},
@@ -37,7 +37,7 @@ use pumpkin_protocol::{
     packet::Packet,
     serial::PacketRead,
 };
-use pumpkin_util::GameMode;
+use sculith_util::GameMode;
 
 use crate::{
     entity::player::Player,

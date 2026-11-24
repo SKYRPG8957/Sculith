@@ -22,7 +22,7 @@ enum FileCategory {
 
 pub(super) const SHARED_BEDROCK_SERVER_CASES: &[&str] = &["s-actor-event", "s-animate", "s-text"];
 pub(super) const STACK_LATENCY_PACKET_FILE: &str =
-    "../../crates/pumpkin-protocol/src/bedrock/network_stack_latency.rs";
+    "../../crates/sculith-protocol/src/bedrock/network_stack_latency.rs";
 
 pub fn build() -> String {
     let mut package = Package::new(PackageName::new(
@@ -42,16 +42,16 @@ pub fn build() -> String {
 
     let dirs = [
         (
-            Path::new("../../crates/pumpkin-protocol/src/bedrock/server"),
+            Path::new("../../crates/sculith-protocol/src/bedrock/server"),
             FileCategory::Server,
         ),
         (
-            Path::new("../../crates/pumpkin-protocol/src/bedrock/client"),
+            Path::new("../../crates/sculith-protocol/src/bedrock/client"),
             FileCategory::Client,
         ),
         (Path::new(STACK_LATENCY_PACKET_FILE), FileCategory::Shared),
         (
-            Path::new("../../crates/pumpkin-protocol/src/bedrock/network_item.rs"),
+            Path::new("../../crates/sculith-protocol/src/bedrock/network_item.rs"),
             FileCategory::HelperTypes,
         ),
     ];

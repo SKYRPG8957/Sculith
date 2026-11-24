@@ -1,5 +1,5 @@
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::Hand;
+use sculith_util::Hand;
 use std::sync::Arc;
 
 use crate::entity::player::Player;

@@ -3,8 +3,8 @@ use pumpkin_data::entity::{EntityStatus, EntityType, MobCategory};
 use pumpkin_data::environment_attribute::Activity;
 use pumpkin_data::poi_type::PoiType;
 use pumpkin_data::tag::{Block as BlockTag, Taggable};
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::position::BlockPos;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::position::BlockPos;
 
 use super::{VillagerEntity, VillagerProfession};
 use crate::entity::EntityBase;
@@ -785,8 +785,8 @@ mod tests {
     use std::sync::atomic::Ordering::Relaxed;
 
     use pumpkin_data::dimension::Dimension;
-    use pumpkin_util::math::position::BlockPos;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::position::BlockPos;
+    use sculith_util::math::vector3::Vector3;
 
     use super::*;
     use crate::entity::Entity;

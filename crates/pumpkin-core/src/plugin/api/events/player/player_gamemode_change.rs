@@ -1,5 +1,5 @@
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::GameMode;
+use sculith_util::GameMode;
 use std::sync::Arc;
 
 use crate::entity::player::Player;

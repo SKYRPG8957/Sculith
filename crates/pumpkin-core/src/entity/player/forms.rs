@@ -7,13 +7,13 @@ use std::{
 };
 
 use pumpkin_nbt::{NbtCompound, deserializer::NbtReadHelperJava, tag::NbtTag};
-use pumpkin_protocol::{
+use sculith_protocol::{
     ConnectionState, IdOr,
     bedrock::client::modal_form_request::CModalFormRequest,
     codec::var_uint::VarUInt,
     java::client::{dialog::DialogNBT, play::CPlayShowDialog},
 };
-use pumpkin_util::{
+use sculith_util::{
     text::{TextComponent, hover::HoverEvent},
     version::JavaMinecraftVersion,
 };

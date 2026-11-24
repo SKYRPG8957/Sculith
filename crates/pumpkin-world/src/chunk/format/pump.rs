@@ -6,12 +6,12 @@ use std::{
 };
 
 use bytes::{Buf, BufMut, Bytes};
-use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::FxHashMap;
 use ruzstd::{
     decoding::StreamingDecoder,
     encoding::{CompressionLevel, compress_to_vec},
 };
+use sculith_util::math::vector2::Vector2;
 use tracing::warn;
 use xxhash_rust::xxh64::xxh64;
 

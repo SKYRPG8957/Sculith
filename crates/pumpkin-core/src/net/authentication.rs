@@ -2,10 +2,10 @@ use std::{collections::HashMap, net::IpAddr};
 
 use base64::{Engine, engine::general_purpose};
 use pumpkin_config::{AuthenticationConfig, networking::auth::TextureConfig};
-use pumpkin_protocol::Property;
 use reqwest::{StatusCode, Url};
 use rsa::PublicKey as RsaPublicKey;
 use rsa::pkcs8::DecodePublicKey;
+use sculith_protocol::Property;
 use serde::Deserialize;
 use thiserror::Error;
 use uuid::Uuid;

@@ -4,8 +4,8 @@ use pumpkin_data::{
     Block, BlockDirection, BlockStateId,
     fluid::{EnumVariants, Falling, Fluid, FluidProperties, Level},
 };
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::{tick::TickPriority, world::BlockFlags};
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 pub type FlowingFluidProperties = pumpkin_data::fluid::FlowingWaterLikeFluidProperties;
 

@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, BlockState, block_properties::OakFenceLikeProperties};
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
+use sculith_util::{math::position::BlockPos, random::RandomGenerator};
 
 use crate::generation::proto_chunk::GenerationCache;
 use crate::{generation::section_coords, world::WorldPortalExt};
@@ -183,7 +183,7 @@ impl EndSpikeFeature {
         }
 
         chunk.set_block_state(
-            &pumpkin_util::math::vector3::Vector3::new(
+            &sculith_util::math::vector3::Vector3::new(
                 spike.center_x,
                 spike.height,
                 spike.center_z,
@@ -191,7 +191,7 @@ impl EndSpikeFeature {
             Block::BEDROCK.default_state,
         );
         chunk.set_block_state(
-            &pumpkin_util::math::vector3::Vector3::new(
+            &sculith_util::math::vector3::Vector3::new(
                 spike.center_x,
                 spike.height + 1,
                 spike.center_z,
@@ -221,7 +221,7 @@ impl EndSpikeFeature {
 
                         let bar_state = BlockState::from_id(props.to_state_id(&Block::IRON_BARS));
                         chunk.set_block_state(
-                            &pumpkin_util::math::vector3::Vector3::new(
+                            &sculith_util::math::vector3::Vector3::new(
                                 spike.center_x + dx,
                                 spike.height + dy,
                                 spike.center_z + dz,

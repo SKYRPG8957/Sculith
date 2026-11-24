@@ -7,8 +7,8 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::Facing;
 use pumpkin_data::{Block, FacingExt, HorizontalFacingExt};
 use pumpkin_data::{BlockDirection, BlockId};
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockAccessor;
+use sculith_util::math::position::BlockPos;
 
 type WallTorchProps = pumpkin_data::block_properties::WallTorchLikeProperties;
 // Normal tourches don't have properties

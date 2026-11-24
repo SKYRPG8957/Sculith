@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::any::Any;
 use std::sync::Arc;
 

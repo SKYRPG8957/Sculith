@@ -2,9 +2,9 @@ use pumpkin_data::block_properties::ScaffoldingLikeProperties;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::{Block, BlockDirection, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
+use sculith_util::math::position::BlockPos;
 
 use crate::block::{
     BlockBehaviour, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,

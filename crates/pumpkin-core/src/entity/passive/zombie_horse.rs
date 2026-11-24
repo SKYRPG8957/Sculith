@@ -8,8 +8,8 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 use uuid::Uuid;
 
 use crate::entity::{
@@ -169,7 +169,7 @@ impl Mob for ZombieHorseEntity {
         &self,
         _player: &Arc<Player>,
         _item_stack: &mut ItemStack,
-        _hand: pumpkin_util::Hand,
+        _hand: sculith_util::Hand,
     ) -> Option<bool> {
         self.mob_entity
             .persistence_required

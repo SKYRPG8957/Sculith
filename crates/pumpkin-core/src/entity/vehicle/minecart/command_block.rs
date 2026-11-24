@@ -5,7 +5,7 @@ use std::sync::{
 
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use sculith_util::{
     PermissionLvl, math::vector2::Vector2, text::TextComponent, version::JavaMinecraftVersion,
 };
 

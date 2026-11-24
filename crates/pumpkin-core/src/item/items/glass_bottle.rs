@@ -15,8 +15,8 @@ use pumpkin_data::potion::Potion;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::{Block, BlockDirection, BlockId};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 /// A potion holding water; the contents component is what names it and makes it
 /// brewable.
@@ -48,26 +48,26 @@ impl ItemMetadata for GlassBottleItem {
 impl GlassBottleItem {
     fn turn_bottle_into_item(
         player: &Player,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
         mut held: ItemStack,
         mut stack_to_give: ItemStack,
     ) {
         player.increment_stat(StatisticCategory::Used, i32::from(Item::GLASS_BOTTLE.id), 1);
         let world = player.world();
-        if held.item_count == 1 && player.gamemode.load() != pumpkin_util::GameMode::Creative {
+        if held.item_count == 1 && player.gamemode.load() != sculith_util::GameMode::Creative {
             match hand {
-                pumpkin_util::Hand::Right => player.inventory().set_held_item(stack_to_give),
-                pumpkin_util::Hand::Left => player
+                sculith_util::Hand::Right => player.inventory().set_held_item(stack_to_give),
+                sculith_util::Hand::Left => player
                     .inventory()
-                    .set_stack_in_hand(pumpkin_util::Hand::Left, stack_to_give),
+                    .set_stack_in_hand(sculith_util::Hand::Left, stack_to_give),
             }
         } else {
             held.decrement_unless_creative(player.gamemode.load(), 1);
             match hand {
-                pumpkin_util::Hand::Right => player.inventory().set_held_item(held),
-                pumpkin_util::Hand::Left => player
+                sculith_util::Hand::Right => player.inventory().set_held_item(held),
+                sculith_util::Hand::Left => player
                     .inventory()
-                    .set_stack_in_hand(pumpkin_util::Hand::Left, held),
+                    .set_stack_in_hand(sculith_util::Hand::Left, held),
             }
             let was_added = player.inventory().insert_stack_anywhere(&mut stack_to_give);
             if !was_added && !stack_to_give.is_empty() {
@@ -80,7 +80,7 @@ impl GlassBottleItem {
 impl ItemBehaviour for GlassBottleItem {
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+        self.normal_use_with_hand(item, player, yaw, pitch, sculith_util::Hand::Right);
     }
 
     fn normal_use_with_hand(
@@ -89,11 +89,11 @@ impl ItemBehaviour for GlassBottleItem {
         player: &Player,
         yaw: f32,
         pitch: f32,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
     ) {
         let held = match hand {
-            pumpkin_util::Hand::Right => player.inventory().held_item(),
-            pumpkin_util::Hand::Left => player.inventory().off_hand_item(),
+            sculith_util::Hand::Right => player.inventory().held_item(),
+            sculith_util::Hand::Left => player.inventory().off_hand_item(),
         };
         if held.is_empty() || held.item.id != Item::GLASS_BOTTLE.id {
             return;

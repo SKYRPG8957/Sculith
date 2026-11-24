@@ -11,8 +11,8 @@ use pumpkin_data::{
     world::WorldEvent,
 };
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use pumpkin_world::tick::TickPriority;
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
 use crate::block::entities::campfire::CampfireBlockEntity;
 use crate::entity::projectile::may_interact;

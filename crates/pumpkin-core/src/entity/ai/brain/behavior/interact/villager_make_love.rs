@@ -3,10 +3,10 @@ use std::sync::Arc;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_data::poi_type::PoiType;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::poi::Occupancy;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::position::BlockPos;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::{GlobalPos, MemoryModuleId, MemoryStatus, types};

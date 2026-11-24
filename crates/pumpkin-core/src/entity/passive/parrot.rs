@@ -11,9 +11,9 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::{
     Entity, EntityBase,
@@ -93,7 +93,7 @@ impl ParrotEntity {
 
     pub(crate) fn ambient(world: &crate::world::World) -> Sound {
         let mut rng = rand::rng();
-        if world.level_info.load().difficulty != pumpkin_util::Difficulty::Peaceful
+        if world.level_info.load().difficulty != sculith_util::Difficulty::Peaceful
             && rng.random_range(0..AMBIENT_IMITATION_INTERVAL) == 0
         {
             IMITATIONS[rng.random_range(0..IMITATIONS.len())].1
@@ -400,9 +400,9 @@ impl Mob for ParrotEntity {
                     pumpkin_data::entity::EntityStatus::TamingFailed
                 },
                 if success {
-                    pumpkin_protocol::bedrock::server::actor_event::ActorEventID::TamingSucceeded
+                    sculith_protocol::bedrock::server::actor_event::ActorEventID::TamingSucceeded
                 } else {
-                    pumpkin_protocol::bedrock::server::actor_event::ActorEventID::TamingFailed
+                    sculith_protocol::bedrock::server::actor_event::ActorEventID::TamingFailed
                 },
             );
             return true;
@@ -512,7 +512,7 @@ mod tests {
     };
     use pumpkin_data::item::Item;
     use pumpkin_data::tag::{self, Taggable};
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 

@@ -2,7 +2,7 @@ use crate::block::{BlockBehaviour, OnEntityCollisionArgs};
 use crate::entity::EntityBase;
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 #[pumpkin_block(Block::COBWEB)]
 pub struct CobwebBlock;

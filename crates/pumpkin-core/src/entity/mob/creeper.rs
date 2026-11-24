@@ -10,7 +10,7 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
+use sculith_protocol::codec::var_int::VarInt;
 
 use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::{
@@ -264,7 +264,7 @@ impl Mob for CreeperEntity {
         self.ignited.store(true, Ordering::Relaxed);
         entity.set_synced_data(pumpkin_data::tracked_data::creeper::IS_IGNITED, true);
 
-        if player.gamemode.load() != pumpkin_util::GameMode::Creative {
+        if player.gamemode.load() != sculith_util::GameMode::Creative {
             let _ = item_stack.damage_item(1);
         }
 

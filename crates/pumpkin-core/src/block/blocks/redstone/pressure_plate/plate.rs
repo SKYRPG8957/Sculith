@@ -4,7 +4,7 @@ use pumpkin_data::{
     Block, BlockDirection, BlockId, BlockState, BlockStateId,
     tag::{self},
 };
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::{
     block::{

@@ -9,7 +9,7 @@ use crate::command::{
 };
 use crate::world::scoreboard::{Scoreboard, ScoreboardObjective};
 use pumpkin_data::translation;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 pub(crate) const OBJECTIVE_NOT_FOUND_ERROR: CommandErrorType<1> = CommandErrorType::new(
     translation::java::ARGUMENTS_OBJECTIVE_NOTFOUND,

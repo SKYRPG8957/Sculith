@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 use crate::command::{commands::is_world_command, dispatcher::CommandDispatcher};
 use crate::entity::player::{Player, SpamType};

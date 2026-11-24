@@ -12,8 +12,8 @@ use pumpkin_core::{
     server::Server,
 };
 use pumpkin_data::{Block, dimension::Dimension, item::Item, item_stack::ItemStack};
-use pumpkin_protocol::java::server::play::SUpdateSign;
-use pumpkin_util::{
+use sculith_protocol::java::server::play::SUpdateSign;
+use sculith_util::{
     GameMode, Hand, PermissionLvl, math::position::BlockPos, math::vector3::Vector3,
 };
 
@@ -33,7 +33,7 @@ fn stored_line(world: &pumpkin_core::world::World, pos: BlockPos) -> String {
 
 fn stored_text(world: &pumpkin_core::world::World, pos: BlockPos) -> String {
     let raw = stored_line(world, pos);
-    serde_json::from_str::<pumpkin_util::text::TextComponent>(&raw)
+    serde_json::from_str::<sculith_util::text::TextComponent>(&raw)
         .map(|component| component.0.to_bedrock_string())
         .unwrap_or(raw)
 }

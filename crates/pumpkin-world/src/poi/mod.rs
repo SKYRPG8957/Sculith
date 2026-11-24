@@ -8,9 +8,9 @@ use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use pumpkin_data::poi_type::PoiType;
 use pumpkin_data::tag::{PointOfInterestType, Taggable};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::seq::SliceRandom;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use serde::{Deserialize, Serialize};
 
 mod record;

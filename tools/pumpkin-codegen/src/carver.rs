@@ -107,15 +107,15 @@ pub fn build() -> TokenStream {
     }
 
     quote! {
-        use pumpkin_util::math::float_provider::{
+        use sculith_util::math::float_provider::{
             ClampedNormalFloatProvider, ConstantFloatProvider, FloatProvider, NormalFloatProvider,
             TrapezoidFloatProvider, UniformFloatProvider,
         };
-        use pumpkin_util::math::int_provider::{
+        use sculith_util::math::int_provider::{
             BiasedToBottomIntProvider, ConstantIntProvider, IntProvider, NormalIntProvider,
             UniformIntProvider, VeryBiasedToBottomIntProvider,
         };
-        use pumpkin_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
+        use sculith_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
 
         #[derive(Clone, Debug)]
         pub enum HeightProvider {

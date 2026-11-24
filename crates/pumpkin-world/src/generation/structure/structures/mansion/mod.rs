@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use pumpkin_data::{Block, Mirror, Rotation};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::{
+use sculith_util::{
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
 };
@@ -559,7 +559,7 @@ const fn transform(
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_util::random::legacy_rand::LegacyRand;
+    use sculith_util::random::legacy_rand::LegacyRand;
 
     use crate::generation::structure::structures::HeightSampler;
 

@@ -1,4 +1,4 @@
-use pumpkin_util::{math::block_box::BlockBox, random::RandomGenerator};
+use sculith_util::{math::block_box::BlockBox, random::RandomGenerator};
 
 use crate::ProtoChunk;
 

@@ -43,7 +43,7 @@ use pumpkin_data::{
     sound::Sound,
     statistic::StatisticCategory,
 };
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::item_stack_seralizer::OptionalItemStackHash,
     java::{
         client::play::{
@@ -53,7 +53,7 @@ use pumpkin_protocol::{
         server::play::SlotActionType,
     },
 };
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 /// Offhand slot of the player screen handler
 pub const OFF_HAND_SCREEN_SLOT: i32 = 45;

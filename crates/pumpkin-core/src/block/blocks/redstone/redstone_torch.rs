@@ -21,10 +21,10 @@ use pumpkin_data::FacingExt;
 use pumpkin_data::HorizontalFacingExt;
 use pumpkin_data::block_properties::Facing;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockAccessor;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
 
 pub const RECENT_TOGGLE_TIMER: u64 = 60;
 pub const MAX_RECENT_TOGGLES: usize = 8;

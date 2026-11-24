@@ -25,7 +25,7 @@ use pumpkin_data::data_component_impl::{
     AttributeModifiersImpl, CustomNameImpl, EnchantmentsImpl, LoreImpl, MAX_ENCHANTMENT_LEVEL,
 };
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::codec::data_component::{deserialize, serialize};
+use sculith_protocol::codec::data_component::{deserialize, serialize};
 use std::borrow::Cow;
 
 pub(crate) fn to_wit_data_component(id: DataComponent) -> WitDataComponent {

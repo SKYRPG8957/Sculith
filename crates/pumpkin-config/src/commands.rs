@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use pumpkin_util::PermissionLvl;
+use sculith_util::PermissionLvl;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for command handling and execution.

@@ -16,7 +16,7 @@ use pumpkin_nbt::{
     Nbt,
     deserializer::{NbtReadHelper, NbtReadHelperBedrockDisk},
 };
-use pumpkin_util::{
+use sculith_util::{
     math::{position::BlockPos, vector2::Vector2},
     world_seed::Seed,
 };

@@ -5,11 +5,11 @@ pub mod v1_18;
 pub use light::ChunkLightExt;
 
 use pumpkin_data::packet::clientbound::play::LEVEL_CHUNK_WITH_LIGHT;
-use pumpkin_protocol::ClientPacket;
-use pumpkin_protocol::packet::MultiVersionJavaPacket;
-use pumpkin_protocol::ser::WritingError;
-use pumpkin_util::version::JavaMinecraftVersion;
 use pumpkin_world::chunk::ChunkData;
+use sculith_protocol::ClientPacket;
+use sculith_protocol::packet::MultiVersionJavaPacket;
+use sculith_protocol::ser::WritingError;
+use sculith_util::version::JavaMinecraftVersion;
 use std::io::Write;
 
 /// Sent by the server to provide the client with the full data for a chunk.
@@ -82,7 +82,7 @@ mod tests {
         let mut nbt = pumpkin_nbt::compound::NbtCompound::new();
         nbt.put_string("id", "minecraft:chest".to_string());
         chunk.pending_block_entities.lock().unwrap().insert(
-            pumpkin_util::math::position::BlockPos(pumpkin_util::math::vector3::Vector3::new(
+            sculith_util::math::position::BlockPos(sculith_util::math::vector3::Vector3::new(
                 0, 64, 0,
             )),
             nbt,

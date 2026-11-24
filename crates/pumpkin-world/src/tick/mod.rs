@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use sculith_util::{
     math::position::BlockPos,
     resource_location::{FromResourceLocation, ResourceLocation, ToResourceLocation},
 };

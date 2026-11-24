@@ -6,8 +6,8 @@ use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::potion::Effect;
 use pumpkin_data::sound::Sound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::behavior::{fleeing, hunting};
 use crate::entity::mob::spider::{SPIDER_FLEES, SPIDER_HUNTS};
@@ -112,8 +112,8 @@ impl Mob for CaveSpiderEntity {
         if let Some(living) = target.get_living_entity() {
             let world = self.mob_entity.living_entity.entity.world.load();
             let duration = match world.level_info.load().difficulty {
-                pumpkin_util::Difficulty::Normal => 7 * 20,
-                pumpkin_util::Difficulty::Hard => 15 * 20,
+                sculith_util::Difficulty::Normal => 7 * 20,
+                sculith_util::Difficulty::Hard => 15 * 20,
                 _ => 0,
             };
             if duration > 0 {

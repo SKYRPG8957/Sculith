@@ -13,10 +13,10 @@ use pumpkin_data::trial_spawner::TrialSpawnerKey;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::Difficulty;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::Difficulty;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 use super::BlockEntity;
@@ -67,8 +67,8 @@ impl PlayerDetector {
                     .iter()
                     .filter_map(|player| {
                         let mode = player.gamemode.load();
-                        if mode == pumpkin_util::GameMode::Creative
-                            || mode == pumpkin_util::GameMode::Spectator
+                        if mode == sculith_util::GameMode::Creative
+                            || mode == sculith_util::GameMode::Spectator
                         {
                             return None;
                         }
@@ -1270,8 +1270,8 @@ impl TrialSpawner {
             .filter_map(|&uuid| {
                 let player = world.get_player_by_uuid(uuid)?;
                 let mode = player.gamemode.load();
-                if mode == pumpkin_util::GameMode::Creative
-                    || mode == pumpkin_util::GameMode::Spectator
+                if mode == sculith_util::GameMode::Creative
+                    || mode == sculith_util::GameMode::Spectator
                 {
                     return None;
                 }

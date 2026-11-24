@@ -10,9 +10,9 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
-use pumpkin_protocol::IdOr;
-use pumpkin_protocol::java::client::play::CSoundEffect;
-use pumpkin_util::{GameMode, Hand};
+use sculith_protocol::IdOr;
+use sculith_protocol::java::client::play::CSoundEffect;
+use sculith_util::{GameMode, Hand};
 
 pub struct BowItem;
 

@@ -8,7 +8,7 @@ use pumpkin_data::block_properties::{HorizontalFacing, JigsawLikeProperties, Ori
 use pumpkin_data::block_rotation::{Mirror, Rotation};
 use pumpkin_data::{BlockDirection, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::{GameMode, PermissionLvl};
+use sculith_util::{GameMode, PermissionLvl};
 
 use pumpkin_world::generation::structure::structures::jigsaw::JigsawJointType;
 

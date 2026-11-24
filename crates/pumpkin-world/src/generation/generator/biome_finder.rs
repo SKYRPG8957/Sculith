@@ -1,7 +1,7 @@
 use pumpkin_data::chunk::{Biome, BiomeTree, NETHER_BIOME_SOURCE, OVERWORLD_BIOME_SOURCE};
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::math::position::BlockPos;
 use rustc_hash::FxHashSet;
+use sculith_util::math::position::BlockPos;
 
 use crate::biome::{BiomeSupplier, MultiNoiseBiomeSupplier, end::TheEndBiomeSupplier};
 use crate::generation::biome_coords;
@@ -191,9 +191,9 @@ fn out_from_origin(origin: i32, min: i32, max: i32, step: i32) -> Vec<i32> {
 mod test {
     use pumpkin_data::chunk::Biome;
     use pumpkin_data::dimension::Dimension;
-    use pumpkin_util::math::position::BlockPos;
-    use pumpkin_util::world_seed::Seed;
     use rustc_hash::FxHashSet;
+    use sculith_util::math::position::BlockPos;
+    use sculith_util::world_seed::Seed;
 
     use super::super::flat::FlatGenerator;
     use super::super::{GeneratorInit, VanillaGenerator, WorldGenerator};

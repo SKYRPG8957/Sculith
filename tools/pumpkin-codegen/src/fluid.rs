@@ -664,7 +664,7 @@ pub fn build() -> TokenStream {
         use std::hash::{Hash, Hasher};
         use crate::tag::{Taggable, RegistryKey};
         use crate::BlockStateId;
-        use pumpkin_util::resource_location::{FromResourceLocation, ResourceLocation, ToResourceLocation};
+        use sculith_util::resource_location::{FromResourceLocation, ResourceLocation, ToResourceLocation};
 
         #[derive(Clone)]
         pub struct PartialFluidState {

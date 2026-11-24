@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_protocol::ConnectionState;
-use pumpkin_util::version::{BedrockMinecraftVersion, JavaMinecraftVersion};
+use sculith_protocol::ConnectionState;
+use sculith_util::version::{BedrockMinecraftVersion, JavaMinecraftVersion};
 use std::sync::Arc;
 
 use crate::entity::player::Player;

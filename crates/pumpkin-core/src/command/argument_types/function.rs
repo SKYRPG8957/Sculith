@@ -4,7 +4,7 @@ use crate::command::{
     errors::command_syntax_error::CommandSyntaxError, string_reader::StringReader,
 };
 use pumpkin_command::argument_types::FromStringReader;
-use pumpkin_util::identifier::Identifier;
+use sculith_util::identifier::Identifier;
 
 /// Parses a function name: `name`, `namespace:name` or a tag such as `#tag`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

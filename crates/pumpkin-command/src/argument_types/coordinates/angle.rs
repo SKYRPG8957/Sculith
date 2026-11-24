@@ -1,5 +1,5 @@
 use pumpkin_data::translation;
-use pumpkin_util::math::wrap_degrees;
+use sculith_util::math::wrap_degrees;
 
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};
 use crate::context::command_context::CommandContext;

@@ -11,7 +11,7 @@ async-trait.workspace = true
 pumpkin-data = { workspace = true, features = ["block"] }
 pumpkin-macros.workspace = true
 pumpkin-nbt.workspace = true
-pumpkin-util.workspace = true
+sculith-util.workspace = true
 pumpkin-world.workspace = true
 serde.workspace = true
 serde_json.workspace = true

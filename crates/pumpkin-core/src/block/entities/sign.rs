@@ -8,9 +8,9 @@ use crate::entity::player::Player;
 use crate::world::World;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::click::ClickEvent;
+use sculith_util::math::position::BlockPos;
+use sculith_util::text::TextComponent;
+use sculith_util::text::click::ClickEvent;
 
 pub use pumpkin_data::dye_color::DyeColor;
 
@@ -846,7 +846,7 @@ mod tests {
 
     #[test]
     fn client_messages_keep_previous_style_and_filtered_text() {
-        use pumpkin_util::text::color::{Color, NamedColor};
+        use sculith_util::text::color::{Color, NamedColor};
 
         let text = SignText::default();
         let styled = r#"{"text":"old","color":"red"}"#;

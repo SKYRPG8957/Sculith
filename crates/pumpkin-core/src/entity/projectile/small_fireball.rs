@@ -3,8 +3,8 @@ use std::sync::atomic::Ordering;
 
 use pumpkin_data::damage::DamageType;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::vector3::Vector3;
 
 use crate::{
     block::blocks::fire::{FireBlockBase, fire::FireBlock},

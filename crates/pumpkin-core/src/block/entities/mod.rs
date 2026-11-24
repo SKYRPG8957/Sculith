@@ -3,7 +3,7 @@ use std::{any::Any, sync::Arc};
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::{Block, block_properties::BLOCK_ENTITY_TYPES};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::world::World;
 use pumpkin_data::BlockStateId;
@@ -142,7 +142,7 @@ pub trait BlockEntity: Any + Send + Sync {
         None
     }
 
-    fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         None
     }
 
@@ -191,7 +191,7 @@ pub trait BlockEntity: Any + Send + Sync {
 /// Shared `BaseContainerBlockEntity` / `BeaconBlockEntity` `CustomName` + `lock` state (`26.3`).
 #[derive(Default)]
 pub struct ContainerMetadata {
-    pub custom_name: std::sync::Mutex<Option<pumpkin_util::text::TextComponent>>,
+    pub custom_name: std::sync::Mutex<Option<sculith_util::text::TextComponent>>,
     pub lock: std::sync::Mutex<Option<pumpkin_data::data_component_impl::LockImpl>>,
 }
 
@@ -284,7 +284,7 @@ impl ContainerMetadata {
     }
 
     #[must_use]
-    pub fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    pub fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         self.custom_name
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -638,7 +638,7 @@ mod test {
     use pumpkin_data::{item::Item, item_stack::ItemStack};
     use pumpkin_inventory::Inventory;
     use pumpkin_nbt::compound::NbtCompound;
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
     use std::sync::Arc;
 
     /// A loaded block entity is serialized back into its chunk with

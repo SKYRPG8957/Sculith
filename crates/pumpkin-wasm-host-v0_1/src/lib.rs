@@ -58,7 +58,6 @@ mod resource_with {
         server::{RecipeManager, Server},
         world::World,
     };
-    use pumpkin_util::text::TextComponent;
     use pumpkin_wasm_host_common::{
         args::OwnedArg,
         state::{
@@ -66,6 +65,7 @@ mod resource_with {
             WasmCommandNode,
         },
     };
+    use sculith_util::text::TextComponent;
     use std::collections::HashMap;
     use std::sync::{Arc, Weak};
     use tokio::sync::Mutex;

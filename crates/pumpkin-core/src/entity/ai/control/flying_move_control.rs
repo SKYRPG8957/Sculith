@@ -2,7 +2,7 @@ use crate::entity::ai::control::move_control::{MoveControl, Operation};
 use crate::entity::ai::control::{Control, MoveControlTrait};
 use crate::entity::mob::Mob;
 use pumpkin_data::attributes::Attributes;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering;
 
 pub struct FlyingMoveControl {

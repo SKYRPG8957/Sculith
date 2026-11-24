@@ -1,9 +1,9 @@
 use block_match::BlockMatchRuleTest;
 use block_state_match::BlockStateMatchRuleTest;
 use pumpkin_data::BlockStateId;
-use pumpkin_util::random::RandomGenerator;
 use random_block_match::RandomBlockMatchRuleTest;
 use random_block_state_match::RandomBlockStateMatchRuleTest;
+use sculith_util::random::RandomGenerator;
 use tag_match::TagMatchRuleTest;
 
 pub mod block_match;

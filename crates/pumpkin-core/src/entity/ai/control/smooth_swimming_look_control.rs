@@ -1,6 +1,6 @@
 use crate::entity::ai::control::{Control, LookControlTrait, look_control::LookControl};
 use crate::entity::mob::Mob;
-use pumpkin_util::math::wrap_degrees;
+use sculith_util::math::wrap_degrees;
 
 pub struct SmoothSwimmingLookControl {
     look: LookControl,

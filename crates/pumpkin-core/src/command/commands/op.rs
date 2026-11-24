@@ -9,9 +9,9 @@ use crate::command::suggestion::suggestions::SuggestionsBuilder;
 use crate::data::SaveJSONConfiguration;
 use pumpkin_config::op::Op;
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 pub const ALREADY_OP_ERROR_TYPE: CommandErrorType<0> = CommandErrorType::new(
     translation::java::COMMANDS_OP_FAILED,

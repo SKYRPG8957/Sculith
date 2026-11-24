@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{PoisonError, RwLock};
 
-use pumpkin_util::version::BedrockMinecraftVersion;
 use pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
+use sculith_util::version::BedrockMinecraftVersion;
 
 /// Thread-safe registry for Bedrock Minecraft protocol versions supported by plugins.
 #[derive(Debug, Default)]

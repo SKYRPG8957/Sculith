@@ -4,8 +4,8 @@ use std::path::Path;
 
 use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::TokenStream;
-use pumpkin_util::math::float_provider::FloatProvider;
 use quote::{format_ident, quote};
+use sculith_util::math::float_provider::FloatProvider;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -207,7 +207,7 @@ pub fn build() -> TokenStream {
         use crate::data_component_impl::Operation;
         use crate::sound::Sound;
         use crate::tag::Tag;
-        use pumpkin_util::math::float_provider::FloatProvider;
+        use sculith_util::math::float_provider::FloatProvider;
 
         pub struct SulfurCubeAttributeModifier {
             pub attribute: &'static Attributes,

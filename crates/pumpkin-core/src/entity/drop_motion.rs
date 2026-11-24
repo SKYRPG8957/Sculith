@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use pumpkin_data::{BlockStateId, biome::Biome, fluid::Fluid};
-use pumpkin_util::math::{
+use sculith_util::math::{
     boundingbox::BoundingBox, position::BlockPos, vector2::Vector2, vector3::Vector3,
 };
 

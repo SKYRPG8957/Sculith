@@ -1,5 +1,5 @@
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 
 use crate::entity::player::Player;

@@ -9,8 +9,8 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
 use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
 
 use crate::entity::{
     Entity, EntityBase,

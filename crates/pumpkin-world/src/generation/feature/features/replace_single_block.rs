@@ -1,4 +1,4 @@
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
+use sculith_util::{math::position::BlockPos, random::RandomGenerator};
 
 use crate::generation::feature::features::ore::OreTarget;
 use crate::generation::proto_chunk::GenerationCache;

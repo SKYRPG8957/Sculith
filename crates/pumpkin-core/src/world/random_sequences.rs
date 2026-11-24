@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hasher};
 
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::random::RandomImpl;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
+use sculith_util::identifier::Identifier;
+use sculith_util::random::RandomImpl;
+use sculith_util::random::xoroshiro128::Xoroshiro;
 
 /// A single random sequence wrapper.
 pub struct RandomSequence {

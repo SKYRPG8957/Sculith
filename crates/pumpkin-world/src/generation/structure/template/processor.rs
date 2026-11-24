@@ -7,7 +7,7 @@ use pumpkin_data::{
     tag::Taggable,
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::{
+use sculith_util::{
     math::{int_provider::IntProvider, vector3::Vector3},
     random::{RandomImpl, hash_block_pos, legacy_rand::LegacyRand},
 };

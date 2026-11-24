@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 
 use arc_swap::ArcSwap;
 use pumpkin_data::entity::EntityType;
-use pumpkin_util::math::boundingbox::BoundingBox;
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::boundingbox::BoundingBox;
 use uuid::Uuid;
 
 use crate::entity::EntityBase;
@@ -665,8 +665,8 @@ mod tests {
     };
     use crate::server::TickDeadline;
     use pumpkin_data::{entity::EntityType, item::Item, item_stack::ItemStack};
-    use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
     use pumpkin_world::chunk::ChunkData;
+    use sculith_util::math::{position::BlockPos, vector3::Vector3};
     use std::time::{Duration, Instant};
 
     fn ids(world: &super::super::World, area: &BoundingBox) -> Vec<i32> {

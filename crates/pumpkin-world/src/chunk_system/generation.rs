@@ -98,7 +98,7 @@ mod tests {
     use crate::world::WorldPortalExt;
     use pumpkin_data::BlockStateId;
     use pumpkin_data::dimension::Dimension;
-    use pumpkin_util::world_seed::Seed;
+    use sculith_util::world_seed::Seed;
     use std::sync::Arc;
 
     struct BlockRegistry;
@@ -108,7 +108,7 @@ mod tests {
             _block: &pumpkin_data::Block,
             _state: &pumpkin_data::BlockState,
             _block_accessor: &dyn crate::world::BlockAccessor,
-            _block_pos: &pumpkin_util::math::position::BlockPos,
+            _block_pos: &sculith_util::math::position::BlockPos,
         ) -> bool {
             true
         }
@@ -292,7 +292,7 @@ mod tests {
             for z in -192..-176 {
                 for y in -64..320 {
                     let block = chunk
-                        .get_block_state(&pumpkin_util::math::vector3::Vector3::new(x, y, z))
+                        .get_block_state(&sculith_util::math::vector3::Vector3::new(x, y, z))
                         .to_block_id();
                     if [
                         pumpkin_data::Block::DEEPSLATE_BRICKS.id,
@@ -342,7 +342,7 @@ mod tests {
             for z in -1328..-1312 {
                 for y in -64..320 {
                     let block = chunk
-                        .get_block_state(&pumpkin_util::math::vector3::Vector3::new(x, y, z))
+                        .get_block_state(&sculith_util::math::vector3::Vector3::new(x, y, z))
                         .to_block_id();
                     if [
                         pumpkin_data::Block::DARK_OAK_LOG.id,
@@ -391,7 +391,7 @@ mod tests {
             for x in -4896..=-4881 {
                 for z in -4400..=-4393 {
                     let state =
-                        chunk.get_block_state(&pumpkin_util::math::vector3::Vector3::new(x, y, z));
+                        chunk.get_block_state(&sculith_util::math::vector3::Vector3::new(x, y, z));
                     hash ^= u64::from(state.as_u16());
                     hash = hash.wrapping_mul(0x100000001b3);
                     non_air += usize::from(!state.to_state().is_air());
@@ -438,7 +438,7 @@ mod tests {
         };
 
         for (x, y, z) in [(1173, 70, -1311), (1173, 70, -1305)] {
-            let state = chunk.get_block_state(&pumpkin_util::math::vector3::Vector3::new(x, y, z));
+            let state = chunk.get_block_state(&sculith_util::math::vector3::Vector3::new(x, y, z));
             assert_eq!(state.to_block_id(), pumpkin_data::Block::GRASS_BLOCK.id);
         }
 
@@ -453,7 +453,7 @@ mod tests {
             panic!("features stage should return a proto chunk");
         };
         let state =
-            cage_chunk.get_block_state(&pumpkin_util::math::vector3::Vector3::new(1183, 68, -1330));
+            cage_chunk.get_block_state(&sculith_util::math::vector3::Vector3::new(1183, 68, -1330));
         assert_eq!(state.to_block_id(), pumpkin_data::Block::GRASS_BLOCK.id);
     }
 }

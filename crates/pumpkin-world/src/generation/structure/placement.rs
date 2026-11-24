@@ -3,14 +3,14 @@ use pumpkin_data::structures::{
     SpreadType, StructurePlacement, StructurePlacementCalculator, StructurePlacementType,
     StructureSet,
 };
-use pumpkin_util::{
+use rayon::prelude::*;
+use sculith_util::{
     math::floor_div,
     random::{
         RandomGenerator, RandomImpl, get_large_feature_seed, get_large_feature_with_salt,
         get_region_seed, legacy_rand::LegacyRand,
     },
 };
-use rayon::prelude::*;
 use std::f64::consts::PI;
 use std::sync::{Arc, Once, OnceLock};
 
@@ -702,7 +702,7 @@ mod tests {
     use pumpkin_data::structures::{
         RandomSpreadStructurePlacement, StructurePlacementCalculator, StructureSet,
     };
-    use pumpkin_util::random::{
+    use sculith_util::random::{
         RandomGenerator, RandomImpl, get_region_seed, legacy_rand::LegacyRand,
     };
 

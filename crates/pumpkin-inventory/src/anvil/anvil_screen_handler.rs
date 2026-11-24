@@ -550,7 +550,7 @@ impl ScreenHandler for AnvilScreenHandler {
         &mut self,
         slot_index: i32,
         button: i32,
-        action_type: pumpkin_protocol::java::server::play::SlotActionType,
+        action_type: sculith_protocol::java::server::play::SlotActionType,
         player: &dyn InventoryPlayer,
     ) {
         self.internal_on_slot_click(slot_index, button, action_type, player);
@@ -564,7 +564,7 @@ mod tests {
     use super::*;
     use crate::entity_equipment::EntityEquipment;
     use crate::inventory::SimpleInventory;
-    use pumpkin_protocol::java::client::play::{
+    use sculith_protocol::java::client::play::{
         CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem,
         CSetPlayerInventory, CSetSelectedSlot,
     };

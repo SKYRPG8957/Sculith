@@ -682,7 +682,7 @@ macro_rules! impl_block_entity_for_cooking {
                 self.metadata.get_lock()
             }
 
-            fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+            fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
                 self.metadata.get_custom_name()
             }
 
@@ -781,7 +781,7 @@ macro_rules! impl_block_entity_for_cooking {
 #[must_use]
 pub fn build_furnace_actor(
     id: &'static str,
-    position: pumpkin_util::math::position::BlockPos,
+    position: sculith_util::math::position::BlockPos,
     cook_time: u16,
     lit_remaining: u16,
     lit_total: u16,
@@ -800,7 +800,7 @@ pub fn build_furnace_actor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
 
     #[test]
     fn furnace_actor_builder() {

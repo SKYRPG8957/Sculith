@@ -10,7 +10,7 @@ use pumpkin_inventory::{
     smithing_table_screen_handler::SmithingTableScreenHandler,
     stonecutter_screen_handler::StonecutterScreenHandler,
 };
-use pumpkin_protocol::bedrock::{
+use sculith_protocol::bedrock::{
     client::item_stack_response::{
         CItemStackResponse, ItemStackResponseContainerInfo, ItemStackResponseInfo,
         ItemStackResponseSlotInfo,
@@ -20,10 +20,10 @@ use pumpkin_protocol::bedrock::{
 
 impl BedrockClient {
     pub fn handle_item_stack_request(&self, player: &Arc<Player>, packet: SItemStackRequest) {
-        use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
+        use sculith_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
         let storage = super::player_inventory::StorageContext::capture(player);
         let planned =
-            |request: &pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequest| {
+            |request: &sculith_protocol::bedrock::server::item_stack_request::ItemStackRequest| {
                 storage.is_some()
                     || super::player_inventory::is_player_inventory_request(request)
                     || request.actions.iter().any(|action| {
@@ -66,9 +66,9 @@ impl BedrockClient {
     fn handle_regular_stack_requests(
         &self,
         player: &Arc<Player>,
-        packet: pumpkin_protocol::bedrock::server::item_stack_request::SItemStackRequest,
+        packet: sculith_protocol::bedrock::server::item_stack_request::SItemStackRequest,
     ) {
-        use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
+        use sculith_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
 
         let (responses, inventory_updated) = {
             let current_screen_handler = player
@@ -925,9 +925,9 @@ pub(super) fn build_stack_response(
 /// Such requests are rejected whole, before any stack changes.
 fn touches_unroutable_slot(
     screen_handler: &dyn ScreenHandler,
-    action: &pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction,
+    action: &sculith_protocol::bedrock::server::item_stack_request::ItemStackRequestAction,
 ) -> bool {
-    use pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestAction as A;
+    use sculith_protocol::bedrock::server::item_stack_request::ItemStackRequestAction as A;
     let slots = match action {
         A::Take {
             source,
@@ -1268,7 +1268,7 @@ pub(crate) fn record_update(
 
 fn get_slot_stack(
     screen_handler: &dyn ScreenHandler,
-    slot_info: &pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo,
+    slot_info: &sculith_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo,
     created_item: Option<&ItemStack>,
 ) -> ItemStack {
     if let (ContainerName::CreatedOutput, Some(stack)) =
@@ -1299,7 +1299,7 @@ fn get_slot_stack(
 fn update_slot_stack(
     player: &Player,
     screen_handler: &mut dyn ScreenHandler,
-    slot_info: &pumpkin_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo,
+    slot_info: &sculith_protocol::bedrock::server::item_stack_request::ItemStackRequestSlotInfo,
     new_stack: ItemStack,
 ) {
     if slot_info.container_name.container_name == ContainerName::Cursor {

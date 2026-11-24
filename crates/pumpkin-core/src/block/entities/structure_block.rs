@@ -7,16 +7,16 @@ use pumpkin_data::block_properties::{StructureBlockLikeProperties, Structurebloc
 use pumpkin_data::{Block, BlockStateId, Mirror, Rotation};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::nbt_compress::write_gzip_compound_tag_to_bytes;
-use pumpkin_util::math::block_box::BlockBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomImpl, legacy_rand::LegacyRand};
 use pumpkin_world::generation::structure::template::{
     BlockPlacer, BlockStateResolver, Palette, PaletteEntry, StructureBlockInfo, StructureTemplate,
     global_cache,
 };
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::block_box::BlockBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomImpl, legacy_rand::LegacyRand};
 
 use crate::world::World;
 use crate::world::block_placer::WorldBlockPlacer;
@@ -1188,7 +1188,7 @@ mod tests {
     use super::{
         compute_detected_bounds, is_safe_generated_structure_path, parse_structure_identifier,
     };
-    use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+    use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
     #[test]
     fn structure_identifier_validation_canonicalizes_and_rejects_invalid_names() {

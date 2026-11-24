@@ -6,9 +6,9 @@ use bytes::BufMut;
 use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_data::tracked_data::{TrackedData, TrackedId, living_entity};
-use pumpkin_protocol::java::client::play::{Metadata, MetadataSerializer};
-use pumpkin_protocol::ser::WritingError;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_protocol::java::client::play::{Metadata, MetadataSerializer};
+use sculith_protocol::ser::WritingError;
+use sculith_util::version::JavaMinecraftVersion;
 
 pub trait ErasedSerializer: Send + Sync {
     fn write(
@@ -292,7 +292,7 @@ impl SynchedEntityData {
 #[cfg(test)]
 mod test {
     use pumpkin_data::tracked_data::player::PLAYER_MODE_CUSTOMISATION;
-    use pumpkin_protocol::codec::var_int::VarInt;
+    use sculith_protocol::codec::var_int::VarInt;
 
     use super::*;
 

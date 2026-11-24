@@ -9,9 +9,9 @@ use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 use crate::item::items::ignite::ignition::Ignition;
@@ -83,7 +83,7 @@ impl ItemBehaviour for FlintAndSteelItem {
             block,
         );
 
-        if ignited && player.gamemode.load() != pumpkin_util::GameMode::Creative {
+        if ignited && player.gamemode.load() != sculith_util::GameMode::Creative {
             let _ = item.damage_item(1);
         }
 

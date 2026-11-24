@@ -5,10 +5,10 @@ use pumpkin_data::{
     tag,
     tag::Taggable,
 };
-use pumpkin_util::math::{
+use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
+use sculith_util::math::{
     boundingbox::EntityDimensions, position::BlockPos, vector2::Vector2, vector3::Vector3,
 };
-use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
 use std::sync::Arc;
 
 use crate::world::World;
@@ -848,7 +848,7 @@ impl NetherPortal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::math::boundingbox::EntityDimensions;
+    use sculith_util::math::boundingbox::EntityDimensions;
 
     #[test]
     fn portal_teleport_position_x_axis() {

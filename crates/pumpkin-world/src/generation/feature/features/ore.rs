@@ -1,7 +1,7 @@
 use core::f32;
 
 use pumpkin_data::{BlockDirection, BlockState, BlockStateId};
-use pumpkin_util::{
+use sculith_util::{
     math::{lerp, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
 };
@@ -91,7 +91,7 @@ impl OreFeature {
             let g = lerp(f as f64, start_z, end_z);
             let h = random.next_f64() * j as f64 / 16.0;
             let l = f64::midpoint(
-                (pumpkin_util::math::sin(f32::consts::PI * f) + 1.0) as f64 * h,
+                (sculith_util::math::sin(f32::consts::PI * f) + 1.0) as f64 * h,
                 1.0,
             );
 

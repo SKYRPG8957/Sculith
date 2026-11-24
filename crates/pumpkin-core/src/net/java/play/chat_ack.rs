@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::java::server::play::SChatAck;
+use sculith_protocol::java::server::play::SChatAck;
 
 impl JavaClient {
     pub fn handle_chat_ack(&self, player: &Arc<Player>, packet: &SChatAck) {

@@ -380,7 +380,7 @@ impl ToFromWasmEvent
     fn from_wasm_event(event: Event, _state: &mut PluginHostState) -> Self {
         match event {
             Event::ChunkPopulateEvent(data) => Self {
-                chunk_pos: pumpkin_util::math::vector2::Vector2::new(data.chunk_x, data.chunk_z),
+                chunk_pos: sculith_util::math::vector2::Vector2::new(data.chunk_x, data.chunk_z),
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),
@@ -407,7 +407,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::chunk_unload:
     fn from_wasm_event(event: Event, _state: &mut PluginHostState) -> Self {
         match event {
             Event::ChunkUnloadEvent(data) => Self {
-                chunk_pos: pumpkin_util::math::vector2::Vector2::new(data.chunk_x, data.chunk_z),
+                chunk_pos: sculith_util::math::vector2::Vector2::new(data.chunk_x, data.chunk_z),
                 cancelled: data.cancelled,
             },
             _ => panic!("unexpected event type"),
@@ -437,7 +437,7 @@ impl ToFromWasmEvent
     fn from_wasm_event(event: Event, _state: &mut PluginHostState) -> Self {
         match event {
             Event::EntitiesLoadEvent(data) => Self {
-                chunk_pos: pumpkin_util::math::vector2::Vector2::new(data.chunk_x, data.chunk_z),
+                chunk_pos: sculith_util::math::vector2::Vector2::new(data.chunk_x, data.chunk_z),
                 entity_count: data.entity_count as usize,
                 cancelled: data.cancelled,
             },
@@ -468,7 +468,7 @@ impl ToFromWasmEvent
     fn from_wasm_event(event: Event, _state: &mut PluginHostState) -> Self {
         match event {
             Event::EntitiesUnloadEvent(data) => Self {
-                chunk_pos: pumpkin_util::math::vector2::Vector2::new(data.chunk_x, data.chunk_z),
+                chunk_pos: sculith_util::math::vector2::Vector2::new(data.chunk_x, data.chunk_z),
                 entity_count: data.entity_count as usize,
                 cancelled: data.cancelled,
             },
@@ -497,7 +497,7 @@ impl ToFromWasmEvent for pumpkin_core::plugin::api::events::world::generic_game:
         match event {
             Event::GenericGameEvent(data) => Self {
                 event_key: data.event_id,
-                position: pumpkin_util::math::vector3::Vector3::new(
+                position: sculith_util::math::vector3::Vector3::new(
                     data.pos.0, data.pos.1, data.pos.2,
                 ),
                 cancelled: data.cancelled,

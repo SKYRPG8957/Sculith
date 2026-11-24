@@ -14,9 +14,9 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockState, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 type TrapDoorProperties = pumpkin_data::block_properties::OakTrapdoorLikeProperties;

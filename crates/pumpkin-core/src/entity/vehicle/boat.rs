@@ -18,13 +18,13 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::translation;
 use pumpkin_inventory::Inventory;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::client::set_actor_data::{
+use sculith_protocol::bedrock::client::set_actor_data::{
     MetadataValue, SyncedActorDataList, entity_data_flag, entity_data_key,
 };
-use pumpkin_protocol::java::client::play::Metadata;
-use pumpkin_util::GameMode;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::java::client::play::Metadata;
+use sculith_util::GameMode;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 
 use crate::entity::vehicle::vehicle::VehicleEntity;
 

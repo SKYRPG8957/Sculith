@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::translation::java::{COMMANDS_LIST_NAMEANDID, COMMANDS_LIST_PLAYERS};
-use pumpkin_util::{
+use sculith_util::{
     permission::{Permission, PermissionDefault, PermissionRegistry},
     text::TextComponent,
 };

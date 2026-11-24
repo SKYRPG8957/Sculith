@@ -1,9 +1,9 @@
-use pumpkin_protocol::java::client::play::{
+use sculith_protocol::java::client::play::{
     CInitializeWorldBorder, CSetBorderCenter, CSetBorderLerpSize, CSetBorderSize,
     CSetBorderWarningDelay, CSetBorderWarningDistance,
 };
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::Entity;
 use crate::net::java::JavaClient;

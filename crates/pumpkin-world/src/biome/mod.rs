@@ -409,7 +409,7 @@ mod test {
     #[test]
     fn biome_desert() {
         use crate::generation::generator::{GeneratorInit, VanillaGenerator};
-        use pumpkin_util::world_seed::Seed;
+        use sculith_util::world_seed::Seed;
         let seed = 13579;
         let generator = VanillaGenerator::new(Seed(seed as u64), Dimension::OVERWORLD);
         let mut sampler = MultiNoiseSampler::generate(&generator.base_router.multi_noise);
@@ -421,7 +421,7 @@ mod test {
     fn wide_area_surface() {
         use crate::generation::generator::{GeneratorInit, VanillaGenerator, WorldGenerator};
         use crate::generation::noise::router::multi_noise_sampler::MultiNoiseSampler;
-        use pumpkin_util::world_seed::Seed;
+        use sculith_util::world_seed::Seed;
         #[derive(Deserialize)]
         struct BiomeData {
             x: i32,
@@ -495,7 +495,7 @@ mod test {
     fn nether_chunks_only_contain_nether_biomes() {
         use crate::generation::generator::{GeneratorInit, VanillaGenerator, WorldGenerator};
         use crate::generation::noise::router::multi_noise_sampler::MultiNoiseSampler;
-        use pumpkin_util::world_seed::Seed;
+        use sculith_util::world_seed::Seed;
 
         let fill = |dimension: Dimension, chunk_x: i32, chunk_z: i32| -> Vec<u8> {
             let world_gen =

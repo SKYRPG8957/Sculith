@@ -1,7 +1,7 @@
 use std::f64::consts::FRAC_PI_2;
 
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::poi::SectionPos;
+use sculith_util::math::vector3::Vector3;
 
 use super::wander_around::WanderAroundGoal;
 use crate::entity::ai::brain::behavior::poi_walk::village_bound_random_stroll::{

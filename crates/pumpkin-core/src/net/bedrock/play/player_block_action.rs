@@ -6,7 +6,7 @@ impl BedrockClient {
         &self,
         player: &Arc<Player>,
         server: &Arc<Server>,
-        packet: &pumpkin_protocol::bedrock::server::player_auth_input::PlayerBlockAction,
+        packet: &sculith_protocol::bedrock::server::player_auth_input::PlayerBlockAction,
     ) {
         let mut spin_attack_prediction = None;
         self.apply_player_action(

@@ -1,4 +1,4 @@
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
+use sculith_util::{math::position::BlockPos, random::RandomGenerator};
 
 use super::{FoliagePlacer, LeaveValidator};
 use crate::generation::block_state_provider::BlockStateProvider;
@@ -65,7 +65,7 @@ impl AcaciaFoliagePlacer {
 impl LeaveValidator for AcaciaFoliagePlacer {
     fn is_invalid_for_leaves(
         &self,
-        _random: &mut pumpkin_util::random::RandomGenerator,
+        _random: &mut sculith_util::random::RandomGenerator,
         dx: i32,
         y: i32,
         dz: i32,

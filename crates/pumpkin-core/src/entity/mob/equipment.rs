@@ -33,9 +33,9 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::tag::{Tag, Taggable};
-use pumpkin_util::difficulty::Difficulty;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::difficulty::Difficulty;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::EntityBase;
 use crate::entity::mob::{Mob, MobEntity};
@@ -382,7 +382,7 @@ impl RegionalDifficulty {
             world
                 .level
                 .loaded_chunks
-                .get(&pumpkin_util::math::vector2::Vector2::new(chunk_x, chunk_z))
+                .get(&sculith_util::math::vector2::Vector2::new(chunk_x, chunk_z))
                 .map_or(0, |c| {
                     c.inhabited_time.load(std::sync::atomic::Ordering::Relaxed)
                 })

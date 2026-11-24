@@ -8,7 +8,7 @@ use pumpkin_core::{
     server::Server,
 };
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::{PermissionLvl, math::vector2::Vector2};
+use sculith_util::{PermissionLvl, math::vector2::Vector2};
 use tokio::net::TcpListener;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 

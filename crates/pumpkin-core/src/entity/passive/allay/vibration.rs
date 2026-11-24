@@ -5,8 +5,8 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_protocol::{codec::var_int::VarInt, java::client::play::CParticle, ser::WritingError};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_protocol::{codec::var_int::VarInt, java::client::play::CParticle, ser::WritingError};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 use uuid::Uuid;
 
 use super::{AllayEntity, ai};
@@ -376,7 +376,7 @@ mod tests {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
         world.level.loaded_chunks.insert(
-            pumpkin_util::math::vector2::Vector2::new(0, 0),
+            sculith_util::math::vector2::Vector2::new(0, 0),
             pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
         );
         let allay = AllayEntity::new(Entity::new(

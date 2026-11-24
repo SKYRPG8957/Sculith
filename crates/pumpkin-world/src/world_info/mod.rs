@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::CURRENT_MC_VERSION;
 use pumpkin_data::game_rules::GameRuleRegistry;
-use pumpkin_util::{Difficulty, serde_enum_as_integer, world_seed::Seed};
+use sculith_util::{Difficulty, serde_enum_as_integer, world_seed::Seed};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
@@ -182,7 +182,7 @@ pub struct WorldGenSettings {
 impl Default for WorldGenSettings {
     fn default() -> Self {
         // Use seed 0 as placeholder; actual seed comes from config or world_gen_settings.dat
-        Self::new(pumpkin_util::world_seed::Seed(0))
+        Self::new(sculith_util::world_seed::Seed(0))
     }
 }
 

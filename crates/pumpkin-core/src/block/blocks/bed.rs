@@ -9,10 +9,10 @@ use pumpkin_data::tag::{Block as BlockTag, Taggable};
 use pumpkin_data::translation;
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::GameMode;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::GameMode;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::block::registry::BlockActionResult;
 use crate::block::{

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use pumpkin_data::{Block, BlockState};
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
@@ -505,7 +505,7 @@ fn box_from_corners(first: Vector3<i32>, second: Vector3<i32>) -> BlockBox {
 #[cfg(test)]
 mod tests {
     use pumpkin_data::{Block, dimension::Dimension};
-    use pumpkin_util::{
+    use sculith_util::{
         BlockDirection,
         math::block_box::BlockBox,
         random::{RandomGenerator, legacy_rand::LegacyRand},
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn elder_guardian_nbt_is_accepted_by_the_entity_loader() {
-        let nbt = elder_guardian_nbt(pumpkin_util::math::vector3::Vector3::new(1, 2, 3));
+        let nbt = elder_guardian_nbt(sculith_util::math::vector3::Vector3::new(1, 2, 3));
 
         assert_eq!(nbt.get_string("id"), Some("minecraft:elder_guardian"));
         assert_eq!(nbt.get_list("Pos").unwrap().len(), 3);

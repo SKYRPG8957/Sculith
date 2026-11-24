@@ -22,11 +22,11 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::{BlockId, BlockState, BlockStateId, Enchantment};
 use pumpkin_inventory::screen_handler::InventoryPlayer;
-use pumpkin_util::GameMode;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
+use sculith_util::GameMode;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
 
 pub struct BeehiveBlock;
 

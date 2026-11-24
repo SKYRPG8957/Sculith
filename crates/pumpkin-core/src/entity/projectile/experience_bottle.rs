@@ -9,9 +9,9 @@ use crate::server::Server;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_util::math::position::BlockPos;
 
 const GRAVITY: f64 = 0.07;
 const WATER_COLOR: i32 = -13_083_194; // 0xFF385DC6

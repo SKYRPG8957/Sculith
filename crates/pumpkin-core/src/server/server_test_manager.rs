@@ -11,9 +11,9 @@ use pumpkin_gametest::{
 };
 pub use pumpkin_gametest::{GameTestBatchReport, GameTestRetryOptions};
 use pumpkin_nbt::NbtCompound;
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
-use pumpkin_util::text::TextComponent;
 use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
+use sculith_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_util::text::TextComponent;
 use tracing::{info, warn};
 
 use crate::{
@@ -643,7 +643,7 @@ impl GameTestWorld for ServerGameTestWorld {
     async fn spawn_entity(
         &self,
         entity_name: &str,
-        position: pumpkin_util::math::vector3::Vector3<f64>,
+        position: sculith_util::math::vector3::Vector3<f64>,
     ) -> GameTestResult<()> {
         let normalized = entity_name
             .strip_prefix("minecraft:")
@@ -671,7 +671,7 @@ impl GameTestWorld for ServerGameTestWorld {
         &self,
         item_name: &str,
         count: u8,
-        position: pumpkin_util::math::vector3::Vector3<f64>,
+        position: sculith_util::math::vector3::Vector3<f64>,
     ) -> GameTestResult<()> {
         let normalized = item_name.strip_prefix("minecraft:").unwrap_or(item_name);
         let item = pumpkin_data::item::Item::from_registry_key(normalized)
@@ -686,7 +686,7 @@ impl GameTestWorld for ServerGameTestWorld {
         let item_entity = Arc::new(crate::entity::item::ItemEntity::new_with_velocity(
             base_entity,
             pumpkin_data::item_stack::ItemStack::new(count, item),
-            pumpkin_util::math::vector3::Vector3::default(),
+            sculith_util::math::vector3::Vector3::default(),
             0,
         ));
         self.world.spawn_entity(item_entity);
@@ -696,13 +696,13 @@ impl GameTestWorld for ServerGameTestWorld {
     async fn entity_count_in_box(
         &self,
         entity_name: &str,
-        min: pumpkin_util::math::vector3::Vector3<f64>,
-        max: pumpkin_util::math::vector3::Vector3<f64>,
+        min: sculith_util::math::vector3::Vector3<f64>,
+        max: sculith_util::math::vector3::Vector3<f64>,
     ) -> GameTestResult<usize> {
         let normalized = entity_name
             .strip_prefix("minecraft:")
             .unwrap_or(entity_name);
-        let box_bounds = pumpkin_util::math::boundingbox::BoundingBox::new(min, max);
+        let box_bounds = sculith_util::math::boundingbox::BoundingBox::new(min, max);
         let entities = self.world.entities.load_full();
         let count = entities
             .iter()
@@ -719,13 +719,13 @@ impl GameTestWorld for ServerGameTestWorld {
     async fn item_count_in_box(
         &self,
         item_name: &str,
-        min: pumpkin_util::math::vector3::Vector3<f64>,
-        max: pumpkin_util::math::vector3::Vector3<f64>,
+        min: sculith_util::math::vector3::Vector3<f64>,
+        max: sculith_util::math::vector3::Vector3<f64>,
     ) -> GameTestResult<u32> {
         let normalized = item_name.strip_prefix("minecraft:").unwrap_or(item_name);
         let target_item = pumpkin_data::item::Item::from_registry_key(normalized)
             .ok_or_else(|| GameTestError::World(format!("Unknown item '{item_name}'")))?;
-        let box_bounds = pumpkin_util::math::boundingbox::BoundingBox::new(min, max);
+        let box_bounds = sculith_util::math::boundingbox::BoundingBox::new(min, max);
         let entities = self.world.entities.load_full();
         let mut total = 0u32;
         for entity in entities.iter() {
@@ -893,7 +893,7 @@ impl GameTestWorld for ServerGameTestWorld {
 
     async fn execute_command(
         &self,
-        position: pumpkin_util::math::vector3::Vector3<f64>,
+        position: sculith_util::math::vector3::Vector3<f64>,
         command: &str,
     ) -> GameTestResult<u32> {
         let Some(server) = self.world.server.upgrade() else {
@@ -907,7 +907,7 @@ impl GameTestWorld for ServerGameTestWorld {
             self.world.clone(),
             None,
             position,
-            pumpkin_util::math::vector2::Vector2::new(0.0, 0.0),
+            sculith_util::math::vector2::Vector2::new(0.0, 0.0),
             "GameTest".to_string(),
             TextComponent::text("GameTest"),
             server.clone(),

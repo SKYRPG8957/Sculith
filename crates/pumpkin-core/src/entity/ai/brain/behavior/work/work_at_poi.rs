@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::position_tracker::{BlockPosTracker, PositionTracker};

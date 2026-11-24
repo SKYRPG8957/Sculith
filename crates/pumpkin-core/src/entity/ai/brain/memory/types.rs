@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rustc_hash::FxHashSet;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 use crate::entity::EntityBase;

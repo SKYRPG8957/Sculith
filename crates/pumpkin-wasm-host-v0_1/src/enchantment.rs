@@ -4,8 +4,8 @@ use crate::pumpkin::plugin::enchantments::{
 };
 use pumpkin_core::server::enchantment::CustomEnchantmentEntry;
 use pumpkin_data::enchantment::{AttributeModifierSlot, Enchantment};
-use pumpkin_util::text::TextComponent;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_util::text::TextComponent;
 use wasmtime::component::Resource;
 
 impl HostEnchantmentManager for PluginHostState {

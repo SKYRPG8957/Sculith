@@ -1,4 +1,4 @@
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SectionPos {

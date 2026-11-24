@@ -1,5 +1,5 @@
 use pumpkin_data::Block;
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::block_box::BlockBox,
     random::{RandomGenerator, RandomImpl},
@@ -79,7 +79,7 @@ impl StructurePieceBase for BridgeEndPiece {
 
         // Use a seeded local random so geometry is deterministic.
         let mut rng =
-            pumpkin_util::random::legacy_rand::LegacyRand::from_seed((self.seed as i64) as u64);
+            sculith_util::random::legacy_rand::LegacyRand::from_seed((self.seed as i64) as u64);
 
         for i in 0..=4i32 {
             for j in 3..=4i32 {

@@ -13,9 +13,9 @@ use pumpkin_data::potion_brewing::BREWING_RECIPES;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_inventory::{Inventory, sync_read_items_from_nbt, sync_write_items_to_nbt};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::recipe::DynamicRecipe;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::codec::recipe::DynamicRecipe;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 pub struct BrewingStandBlockEntity {
     pub position: BlockPos,
@@ -698,7 +698,7 @@ impl crate::block::entities::BlockEntity for BrewingStandBlockEntity {
         self.metadata.get_lock()
     }
 
-    fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         self.metadata.get_custom_name()
     }
 

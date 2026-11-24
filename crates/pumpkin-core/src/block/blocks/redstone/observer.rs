@@ -7,8 +7,8 @@ use crate::block::{
 use crate::entity::EntityBase;
 use pumpkin_data::{Block, BlockStateId, FacingExt, block_properties::ObserverLikeProperties};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::{tick::TickPriority, world::BlockFlags};
+use sculith_util::math::position::BlockPos;
 
 use crate::{block::BlockBehaviour, world::World};
 

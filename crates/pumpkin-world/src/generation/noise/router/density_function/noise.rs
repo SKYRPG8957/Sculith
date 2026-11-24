@@ -1,5 +1,5 @@
 use pumpkin_data::noise_router::{InterpolatedNoiseSamplerData, NoiseData, ShiftedNoiseData};
-use pumpkin_util::{
+use sculith_util::{
     math::{lerp, vector3::Vector3},
     noise::perlin::{Layer, Noise as _, NoiseStack, SmearedPerlinNoise},
     random::RandomImpl,

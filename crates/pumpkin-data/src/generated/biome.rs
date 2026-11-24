@@ -3,7 +3,7 @@ use crate::biome::de::Deserialize;
 use crate::entity_type::EntityType;
 use crate::tag::RegistryKey;
 use crate::tag::Taggable;
-use pumpkin_util::biome::{TemperatureModifier, Weather};
+use sculith_util::biome::{TemperatureModifier, Weather};
 use serde::{Deserializer, de};
 use std::{
     fmt,

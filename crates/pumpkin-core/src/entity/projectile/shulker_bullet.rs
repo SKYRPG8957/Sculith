@@ -8,9 +8,9 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::potion::Effect;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 use crate::entity::mob::shulker::Axis;
@@ -22,8 +22,8 @@ use crate::entity::{Entity, EntityBase};
 use crate::server::Server;
 use crate::world::game_event::GameEventContext;
 use pumpkin_data::game_event::GameEvent;
-use pumpkin_util::Difficulty;
 use pumpkin_world::clip::ClipBlock;
+use sculith_util::Difficulty;
 
 // Direction ordinal constants
 const DIR_DOWN: u8 = 0;

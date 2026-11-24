@@ -1,5 +1,5 @@
 use pumpkin_data::Rotation;
-use pumpkin_util::{
+use sculith_util::{
     math::vector3::Vector3,
     random::{RandomGenerator, RandomImpl},
 };
@@ -1040,7 +1040,7 @@ impl MansionPiecePlacer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_util::random::legacy_rand::LegacyRand;
+    use sculith_util::random::legacy_rand::LegacyRand;
 
     use super::*;
 

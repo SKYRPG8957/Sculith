@@ -19,7 +19,7 @@ pub struct CreakingHeartBlock;
 impl CreakingHeartBlock {
     fn active_state(
         world: &crate::world::World,
-        pos: &pumpkin_util::math::position::BlockPos,
+        pos: &sculith_util::math::position::BlockPos,
     ) -> CreakingHeartState {
         if world
             .environment_attributes()
@@ -39,7 +39,7 @@ impl CreakingHeartBlock {
 
     fn check_active_logs(
         world: &dyn pumpkin_world::world::BlockAccessor,
-        pos: &pumpkin_util::math::position::BlockPos,
+        pos: &sculith_util::math::position::BlockPos,
         axis: Axis,
     ) -> bool {
         let (pos_a, pos_b) = match axis {

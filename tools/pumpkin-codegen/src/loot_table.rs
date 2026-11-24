@@ -2,12 +2,12 @@ use std::{fs, path::Path};
 
 use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
-use pumpkin_util::loot_table::{
+use quote::{format_ident, quote};
+use sculith_util::loot_table::{
     DynamicLootCondition, DynamicLootEntry, DynamicLootEntryKind, DynamicLootFunction,
     DynamicLootPool, DynamicLootTable, LootBonusFormula, LootEntityTarget, LootFunctionKind,
     LootNumberProvider, parser::parse_loot_table_with_predicates,
 };
-use quote::{format_ident, quote};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -387,7 +387,7 @@ pub fn build() -> TokenStream {
     }
     let predicates = generator.predicates;
     quote! {
-        pub use pumpkin_util::loot_table::*;
+        pub use sculith_util::loot_table::*;
         #predicates
         #declarations
         static LOOT_TABLES_BY_KEY: [(&str, &LootTable); #count] = [#(#rows),*];

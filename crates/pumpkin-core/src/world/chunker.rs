@@ -1,12 +1,12 @@
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_util::math::{position::BlockPos, vector2::Vector2};
 use std::{num::NonZero, sync::Arc};
 
-use pumpkin_protocol::{
+use pumpkin_world::chunk_system::ChunkLoading;
+use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
+use sculith_protocol::{
     bedrock::client::network_chunk_publisher_update::CNetworkChunkPublisherUpdate,
     java::client::play::CCenterChunk,
 };
-use pumpkin_world::chunk_system::ChunkLoading;
-use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 
 use crate::{
     entity::{

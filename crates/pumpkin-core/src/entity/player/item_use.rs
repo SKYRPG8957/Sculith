@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use pumpkin_data::{Block, data_component_impl::EquipmentSlot, item_stack::ItemStack};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer, java::client::play::CSetPlayerInventory,
 };
-use pumpkin_util::{GameMode, Hand};
+use sculith_util::{GameMode, Hand};
 
 use crate::{
     block::BlockPlacement,

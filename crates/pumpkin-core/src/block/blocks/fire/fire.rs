@@ -6,11 +6,11 @@ use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 use crate::block::blocks::tnt::TNTBlock;

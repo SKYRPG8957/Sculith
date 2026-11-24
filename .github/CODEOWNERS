@@ -4,7 +4,7 @@
 # A path-specific rule replaces the owners of earlier rules, it does not add to them.
 
 # --- Networking (Java) ---
-/crates/pumpkin-protocol/                                                   @Snowiiii @xRookieFight
+/crates/sculith-protocol/                                                   @Snowiiii @xRookieFight
 /crates/pumpkin-core/src/net/                                               @Snowiiii @xRookieFight
 
 # --- Commands ---
@@ -82,9 +82,9 @@
 /assets/bedrock/                                                            @xRookieFight @QuantumSegfault
 /assets/en_us_bedrock.lang                                                  @QuantumSegfault
 /crates/pumpkin-config/src/networking/bedrock.rs                            @QuantumSegfault
-/crates/pumpkin-protocol/src/bedrock/                                       @xRookieFight @QuantumSegfault
+/crates/sculith-protocol/src/bedrock/                                       @xRookieFight @QuantumSegfault
 /crates/pumpkin-core/src/net/bedrock/                                       @xRookieFight @QuantumSegfault
-/crates/pumpkin-protocol/fuzz/fuzz_targets/*_bedrock.rs                     @Snowiiii @xRookieFight @QuantumSegfault
+/crates/sculith-protocol/fuzz/fuzz_targets/*_bedrock.rs                     @Snowiiii @xRookieFight @QuantumSegfault
 /crates/pumpkin-nbt/fuzz/fuzz_targets/deserialize_bedrock.rs                @QuantumSegfault
 /crates/pumpkin-core/src/plugin/api/events/player/bedrock_form_response.rs  @yunuservices @Phoenixxo @QuantumSegfault
 /crates/pumpkin-plugin-api/src/events/player/bedrock_form_response.rs       @yunuservices @Phoenixxo @QuantumSegfault

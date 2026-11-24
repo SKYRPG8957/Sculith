@@ -3,10 +3,10 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::registry::BlockActionResult;
 use crate::block::{

@@ -1,12 +1,12 @@
 use super::BlockEntity;
 use pumpkin_data::Block;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::xoroshiro128::Xoroshiro;
+use sculith_util::random::{RandomGenerator, RandomImpl};
 use std::sync::{Arc, Mutex};
 
 use crate::world::World;

@@ -1,6 +1,6 @@
 use crate::entity::player::Player;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 
 /// An event that occurs when an entity dies.

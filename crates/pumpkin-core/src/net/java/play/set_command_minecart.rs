@@ -2,7 +2,7 @@
 use super::*;
 use crate::entity::vehicle::minecart::MinecartEntity;
 use pumpkin_data::translation;
-use pumpkin_protocol::java::server::play::SSetCommandMinecart;
+use sculith_protocol::java::server::play::SSetCommandMinecart;
 
 impl JavaClient {
     pub fn handle_set_command_minecart(&self, player: &Player, packet: &SSetCommandMinecart<'_>) {

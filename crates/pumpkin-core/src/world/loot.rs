@@ -6,13 +6,13 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::recipes::{CookingRecipeKind, get_cooking_recipe_with_ingredient};
 use pumpkin_data::tag::Taggable;
-pub use pumpkin_util::loot_table::{
+pub use sculith_util::loot_table::{
     DynamicLootCondition, DynamicLootEntry, DynamicLootEntryKind, DynamicLootFunction,
     DynamicLootPool, DynamicLootTable, LootBonusFormula, LootCondition, LootEntityTarget,
     LootEntry, LootEntryKind, LootFunction, LootFunctionKind, LootNumberProvider, LootPool,
     LootTable,
 };
-use pumpkin_util::random::{RandomImpl, xoroshiro128::Xoroshiro};
+use sculith_util::random::{RandomImpl, xoroshiro128::Xoroshiro};
 
 mod generation;
 mod predicates;
@@ -27,7 +27,7 @@ pub struct LootContextParameters<'a> {
     pub this_entity: Option<&'a dyn EntityBase>,
     pub killer_entity: Option<&'a dyn EntityBase>,
     pub direct_killer_entity: Option<&'a dyn EntityBase>,
-    pub position: Option<pumpkin_util::math::vector3::Vector3<f64>>,
+    pub position: Option<sculith_util::math::vector3::Vector3<f64>>,
     pub world_time: u64,
     pub damage_type: Option<DamageType>,
     pub tool: Option<ItemStack>,
@@ -467,7 +467,7 @@ pub fn evaluate_predicate_value(
     value: &serde_json::Value,
     params: &LootContextParameters<'_>,
 ) -> bool {
-    pumpkin_util::loot_table::parser::parse_condition_with_predicates(value, &|name| {
+    sculith_util::loot_table::parser::parse_condition_with_predicates(value, &|name| {
         pumpkin_data::loot_table::get_loot_predicate(name).cloned()
     })
     .map_or_else(

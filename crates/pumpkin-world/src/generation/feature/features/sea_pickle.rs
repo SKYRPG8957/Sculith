@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, BlockDirection, BlockState, block_properties::SeaPickleLikeProperties};
-use pumpkin_util::{
+use sculith_util::{
     math::{int_provider::IntProvider, position::BlockPos},
     random::{RandomGenerator, RandomImpl},
 };

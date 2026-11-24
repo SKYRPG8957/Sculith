@@ -3,9 +3,9 @@ use super::{Controls, Goal, to_goal_ticks};
 use crate::entity::ai::pathfinder::NavigatorGoal;
 use crate::entity::{ai::goal::ParentHandle, mob::Mob};
 use crate::world::World;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 const GIVE_UP_TICKS: i32 = 1200;
 const STAY_TICKS: i32 = 1200;

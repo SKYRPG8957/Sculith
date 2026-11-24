@@ -12,7 +12,7 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::java::client::play::{CGameEvent, GameEvent};
+use sculith_protocol::java::client::play::{CGameEvent, GameEvent};
 
 use super::abstract_fish::{AbstractFish, FishData};
 use crate::entity::bucketable::Bucketable;

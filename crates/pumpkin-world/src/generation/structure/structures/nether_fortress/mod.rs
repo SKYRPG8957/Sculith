@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::{block_box::BlockBox, position::BlockPos},
     random::RandomImpl,

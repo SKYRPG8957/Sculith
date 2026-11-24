@@ -2,9 +2,9 @@ use std::{collections::BTreeMap, fs};
 
 use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::TokenStream;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::TextContent::Translate;
 use quote::{format_ident, quote};
+use sculith_util::text::TextComponent;
+use sculith_util::text::TextContent::Translate;
 use serde::Deserialize;
 
 /// Raw deserialization shape for a single enchantment entry from `enchantment/*.json`.
@@ -198,12 +198,12 @@ fn parse_position_source(v: Option<&serde_json::Value>) -> (TokenStream, f32, f3
 fn parse_float_provider(v: &serde_json::Value) -> TokenStream {
     if let Some(f) = v.as_f64() {
         let f = f as f32;
-        quote! { pumpkin_util::math::float_provider::FloatProvider::Constant(#f) }
+        quote! { sculith_util::math::float_provider::FloatProvider::Constant(#f) }
     } else if let Some(type_str) = v.get("type").and_then(|s| s.as_str()) {
         match type_str {
             "minecraft:constant" => {
                 let val = v.get("value").and_then(|n| n.as_f64()).unwrap_or(0.0) as f32;
-                quote! { pumpkin_util::math::float_provider::FloatProvider::Constant(#val) }
+                quote! { sculith_util::math::float_provider::FloatProvider::Constant(#val) }
             }
             "minecraft:uniform" => {
                 let min = v
@@ -215,9 +215,9 @@ fn parse_float_provider(v: &serde_json::Value) -> TokenStream {
                     .and_then(|n| n.as_f64())
                     .unwrap_or(0.0) as f32;
                 quote! {
-                    pumpkin_util::math::float_provider::FloatProvider::Object(
-                        pumpkin_util::math::float_provider::NormalFloatProvider::Uniform(
-                            pumpkin_util::math::float_provider::UniformFloatProvider::new(#min, #max)
+                    sculith_util::math::float_provider::FloatProvider::Object(
+                        sculith_util::math::float_provider::NormalFloatProvider::Uniform(
+                            sculith_util::math::float_provider::UniformFloatProvider::new(#min, #max)
                         )
                     )
                 }
@@ -227,17 +227,17 @@ fn parse_float_provider(v: &serde_json::Value) -> TokenStream {
                 let max = v.get("max").and_then(|n| n.as_f64()).unwrap_or(0.0) as f32;
                 let plateau = v.get("plateau").and_then(|n| n.as_f64()).unwrap_or(0.0) as f32;
                 quote! {
-                    pumpkin_util::math::float_provider::FloatProvider::Object(
-                        pumpkin_util::math::float_provider::NormalFloatProvider::Trapezoid(
-                            pumpkin_util::math::float_provider::TrapezoidFloatProvider::new(#min, #max, #plateau)
+                    sculith_util::math::float_provider::FloatProvider::Object(
+                        sculith_util::math::float_provider::NormalFloatProvider::Trapezoid(
+                            sculith_util::math::float_provider::TrapezoidFloatProvider::new(#min, #max, #plateau)
                         )
                     )
                 }
             }
-            _ => quote! { pumpkin_util::math::float_provider::FloatProvider::Constant(0.0) },
+            _ => quote! { sculith_util::math::float_provider::FloatProvider::Constant(0.0) },
         }
     } else {
-        quote! { pumpkin_util::math::float_provider::FloatProvider::Constant(0.0) }
+        quote! { sculith_util::math::float_provider::FloatProvider::Constant(0.0) }
     }
 }
 
@@ -250,7 +250,7 @@ fn parse_velocity_source(v: Option<&serde_json::Value>) -> (f32, TokenStream) {
     let base = obj.and_then(|o| o.get("base"));
     let base_token = match base {
         Some(b) => parse_float_provider(b),
-        None => quote! { pumpkin_util::math::float_provider::FloatProvider::Constant(0.0) },
+        None => quote! { sculith_util::math::float_provider::FloatProvider::Constant(0.0) },
     };
     (movement_scale, base_token)
 }
@@ -566,8 +566,8 @@ fn parse_entity_effect(val: &serde_json::Value) -> TokenStream {
                 );
                 quote! {
                     EnchantmentEntityEffect::ApplyImpulse {
-                        direction: pumpkin_util::math::vector3::Vector3::new(#dir_x, #dir_y, #dir_z),
-                        coordinate_scale: pumpkin_util::math::vector3::Vector3::new(#scale_x, #scale_y, #scale_z),
+                        direction: sculith_util::math::vector3::Vector3::new(#dir_x, #dir_y, #dir_z),
+                        coordinate_scale: sculith_util::math::vector3::Vector3::new(#scale_x, #scale_y, #scale_z),
                         magnitude: #mag,
                     }
                 }
@@ -905,7 +905,7 @@ fn parse_single_replace_disk_predicate(v: &serde_json::Value) -> TokenStream {
             let tag_ident = format_ident!("{}", tag.to_uppercase().replace([':', '-'], "_"));
             quote! {
                 ReplaceDiskPredicate::MatchingBlockTag {
-                    offset: pumpkin_util::math::vector3::Vector3::new(#offset_x, #offset_y, #offset_z),
+                    offset: sculith_util::math::vector3::Vector3::new(#offset_x, #offset_y, #offset_z),
                     tag: &crate::tag::Block::#tag_ident,
                 }
             }
@@ -936,7 +936,7 @@ fn parse_single_replace_disk_predicate(v: &serde_json::Value) -> TokenStream {
             };
             quote! {
                 ReplaceDiskPredicate::MatchingBlocks {
-                    offset: pumpkin_util::math::vector3::Vector3::new(#offset_x, #offset_y, #offset_z),
+                    offset: sculith_util::math::vector3::Vector3::new(#offset_x, #offset_y, #offset_z),
                     blocks: #blocks_token,
                 }
             }
@@ -967,7 +967,7 @@ fn parse_single_replace_disk_predicate(v: &serde_json::Value) -> TokenStream {
             };
             quote! {
                 ReplaceDiskPredicate::MatchingFluids {
-                    offset: pumpkin_util::math::vector3::Vector3::new(#offset_x, #offset_y, #offset_z),
+                    offset: sculith_util::math::vector3::Vector3::new(#offset_x, #offset_y, #offset_z),
                     fluids: #fluids_token,
                 }
             }
@@ -1236,8 +1236,8 @@ pub fn build() -> TokenStream {
         use crate::tag::EntityType as EntityTypeTag;
         use crate::tag::{RegistryKey, Tag, Taggable};
         use crate::data_component_impl::EnchantmentsImpl;
-        use pumpkin_util::text::TextComponent;
-        use pumpkin_util::text::color::NamedColor;
+        use sculith_util::text::TextComponent;
+        use sculith_util::text::color::NamedColor;
         use std::hash::{Hash, Hasher};
         use std::slice::Iter;
 
@@ -1321,15 +1321,15 @@ pub fn build() -> TokenStream {
         #[derive(Clone, Debug, PartialEq)]
         pub enum ReplaceDiskPredicate {
             MatchingBlockTag {
-                offset: pumpkin_util::math::vector3::Vector3<i32>,
+                offset: sculith_util::math::vector3::Vector3<i32>,
                 tag: &'static crate::tag::Tag,
             },
             MatchingBlocks {
-                offset: pumpkin_util::math::vector3::Vector3<i32>,
+                offset: sculith_util::math::vector3::Vector3<i32>,
                 blocks: &'static [&'static str],
             },
             MatchingFluids {
-                offset: pumpkin_util::math::vector3::Vector3<i32>,
+                offset: sculith_util::math::vector3::Vector3<i32>,
                 fluids: &'static [&'static str],
             },
             Unobstructed,
@@ -1385,7 +1385,7 @@ pub fn build() -> TokenStream {
                 vertical_position: PositionSource,
                 horizontal_velocity: VelocitySource,
                 vertical_velocity: VelocitySource,
-                speed: pumpkin_util::math::float_provider::FloatProvider,
+                speed: sculith_util::math::float_provider::FloatProvider,
             },
             RunFunction {
                 function: &'static str,
@@ -1394,8 +1394,8 @@ pub fn build() -> TokenStream {
                 amount: LevelBasedValue,
             },
             ApplyImpulse {
-                direction: pumpkin_util::math::vector3::Vector3<f64>,
-                coordinate_scale: pumpkin_util::math::vector3::Vector3<f64>,
+                direction: sculith_util::math::vector3::Vector3<f64>,
+                coordinate_scale: sculith_util::math::vector3::Vector3<f64>,
                 magnitude: LevelBasedValue,
             },
             ApplyMobEffect {
@@ -1438,7 +1438,7 @@ pub fn build() -> TokenStream {
                 position: f64,
                 center: f64,
                 bounding_box_span: f32,
-                random: &mut impl pumpkin_util::random::RandomImpl,
+                random: &mut impl sculith_util::random::RandomImpl,
             ) -> f64 {
                 match self {
                     Self::EntityPosition => position,
@@ -1491,7 +1491,7 @@ pub fn build() -> TokenStream {
                 position: f64,
                 center: f64,
                 bounding_box_span: f32,
-                random: &mut impl pumpkin_util::random::RandomImpl,
+                random: &mut impl sculith_util::random::RandomImpl,
             ) -> f64 {
                 self.source_type.get_coordinate(
                     position,
@@ -1505,14 +1505,14 @@ pub fn build() -> TokenStream {
         #[derive(Clone, Debug, PartialEq)]
         pub struct VelocitySource {
             pub movement_scale: f32,
-            pub base: pumpkin_util::math::float_provider::FloatProvider,
+            pub base: sculith_util::math::float_provider::FloatProvider,
         }
 
         impl VelocitySource {
             #[must_use]
             pub const fn new(
                 movement_scale: f32,
-                base: pumpkin_util::math::float_provider::FloatProvider,
+                base: sculith_util::math::float_provider::FloatProvider,
             ) -> Self {
                 Self {
                     movement_scale,
@@ -1524,13 +1524,13 @@ pub fn build() -> TokenStream {
             pub const fn movement_scaled(scale: f32) -> Self {
                 Self {
                     movement_scale: scale,
-                    base: pumpkin_util::math::float_provider::FloatProvider::Constant(0.0),
+                    base: sculith_util::math::float_provider::FloatProvider::Constant(0.0),
                 }
             }
 
             #[must_use]
             pub const fn fixed_velocity(
-                provider: pumpkin_util::math::float_provider::FloatProvider,
+                provider: sculith_util::math::float_provider::FloatProvider,
             ) -> Self {
                 Self {
                     movement_scale: 0.0,
@@ -1541,7 +1541,7 @@ pub fn build() -> TokenStream {
             pub fn get_velocity(
                 &self,
                 movement: f64,
-                random: &mut impl pumpkin_util::random::RandomImpl,
+                random: &mut impl sculith_util::random::RandomImpl,
             ) -> f64 {
                 f64::from(self.movement_scale).mul_add(movement, f64::from(self.base.get(random)))
             }

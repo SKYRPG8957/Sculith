@@ -11,7 +11,7 @@ use pumpkin_nbt::{
     deserializer::{NbtReadHelper, NbtReadHelperBedrockDisk},
     tag::NbtTag,
 };
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use super::{
     AnvilLevelInfo, AnvilRegion, BLOCK_ENTITY, ChunkData, DB, Error, GeneratorPolicy, ImportStats,

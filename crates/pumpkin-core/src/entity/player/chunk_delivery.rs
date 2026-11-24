@@ -3,7 +3,7 @@ use std::sync::{
     atomic::Ordering::{Acquire, Relaxed},
 };
 
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::version::JavaMinecraftVersion;
 
 use crate::{
     entity::EntityBase,

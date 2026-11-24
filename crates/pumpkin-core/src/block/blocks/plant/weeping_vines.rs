@@ -6,10 +6,10 @@ use crate::block::{
 use crate::world::World;
 use pumpkin_data::block_properties::WeepingVinesProperties;
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 pub struct WeepingVinesBlock;
 

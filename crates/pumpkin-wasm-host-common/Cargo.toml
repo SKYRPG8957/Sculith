@@ -15,7 +15,7 @@ pumpkin-auth.workspace = true
 pumpkin-data = { workspace = true, features = ["default"] }
 pumpkin-inventory.workspace = true
 pumpkin-plugin-runtime.workspace = true
-pumpkin-util.workspace = true
+sculith-util.workspace = true
 pumpkin-world.workspace = true
 ed25519-dalek.workspace = true
 hex.workspace = true

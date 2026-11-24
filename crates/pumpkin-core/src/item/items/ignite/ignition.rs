@@ -3,7 +3,7 @@ use crate::block::blocks::fire::fire::FireBlock;
 use crate::world::World;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockStateId, tag};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 pub struct Ignition;

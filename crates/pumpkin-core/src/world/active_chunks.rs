@@ -1,5 +1,5 @@
-use pumpkin_util::math::vector2::Vector2;
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::vector2::Vector2;
 use uuid::Uuid;
 
 use super::tick_regions::TickRegions;

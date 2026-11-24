@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::text::{TextComponent, click::ClickEvent, color::NamedColor, hover::HoverEvent};
+use sculith_util::PermissionLvl;
+use sculith_util::text::{TextComponent, click::ClickEvent, color::NamedColor, hover::HoverEvent};
 use serde::Deserialize;
 use tracing::{debug, warn};
 

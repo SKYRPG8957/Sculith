@@ -1,13 +1,13 @@
 use pumpkin_data::entity::EntityStatus;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
 
 use super::{Controls, Goal};
 use crate::entity::ai::pathfinder::NavigatorGoal;
 use crate::entity::ai::util::default_random_pos;
 use crate::entity::mob::Mob;
 use crate::entity::passive::abstract_horse::AbstractHorse;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 pub struct RunAroundLikeCrazyGoal {
     goal_control: Controls,

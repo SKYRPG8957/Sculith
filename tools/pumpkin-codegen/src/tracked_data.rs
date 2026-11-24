@@ -77,7 +77,7 @@ pub(crate) fn build() -> TokenStream {
 
     quote! {
         use crate::meta_data_type::MetaDataType;
-        use pumpkin_util::version::JavaMinecraftVersion;
+        use sculith_util::version::JavaMinecraftVersion;
 
         #tracked_id_struct
 

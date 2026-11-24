@@ -4,7 +4,7 @@ use pumpkin_data::{
     Block, BlockId, BlockState, Mirror, Rotation, block_properties::blocks_movement,
     structures::StructureKeys,
 };
-use pumpkin_util::{
+use sculith_util::{
     HeightMap,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl, hash_block_pos, legacy_rand::LegacyRand},

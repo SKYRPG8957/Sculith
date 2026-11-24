@@ -7,7 +7,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::{
     Entity, EntityBase,

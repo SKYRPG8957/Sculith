@@ -1,5 +1,5 @@
-use pumpkin_util::loot_table::DynamicLootTable;
-use pumpkin_util::loot_table::parser::parse_loot_table_with_predicates;
+use sculith_util::loot_table::DynamicLootTable;
+use sculith_util::loot_table::parser::parse_loot_table_with_predicates;
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 #[must_use]
@@ -50,7 +50,7 @@ fn load_loot_tables_recursive<S: std::hash::BuildHasher>(
 
             if let Ok(content) = fs::read_to_string(&path)
                 && let Some(table) = parse_loot_table_with_predicates(&content, &|name| {
-                    let id = pumpkin_util::identifier::Identifier::parse(name).ok()?;
+                    let id = sculith_util::identifier::Identifier::parse(name).ok()?;
                     let (namespace, path) = (id.namespace(), id.path());
                     if !Path::new(namespace)
                         .components()
@@ -84,7 +84,7 @@ fn load_loot_tables_recursive<S: std::hash::BuildHasher>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::loot_table::{
+    use sculith_util::loot_table::{
         DynamicLootCondition, DynamicLootEntryKind, LootBonusFormula, LootFunctionKind,
         LootNumberProvider,
     };

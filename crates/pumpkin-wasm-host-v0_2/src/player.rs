@@ -3,7 +3,7 @@ use crate::LockIgnorePoison;
 use crate::RequireServer;
 
 use crate::forms::FormsHostStateExt;
-use pumpkin_protocol::bedrock::client::PackIdVersion;
+use sculith_protocol::bedrock::client::PackIdVersion;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use wasmtime::component::{Access, Accessor, HasSelf, Resource};
@@ -39,25 +39,25 @@ use pumpkin_core::{
     net::DisconnectReason,
 };
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_protocol::Property;
-use pumpkin_protocol::bedrock::client::modal_form_request::CModalFormRequest;
-use pumpkin_protocol::java::client::dialog::DialogNBT;
-use pumpkin_util::permission::PermissionLvl;
-use pumpkin_util::translation::Locale;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_protocol::Property;
+use sculith_protocol::bedrock::client::modal_form_request::CModalFormRequest;
+use sculith_protocol::java::client::dialog::DialogNBT;
+use sculith_util::permission::PermissionLvl;
+use sculith_util::translation::Locale;
 use std::str::FromStr;
 
-use pumpkin_protocol::bedrock::client::set_actor_data::{
+use sculith_protocol::bedrock::client::set_actor_data::{
     CSetActorData, MetadataValue, PropertySyncData, SyncedActorDataList, entity_data_key,
 };
-use pumpkin_protocol::codec::var_ulong::VarULong;
-use pumpkin_util::version::{BedrockMinecraftVersion, JavaMinecraftVersion};
+use sculith_protocol::codec::var_ulong::VarULong;
+use sculith_util::version::{BedrockMinecraftVersion, JavaMinecraftVersion};
 
 const fn from_wit_client_game_event(
     event: pumpkin::plugin::player::ClientGameEvent,
-) -> pumpkin_protocol::java::client::play::GameEvent {
+) -> sculith_protocol::java::client::play::GameEvent {
     use pumpkin::plugin::player::ClientGameEvent as W;
-    use pumpkin_protocol::java::client::play::GameEvent as G;
+    use sculith_protocol::java::client::play::GameEvent as G;
     match event {
         W::NoRespawnBlockAvailable => G::NoRespawnBlockAvailable,
         W::BeginRaining => G::BeginRaining,
@@ -79,29 +79,29 @@ const fn from_wit_client_game_event(
 pub(crate) fn from_wit_server_link(
     state: &mut PluginHostState,
     link: pumpkin::plugin::player::ServerLink,
-) -> wasmtime::Result<(pumpkin_protocol::Label, String)> {
+) -> wasmtime::Result<(sculith_protocol::Label, String)> {
     use pumpkin::plugin::player::{KnownServerLink, ServerLinkLabel};
     let label = match link.label {
         ServerLinkLabel::Known(known) => {
             let link_type = match known {
-                KnownServerLink::BugReport => pumpkin_protocol::LinkType::BugReport,
+                KnownServerLink::BugReport => sculith_protocol::LinkType::BugReport,
                 KnownServerLink::CommunityGuidelines => {
-                    pumpkin_protocol::LinkType::CommunityGuidelines
+                    sculith_protocol::LinkType::CommunityGuidelines
                 }
-                KnownServerLink::Support => pumpkin_protocol::LinkType::Support,
-                KnownServerLink::Status => pumpkin_protocol::LinkType::Status,
-                KnownServerLink::Feedback => pumpkin_protocol::LinkType::Feedback,
-                KnownServerLink::Community => pumpkin_protocol::LinkType::Community,
-                KnownServerLink::Website => pumpkin_protocol::LinkType::Website,
-                KnownServerLink::Forums => pumpkin_protocol::LinkType::Forums,
-                KnownServerLink::News => pumpkin_protocol::LinkType::News,
-                KnownServerLink::Announcements => pumpkin_protocol::LinkType::Announcements,
+                KnownServerLink::Support => sculith_protocol::LinkType::Support,
+                KnownServerLink::Status => sculith_protocol::LinkType::Status,
+                KnownServerLink::Feedback => sculith_protocol::LinkType::Feedback,
+                KnownServerLink::Community => sculith_protocol::LinkType::Community,
+                KnownServerLink::Website => sculith_protocol::LinkType::Website,
+                KnownServerLink::Forums => sculith_protocol::LinkType::Forums,
+                KnownServerLink::News => sculith_protocol::LinkType::News,
+                KnownServerLink::Announcements => sculith_protocol::LinkType::Announcements,
             };
-            pumpkin_protocol::Label::BuiltIn(link_type)
+            sculith_protocol::Label::BuiltIn(link_type)
         }
         ServerLinkLabel::Custom(text) => {
             let text_res = state.take(text)?;
-            pumpkin_protocol::Label::TextComponent(Box::new(text_res))
+            sculith_protocol::Label::TextComponent(Box::new(text_res))
         }
     };
     Ok((label, link.url))
@@ -358,74 +358,74 @@ const fn to_wasm_bedrock_graphics_mode(mode: i32) -> pumpkin::plugin::player::Be
 
 const fn from_wasm_bedrock_ability(
     ability: pumpkin::plugin::player::BedrockAbility,
-) -> pumpkin_protocol::bedrock::client::update_abilities::Ability {
+) -> sculith_protocol::bedrock::client::update_abilities::Ability {
     match ability {
         pumpkin::plugin::player::BedrockAbility::Build => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Build
+            sculith_protocol::bedrock::client::update_abilities::Ability::Build
         }
         pumpkin::plugin::player::BedrockAbility::Mine => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Mine
+            sculith_protocol::bedrock::client::update_abilities::Ability::Mine
         }
         pumpkin::plugin::player::BedrockAbility::DoorsAndSwitches => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::DoorsAndSwitches
+            sculith_protocol::bedrock::client::update_abilities::Ability::DoorsAndSwitches
         }
         pumpkin::plugin::player::BedrockAbility::OpenContainers => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::OpenContainers
+            sculith_protocol::bedrock::client::update_abilities::Ability::OpenContainers
         }
         pumpkin::plugin::player::BedrockAbility::AttackPlayers => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::AttackPlayers
+            sculith_protocol::bedrock::client::update_abilities::Ability::AttackPlayers
         }
         pumpkin::plugin::player::BedrockAbility::AttackMobs => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::AttackMobs
+            sculith_protocol::bedrock::client::update_abilities::Ability::AttackMobs
         }
         pumpkin::plugin::player::BedrockAbility::OperatorCommands => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::OperatorCommands
+            sculith_protocol::bedrock::client::update_abilities::Ability::OperatorCommands
         }
         pumpkin::plugin::player::BedrockAbility::Teleport => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Teleport
+            sculith_protocol::bedrock::client::update_abilities::Ability::Teleport
         }
         pumpkin::plugin::player::BedrockAbility::Invulnerable => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Invulnerable
+            sculith_protocol::bedrock::client::update_abilities::Ability::Invulnerable
         }
         pumpkin::plugin::player::BedrockAbility::Flying => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Flying
+            sculith_protocol::bedrock::client::update_abilities::Ability::Flying
         }
         pumpkin::plugin::player::BedrockAbility::MayFly => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::MayFly
+            sculith_protocol::bedrock::client::update_abilities::Ability::MayFly
         }
         pumpkin::plugin::player::BedrockAbility::Instabuild => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Instabuild
+            sculith_protocol::bedrock::client::update_abilities::Ability::Instabuild
         }
         pumpkin::plugin::player::BedrockAbility::Lightning => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Lightning
+            sculith_protocol::bedrock::client::update_abilities::Ability::Lightning
         }
         pumpkin::plugin::player::BedrockAbility::FlySpeed => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::FlySpeed
+            sculith_protocol::bedrock::client::update_abilities::Ability::FlySpeed
         }
         pumpkin::plugin::player::BedrockAbility::WalkSpeed => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::WalkSpeed
+            sculith_protocol::bedrock::client::update_abilities::Ability::WalkSpeed
         }
         pumpkin::plugin::player::BedrockAbility::Muted => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Muted
+            sculith_protocol::bedrock::client::update_abilities::Ability::Muted
         }
         pumpkin::plugin::player::BedrockAbility::WorldBuilder => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::WorldBuilder
+            sculith_protocol::bedrock::client::update_abilities::Ability::WorldBuilder
         }
         pumpkin::plugin::player::BedrockAbility::NoClip => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::NoClip
+            sculith_protocol::bedrock::client::update_abilities::Ability::NoClip
         }
         pumpkin::plugin::player::BedrockAbility::PrivilegedBuilder => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::PrivilegedBuilder
+            sculith_protocol::bedrock::client::update_abilities::Ability::PrivilegedBuilder
         }
         pumpkin::plugin::player::BedrockAbility::VerticalFlySpeed => {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::VerticalFlySpeed
+            sculith_protocol::bedrock::client::update_abilities::Ability::VerticalFlySpeed
         }
     }
 }
 
 #[allow(clippy::too_many_lines)]
 const fn from_wasm_bedrock_status_flag(flag: pumpkin::plugin::player::BedrockStatusFlag) -> u32 {
-    use pumpkin_protocol::bedrock::client::set_actor_data::entity_data_flag;
+    use sculith_protocol::bedrock::client::set_actor_data::entity_data_flag;
     match flag {
         pumpkin::plugin::player::BedrockStatusFlag::OnFire => entity_data_flag::ON_FIRE,
         pumpkin::plugin::player::BedrockStatusFlag::Sneaking => entity_data_flag::SNEAKING,
@@ -623,7 +623,7 @@ const fn from_wasm_bedrock_status_flag(flag: pumpkin::plugin::player::BedrockSta
 pub(crate) fn text_component_from_resource(
     state: &PluginHostState,
     text: &Resource<pumpkin::plugin::text::TextComponent>,
-) -> pumpkin_util::text::TextComponent {
+) -> sculith_util::text::TextComponent {
     state
         .get(text)
         .expect("invalid text-component resource handle")
@@ -1137,8 +1137,8 @@ use pumpkin_inventory::Clearable;
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::generic_container_screen_handler::GenericContainerScreenHandler;
 use pumpkin_inventory::player::ender_chest_inventory::EnderChestInventory;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_protocol::java::client::play::CSetContainerSlot;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_protocol::java::client::play::CSetContainerSlot;
 
 use crate::pumpkin::plugin::item_stack::ItemStack as WitHostItemStack;
 
@@ -1452,9 +1452,9 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
             })?;
         player.spawn_particles(
             particle_data,
-            pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+            sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
             count,
-            pumpkin_util::math::vector3::Vector3::new(
+            sculith_util::math::vector3::Vector3::new(
                 offset.0 as f32,
                 offset.1 as f32,
                 offset.2 as f32,
@@ -1472,7 +1472,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         player.send_block_change(
-            pumpkin_util::math::position::BlockPos(pumpkin_util::math::vector3::Vector3::new(
+            sculith_util::math::position::BlockPos(sculith_util::math::vector3::Vector3::new(
                 pos.x, pos.y, pos.z,
             )),
             block_id,
@@ -1486,8 +1486,8 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         pos: pumpkin::plugin::common::BlockPos,
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
-        player.reset_block_change(pumpkin_util::math::position::BlockPos(
-            pumpkin_util::math::vector3::Vector3::new(pos.x, pos.y, pos.z),
+        player.reset_block_change(sculith_util::math::position::BlockPos(
+            sculith_util::math::vector3::Vector3::new(pos.x, pos.y, pos.z),
         ));
         Ok(())
     }
@@ -1510,10 +1510,10 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         } else {
             -1
         };
-        let block_pos = pumpkin_util::math::position::BlockPos(
-            pumpkin_util::math::vector3::Vector3::new(pos.x, pos.y, pos.z),
+        let block_pos = sculith_util::math::position::BlockPos(
+            sculith_util::math::vector3::Vector3::new(pos.x, pos.y, pos.z),
         );
-        let packet = pumpkin_protocol::java::client::play::CSetBlockDestroyStage::new(
+        let packet = sculith_protocol::java::client::play::CSetBlockDestroyStage::new(
             player.entity_id().into(),
             block_pos,
             stage,
@@ -1529,8 +1529,8 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         let target_vec = from_wasm_position(target);
-        let packet = pumpkin_protocol::java::client::play::CPlayerLookAt::at_position(
-            pumpkin_protocol::codec::var_int::VarInt(1),
+        let packet = sculith_protocol::java::client::play::CPlayerLookAt::at_position(
+            sculith_protocol::codec::var_int::VarInt(1),
             target_vec.x,
             target_vec.y,
             target_vec.z,
@@ -1546,8 +1546,8 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         let str_refs: Vec<&str> = completions.iter().map(String::as_str).collect();
-        let packet = pumpkin_protocol::java::client::play::CCustomChatCompletions::new(
-            pumpkin_protocol::codec::var_int::VarInt(0),
+        let packet = sculith_protocol::java::client::play::CCustomChatCompletions::new(
+            sculith_protocol::codec::var_int::VarInt(0),
             &str_refs,
         );
         player.try_send_client_packet(&packet);
@@ -1561,8 +1561,8 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         let str_refs: Vec<&str> = completions.iter().map(String::as_str).collect();
-        let packet = pumpkin_protocol::java::client::play::CCustomChatCompletions::new(
-            pumpkin_protocol::codec::var_int::VarInt(1),
+        let packet = sculith_protocol::java::client::play::CCustomChatCompletions::new(
+            sculith_protocol::codec::var_int::VarInt(1),
             &str_refs,
         );
         player.try_send_client_packet(&packet);
@@ -1576,8 +1576,8 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         let str_refs: Vec<&str> = completions.iter().map(String::as_str).collect();
-        let packet = pumpkin_protocol::java::client::play::CCustomChatCompletions::new(
-            pumpkin_protocol::codec::var_int::VarInt(2),
+        let packet = sculith_protocol::java::client::play::CCustomChatCompletions::new(
+            sculith_protocol::codec::var_int::VarInt(2),
             &str_refs,
         );
         player.try_send_client_packet(&packet);
@@ -1591,8 +1591,8 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         let hand = match hand {
-            pumpkin::plugin::common::Hand::Right => pumpkin_util::Hand::Right,
-            pumpkin::plugin::common::Hand::Left => pumpkin_util::Hand::Left,
+            pumpkin::plugin::common::Hand::Right => sculith_util::Hand::Right,
+            pumpkin::plugin::common::Hand::Left => sculith_util::Hand::Left,
         };
         player.open_book(hand);
         Ok(())
@@ -1606,7 +1606,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         player.open_sign_editor(
-            pumpkin_util::math::position::BlockPos(pumpkin_util::math::vector3::Vector3::new(
+            sculith_util::math::position::BlockPos(sculith_util::math::vector3::Vector3::new(
                 pos.x, pos.y, pos.z,
             )),
             is_front_text,
@@ -1620,7 +1620,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         velocity: pumpkin::plugin::common::Position,
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
-        player.set_velocity(pumpkin_util::math::vector3::Vector3::new(
+        player.set_velocity(sculith_util::math::vector3::Vector3::new(
             velocity.0, velocity.1, velocity.2,
         ));
         Ok(())
@@ -1725,9 +1725,9 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         for link in links {
             converted.push(from_wit_server_link(self, link)?);
         }
-        let protocol_links: Vec<pumpkin_protocol::Link<'_>> = converted
+        let protocol_links: Vec<sculith_protocol::Link<'_>> = converted
             .iter()
-            .map(|(label, url)| pumpkin_protocol::Link::new(label.clone(), url))
+            .map(|(label, url)| sculith_protocol::Link::new(label.clone(), url))
             .collect();
         player.set_server_links(&protocol_links);
         Ok(())
@@ -2008,7 +2008,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         let pos_vec = from_wasm_position(pos);
-        let block_pos = pumpkin_util::math::position::BlockPos::new(
+        let block_pos = sculith_util::math::position::BlockPos::new(
             pos_vec.x as i32,
             pos_vec.y as i32,
             pos_vec.z as i32,
@@ -2024,8 +2024,8 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         let player = self.get(&player)?;
         let target = player
             .get_compass_target()
-            .unwrap_or(pumpkin_util::math::position::BlockPos::new(0, 0, 0));
-        let vec3 = pumpkin_util::math::vector3::Vector3::new(
+            .unwrap_or(sculith_util::math::position::BlockPos::new(0, 0, 0));
+        let vec3 = sculith_util::math::vector3::Vector3::new(
             f64::from(target.0.x),
             f64::from(target.0.y),
             f64::from(target.0.z),
@@ -2040,7 +2040,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<()> {
         let player = self.get(&player)?;
         let pos_vec = from_wasm_position(pos);
-        let block_pos = pumpkin_util::math::position::BlockPos::new(
+        let block_pos = sculith_util::math::position::BlockPos::new(
             pos_vec.x as i32,
             pos_vec.y as i32,
             pos_vec.z as i32,
@@ -2055,7 +2055,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     ) -> wasmtime::Result<Option<crate::pumpkin::plugin::common::Position>> {
         let player = self.get(&player)?;
         Ok(player.get_respawn_location().map(|p| {
-            let vec3 = pumpkin_util::math::vector3::Vector3::new(
+            let vec3 = sculith_util::math::vector3::Vector3::new(
                 f64::from(p.0.x),
                 f64::from(p.0.y),
                 f64::from(p.0.z),
@@ -2233,7 +2233,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
             f64::from(max_distance),
         );
         Ok(res.map(|p| {
-            let vec3 = pumpkin_util::math::vector3::Vector3::new(
+            let vec3 = sculith_util::math::vector3::Vector3::new(
                 f64::from(p.0.x),
                 f64::from(p.0.y),
                 f64::from(p.0.z),
@@ -2405,7 +2405,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
     fn get_exp_to_level(&mut self, player: Resource<Player>) -> wasmtime::Result<i32> {
         let player = self.get(&player)?;
         let level = player.experience_level.load(Ordering::Relaxed);
-        Ok(pumpkin_util::math::experience::points_in_level(level))
+        Ok(sculith_util::math::experience::points_in_level(level))
     }
 
     fn is_flying(&mut self, player: Resource<Player>) -> wasmtime::Result<bool> {
@@ -2729,7 +2729,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         pos: pumpkin::plugin::world::BlockPos,
     ) -> wasmtime::Result<bool> {
         let player = self.get(&player)?;
-        let internal_pos = pumpkin_util::math::position::BlockPos::new(pos.x, pos.y, pos.z);
+        let internal_pos = sculith_util::math::position::BlockPos::new(pos.x, pos.y, pos.z);
         let (block, state) = player.world().get_block_and_state(&internal_pos);
         Ok(player.can_harvest(state, block))
     }
@@ -2740,7 +2740,7 @@ impl pumpkin::plugin::player::HostPlayer for PluginHostState {
         pos: pumpkin::plugin::world::BlockPos,
     ) -> wasmtime::Result<f32> {
         let player = self.get(&player)?;
-        let internal_pos = pumpkin_util::math::position::BlockPos::new(pos.x, pos.y, pos.z);
+        let internal_pos = sculith_util::math::position::BlockPos::new(pos.x, pos.y, pos.z);
         let block = player.world().get_block(&internal_pos);
         Ok(player.get_mining_speed(block))
     }
@@ -2941,7 +2941,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
             player.play_sound(
                 sound_data as u16,
                 internal_category,
-                &pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+                &sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
                 volume,
                 pitch,
                 rand::random::<i64>(),
@@ -3003,7 +3003,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
             player.play_custom_sound(
                 &sound_name,
                 internal_category,
-                &pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+                &sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
                 volume,
                 pitch,
             );
@@ -3022,7 +3022,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         run_blocking(accessor, move || {
             let sound_rl = sound_name
                 .as_deref()
-                .map(pumpkin_util::resource_location::ResourceLocation::from);
+                .map(sculith_util::resource_location::ResourceLocation::from);
             let cat = category.map(super::world::from_wit_sound_category);
             player.stop_sound(sound_rl, cat);
             Ok(())
@@ -3081,14 +3081,14 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
             dispatcher.handle_command(&source, command);
         } else {
             let config = &server.advanced_config;
-            let decorated = pumpkin_util::text::TextComponent::chat_decorated(
+            let decorated = sculith_util::text::TextComponent::chat_decorated(
                 &config.chat.format,
                 &player.gameprofile.name,
                 &message,
             );
             server.broadcast_message(
                 &decorated,
-                &pumpkin_util::text::TextComponent::text(player.gameprofile.name.clone()),
+                &sculith_util::text::TextComponent::text(player.gameprofile.name.clone()),
                 0,
                 None,
             );
@@ -3112,10 +3112,10 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         let slot = crate::living_entity::from_wit_equipment_slot(slot);
         let equipment = vec![(
             slot.discriminant(),
-            pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer::from(stack),
+            sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer::from(stack),
         )];
-        let packet = pumpkin_protocol::java::client::play::CSetEquipment::new(
-            pumpkin_protocol::codec::var_int::VarInt(entity_id as i32),
+        let packet = sculith_protocol::java::client::play::CSetEquipment::new(
+            sculith_protocol::codec::var_int::VarInt(entity_id as i32),
             equipment,
         );
         player.try_send_client_packet(&packet);
@@ -3136,8 +3136,8 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
 
         let hand = from_wasm_hand(hand);
         let slot = match hand {
-            pumpkin_util::Hand::Right => player.inventory().get_selected_slot() as usize,
-            pumpkin_util::Hand::Left => PlayerInventory::OFF_HAND_SLOT,
+            sculith_util::Hand::Right => player.inventory().get_selected_slot() as usize,
+            sculith_util::Hand::Left => PlayerInventory::OFF_HAND_SLOT,
         };
 
         player.inventory().set_stack(slot, stack.clone());
@@ -3257,7 +3257,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         pos: pumpkin::plugin::world::BlockPos,
     ) -> wasmtime::Result<bool> {
         let player = accessor.get_res(&player)?;
-        let internal_pos = pumpkin_util::math::position::BlockPos::new(pos.x, pos.y, pos.z);
+        let internal_pos = sculith_util::math::position::BlockPos::new(pos.x, pos.y, pos.z);
         run_blocking(accessor, move || player.break_block(&internal_pos)).await
     }
 
@@ -3356,7 +3356,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         let player = accessor.get_res(&player)?;
         if let Some(client) = player.client.java() {
             let packet =
-                pumpkin_protocol::java::client::play::CDeleteChat::from_signature(&signature);
+                sculith_protocol::java::client::play::CDeleteChat::from_signature(&signature);
             client.try_send_packet(&packet);
         }
         Ok(())
@@ -3370,7 +3370,7 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         let player = accessor.get_res(&player)?;
         if let Some(client) = player.client.java() {
             let packet =
-                pumpkin_protocol::java::client::play::CDeleteChat::from_cache_id(signature_id);
+                sculith_protocol::java::client::play::CDeleteChat::from_cache_id(signature_id);
             client.try_send_packet(&packet);
         }
         Ok(())
@@ -3384,9 +3384,9 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
     ) -> wasmtime::Result<()> {
         let player = accessor.get_res(&player)?;
         if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
-            client.try_send_packet(&pumpkin_protocol::java::client::play::CTransfer::new(
+            client.try_send_packet(&sculith_protocol::java::client::play::CTransfer::new(
                 &host,
-                pumpkin_protocol::codec::var_int::VarInt(i32::from(port)),
+                sculith_protocol::codec::var_int::VarInt(i32::from(port)),
             ));
         }
         Ok(())
@@ -3986,8 +3986,8 @@ impl pumpkin::plugin::player::HostJavaPlayer for PluginHostState {
             chat_colors: config.chat_colors,
             skin_parts: parts,
             main_hand: match config.main_hand {
-                pumpkin_util::Hand::Left => pumpkin::plugin::common::Hand::Left,
-                pumpkin_util::Hand::Right => pumpkin::plugin::common::Hand::Right,
+                sculith_util::Hand::Left => pumpkin::plugin::common::Hand::Left,
+                sculith_util::Hand::Right => pumpkin::plugin::common::Hand::Right,
             },
             text_filtering: config.text_filtering,
             server_listing: config.server_listing,
@@ -4037,7 +4037,7 @@ impl pumpkin::plugin::player::HostJavaPlayer for PluginHostState {
         // SAFETY: The WIT enum variants and discriminants are 1:1 generated from entity_statuses.json
         let internal_status: pumpkin_data::entity_status::EntityStatus =
             unsafe { std::mem::transmute(status as u8) };
-        let packet = pumpkin_protocol::java::client::play::CEntityStatus::new(
+        let packet = sculith_protocol::java::client::play::CEntityStatus::new(
             entity_id,
             internal_status as u8 as i8,
         );
@@ -4083,7 +4083,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
 
         if let pumpkin_core::net::ClientPlatform::Java(_) = player.client.as_ref() {
             player
-                .send_client_packet(&pumpkin_protocol::java::client::play::CCustomPayload::new(
+                .send_client_packet(&sculith_protocol::java::client::play::CCustomPayload::new(
                     &channel, &data,
                 ))
                 .await;
@@ -4106,7 +4106,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
 
         if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
             client.try_send_packet(
-                &pumpkin_protocol::java::client::play::CAddResourcePack::new(
+                &sculith_protocol::java::client::play::CAddResourcePack::new(
                     &uuid,
                     &pack.url,
                     &pack.hash,
@@ -4129,7 +4129,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
 
         if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
             client.try_send_packet(
-                &pumpkin_protocol::java::client::play::CRemoveResourcePack::new(Some(&uuid)),
+                &sculith_protocol::java::client::play::CRemoveResourcePack::new(Some(&uuid)),
             );
         }
         Ok(())
@@ -4143,7 +4143,7 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
 
         if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
             client.try_send_packet(
-                &pumpkin_protocol::java::client::play::CRemoveResourcePack::new(None),
+                &sculith_protocol::java::client::play::CRemoveResourcePack::new(None),
             );
         }
         Ok(())
@@ -4177,19 +4177,19 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
 
             if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
                 match client.connection_state.load() {
-                    pumpkin_protocol::ConnectionState::Config => {
+                    sculith_protocol::ConnectionState::Config => {
                         client.try_send_packet(
-                            &pumpkin_protocol::java::client::config::CConfigShowDialog::new(
-                                pumpkin_protocol::IdOr::Value(DialogNBT::from_dialog(
+                            &sculith_protocol::java::client::config::CConfigShowDialog::new(
+                                sculith_protocol::IdOr::Value(DialogNBT::from_dialog(
                                     &protocol_dialog,
                                 )),
                             ),
                         );
                     }
-                    pumpkin_protocol::ConnectionState::Play => {
+                    sculith_protocol::ConnectionState::Play => {
                         client.try_send_packet(
-                            &pumpkin_protocol::java::client::play::CPlayShowDialog::new(
-                                pumpkin_protocol::IdOr::Value(DialogNBT::from_dialog(
+                            &sculith_protocol::java::client::play::CPlayShowDialog::new(
+                                sculith_protocol::IdOr::Value(DialogNBT::from_dialog(
                                     &protocol_dialog,
                                 )),
                             ),
@@ -4229,14 +4229,14 @@ impl pumpkin::plugin::player::HostJavaPlayerWithStore<PluginHostState>
 
             if let pumpkin_core::net::ClientPlatform::Java(client) = player.client.as_ref() {
                 match client.connection_state.load() {
-                    pumpkin_protocol::ConnectionState::Config => {
+                    sculith_protocol::ConnectionState::Config => {
                         client.try_send_packet(
-                            &pumpkin_protocol::java::client::config::CConfigClearDialog::new(),
+                            &sculith_protocol::java::client::config::CConfigClearDialog::new(),
                         );
                     }
-                    pumpkin_protocol::ConnectionState::Play => {
+                    sculith_protocol::ConnectionState::Play => {
                         client.try_send_packet(
-                            &pumpkin_protocol::java::client::play::CPlayClearDialog::new(),
+                            &sculith_protocol::java::client::play::CPlayClearDialog::new(),
                         );
                     }
                     _ => {}
@@ -4363,20 +4363,20 @@ impl pumpkin::plugin::player::HostBedrockPlayer for PluginHostState {
         let abilities = player.abilities.lock_ignore_poison();
 
         match ability {
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Build
-            | pumpkin_protocol::bedrock::client::update_abilities::Ability::Mine => {
+            sculith_protocol::bedrock::client::update_abilities::Ability::Build
+            | sculith_protocol::bedrock::client::update_abilities::Ability::Mine => {
                 Ok(abilities.allow_modify_world)
             }
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Invulnerable => {
+            sculith_protocol::bedrock::client::update_abilities::Ability::Invulnerable => {
                 Ok(abilities.invulnerable)
             }
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Flying => {
+            sculith_protocol::bedrock::client::update_abilities::Ability::Flying => {
                 Ok(abilities.flying)
             }
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::MayFly => {
+            sculith_protocol::bedrock::client::update_abilities::Ability::MayFly => {
                 Ok(abilities.allow_flying)
             }
-            pumpkin_protocol::bedrock::client::update_abilities::Ability::Instabuild => {
+            sculith_protocol::bedrock::client::update_abilities::Ability::Instabuild => {
                 Ok(abilities.creative)
             }
             _ => Ok(false), // Most Bedrock-specific abilities aren't tracked in generic Abilities struct yet
@@ -4395,20 +4395,20 @@ impl pumpkin::plugin::player::HostBedrockPlayer for PluginHostState {
         {
             let mut abilities = player.abilities.lock_ignore_poison();
             match ability {
-                pumpkin_protocol::bedrock::client::update_abilities::Ability::Build
-                | pumpkin_protocol::bedrock::client::update_abilities::Ability::Mine => {
+                sculith_protocol::bedrock::client::update_abilities::Ability::Build
+                | sculith_protocol::bedrock::client::update_abilities::Ability::Mine => {
                     abilities.allow_modify_world = value;
                 }
-                pumpkin_protocol::bedrock::client::update_abilities::Ability::Invulnerable => {
+                sculith_protocol::bedrock::client::update_abilities::Ability::Invulnerable => {
                     abilities.invulnerable = value;
                 }
-                pumpkin_protocol::bedrock::client::update_abilities::Ability::Flying => {
+                sculith_protocol::bedrock::client::update_abilities::Ability::Flying => {
                     abilities.flying = value;
                 }
-                pumpkin_protocol::bedrock::client::update_abilities::Ability::MayFly => {
+                sculith_protocol::bedrock::client::update_abilities::Ability::MayFly => {
                     abilities.allow_flying = value;
                 }
-                pumpkin_protocol::bedrock::client::update_abilities::Ability::Instabuild => {
+                sculith_protocol::bedrock::client::update_abilities::Ability::Instabuild => {
                     abilities.creative = value;
                 }
                 _ => {} // Not supported yet
@@ -4635,7 +4635,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
 
             client
                 .send_packet(&CModalFormRequest {
-                    form_id: pumpkin_protocol::codec::var_uint::VarUInt(form_id),
+                    form_id: sculith_protocol::codec::var_uint::VarUInt(form_id),
                     form_ui_json: CModalFormRequest::encode_plugin_form(form_json),
                 })
                 .await;
@@ -4658,7 +4658,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
                 .packs
                 .into_iter()
                 .map(
-                    |p| pumpkin_protocol::bedrock::client::resource_packs_info::PackInfoData {
+                    |p| sculith_protocol::bedrock::client::resource_packs_info::PackInfoData {
                         pack_id_version: PackIdVersion::new(Uuid::from_wit(&p.id), p.version),
                         pack_size: p.size,
                         cdn_url: p.download_url,
@@ -4677,7 +4677,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
                 .map_or_else(uuid::Uuid::nil, |id| Uuid::from_wit(&id));
 
             let packs_info =
-                pumpkin_protocol::bedrock::client::resource_packs_info::CResourcePacksInfo {
+                sculith_protocol::bedrock::client::resource_packs_info::CResourcePacksInfo {
                     resource_pack_required: info.required,
                     has_addon_packs: info.has_addon_packs,
                     has_scripts: info.has_scripts,

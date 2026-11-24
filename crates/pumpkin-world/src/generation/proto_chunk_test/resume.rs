@@ -8,7 +8,7 @@ use crate::generation::{
     biome_coords, generator::WorldGenerator, get_world_gen, proto_chunk::ProtoChunk,
 };
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::world_seed::Seed;
+use sculith_util::world_seed::Seed;
 
 use super::surface_biomes;
 
@@ -208,7 +208,7 @@ fn block_entities_survive_chunk_data_resume() {
 fn heightmap_roundtrip_through_chunk_data_resume() {
     use crate::chunk_system::chunk_state::Chunk;
     use pumpkin_config::lighting::LightingEngineConfig;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     let seed = Seed(1779920288596261407);
     let (cx, cz) = (67i32, 63i32);

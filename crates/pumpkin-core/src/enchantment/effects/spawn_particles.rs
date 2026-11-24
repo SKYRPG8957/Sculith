@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 pub use pumpkin_data::enchantment::{PositionSource, PositionSourceType, VelocitySource};
 use pumpkin_data::particle::Particle;
-use pumpkin_util::math::float_provider::FloatProvider;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomGenerator, get_seed, xoroshiro128::Xoroshiro};
+use sculith_util::math::float_provider::FloatProvider;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomGenerator, get_seed, xoroshiro128::Xoroshiro};
 
 use super::EnchantmentEntityEffectExt;
 use crate::entity::Entity;

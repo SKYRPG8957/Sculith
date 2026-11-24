@@ -4,7 +4,7 @@ use std::{
 };
 
 use pumpkin_data::BlockStateId;
-use pumpkin_util::{
+use sculith_util::{
     GameMode,
     math::{position::BlockPos, vector2::Vector2, vector3::Vector3},
 };

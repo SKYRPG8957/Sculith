@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer, java::client::play::CSetContainerSlot,
 };
 

@@ -10,9 +10,9 @@ use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::entity::attributes::ModifierOperation;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 const DESCRIPTION: &str = "Queries or modifies attributes of an entity.";
 const PERMISSION: &str = "minecraft:command.attribute";

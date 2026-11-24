@@ -1,10 +1,10 @@
 use pumpkin_data::Block;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
 use rustc_hash::FxHashSet;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::effect::MobEffect;
 use crate::entity::living::LivingEntity;

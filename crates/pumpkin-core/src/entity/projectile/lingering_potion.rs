@@ -8,11 +8,11 @@ use crate::{
 };
 use pumpkin_data::entity::EntityStatus;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_protocol::java::client::play::CWorldEvent;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::{Vector2, to_chunk_pos};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_protocol::java::client::play::CWorldEvent;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector2::{Vector2, to_chunk_pos};
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 const GRAVITY: f64 = 0.05;
@@ -80,7 +80,7 @@ impl EntityBase for LingeringPotionEntity {
         // Sync the item stack so the client renders the correct potion type
         entity.set_synced_data(
             pumpkin_data::tracked_data::lingering_potion::ITEM_STACK,
-            pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer::from(stack.clone()),
+            sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer::from(stack.clone()),
         );
     }
 

@@ -4,8 +4,8 @@ use crate::world::World;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockAccessor;
+use sculith_util::math::position::BlockPos;
 
 #[pumpkin_block("minecraft:spore_blossom")]
 pub struct SporeBlossomBlock;
@@ -30,7 +30,7 @@ impl PlantBlockBase for SporeBlossomBlock {
     fn can_plant_on_top(
         &self,
         _block_accessor: &dyn pumpkin_world::world::BlockAccessor,
-        _pos: &pumpkin_util::math::position::BlockPos,
+        _pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         false
     }

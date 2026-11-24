@@ -1,7 +1,7 @@
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use pumpkin_data::item::Item;
-use pumpkin_util::GameMode;
+use sculith_util::GameMode;
 
 pub struct MaceItem;
 

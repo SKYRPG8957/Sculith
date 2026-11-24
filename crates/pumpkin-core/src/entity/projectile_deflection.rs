@@ -1,7 +1,7 @@
 use crate::entity::{Entity, EntityBase};
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering;
 use uuid::Uuid;
 

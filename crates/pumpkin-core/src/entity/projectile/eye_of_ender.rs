@@ -9,10 +9,10 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer, java::client::play::Metadata,
 };
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Mutex;
 use std::sync::{
     Arc,
@@ -233,7 +233,7 @@ impl EntityBase for EyeOfEnder {
             .is_ok()
         {
             data.push(255);
-            let meta_packet = pumpkin_protocol::java::client::play::CSetEntityMetadata::new(
+            let meta_packet = sculith_protocol::java::client::play::CSetEntityMetadata::new(
                 self.entity.entity_id.into(),
                 data.into(),
             );

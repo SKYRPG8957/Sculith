@@ -1,5 +1,5 @@
 use pumpkin_data::chunk::DoublePerlinNoiseParameters;
-use pumpkin_util::{
+use sculith_util::{
     noise::{
         perlin::{Noise, NormalNoise},
         volume::DensityVolume,

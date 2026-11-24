@@ -20,8 +20,8 @@ use pumpkin_data::recipes::RECIPES_STONECUTTING;
 use pumpkin_data::screen::WindowType;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::statistic::StatisticCategory;
-use pumpkin_protocol::codec::recipe::DynamicRecipe;
-use pumpkin_protocol::java::server::play::SlotActionType;
+use sculith_protocol::codec::recipe::DynamicRecipe;
+use sculith_protocol::java::server::play::SlotActionType;
 
 pub struct StonecutterRecipeChoice {
     pub result_id: String,

@@ -1,6 +1,6 @@
 use pumpkin_data::{Block, block_properties::OakFenceLikeProperties};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{BlockDirection, math::block_box::BlockBox, random::RandomGenerator};
+use sculith_util::{BlockDirection, math::block_box::BlockBox, random::RandomGenerator};
 
 use crate::{
     ProtoChunk,

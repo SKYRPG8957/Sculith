@@ -1,4 +1,4 @@
-use pumpkin_util::Difficulty;
+use sculith_util::Difficulty;
 
 use crate::entity::EntityBase;
 use crate::entity::living::LivingEntity;

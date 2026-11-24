@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::version::JavaMinecraftVersion;
 
 impl PendingConnection {
     async fn verify_encryption_token(
@@ -131,7 +131,7 @@ impl PendingConnection {
             .info
             .clone();
         self.send_packet_now(&CSetCompression::new(
-            pumpkin_protocol::codec::var_int::VarInt(compression.threshold as i32),
+            sculith_protocol::codec::var_int::VarInt(compression.threshold as i32),
         ))
         .await;
         self.set_compression(&compression);

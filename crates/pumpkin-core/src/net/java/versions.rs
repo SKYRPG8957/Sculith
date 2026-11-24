@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{PoisonError, RwLock};
 
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::version::JavaMinecraftVersion;
 
 /// Thread-safe registry for Java Minecraft client versions supported by plugins.
 #[derive(Debug, Default)]

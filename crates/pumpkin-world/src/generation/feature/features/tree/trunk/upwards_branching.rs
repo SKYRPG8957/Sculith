@@ -1,8 +1,8 @@
 use pumpkin_data::BlockState;
 use pumpkin_data::block_properties::HorizontalFacing;
-use pumpkin_util::math::int_provider::IntProvider;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use sculith_util::math::int_provider::IntProvider;
+use sculith_util::math::position::BlockPos;
+use sculith_util::random::{RandomGenerator, RandomImpl};
 
 use super::TrunkPlacer;
 use crate::generation::block_state_provider::BlockStateProvider;

@@ -13,8 +13,8 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::{
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::{
     boundingbox::EntityDimensions, euler_angle::EulerAngle, vector3::Vector3,
 };
 

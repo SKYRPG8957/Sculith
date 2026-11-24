@@ -17,10 +17,10 @@ use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
-use pumpkin_protocol::bedrock::server::ActorEventID;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::clip::ClipBlock;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::ActorEventID;
+use sculith_util::math::vector3::Vector3;
 
 pub struct FishingBobberEntity {
     pub entity: Entity,
@@ -271,12 +271,12 @@ impl EntityBase for FishingBobberEntity {
 
     fn entity_bedrock_spawn_metadata(
         &self,
-    ) -> Option<pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
+    ) -> Option<sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
         let mut meta =
-            pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
+            sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
         meta.set(
-            pumpkin_protocol::bedrock::client::set_actor_data::entity_data_key::OWNER,
-            pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Int64(i64::from(
+            sculith_protocol::bedrock::client::set_actor_data::entity_data_key::OWNER,
+            sculith_protocol::bedrock::client::set_actor_data::MetadataValue::Int64(i64::from(
                 self.owner
                     .get(&self.entity.world.load())
                     .map_or(0, |owner| owner.get_entity().entity_id),

@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::{
     ai::control::{Control, MoveControlTrait, move_control::MoveControl},

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-pumpkin-protocol.workspace = true
+sculith-protocol.workspace = true
 pumpkin-data = { workspace = true, features = [
     "item",
     "screen",
@@ -18,7 +18,7 @@ pumpkin-data = { workspace = true, features = [
     "statistic",
 ] }
 
-pumpkin-util.workspace = true
+sculith-util.workspace = true
 pumpkin-nbt.workspace = true
 
 rand.workspace = true

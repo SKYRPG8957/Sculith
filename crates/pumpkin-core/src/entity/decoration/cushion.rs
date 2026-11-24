@@ -8,10 +8,10 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::Metadata;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::Metadata;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::version::JavaMinecraftVersion;
 
 use crate::entity::player::Player;
 use crate::entity::{Entity, EntityBase, living::LivingEntity};

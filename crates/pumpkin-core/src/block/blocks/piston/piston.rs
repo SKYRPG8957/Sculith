@@ -9,10 +9,10 @@ use pumpkin_data::{
     block_state::PistonBehavior,
     sound::{Sound, SoundCategory},
 };
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use rustc_hash::FxHashMap;
+use sculith_util::math::position::BlockPos;
 
 use crate::{
     block::{

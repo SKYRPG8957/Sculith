@@ -1,9 +1,9 @@
 use pumpkin_data::block_properties::TargetProperties;
 use pumpkin_data::{Block, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::vector3::Vector3;
 
 use crate::block::{
     BlockBehaviour, EmitsRedstonePowerArgs, GetRedstonePowerArgs, OnProjectileHitArgs,

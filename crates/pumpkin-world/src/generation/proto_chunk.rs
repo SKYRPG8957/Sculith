@@ -10,14 +10,14 @@ use pumpkin_data::structures::{
 use pumpkin_data::tag::RegistryKey;
 use pumpkin_data::{Block, BlockState, block_properties::blocks_movement, chunk::Biome};
 use pumpkin_data::{BlockId, BlockStateId, tag};
-use pumpkin_util::random::xoroshiro128::XoroshiroSplitter;
-use pumpkin_util::random::{RandomImpl, get_large_feature_seed, legacy_rand::LegacyRand};
-use pumpkin_util::{
+use rustc_hash::FxHashMap;
+use sculith_util::random::xoroshiro128::XoroshiroSplitter;
+use sculith_util::random::{RandomImpl, get_large_feature_seed, legacy_rand::LegacyRand};
+use sculith_util::{
     HeightMap,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, get_decorator_seed, worldgen_random::WorldgenRandom},
 };
-use rustc_hash::FxHashMap;
 
 use super::{
     GlobalRandomConfig, biome_coords,
@@ -1750,10 +1750,10 @@ impl ProtoChunk {
 
             match &set.placement.placement_type {
                 StructurePlacementType::RandomSpread(spread) => {
-                    let min_rx = pumpkin_util::math::floor_div(chunk_x - 8, spread.spacing);
-                    let max_rx = pumpkin_util::math::floor_div(chunk_x + 8, spread.spacing);
-                    let min_rz = pumpkin_util::math::floor_div(chunk_z - 8, spread.spacing);
-                    let max_rz = pumpkin_util::math::floor_div(chunk_z + 8, spread.spacing);
+                    let min_rx = sculith_util::math::floor_div(chunk_x - 8, spread.spacing);
+                    let max_rx = sculith_util::math::floor_div(chunk_x + 8, spread.spacing);
+                    let min_rz = sculith_util::math::floor_div(chunk_z - 8, spread.spacing);
+                    let max_rz = sculith_util::math::floor_div(chunk_z + 8, spread.spacing);
 
                     for rx in min_rx..=max_rx {
                         for rz in min_rz..=max_rz {

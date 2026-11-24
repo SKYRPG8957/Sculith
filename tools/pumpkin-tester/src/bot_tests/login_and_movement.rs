@@ -6,7 +6,7 @@ use std::{
 
 use pumpkin_core::server::Server;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::bot::{HeadlessBot, MAX_POLL_TICKS};
 

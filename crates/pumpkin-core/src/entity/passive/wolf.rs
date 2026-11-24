@@ -12,9 +12,9 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::wolf_sound_variant::WolfSoundVariant;
 use pumpkin_data::wolf_variant::WolfVariant;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::position::BlockPos;
 use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::custom_sound::CustomSound;
 use crate::entity::{

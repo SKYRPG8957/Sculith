@@ -3,7 +3,7 @@ use std::{net::SocketAddr, time::Duration};
 use bytes::Bytes;
 use pumpkin_core::net::java::{JavaReadHalf, JavaWriteHalf};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_protocol::{
+use sculith_protocol::{
     ClientPacket, ConnectionState, RawPacket, ServerPacket,
     codec::var_int::VarInt,
     java::{
@@ -27,7 +27,7 @@ use pumpkin_protocol::{
     packet::MultiVersionJavaPacket,
     ser::NetworkWriteExt,
 };
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 use tokio::{
     io::{AsyncWrite, BufReader, BufWriter},
     net::TcpStream,

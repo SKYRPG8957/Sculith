@@ -12,8 +12,8 @@ use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
+use sculith_util::math::position::BlockPos;
 
 type FenceGateProperties = pumpkin_data::block_properties::OakFenceGateLikeProperties;
 type FenceLikeProperties = pumpkin_data::block_properties::OakFenceLikeProperties;

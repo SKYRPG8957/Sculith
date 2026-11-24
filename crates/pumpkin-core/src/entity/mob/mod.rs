@@ -42,16 +42,16 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_data::{Block, BlockId, BlockState};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::client::set_actor_data::entity_data_flag;
-use pumpkin_util::Difficulty;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::math::wrap_degrees;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
-use pumpkin_util::random::{RandomGenerator, get_seed};
-use pumpkin_util::version::JavaMinecraftVersion;
 use rand::RngExt;
+use sculith_protocol::bedrock::client::set_actor_data::entity_data_flag;
+use sculith_util::Difficulty;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::math::wrap_degrees;
+use sculith_util::random::xoroshiro128::Xoroshiro;
+use sculith_util::random::{RandomGenerator, get_seed};
+use sculith_util::version::JavaMinecraftVersion;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock, Weak};
@@ -605,7 +605,7 @@ impl MobEntity {
         let yaw = (dz.atan2(dx).to_degrees() as f32) - 90.0;
         let pitch = -(dy.atan2(dx.hypot(dz)).to_degrees() as f32);
         let rotlerp = |from: f32, to: f32, max: f32| {
-            from + pumpkin_util::math::wrap_degrees(to - from).clamp(-max, max)
+            from + sculith_util::math::wrap_degrees(to - from).clamp(-max, max)
         };
         entity
             .pitch
@@ -1172,7 +1172,7 @@ impl MobEntity {
             let dist_sq = diff.length_squared();
             if dist_sq <= Entity::LEASH_SNAP_DISTANCE * Entity::LEASH_SNAP_DISTANCE {
                 if entity.leash_to(player.clone() as Arc<dyn EntityBase>)
-                    && player.gamemode.load() != pumpkin_util::GameMode::Creative
+                    && player.gamemode.load() != sculith_util::GameMode::Creative
                 {
                     item_stack.decrement(1);
                 }
@@ -1192,7 +1192,7 @@ impl MobEntity {
 
         let nearest_dist_sq = players
             .iter()
-            .filter(|p| p.gamemode.load() != pumpkin_util::GameMode::Spectator)
+            .filter(|p| p.gamemode.load() != sculith_util::GameMode::Spectator)
             .map(|p| {
                 let pp = p.get_entity().pos.load();
                 let dx = pp.x - pos.x;
@@ -1770,7 +1770,7 @@ pub trait Mob: EntityBase + Send + Sync {
     /// Metadata which must accompany this mob whenever it is spawned for a Bedrock client.
     fn mob_bedrock_spawn_metadata(
         &self,
-    ) -> Option<pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
+    ) -> Option<sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
         self.mob_metadata().map(|m| m.to_bedrock_actor_data())
     }
 
@@ -1821,7 +1821,7 @@ pub trait Mob: EntityBase + Send + Sync {
     fn attempt_to_shear_equipment(&self, player: &Arc<Player>, shears: &mut ItemStack) -> bool {
         let mob_entity = self.get_mob_entity();
         let living = &mob_entity.living_entity;
-        let creative = player.gamemode.load() == pumpkin_util::GameMode::Creative;
+        let creative = player.gamemode.load() == sculith_util::GameMode::Creative;
         let sheared = {
             let equipment = living
                 .entity_equipment
@@ -2567,7 +2567,7 @@ pub trait Mob: EntityBase + Send + Sync {
         &self,
         _player: &Arc<Player>,
         _item_stack: &mut ItemStack,
-        _hand: pumpkin_util::Hand,
+        _hand: sculith_util::Hand,
     ) -> Option<bool> {
         None
     }
@@ -3054,7 +3054,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         &self,
         player: &Arc<Player>,
         item_stack: &mut ItemStack,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
     ) -> Option<bool> {
         self.mob_interact_with_hand(player, item_stack, hand)
     }
@@ -3247,7 +3247,7 @@ mod tests {
     use pumpkin_data::entity::EntityType;
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     use super::Mob;
     use crate::entity::ai::test_support::world;

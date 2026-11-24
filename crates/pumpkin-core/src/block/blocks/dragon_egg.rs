@@ -8,8 +8,8 @@ use crate::world::World;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use rand::{RngExt, rng};
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 #[pumpkin_block("minecraft:dragon_egg")]

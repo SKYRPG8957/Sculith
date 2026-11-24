@@ -3,7 +3,7 @@ use super::*;
 use crate::block::entities::beacon::BeaconBlockEntity;
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::beacon_screen_handler::BeaconScreenHandler;
-use pumpkin_protocol::java::server::play::SSetBeacon;
+use sculith_protocol::java::server::play::SSetBeacon;
 
 impl JavaClient {
     pub fn handle_set_beacon(&self, player: &Arc<Player>, packet: &SSetBeacon) {

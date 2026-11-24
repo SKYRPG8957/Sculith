@@ -20,7 +20,7 @@ mod surface;
 
 use generator::VanillaGenerator;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::{
+use sculith_util::{
     random::xoroshiro128::{Xoroshiro, XoroshiroSplitter},
     world_seed::Seed,
 };

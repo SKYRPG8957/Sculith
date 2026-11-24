@@ -1,7 +1,7 @@
 use std::sync::RwLock;
 
 use pumpkin_inventory::crafting::recipe_provider::RecipeProvider;
-pub use pumpkin_protocol::codec::recipe::DynamicRecipe;
+pub use sculith_protocol::codec::recipe::DynamicRecipe;
 
 pub struct RecipeManager {
     dynamic_recipes: RwLock<Vec<DynamicRecipe>>,

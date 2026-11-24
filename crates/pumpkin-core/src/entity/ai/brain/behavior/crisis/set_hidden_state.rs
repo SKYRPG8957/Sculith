@@ -1,4 +1,4 @@
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::super::OneShot;
 use crate::entity::ai::brain::memory::{MemoryModuleId, MemoryStatus, types};

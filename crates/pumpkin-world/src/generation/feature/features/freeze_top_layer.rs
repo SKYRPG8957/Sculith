@@ -5,8 +5,8 @@ use pumpkin_data::block_properties::{
 };
 use pumpkin_data::tag;
 use pumpkin_data::{Block, BlockId, BlockState, BlockStateId};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::random::RandomGenerator;
+use sculith_util::math::position::BlockPos;
+use sculith_util::random::RandomGenerator;
 
 pub struct FreezeTopLayerFeature;
 
@@ -149,10 +149,10 @@ mod tests {
     use pumpkin_data::chunk::Biome;
     use pumpkin_data::dimension::Dimension;
     use pumpkin_data::placed_feature::PlacedFeature;
-    use pumpkin_util::math::vector3::Vector3;
-    use pumpkin_util::random::RandomGenerator;
-    use pumpkin_util::random::legacy_rand::LegacyRand;
-    use pumpkin_util::world_seed::Seed;
+    use sculith_util::math::vector3::Vector3;
+    use sculith_util::random::RandomGenerator;
+    use sculith_util::random::legacy_rand::LegacyRand;
+    use sculith_util::world_seed::Seed;
 
     const GROUND_Y: i32 = 63;
     const TOP_Y: i32 = GROUND_Y + 1;

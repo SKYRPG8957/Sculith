@@ -8,10 +8,10 @@ use pumpkin_data::block_properties::AttachFace;
 use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
 
 type ButtonLikeProperties = pumpkin_data::block_properties::LeverLikeProperties;
 

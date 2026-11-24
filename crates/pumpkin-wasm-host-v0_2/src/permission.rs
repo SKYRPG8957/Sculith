@@ -7,14 +7,14 @@ use pumpkin_wasm_host_common::state::PluginHostState;
 
 impl pumpkin::plugin::permission::Host for PluginHostState {}
 
-pub(crate) fn to_wit_permission(permission: pumpkin_util::permission::Permission) -> Permission {
+pub(crate) fn to_wit_permission(permission: sculith_util::permission::Permission) -> Permission {
     Permission {
         node: permission.node,
         description: permission.description,
         default: match permission.default {
-            pumpkin_util::permission::PermissionDefault::Deny => PermissionDefault::Deny,
-            pumpkin_util::permission::PermissionDefault::Allow => PermissionDefault::Allow,
-            pumpkin_util::permission::PermissionDefault::Op(level) => {
+            sculith_util::permission::PermissionDefault::Deny => PermissionDefault::Deny,
+            sculith_util::permission::PermissionDefault::Allow => PermissionDefault::Allow,
+            sculith_util::permission::PermissionDefault::Op(level) => {
                 PermissionDefault::Op(to_wit_permission_level(level))
             }
         },
@@ -30,8 +30,8 @@ pub(crate) fn to_wit_permission(permission: pumpkin_util::permission::Permission
 mod tests {
     use super::*;
     use crate::pumpkin::plugin::permission::PermissionLevel;
-    use pumpkin_util::PermissionLvl;
-    use pumpkin_util::permission::{
+    use sculith_util::PermissionLvl;
+    use sculith_util::permission::{
         Permission as UtilPermission, PermissionDefault as UtilPermissionDefault,
     };
 

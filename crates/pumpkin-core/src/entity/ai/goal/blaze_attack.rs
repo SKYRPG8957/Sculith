@@ -1,6 +1,6 @@
 use crate::entity::ai::util::RandomExt;
-use pumpkin_protocol::java::client::play::CWorldEvent;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::java::client::play::CWorldEvent;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 use crate::entity::{

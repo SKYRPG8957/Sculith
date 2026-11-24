@@ -1,7 +1,7 @@
 pub mod provider;
 pub mod suggestions;
 
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::fmt::Debug;
 use std::hash::Hash;
 

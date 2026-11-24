@@ -1,4 +1,4 @@
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator, random::RandomImpl};
+use sculith_util::{math::position::BlockPos, random::RandomGenerator, random::RandomImpl};
 
 use crate::generation::proto_chunk::GenerationCache;
 

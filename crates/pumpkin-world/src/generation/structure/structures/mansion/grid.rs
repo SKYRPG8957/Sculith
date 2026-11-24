@@ -1,4 +1,4 @@
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use sculith_util::random::{RandomGenerator, RandomImpl};
 
 use super::Direction;
 
@@ -504,7 +504,7 @@ impl MansionGrid {
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_util::random::legacy_rand::LegacyRand;
+    use sculith_util::random::legacy_rand::LegacyRand;
 
     use super::*;
 

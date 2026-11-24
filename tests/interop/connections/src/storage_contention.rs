@@ -16,7 +16,7 @@ use pumpkin_core::{
 };
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_inventory::{Inventory, slot::Slot};
-use pumpkin_protocol::{RawPacket, java::server::play::SClickSlot, packet::MultiVersionJavaPacket};
+use sculith_protocol::{RawPacket, java::server::play::SClickSlot, packet::MultiVersionJavaPacket};
 
 pub fn register(context: &Arc<Context>) {
     let probe = Arc::new(Probe {

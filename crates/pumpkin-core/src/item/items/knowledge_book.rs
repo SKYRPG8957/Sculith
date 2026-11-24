@@ -7,9 +7,9 @@ use pumpkin_data::item::Item;
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::codec::recipe::DynamicRecipe;
-use pumpkin_protocol::java::client::play::CRecipeBookAdd;
-use pumpkin_util::Hand;
+use sculith_protocol::codec::recipe::DynamicRecipe;
+use sculith_protocol::java::client::play::CRecipeBookAdd;
+use sculith_util::Hand;
 
 pub struct KnowledgeBookItem;
 pub struct DiscFragmentItem;
@@ -23,8 +23,8 @@ impl ItemMetadata for KnowledgeBookItem {
 fn dynamic_recipe_id(recipe: &DynamicRecipe) -> &str {
     recipe.recipe_id().unwrap_or_else(|| match recipe {
         DynamicRecipe::Crafting(
-            pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shaped { result, .. }
-            | pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless { result, .. },
+            sculith_protocol::codec::recipe::OwnedCraftingRecipe::Shaped { result, .. }
+            | sculith_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless { result, .. },
         ) => &result.item_id,
         _ => "",
     })

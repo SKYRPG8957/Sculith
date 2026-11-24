@@ -11,9 +11,9 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_protocol::java::client::play::{CSetEntityMetadata, Metadata};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_protocol::java::client::play::{CSetEntityMetadata, Metadata};
+use sculith_util::math::vector3::Vector3;
 
 /// An item frame or glow item frame.
 ///

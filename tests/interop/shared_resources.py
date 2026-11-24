@@ -461,7 +461,7 @@ def main():
             client.check_plugin_world_sound()
             if args.dialog_replies:
                 for case in ["none", "small", "large"]:
-                    data = (ROOT / f"crates/pumpkin-protocol/tests/fixtures/java_custom_click_{case}_777.bin").read_bytes()
+                    data = (ROOT / f"crates/sculith-protocol/tests/fixtures/java_custom_click_{case}_777.bin").read_bytes()
                     client.send(68, data)  # Java 26.3 custom_click_action.
                 deadline = time.monotonic() + 10
                 while True:

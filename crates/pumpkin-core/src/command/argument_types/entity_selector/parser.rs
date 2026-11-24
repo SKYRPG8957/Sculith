@@ -14,12 +14,12 @@ use crate::command::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use bitflags::bitflags;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::translation;
-use pumpkin_util::GameMode;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::bounds::{DoubleBounds, FloatDegreeBounds, IntBounds};
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
+use sculith_util::GameMode;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::bounds::{DoubleBounds, FloatDegreeBounds, IntBounds};
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 use uuid::Uuid;
 
 pub const INVALID_NAME_OR_UUID_ERROR_TYPE: CommandErrorType<0> = CommandErrorType::new(

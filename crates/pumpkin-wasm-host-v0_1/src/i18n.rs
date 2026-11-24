@@ -1,6 +1,6 @@
 use crate::pumpkin::plugin::{common::Locale as WitLocale, i18n::Host};
-use pumpkin_util::translation::{Locale as UtilLocale, add_translation_file, get_translation};
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_util::translation::{Locale as UtilLocale, add_translation_file, get_translation};
 use std::str::FromStr;
 
 impl Host for PluginHostState {
@@ -21,7 +21,7 @@ impl Host for PluginHostState {
     }
 }
 
-/// Converts a WIT Locale to a pumpkin-util Locale.
+/// Converts a WIT Locale to a sculith-util Locale.
 fn wit_to_util_locale(wit: WitLocale) -> UtilLocale {
     // WIT variants like EnUs often debug to "EnUs".
     // We convert to lowercase and handle potential format differences.

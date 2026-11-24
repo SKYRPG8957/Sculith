@@ -2,7 +2,7 @@ use super::{Controls, Goal, to_goal_ticks};
 use crate::entity::EntityBase;
 use crate::entity::ai::pathfinder::NavigatorGoal;
 use crate::entity::mob::Mob;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 

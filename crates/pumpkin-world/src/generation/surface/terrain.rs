@@ -2,7 +2,7 @@ use pumpkin_data::{
     Block, BlockState, BlockStateId,
     chunk::{Biome, DoublePerlinNoiseParameters},
 };
-use pumpkin_util::{
+use sculith_util::{
     math::vector3::Vector3,
     random::{
         RandomImpl,

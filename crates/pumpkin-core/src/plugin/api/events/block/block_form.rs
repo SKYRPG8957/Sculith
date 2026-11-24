@@ -1,6 +1,6 @@
 use pumpkin_data::Block;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 /// An event that occurs when a block forms naturally (e.g. ice, snow, cobblestone).
 #[cancellable]

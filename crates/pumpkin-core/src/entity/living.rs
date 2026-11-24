@@ -4,14 +4,14 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_inventory::build_equipment_slots;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_protocol::bedrock::client::take_item_actor::CTakeItemActor;
-use pumpkin_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
-use pumpkin_protocol::codec::var_ulong::VarULong;
-use pumpkin_util::Difficulty;
-use pumpkin_util::GameMode;
-use pumpkin_util::Hand;
-use pumpkin_util::math::position::BlockPos;
 use rustc_hash::FxHashMap;
+use sculith_protocol::bedrock::client::take_item_actor::CTakeItemActor;
+use sculith_protocol::bedrock::server::actor_event::{ActorEventID, SActorEvent};
+use sculith_protocol::codec::var_ulong::VarULong;
+use sculith_util::Difficulty;
+use sculith_util::GameMode;
+use sculith_util::Hand;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{
@@ -59,22 +59,22 @@ use pumpkin_data::{damage::DamageType, sound::Sound};
 use pumpkin_inventory::entity_equipment::EntityEquipment;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::bedrock::client::set_actor_data::{
+use rand::RngExt;
+use sculith_protocol::bedrock::client::set_actor_data::{
     CSetActorData, PropertySyncData, entity_data_flag, entity_data_key,
 };
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::{
     CHurtAnimation, CSwingArm, CTakeItemEntity, CUpdateMobEffect,
 };
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
     java::client::play::{CSetEquipment, MetadataSerializer},
     ser::{NetworkWriteExt, WritingError},
 };
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
-use rand::RngExt;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 use std::sync::{RwLock, RwLockReadGuard};
 
 #[derive(Clone, Copy)]
@@ -225,7 +225,7 @@ impl MetadataSerializer for EffectParticles {
     fn write_metadata(
         &self,
         writer: &mut impl std::io::Write,
-        _version: &pumpkin_util::version::JavaMinecraftVersion,
+        _version: &sculith_util::version::JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
         let count = i32::try_from(self.0.len())
             .map_err(|_| WritingError::Message("Too many effect particles".into()))?;
@@ -742,15 +742,15 @@ impl LivingEntity {
             }
             if *slot == EquipmentSlot::MAIN_HAND || *slot == EquipmentSlot::OFF_HAND {
                 let window_id = if *slot == EquipmentSlot::OFF_HAND {
-                    pumpkin_protocol::bedrock::server::inventory_transaction::WINDOW_ID_OFF_HAND
+                    sculith_protocol::bedrock::server::inventory_transaction::WINDOW_ID_OFF_HAND
                         as u8
                 } else {
                     0
                 };
 
-                let be_packet = pumpkin_protocol::bedrock::client::CMobEquipment {
+                let be_packet = sculith_protocol::bedrock::client::CMobEquipment {
                     target_runtime_id: (self.entity_id() as u64).into(),
-                    item: pumpkin_protocol::bedrock::network_item::NetworkItemStackDescriptor::from(
+                    item: sculith_protocol::bedrock::network_item::NetworkItemStackDescriptor::from(
                         stack,
                     ),
                     slot: 0,
@@ -841,8 +841,8 @@ impl LivingEntity {
     pub fn bedrock_armor_packet(
         &self,
         overrides: &[(EquipmentSlot, ItemStack)],
-    ) -> pumpkin_protocol::bedrock::client::CMobArmorEquipment {
-        use pumpkin_protocol::bedrock::network_item::NetworkItemStackDescriptor;
+    ) -> sculith_protocol::bedrock::client::CMobArmorEquipment {
+        use sculith_protocol::bedrock::network_item::NetworkItemStackDescriptor;
 
         let equipment_guard = self
             .entity_equipment
@@ -857,7 +857,7 @@ impl LivingEntity {
             }
         };
 
-        let packet = pumpkin_protocol::bedrock::client::CMobArmorEquipment {
+        let packet = sculith_protocol::bedrock::client::CMobArmorEquipment {
             target_runtime_id: (self.entity_id() as u64).into(),
             head: slot_desc(&EquipmentSlot::HEAD),
             chest: slot_desc(&EquipmentSlot::CHEST),
@@ -1140,10 +1140,10 @@ impl LivingEntity {
         self.livings_flags.store(b, Ordering::Relaxed);
 
         let bedrock_flag = if flag == Self::USING_ITEM_FLAG {
-            Some(pumpkin_protocol::bedrock::client::set_actor_data::entity_data_flag::USING_ITEM)
+            Some(sculith_protocol::bedrock::client::set_actor_data::entity_data_flag::USING_ITEM)
         } else if flag == Self::USING_RIPTIDE_FLAG {
             Some(
-                pumpkin_protocol::bedrock::client::set_actor_data::entity_data_flag::DAMAGE_NEARBY_MOBS,
+                sculith_protocol::bedrock::client::set_actor_data::entity_data_flag::DAMAGE_NEARBY_MOBS,
             )
         } else {
             None
@@ -1159,10 +1159,10 @@ impl LivingEntity {
             }
 
             let mut meta =
-                pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
+                sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
             meta.set(
-                pumpkin_protocol::bedrock::client::set_actor_data::entity_data_key::FLAGS,
-                pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Int64(
+                sculith_protocol::bedrock::client::set_actor_data::entity_data_key::FLAGS,
+                sculith_protocol::bedrock::client::set_actor_data::MetadataValue::Int64(
                     self.entity.bedrock_flags.load(Ordering::Relaxed),
                 ),
             );
@@ -1177,7 +1177,7 @@ impl LivingEntity {
     }
 
     pub fn set_bedrock_blocking(&self, blocking: bool) {
-        let flag = pumpkin_protocol::bedrock::client::set_actor_data::entity_data_flag::BLOCKING;
+        let flag = sculith_protocol::bedrock::client::set_actor_data::entity_data_flag::BLOCKING;
         let index = (flag - 64) as u8;
         let mask = 1i64 << index;
         if blocking {
@@ -1191,10 +1191,10 @@ impl LivingEntity {
         }
 
         let mut meta =
-            pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
+            sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
         meta.set(
-            pumpkin_protocol::bedrock::client::set_actor_data::entity_data_key::FLAGS_TWO,
-            pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Int64(
+            sculith_protocol::bedrock::client::set_actor_data::entity_data_key::FLAGS_TWO,
+            sculith_protocol::bedrock::client::set_actor_data::MetadataValue::Int64(
                 self.entity.bedrock_flags_two.load(Ordering::Relaxed),
             ),
         );
@@ -1745,9 +1745,9 @@ impl LivingEntity {
             flag,
         );
 
-        let be_packet = pumpkin_protocol::bedrock::client::CMobEffect {
+        let be_packet = sculith_protocol::bedrock::client::CMobEffect {
             target_runtime_id: VarULong(self.entity.entity_id as u64),
-            event_id: pumpkin_protocol::bedrock::client::CMobEffect::EVENT_ADD,
+            event_id: sculith_protocol::bedrock::client::CMobEffect::EVENT_ADD,
             effect_id: VarInt(effect.effect_type.to_bedrock_id()),
             effect_amplifier: VarInt(i32::from(effect.amplifier)),
             show_particles: effect.show_particles,
@@ -2046,10 +2046,10 @@ impl LivingEntity {
         let entity_id = self.entity_id();
 
         let je_packet =
-            pumpkin_protocol::java::client::play::CSwingArm::new(entity_id.into(), false);
-        let be_packet = pumpkin_protocol::bedrock::server::animate::SAnimate {
-            action: pumpkin_protocol::bedrock::server::animate::AnimateAction::SwingArm,
-            target_actor_runtime_id: pumpkin_protocol::codec::var_ulong::VarULong(entity_id as u64),
+            sculith_protocol::java::client::play::CSwingArm::new(entity_id.into(), false);
+        let be_packet = sculith_protocol::bedrock::server::animate::SAnimate {
+            action: sculith_protocol::bedrock::server::animate::AnimateAction::SwingArm,
+            target_actor_runtime_id: sculith_protocol::codec::var_ulong::VarULong(entity_id as u64),
             data: 0.0,
             swing_source: None,
             hand: 0,
@@ -2063,9 +2063,9 @@ impl LivingEntity {
         let entity_id = self.entity_id();
 
         let je_packet = CSwingArm::new(entity_id.into(), true);
-        let be_packet = pumpkin_protocol::bedrock::server::animate::SAnimate {
-            action: pumpkin_protocol::bedrock::server::animate::AnimateAction::SwingArm,
-            target_actor_runtime_id: pumpkin_protocol::codec::var_ulong::VarULong(entity_id as u64),
+        let be_packet = sculith_protocol::bedrock::server::animate::SAnimate {
+            action: sculith_protocol::bedrock::server::animate::AnimateAction::SwingArm,
+            target_actor_runtime_id: sculith_protocol::codec::var_ulong::VarULong(entity_id as u64),
             data: 0.0,
             swing_source: None,
             hand: 1,
@@ -2991,7 +2991,7 @@ impl LivingEntity {
                 {
                     let hand_stack = player
                         .inventory()
-                        .get_stack_in_hand(pumpkin_util::Hand::Right);
+                        .get_stack_in_hand(sculith_util::Hand::Right);
                     looting_level = hand_stack
                         .get_enchantment_level(&Enchantment::LOOTING)
                         .max(0) as u32;
@@ -4360,7 +4360,7 @@ impl LivingEntity {
                 let player = att.get_player()?;
                 let hand_stack = player
                     .inventory()
-                    .get_stack_in_hand(pumpkin_util::Hand::Right);
+                    .get_stack_in_hand(sculith_util::Hand::Right);
                 let level = hand_stack.get_enchantment_level(&Enchantment::BREACH);
                 (level > 0).then_some(level as u32)
             })
@@ -5952,7 +5952,7 @@ mod tests {
             show_icon: true,
             blend: false,
         };
-        let metadata = pumpkin_protocol::java::client::play::Metadata::new(
+        let metadata = sculith_protocol::java::client::play::Metadata::new(
             tracked_data::living_entity::EFFECT_PARTICLES,
             EffectParticles(vec![EffectParticle::from_effect(&effect)]),
         );
@@ -5961,7 +5961,7 @@ mod tests {
         metadata
             .write(
                 &mut bytes,
-                &pumpkin_util::version::JavaMinecraftVersion::V_26_3,
+                &sculith_util::version::JavaMinecraftVersion::V_26_3,
             )
             .unwrap();
 
@@ -5986,8 +5986,8 @@ mod ai_step_tests {
     use crate::entity::{Entity, EntityBase};
     use crate::world::World;
     use pumpkin_data::{attributes::Attributes, entity::EntityType};
-    use pumpkin_util::math::position::BlockPos;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::position::BlockPos;
+    use sculith_util::math::vector3::Vector3;
 
     type TestResult = Result<(), Box<dyn Error>>;
 
@@ -6403,7 +6403,7 @@ mod ai_step_tests {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
         world.level.loaded_chunks.insert(
-            pumpkin_util::math::vector2::Vector2::new(0, 0),
+            sculith_util::math::vector2::Vector2::new(0, 0),
             pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
         );
         let bat = crate::entity::mob::bat::BatEntity::new(Entity::new(
@@ -6453,8 +6453,8 @@ mod ai_step_tests {
     #[tokio::test]
     async fn strafe_checks_live_collision_before_publishing_original_inputs() -> TestResult {
         use pumpkin_data::Block;
-        use pumpkin_util::math::vector2::Vector2;
         use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
+        use sculith_util::math::vector2::Vector2;
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
         world
@@ -6555,7 +6555,7 @@ mod ai_step_tests {
         let position = living.entity.pos.load();
         let velocity = living.entity.velocity.load();
         world.level.loaded_chunks.insert(
-            pumpkin_util::math::vector2::Vector2::new(0, 0),
+            sculith_util::math::vector2::Vector2::new(0, 0),
             pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
         );
         world.set_block_state(
@@ -6710,9 +6710,9 @@ mod ai_step_tests {
 mod player_wall_tests {
     use pumpkin_data::attributes::Attributes;
     use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::position::BlockPos;
-    use pumpkin_util::math::vector3::Vector3;
     use pumpkin_world::world::BlockFlags;
+    use sculith_util::math::position::BlockPos;
+    use sculith_util::math::vector3::Vector3;
 
     use super::LivingEntity;
     use crate::entity::Entity;
@@ -6725,7 +6725,7 @@ mod player_wall_tests {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
         world.level.loaded_chunks.insert(
-            pumpkin_util::math::vector2::Vector2::new(0, 0),
+            sculith_util::math::vector2::Vector2::new(0, 0),
             pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
         );
         world.set_block_state(

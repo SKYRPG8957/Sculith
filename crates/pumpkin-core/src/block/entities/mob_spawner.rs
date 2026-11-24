@@ -6,7 +6,7 @@ use std::sync::{
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::{entity::EntityType, world::WorldEvent};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::{
     block::entities::BlockEntity, entity::EntityBase, entity::mob::spawn::finalize_spawn,

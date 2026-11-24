@@ -3,7 +3,7 @@ use super::*;
 use crate::block::BlockPlacement;
 use crate::{entity::player::ItemUseSnapshot, item::registry::should_try_block_placement};
 use pumpkin_data::item::Item;
-use pumpkin_protocol::bedrock::server::inventory_transaction::HandSlot;
+use sculith_protocol::bedrock::server::inventory_transaction::HandSlot;
 
 const SIMULATION_TICK_TRIGGER: u8 = 2;
 
@@ -337,7 +337,7 @@ impl BedrockClient {
                         let native_interaction = event.target.interact_with_hand(
                             player,
                             &mut stack,
-                            pumpkin_util::Hand::Right,
+                            sculith_util::Hand::Right,
                         );
                         if !native_interaction
                             .unwrap_or_else(|| event.target.interact(player, &mut stack))

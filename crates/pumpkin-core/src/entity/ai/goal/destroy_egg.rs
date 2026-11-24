@@ -5,8 +5,8 @@ use crate::entity::mob::Mob;
 use crate::world::World;
 use pumpkin_data::Block;
 use pumpkin_data::sound::{Sound, SoundCategory};
-use pumpkin_util::math::position::BlockPos;
 use rand::{RngExt, rng};
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 pub struct DestroyEggGoal {

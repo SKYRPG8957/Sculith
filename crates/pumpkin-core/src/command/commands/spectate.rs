@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use pumpkin_data::translation;
-use pumpkin_protocol::java::client::play::CSetCamera;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::{GameMode, PermissionLvl};
+use sculith_protocol::java::client::play::CSetCamera;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
+use sculith_util::{GameMode, PermissionLvl};
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command};
 use crate::command::argument_types::entity::EntityArgumentType;

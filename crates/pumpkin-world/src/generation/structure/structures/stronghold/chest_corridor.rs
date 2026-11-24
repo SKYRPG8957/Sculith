@@ -1,5 +1,5 @@
 use pumpkin_data::Block;
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::block_box::BlockBox,
     random::{RandomGenerator, RandomImpl},

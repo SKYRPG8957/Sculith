@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use pumpkin_data::{Block, BlockId, BlockState};
 use pumpkin_data::{Mirror, Rotation};
-use pumpkin_util::HeightMap;
-use pumpkin_util::{
+use sculith_util::HeightMap;
+use sculith_util::{
     BlockDirection,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl, legacy_rand::LegacyRand},

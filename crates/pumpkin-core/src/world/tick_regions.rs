@@ -1,8 +1,8 @@
 use std::{cmp::Reverse, collections::hash_map::Entry, sync::Arc};
 
-use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::level::{ScheduledTickGroup, ScheduledTickStep};
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::vector2::Vector2;
 
 use super::{entity_chunks::RegionalEntityChunks, regional_input::RegionalInput};
 

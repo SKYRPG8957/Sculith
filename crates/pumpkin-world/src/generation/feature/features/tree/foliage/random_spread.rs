@@ -1,4 +1,4 @@
-use pumpkin_util::{
+use sculith_util::{
     math::{int_provider::IntProvider, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
 };

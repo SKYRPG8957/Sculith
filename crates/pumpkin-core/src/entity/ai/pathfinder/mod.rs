@@ -1,5 +1,5 @@
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::living::LivingEntity;
 use crate::world::World;
@@ -2638,7 +2638,7 @@ mod tests {
     use std::sync::Arc;
 
     use pumpkin_data::{dimension::Dimension, entity::EntityType};
-    use pumpkin_util::math::boundingbox::EntityDimensions;
+    use sculith_util::math::boundingbox::EntityDimensions;
 
     use super::*;
     use crate::entity::{
@@ -2682,7 +2682,7 @@ mod tests {
             chunk.set_block_absolute_y(0, 64, z, pumpkin_data::Block::WATER.default_state.id);
         }
         world.level.loaded_chunks.insert(
-            pumpkin_util::math::vector2::Vector2::new(0, 0),
+            sculith_util::math::vector2::Vector2::new(0, 0),
             chunk.clone(),
         );
         let living = living(world.clone(), &EntityType::COD);

@@ -72,7 +72,7 @@ pub fn bench_create_and_populate_noise(random_config: &GlobalRandomConfig) {
         SurfaceHeightEstimateSampler, SurfaceHeightSamplerBuilderOptions,
     };
     use crate::generation::proto_chunk::StandardChunkFluidLevelSampler;
-    use pumpkin_util::world_seed::Seed;
+    use sculith_util::world_seed::Seed;
 
     let world_gen = WorldGenerator::Noise(Box::new(VanillaGenerator::new(
         Seed(random_config.seed),
@@ -139,7 +139,7 @@ pub fn bench_create_and_populate_noise(random_config: &GlobalRandomConfig) {
 pub fn bench_create_and_populate_biome(random_config: &GlobalRandomConfig) {
     use crate::generation::generator::{GeneratorInit, VanillaGenerator, WorldGenerator};
     use crate::generation::noise::router::multi_noise_sampler::MultiNoiseSampler;
-    use pumpkin_util::world_seed::Seed;
+    use sculith_util::world_seed::Seed;
 
     let world_gen = WorldGenerator::Noise(Box::new(VanillaGenerator::new(
         Seed(random_config.seed),
@@ -166,7 +166,7 @@ pub fn bench_create_and_populate_noise_with_surface(random_config: &GlobalRandom
         },
     };
     use crate::generation::proto_chunk::StandardChunkFluidLevelSampler;
-    use pumpkin_util::world_seed::Seed;
+    use sculith_util::world_seed::Seed;
 
     let world_gen = WorldGenerator::Noise(Box::new(VanillaGenerator::new(
         Seed(random_config.seed),

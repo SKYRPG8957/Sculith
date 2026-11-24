@@ -5,7 +5,7 @@ use pumpkin_core::{
     server::Server,
 };
 use pumpkin_data::entity::EntityType;
-use pumpkin_util::{GameMode, math::vector3::Vector3};
+use sculith_util::{GameMode, math::vector3::Vector3};
 
 use crate::bot::HeadlessBot;
 

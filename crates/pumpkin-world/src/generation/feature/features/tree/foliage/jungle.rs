@@ -1,4 +1,4 @@
-use pumpkin_util::{
+use sculith_util::{
     math::position::BlockPos,
     random::{RandomGenerator, RandomImpl},
 };
@@ -55,7 +55,7 @@ impl JungleFoliagePlacer {
 impl LeaveValidator for JungleFoliagePlacer {
     fn is_invalid_for_leaves(
         &self,
-        _random: &mut pumpkin_util::random::RandomGenerator,
+        _random: &mut sculith_util::random::RandomGenerator,
         dx: i32,
         _y: i32,
         dz: i32,

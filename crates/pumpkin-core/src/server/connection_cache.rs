@@ -2,11 +2,11 @@ use crate::entity::player::Player;
 use base64::{Engine as _, engine::general_purpose};
 use pumpkin_config::BasicConfiguration;
 use pumpkin_data::packet::{CURRENT_MC_VERSION, LOWEST_SUPPORTED_MC_VERSION};
-use pumpkin_protocol::{
+use sculith_protocol::{
     Players, Sample, StatusResponse, Version,
     java::client::{config::CPluginMessage, status::CStatusResponse},
 };
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::{
     fs,
     io::{self, Cursor},

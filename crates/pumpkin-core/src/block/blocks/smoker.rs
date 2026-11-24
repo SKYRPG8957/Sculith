@@ -64,7 +64,7 @@ impl ScreenHandlerFactory for SmokerScreenFactory {
         Some(concrete_arc as SharedScreenHandler)
     }
 
-    fn get_display_name(&self) -> pumpkin_util::text::TextComponent {
+    fn get_display_name(&self) -> sculith_util::text::TextComponent {
         pumpkin_macros::translate_cross!(
             translation::java::CONTAINER_SMOKER,
             translation::bedrock::TILE_SMOKER_NAME

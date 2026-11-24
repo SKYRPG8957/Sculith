@@ -5,7 +5,7 @@ use thiserror::Error;
 use tracing::warn;
 
 use crate::net::{GameProfile, management::auth::is_valid_secret, offline_uuid};
-use pumpkin_protocol::Property;
+use sculith_protocol::Property;
 
 /// The property name the `BungeeGuard` plugin uses to forward its shared
 /// secret inside the profile properties.
@@ -132,11 +132,11 @@ pub fn bungeecord_login(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_protocol::ser::NetworkWriteExt;
-    use pumpkin_protocol::{
+    use sculith_protocol::ser::NetworkWriteExt;
+    use sculith_protocol::{
         ServerPacket, codec::var_int::VarInt, java::server::handshake::SHandShake,
     };
-    use pumpkin_util::version::JavaMinecraftVersion;
+    use sculith_util::version::JavaMinecraftVersion;
 
     /// Drives the whole path a proxied login takes: the handshake is encoded as
     /// `BungeeCord` puts it on the wire, decoded by the real packet reader, and

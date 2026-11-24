@@ -1,6 +1,6 @@
 use pumpkin_data::noise_router::WrapperType;
-use pumpkin_util::math::vector3::Vector3;
 use rustc_hash::FxHashMap;
+use sculith_util::math::vector3::Vector3;
 
 use crate::generation::{biome_coords, positions::chunk_pos};
 

@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use pumpkin_data::tag::{self, Tag, Taggable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::{Controls, Goal};
 use crate::entity::mob::Mob;
@@ -34,7 +34,7 @@ impl TryFindWaterGoal {
 
     #[must_use]
     pub fn find_water_range(
-        pos: pumpkin_util::math::vector3::Vector3<f64>,
+        pos: sculith_util::math::vector3::Vector3<f64>,
     ) -> (BlockPos, BlockPos) {
         let min_x = (pos.x - 2.0).floor() as i32;
         let min_y = (pos.y - 2.0).floor() as i32;
@@ -103,7 +103,7 @@ impl Goal for TryFindWaterGoal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     #[test]
     fn find_water_range_calculation() {

@@ -18,7 +18,7 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::ai::target_match::TargetMatch;
 use crate::entity::item::ItemEntity;
@@ -811,7 +811,7 @@ impl PiglinEntity {
         let world = entity.world.load();
         let pos = entity.pos.load();
 
-        if world.level_info.load().difficulty != pumpkin_util::Difficulty::Peaceful {
+        if world.level_info.load().difficulty != sculith_util::Difficulty::Peaceful {
             world.play_sound(
                 Sound::EntityPiglinConvertedToZombified,
                 SoundCategory::Hostile,

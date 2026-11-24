@@ -4,8 +4,8 @@ use pumpkin_data::BlockState;
 use pumpkin_data::block_properties::{BlockProperties, OakLeavesLikeProperties};
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{BlockId, tag};
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
 use root::RootPlacer;
+use sculith_util::{math::position::BlockPos, random::RandomGenerator};
 
 use trunk::TrunkPlacer;
 

@@ -2,8 +2,8 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, tag};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockAccessor;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::{BlockBehaviour, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs};
 

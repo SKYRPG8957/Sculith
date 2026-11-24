@@ -1,6 +1,6 @@
 use pumpkin_inventory::InventoryError;
-use pumpkin_protocol::ser::ReadingError;
 use pumpkin_world::data::player_data::PlayerDataError;
+use sculith_protocol::ser::ReadingError;
 use std::fmt::Display;
 use tracing::Level;
 

@@ -16,8 +16,8 @@ use pumpkin_data::block_properties::is_air;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Block::MINECRAFT_SCULK_REPLACEABLE;
 use pumpkin_data::tag::Block::MINECRAFT_SCULK_REPLACEABLE_WORLD_GEN;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 pub mod growth;
 pub mod spreader;

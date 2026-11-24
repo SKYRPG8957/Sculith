@@ -7,8 +7,8 @@ use crate::{
 };
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::{EntityStatus, EntityType};
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::vector3::Vector3;
 
 const GRAVITY: f64 = 0.03;
 

@@ -1,4 +1,4 @@
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
 use crate::block_properties::{COLLISION_SHAPES, NoteblockInstrument, SOUND_TYPES};
 use crate::blocks::SuffocationPredicate;
@@ -434,7 +434,7 @@ const UP_CENTER_SOLID: u8 = 1 << 7;
 mod tests {
     use super::{BlockState, BlockStateId};
     use crate::{Block, BlockId};
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
 
     fn assert_close(actual: f64, expected: f64) {
         assert!((actual - expected).abs() < 1.0e-6, "{actual} != {expected}");

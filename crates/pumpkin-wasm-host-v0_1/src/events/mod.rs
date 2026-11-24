@@ -2,8 +2,8 @@ use std::{any::Any, sync::Arc};
 
 use pumpkin_data::{Block, entity::EntityType};
 use pumpkin_inventory::screen_handler::ClickType;
-use pumpkin_protocol::java::server::play::ActionType;
-use pumpkin_util::{
+use sculith_protocol::java::server::play::ActionType;
+use sculith_util::{
     GameMode, Hand,
     math::{position::BlockPos, vector3::Vector3},
 };
@@ -202,10 +202,10 @@ pub(super) fn consume_player(
 pub(super) fn consume_text_component(
     state: &mut PluginHostState,
     text_component: &Resource<pumpkin::plugin::text::TextComponent>,
-) -> pumpkin_util::text::TextComponent {
+) -> sculith_util::text::TextComponent {
     state
         .resource_table
-        .delete::<pumpkin_util::text::TextComponent>(Resource::new_own(text_component.rep()))
+        .delete::<sculith_util::text::TextComponent>(Resource::new_own(text_component.rep()))
         .expect("invalid text-component resource handle")
 }
 

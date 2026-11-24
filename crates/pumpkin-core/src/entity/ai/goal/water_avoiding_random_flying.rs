@@ -1,8 +1,8 @@
 use super::{Controls, Goal, wander_around::WanderAroundGoal};
 use crate::entity::ai::util::{air_and_water_random_pos, hover_random_pos};
 use crate::entity::mob::Mob;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::vector3::Vector3;
 
 pub struct WaterAvoidingRandomFlyingGoal {
     wander: WanderAroundGoal,
@@ -25,7 +25,7 @@ impl WaterAvoidingRandomFlyingGoal {
 
     fn parrot_position(mob: &dyn Mob) -> Option<Vector3<f64>> {
         use pumpkin_data::tag::{self, Taggable};
-        use pumpkin_util::math::position::BlockPos;
+        use sculith_util::math::position::BlockPos;
         let entity = mob.get_entity();
         let world = entity.world.load();
         let pos = entity.pos.load();

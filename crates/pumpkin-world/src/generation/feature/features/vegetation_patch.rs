@@ -1,6 +1,6 @@
 use super::JavaBlockPosHashSet;
 
-use pumpkin_util::{
+use sculith_util::{
     math::{position::BlockPos, vector3::Vector3, vertical_surface_type::VerticalSurfaceType},
     random::{RandomGenerator, RandomImpl},
 };
@@ -15,11 +15,11 @@ pub struct VegetationPatchFeature {
     pub ground_state: BlockStateProvider,
     pub vegetation_feature: Box<crate::generation::feature::placed_features::PlacedFeature>,
     pub surface: VerticalSurfaceType,
-    pub depth: pumpkin_util::math::int_provider::IntProvider,
+    pub depth: sculith_util::math::int_provider::IntProvider,
     pub extra_bottom_block_chance: f32,
     pub vertical_range: i32,
     pub vegetation_chance: f32,
-    pub xz_radius: pumpkin_util::math::int_provider::IntProvider,
+    pub xz_radius: sculith_util::math::int_provider::IntProvider,
     pub extra_edge_column_chance: f32,
 }
 

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 use pumpkin_core::{
     command::{
@@ -13,7 +13,7 @@ use pumpkin_core::{
     },
     entity::player::Player,
 };
-use pumpkin_util::math::{
+use sculith_util::math::{
     position::BlockPos,
     vector2::Vector2,
     vector3::{Axis, Vector3},
@@ -39,12 +39,12 @@ pub enum OwnedArg {
     Entity(Arc<dyn pumpkin_core::entity::EntityBase>),
     Players(Vec<Arc<Player>>),
     GameProfiles(Vec<pumpkin_core::net::GameProfile>),
-    BlockPos(pumpkin_util::math::position::BlockPos),
-    Pos3D(pumpkin_util::math::vector3::Vector3<f64>),
-    Pos2D(pumpkin_util::math::vector2::Vector2<f64>),
+    BlockPos(sculith_util::math::position::BlockPos),
+    Pos3D(sculith_util::math::vector3::Vector3<f64>),
+    Pos2D(sculith_util::math::vector2::Vector2<f64>),
     Rotation(f32, bool, f32, bool),
-    GameMode(pumpkin_util::GameMode),
-    Difficulty(pumpkin_util::Difficulty),
+    GameMode(sculith_util::GameMode),
+    Difficulty(sculith_util::Difficulty),
     Item(String),
     ItemPredicate(String),
     ResourceLocation(String),
@@ -84,15 +84,15 @@ pub fn build_consumed_args_from_context(context: &CommandContext) -> HashMap<Str
             map.insert(name.clone(), OwnedArg::Num(Ok(Number::F64(f))));
         } else if let Some(s) = res.downcast_ref::<String>() {
             map.insert(name.clone(), OwnedArg::Simple(s.clone()));
-        } else if let Some(&pos) = res.downcast_ref::<pumpkin_util::math::position::BlockPos>() {
+        } else if let Some(&pos) = res.downcast_ref::<sculith_util::math::position::BlockPos>() {
             map.insert(name.clone(), OwnedArg::BlockPos(pos));
-        } else if let Some(&v) = res.downcast_ref::<pumpkin_util::math::vector3::Vector3<f64>>() {
+        } else if let Some(&v) = res.downcast_ref::<sculith_util::math::vector3::Vector3<f64>>() {
             map.insert(name.clone(), OwnedArg::Pos3D(v));
-        } else if let Some(&v) = res.downcast_ref::<pumpkin_util::math::vector2::Vector2<f64>>() {
+        } else if let Some(&v) = res.downcast_ref::<sculith_util::math::vector2::Vector2<f64>>() {
             map.insert(name.clone(), OwnedArg::Pos2D(v));
-        } else if let Some(&mode) = res.downcast_ref::<pumpkin_util::GameMode>() {
+        } else if let Some(&mode) = res.downcast_ref::<sculith_util::GameMode>() {
             map.insert(name.clone(), OwnedArg::GameMode(mode));
-        } else if let Some(&diff) = res.downcast_ref::<pumpkin_util::Difficulty>() {
+        } else if let Some(&diff) = res.downcast_ref::<sculith_util::Difficulty>() {
             map.insert(name.clone(), OwnedArg::Difficulty(diff));
         } else if let Some(t) = res.downcast_ref::<TextComponent>() {
             map.insert(name.clone(), OwnedArg::TextComponent(t.clone()));

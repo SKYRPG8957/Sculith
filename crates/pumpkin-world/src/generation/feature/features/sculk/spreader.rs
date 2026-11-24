@@ -3,10 +3,10 @@
 use pumpkin_data::BlockDirection;
 use pumpkin_data::BlockId;
 use pumpkin_data::BlockStateId;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::RandomGenerator;
-use pumpkin_util::random::RandomImpl;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::RandomGenerator;
+use sculith_util::random::RandomImpl;
 use std::collections::HashMap;
 
 use super::NON_CORNER_NEIGHBOURS;
@@ -621,7 +621,7 @@ impl ChargeCursor {
 mod tests {
     use super::*;
     use pumpkin_data::Block;
-    use pumpkin_util::random::legacy_rand::LegacyRand;
+    use sculith_util::random::legacy_rand::LegacyRand;
 
     use crate::generation::feature::features::sculk::test_utils::MockSculkLevel;
 

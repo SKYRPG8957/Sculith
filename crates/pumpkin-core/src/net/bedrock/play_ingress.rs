@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak, atomic::Ordering::Relaxed};
 
-use pumpkin_protocol::{
+use sculith_protocol::{
     RawPacket,
     bedrock::{
         network_stack_latency::NetworkStackLatency,
@@ -14,7 +14,7 @@ use pumpkin_protocol::{
     packet::Packet,
     serial::PacketRead,
 };
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use crate::{
     entity::{
@@ -476,7 +476,8 @@ mod tests {
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
     use pumpkin_data::{Block, effect::StatusEffect, potion::Effect};
-    use pumpkin_protocol::{
+    use pumpkin_world::world::BlockFlags;
+    use sculith_protocol::{
         bedrock::{
             client::{CMobEffect, CMovePlayer, update_attributes::CUpdateAttributes},
             network_item::NetworkItemDescriptor,
@@ -485,8 +486,7 @@ mod tests {
         codec::{var_int::VarInt, var_uint::VarUInt, var_ulong::VarULong},
         serial::PacketWrite,
     };
-    use pumpkin_util::{GameMode, math::vector3::Vector3};
-    use pumpkin_world::world::BlockFlags;
+    use sculith_util::{GameMode, math::vector3::Vector3};
     use std::{
         sync::{Mutex, atomic::AtomicBool, mpsc},
         time::{Duration, Instant},

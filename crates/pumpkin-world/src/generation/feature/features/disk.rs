@@ -1,5 +1,5 @@
-use pumpkin_util::math::{int_provider::IntProvider, position::BlockPos};
-use pumpkin_util::random::RandomGenerator;
+use sculith_util::math::{int_provider::IntProvider, position::BlockPos};
+use sculith_util::random::RandomGenerator;
 
 use crate::generation::{
     block_predicate::BlockPredicate, block_state_provider::BlockStateProvider,

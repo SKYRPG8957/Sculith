@@ -2,7 +2,7 @@ use piston::PistonBlock;
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_state::PistonBehavior;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::world::World;
 

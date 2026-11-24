@@ -14,9 +14,9 @@ use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
-use pumpkin_util::Hand;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::Hand;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 pub struct PlaceOnWaterBlockItem;
 

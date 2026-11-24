@@ -7,7 +7,7 @@ use crate::{
 };
 use pumpkin_data::damage::DamageType;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 pub struct MarkerEntity {
     pub entity: Entity,

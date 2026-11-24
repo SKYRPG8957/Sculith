@@ -1,5 +1,5 @@
 use pumpkin_data::BlockStateId;
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use sculith_util::random::{RandomGenerator, RandomImpl};
 
 pub struct RandomBlockStateMatchRuleTest {
     pub block_state: BlockStateId,

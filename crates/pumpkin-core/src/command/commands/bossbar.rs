@@ -1,10 +1,10 @@
 use uuid::Uuid;
 
 use pumpkin_data::translation;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::hover::HoverEvent;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
+use sculith_util::text::hover::HoverEvent;
 
 use crate::command::CommandSource;
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
@@ -45,7 +45,7 @@ impl ArgumentType<CommandSource> for BossbarIdArgumentType {
     type Item = String;
 
     fn parse(&self, reader: &mut StringReader) -> Result<Self::Item, CommandSyntaxError> {
-        let ident = pumpkin_util::identifier::Identifier::from_reader(reader)?;
+        let ident = sculith_util::identifier::Identifier::from_reader(reader)?;
         Ok(ident.to_string())
     }
 

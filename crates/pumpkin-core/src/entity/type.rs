@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::tag::Taggable;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 use crate::entity::boss::ender_dragon::EnderDragonEntity;
@@ -565,7 +565,7 @@ pub fn check_spawn_rules(
 
     // Ghast
     if id == EntityType::GHAST.id {
-        if world.level_info.load().difficulty == pumpkin_util::Difficulty::Peaceful {
+        if world.level_info.load().difficulty == sculith_util::Difficulty::Peaceful {
             return false;
         }
         if rand::random_range(0..20) != 0 {
@@ -576,7 +576,7 @@ pub fn check_spawn_rules(
 
     // Magma Cube
     if id == EntityType::MAGMA_CUBE.id {
-        if world.level_info.load().difficulty == pumpkin_util::Difficulty::Peaceful {
+        if world.level_info.load().difficulty == sculith_util::Difficulty::Peaceful {
             return false;
         }
         return mob::MobEntity::check_mob_spawn_rules(entity_type, world, pos, reason);
@@ -601,7 +601,7 @@ pub fn check_spawn_rules(
         return mob::MobEntity::check_mob_spawn_rules(entity_type, world, pos, reason);
     }
     if id == EntityType::ZOMBIFIED_PIGLIN.id {
-        if world.level_info.load().difficulty == pumpkin_util::Difficulty::Peaceful {
+        if world.level_info.load().difficulty == sculith_util::Difficulty::Peaceful {
             return false;
         }
         let below = pos.down();
@@ -800,7 +800,7 @@ pub fn check_spawn_rules(
             return false;
         }
         let can_monster_spawn = world.level_info.load().difficulty
-            != pumpkin_util::Difficulty::Peaceful
+            != sculith_util::Difficulty::Peaceful
             && (reason.ignores_light_requirements()
                 || mob::MobEntity::is_dark_enough_to_spawn(world, pos, is_thundering))
             && (reason.is_spawner() || water(pos));
@@ -818,7 +818,7 @@ pub fn check_spawn_rules(
             && can_monster_spawn;
     }
     if id == EntityType::GUARDIAN.id || id == EntityType::ELDER_GUARDIAN.id {
-        if world.level_info.load().difficulty == pumpkin_util::Difficulty::Peaceful {
+        if world.level_info.load().difficulty == sculith_util::Difficulty::Peaceful {
             return false;
         }
         if !world

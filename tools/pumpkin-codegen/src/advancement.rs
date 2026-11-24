@@ -1,10 +1,10 @@
 use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::resource_location::ResourceLocation;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::TextContent::Translate;
 use quote::{ToTokens, format_ident, quote};
+use sculith_util::identifier::Identifier;
+use sculith_util::resource_location::ResourceLocation;
+use sculith_util::text::TextComponent;
+use sculith_util::text::TextContent::Translate;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::cmp::PartialEq;
 use std::fmt::Display;
@@ -1921,13 +1921,13 @@ pub(crate) fn build() -> TokenStream {
     }
 
     quote! {
-        use pumpkin_util::text::TextComponent;
+        use sculith_util::text::TextComponent;
         use crate::item_stack::ItemStack;
         use crate::item::Item;
         use crate::advancement_data::*;
         use std::sync::LazyLock;
-        use pumpkin_util::identifier::Identifier;
-        use pumpkin_util::text::{color::NamedColor,
+        use sculith_util::identifier::Identifier;
+        use sculith_util::text::{color::NamedColor,
             style::Style,
             hover::HoverEvent,
             color::Color};

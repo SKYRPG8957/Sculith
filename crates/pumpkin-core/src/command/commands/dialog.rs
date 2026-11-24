@@ -5,12 +5,12 @@ use crate::command::context::command_context::CommandContext;
 use crate::command::errors::error_types::LiteralCommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
-use pumpkin_protocol::IdOr;
-use pumpkin_protocol::java::client::dialog::DialogNBT;
-use pumpkin_protocol::java::client::play::{CPlayClearDialog, CPlayShowDialog};
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::IdOr;
+use sculith_protocol::java::client::dialog::DialogNBT;
+use sculith_protocol::java::client::play::{CPlayClearDialog, CPlayShowDialog};
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 const DESCRIPTION: &str = "Manages player dialog screens.";
 const PERMISSION: &str = "minecraft:command.dialog";

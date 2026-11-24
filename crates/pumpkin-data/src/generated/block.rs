@@ -11,10 +11,10 @@ use crate::{
     clippy::too_many_lines,
     clippy::match_same_arms
 )]
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::experience::Experience;
-use pumpkin_util::math::int_provider::{IntProvider, NormalIntProvider, UniformIntProvider};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::experience::Experience;
+use sculith_util::math::int_provider::{IntProvider, NormalIntProvider, UniformIntProvider};
+use sculith_util::math::vector3::Vector3;
 use std::collections::BTreeMap;
 mod __random_ticks_bitset {
     pub const RANDOM_TICKS_MAX_ID: u16 = 35721u16;

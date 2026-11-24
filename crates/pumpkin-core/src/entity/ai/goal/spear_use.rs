@@ -1,6 +1,6 @@
 use pumpkin_data::data_component_impl::{EquipmentSlot, KineticWeaponImpl};
-use pumpkin_util::Hand;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::Hand;
+use sculith_util::math::vector3::Vector3;
 
 use super::{Controls, Goal, to_goal_ticks};
 use crate::entity::ai::pathfinder::NavigatorGoal;

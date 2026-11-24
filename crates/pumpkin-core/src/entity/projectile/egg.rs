@@ -10,9 +10,9 @@ use crate::{
 use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 const MAX_EGG_HATCH_EVENT_SPAWNS: usize = 16;

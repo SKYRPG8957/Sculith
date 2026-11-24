@@ -4,8 +4,8 @@
 //! is told the parser vanilla declares for that argument, so its
 //! highlighting, validation and completion match vanilla's.
 
-use pumpkin_protocol::java::client::play::SuggestionProviders;
-use pumpkin_util::identifier::Identifier;
+use sculith_protocol::java::client::play::SuggestionProviders;
+use sculith_util::identifier::Identifier;
 
 use crate::argument_types::FromStringReader;
 use crate::argument_types::argument_type::{ArgumentType, JavaClientArgumentType};
@@ -110,7 +110,7 @@ impl<S: CommandSource> ArgumentType<S> for WordArgumentType {
 
     fn client_side_parser(&self) -> JavaClientArgumentType {
         JavaClientArgumentType::String(
-            pumpkin_protocol::java::client::play::StringProtoArgBehavior::SingleWord,
+            sculith_protocol::java::client::play::StringProtoArgBehavior::SingleWord,
         )
     }
 

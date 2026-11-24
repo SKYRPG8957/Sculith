@@ -1,6 +1,6 @@
 use pumpkin_data::BlockDirection;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use crate::entity::ai::pathfinder::{
     node::{Node, PathType, Target},

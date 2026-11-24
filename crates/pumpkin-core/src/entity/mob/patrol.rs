@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::goal::{Controls, Goal};
 use crate::entity::ai::pathfinder::NavigatorGoal;

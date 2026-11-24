@@ -3,10 +3,10 @@ use std::sync::Arc;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockState, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::lighting::LightEngine;
 use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::{BlockBehaviour, BonemealArgs, RandomTickArgs};
 use crate::world::World;

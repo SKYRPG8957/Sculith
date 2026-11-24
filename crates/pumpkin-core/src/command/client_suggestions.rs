@@ -1,4 +1,4 @@
-use pumpkin_protocol::{
+use sculith_protocol::{
     bedrock::client::CommandPermissionLevel,
     codec::var_int::VarInt,
     java::client::play::{
@@ -17,10 +17,10 @@ use crate::command::{
 };
 use crate::entity::player::Player;
 use crate::server::Server;
-use pumpkin_protocol::bedrock::client::available_commands::{
+use sculith_protocol::bedrock::client::available_commands::{
     CAvailableCommands, CommandData, EnumData, OverloadData, ParamData, arg_flags, arg_types,
 };
-use pumpkin_protocol::java::client::play::SuggestionProviders;
+use sculith_protocol::java::client::play::SuggestionProviders;
 
 fn visible_root(
     node: &AttachedNode,

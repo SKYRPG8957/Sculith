@@ -5,9 +5,9 @@ use pumpkin_data::entity::EntityStatus;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::vector3::Vector3;
 
 use std::sync::Arc;
 

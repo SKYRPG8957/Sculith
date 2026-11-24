@@ -1,6 +1,6 @@
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 use crate::world::World;

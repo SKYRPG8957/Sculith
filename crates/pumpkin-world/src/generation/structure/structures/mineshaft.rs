@@ -8,7 +8,7 @@ use pumpkin_data::{
     },
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
@@ -681,7 +681,7 @@ impl MineShaftCorridor {
         let has_rails = random.next_bounded_i32(3) == 0;
         let spider_corridor = !has_rails && random.next_bounded_i32(23) == 0;
         let axis = direction.get_axis();
-        let num_sections = if axis == pumpkin_util::math::vector3::Axis::Z {
+        let num_sections = if axis == sculith_util::math::vector3::Axis::Z {
             (bounding_box.max.z - bounding_box.min.z + 1) / 5
         } else {
             (bounding_box.max.x - bounding_box.min.x + 1) / 5
@@ -2013,8 +2013,8 @@ mod tests {
     use super::*;
     use crate::generation::get_world_gen;
     use pumpkin_data::dimension::Dimension;
-    use pumpkin_util::random::legacy_rand::LegacyRand;
-    use pumpkin_util::world_seed::Seed;
+    use sculith_util::random::legacy_rand::LegacyRand;
+    use sculith_util::world_seed::Seed;
 
     #[test]
     fn mineshaft_corridor_chest_minecart_spawns_with_loot_table() {

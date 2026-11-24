@@ -8,7 +8,7 @@ use bytes::Bytes;
 use crossbeam::atomic::AtomicCell;
 use pumpkin_config::networking::compression::CompressionInfo;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_protocol::{
+use sculith_protocol::{
     ClientPacket, ConnectionState, PacketDecodeError, RawPacket, ServerPacket,
     codec::var_int::VarInt,
     java::{
@@ -26,7 +26,7 @@ use pumpkin_protocol::{
     packet::MultiVersionJavaPacket,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt, ReadingError},
 };
-use pumpkin_util::{Hand, text::TextComponent, version::JavaMinecraftVersion};
+use sculith_util::{Hand, text::TextComponent, version::JavaMinecraftVersion};
 use tokio::{
     io::{BufReader, BufWriter},
     net::TcpStream,
@@ -247,7 +247,7 @@ impl PendingConnection {
                             continue;
                         }
                         let id = rand::random::<i64>();
-                        let keepalive = pumpkin_protocol::java::client::config::CConfigKeepAlive::new(id);
+                        let keepalive = sculith_protocol::java::client::config::CConfigKeepAlive::new(id);
                         let mut bytes = Vec::new();
                         if let Err(error) = JavaClient::write_packet_for_version(&keepalive, CURRENT_MC_VERSION, &mut bytes) {
                             warn!("Cannot encode configuration keepalive: {error}");
@@ -544,7 +544,7 @@ impl PendingConnection {
             0 => {
                 self.handle_handshake(
                     server,
-                    pumpkin_protocol::java::server::handshake::SHandShake::read(
+                    sculith_protocol::java::server::handshake::SHandShake::read(
                         &mut payload,
                         &CURRENT_MC_VERSION,
                     )?,
@@ -569,15 +569,15 @@ impl PendingConnection {
         let version = CURRENT_MC_VERSION;
 
         match packet.id {
-            id if id == pumpkin_protocol::java::server::status::SStatusRequest::to_id(version) => {
+            id if id == sculith_protocol::java::server::status::SStatusRequest::to_id(version) => {
                 self.handle_status_request(server).await;
                 Ok(None)
             }
             id if id
-                == pumpkin_protocol::java::server::status::SStatusPingRequest::to_id(version) =>
+                == sculith_protocol::java::server::status::SStatusPingRequest::to_id(version) =>
             {
                 self.handle_ping_request(
-                    pumpkin_protocol::java::server::status::SStatusPingRequest::read(
+                    sculith_protocol::java::server::status::SStatusPingRequest::read(
                         &mut payload,
                         &version,
                     )?,
@@ -602,11 +602,11 @@ impl PendingConnection {
         let version = CURRENT_MC_VERSION;
 
         match packet.id {
-            id if id == pumpkin_protocol::java::server::login::SLoginStart::to_id(version) => {
+            id if id == sculith_protocol::java::server::login::SLoginStart::to_id(version) => {
                 Ok(self
                     .handle_login_start(
                         server,
-                        pumpkin_protocol::java::server::login::SLoginStart::read(
+                        sculith_protocol::java::server::login::SLoginStart::read(
                             &mut payload,
                             &version,
                         )?,
@@ -614,12 +614,12 @@ impl PendingConnection {
                     .await)
             }
             id if id
-                == pumpkin_protocol::java::server::login::SEncryptionResponse::to_id(version) =>
+                == sculith_protocol::java::server::login::SEncryptionResponse::to_id(version) =>
             {
                 Ok(self
                     .handle_encryption_response(
                         server,
-                        pumpkin_protocol::java::server::login::SEncryptionResponse::read(
+                        sculith_protocol::java::server::login::SEncryptionResponse::read(
                             &mut payload,
                             &version,
                         )?,
@@ -627,12 +627,12 @@ impl PendingConnection {
                     .await)
             }
             id if id
-                == pumpkin_protocol::java::server::login::SLoginPluginResponse::to_id(version) =>
+                == sculith_protocol::java::server::login::SLoginPluginResponse::to_id(version) =>
             {
                 Ok(self
                     .handle_plugin_response(
                         server,
-                        pumpkin_protocol::java::server::login::SLoginPluginResponse::read(
+                        sculith_protocol::java::server::login::SLoginPluginResponse::read(
                             &mut payload,
                             &version,
                         )?,
@@ -640,10 +640,10 @@ impl PendingConnection {
                     .await)
             }
             id if id
-                == pumpkin_protocol::java::server::login::SLoginCookieResponse::to_id(version) =>
+                == sculith_protocol::java::server::login::SLoginCookieResponse::to_id(version) =>
             {
                 self.handle_login_cookie_response(
-                    &pumpkin_protocol::java::server::login::SLoginCookieResponse::read(
+                    &sculith_protocol::java::server::login::SLoginCookieResponse::read(
                         &mut payload,
                         &version,
                     )?,
@@ -651,7 +651,7 @@ impl PendingConnection {
                 Ok(None)
             }
             id if id
-                == pumpkin_protocol::java::server::login::SLoginAcknowledged::to_id(version) =>
+                == sculith_protocol::java::server::login::SLoginAcknowledged::to_id(version) =>
             {
                 Ok(self.handle_login_acknowledged(server).await)
             }
@@ -802,7 +802,7 @@ impl PendingConnection {
         }
         let resource_config = &server.advanced_config.resource_pack.java;
         if resource_config.enabled {
-            use pumpkin_protocol::java::server::config::ResourcePackResponseResult;
+            use sculith_protocol::java::server::config::ResourcePackResponseResult;
             match packet.response_result() {
                 ResourcePackResponseResult::DownloadSuccess => {
                     self.start_known_packs(server).await;

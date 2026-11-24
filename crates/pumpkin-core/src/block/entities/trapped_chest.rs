@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex as StdMutex, RwLock, atomic::AtomicBool};
 
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::{
     block::viewer::ViewerCountTracker, impl_block_entity_for_chest, impl_chest_helper_methods,

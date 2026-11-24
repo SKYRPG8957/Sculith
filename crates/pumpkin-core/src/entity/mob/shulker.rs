@@ -7,10 +7,10 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::CEntityPositionSync;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::CEntityPositionSync;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use rand::RngExt;
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_protocol::java::client::play::MerchantOffer;
+use sculith_protocol::java::client::play::MerchantOffer;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::position_tracker::{EntityTracker, PositionTracker};

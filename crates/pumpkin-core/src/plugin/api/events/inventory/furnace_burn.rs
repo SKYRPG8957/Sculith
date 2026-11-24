@@ -1,5 +1,5 @@
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 /// An event that occurs when an item is consumed as fuel in a furnace.
 #[cancellable]

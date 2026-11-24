@@ -117,7 +117,7 @@ use crate::errors::{
     command_syntax_error::{CommandSyntaxError, ContextProvider},
     error_types::sealed::Sealed,
 };
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 /// Represents text which can be used as a template that is generated at
 /// compile time and cannot change at runtime.
@@ -348,7 +348,7 @@ error_type_no_arg_slice_impl!(N = 4 => arg1, arg2, arg3, arg4 | "by taking 4 tra
 mod test {
     use crate::errors::error_types::{CommandErrorType, LiteralCommandErrorType};
     use crate::string_reader::StringReader;
-    use pumpkin_util::text::TextComponent;
+    use sculith_util::text::TextComponent;
 
     const TEST_LITERAL_ERROR_TYPE: LiteralCommandErrorType =
         LiteralCommandErrorType::new("Test error");

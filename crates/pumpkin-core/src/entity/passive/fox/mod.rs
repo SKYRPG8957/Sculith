@@ -13,8 +13,8 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::codec::var_int::VarInt;
 use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
 use uuid::Uuid;
 
 use crate::entity::ai::behavior::fleeing::{self, Flee};

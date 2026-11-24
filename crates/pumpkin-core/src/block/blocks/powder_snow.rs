@@ -4,10 +4,10 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 use crate::block::{BlockBehaviour, OnEntityCollisionArgs, OnLandedUponArgs, PathComputationType};
 use crate::entity::EntityBase;

@@ -1,7 +1,7 @@
 use super::{BlockPalette, ChunkData, has_random_ticking_fluid, has_random_ticks};
 use crate::tick::{ScheduledTick, TickPriority};
 use pumpkin_data::{Block, BlockStateId, fluid::Fluid};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 use std::sync::{TryLockError, atomic::Ordering};
 
 /// A scheduled water tick whose side effects fit the regional transaction.

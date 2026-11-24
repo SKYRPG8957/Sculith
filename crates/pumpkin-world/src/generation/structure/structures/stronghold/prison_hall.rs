@@ -4,7 +4,7 @@ use pumpkin_data::{
         DoubleBlockHalf, HorizontalFacing, OakDoorLikeProperties, OakFenceLikeProperties,
     },
 };
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::block_box::BlockBox,
     random::{RandomGenerator, RandomImpl},

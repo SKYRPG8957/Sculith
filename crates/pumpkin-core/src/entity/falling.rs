@@ -6,10 +6,10 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_protocol::bedrock::client::CUpdateBlock;
-use pumpkin_protocol::java::client::play::CBlockUpdate;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
+use sculith_protocol::bedrock::client::CUpdateBlock;
+use sculith_protocol::java::client::play::CBlockUpdate;
+use sculith_util::math::position::BlockPos;
 use std::sync::{Arc, atomic::Ordering};
 
 use crate::{
@@ -142,13 +142,13 @@ impl EntityBase for FallingEntity {
 
     fn entity_bedrock_spawn_metadata(
         &self,
-    ) -> Option<pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
+    ) -> Option<sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
         let mut meta =
-            pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
+            sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList::new();
         let runtime_id = BlockState::to_be_network_id(self.block_state_id);
         meta.set(
-            pumpkin_protocol::bedrock::client::set_actor_data::entity_data_key::VARIANT,
-            pumpkin_protocol::bedrock::client::set_actor_data::MetadataValue::Int(
+            sculith_protocol::bedrock::client::set_actor_data::entity_data_key::VARIANT,
+            sculith_protocol::bedrock::client::set_actor_data::MetadataValue::Int(
                 runtime_id as i32,
             ),
         );

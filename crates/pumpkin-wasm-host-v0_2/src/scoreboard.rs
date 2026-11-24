@@ -11,9 +11,9 @@ use crate::pumpkin::{
     },
 };
 use pumpkin_core::world::scoreboard::{ScoreboardObjective, ScoreboardScore, Team};
-use pumpkin_protocol::NumberFormat;
-use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_wasm_host_common::state::{PluginHostState, ScoreboardProvider};
+use sculith_protocol::NumberFormat;
+use sculith_protocol::codec::var_int::VarInt;
 
 fn map_number_format(
     nf: Option<scoreboard::NumberFormat>,
@@ -77,8 +77,8 @@ impl scoreboard::HostScoreboard for PluginHostState {
         let nf = map_number_format(number_format, self)?;
 
         let rt = match render_type {
-            RenderType::Integer => pumpkin_protocol::java::client::play::RenderType::Integer,
-            RenderType::Hearts => pumpkin_protocol::java::client::play::RenderType::Hearts,
+            RenderType::Integer => sculith_protocol::java::client::play::RenderType::Integer,
+            RenderType::Hearts => sculith_protocol::java::client::play::RenderType::Hearts,
         };
 
         let objective = ScoreboardObjective::new(name, display_name, rt, nf, "dummy");
@@ -112,8 +112,8 @@ impl scoreboard::HostScoreboard for PluginHostState {
         let nf = map_number_format(number_format, self)?;
 
         let rt = match render_type {
-            RenderType::Integer => pumpkin_protocol::java::client::play::RenderType::Integer,
-            RenderType::Hearts => pumpkin_protocol::java::client::play::RenderType::Hearts,
+            RenderType::Integer => sculith_protocol::java::client::play::RenderType::Integer,
+            RenderType::Hearts => sculith_protocol::java::client::play::RenderType::Hearts,
         };
 
         let objective = ScoreboardObjective::new(name, display_name, rt, nf, "dummy");
@@ -850,40 +850,40 @@ fn map_team_settings(
 
 const fn map_named_color(
     color: pumpkin::plugin::common::NamedColor,
-) -> pumpkin_util::text::color::NamedColor {
+) -> sculith_util::text::color::NamedColor {
     match color {
-        pumpkin::plugin::common::NamedColor::Black => pumpkin_util::text::color::NamedColor::Black,
+        pumpkin::plugin::common::NamedColor::Black => sculith_util::text::color::NamedColor::Black,
         pumpkin::plugin::common::NamedColor::DarkBlue => {
-            pumpkin_util::text::color::NamedColor::DarkBlue
+            sculith_util::text::color::NamedColor::DarkBlue
         }
         pumpkin::plugin::common::NamedColor::DarkGreen => {
-            pumpkin_util::text::color::NamedColor::DarkGreen
+            sculith_util::text::color::NamedColor::DarkGreen
         }
         pumpkin::plugin::common::NamedColor::DarkAqua => {
-            pumpkin_util::text::color::NamedColor::DarkAqua
+            sculith_util::text::color::NamedColor::DarkAqua
         }
         pumpkin::plugin::common::NamedColor::DarkRed => {
-            pumpkin_util::text::color::NamedColor::DarkRed
+            sculith_util::text::color::NamedColor::DarkRed
         }
         pumpkin::plugin::common::NamedColor::DarkPurple => {
-            pumpkin_util::text::color::NamedColor::DarkPurple
+            sculith_util::text::color::NamedColor::DarkPurple
         }
-        pumpkin::plugin::common::NamedColor::Gold => pumpkin_util::text::color::NamedColor::Gold,
-        pumpkin::plugin::common::NamedColor::Gray => pumpkin_util::text::color::NamedColor::Gray,
+        pumpkin::plugin::common::NamedColor::Gold => sculith_util::text::color::NamedColor::Gold,
+        pumpkin::plugin::common::NamedColor::Gray => sculith_util::text::color::NamedColor::Gray,
         pumpkin::plugin::common::NamedColor::DarkGray => {
-            pumpkin_util::text::color::NamedColor::DarkGray
+            sculith_util::text::color::NamedColor::DarkGray
         }
-        pumpkin::plugin::common::NamedColor::Blue => pumpkin_util::text::color::NamedColor::Blue,
-        pumpkin::plugin::common::NamedColor::Green => pumpkin_util::text::color::NamedColor::Green,
-        pumpkin::plugin::common::NamedColor::Aqua => pumpkin_util::text::color::NamedColor::Aqua,
-        pumpkin::plugin::common::NamedColor::Red => pumpkin_util::text::color::NamedColor::Red,
+        pumpkin::plugin::common::NamedColor::Blue => sculith_util::text::color::NamedColor::Blue,
+        pumpkin::plugin::common::NamedColor::Green => sculith_util::text::color::NamedColor::Green,
+        pumpkin::plugin::common::NamedColor::Aqua => sculith_util::text::color::NamedColor::Aqua,
+        pumpkin::plugin::common::NamedColor::Red => sculith_util::text::color::NamedColor::Red,
         pumpkin::plugin::common::NamedColor::LightPurple => {
-            pumpkin_util::text::color::NamedColor::LightPurple
+            sculith_util::text::color::NamedColor::LightPurple
         }
         pumpkin::plugin::common::NamedColor::Yellow => {
-            pumpkin_util::text::color::NamedColor::Yellow
+            sculith_util::text::color::NamedColor::Yellow
         }
-        pumpkin::plugin::common::NamedColor::White => pumpkin_util::text::color::NamedColor::White,
+        pumpkin::plugin::common::NamedColor::White => sculith_util::text::color::NamedColor::White,
     }
 }
 
@@ -933,41 +933,41 @@ fn map_team_to_settings(
 }
 
 const fn map_named_color_rev(
-    color: pumpkin_util::text::color::NamedColor,
+    color: sculith_util::text::color::NamedColor,
 ) -> pumpkin::plugin::common::NamedColor {
     match color {
-        pumpkin_util::text::color::NamedColor::Black => pumpkin::plugin::common::NamedColor::Black,
-        pumpkin_util::text::color::NamedColor::DarkBlue => {
+        sculith_util::text::color::NamedColor::Black => pumpkin::plugin::common::NamedColor::Black,
+        sculith_util::text::color::NamedColor::DarkBlue => {
             pumpkin::plugin::common::NamedColor::DarkBlue
         }
-        pumpkin_util::text::color::NamedColor::DarkGreen => {
+        sculith_util::text::color::NamedColor::DarkGreen => {
             pumpkin::plugin::common::NamedColor::DarkGreen
         }
-        pumpkin_util::text::color::NamedColor::DarkAqua => {
+        sculith_util::text::color::NamedColor::DarkAqua => {
             pumpkin::plugin::common::NamedColor::DarkAqua
         }
-        pumpkin_util::text::color::NamedColor::DarkRed => {
+        sculith_util::text::color::NamedColor::DarkRed => {
             pumpkin::plugin::common::NamedColor::DarkRed
         }
-        pumpkin_util::text::color::NamedColor::DarkPurple => {
+        sculith_util::text::color::NamedColor::DarkPurple => {
             pumpkin::plugin::common::NamedColor::DarkPurple
         }
-        pumpkin_util::text::color::NamedColor::Gold => pumpkin::plugin::common::NamedColor::Gold,
-        pumpkin_util::text::color::NamedColor::Gray => pumpkin::plugin::common::NamedColor::Gray,
-        pumpkin_util::text::color::NamedColor::DarkGray => {
+        sculith_util::text::color::NamedColor::Gold => pumpkin::plugin::common::NamedColor::Gold,
+        sculith_util::text::color::NamedColor::Gray => pumpkin::plugin::common::NamedColor::Gray,
+        sculith_util::text::color::NamedColor::DarkGray => {
             pumpkin::plugin::common::NamedColor::DarkGray
         }
-        pumpkin_util::text::color::NamedColor::Blue => pumpkin::plugin::common::NamedColor::Blue,
-        pumpkin_util::text::color::NamedColor::Green => pumpkin::plugin::common::NamedColor::Green,
-        pumpkin_util::text::color::NamedColor::Aqua => pumpkin::plugin::common::NamedColor::Aqua,
-        pumpkin_util::text::color::NamedColor::Red => pumpkin::plugin::common::NamedColor::Red,
-        pumpkin_util::text::color::NamedColor::LightPurple => {
+        sculith_util::text::color::NamedColor::Blue => pumpkin::plugin::common::NamedColor::Blue,
+        sculith_util::text::color::NamedColor::Green => pumpkin::plugin::common::NamedColor::Green,
+        sculith_util::text::color::NamedColor::Aqua => pumpkin::plugin::common::NamedColor::Aqua,
+        sculith_util::text::color::NamedColor::Red => pumpkin::plugin::common::NamedColor::Red,
+        sculith_util::text::color::NamedColor::LightPurple => {
             pumpkin::plugin::common::NamedColor::LightPurple
         }
-        pumpkin_util::text::color::NamedColor::Yellow => {
+        sculith_util::text::color::NamedColor::Yellow => {
             pumpkin::plugin::common::NamedColor::Yellow
         }
-        pumpkin_util::text::color::NamedColor::White => pumpkin::plugin::common::NamedColor::White,
+        sculith_util::text::color::NamedColor::White => pumpkin::plugin::common::NamedColor::White,
     }
 }
 
@@ -1250,7 +1250,7 @@ impl HostBedrockScoreboard for PluginHostState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::text::TextComponent;
+    use sculith_util::text::TextComponent;
 
     #[test]
     fn fixed_number_format_consumes_its_text_component() {

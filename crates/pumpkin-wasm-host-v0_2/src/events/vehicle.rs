@@ -14,8 +14,8 @@ use pumpkin_core::plugin::vehicle::{
     vehicle_entity_collision::VehicleEntityCollisionEvent, vehicle_exit::VehicleExitEvent,
     vehicle_move::VehicleMoveEvent, vehicle_update::VehicleUpdateEvent,
 };
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_wasm_host_common::state::PluginHostState;
+use sculith_util::math::vector3::Vector3;
 
 impl ToFromWasmEvent for VehicleBlockCollisionEvent {
     fn to_wasm_event(&self, _state: &mut PluginHostState) -> Event {

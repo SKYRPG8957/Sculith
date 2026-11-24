@@ -7,7 +7,7 @@ use arc_swap::ArcSwap;
 use bytes::{BufMut, BytesMut};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use pumpkin_config::networking::proxy::VineConfig;
-use pumpkin_protocol::{
+use sculith_protocol::{
     Property, java::client::login::CLoginPluginRequest, java::server::login::SLoginPluginResponse,
     ser::NetworkReadExt,
 };
@@ -224,8 +224,8 @@ pub fn receive_vine_plugin_response(
 mod tests {
     use super::*;
     use ed25519_dalek::Signer;
-    use pumpkin_protocol::codec::var_int::VarInt;
-    use pumpkin_protocol::ser::NetworkWriteExt;
+    use sculith_protocol::codec::var_int::VarInt;
+    use sculith_protocol::ser::NetworkWriteExt;
     use uuid::Uuid;
 
     #[test]

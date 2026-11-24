@@ -1,4 +1,4 @@
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 /// Represents a Java Edition tab list configuration containing header and footer components.
 #[derive(Debug, Clone)]

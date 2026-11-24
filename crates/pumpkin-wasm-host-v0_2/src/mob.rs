@@ -5,7 +5,7 @@ use crate::pumpkin::plugin::world::HostMobWithStore;
 use std::sync::Arc;
 use wasmtime::component::{Accessor, HasSelf, Resource};
 
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::{
     pumpkin::plugin::{
@@ -750,10 +750,10 @@ impl HostMob for PluginHostState {
                 {
                     {
                         let mut vdata = villager.villager_data.lock_ignore_poison();
-                        vdata.profession = pumpkin_protocol::codec::var_int::VarInt(
+                        vdata.profession = sculith_protocol::codec::var_int::VarInt(
                             from_wit_villager_profession(villager_data.profession) as i32,
                         );
-                        vdata.level = pumpkin_protocol::codec::var_int::VarInt(i32::from(
+                        vdata.level = sculith_protocol::codec::var_int::VarInt(i32::from(
                             villager_data.level,
                         ));
                     };

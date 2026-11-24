@@ -1,6 +1,6 @@
 use super::BlockEntity;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Mutex;
 
 pub struct EnchantingTableBlockEntity {
@@ -69,7 +69,7 @@ impl BlockEntity for EnchantingTableBlockEntity {
             && let Some(name) = name.as_ref()
         {
             stack.set_data_component(pumpkin_data::data_component_impl::CustomNameImpl {
-                name: pumpkin_util::text::TextComponent::text(name.clone()),
+                name: sculith_util::text::TextComponent::text(name.clone()),
             });
         }
     }
@@ -86,12 +86,12 @@ impl BlockEntity for EnchantingTableBlockEntity {
         }
     }
 
-    fn get_custom_name(&self) -> Option<pumpkin_util::text::TextComponent> {
+    fn get_custom_name(&self) -> Option<sculith_util::text::TextComponent> {
         self.custom_name
             .lock()
             .ok()
             .and_then(|g| g.clone())
-            .map(pumpkin_util::text::TextComponent::text)
+            .map(sculith_util::text::TextComponent::text)
     }
 }
 

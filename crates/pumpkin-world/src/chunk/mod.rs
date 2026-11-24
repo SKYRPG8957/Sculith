@@ -7,8 +7,8 @@ use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Block::MINECRAFT_LEAVES;
 use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
@@ -1268,7 +1268,7 @@ mod tests {
     use super::{ChunkData, ChunkSections};
     use crate::chunk::palette::BlockPalette;
     use pumpkin_data::{Block, block_properties::has_random_ticks};
-    use pumpkin_util::math::position::BlockPos;
+    use sculith_util::math::position::BlockPos;
 
     #[test]
     fn regional_edit_checks_the_expected_state_and_current_owner() {

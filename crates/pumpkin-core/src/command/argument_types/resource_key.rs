@@ -7,9 +7,9 @@ use crate::command::errors::error_types::CommandErrorType;
 use crate::command::string_reader::StringReader;
 use crate::command::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use pumpkin_data::{Advancement, translation};
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::resource::ResourceKey;
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::resource::ResourceKey;
+use sculith_util::text::TextComponent;
 use std::string::ToString;
 
 pub static ADVANCEMENT_REGISTRY: &Identifier = &Identifier::vanilla_static("advancement");

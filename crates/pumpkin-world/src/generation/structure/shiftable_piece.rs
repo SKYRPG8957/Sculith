@@ -1,4 +1,4 @@
-use pumpkin_util::{
+use sculith_util::{
     HeightMap,
     math::{block_box::BlockBox, vector3::Axis},
 };

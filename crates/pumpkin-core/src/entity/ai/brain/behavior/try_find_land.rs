@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pumpkin_data::tag;
 use pumpkin_data::{BlockDirection, HorizontalFacingExt};
-use pumpkin_util::math::position::{BlockPos, OutwardIterator};
+use sculith_util::math::position::{BlockPos, OutwardIterator};
 
 use super::super::BrainTick;
 use super::super::memory::{

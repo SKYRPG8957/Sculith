@@ -10,7 +10,7 @@ use std::sync::{
 use std::time::Duration;
 
 use bytes::Bytes;
-use pumpkin_protocol::{
+use sculith_protocol::{
     MAX_PACKET_SIZE, PacketEncodeError, java::packet_encoder::TCPNetworkEncoder,
 };
 use tokio::io::AsyncWrite;

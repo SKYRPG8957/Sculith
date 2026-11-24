@@ -6,9 +6,9 @@ use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::potion::Effect;
 use pumpkin_data::sound::Sound;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::core::integer::IntegerArgumentType;

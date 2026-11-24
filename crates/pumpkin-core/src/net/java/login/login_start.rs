@@ -83,7 +83,7 @@ impl PendingConnection {
             // and always contact Mojang's session server on encryption.
             if server.advanced_config.networking.java.encryption
                 && (online_mode
-                    || self.version.load() >= pumpkin_util::version::JavaMinecraftVersion::V_1_20_5)
+                    || self.version.load() >= sculith_util::version::JavaMinecraftVersion::V_1_20_5)
             {
                 let verify_token: [u8; 4] = rand::random();
                 self.verify_token = Some(verify_token);

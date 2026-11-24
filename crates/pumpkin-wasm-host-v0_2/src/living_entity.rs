@@ -674,8 +674,8 @@ impl HostLivingEntityWithStore<PluginHostState> for HasSelf<PluginHostState> {
         run_blocking(accessor, move || {
             if let Some(player) = entity.get_player() {
                 let internal_hand = match hand {
-                    crate::pumpkin::plugin::common::Hand::Left => pumpkin_util::Hand::Left,
-                    crate::pumpkin::plugin::common::Hand::Right => pumpkin_util::Hand::Right,
+                    crate::pumpkin::plugin::common::Hand::Left => sculith_util::Hand::Left,
+                    crate::pumpkin::plugin::common::Hand::Right => sculith_util::Hand::Right,
                 };
                 player.swing_hand(internal_hand, true);
             } else if let Some(living) = entity.get_living_entity() {

@@ -30,11 +30,11 @@ use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::{Block, BlockDirection};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::math::wrap_degrees;
-use pumpkin_util::permission::PermissionLvl;
-use pumpkin_util::{Difficulty, Hand};
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::math::wrap_degrees;
+use sculith_util::permission::PermissionLvl;
+use sculith_util::{Difficulty, Hand};
 use uuid::Uuid;
 
 pub struct SpawnEggItem;

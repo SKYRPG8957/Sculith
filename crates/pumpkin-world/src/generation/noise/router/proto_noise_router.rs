@@ -5,7 +5,7 @@ use pumpkin_data::{
         UnaryOperation,
     },
 };
-use pumpkin_util::random::{legacy_rand::LegacyRand, xoroshiro128::XoroshiroSplitter};
+use sculith_util::random::{legacy_rand::LegacyRand, xoroshiro128::XoroshiroSplitter};
 use std::sync::Arc;
 
 use crate::{
@@ -31,7 +31,7 @@ use super::{
     },
     density_volume::DensityVolume,
 };
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 pub static BEARDIFIER_ZERO_CONSTANT: IndependentProtoNoiseFunctionComponent =
     IndependentProtoNoiseFunctionComponent::Constant(Constant::new(0.0));
@@ -315,8 +315,8 @@ impl DoublePerlinNoiseBuilder {
         parameters: &DoublePerlinNoiseParameters,
     ) -> DoublePerlinNoiseSampler {
         if legacy_random_source {
-            use pumpkin_util::random::RandomImpl;
-            use pumpkin_util::random::legacy_rand::LegacyRand;
+            use sculith_util::random::RandomImpl;
+            use sculith_util::random::legacy_rand::LegacyRand;
             let mut root = LegacyRand::from_seed(world_seed);
             let factory_seed = root.next_i64() as u64;
             let mut noise_rand =

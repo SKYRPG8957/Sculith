@@ -23,7 +23,7 @@ use pumpkin_data::{
     tag::Taggable,
 };
 use pumpkin_inventory::screen_handler::InventoryPlayer;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 #[pumpkin_block("minecraft:chiseled_bookshelf")]
 pub struct ChiseledBookshelfBlock;

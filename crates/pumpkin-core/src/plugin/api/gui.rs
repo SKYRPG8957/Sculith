@@ -8,7 +8,7 @@ use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{InventoryPlayer, ScreenHandler, ScreenHandlerBehaviour};
 use pumpkin_inventory::slot::{NormalSlot, Slot};
 use pumpkin_inventory::{Clearable, Inventory};
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 pub struct PluginGui {
     pub window_type: WindowType,
@@ -285,7 +285,7 @@ mod tests {
         statistic::StatisticCategory,
     };
     use pumpkin_inventory::entity_equipment::EntityEquipment;
-    use pumpkin_protocol::java::{
+    use sculith_protocol::java::{
         client::play::{
             CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem,
             CSetPlayerInventory, CSetSelectedSlot,

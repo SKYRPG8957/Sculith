@@ -6,7 +6,7 @@ use std::{
 use pumpkin_core::server::{Server, server_test_manager::drain_game_test_queue};
 use pumpkin_data::{Block, dimension::Dimension, item::Item};
 use pumpkin_gametest::GameTestRunner;
-use pumpkin_util::{GameMode, PermissionLvl, math::position::BlockPos};
+use sculith_util::{GameMode, PermissionLvl, math::position::BlockPos};
 
 use crate::bot::{HeadlessBot, MAX_POLL_TICKS};
 

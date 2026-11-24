@@ -1,7 +1,7 @@
 use std::sync::{PoisonError, atomic::Ordering};
 
-use pumpkin_protocol::java::server::play::SConfirmTeleport;
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::java::server::play::SConfirmTeleport;
+use sculith_util::text::TextComponent;
 
 use crate::{entity::EntityBase, entity::player::Player, net::java::JavaClient};
 

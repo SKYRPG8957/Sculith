@@ -8,7 +8,7 @@ use pumpkin_inventory::screen_handler::{
 };
 use pumpkin_inventory::smithing_table_screen_handler::SmithingTableScreenHandler;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 use std::sync::Mutex;
 

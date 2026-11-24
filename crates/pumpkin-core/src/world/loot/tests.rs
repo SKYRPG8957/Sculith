@@ -39,8 +39,8 @@ use pumpkin_data::{
     chicken_variant::ChickenVariant, entity::EntityType, entity_variant::MooshroomVariant,
     frog_variant::FrogVariant,
 };
-use pumpkin_util::loot_table::parser::parse_loot_table;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::loot_table::parser::parse_loot_table;
+use sculith_util::math::vector3::Vector3;
 
 fn assert_drops(
     key: &str,
@@ -641,8 +641,8 @@ async fn double_plants_keep_their_adjacent_half_location_checks() {
         Block,
         block_properties::{DoubleBlockHalf, LargeFernProperties},
     };
-    use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
     use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
+    use sculith_util::math::{position::BlockPos, vector2::Vector2};
     let folder = tempfile::tempdir().unwrap();
     let world = world(&folder);
     world

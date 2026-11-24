@@ -10,11 +10,11 @@ use pine::PineFoliagePlacer;
 use poplar::PoplarFoliagePlacer;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::{BlockProperties, OakLeavesLikeProperties};
-use pumpkin_util::{
+use random_spread::RandomSpreadFoliagePlacer;
+use sculith_util::{
     math::{int_provider::IntProvider, position::BlockPos, vector3::Vector3},
     random::{RandomGenerator, RandomImpl},
 };
-use random_spread::RandomSpreadFoliagePlacer;
 
 use spruce::SpruceFoliagePlacer;
 

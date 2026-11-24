@@ -1,5 +1,5 @@
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 /// An event that occurs when something tries to broadcast a message to the server.
 ///

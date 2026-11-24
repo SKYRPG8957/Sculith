@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use pumpkin_util::{
+use sculith_util::{
     PermissionLvl,
     permission::{Permission, PermissionDefault, PermissionRegistry},
     text::TextComponent,

@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicI32, Ordering::Relaxed};
 
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::statistic::CustomStatistic;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 use crate::entity::EntityBase;

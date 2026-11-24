@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use pumpkin_data::{Mirror, Rotation};
-use pumpkin_util::{
+use sculith_util::{
     math::{block_box::BlockBox, vector3::Vector3},
     random::RandomGenerator,
 };
@@ -258,7 +258,7 @@ impl TemplatePiece {
                 if placed_nbt.get_string("LootTable").is_some()
                     && placed_nbt.get_long("LootTableSeed").is_none()
                 {
-                    use pumpkin_util::random::{
+                    use sculith_util::random::{
                         RandomImpl, hash_block_pos, legacy_rand::LegacyRand,
                     };
                     let mut random =

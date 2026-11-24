@@ -6,9 +6,9 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_util::math::atomic_f32::AtomicF32;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_util::math::atomic_f32::AtomicF32;
+use sculith_util::math::vector3::Vector3;
 
 use crate::{
     entity::{

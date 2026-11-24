@@ -54,12 +54,12 @@ use crate::world::scoreboard::Scoreboard;
 use crate::world::stopwatches::Stopwatches;
 use pumpkin_data::translation;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_util::PermissionLvl;
+use sculith_util::identifier::Identifier;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -1706,7 +1706,7 @@ mod tests {
     use super::*;
     use crate::command::CommandSource;
     use crate::world::scoreboard::{NoTarget, ScoreboardObjective};
-    use pumpkin_protocol::java::client::play::RenderType;
+    use sculith_protocol::java::client::play::RenderType;
 
     #[test]
     fn score_lookup_distinguishes_missing_objectives_and_scores() {

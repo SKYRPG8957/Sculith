@@ -164,7 +164,7 @@ impl ProjectileWeaponItem {
                 let eye_y = shooter.get_eye_y();
                 let entity = Entity::new(
                     world.clone(),
-                    pumpkin_util::math::vector3::Vector3::new(
+                    sculith_util::math::vector3::Vector3::new(
                         shooter_pos.x,
                         eye_y - 0.15,
                         shooter_pos.z,

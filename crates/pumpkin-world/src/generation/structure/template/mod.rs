@@ -34,8 +34,8 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::Mirror;
 use pumpkin_data::Rotation;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomImpl, hash_block_pos, legacy_rand::LegacyRand};
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomImpl, hash_block_pos, legacy_rand::LegacyRand};
 
 use crate::ProtoChunk;
 
@@ -83,7 +83,7 @@ pub fn place_template(
     skip_air: bool,
     apply_waterlogging: bool,
     processors: &[StructureProcessor],
-    chunk_box: Option<&pumpkin_util::math::block_box::BlockBox>,
+    chunk_box: Option<&sculith_util::math::block_box::BlockBox>,
 ) {
     place_template_with_options(
         placer,
@@ -109,7 +109,7 @@ pub fn place_template_with_options(
     skip_air: bool,
     apply_waterlogging: bool,
     processors: &[StructureProcessor],
-    chunk_box: Option<&pumpkin_util::math::block_box::BlockBox>,
+    chunk_box: Option<&sculith_util::math::block_box::BlockBox>,
     keep_jigsaws: bool,
 ) {
     let (rotated_ox, rotated_oz) = rotation.rotate_offset(offset.0, offset.1);
@@ -250,7 +250,7 @@ pub(crate) fn place_template_entities(
     template: &StructureTemplate,
     origin: Vector3<i32>,
     rotation: Rotation,
-    chunk_box: &pumpkin_util::math::block_box::BlockBox,
+    chunk_box: &sculith_util::math::block_box::BlockBox,
 ) {
     for entity in &template.entities {
         let block_pos = rotation.transform_pos(entity.block_pos, template.size);

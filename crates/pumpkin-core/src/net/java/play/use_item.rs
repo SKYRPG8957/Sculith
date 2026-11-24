@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::entity::player::ItemUseSnapshot;
-use pumpkin_util::version::JavaMinecraftVersion;
+use sculith_util::version::JavaMinecraftVersion;
 
 impl JavaClient {
     pub fn handle_use_item(&self, player: &Arc<Player>, use_item: &SUseItem, server: &Arc<Server>) {

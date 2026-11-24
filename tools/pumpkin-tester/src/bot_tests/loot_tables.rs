@@ -8,7 +8,7 @@ use pumpkin_core::{
     server::Server,
 };
 use pumpkin_data::{dimension::Dimension, entity::EntityType, item::Item};
-use pumpkin_util::loot_table::parser::parse_loot_table;
+use sculith_util::loot_table::parser::parse_loot_table;
 
 use crate::bot::HeadlessBot;
 

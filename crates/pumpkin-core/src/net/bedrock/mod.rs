@@ -19,7 +19,7 @@ use tracing::{debug, error, warn};
 use bytes::Bytes;
 use pumpkin_config::networking::compression::CompressionInfo;
 use pumpkin_inventory::screen_handler::ScreenHandler;
-use pumpkin_protocol::{
+use sculith_protocol::{
     BClientPacket, PacketDecodeError, RawPacket,
     bedrock::{
         SubClient,
@@ -99,10 +99,10 @@ use crate::{
     },
 };
 use arc_swap::{ArcSwap, ArcSwapOption};
-use pumpkin_protocol::{bedrock::server::login::ClientData, codec::var_uint::VarUInt};
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::version::BedrockMinecraftVersion;
 use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, level::SyncChunk};
+use sculith_protocol::{bedrock::server::login::ClientData, codec::var_uint::VarUInt};
+use sculith_util::math::vector2::Vector2;
+use sculith_util::version::BedrockMinecraftVersion;
 pub use versions::BedrockVersions;
 
 pub struct OutgoingPacket {
@@ -139,7 +139,7 @@ const TERRAIN_CREDIT_POLL_INTERVAL: Duration = Duration::from_millis(20);
 // Network settings, own impulses, teleports and game actions bypass the motion timer.
 fn ordinary_pose(packet: &OutgoingPacket, own_runtime_id: Option<u64>) -> bool {
     use pumpkin_data::bedrock_packet::{MOVE_ACTOR_DELTA, MOVE_PLAYER, SET_ACTOR_MOTION};
-    use pumpkin_protocol::codec::var_ulong::VarULong;
+    use sculith_protocol::codec::var_ulong::VarULong;
     if packet.completion.is_some() {
         return false;
     }
@@ -268,7 +268,7 @@ pub struct BedrockClient {
     /// Last processed `PlayerAuthInput` tick. Motion for the own player must carry it.
     pub input_tick: AtomicU64,
     /// Client predicted velocity from the last `PlayerAuthInput`. Pushes build on it.
-    pub client_delta: AtomicCell<pumpkin_util::math::vector3::Vector3<f64>>,
+    pub client_delta: AtomicCell<sculith_util::math::vector3::Vector3<f64>>,
     /// World age of the last server motion sent to the own player.
     pub own_motion_age: AtomicCell<i64>,
     /// `PlayerAuthInput` tick tagged on that last own-player `SetActorMotion`.
@@ -282,7 +282,7 @@ pub struct BedrockClient {
     /// Inputs since the last teleport without reaching it. Resent past a threshold.
     pub teleport_unconfirmed_inputs: AtomicU32,
     /// Network position of the last own teleport `MovePlayer`, which the client must reach.
-    pub teleport_sent_pos: AtomicCell<pumpkin_util::math::vector3::Vector3<f32>>,
+    pub teleport_sent_pos: AtomicCell<sculith_util::math::vector3::Vector3<f32>>,
     /// Separate from normal vitals caching so the first rejected use always gets corrected.
     last_food_rejection_tick: AtomicCell<Option<i32>>,
     pub client_cache_supported: AtomicBool,
@@ -343,7 +343,7 @@ impl BedrockClient {
             inventory_opened: AtomicBool::new(false),
             cursor_drag: std::sync::Mutex::new(None),
             input_tick: AtomicU64::new(0),
-            client_delta: AtomicCell::new(pumpkin_util::math::vector3::Vector3::default()),
+            client_delta: AtomicCell::new(sculith_util::math::vector3::Vector3::default()),
             own_motion_age: AtomicCell::new(i64::MIN),
             own_motion_tick: AtomicU64::new(0),
             push_residual: std::sync::Mutex::default(),
@@ -351,7 +351,7 @@ impl BedrockClient {
             next_latency_id: AtomicU64::new(1),
             last_latency_send: AtomicCell::new(Instant::now()),
             teleport_unconfirmed_inputs: AtomicU32::new(0),
-            teleport_sent_pos: AtomicCell::new(pumpkin_util::math::vector3::Vector3::default()),
+            teleport_sent_pos: AtomicCell::new(sculith_util::math::vector3::Vector3::default()),
             last_food_rejection_tick: AtomicCell::new(None),
             client_cache_supported: AtomicBool::new(false),
             blob_cache: std::sync::Mutex::new(blob_cache::BlobCache::new()),
@@ -634,7 +634,7 @@ impl BedrockClient {
         warn!("Closing connection for {}: {message}", self.address);
         if send_packet {
             self.send_packet(&CDisconnect {
-                reason: pumpkin_protocol::codec::var_int::VarInt(reason as i32),
+                reason: sculith_protocol::codec::var_int::VarInt(reason as i32),
                 skip_message,
                 message,
                 filtered_message,
@@ -1706,7 +1706,7 @@ impl BedrockClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_protocol::bedrock::client::biome_definition_list::CBiomeDefinitionList;
+    use sculith_protocol::bedrock::client::biome_definition_list::CBiomeDefinitionList;
 
     #[tokio::test]
     async fn food_drain_shares_one_deadline_across_owners() {
@@ -1772,10 +1772,10 @@ mod tests {
 
     #[test]
     fn watcher_velocity_waits_only_for_a_remote_untimed_actor() {
-        use pumpkin_protocol::{
+        use sculith_protocol::{
             bedrock::client::set_actor_motion::CSetActorMotion, codec::var_ulong::VarULong,
         };
-        use pumpkin_util::math::vector3::Vector3;
+        use sculith_util::math::vector3::Vector3;
 
         let mut motion = CSetActorMotion {
             target_runtime_id: VarULong(300),

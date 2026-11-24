@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
 
 use crate::{
     block::entities::mob_spawner::{

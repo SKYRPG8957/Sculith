@@ -10,7 +10,7 @@ use creaking_heart::CreakingHeartTreeDecorator;
 use leave_vine::LeavesVineTreeDecorator;
 use pale_moss::PaleMossTreeDecorator;
 use place_on_ground::PlaceOnGroundTreeDecorator;
-use pumpkin_util::{math::position::BlockPos, random::RandomGenerator};
+use sculith_util::{math::position::BlockPos, random::RandomGenerator};
 
 use trunk_vine::TrunkVineTreeDecorator;
 

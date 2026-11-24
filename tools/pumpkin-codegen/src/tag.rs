@@ -488,7 +488,7 @@ pub(crate) fn build() -> TokenStream {
     .to_token_stream();
 
     quote! {
-        use pumpkin_util::version::JavaMinecraftVersion;
+        use sculith_util::version::JavaMinecraftVersion;
 
         pub type Tag = (&'static [&'static str], &'static [u16]);
 

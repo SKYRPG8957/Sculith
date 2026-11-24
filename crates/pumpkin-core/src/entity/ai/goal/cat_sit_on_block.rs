@@ -3,7 +3,7 @@ use std::sync::Weak;
 use pumpkin_data::Block;
 use pumpkin_data::block_properties::{BedPart, FurnaceLikeProperties, WhiteBedLikeProperties};
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::move_to_target_pos::{MoveToTargetPos, MoveToTargetPosGoal};
 use super::{Controls, Goal, ParentHandle};

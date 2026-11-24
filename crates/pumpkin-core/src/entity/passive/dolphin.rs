@@ -12,9 +12,9 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_util::math::vector3::Vector3;
 
 use super::ageable_water_creature::AgeableWaterCreature;
 use crate::entity::ageable::{AgeableData, AgeableMob};
@@ -439,13 +439,13 @@ mod tests {
     use crate::entity::ai::test_support::world;
     use pumpkin_data::effect::StatusEffect;
     use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::vector2::Vector2;
+    use sculith_util::math::vector2::Vector2;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     fn conservative_body(
         dolphin: &DolphinEntity,
-    ) -> Result<pumpkin_util::math::boundingbox::BoundingBox, Box<dyn std::error::Error>> {
+    ) -> Result<sculith_util::math::boundingbox::BoundingBox, Box<dyn std::error::Error>> {
         let crate::world::entity_islands::EntityReach::Conservative(reach) =
             crate::world::entity_islands::EntityReach::of(
                 dolphin,
@@ -496,7 +496,7 @@ mod tests {
         entity
             .movement_multiplier
             .store(Vector3::new(2.0, 2.0, 2.0));
-        let target = pumpkin_util::math::position::BlockPos::new(0, 64, 8);
+        let target = sculith_util::math::position::BlockPos::new(0, 64, 8);
         dolphin
             .mob_entity
             .navigator

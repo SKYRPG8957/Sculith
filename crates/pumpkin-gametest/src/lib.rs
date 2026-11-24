@@ -34,9 +34,9 @@ mod tests {
     use async_trait::async_trait;
     use pumpkin_data::{Block, BlockState, BlockStateId};
     use pumpkin_nbt::{NbtCompound, tag::NbtTag};
-    use pumpkin_util::math::position::BlockPos;
-    use pumpkin_util::text::TextComponent;
     use pumpkin_world::{CURRENT_MC_DATA_VERSION, world::BlockFlags};
+    use sculith_util::math::position::BlockPos;
+    use sculith_util::text::TextComponent;
 
     use super::*;
 

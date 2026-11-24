@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering::Relaxed};
 
 use crossbeam::atomic::AtomicCell;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::boundingbox::BoundingBox;
+use sculith_util::math::boundingbox::BoundingBox;
 use uuid::Uuid;
 
 use crate::entity::EntityBase;

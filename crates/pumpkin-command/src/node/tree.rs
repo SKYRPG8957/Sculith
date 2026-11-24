@@ -10,8 +10,8 @@ use crate::node::attached::{
 use crate::node::detached::{CommandDetachedNode, DetachedNode, GlobalNodeId};
 use crate::source::{CommandSource, DummySource};
 use crate::string_reader::StringReader;
-use pumpkin_util::text::TextComponent;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use sculith_util::text::TextComponent;
 use std::num::NonZero;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;

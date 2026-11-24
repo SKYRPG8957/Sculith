@@ -6,7 +6,7 @@ use pumpkin_data::{
     Block, BlockDirection,
     fluid::{EnumVariants, Falling, Fluid, FluidProperties, Level},
 };
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
 /// Represents a node in the BFS pathfinding queue for fluid flow calculation.

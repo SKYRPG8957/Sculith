@@ -6,12 +6,12 @@ use std::{
     time::Duration,
 };
 
-use pumpkin_protocol::query::{
-    CBasicStatus, CFullStatus, CHandshake, PacketType, RawQueryPacket, SHandshake, SStatusRequest,
-};
-use pumpkin_util::text::{TextComponent, color::NamedColor};
 use pumpkin_world::CURRENT_MC_VERSION;
 use rand::RngExt;
+use sculith_protocol::query::{
+    CBasicStatus, CFullStatus, CHandshake, PacketType, RawQueryPacket, SHandshake, SStatusRequest,
+};
+use sculith_util::text::{TextComponent, color::NamedColor};
 use tokio::{net::UdpSocket, sync::RwLock, time};
 use tracing::{error, info};
 

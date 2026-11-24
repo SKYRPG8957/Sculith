@@ -1,9 +1,9 @@
 use pumpkin_data::block_properties::NoteblockInstrument as InternalNoteblockInstrument;
 use pumpkin_data::block_state::PistonBehavior;
 use pumpkin_data::{BlockDirection as InternalBlockDirection, BlockId, BlockStateId};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use pumpkin_world::chunk::ChunkHeightmapType;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 use std::sync::{Arc, Mutex as StdMutex};
 use wasmtime::component::{Access, HasSelf, Resource};
 
@@ -211,7 +211,7 @@ pub(crate) const fn to_wit_noteblock_instrument(
 }
 
 pub(crate) const fn to_wit_bounding_box(
-    bb: pumpkin_util::math::boundingbox::BoundingBox,
+    bb: sculith_util::math::boundingbox::BoundingBox,
 ) -> WitBoundingBox {
     WitBoundingBox {
         min: (bb.min.x, bb.min.y, bb.min.z),
@@ -632,7 +632,7 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
     ) -> wasmtime::Result<Option<Resource<WitChunk>>> {
         let world_res = self.get(&world)?;
         let world_provider = world_res.clone();
-        let pos = pumpkin_util::math::vector2::Vector2::new(x, z);
+        let pos = sculith_util::math::vector2::Vector2::new(x, z);
 
         let chunk = world_provider
             .level
@@ -730,7 +730,7 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
     fn get_top_block_y(&mut self, world: Resource<World>, x: i32, z: i32) -> wasmtime::Result<i32> {
         Ok(self
             .get(&world)?
-            .get_top_block(pumpkin_util::math::vector2::Vector2::new(x, z)))
+            .get_top_block(sculith_util::math::vector2::Vector2::new(x, z)))
     }
 
     fn get_motion_blocking_height(
@@ -789,8 +789,8 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
             })?;
 
         world_ref.spawn_particle(
-            pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
-            pumpkin_util::math::vector3::Vector3::new(
+            sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+            sculith_util::math::vector3::Vector3::new(
                 offset.0 as f32,
                 offset.1 as f32,
                 offset.2 as f32,
@@ -895,7 +895,7 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
             !w.get_block_state(pos).is_air()
         });
         Ok(res.map(|(p, _)| {
-            super::events::to_wasm_position(pumpkin_util::math::vector3::Vector3::new(
+            super::events::to_wasm_position(sculith_util::math::vector3::Vector3::new(
                 f64::from(p.0.x),
                 f64::from(p.0.y),
                 f64::from(p.0.z),
@@ -1191,7 +1191,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
                 world_ref.play_sound_raw(
                     sound_data as u16,
                     internal_category,
-                    &pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+                    &sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
                     volume,
                     pitch,
                 );
@@ -1217,7 +1217,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
                 world_ref.play_custom_sound(
                     &sound_name,
                     internal_category,
-                    &pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
+                    &sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2),
                     volume,
                     pitch,
                 );
@@ -1266,7 +1266,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
             pumpkin::plugin::world::ExplosionInteraction::Tnt => ExplosionInteraction::Tnt,
             pumpkin::plugin::world::ExplosionInteraction::Trigger => ExplosionInteraction::Trigger,
         };
-        let pos = pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
+        let pos = sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
         plugin
             .store
             .pump_blocking(&mut host, move || world.explode(pos, power, interaction))
@@ -1282,7 +1282,7 @@ impl pumpkin::plugin::world::HostWorldWithStore<PluginHostState> for HasSelf<Plu
         let (world, plugin) = world_and_plugin(host.get(), &world)?;
 
         let internal_type = super::entity::from_wit_entity_type(entity_type)?;
-        let pos = pumpkin_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
+        let pos = sculith_util::math::vector3::Vector3::new(pos.0, pos.1, pos.2);
         let entity = pumpkin_core::entity::r#type::from_type(
             internal_type,
             pos,
@@ -1694,7 +1694,7 @@ impl pumpkin::plugin::world::HostWorldBorder for PluginHostState {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         Ok(super::events::to_wasm_position(
-            pumpkin_util::math::vector3::Vector3::new(guard.center_x, 0.0, guard.center_z),
+            sculith_util::math::vector3::Vector3::new(guard.center_x, 0.0, guard.center_z),
         ))
     }
 

@@ -23,14 +23,14 @@ use pumpkin_inventory::inventory::{SimpleInventory, sync_read_items_from_nbt};
 use pumpkin_inventory::mount_screen_handler::MountScreenHandler;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::bedrock::client::set_actor_data::{
+use rand::RngExt;
+use sculith_protocol::bedrock::client::set_actor_data::{
     MetadataValue, SyncedActorDataList, entity_data_flag, entity_data_key,
 };
-use pumpkin_protocol::bedrock::client::update_equip::HORSE_CONTAINER_TYPE;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use rand::RngExt;
+use sculith_protocol::bedrock::client::update_equip::HORSE_CONTAINER_TYPE;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use uuid::Uuid;
 
 use crate::entity::ageable::AgeableMob;
@@ -1275,7 +1275,7 @@ macro_rules! abstract_horse_mob_hooks {
             &self,
             _passenger: &dyn $crate::entity::EntityBase,
             index: usize,
-        ) -> Option<pumpkin_util::math::vector3::Vector3<f64>> {
+        ) -> Option<sculith_util::math::vector3::Vector3<f64>> {
             $crate::entity::passive::abstract_horse::stand_passenger_attachment_point(self, index)
         }
 
@@ -1413,7 +1413,7 @@ macro_rules! abstract_horse_mob_hooks {
 
         fn mob_bedrock_spawn_metadata(
             &self,
-        ) -> Option<pumpkin_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
+        ) -> Option<sculith_protocol::bedrock::client::set_actor_data::SyncedActorDataList> {
             let mut data = self
                 .mob_metadata()
                 .map(|meta| meta.to_bedrock_actor_data())

@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, fs};
 
 use proc_macro2::TokenStream;
-use pumpkin_util::DoublePerlinNoiseParametersCodec;
 use quote::{format_ident, quote};
+use sculith_util::DoublePerlinNoiseParametersCodec;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -79,7 +79,7 @@ pub fn build() -> TokenStream {
         let lo = u64::from_be_bytes(hash[0..8].try_into().unwrap());
         let hi = u64::from_be_bytes(hash[8..16].try_into().unwrap());
 
-        let string_hash = pumpkin_util::math::java_string_hash(raw_name);
+        let string_hash = sculith_util::math::java_string_hash(raw_name);
 
         let amplitudes = &parameter.amplitudes;
         let first_octave = parameter.first_octave;

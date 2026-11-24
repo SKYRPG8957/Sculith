@@ -3,14 +3,14 @@ use pumpkin_data::placed_feature::PlacedFeature as PlacedFeatureKey;
 use pumpkin_data::structures::{Structure, StructureKeys, StructureType};
 use pumpkin_data::translation;
 use pumpkin_data::{Block, BlockStateId, Mirror, Rotation};
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::math::block_box::BlockBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::hash_block_pos;
-use pumpkin_util::text::TextComponent;
 use pumpkin_world::generation::proto_chunk::ProtoChunk;
 use pumpkin_world::world::{BlockAccessor, WorldPortalExt};
+use sculith_util::identifier::Identifier;
+use sculith_util::math::block_box::BlockBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::hash_block_pos;
+use sculith_util::text::TextComponent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::argument_type::JavaClientArgumentType;
@@ -35,10 +35,10 @@ use pumpkin_world::generation::structure::structures::jigsaw_placement::{
 };
 use pumpkin_world::generation::structure::template::BlockPlacer;
 
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::random::RandomGenerator;
-use pumpkin_util::random::legacy_rand::LegacyRand;
+use sculith_util::PermissionLvl;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::random::RandomGenerator;
+use sculith_util::random::legacy_rand::LegacyRand;
 
 const DESCRIPTION: &str = "Places a structure template in the world.";
 const PERMISSION: &str = "minecraft:command.place";

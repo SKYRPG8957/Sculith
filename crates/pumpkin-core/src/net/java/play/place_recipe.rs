@@ -166,7 +166,7 @@ impl JavaClient {
             };
 
             match crafting {
-                pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shaped {
+                sculith_protocol::codec::recipe::OwnedCraftingRecipe::Shaped {
                     pattern,
                     key,
                     ..
@@ -184,7 +184,7 @@ impl JavaClient {
                     }
                 }
 
-                pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless {
+                sculith_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless {
                     ingredients,
                     ..
                 } => {

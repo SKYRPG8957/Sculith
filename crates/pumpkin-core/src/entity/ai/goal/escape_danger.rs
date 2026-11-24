@@ -1,7 +1,7 @@
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering::Relaxed;
 
 use super::{Controls, Goal, GoalReach};

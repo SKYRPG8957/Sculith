@@ -4,7 +4,7 @@ use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use pumpkin_data::item::Item;
 use pumpkin_data::statistic::StatisticCategory;
-use pumpkin_util::Hand;
+use sculith_util::Hand;
 
 pub struct WritableBookItem;
 

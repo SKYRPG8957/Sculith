@@ -10,7 +10,7 @@ use pumpkin_data::{
     packet::CURRENT_MC_VERSION,
     translation,
 };
-use pumpkin_util::permission::PermissionLvl;
+use sculith_util::permission::PermissionLvl;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use time::OffsetDateTime;

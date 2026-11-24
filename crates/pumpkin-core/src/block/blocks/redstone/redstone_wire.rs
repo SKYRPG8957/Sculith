@@ -9,8 +9,8 @@ use pumpkin_data::block_rotation::{Mirror, Rotation};
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockState, HorizontalFacingExt};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
+use sculith_util::math::position::BlockPos;
 
 use crate::block::registry::BlockActionResult;
 use crate::block::{

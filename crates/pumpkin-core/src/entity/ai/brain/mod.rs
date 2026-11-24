@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::environment_attribute::Activity;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::entity::mob::Mob;
 use crate::world::World;
@@ -513,7 +513,7 @@ mod tests {
     use super::*;
     use crate::entity::ai::test_support::world;
     use pumpkin_data::entity::EntityType;
-    use pumpkin_util::math::vector3::Vector3;
+    use sculith_util::math::vector3::Vector3;
 
     struct ProbeMob(MobEntity);
 
@@ -909,7 +909,7 @@ mod tests {
     async fn brains_come_from_the_provider_and_refresh_keeps_saved_memories()
     -> Result<(), Box<dyn std::error::Error>> {
         use pumpkin_data::dimension::Dimension;
-        use pumpkin_util::math::position::BlockPos;
+        use sculith_util::math::position::BlockPos;
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
         let stops = Arc::new(AtomicUsize::new(0));

@@ -19,14 +19,14 @@ use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::CMerchantOffers;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
 use rand::RngExt;
 use rand::seq::IndexedRandom;
+use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::CMerchantOffers;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 
 use super::villager::{
     apply_potion, apply_random_dye, apply_stew_effect, trigger_trade_advancement,
@@ -66,7 +66,7 @@ fn create_invisibility_potion() -> ItemStack {
 use crate::data::datapack::trade_loader::{DynamicTradeModifier, DynamicVillagerTrade};
 
 fn add_offers_from_dynamic_trades(
-    offers: &mut Vec<pumpkin_protocol::java::client::play::MerchantOffer>,
+    offers: &mut Vec<sculith_protocol::java::client::play::MerchantOffer>,
     trade_pool: &[DynamicVillagerTrade],
     amount: usize,
     rng: &mut impl rand::Rng,
@@ -100,7 +100,7 @@ fn add_offers_from_dynamic_trades(
             _ => {}
         }
 
-        offers.push(pumpkin_protocol::java::client::play::MerchantOffer {
+        offers.push(sculith_protocol::java::client::play::MerchantOffer {
             base_cost_a: ItemStackSerializer(Cow::Owned(base_cost_a)),
             output: ItemStackSerializer(Cow::Owned(output)),
             cost_b: cost_b.map(|stack| ItemStackSerializer(Cow::Owned(stack))),
@@ -117,7 +117,7 @@ fn add_offers_from_dynamic_trades(
 }
 
 fn add_offers_from_trade_set(
-    offers: &mut Vec<pumpkin_protocol::java::client::play::MerchantOffer>,
+    offers: &mut Vec<sculith_protocol::java::client::play::MerchantOffer>,
     trade_pool: &'static [VillagerTrade],
     amount: usize,
     rng: &mut impl rand::Rng,
@@ -147,7 +147,7 @@ pub struct WanderingTraderEntity {
     pub mob_entity: MobEntity,
     pub despawn_delay: AtomicI32,
     pub wander_target: std::sync::Mutex<Option<BlockPos>>,
-    pub offers: std::sync::Mutex<Vec<pumpkin_protocol::java::client::play::MerchantOffer>>,
+    pub offers: std::sync::Mutex<Vec<sculith_protocol::java::client::play::MerchantOffer>>,
     pub merchant_inventory: Arc<SimpleInventory>,
     pub trading_player: std::sync::Mutex<Option<(Uuid, u8)>>,
     pub is_trading: AtomicBool,
@@ -369,7 +369,7 @@ impl WanderingTraderEntity {
     }
 
     fn bedrock_trade_data(
-        offers: &[pumpkin_protocol::java::client::play::MerchantOffer],
+        offers: &[sculith_protocol::java::client::play::MerchantOffer],
     ) -> NbtCompound {
         use pumpkin_nbt::tag::NbtTag;
 
@@ -445,9 +445,9 @@ impl WanderingTraderEntity {
         &self,
         player: &Player,
         sync_id: u8,
-        offers: &[pumpkin_protocol::java::client::play::MerchantOffer],
+        offers: &[sculith_protocol::java::client::play::MerchantOffer],
     ) {
-        use pumpkin_protocol::{bedrock::client::CUpdateTrade, codec::var_long::VarLong};
+        use sculith_protocol::{bedrock::client::CUpdateTrade, codec::var_long::VarLong};
 
         let java = CMerchantOffers::new(
             VarInt(i32::from(sync_id)),
@@ -766,7 +766,7 @@ impl Mob for WanderingTraderEntity {
                         let special_price = recipe.get_int("specialPrice").unwrap_or(0);
                         let demand = recipe.get_int("demand").unwrap_or(0);
 
-                        offers.push(pumpkin_protocol::java::client::play::MerchantOffer {
+                        offers.push(sculith_protocol::java::client::play::MerchantOffer {
                             base_cost_a: buy.into(),
                             output: sell_item.into(),
                             cost_b: buy_b.map(Into::into),

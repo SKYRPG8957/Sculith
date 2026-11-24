@@ -1,7 +1,7 @@
 use crate::entity::player::Player;
 use dashmap::DashMap;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_util::math::{position::BlockPos, vector2::Vector2};
 use std::sync::{Arc, Mutex};
 
 pub struct MapManager {

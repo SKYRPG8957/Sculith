@@ -11,12 +11,12 @@ pub trait NoiseEvaluationContext {
     fn sample_shift_a(
         &mut self,
         noise_id: DoublePerlinNoiseParameters,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
     ) -> f32;
     fn sample_shift_b(
         &mut self,
         noise_id: DoublePerlinNoiseParameters,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
     ) -> f32;
     fn sample_shifted_noise(
         &mut self,
@@ -27,58 +27,58 @@ pub trait NoiseEvaluationContext {
         xz_scale: f64,
         y_scale: f64,
     ) -> f32;
-    fn sample_interpolated_noise(&mut self, pos: &pumpkin_util::math::vector3::Vector3<i32>)
+    fn sample_interpolated_noise(&mut self, pos: &sculith_util::math::vector3::Vector3<i32>)
     -> f32;
-    fn sample_beardifier(&mut self, pos: &pumpkin_util::math::vector3::Vector3<i32>) -> f32;
-    fn sample_blend_alpha(&mut self, pos: &pumpkin_util::math::vector3::Vector3<i32>) -> f32;
-    fn sample_blend_offset(&mut self, pos: &pumpkin_util::math::vector3::Vector3<i32>) -> f32;
+    fn sample_beardifier(&mut self, pos: &sculith_util::math::vector3::Vector3<i32>) -> f32;
+    fn sample_blend_alpha(&mut self, pos: &sculith_util::math::vector3::Vector3<i32>) -> f32;
+    fn sample_blend_offset(&mut self, pos: &sculith_util::math::vector3::Vector3<i32>) -> f32;
     fn sample_blend_density(
         &mut self,
         input_val: f32,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
     ) -> f32;
-    fn sample_end_islands(&mut self, pos: &pumpkin_util::math::vector3::Vector3<i32>) -> f32;
+    fn sample_end_islands(&mut self, pos: &sculith_util::math::vector3::Vector3<i32>) -> f32;
     fn sample_wrapper(
         &mut self,
         wrapper_index: usize,
         wrapper_type: WrapperType,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
-        eval_input: &dyn Fn(&pumpkin_util::math::vector3::Vector3<i32>, &mut Self) -> f32,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
+        eval_input: &dyn Fn(&sculith_util::math::vector3::Vector3<i32>, &mut Self) -> f32,
     ) -> f32;
     fn sample_spline(
         &mut self,
         spline_index: usize,
         location_value: f32,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
     ) -> f32;
     fn sample_find_top_surface(
         &mut self,
-        density_fn: &dyn Fn(&pumpkin_util::math::vector3::Vector3<i32>, &mut Self) -> f32,
-        upper_bound_fn: &dyn Fn(&pumpkin_util::math::vector3::Vector3<i32>, &mut Self) -> f32,
+        density_fn: &dyn Fn(&sculith_util::math::vector3::Vector3<i32>, &mut Self) -> f32,
+        upper_bound_fn: &dyn Fn(&sculith_util::math::vector3::Vector3<i32>, &mut Self) -> f32,
         lower_bound: i32,
         cell_height: i32,
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
     ) -> f32;
 }
 pub mod overworld_compiled {
     use super::*;
     #[inline(always)]
     pub fn eval_overworld_0<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_shift_a(DoublePerlinNoiseParameters::OFFSET, pos)
     }
     #[inline(always)]
     pub fn eval_overworld_1<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(1usize, WrapperType::Cache, pos, &eval_overworld_0)
     }
     #[inline(always)]
     pub fn eval_overworld_2<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -86,21 +86,21 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_3<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_shift_b(DoublePerlinNoiseParameters::OFFSET, pos)
     }
     #[inline(always)]
     pub fn eval_overworld_4<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(4usize, WrapperType::Cache, pos, &eval_overworld_3)
     }
     #[inline(always)]
     pub fn eval_overworld_5<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_overworld_1(pos, ctx);
@@ -117,22 +117,22 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_6<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(6usize, WrapperType::Cache, pos, &eval_overworld_5)
     }
     #[inline(always)]
     pub fn eval_overworld_7<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_overworld_6(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_8<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -142,21 +142,21 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_9<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_blend_alpha(pos)
     }
     #[inline(always)]
     pub fn eval_overworld_10<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_blend_offset(pos)
     }
     #[inline(always)]
     pub fn eval_overworld_11<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_overworld_1(pos, ctx);
@@ -173,14 +173,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_12<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(12usize, WrapperType::Cache, pos, &eval_overworld_11)
     }
     #[inline(always)]
     pub fn eval_overworld_13<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_overworld_1(pos, ctx);
@@ -197,49 +197,49 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_14<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(14usize, WrapperType::Cache, pos, &eval_overworld_13)
     }
     #[inline(always)]
     pub fn eval_overworld_15<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_14(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_16<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_15(pos, ctx) + -0.6666667f32
     }
     #[inline(always)]
     pub fn eval_overworld_17<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_16(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_18<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_17(pos, ctx) + -0.33333334f32
     }
     #[inline(always)]
     pub fn eval_overworld_19<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_18(pos, ctx) * -3f32
     }
     #[inline(always)]
     pub fn eval_overworld_20<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_overworld_12(pos, ctx);
@@ -247,14 +247,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_21<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_20(pos, ctx) + -0.50375f32
     }
     #[inline(always)]
     pub fn eval_overworld_22<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_overworld_9(pos, ctx);
@@ -264,29 +264,29 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_23<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(23usize, WrapperType::Cache, pos, &eval_overworld_22)
     }
     #[inline(always)]
     pub fn eval_overworld_24<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_overworld_23(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_25<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_8(pos, ctx) + eval_overworld_24(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_26<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -298,7 +298,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_27<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -310,7 +310,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_28<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -322,7 +322,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_29<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -334,7 +334,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_30<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -344,7 +344,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_31<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -352,7 +352,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_32<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -362,7 +362,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_33<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -370,7 +370,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_34<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_overworld_12(pos, ctx);
@@ -378,7 +378,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_35<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_overworld_9(pos, ctx);
@@ -388,14 +388,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_36<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(36usize, WrapperType::Cache, pos, &eval_overworld_35)
     }
     #[inline(always)]
     pub fn eval_overworld_37<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -407,7 +407,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_38<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_overworld_37(pos, ctx);
@@ -415,36 +415,36 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_39<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_36(pos, ctx) * eval_overworld_38(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_40<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(40usize, WrapperType::Cache, pos, &eval_overworld_39)
     }
     #[inline(always)]
     pub fn eval_overworld_41<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_overworld_40(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_42<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_25(pos, ctx) + eval_overworld_41(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_43<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -452,7 +452,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_44<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_overworld_12(pos, ctx);
@@ -460,7 +460,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_45<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_overworld_9(pos, ctx);
@@ -470,29 +470,29 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_46<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(46usize, WrapperType::Cache, pos, &eval_overworld_45)
     }
     #[inline(always)]
     pub fn eval_overworld_47<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_overworld_46(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_48<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_42(pos, ctx) * eval_overworld_47(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_49<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_overworld_48(pos, ctx);
@@ -500,35 +500,35 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_50<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_49(pos, ctx) * 4f32
     }
     #[inline(always)]
     pub fn eval_overworld_51<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_interpolated_noise(pos)
     }
     #[inline(always)]
     pub fn eval_overworld_52<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_50(pos, ctx) + eval_overworld_51(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_53<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(53usize, WrapperType::Cache, pos, &eval_overworld_52)
     }
     #[inline(always)]
     pub fn eval_overworld_54<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -540,14 +540,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_55<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_54(pos, ctx) + 0.37f32
     }
     #[inline(always)]
     pub fn eval_overworld_56<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -557,14 +557,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_57<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_55(pos, ctx) + eval_overworld_56(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_58<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -576,21 +576,21 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_59<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_58(pos, ctx) * -0.05f32
     }
     #[inline(always)]
     pub fn eval_overworld_60<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_59(pos, ctx) + -0.05f32
     }
     #[inline(always)]
     pub fn eval_overworld_61<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -602,35 +602,35 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_62<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_61(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_63<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_62(pos, ctx) + -0.4f32
     }
     #[inline(always)]
     pub fn eval_overworld_64<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_60(pos, ctx) * eval_overworld_63(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_65<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(65usize, WrapperType::Cache, pos, &eval_overworld_64)
     }
     #[inline(always)]
     pub fn eval_overworld_66<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -642,14 +642,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_67<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(67usize, WrapperType::Cache, pos, &eval_overworld_66)
     }
     #[inline(always)]
     pub fn eval_overworld_68<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -661,14 +661,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_69<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_68(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_overworld_70<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -680,14 +680,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_71<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_70(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_overworld_72<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -699,14 +699,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_73<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_72(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_overworld_74<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -718,14 +718,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_75<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_74(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_overworld_76<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_overworld_67(pos, ctx);
@@ -746,14 +746,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_77<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_76(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_78<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -765,14 +765,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_79<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_78(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_overworld_80<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -784,14 +784,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_81<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_80(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_overworld_82<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -803,14 +803,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_83<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_82(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_overworld_84<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -822,14 +822,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_85<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_84(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_overworld_86<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_overworld_67(pos, ctx);
@@ -850,21 +850,21 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_87<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_86(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_88<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_77(pos, ctx).max(eval_overworld_87(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_89<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -876,70 +876,70 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_90<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_89(pos, ctx) * -0.011500001f32
     }
     #[inline(always)]
     pub fn eval_overworld_91<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_90(pos, ctx) + -0.0765f32
     }
     #[inline(always)]
     pub fn eval_overworld_92<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_88(pos, ctx) + eval_overworld_91(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_93<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_92(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_overworld_94<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_65(pos, ctx) + eval_overworld_93(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_95<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_57(pos, ctx).min(eval_overworld_94(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_96<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(96usize, WrapperType::Cache, pos, &eval_overworld_95)
     }
     #[inline(always)]
     pub fn eval_overworld_97<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_96(pos, ctx) * 5f32
     }
     #[inline(always)]
     pub fn eval_overworld_98<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_53(pos, ctx).min(eval_overworld_97(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_99<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -951,7 +951,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_100<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_overworld_99(pos, ctx);
@@ -959,14 +959,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_101<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_100(pos, ctx) * 4f32
     }
     #[inline(always)]
     pub fn eval_overworld_102<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -978,63 +978,63 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_103<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_102(pos, ctx) + 0.27f32
     }
     #[inline(always)]
     pub fn eval_overworld_104<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_103(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_overworld_105<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_53(pos, ctx) * -0.64f32
     }
     #[inline(always)]
     pub fn eval_overworld_106<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_105(pos, ctx) + 1.5f32
     }
     #[inline(always)]
     pub fn eval_overworld_107<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_106(pos, ctx).clamp(0f32, 0.5f32)
     }
     #[inline(always)]
     pub fn eval_overworld_108<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_104(pos, ctx) + eval_overworld_107(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_109<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_101(pos, ctx) + eval_overworld_108(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_110<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_109(pos, ctx).min(eval_overworld_96(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_111<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1046,7 +1046,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_112<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1058,14 +1058,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_113<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_112(pos, ctx) * 0.5f32
     }
     #[inline(always)]
     pub fn eval_overworld_114<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1077,14 +1077,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_115<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_114(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_overworld_116<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1096,14 +1096,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_117<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_116(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_overworld_118<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1115,14 +1115,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_119<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_118(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_overworld_120<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1134,14 +1134,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_121<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_120(pos, ctx) * 3f32
     }
     #[inline(always)]
     pub fn eval_overworld_122<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_overworld_111(pos, ctx);
@@ -1163,14 +1163,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_123<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_122(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_124<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1182,42 +1182,42 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_125<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_124(pos, ctx) * -0.34999996f32
     }
     #[inline(always)]
     pub fn eval_overworld_126<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_125(pos, ctx) + -0.95f32
     }
     #[inline(always)]
     pub fn eval_overworld_127<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(127usize, WrapperType::Cache, pos, &eval_overworld_126)
     }
     #[inline(always)]
     pub fn eval_overworld_128<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_127(pos, ctx) * 0.083f32
     }
     #[inline(always)]
     pub fn eval_overworld_129<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_123(pos, ctx) + eval_overworld_128(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_130<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1229,29 +1229,29 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_131<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_130(pos, ctx) * 8f32
     }
     #[inline(always)]
     pub fn eval_overworld_132<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(132usize, WrapperType::Cache, pos, &eval_overworld_131)
     }
     #[inline(always)]
     pub fn eval_overworld_133<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_overworld_132(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_134<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -1261,28 +1261,28 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_135<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_133(pos, ctx) + eval_overworld_134(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_136<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_135(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_137<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_136(pos, ctx) + eval_overworld_127(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_138<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_overworld_137(pos, ctx);
@@ -1290,35 +1290,35 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_139<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_129(pos, ctx).max(eval_overworld_138(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_140<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_139(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_overworld_141<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_140(pos, ctx) + eval_overworld_65(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_142<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_110(pos, ctx).min(eval_overworld_141(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_143<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1330,14 +1330,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_144<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_143(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_overworld_145<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1349,28 +1349,28 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_146<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_145(pos, ctx) * -1f32
     }
     #[inline(always)]
     pub fn eval_overworld_147<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_146(pos, ctx) + -1f32
     }
     #[inline(always)]
     pub fn eval_overworld_148<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_144(pos, ctx) + eval_overworld_147(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_149<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1382,21 +1382,21 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_150<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_149(pos, ctx) * 0.55f32
     }
     #[inline(always)]
     pub fn eval_overworld_151<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_150(pos, ctx) + 0.55f32
     }
     #[inline(always)]
     pub fn eval_overworld_152<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_overworld_151(pos, ctx);
@@ -1404,21 +1404,21 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_153<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_148(pos, ctx) * eval_overworld_152(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_154<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(154usize, WrapperType::Cache, pos, &eval_overworld_153)
     }
     #[inline(always)]
     pub fn eval_overworld_155<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -1426,7 +1426,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_156<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_154(pos, ctx);
@@ -1438,14 +1438,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_157<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_142(pos, ctx).max(eval_overworld_156(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_158<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_53(pos, ctx);
@@ -1457,7 +1457,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_159<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_overworld_32(pos, ctx);
@@ -1467,7 +1467,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_160<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_overworld_30(pos, ctx);
@@ -1477,7 +1477,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_161<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_160(pos, ctx);
@@ -1485,14 +1485,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_162<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_161(pos, ctx) * 0.64f32
     }
     #[inline(always)]
     pub fn eval_overworld_163<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -1507,7 +1507,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_164<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let c = eval_overworld_163(pos, ctx).clamp(-1.0, 1.0);
@@ -1515,7 +1515,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_165<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -1525,7 +1525,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_166<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1537,7 +1537,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_167<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -1545,7 +1545,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_168<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_165(pos, ctx);
@@ -1557,7 +1557,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_169<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -1572,7 +1572,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_170<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -1580,7 +1580,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_171<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1592,21 +1592,21 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_172<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_171(pos, ctx) * -0.025f32
     }
     #[inline(always)]
     pub fn eval_overworld_173<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_172(pos, ctx) + -0.075f32
     }
     #[inline(always)]
     pub fn eval_overworld_174<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_165(pos, ctx);
@@ -1618,7 +1618,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_175<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -1633,7 +1633,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_176<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1645,7 +1645,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_177<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_165(pos, ctx);
@@ -1657,7 +1657,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_178<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -1672,14 +1672,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_179<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_178(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_180<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1691,7 +1691,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_181<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_165(pos, ctx);
@@ -1703,7 +1703,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_182<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -1718,35 +1718,35 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_183<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_182(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_184<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_179(pos, ctx).max(eval_overworld_183(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_185<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_184(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_overworld_186<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_175(pos, ctx) + eval_overworld_185(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_187<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_169(pos, ctx);
@@ -1758,28 +1758,28 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_188<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_164(pos, ctx).min(eval_overworld_187(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_189<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_beardifier(pos)
     }
     #[inline(always)]
     pub fn eval_overworld_190<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_188(pos, ctx) + eval_overworld_189(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_191<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1791,7 +1791,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_192<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_165(pos, ctx);
@@ -1803,7 +1803,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_193<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -1818,14 +1818,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_194<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(194usize, WrapperType::Cache, pos, &eval_overworld_193)
     }
     #[inline(always)]
     pub fn eval_overworld_195<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -1833,7 +1833,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_196<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1845,7 +1845,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_197<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -1853,7 +1853,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_198<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_165(pos, ctx);
@@ -1865,7 +1865,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_199<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -1880,14 +1880,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_200<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_199(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_201<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1899,7 +1899,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_202<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_165(pos, ctx);
@@ -1911,7 +1911,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_203<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -1926,28 +1926,28 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_204<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_203(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_overworld_205<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_200(pos, ctx).max(eval_overworld_204(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_overworld_206<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_195(pos, ctx) - eval_overworld_205(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_overworld_207<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_overworld_194(pos, ctx);
@@ -1959,14 +1959,14 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_208<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(208usize, WrapperType::Cache, pos, &eval_overworld_207)
     }
     #[inline(always)]
     pub fn eval_overworld_209<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -1974,7 +1974,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_210<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -1986,7 +1986,7 @@ pub mod overworld_compiled {
     }
     #[inline(always)]
     pub fn eval_overworld_211<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_overworld_209(pos, ctx) - eval_overworld_210(pos, ctx)
@@ -1996,21 +1996,21 @@ pub mod amplified_compiled {
     use super::*;
     #[inline(always)]
     pub fn eval_amplified_0<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_shift_a(DoublePerlinNoiseParameters::OFFSET, pos)
     }
     #[inline(always)]
     pub fn eval_amplified_1<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(1usize, WrapperType::Cache, pos, &eval_amplified_0)
     }
     #[inline(always)]
     pub fn eval_amplified_2<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -2018,21 +2018,21 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_3<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_shift_b(DoublePerlinNoiseParameters::OFFSET, pos)
     }
     #[inline(always)]
     pub fn eval_amplified_4<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(4usize, WrapperType::Cache, pos, &eval_amplified_3)
     }
     #[inline(always)]
     pub fn eval_amplified_5<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_amplified_1(pos, ctx);
@@ -2049,22 +2049,22 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_6<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(6usize, WrapperType::Cache, pos, &eval_amplified_5)
     }
     #[inline(always)]
     pub fn eval_amplified_7<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_amplified_6(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_8<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -2074,21 +2074,21 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_9<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_blend_alpha(pos)
     }
     #[inline(always)]
     pub fn eval_amplified_10<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_blend_offset(pos)
     }
     #[inline(always)]
     pub fn eval_amplified_11<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_amplified_1(pos, ctx);
@@ -2105,14 +2105,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_12<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(12usize, WrapperType::Cache, pos, &eval_amplified_11)
     }
     #[inline(always)]
     pub fn eval_amplified_13<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_amplified_1(pos, ctx);
@@ -2129,49 +2129,49 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_14<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(14usize, WrapperType::Cache, pos, &eval_amplified_13)
     }
     #[inline(always)]
     pub fn eval_amplified_15<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_14(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_16<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_15(pos, ctx) + -0.6666667f32
     }
     #[inline(always)]
     pub fn eval_amplified_17<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_16(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_18<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_17(pos, ctx) + -0.33333334f32
     }
     #[inline(always)]
     pub fn eval_amplified_19<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_18(pos, ctx) * -3f32
     }
     #[inline(always)]
     pub fn eval_amplified_20<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_amplified_12(pos, ctx);
@@ -2179,14 +2179,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_21<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_20(pos, ctx) + -0.50375f32
     }
     #[inline(always)]
     pub fn eval_amplified_22<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_amplified_9(pos, ctx);
@@ -2196,29 +2196,29 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_23<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(23usize, WrapperType::Cache, pos, &eval_amplified_22)
     }
     #[inline(always)]
     pub fn eval_amplified_24<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_amplified_23(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_25<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_8(pos, ctx) + eval_amplified_24(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_26<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2230,7 +2230,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_27<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2242,7 +2242,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_28<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2254,7 +2254,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_29<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2266,7 +2266,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_30<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -2276,7 +2276,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_31<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -2284,7 +2284,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_32<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -2294,7 +2294,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_33<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -2302,7 +2302,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_34<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_amplified_12(pos, ctx);
@@ -2310,7 +2310,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_35<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_amplified_9(pos, ctx);
@@ -2320,14 +2320,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_36<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(36usize, WrapperType::Cache, pos, &eval_amplified_35)
     }
     #[inline(always)]
     pub fn eval_amplified_37<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2339,7 +2339,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_38<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_amplified_37(pos, ctx);
@@ -2347,36 +2347,36 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_39<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_36(pos, ctx) * eval_amplified_38(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_40<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(40usize, WrapperType::Cache, pos, &eval_amplified_39)
     }
     #[inline(always)]
     pub fn eval_amplified_41<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_amplified_40(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_42<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_25(pos, ctx) + eval_amplified_41(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_43<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -2384,7 +2384,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_44<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_amplified_12(pos, ctx);
@@ -2392,7 +2392,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_45<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_amplified_9(pos, ctx);
@@ -2402,29 +2402,29 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_46<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(46usize, WrapperType::Cache, pos, &eval_amplified_45)
     }
     #[inline(always)]
     pub fn eval_amplified_47<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_amplified_46(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_48<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_42(pos, ctx) * eval_amplified_47(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_49<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_amplified_48(pos, ctx);
@@ -2432,35 +2432,35 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_50<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_49(pos, ctx) * 4f32
     }
     #[inline(always)]
     pub fn eval_amplified_51<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_interpolated_noise(pos)
     }
     #[inline(always)]
     pub fn eval_amplified_52<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_50(pos, ctx) + eval_amplified_51(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_53<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(53usize, WrapperType::Cache, pos, &eval_amplified_52)
     }
     #[inline(always)]
     pub fn eval_amplified_54<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2472,14 +2472,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_55<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_54(pos, ctx) + 0.37f32
     }
     #[inline(always)]
     pub fn eval_amplified_56<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -2489,14 +2489,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_57<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_55(pos, ctx) + eval_amplified_56(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_58<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2508,21 +2508,21 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_59<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_58(pos, ctx) * -0.05f32
     }
     #[inline(always)]
     pub fn eval_amplified_60<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_59(pos, ctx) + -0.05f32
     }
     #[inline(always)]
     pub fn eval_amplified_61<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2534,35 +2534,35 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_62<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_61(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_63<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_62(pos, ctx) + -0.4f32
     }
     #[inline(always)]
     pub fn eval_amplified_64<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_60(pos, ctx) * eval_amplified_63(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_65<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(65usize, WrapperType::Cache, pos, &eval_amplified_64)
     }
     #[inline(always)]
     pub fn eval_amplified_66<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2574,14 +2574,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_67<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(67usize, WrapperType::Cache, pos, &eval_amplified_66)
     }
     #[inline(always)]
     pub fn eval_amplified_68<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2593,14 +2593,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_69<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_68(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_amplified_70<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2612,14 +2612,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_71<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_70(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_amplified_72<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2631,14 +2631,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_73<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_72(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_amplified_74<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2650,14 +2650,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_75<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_74(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_amplified_76<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_amplified_67(pos, ctx);
@@ -2678,14 +2678,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_77<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_76(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_78<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2697,14 +2697,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_79<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_78(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_amplified_80<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2716,14 +2716,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_81<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_80(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_amplified_82<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2735,14 +2735,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_83<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_82(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_amplified_84<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2754,14 +2754,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_85<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_84(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_amplified_86<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_amplified_67(pos, ctx);
@@ -2782,21 +2782,21 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_87<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_86(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_88<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_77(pos, ctx).max(eval_amplified_87(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_89<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2808,70 +2808,70 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_90<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_89(pos, ctx) * -0.011500001f32
     }
     #[inline(always)]
     pub fn eval_amplified_91<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_90(pos, ctx) + -0.0765f32
     }
     #[inline(always)]
     pub fn eval_amplified_92<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_88(pos, ctx) + eval_amplified_91(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_93<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_92(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_amplified_94<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_65(pos, ctx) + eval_amplified_93(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_95<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_57(pos, ctx).min(eval_amplified_94(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_96<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(96usize, WrapperType::Cache, pos, &eval_amplified_95)
     }
     #[inline(always)]
     pub fn eval_amplified_97<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_96(pos, ctx) * 5f32
     }
     #[inline(always)]
     pub fn eval_amplified_98<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_53(pos, ctx).min(eval_amplified_97(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_99<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2883,7 +2883,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_100<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_amplified_99(pos, ctx);
@@ -2891,14 +2891,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_101<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_100(pos, ctx) * 4f32
     }
     #[inline(always)]
     pub fn eval_amplified_102<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2910,63 +2910,63 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_103<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_102(pos, ctx) + 0.27f32
     }
     #[inline(always)]
     pub fn eval_amplified_104<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_103(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_amplified_105<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_53(pos, ctx) * -0.64f32
     }
     #[inline(always)]
     pub fn eval_amplified_106<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_105(pos, ctx) + 1.5f32
     }
     #[inline(always)]
     pub fn eval_amplified_107<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_106(pos, ctx).clamp(0f32, 0.5f32)
     }
     #[inline(always)]
     pub fn eval_amplified_108<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_104(pos, ctx) + eval_amplified_107(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_109<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_101(pos, ctx) + eval_amplified_108(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_110<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_109(pos, ctx).min(eval_amplified_96(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_111<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2978,7 +2978,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_112<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -2990,14 +2990,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_113<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_112(pos, ctx) * 0.5f32
     }
     #[inline(always)]
     pub fn eval_amplified_114<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3009,14 +3009,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_115<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_114(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_amplified_116<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3028,14 +3028,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_117<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_116(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_amplified_118<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3047,14 +3047,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_119<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_118(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_amplified_120<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3066,14 +3066,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_121<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_120(pos, ctx) * 3f32
     }
     #[inline(always)]
     pub fn eval_amplified_122<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_amplified_111(pos, ctx);
@@ -3095,14 +3095,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_123<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_122(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_124<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3114,42 +3114,42 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_125<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_124(pos, ctx) * -0.34999996f32
     }
     #[inline(always)]
     pub fn eval_amplified_126<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_125(pos, ctx) + -0.95f32
     }
     #[inline(always)]
     pub fn eval_amplified_127<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(127usize, WrapperType::Cache, pos, &eval_amplified_126)
     }
     #[inline(always)]
     pub fn eval_amplified_128<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_127(pos, ctx) * 0.083f32
     }
     #[inline(always)]
     pub fn eval_amplified_129<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_123(pos, ctx) + eval_amplified_128(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_130<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3161,29 +3161,29 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_131<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_130(pos, ctx) * 8f32
     }
     #[inline(always)]
     pub fn eval_amplified_132<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(132usize, WrapperType::Cache, pos, &eval_amplified_131)
     }
     #[inline(always)]
     pub fn eval_amplified_133<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_amplified_132(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_134<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -3193,28 +3193,28 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_135<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_133(pos, ctx) + eval_amplified_134(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_136<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_135(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_137<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_136(pos, ctx) + eval_amplified_127(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_138<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_amplified_137(pos, ctx);
@@ -3222,35 +3222,35 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_139<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_129(pos, ctx).max(eval_amplified_138(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_140<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_139(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_amplified_141<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_140(pos, ctx) + eval_amplified_65(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_142<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_110(pos, ctx).min(eval_amplified_141(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_143<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3262,14 +3262,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_144<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_143(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_amplified_145<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3281,28 +3281,28 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_146<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_145(pos, ctx) * -1f32
     }
     #[inline(always)]
     pub fn eval_amplified_147<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_146(pos, ctx) + -1f32
     }
     #[inline(always)]
     pub fn eval_amplified_148<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_144(pos, ctx) + eval_amplified_147(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_149<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3314,21 +3314,21 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_150<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_149(pos, ctx) * 0.55f32
     }
     #[inline(always)]
     pub fn eval_amplified_151<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_150(pos, ctx) + 0.55f32
     }
     #[inline(always)]
     pub fn eval_amplified_152<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_amplified_151(pos, ctx);
@@ -3336,21 +3336,21 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_153<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_148(pos, ctx) * eval_amplified_152(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_154<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(154usize, WrapperType::Cache, pos, &eval_amplified_153)
     }
     #[inline(always)]
     pub fn eval_amplified_155<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -3358,7 +3358,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_156<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_154(pos, ctx);
@@ -3370,14 +3370,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_157<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_142(pos, ctx).max(eval_amplified_156(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_158<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_53(pos, ctx);
@@ -3389,7 +3389,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_159<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_amplified_32(pos, ctx);
@@ -3399,7 +3399,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_160<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_amplified_30(pos, ctx);
@@ -3409,7 +3409,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_161<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_160(pos, ctx);
@@ -3417,14 +3417,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_162<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_161(pos, ctx) * 0.64f32
     }
     #[inline(always)]
     pub fn eval_amplified_163<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -3439,7 +3439,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_164<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let c = eval_amplified_163(pos, ctx).clamp(-1.0, 1.0);
@@ -3447,7 +3447,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_165<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -3457,7 +3457,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_166<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3469,7 +3469,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_167<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -3477,7 +3477,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_168<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_165(pos, ctx);
@@ -3489,7 +3489,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_169<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -3504,7 +3504,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_170<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -3512,7 +3512,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_171<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3524,21 +3524,21 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_172<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_171(pos, ctx) * -0.025f32
     }
     #[inline(always)]
     pub fn eval_amplified_173<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_172(pos, ctx) + -0.075f32
     }
     #[inline(always)]
     pub fn eval_amplified_174<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_165(pos, ctx);
@@ -3550,7 +3550,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_175<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -3565,7 +3565,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_176<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3577,7 +3577,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_177<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_165(pos, ctx);
@@ -3589,7 +3589,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_178<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -3604,14 +3604,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_179<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_178(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_180<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3623,7 +3623,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_181<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_165(pos, ctx);
@@ -3635,7 +3635,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_182<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -3650,35 +3650,35 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_183<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_182(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_184<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_179(pos, ctx).max(eval_amplified_183(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_185<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_184(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_amplified_186<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_175(pos, ctx) + eval_amplified_185(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_187<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_169(pos, ctx);
@@ -3690,28 +3690,28 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_188<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_164(pos, ctx).min(eval_amplified_187(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_189<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_beardifier(pos)
     }
     #[inline(always)]
     pub fn eval_amplified_190<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_188(pos, ctx) + eval_amplified_189(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_191<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3723,7 +3723,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_192<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_165(pos, ctx);
@@ -3735,7 +3735,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_193<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -3750,14 +3750,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_194<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(194usize, WrapperType::Cache, pos, &eval_amplified_193)
     }
     #[inline(always)]
     pub fn eval_amplified_195<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -3765,7 +3765,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_196<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3777,7 +3777,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_197<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -3785,7 +3785,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_198<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_165(pos, ctx);
@@ -3797,7 +3797,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_199<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -3812,14 +3812,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_200<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_199(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_201<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3831,7 +3831,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_202<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_165(pos, ctx);
@@ -3843,7 +3843,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_203<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -3858,28 +3858,28 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_204<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_203(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_amplified_205<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_200(pos, ctx).max(eval_amplified_204(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_amplified_206<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_195(pos, ctx) - eval_amplified_205(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_amplified_207<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_amplified_194(pos, ctx);
@@ -3891,14 +3891,14 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_208<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(208usize, WrapperType::Cache, pos, &eval_amplified_207)
     }
     #[inline(always)]
     pub fn eval_amplified_209<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -3906,7 +3906,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_210<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -3918,7 +3918,7 @@ pub mod amplified_compiled {
     }
     #[inline(always)]
     pub fn eval_amplified_211<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_amplified_209(pos, ctx) - eval_amplified_210(pos, ctx)
@@ -3928,21 +3928,21 @@ pub mod large_biomes_compiled {
     use super::*;
     #[inline(always)]
     pub fn eval_large_biomes_0<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_shift_a(DoublePerlinNoiseParameters::OFFSET, pos)
     }
     #[inline(always)]
     pub fn eval_large_biomes_1<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(1usize, WrapperType::Cache, pos, &eval_large_biomes_0)
     }
     #[inline(always)]
     pub fn eval_large_biomes_2<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -3950,21 +3950,21 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_3<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_shift_b(DoublePerlinNoiseParameters::OFFSET, pos)
     }
     #[inline(always)]
     pub fn eval_large_biomes_4<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(4usize, WrapperType::Cache, pos, &eval_large_biomes_3)
     }
     #[inline(always)]
     pub fn eval_large_biomes_5<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_large_biomes_1(pos, ctx);
@@ -3981,22 +3981,22 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_6<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(6usize, WrapperType::Cache, pos, &eval_large_biomes_5)
     }
     #[inline(always)]
     pub fn eval_large_biomes_7<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_large_biomes_6(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_8<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -4006,21 +4006,21 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_9<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_blend_alpha(pos)
     }
     #[inline(always)]
     pub fn eval_large_biomes_10<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_blend_offset(pos)
     }
     #[inline(always)]
     pub fn eval_large_biomes_11<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_large_biomes_1(pos, ctx);
@@ -4037,14 +4037,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_12<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(12usize, WrapperType::Cache, pos, &eval_large_biomes_11)
     }
     #[inline(always)]
     pub fn eval_large_biomes_13<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let sx = eval_large_biomes_1(pos, ctx);
@@ -4061,49 +4061,49 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_14<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(14usize, WrapperType::Cache, pos, &eval_large_biomes_13)
     }
     #[inline(always)]
     pub fn eval_large_biomes_15<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_14(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_16<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_15(pos, ctx) + -0.6666667f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_17<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_16(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_18<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_17(pos, ctx) + -0.33333334f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_19<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_18(pos, ctx) * -3f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_20<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_large_biomes_12(pos, ctx);
@@ -4111,14 +4111,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_21<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_20(pos, ctx) + -0.50375f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_22<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_large_biomes_9(pos, ctx);
@@ -4128,29 +4128,29 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_23<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(23usize, WrapperType::Cache, pos, &eval_large_biomes_22)
     }
     #[inline(always)]
     pub fn eval_large_biomes_24<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_large_biomes_23(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_25<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_8(pos, ctx) + eval_large_biomes_24(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_26<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4162,7 +4162,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_27<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4174,7 +4174,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_28<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4186,7 +4186,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_29<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4198,7 +4198,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_30<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -4208,7 +4208,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_31<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -4216,7 +4216,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_32<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -4226,7 +4226,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_33<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -4234,7 +4234,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_34<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_large_biomes_12(pos, ctx);
@@ -4242,7 +4242,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_35<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_large_biomes_9(pos, ctx);
@@ -4252,14 +4252,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_36<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(36usize, WrapperType::Cache, pos, &eval_large_biomes_35)
     }
     #[inline(always)]
     pub fn eval_large_biomes_37<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4271,7 +4271,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_38<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_large_biomes_37(pos, ctx);
@@ -4279,36 +4279,36 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_39<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_36(pos, ctx) * eval_large_biomes_38(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_40<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(40usize, WrapperType::Cache, pos, &eval_large_biomes_39)
     }
     #[inline(always)]
     pub fn eval_large_biomes_41<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_large_biomes_40(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_42<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_25(pos, ctx) + eval_large_biomes_41(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_43<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -4316,7 +4316,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_44<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let location_val = eval_large_biomes_12(pos, ctx);
@@ -4324,7 +4324,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_45<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_large_biomes_9(pos, ctx);
@@ -4334,29 +4334,29 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_46<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(46usize, WrapperType::Cache, pos, &eval_large_biomes_45)
     }
     #[inline(always)]
     pub fn eval_large_biomes_47<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_large_biomes_46(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_48<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_42(pos, ctx) * eval_large_biomes_47(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_49<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_large_biomes_48(pos, ctx);
@@ -4364,35 +4364,35 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_50<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_49(pos, ctx) * 4f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_51<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_interpolated_noise(pos)
     }
     #[inline(always)]
     pub fn eval_large_biomes_52<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_50(pos, ctx) + eval_large_biomes_51(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_53<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(53usize, WrapperType::Cache, pos, &eval_large_biomes_52)
     }
     #[inline(always)]
     pub fn eval_large_biomes_54<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4404,14 +4404,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_55<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_54(pos, ctx) + 0.37f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_56<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -4421,14 +4421,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_57<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_55(pos, ctx) + eval_large_biomes_56(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_58<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4440,21 +4440,21 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_59<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_58(pos, ctx) * -0.05f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_60<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_59(pos, ctx) + -0.05f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_61<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4466,35 +4466,35 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_62<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_61(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_63<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_62(pos, ctx) + -0.4f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_64<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_60(pos, ctx) * eval_large_biomes_63(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_65<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(65usize, WrapperType::Cache, pos, &eval_large_biomes_64)
     }
     #[inline(always)]
     pub fn eval_large_biomes_66<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4506,14 +4506,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_67<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(67usize, WrapperType::Cache, pos, &eval_large_biomes_66)
     }
     #[inline(always)]
     pub fn eval_large_biomes_68<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4525,14 +4525,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_69<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_68(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_70<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4544,14 +4544,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_71<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_70(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_72<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4563,14 +4563,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_73<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_72(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_74<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4582,14 +4582,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_75<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_74(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_76<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_large_biomes_67(pos, ctx);
@@ -4610,14 +4610,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_77<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_76(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_78<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4629,14 +4629,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_79<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_78(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_80<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4648,14 +4648,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_81<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_80(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_82<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4667,14 +4667,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_83<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_82(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_84<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4686,14 +4686,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_85<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_84(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_86<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_large_biomes_67(pos, ctx);
@@ -4714,21 +4714,21 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_87<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_86(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_88<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_77(pos, ctx).max(eval_large_biomes_87(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_89<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4740,70 +4740,70 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_90<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_89(pos, ctx) * -0.011500001f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_91<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_90(pos, ctx) + -0.0765f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_92<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_88(pos, ctx) + eval_large_biomes_91(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_93<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_92(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_large_biomes_94<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_65(pos, ctx) + eval_large_biomes_93(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_95<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_57(pos, ctx).min(eval_large_biomes_94(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_96<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(96usize, WrapperType::Cache, pos, &eval_large_biomes_95)
     }
     #[inline(always)]
     pub fn eval_large_biomes_97<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_96(pos, ctx) * 5f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_98<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_53(pos, ctx).min(eval_large_biomes_97(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_99<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4815,7 +4815,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_100<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_large_biomes_99(pos, ctx);
@@ -4823,14 +4823,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_101<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_100(pos, ctx) * 4f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_102<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4842,63 +4842,63 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_103<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_102(pos, ctx) + 0.27f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_104<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_103(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_large_biomes_105<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_53(pos, ctx) * -0.64f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_106<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_105(pos, ctx) + 1.5f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_107<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_106(pos, ctx).clamp(0f32, 0.5f32)
     }
     #[inline(always)]
     pub fn eval_large_biomes_108<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_104(pos, ctx) + eval_large_biomes_107(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_109<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_101(pos, ctx) + eval_large_biomes_108(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_110<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_109(pos, ctx).min(eval_large_biomes_96(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_111<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4910,7 +4910,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_112<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4922,14 +4922,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_113<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_112(pos, ctx) * 0.5f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_114<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4941,14 +4941,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_115<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_114(pos, ctx) * 0.75f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_116<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4960,14 +4960,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_117<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_116(pos, ctx) * 1f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_118<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4979,14 +4979,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_119<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_118(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_120<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -4998,14 +4998,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_121<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_120(pos, ctx) * 3f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_122<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let input_val = eval_large_biomes_111(pos, ctx);
@@ -5027,14 +5027,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_123<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_122(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_124<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5046,42 +5046,42 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_125<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_124(pos, ctx) * -0.34999996f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_126<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_125(pos, ctx) + -0.95f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_127<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(127usize, WrapperType::Cache, pos, &eval_large_biomes_126)
     }
     #[inline(always)]
     pub fn eval_large_biomes_128<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_127(pos, ctx) * 0.083f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_129<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_123(pos, ctx) + eval_large_biomes_128(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_130<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5093,29 +5093,29 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_131<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_130(pos, ctx) * 8f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_132<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(132usize, WrapperType::Cache, pos, &eval_large_biomes_131)
     }
     #[inline(always)]
     pub fn eval_large_biomes_133<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_large_biomes_132(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_134<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -5125,28 +5125,28 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_135<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_133(pos, ctx) + eval_large_biomes_134(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_136<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_135(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_137<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_136(pos, ctx) + eval_large_biomes_127(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_138<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_large_biomes_137(pos, ctx);
@@ -5154,35 +5154,35 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_139<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_129(pos, ctx).max(eval_large_biomes_138(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_140<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_139(pos, ctx).clamp(-1f32, 1f32)
     }
     #[inline(always)]
     pub fn eval_large_biomes_141<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_140(pos, ctx) + eval_large_biomes_65(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_142<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_110(pos, ctx).min(eval_large_biomes_141(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_143<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5194,14 +5194,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_144<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_143(pos, ctx) * 2f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_145<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5213,28 +5213,28 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_146<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_145(pos, ctx) * -1f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_147<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_146(pos, ctx) + -1f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_148<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_144(pos, ctx) + eval_large_biomes_147(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_149<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5246,21 +5246,21 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_150<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_149(pos, ctx) * 0.55f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_151<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_150(pos, ctx) + 0.55f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_152<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let v = eval_large_biomes_151(pos, ctx);
@@ -5268,21 +5268,21 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_153<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_148(pos, ctx) * eval_large_biomes_152(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_154<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(154usize, WrapperType::Cache, pos, &eval_large_biomes_153)
     }
     #[inline(always)]
     pub fn eval_large_biomes_155<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5290,7 +5290,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_156<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_154(pos, ctx);
@@ -5302,14 +5302,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_157<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_142(pos, ctx).max(eval_large_biomes_156(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_158<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_53(pos, ctx);
@@ -5321,7 +5321,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_159<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_large_biomes_32(pos, ctx);
@@ -5331,7 +5331,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_160<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_large_biomes_30(pos, ctx);
@@ -5341,7 +5341,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_161<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_160(pos, ctx);
@@ -5349,14 +5349,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_162<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_161(pos, ctx) * 0.64f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_163<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5371,7 +5371,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_164<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let c = eval_large_biomes_163(pos, ctx).clamp(-1.0, 1.0);
@@ -5379,7 +5379,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_165<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -5389,7 +5389,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_166<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5401,7 +5401,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_167<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5409,7 +5409,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_168<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_165(pos, ctx);
@@ -5421,7 +5421,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_169<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5436,7 +5436,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_170<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5444,7 +5444,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_171<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5456,21 +5456,21 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_172<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_171(pos, ctx) * -0.025f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_173<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_172(pos, ctx) + -0.075f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_174<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_165(pos, ctx);
@@ -5482,7 +5482,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_175<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5497,7 +5497,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_176<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5509,7 +5509,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_177<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_165(pos, ctx);
@@ -5521,7 +5521,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_178<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5536,14 +5536,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_179<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_178(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_180<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5555,7 +5555,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_181<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_165(pos, ctx);
@@ -5567,7 +5567,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_182<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5582,35 +5582,35 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_183<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_182(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_184<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_179(pos, ctx).max(eval_large_biomes_183(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_185<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_184(pos, ctx) * 1.5f32
     }
     #[inline(always)]
     pub fn eval_large_biomes_186<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_175(pos, ctx) + eval_large_biomes_185(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_187<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_169(pos, ctx);
@@ -5622,28 +5622,28 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_188<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_164(pos, ctx).min(eval_large_biomes_187(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_189<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_beardifier(pos)
     }
     #[inline(always)]
     pub fn eval_large_biomes_190<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_188(pos, ctx) + eval_large_biomes_189(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_191<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5655,7 +5655,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_192<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_165(pos, ctx);
@@ -5667,7 +5667,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_193<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5682,14 +5682,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_194<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(194usize, WrapperType::Cache, pos, &eval_large_biomes_193)
     }
     #[inline(always)]
     pub fn eval_large_biomes_195<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5697,7 +5697,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_196<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5709,7 +5709,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_197<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5717,7 +5717,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_198<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_165(pos, ctx);
@@ -5729,7 +5729,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_199<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5744,14 +5744,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_200<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_199(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_201<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5763,7 +5763,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_202<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_165(pos, ctx);
@@ -5775,7 +5775,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_203<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5790,28 +5790,28 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_204<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_203(pos, ctx).abs()
     }
     #[inline(always)]
     pub fn eval_large_biomes_205<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_200(pos, ctx).max(eval_large_biomes_204(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_large_biomes_206<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_195(pos, ctx) - eval_large_biomes_205(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_large_biomes_207<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_large_biomes_194(pos, ctx);
@@ -5823,14 +5823,14 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_208<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(208usize, WrapperType::Cache, pos, &eval_large_biomes_207)
     }
     #[inline(always)]
     pub fn eval_large_biomes_209<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5838,7 +5838,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_210<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_noise(
@@ -5850,7 +5850,7 @@ pub mod large_biomes_compiled {
     }
     #[inline(always)]
     pub fn eval_large_biomes_211<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_large_biomes_209(pos, ctx) - eval_large_biomes_210(pos, ctx)
@@ -5860,7 +5860,7 @@ pub mod nether_compiled {
     use super::*;
     #[inline(always)]
     pub fn eval_nether_0<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5868,7 +5868,7 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_1<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -5878,7 +5878,7 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_2<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5886,7 +5886,7 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_3<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -5896,7 +5896,7 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_4<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5904,14 +5904,14 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_5<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_interpolated_noise(pos)
     }
     #[inline(always)]
     pub fn eval_nether_6<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_nether_3(pos, ctx);
@@ -5921,7 +5921,7 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_7<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_nether_1(pos, ctx);
@@ -5931,7 +5931,7 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_8<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_nether_7(pos, ctx);
@@ -5939,14 +5939,14 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_9<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_nether_8(pos, ctx) * 0.64f32
     }
     #[inline(always)]
     pub fn eval_nether_10<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -5961,7 +5961,7 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_11<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let c = eval_nether_10(pos, ctx).clamp(-1.0, 1.0);
@@ -5969,14 +5969,14 @@ pub mod nether_compiled {
     }
     #[inline(always)]
     pub fn eval_nether_12<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_beardifier(pos)
     }
     #[inline(always)]
     pub fn eval_nether_13<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_nether_11(pos, ctx) + eval_nether_12(pos, ctx)
@@ -5986,7 +5986,7 @@ pub mod end_compiled {
     use super::*;
     #[inline(always)]
     pub fn eval_end_0<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -5994,7 +5994,7 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_1<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -6005,21 +6005,21 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_2<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_end_0(pos, ctx) - eval_end_1(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_end_3<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_end_2(pos, ctx).clamp(-100f32, 80f32)
     }
     #[inline(always)]
     pub fn eval_end_4<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -6027,58 +6027,58 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_5<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_end_3(pos, ctx) - eval_end_4(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_end_6<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_end_5(pos, ctx) * 0.0078125f32
     }
     #[inline(always)]
     pub fn eval_end_7<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_end_6(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_end_8<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_end_islands(pos)
     }
     #[inline(always)]
     pub fn eval_end_9<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_end_7(pos, ctx).max(eval_end_8(pos, ctx))
     }
     #[inline(always)]
     pub fn eval_end_10<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(10usize, WrapperType::Cache, pos, &eval_end_9)
     }
     #[inline(always)]
     pub fn eval_end_11<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
-        let slice_pos = pumpkin_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
+        let slice_pos = sculith_util::math::vector3::Vector3::new(pos.x, 0i32, pos.z);
         eval_end_10(&slice_pos, ctx)
     }
     #[inline(always)]
     pub fn eval_end_12<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -6086,7 +6086,7 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_13<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -6096,7 +6096,7 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_14<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -6104,7 +6104,7 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_15<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = ctx;
@@ -6114,7 +6114,7 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_16<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let _ = (pos, ctx);
@@ -6122,21 +6122,21 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_17<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_interpolated_noise(pos)
     }
     #[inline(always)]
     pub fn eval_end_18<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_end_11(pos, ctx) + eval_end_17(pos, ctx)
     }
     #[inline(always)]
     pub fn eval_end_19<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_end_15(pos, ctx);
@@ -6146,7 +6146,7 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_20<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let a = eval_end_13(pos, ctx);
@@ -6156,7 +6156,7 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_21<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let val = eval_end_20(pos, ctx);
@@ -6164,14 +6164,14 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_22<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_end_21(pos, ctx) * 0.64f32
     }
     #[inline(always)]
     pub fn eval_end_23<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_wrapper(
@@ -6186,7 +6186,7 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_24<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         let c = eval_end_23(pos, ctx).clamp(-1.0, 1.0);
@@ -6194,14 +6194,14 @@ pub mod end_compiled {
     }
     #[inline(always)]
     pub fn eval_end_25<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         ctx.sample_beardifier(pos)
     }
     #[inline(always)]
     pub fn eval_end_26<C: NoiseEvaluationContext>(
-        pos: &pumpkin_util::math::vector3::Vector3<i32>,
+        pos: &sculith_util::math::vector3::Vector3<i32>,
         ctx: &mut C,
     ) -> f32 {
         eval_end_24(pos, ctx) + eval_end_25(pos, ctx)

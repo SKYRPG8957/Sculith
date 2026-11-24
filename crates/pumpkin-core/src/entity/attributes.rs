@@ -3,12 +3,12 @@ use pumpkin_data::attributes::Attributes;
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::bedrock::client::add_actor::SyncedAttribute;
-use pumpkin_protocol::bedrock::client::update_attributes::{
+use rustc_hash::FxHashMap;
+use sculith_protocol::bedrock::client::add_actor::SyncedAttribute;
+use sculith_protocol::bedrock::client::update_attributes::{
     AttributeData as BedrockAttribute, CUpdateAttributes as BedrockAttributeUpdate,
 };
-use pumpkin_protocol::codec::var_ulong::VarULong;
-use rustc_hash::FxHashMap;
+use sculith_protocol::codec::var_ulong::VarULong;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
@@ -339,10 +339,10 @@ pub fn send_attribute_updates_for_living(
     living: &crate::entity::living::LivingEntity,
     attributes: Vec<Attributes>,
 ) {
-    use pumpkin_protocol::codec::var_int::VarInt;
-    use pumpkin_protocol::java::client::play::AttributeModifier as JeAttrMod;
-    use pumpkin_protocol::java::client::play::CUpdateAttributes as JePacket;
-    use pumpkin_protocol::java::client::play::Property as JeProperty;
+    use sculith_protocol::codec::var_int::VarInt;
+    use sculith_protocol::java::client::play::AttributeModifier as JeAttrMod;
+    use sculith_protocol::java::client::play::CUpdateAttributes as JePacket;
+    use sculith_protocol::java::client::play::Property as JeProperty;
 
     let mut je_properties: Vec<JeProperty> = Vec::with_capacity(attributes.len());
     let mut be_attributes: Vec<BedrockAttribute> = Vec::with_capacity(attributes.len());

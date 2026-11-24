@@ -1,7 +1,7 @@
 use pumpkin_data::{Block, BlockStateId, Property, PropertyLookupError, translation};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::identifier::Identifier;
-use pumpkin_util::text::TextComponent;
+use sculith_util::identifier::Identifier;
+use sculith_util::text::TextComponent;
 
 use crate::{
     argument_types::{

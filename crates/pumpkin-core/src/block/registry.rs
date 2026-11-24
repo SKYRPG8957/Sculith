@@ -196,11 +196,11 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockState};
 use pumpkin_inventory::screen_handler::ScreenHandlerFactory;
-use pumpkin_util::math::boundingbox::BoundingBox;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rustc_hash::FxHashMap;
+use sculith_util::math::boundingbox::BoundingBox;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 use std::sync::Arc;
 
 use super::BlockIsReplacing;
@@ -743,10 +743,10 @@ impl BlockRegistry {
         let clicked_block = world.get_block(&clicked_block_pos);
 
         match player.gamemode.load() {
-            pumpkin_util::GameMode::Spectator => {
+            sculith_util::GameMode::Spectator => {
                 return Err(BlockPlacingError::InvalidGamemode);
             }
-            pumpkin_util::GameMode::Adventure => {
+            sculith_util::GameMode::Adventure => {
                 let can_place = held_stack
                     .get_data_component::<CanPlaceOnImpl>()
                     .is_some_and(|comp| comp.matches_block(clicked_block));
@@ -764,14 +764,14 @@ impl BlockRegistry {
 
         if adjacent_y > world.get_top_y() {
             player.send_system_message_raw(
-                &pumpkin_util::text::TextComponent::translate_cross(
+                &sculith_util::text::TextComponent::translate_cross(
                     pumpkin_data::translation::java::BUILD_TOOHIGH,
                     pumpkin_data::translation::bedrock::BUILD_TOOHIGH,
-                    vec![pumpkin_util::text::TextComponent::text(
+                    vec![sculith_util::text::TextComponent::text(
                         (world.get_top_y()).to_string(),
                     )],
                 )
-                .color_named(pumpkin_util::text::color::NamedColor::Red),
+                .color_named(sculith_util::text::color::NamedColor::Red),
                 true,
             );
             return Err(BlockPlacingError::BlockOutOfWorld);
@@ -784,10 +784,10 @@ impl BlockRegistry {
         };
 
         if world.is_in_spawn_protection(player, &final_block_pos) {
-            player.send_system_message(&pumpkin_util::text::TextComponent::translate_cross(
+            player.send_system_message(&sculith_util::text::TextComponent::translate_cross(
                 pumpkin_data::translation::java::BUILD_SPAWN_PROTECTION,
                 pumpkin_data::translation::java::BUILD_SPAWN_PROTECTION,
-                [pumpkin_util::text::TextComponent::text(
+                [sculith_util::text::TextComponent::text(
                     player.gameprofile.name.clone(),
                 )],
             ));
@@ -1129,7 +1129,7 @@ impl BlockRegistry {
             cursor_pos: &placement.cursor_pos,
         };
         let position = &placement.clicked_pos;
-        let main_hand = placement.hand == pumpkin_util::Hand::Right;
+        let main_hand = placement.hand == sculith_util::Hand::Right;
         let equipment = if main_hand {
             EquipmentSlot::MAIN_HAND
         } else {

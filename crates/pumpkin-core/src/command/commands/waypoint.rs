@@ -1,9 +1,9 @@
 use pumpkin_data::translation;
-use pumpkin_protocol::java::client::play::{CWaypoint, WaypointIcon};
-use pumpkin_util::PermissionLvl;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::java::client::play::{CWaypoint, WaypointIcon};
+use sculith_util::PermissionLvl;
+use sculith_util::math::position::BlockPos;
+use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
+use sculith_util::text::TextComponent;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::entity::EntityArgumentType;

@@ -5,7 +5,7 @@ use pumpkin_data::{
     block_properties::{has_random_ticks, is_air, is_liquid},
     fluid::Fluid,
 };
-use pumpkin_util::encompassing_bits;
+use sculith_util::encompassing_bits;
 use tracing::warn;
 
 use super::format::{ChunkSectionBiomes, ChunkSectionBlockStates};

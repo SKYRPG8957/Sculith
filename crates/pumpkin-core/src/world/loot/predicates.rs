@@ -11,9 +11,9 @@ use pumpkin_data::{
     item_stack::ItemStack,
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
-use pumpkin_util::loot_table::LootNumberProvider;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::random::RandomImpl;
+use sculith_util::loot_table::LootNumberProvider;
+use sculith_util::math::position::BlockPos;
+use sculith_util::random::RandomImpl;
 use serde_json::Value;
 
 use super::{EntityBase, LootContextParameters, LootEntityTarget, Taggable, World, Xoroshiro};

@@ -15,7 +15,7 @@ use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 use std::sync::Mutex;
 

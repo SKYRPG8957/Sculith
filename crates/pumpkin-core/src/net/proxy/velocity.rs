@@ -2,11 +2,11 @@ use arc_swap::ArcSwap;
 use bytes::{BufMut, BytesMut};
 use hmac::{Hmac, KeyInit, Mac};
 use pumpkin_config::networking::proxy::VelocityConfig;
-use pumpkin_protocol::{
+use rand::RngExt;
+use sculith_protocol::{
     Property, java::client::login::CLoginPluginRequest, java::server::login::SLoginPluginResponse,
     ser::NetworkReadExt,
 };
-use rand::RngExt;
 use sha2::Sha256;
 use std::sync::Arc;
 /// Proxy implementation for Velocity <https://papermc.io/software/velocity> by `PaperMC`
@@ -165,7 +165,7 @@ mod tests {
     use std::{error::Error, sync::Weak, time::Duration};
 
     use pumpkin_data::packet::CURRENT_MC_VERSION;
-    use pumpkin_protocol::{
+    use sculith_protocol::{
         ConnectionState, VarInt, java::packet_decoder::TCPNetworkDecoder,
         packet::MultiVersionJavaPacket, ser::NetworkWriteExt,
     };

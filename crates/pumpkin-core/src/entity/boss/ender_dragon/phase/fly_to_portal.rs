@@ -1,6 +1,6 @@
 use super::EnderDragonPhase;
 use crate::entity::boss::ender_dragon::{EnderDragonEntity, Vector3Ext};
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 pub struct FlyToPortalPhase;
 

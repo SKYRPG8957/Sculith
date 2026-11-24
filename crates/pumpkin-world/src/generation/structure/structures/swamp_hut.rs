@@ -5,7 +5,7 @@ use pumpkin_data::{
     block_properties::{HorizontalFacing, StairsShape, WhiteWoolStairsLikeProperties},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::{
+use sculith_util::{
     BlockDirection,
     math::{block_box::BlockBox, position::BlockPos},
     random::RandomGenerator,

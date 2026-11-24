@@ -14,12 +14,12 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockId, BlockState, BlockStateId, Mirror, Rotation};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_util::GameMode;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::GameMode;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 use uuid::Uuid;
 
 use crate::block::blocks::chain::ChainBlock;

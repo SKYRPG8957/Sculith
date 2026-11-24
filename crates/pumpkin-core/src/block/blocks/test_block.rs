@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pumpkin_data::Block;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::{GameMode, PermissionLvl};
+use sculith_util::{GameMode, PermissionLvl};
 
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::entities::test_block::{TestBlockBlockEntity, TestBlockMode};

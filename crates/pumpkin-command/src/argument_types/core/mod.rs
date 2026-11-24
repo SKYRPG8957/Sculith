@@ -1,4 +1,4 @@
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 
 use crate::{
     errors::{command_syntax_error::CommandSyntaxError, error_types::CommandErrorType},

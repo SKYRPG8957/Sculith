@@ -6,10 +6,10 @@ use pumpkin_data::item::Item;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::translation;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::GameMode;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::text::TextComponent;
 use pumpkin_world::world::BlockFlags;
+use sculith_util::GameMode;
+use sculith_util::math::position::BlockPos;
+use sculith_util::text::TextComponent;
 use std::sync::Arc;
 
 use super::redstone::block_receives_redstone_power;

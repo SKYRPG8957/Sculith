@@ -114,7 +114,7 @@ pub(crate) fn build() -> TokenStream {
     let clientbound_modules = generate_phase_modules(&versions, false);
 
     quote!(
-        use pumpkin_util::version::JavaMinecraftVersion;
+        use sculith_util::version::JavaMinecraftVersion;
 
         pub const CURRENT_MC_VERSION: JavaMinecraftVersion = #LATEST_VERSION;
         pub const LOWEST_SUPPORTED_MC_VERSION: JavaMinecraftVersion = #LATEST_VERSION;

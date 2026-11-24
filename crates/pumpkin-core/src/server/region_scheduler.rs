@@ -167,7 +167,7 @@ impl RegionSchedule {
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_util::math::vector2::Vector2;
+    use sculith_util::math::vector2::Vector2;
 
     use super::*;
 

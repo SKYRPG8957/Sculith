@@ -6,7 +6,7 @@ use uuid::Uuid;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::vector3::Vector3;
 
 use crate::entity::ai::behavior::fleeing::{self, Flee};
 use crate::entity::ai::behavior::hunting::{self, Hunt};

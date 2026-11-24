@@ -6,12 +6,12 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockStateId, tag};
 use pumpkin_inventory::Clearable;
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::{
+use pumpkin_world::world::BlockFlags;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::{
     CGameEvent, CPlayerSpawnPosition, CRespawn, GameEvent, PlayerSpawnData,
 };
-use pumpkin_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
-use pumpkin_world::world::BlockFlags;
+use sculith_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use tokio::task::JoinHandle;
 
 use crate::entity::EntityBase;
@@ -464,9 +464,9 @@ impl Player {
                 pitch,
                 world.dimension.minecraft_name.to_string(),
             ),
-            &pumpkin_protocol::bedrock::client::CSetSpawnPosition {
+            &sculith_protocol::bedrock::client::CSetSpawnPosition {
                 spawn_position_type:
-                    pumpkin_protocol::bedrock::client::SpawnPositionType::WorldRespawn,
+                    sculith_protocol::bedrock::client::SpawnPositionType::WorldRespawn,
                 block_position: spawn,
                 dimension_type: bedrock_dimension_id(&world.dimension).into(),
                 spawn_block_pos: spawn,

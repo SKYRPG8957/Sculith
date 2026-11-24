@@ -2,7 +2,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use pumpkin_data::dimension::Dimension;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 #[derive(Clone, Copy)]
 pub struct GlobalPos {

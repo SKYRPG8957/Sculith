@@ -24,7 +24,7 @@ impl BlockMetadata for BrushableBlock {
 impl BrushableBlock {
     pub fn brush(
         world: &Arc<crate::world::World>,
-        pos: &pumpkin_util::math::position::BlockPos,
+        pos: &sculith_util::math::position::BlockPos,
         block: &Block,
     ) {
         let state = world.get_block_state(pos);

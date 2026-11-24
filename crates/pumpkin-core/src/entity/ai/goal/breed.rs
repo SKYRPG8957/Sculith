@@ -3,8 +3,8 @@ use std::sync::{Arc, Weak};
 use uuid::Uuid;
 
 use pumpkin_data::entity::EntityStatus;
-use pumpkin_protocol::bedrock::server::actor_event::ActorEventID;
 use rand::RngExt;
+use sculith_protocol::bedrock::server::actor_event::ActorEventID;
 
 use crate::entity::ai::target_match::{SearchArea, TargetMatch};
 use crate::entity::ai::target_predicate::TargetPredicate;

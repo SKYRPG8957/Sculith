@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
 use crate::entity::{EntityBase, player::Player};
 use crate::world::World;

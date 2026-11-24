@@ -33,7 +33,7 @@ impl SaveJSONConfiguration for OperatorConfig {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_util::PermissionLvl;
+    use sculith_util::PermissionLvl;
 
     const TEST_UUID: &str = "00000000-0000-0000-0000-000000000001";
     const SECOND_TEST_UUID: &str = "00000000-0000-0000-0000-000000000002";

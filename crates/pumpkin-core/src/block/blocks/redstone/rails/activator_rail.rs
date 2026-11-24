@@ -15,7 +15,7 @@ use crate::block::PlacedArgs;
 use crate::entity::EntityBase;
 use crate::world::World;
 use pumpkin_data::Block;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use super::super::block_receives_redstone_power;
 use super::RailProperties;

@@ -11,7 +11,7 @@ use std::{
 };
 
 use pumpkin_data::recipes::CookingRecipeKind;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 
 use crate::{
     block::entities::furnace_like_block_entity::CookingBlockEntityBase,

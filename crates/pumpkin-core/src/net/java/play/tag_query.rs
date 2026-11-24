@@ -1,7 +1,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use pumpkin_nbt::{Nbt, compound::NbtCompound};
-use pumpkin_protocol::java::{
+use sculith_protocol::java::{
     client::play::CTagQueryResponse,
     server::play::{SBlockEntityTagQuery, SEntityTagQuery},
 };

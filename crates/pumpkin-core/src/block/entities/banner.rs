@@ -1,7 +1,7 @@
 use super::BlockEntity;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_util::math::position::BlockPos;
+use sculith_util::math::position::BlockPos;
 use std::sync::Mutex;
 
 pub struct BannerBlockEntity {
@@ -94,7 +94,7 @@ impl BlockEntity for BannerBlockEntity {
             && let Some(name) = name.as_ref()
         {
             stack.set_data_component(pumpkin_data::data_component_impl::CustomNameImpl {
-                name: pumpkin_util::text::TextComponent::text(name.clone()),
+                name: sculith_util::text::TextComponent::text(name.clone()),
             });
         }
     }

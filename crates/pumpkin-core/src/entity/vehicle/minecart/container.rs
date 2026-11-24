@@ -11,8 +11,8 @@ use pumpkin_inventory::screen_handler::{
 };
 use pumpkin_inventory::{Clearable, Inventory};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
 
 use crate::entity::{Entity, player::Player};
 

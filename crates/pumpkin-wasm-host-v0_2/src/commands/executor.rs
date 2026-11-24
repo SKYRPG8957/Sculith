@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pumpkin_util::text::{
+use sculith_util::text::{
     TextComponent,
     color::{Color, NamedColor},
 };

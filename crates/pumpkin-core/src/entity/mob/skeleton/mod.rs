@@ -5,7 +5,7 @@ use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_util::Difficulty;
+use sculith_util::Difficulty;
 
 use crate::entity::{
     Entity,

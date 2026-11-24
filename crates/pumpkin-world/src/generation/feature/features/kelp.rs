@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, BlockDirection, BlockState, block_properties::KelpLikeProperties, tag};
-use pumpkin_util::{
+use sculith_util::{
     math::position::BlockPos,
     random::{RandomGenerator, RandomImpl},
 };

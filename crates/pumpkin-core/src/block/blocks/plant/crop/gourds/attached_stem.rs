@@ -3,8 +3,8 @@ use pumpkin_data::{
     block_properties::{WallTorchLikeProperties, WheatLikeProperties},
     tag::{self, Taggable},
 };
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockAccessor;
+use sculith_util::math::position::BlockPos;
 
 use crate::block::{
     BlockBehaviour, BlockMetadata, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,

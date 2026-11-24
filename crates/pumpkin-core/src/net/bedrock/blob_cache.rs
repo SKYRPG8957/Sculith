@@ -6,10 +6,10 @@ use std::{
 };
 
 use bytes::Bytes;
-use pumpkin_protocol::bedrock::client::client_cache_miss_response::{
+use rustc_hash::{FxHashMap, FxHasher};
+use sculith_protocol::bedrock::client::client_cache_miss_response::{
     CClientCacheMissResponse, MissingBlobData,
 };
-use rustc_hash::{FxHashMap, FxHasher};
 
 /// Blob bytes kept per client before the oldest are evicted.
 const MAX_BLOB_CACHE_BYTES: usize = 16 * 1024 * 1024;

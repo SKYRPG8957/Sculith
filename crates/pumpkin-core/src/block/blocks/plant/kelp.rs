@@ -8,10 +8,10 @@ use pumpkin_data::block_properties::{KelpProperties, WaterLikeProperties};
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockStateId, tag};
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
+use sculith_util::math::position::BlockPos;
 
 pub struct KelpBlock;
 

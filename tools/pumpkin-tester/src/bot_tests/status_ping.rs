@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, time::Instant};
 
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_protocol::{
+use sculith_protocol::{
     ConnectionState, ServerPacket,
     codec::var_int::VarInt,
     java::{

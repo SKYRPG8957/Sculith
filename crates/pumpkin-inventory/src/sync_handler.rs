@@ -21,7 +21,7 @@
 use std::sync::{Arc, Mutex};
 
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_protocol::{
+use sculith_protocol::{
     codec::{
         item_stack_seralizer::{ItemStackSerializer, OptionalItemStackHash},
         var_int::VarInt,

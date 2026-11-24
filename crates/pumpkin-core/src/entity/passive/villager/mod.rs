@@ -17,14 +17,14 @@ use pumpkin_inventory::screen_handler::{
 };
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::bedrock::{
+use sculith_protocol::bedrock::{
     client::set_actor_data::{MetadataValue, SyncedActorDataList, entity_data_key},
     server::actor_event::ActorEventID,
 };
-use pumpkin_protocol::codec::var_int::VarInt;
-use pumpkin_protocol::java::client::play::CMerchantOffers;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::text::TextComponent;
+use sculith_protocol::codec::var_int::VarInt;
+use sculith_protocol::java::client::play::CMerchantOffers;
+use sculith_util::math::position::BlockPos;
+use sculith_util::text::TextComponent;
 
 use crate::entity::ageable::{AgeableData, AgeableMob};
 use crate::entity::ai::brain::Brain;
@@ -331,7 +331,7 @@ pub struct VillagerEntity {
     pub gossips: std::sync::Mutex<GossipContainer>,
     pub inventory: std::sync::Mutex<Vec<ItemStack>>,
     pub merchant_inventory: Arc<SimpleInventory>,
-    pub offers: std::sync::Mutex<Vec<pumpkin_protocol::java::client::play::MerchantOffer>>,
+    pub offers: std::sync::Mutex<Vec<sculith_protocol::java::client::play::MerchantOffer>>,
     pub unhappy_counter: AtomicI32,
     pub trade_sound_cooldown: AtomicI32,
     pub increase_profession_level_on_update: AtomicBool,
@@ -612,9 +612,9 @@ impl VillagerEntity {
     #[allow(clippy::too_many_lines)]
     pub fn add_trades(&self, profession: VillagerProfession, level: i32) {
         use crate::data::datapack::trade_loader::{DynamicTradeModifier, DynamicVillagerTradeSet};
-        use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
         use rand::seq::IndexedRandom;
         use rand::{RngExt, SeedableRng, rngs::StdRng};
+        use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
         use std::borrow::Cow;
 
         let villager_type = self
@@ -703,7 +703,7 @@ impl VillagerEntity {
                     }
                     DynamicTradeModifier::Potion(potion) => apply_potion(&mut output, potion),
                 }
-                new_offers.push(pumpkin_protocol::java::client::play::MerchantOffer {
+                new_offers.push(sculith_protocol::java::client::play::MerchantOffer {
                     base_cost_a: ItemStackSerializer(Cow::Owned(base_cost_a)),
                     output: ItemStackSerializer(Cow::Owned(output)),
                     cost_b: cost_b.map(|stack| ItemStackSerializer(Cow::Owned(stack))),
@@ -1047,7 +1047,7 @@ impl VillagerEntity {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
-            .any(pumpkin_protocol::java::client::play::MerchantOffer::needs_restock)
+            .any(sculith_protocol::java::client::play::MerchantOffer::needs_restock)
     }
 
     fn allowed_to_restock(&self, game_time: i64) -> bool {
@@ -1117,7 +1117,7 @@ impl VillagerEntity {
     }
 
     fn bedrock_trade_data(
-        offers: &[pumpkin_protocol::java::client::play::MerchantOffer],
+        offers: &[sculith_protocol::java::client::play::MerchantOffer],
         level: i32,
     ) -> NbtCompound {
         use pumpkin_nbt::tag::NbtTag;
@@ -1212,10 +1212,10 @@ impl VillagerEntity {
         &self,
         player: &Player,
         sync_id: u8,
-        offers: &[pumpkin_protocol::java::client::play::MerchantOffer],
+        offers: &[sculith_protocol::java::client::play::MerchantOffer],
         villager_data: VillagerData,
     ) {
-        use pumpkin_protocol::{bedrock::client::CUpdateTrade, codec::var_long::VarLong};
+        use sculith_protocol::{bedrock::client::CUpdateTrade, codec::var_long::VarLong};
 
         let java = CMerchantOffers::new(
             VarInt(i32::from(sync_id)),
@@ -1710,7 +1710,7 @@ impl Mob for VillagerEntity {
                         let special_price = recipe.get_int("specialPrice").unwrap_or(0);
                         let demand = recipe.get_int("demand").unwrap_or(0);
 
-                        offers.push(pumpkin_protocol::java::client::play::MerchantOffer {
+                        offers.push(sculith_protocol::java::client::play::MerchantOffer {
                             base_cost_a: buy.into(),
                             output: sell_item.into(),
                             cost_b: buy_b.map(Into::into),
@@ -1872,7 +1872,7 @@ impl Mob for VillagerEntity {
         lightning: &crate::entity::lightning::LightningBoltEntity,
     ) {
         let world = self.get_entity().world.load_full();
-        let converted = (world.level_info.load().difficulty != pumpkin_util::Difficulty::Peaceful)
+        let converted = (world.level_info.load().difficulty != sculith_util::Difficulty::Peaceful)
             .then(|| {
                 convert_to(
                     self,
@@ -2000,8 +2000,8 @@ impl Mob for VillagerEntity {
 mod tests {
     use pumpkin_data::data_component_impl::{EnchantmentsImpl, StoredEnchantmentsImpl};
     use pumpkin_data::villager::VillagerTradeModifier;
-    use pumpkin_protocol::java::client::play::Metadata;
-    use pumpkin_util::version::JavaMinecraftVersion;
+    use sculith_protocol::java::client::play::Metadata;
+    use sculith_util::version::JavaMinecraftVersion;
 
     use super::*;
 

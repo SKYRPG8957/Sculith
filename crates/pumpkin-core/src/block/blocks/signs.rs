@@ -17,15 +17,15 @@ use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_nbt::serializer::{NbtWriteHelper, NbtWriteHelperJava};
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::IdOr;
-use pumpkin_protocol::java::client::dialog::DialogNBT;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::text::TextComponent;
-use pumpkin_util::text::click::{ClickEvent, ClickPayload};
-use pumpkin_util::text::color::NamedColor;
 use pumpkin_world::tick::TickPriority;
+use sculith_protocol::IdOr;
+use sculith_protocol::java::client::dialog::DialogNBT;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::text::TextComponent;
+use sculith_util::text::click::{ClickEvent, ClickPayload};
+use sculith_util::text::color::NamedColor;
 use tracing::debug;
 use uuid::Uuid;
 
@@ -46,7 +46,7 @@ use crate::item::items::glowing_ink_sac::GlowingInkSacItem;
 use crate::item::items::honeycomb::HoneyCombItem;
 use crate::item::items::ink_sac::InkSacItem;
 use crate::world::World;
-use pumpkin_protocol::java::client::play::{COpenSignEditor, CPlayShowDialog};
+use sculith_protocol::java::client::play::{COpenSignEditor, CPlayShowDialog};
 
 #[pumpkin_block_from_tag("minecraft:all_signs")]
 pub struct SignBlock;
@@ -386,7 +386,7 @@ impl BlockBehaviour for SignBlock {
         }
         args.player.try_enqueue_packet_editioned(
             &COpenSignEditor::new(*args.position, true),
-            &pumpkin_protocol::bedrock::client::open_sign::COpenSign::new(*args.position, true),
+            &sculith_protocol::bedrock::client::open_sign::COpenSign::new(*args.position, true),
         );
     }
 
@@ -694,7 +694,7 @@ fn open_text_edit(
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(player.gameprofile.id);
     player.try_enqueue_packet_editioned(
         &COpenSignEditor::new(*position, is_front_text),
-        &pumpkin_protocol::bedrock::client::open_sign::COpenSign::new(*position, is_front_text),
+        &sculith_protocol::bedrock::client::open_sign::COpenSign::new(*position, is_front_text),
     );
 }
 
@@ -741,7 +741,7 @@ fn is_plain_or_empty_text(text: &str) -> bool {
                 && component.0.extra.is_empty()
                 && matches!(
                     *component.0.content,
-                    pumpkin_util::text::TextContent::Text { .. }
+                    sculith_util::text::TextContent::Text { .. }
                 )
         }
         Err(_) => true,

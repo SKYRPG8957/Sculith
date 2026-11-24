@@ -22,9 +22,9 @@ use pumpkin_data::carver::{CarverAdditionalConfig, CarverConfig};
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::material_rule::MaterialRule;
-use pumpkin_util::math::vector2::Vector2;
-use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use sculith_util::math::vector2::Vector2;
+use sculith_util::math::vector3::Vector3;
+use sculith_util::random::{RandomGenerator, RandomImpl};
 
 pub struct CarverBlockIds {
     pub air: &'static BlockState,
@@ -385,7 +385,7 @@ fn should_carve(config: &CarverConfig, random: &mut RandomGenerator) -> bool {
 }
 
 fn get_large_feature_seed(seed: u64, chunk_x: i32, chunk_z: i32) -> u64 {
-    let mut random = pumpkin_util::random::legacy_rand::LegacyRand::from_seed(seed);
+    let mut random = sculith_util::random::legacy_rand::LegacyRand::from_seed(seed);
     let x_scale = random.next_i64();
     let z_scale = random.next_i64();
     let seed = seed as i64;
@@ -395,7 +395,7 @@ fn get_large_feature_seed(seed: u64, chunk_x: i32, chunk_z: i32) -> u64 {
 }
 
 const fn new_carver_random(seed: u64, _non_vanilla_random: bool) -> RandomGenerator {
-    RandomGenerator::Legacy(pumpkin_util::random::legacy_rand::LegacyRand::from_seed(
+    RandomGenerator::Legacy(sculith_util::random::legacy_rand::LegacyRand::from_seed(
         seed,
     ))
 }
@@ -501,7 +501,7 @@ fn with_carve_run_options<F>(
     F: FnOnce(&mut CarveRun<'_, '_>),
 {
     use crate::generation::generator::{GeneratorInit, VanillaGenerator, WorldGenerator};
-    use pumpkin_util::world_seed::Seed;
+    use sculith_util::world_seed::Seed;
 
     let world_gen = WorldGenerator::Noise(Box::new(VanillaGenerator::new(Seed(42), dimension)));
     let WorldGenerator::Noise(generator) = &world_gen else {

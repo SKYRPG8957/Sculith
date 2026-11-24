@@ -1,5 +1,5 @@
 use pumpkin_macros::{Event, cancellable};
-use pumpkin_protocol::java::client::dialog::Dialog;
+use sculith_protocol::java::client::dialog::Dialog;
 use std::sync::Arc;
 
 use crate::entity::player::Player;

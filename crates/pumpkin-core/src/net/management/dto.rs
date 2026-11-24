@@ -1,4 +1,4 @@
-use pumpkin_util::text::TextComponent;
+use sculith_util::text::TextComponent;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

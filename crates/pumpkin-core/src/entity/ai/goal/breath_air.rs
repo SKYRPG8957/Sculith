@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, fluid::Fluid};
-use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use super::{Controls, Goal};
 use crate::entity::{ai::pathfinder::node::PathComputationType, mob::Mob};

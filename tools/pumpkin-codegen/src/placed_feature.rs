@@ -113,16 +113,16 @@ pub fn build() -> TokenStream {
                 HeightProvider, TrapezoidHeightProvider, UniformHeightProvider,
                 VeryBiasedToBottomHeightProvider,
             };
-            use pumpkin_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
-            use pumpkin_util::math::int_provider::{
+            use sculith_util::y_offset::{AboveBottom, Absolute, BelowTop, RelativeToSeaLevel, YOffset};
+            use sculith_util::math::int_provider::{
                 BiasedToBottomIntProvider, ClampedIntProvider, TrapezoidIntProvider, ClampedNormalIntProvider,
                 ConstantIntProvider, IntProvider, NormalIntProvider, UniformIntProvider,
                 WeightedEntry, WeightedListIntProvider,
             };
             use crate::block::BlockStateCodec;
             use pumpkin_data::{Block, BlockDirection};
-            use pumpkin_util::math::vector3::Vector3;
-            use pumpkin_util::HeightMap;
+            use sculith_util::math::vector3::Vector3;
+            use sculith_util::HeightMap;
             let mut map = std::collections::HashMap::new();
             #(#entries)*
             map

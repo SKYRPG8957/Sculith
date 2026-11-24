@@ -13,8 +13,8 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
-use pumpkin_util::math::position::BlockPos;
-use pumpkin_util::math::vector3::Vector3;
+use sculith_util::math::position::BlockPos;
+use sculith_util::math::vector3::Vector3;
 
 pub struct FireworkRocketItem;
 
@@ -65,7 +65,7 @@ impl ItemBehaviour for FireworkRocketItem {
 
     fn normal_use(&self, item: &Item, player: &Player) {
         let (yaw, pitch) = player.rotation();
-        self.normal_use_with_hand(item, player, yaw, pitch, pumpkin_util::Hand::Right);
+        self.normal_use_with_hand(item, player, yaw, pitch, sculith_util::Hand::Right);
     }
 
     fn normal_use_with_hand(
@@ -74,12 +74,12 @@ impl ItemBehaviour for FireworkRocketItem {
         player: &Player,
         _yaw: f32,
         _pitch: f32,
-        hand: pumpkin_util::Hand,
+        hand: sculith_util::Hand,
     ) {
         if player.get_entity().is_fall_flying() {
             let mut held = match hand {
-                pumpkin_util::Hand::Right => player.inventory().held_item(),
-                pumpkin_util::Hand::Left => player.inventory().off_hand_item(),
+                sculith_util::Hand::Right => player.inventory().held_item(),
+                sculith_util::Hand::Left => player.inventory().off_hand_item(),
             };
             if held.is_empty() || held.item.id != Item::FIREWORK_ROCKET.id {
                 return;
@@ -132,10 +132,10 @@ impl ItemBehaviour for FireworkRocketItem {
             let item_id = held.item.id;
             held.decrement_unless_creative(player.gamemode.load(), 1);
             match hand {
-                pumpkin_util::Hand::Right => player.inventory().set_held_item(held),
-                pumpkin_util::Hand::Left => player
+                sculith_util::Hand::Right => player.inventory().set_held_item(held),
+                sculith_util::Hand::Left => player
                     .inventory()
-                    .set_stack_in_hand(pumpkin_util::Hand::Left, held),
+                    .set_stack_in_hand(sculith_util::Hand::Left, held),
             }
             player.increment_stat(StatisticCategory::Used, i32::from(item_id), 1);
         }
