@@ -10,10 +10,10 @@ use std::{
 use pumpkin_world::{
     chunk::io::converter::RegionFormat,
     data::{
-        checkpoint::{CheckpointFence, SaveCheckpoint, write_terrain},
+        checkpoint::{CheckpointFence, SaveCheckpoint, write_entities, write_terrain},
         player_data::PlayerDataStorage,
     },
-    level::{ChunkSaver, LevelFolder},
+    level::{ChunkSaver, EntitySaver, LevelFolder},
 };
 use rustc_hash::FxHashSet;
 use sculith_config::chunk::ChunkConfig;
@@ -63,9 +63,20 @@ impl StorageCheckpoint {
         let Some(send) = request else {
             return;
         };
-        if !send.is_closed() {
-            let result = capture(server).map(|checkpoint| Capture { checkpoint, access });
-            let _ = send.send(result);
+        if send.is_closed() {
+            return;
+        }
+        match capture(server) {
+            Ok(Some(checkpoint)) => {
+                let _ = send.send(Ok(Capture { checkpoint, access }));
+            }
+            Ok(None) => {
+                // A direct world save can be releasing its entity snapshot.
+                *self.request.lock().unwrap_or_else(PoisonError::into_inner) = Some(send);
+            }
+            Err(err) => {
+                let _ = send.send(Err(err));
+            }
         }
     }
 
@@ -104,7 +115,9 @@ impl StorageCheckpoint {
             captured = receive => captured.map_err(|_| "Checkpoint capture stopped".to_string())??,
             () = server.stop_token.cancelled() => return Err("Server stopped before the checkpoint".to_string()),
         };
-        if checkpoint.worlds.is_empty() || checkpoint.players.is_empty() {
+        if (checkpoint.worlds.is_empty() && checkpoint.entities.is_empty())
+            || checkpoint.players.is_empty()
+        {
             return Ok(None);
         }
         // The checkpoint owns both writers until publication and replay finish. On failure,
@@ -161,29 +174,34 @@ async fn apply_live(server: &Server, checkpoint: Arc<SaveCheckpoint>) -> Result<
     result
 }
 
-fn capture(server: &Server) -> Result<SaveCheckpoint, String> {
+fn capture(server: &Server) -> Result<Option<SaveCheckpoint>, String> {
     let root = server.basic_config.get_world_path();
-    let players = ServerPlayerData::capture_online(server);
     let mut checkpoint = SaveCheckpoint {
-        players,
+        players: ServerPlayerData::capture_online(server),
         ..SaveCheckpoint::default()
     };
     if checkpoint.players.is_empty() {
-        return Ok(checkpoint);
+        return Ok(Some(checkpoint));
     }
     for world in server.worlds.load().iter() {
+        let Some(entities) = world.try_capture_storage_entities() else {
+            return Ok(None);
+        };
+        let path = world
+            .level
+            .level_folder
+            .dim_folder
+            .strip_prefix(&root)
+            .map_err(|err| err.to_string())?;
         let chunks = world.capture_storage_chunks();
         if !chunks.is_empty() {
-            let path = world
-                .level
-                .level_folder
-                .dim_folder
-                .strip_prefix(&root)
-                .map_err(|err| err.to_string())?;
             checkpoint.worlds.insert(path.to_path_buf(), chunks);
         }
+        if !entities.is_empty() {
+            checkpoint.entities.insert(path.to_path_buf(), entities);
+        }
     }
-    Ok(checkpoint)
+    Ok(Some(checkpoint))
 }
 
 pub(super) async fn recover(
@@ -220,16 +238,27 @@ async fn apply(
         Ok((checkpoint, terrain))
     })
     .await?;
-    for (relative, chunks) in terrain {
-        let path = root.join(relative);
-        if let Some(world) = worlds
+    let active_world = |path: &Path| {
+        worlds
             .iter()
             .find(|world| world.level.level_folder.dim_folder == path)
-        {
+    };
+    for (relative, chunks) in terrain {
+        let path = root.join(relative);
+        if let Some(world) = active_world(&path) {
             write_terrain(&world.level.chunk_saver, &world.level.level_folder, chunks).await?;
         } else {
             let folder = LevelFolder::new(root.to_path_buf(), path);
             write_terrain(&ChunkSaver::from_config(config), &folder, chunks).await?;
+        }
+    }
+    for (relative, images) in &checkpoint.entities {
+        let path = root.join(relative);
+        if let Some(world) = active_world(&path) {
+            world.level.write_checkpoint_entities(images).await?;
+        } else {
+            let folder = LevelFolder::new(root.to_path_buf(), path);
+            write_entities(&EntitySaver::from_config(config), &folder, images).await?;
         }
     }
     let root = root.to_path_buf();

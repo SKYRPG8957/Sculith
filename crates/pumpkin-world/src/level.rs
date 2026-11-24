@@ -7,7 +7,7 @@ use crate::{
         io::{Dirtiable, FileIO, LoadedData, file_manager::LevelFileIO},
         palette::has_random_ticking_fluid,
     },
-    data::checkpoint::CheckpointFence,
+    data::checkpoint::{CheckpointFence, EntityChunkImage, write_entities},
     generation::get_world_gen_with_all_settings,
     tick::{OrderedTick, ScheduledTick, TickPriority, order},
     world::WorldPortalExt,
@@ -581,14 +581,14 @@ impl Level {
         self.write_entity_chunks(chunks_to_write).await;
 
         info!("Flushing chunk data to disk for {}...", world_id);
-        if let Some(_access) = self.checkpoint_access().await
-            && let Err(err) = self.chunk_saver.flush_all().await
-        {
-            error!("Failed to flush chunk data for {world_id}: {err}");
-        }
-        info!("Flushing entity data to disk for {}...", world_id);
-        if let Err(err) = self.entity_saver.flush_all().await {
-            error!("Failed to flush entity data for {world_id}: {err}");
+        if let Some(_access) = self.checkpoint_access().await {
+            if let Err(err) = self.chunk_saver.flush_all().await {
+                error!("Failed to flush chunk data for {world_id}: {err}");
+            }
+            info!("Flushing entity data to disk for {}...", world_id);
+            if let Err(err) = self.entity_saver.flush_all().await {
+                error!("Failed to flush entity data for {world_id}: {err}");
+            }
         }
 
         // The scheduler and its writer have stopped, so an older pending save
@@ -758,9 +758,24 @@ impl Level {
         !self.mark_chunks_as_not_watched([chunk]).is_empty()
     }
 
+    /// Reserves the storage handoff before retirement consumes a live entity chunk.
+    pub fn try_entity_retirement(&self) -> Option<tokio::sync::OwnedRwLockReadGuard<()>> {
+        self.checkpoint_fence.try_read()
+    }
+
     pub fn clean_entity_chunks(
         self: &Arc<Self>,
         chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
+    ) {
+        if let Some(access) = self.try_entity_retirement() {
+            self.clean_entity_chunks_with_retirement(chunks, access);
+        }
+    }
+
+    pub fn clean_entity_chunks_with_retirement(
+        self: &Arc<Self>,
+        chunks: impl IntoIterator<Item = impl std::borrow::Borrow<Vector2<i32>>>,
+        access: tokio::sync::OwnedRwLockReadGuard<()>,
     ) {
         // Keep the removal and disk-queue handoff together for a concurrent manual save.
         let _handoff = self
@@ -791,6 +806,7 @@ impl Level {
             .entity_saver
             .queue_saves(&self.level_folder, chunks_to_process);
         self.spawn_task(async move {
+            let _access = access;
             if let Err(err) = save.await {
                 error!("Failed writing entity chunks to disk: {err}");
             }
@@ -1121,6 +1137,9 @@ impl Level {
     async fn fetch_entity_chunks(&self, positions: Vec<Vector2<i32>>) {
         let mut unfinished: FxHashSet<_> = positions.iter().copied().collect();
         let fetch = async {
+            let Some(_access) = self.checkpoint_terrain_read().await else {
+                return;
+            };
             let (tx, mut rx) = mpsc::channel(positions.len());
             self.entity_saver
                 .fetch_chunks(&self.level_folder, &positions, tx)
@@ -1264,6 +1283,9 @@ impl Level {
         if chunks_to_write.is_empty() {
             return;
         }
+        let Some(_access) = self.checkpoint_access().await else {
+            return;
+        };
 
         let chunk_saver = self.entity_saver.clone();
         let level_folder = self.level_folder.clone();
@@ -1449,6 +1471,23 @@ impl Level {
             .filter(|entry| entry.value().live.load(Ordering::Relaxed))
             .map(|entry| *entry.key())
             .collect()
+    }
+
+    /// Cached entity images that can differ from the region file.
+    pub fn entity_chunks_for_checkpoint(&self) -> Vec<(Vector2<i32>, SyncEntityChunk)> {
+        self.loaded_entity_chunks
+            .iter()
+            .filter(|entry| entry.live.load(Ordering::Relaxed) || entry.is_dirty())
+            .map(|entry| (*entry.key(), entry.value().clone()))
+            .collect()
+    }
+
+    /// Applies immutable entity images while the storage checkpoint owns the writer.
+    pub async fn write_checkpoint_entities(
+        &self,
+        images: &[(Vector2<i32>, EntityChunkImage)],
+    ) -> Result<(), String> {
+        write_entities(&self.entity_saver, &self.level_folder, images).await
     }
 
     pub async fn get_or_fetch_entity_chunk<R, F: Fn(&SyncEntityChunk) -> R>(

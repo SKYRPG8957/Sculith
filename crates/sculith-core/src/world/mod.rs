@@ -119,7 +119,12 @@ use pumpkin_world::{
     CURRENT_BEDROCK_MC_VERSION, biome,
     chunk::{io::Dirtiable, palette::bedrock_water_state},
 };
-use pumpkin_world::{chunk::ChunkData, chunk_system::ChunkPos, world::BlockAccessor};
+use pumpkin_world::{
+    chunk::{ChunkData, ChunkEntityData},
+    chunk_system::ChunkPos,
+    data::checkpoint::EntityChunkImage,
+    world::BlockAccessor,
+};
 use pumpkin_world::{
     level::{Level, SyncChunk, apply_regional_block_properties},
     tick::{TickPriority, order},
@@ -7970,6 +7975,52 @@ impl World {
         chunk.internal_to_pump_bytes()
     }
 
+    /// Captures live chunks, including those whose last actor was removed.
+    pub(crate) fn try_capture_storage_entities(
+        &self,
+    ) -> Option<Vec<(Vector2<i32>, EntityChunkImage)>> {
+        let _snapshot = self.entity_chunk_changes.snapshot.try_read().ok()?;
+        let mut grouped = entity_save_records(&self.entities.load());
+        let mut images: Vec<_> = self
+            .level
+            .entity_chunks_for_checkpoint()
+            .into_iter()
+            .map(|(pos, chunk)| {
+                let live = chunk.live.load(Relaxed);
+                let records = grouped.remove(&pos).unwrap_or_default();
+                let records = if live {
+                    records
+                } else {
+                    let mut previous = chunk
+                        .data
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
+                    ChunkEntityData::merge_records(&mut previous, false, records);
+                    previous
+                };
+                (
+                    pos,
+                    EntityChunkImage {
+                        replace: true,
+                        records,
+                    },
+                )
+            })
+            .collect();
+        images.extend(grouped.into_iter().map(|(pos, records)| {
+            // A destination that never went live can still hold unloaded actors on disk.
+            (
+                pos,
+                EntityChunkImage {
+                    replace: false,
+                    records,
+                },
+            )
+        }));
+        Some(images)
+    }
+
     /// Records the edited container in the chunk that owned it when the transfer started.
     pub(crate) fn record_storage_transfer(&self, chunk: &ChunkData, entity: &dyn BlockEntity) {
         let nbt = self.block_entity_save_data(entity);
@@ -8526,22 +8577,6 @@ fn saved_chunk_pos(entity: &dyn EntityBase) -> Vector2<i32> {
     )
 }
 
-/// A live chunk's records were already spawned, so `fresh` replaces them. Otherwise the
-/// records are the only copy of unspawned entities, so they stay and are only replaced by UUID.
-fn merge_entity_records(data: &mut Vec<NbtCompound>, live: bool, fresh: Vec<NbtCompound>) {
-    if live {
-        *data = fresh;
-        return;
-    }
-
-    for record in fresh {
-        if let Some(uuid) = record.get_uuid("UUID") {
-            data.retain(|existing| existing.get_uuid("UUID") != Some(uuid));
-        }
-        data.push(record);
-    }
-}
-
 fn block_entity_nbt(block_entity: &dyn BlockEntity) -> NbtCompound {
     let mut nbt = NbtCompound::new();
     block_entity.write_internal(&mut nbt);
@@ -8561,8 +8596,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        NaturalSpawnChunkCache, World, bedrock_block_breaking_rate, bedrock_chest_block_actor,
-        merge_entity_records, natural_spawn_chunk_count, spawn_list_for_tick,
+        ChunkEntityData, NaturalSpawnChunkCache, World, bedrock_block_breaking_rate,
+        bedrock_chest_block_actor, natural_spawn_chunk_count, spawn_list_for_tick,
     };
 
     fn record(uuid: Option<Uuid>, id: &str) -> NbtCompound {
@@ -8586,7 +8621,7 @@ mod tests {
         let fresh = Uuid::from_u128(2);
         let mut data = vec![record(Some(stale), "minecraft:piglin")];
 
-        merge_entity_records(
+        ChunkEntityData::merge_records(
             &mut data,
             true,
             vec![record(Some(fresh), "minecraft:zombie")],
@@ -8603,7 +8638,7 @@ mod tests {
             record(Some(Uuid::from_u128(2)), "minecraft:zombie"),
         ];
 
-        merge_entity_records(&mut data, true, Vec::new());
+        ChunkEntityData::merge_records(&mut data, true, Vec::new());
 
         assert!(data.is_empty());
     }
@@ -8613,7 +8648,7 @@ mod tests {
         let dormant = Uuid::from_u128(1);
         let mut data = vec![record(Some(dormant), "minecraft:piglin")];
 
-        merge_entity_records(
+        ChunkEntityData::merge_records(
             &mut data,
             false,
             vec![record(Some(Uuid::from_u128(2)), "minecraft:zombie")],
@@ -8630,7 +8665,7 @@ mod tests {
             record(Some(Uuid::from_u128(2)), "minecraft:zombie"),
         ];
 
-        merge_entity_records(
+        ChunkEntityData::merge_records(
             &mut data,
             false,
             vec![record(Some(shared), "minecraft:hoglin")],
@@ -8649,7 +8684,7 @@ mod tests {
     fn merge_entity_records_never_matches_a_record_without_a_uuid() {
         let mut data = vec![record(None, "minecraft:piglin")];
 
-        merge_entity_records(&mut data, false, vec![record(None, "minecraft:zombie")]);
+        ChunkEntityData::merge_records(&mut data, false, vec![record(None, "minecraft:zombie")]);
 
         assert_eq!(ids(&data), ["minecraft:piglin", "minecraft:zombie"]);
     }
@@ -8660,7 +8695,7 @@ mod tests {
         let mut data = Vec::new();
 
         for _ in 0..3 {
-            merge_entity_records(
+            ChunkEntityData::merge_records(
                 &mut data,
                 false,
                 vec![record(Some(uuid), "minecraft:piglin")],

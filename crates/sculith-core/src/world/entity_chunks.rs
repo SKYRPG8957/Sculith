@@ -29,7 +29,6 @@ use crate::{
 use super::{
     RegionId, RegionLayout, World, entity_save_records,
     entity_tracker::{EntityTracker, RestoredMobSpawn},
-    merge_entity_records,
     regional_campfires::RegionalEntityUpdate,
     saved_chunk_pos,
 };
@@ -204,7 +203,7 @@ fn store_entity_records(
 ) {
     let live = chunk.live.load(Relaxed);
     if live || !records.is_empty() {
-        merge_entity_records(data, live, records);
+        ChunkEntityData::merge_records(data, live, records);
         chunk.mark_dirty(true);
     }
 }
@@ -753,6 +752,10 @@ impl World {
         if chunks.is_empty() {
             return Vec::new();
         }
+        let Some(access) = self.level.try_entity_retirement() else {
+            self.queue_entity_chunk_changes(chunks.into_keys());
+            return Vec::new();
+        };
         // NBT preparation can touch actor locks. Do it before pinning the view
         // so an arriving watcher does not have to wait for serialization.
         let mut by_chunk = FxHashMap::<_, Vec<_>>::default();
@@ -835,7 +838,8 @@ impl World {
                     .collect::<Vec<_>>()
             });
         }
-        self.level.clean_entity_chunks(cleaned);
+        self.level
+            .clean_entity_chunks_with_retirement(cleaned, access);
         self.queue_entity_chunk_changes(retry);
         retired
     }

@@ -1310,16 +1310,21 @@ impl ChunkEntityData {
     }
 
     fn internal_to_bytes(&self) -> Bytes {
+        let data = self
+            .data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Self::encode_records(Vector2::new(self.x, self.z), &data)
+    }
+
+    pub(crate) fn encode_records(pos: Vector2<i32>, records: &[NbtCompound]) -> Bytes {
         let mut root = NbtCompound::new();
         root.put_int("DataVersion", WORLD_DATA_VERSION);
         root.put(
             "Position",
-            pumpkin_nbt::tag::NbtTag::IntArray(vec![self.x, self.z]),
+            pumpkin_nbt::tag::NbtTag::IntArray(vec![pos.x, pos.y]),
         );
-        let entities_tag: Vec<pumpkin_nbt::tag::NbtTag> = self
-            .data
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        let entities_tag: Vec<pumpkin_nbt::tag::NbtTag> = records
             .iter()
             .map(|c| pumpkin_nbt::tag::NbtTag::Compound(c.clone()))
             .collect();
@@ -1327,6 +1332,20 @@ impl ChunkEntityData {
 
         let nbt = pumpkin_nbt::Nbt::from(root);
         nbt.write()
+    }
+
+    /// Live records replace the old image. Dormant records can only be replaced by UUID.
+    pub fn merge_records(data: &mut Vec<NbtCompound>, live: bool, fresh: Vec<NbtCompound>) {
+        if live {
+            *data = fresh;
+            return;
+        }
+        for record in fresh {
+            if let Some(uuid) = record.get_uuid("UUID") {
+                data.retain(|existing| existing.get_uuid("UUID") != Some(uuid));
+            }
+            data.push(record);
+        }
     }
 }
 

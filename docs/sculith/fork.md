@@ -714,13 +714,16 @@ server from opening the world and leaves the journal available for inspection.
 ## Manual world checkpoints
 
 `/save-all`, `/save-all flush`, and the management save request capture online
-players and loaded block-entity chunks at a server tick boundary. The scheduler
-continues polling world deadlines while the checkpoint writer is busy. When both
-groups have records, the server syncs one `.sculith-world-checkpoint` in the
-world root before saving either group. Startup replays the checkpoint before
-opening region caches or admitting players. A retry can finish an interrupted
-checkpoint while the server is running. Offline conversion and storage export
-require the checkpoint to be fully applied.
+players, loaded block-entity chunks and entity records at a server tick
+boundary. The journal includes empty images for live chunks whose actors were
+removed. An image for a chunk that has not been activated merges records by
+UUID and preserves dormant actors. The scheduler continues polling world
+deadlines while the checkpoint writer is busy. Normal player and entity writes
+wait for the checkpoint, including the writer that retires unwatched chunks.
+The server syncs one `.sculith-world-checkpoint` before writing the captured
+groups. Startup replays it before opening region caches or admitting players.
+A retry can finish an interrupted checkpoint while the server is running.
+Offline conversion and storage export require the checkpoint to be fully applied.
 
 ## Automatic inventory checkpoints
 
