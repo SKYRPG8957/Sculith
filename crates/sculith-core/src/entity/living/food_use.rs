@@ -21,6 +21,7 @@ pub enum RegionalFoodUseFinish {
 
 impl LivingEntity {
     /// The caller pins the ordered input, personal screen, region and checkpoint.
+    /// An unavailable completion check keeps the work queued for a later step.
     #[expect(
         clippy::too_many_lines,
         reason = "Validate and commit under the same guards"
@@ -30,7 +31,7 @@ impl LivingEntity {
         player: &Player,
         client: &BedrockClient,
         deadline: TickDeadline,
-        can_finish: impl FnOnce(Vector3<f64>) -> bool,
+        can_finish: impl FnOnce(Vector3<f64>) -> Option<bool>,
         publish: impl FnOnce(
             SyncedActorDataList,
             Option<Box<[u8]>>,
@@ -113,8 +114,16 @@ impl LivingEntity {
         ) else {
             return World;
         };
-        if !can_finish(position) {
-            return World;
+        match can_finish(position) {
+            Some(true) => {}
+            Some(false) => return World,
+            None => {
+                tracing::trace!(
+                    entity = self.entity.entity_id,
+                    "Regional food completion is waiting for ownership or the game-event index"
+                );
+                return Pending;
+            }
         }
         if !self.try_publish_food_use_end(client, flags, |metadata, java| {
             publish(metadata, java, empty_main_hand)

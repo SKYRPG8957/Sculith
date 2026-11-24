@@ -481,7 +481,10 @@ impl BedrockClient {
 mod tests {
     use super::*;
     use futures::future::BoxFuture;
-    use pumpkin_data::{Block, effect::StatusEffect, potion::Effect};
+    use pumpkin_data::{
+        Block, effect::StatusEffect, entity::EntityType, item::Item, item_stack::ItemStack,
+        potion::Effect,
+    };
     use pumpkin_world::world::BlockFlags;
     use sculith_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
@@ -495,7 +498,7 @@ mod tests {
         codec::{var_int::VarInt, var_uint::VarUInt, var_ulong::VarULong},
         serial::PacketWrite,
     };
-    use sculith_util::{GameMode, math::vector3::Vector3};
+    use sculith_util::{GameMode, Hand, math::vector3::Vector3};
     use std::{
         sync::{Mutex, atomic::AtomicBool, mpsc},
         time::{Duration, Instant},
@@ -503,6 +506,7 @@ mod tests {
 
     use crate::{
         data::VanillaData,
+        entity::{Entity, interaction::InteractionEntity},
         net::{ClientPlatform, GameProfile, PlayerConfig, packet_limiter::PacketRateLimiter},
         plugin::{EventHandler, api::events::EventPriority},
         server::TickDeadline,
@@ -579,6 +583,81 @@ mod tests {
                 period: TICK_PERIOD,
             },
         );
+    }
+
+    fn verify_food_finish_retries_after_handoff(
+        world: &Arc<World>,
+        server: &Server,
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        origin: Vector2<i32>,
+        destination: Vector2<i32>,
+    ) {
+        let position = |chunk: Vector2<i32>| {
+            Vector3::new(
+                f64::from(chunk.x) * 16.0 + 8.0,
+                100.0,
+                f64::from(chunk.y) * 16.0 + 8.0,
+            )
+        };
+        let hunger = &player.hunger_manager;
+        let living = &player.living_entity;
+        let food = || {
+            (
+                player.get_food_level(),
+                player.inventory.held_item().item_count,
+            )
+        };
+        let saved_hunger = (hunger.level.load(), hunger.saturation.load());
+        let saved_item = player.inventory.held_item();
+        let saved_position = player.get_entity().pos.load();
+        let was_loaded = player.has_client_loaded();
+        player.set_client_loaded(true);
+        player.get_entity().set_pos(position(origin));
+        hunger.level.store(10);
+        hunger.saturation.store(0.0);
+        let apple = ItemStack::new(1, &Item::APPLE);
+        player.inventory.set_held_item(apple.clone());
+        living.start_bedrock_consumable(server, player, client, Hand::Right, apple);
+        assert_eq!(
+            client.food_use_slot(),
+            Some(player.inventory.get_selected_slot())
+        );
+        living.item_use_time.store(2, Relaxed);
+        let first = Instant::now() + TICK_PERIOD;
+        tick_region(world, origin, first);
+        assert_eq!(living.item_use_time.load(Relaxed), 1);
+
+        player.get_entity().set_pos(position(destination));
+        tick_region(world, destination, first);
+        assert_eq!(food(), (10, 1));
+
+        // Replacing the registry leaves the previously indexed generation stale.
+        let previous = world.entities.load_full();
+        let marker = InteractionEntity::new(Entity::new(
+            world.clone(),
+            position(destination),
+            &EntityType::INTERACTION,
+        ));
+        let marker_id = marker.get_entity().entity_id;
+        let due = first + TICK_PERIOD;
+        tick_region(world, origin, due);
+        world.entities.store(Arc::new(vec![marker]));
+        tick_region(world, destination, due);
+        assert_eq!(food(), (10, 1));
+
+        assert!(world.get_entity_by_id(marker_id).is_some());
+        tick_region(world, destination, due + TICK_PERIOD);
+        assert_eq!(food(), (14, 0));
+        tick_region(world, destination, due + TICK_PERIOD * 2);
+        assert_eq!(food(), (14, 0));
+
+        world.entities.store(previous);
+        player.set_client_loaded(was_loaded);
+        player.get_entity().set_pos(saved_position);
+        player.inventory.set_held_item(saved_item);
+        hunger.level.store(saved_hunger.0);
+        hunger.saturation.store(saved_hunger.1);
     }
 
     fn verify_pickup_timer_handoff(
@@ -1431,6 +1510,7 @@ mod tests {
         let mut advanced = AdvancedConfiguration::default();
         advanced.world.generator = WorldPreset::Flat;
         advanced.networking.bedrock.online_mode = false;
+        advanced.advancement.enabled = false;
         let server = Server::new(
             basic,
             advanced,
@@ -1540,6 +1620,7 @@ mod tests {
         assert_eq!(pending_with_lock, 1);
         advance(east);
         check();
+        verify_food_finish_retries_after_handoff(&world, &server, &player, &client, west, east);
         verify_pickup_timer_handoff(&world, &player, east, west);
         verify_item_cooldown_handoff(&world, &server, &player, &client, west, east);
         verify_mining_clock(&world, &server, &player, &client, west).await;

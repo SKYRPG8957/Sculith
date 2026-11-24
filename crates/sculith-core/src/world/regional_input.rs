@@ -312,8 +312,11 @@ impl World {
                 client,
                 deadline,
                 |position| {
-                    if !owns() || !player.has_stable_world_membership() {
-                        return false;
+                    if !player.has_stable_world_membership() {
+                        return Some(false);
+                    }
+                    if !owns() {
+                        return None;
                     }
                     let chunk = BlockPos::floored_v(position).chunk_position();
                     if self.players.load().iter().any(|nearby| {
@@ -327,7 +330,7 @@ impl World {
                                 1,
                             )
                     }) {
-                        return false;
+                        return Some(false);
                     }
                     let area = super::game_event::notified_area(
                         position,
@@ -335,7 +338,7 @@ impl World {
                     );
                     self.entity_index
                         .try_has_game_event_listener(&self.entities.load_full(), &area)
-                        == Some(false)
+                        .map(|has_listener| !has_listener)
                 },
                 |metadata, java, empty_main_hand| {
                     self.entity_tracker.try_publish_regional_player_metadata(
