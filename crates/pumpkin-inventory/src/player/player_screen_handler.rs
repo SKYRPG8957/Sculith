@@ -21,7 +21,7 @@
 use super::player_inventory::PlayerInventory;
 use crate::crafting::crafting_inventory::CraftingInventory;
 use crate::crafting::crafting_screen_handler::CraftingScreenHandler;
-use crate::crafting::recipes::{RecipeFinderScreenHandler, RecipeInputInventory};
+use crate::crafting::recipes::RecipeFinderScreenHandler;
 use crate::inventory::Inventory;
 use crate::screen_handler::{InventoryPlayer, ScreenHandler, ScreenHandlerBehaviour};
 use crate::slot::{ArmorSlot, NormalSlot, Slot};
@@ -29,7 +29,7 @@ use pumpkin_data::data_component_impl::{EquipmentSlot, EquipmentType, Equippable
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::screen::WindowType;
 use std::any::Any;
-use std::sync::Arc;
+use std::sync::{Arc, RwLockWriteGuard};
 
 /// Screen handler for the player's inventory.
 ///
@@ -39,7 +39,7 @@ pub struct PlayerScreenHandler {
     /// Core screen handler behavior (slots, sync ID, listeners).
     behaviour: ScreenHandlerBehaviour,
     /// The 2x2 crafting grid inventory.
-    crafting_inventory: Arc<dyn RecipeInputInventory>,
+    crafting_inventory: Arc<CraftingInventory>,
 }
 
 impl RecipeFinderScreenHandler for PlayerScreenHandler {}
@@ -69,17 +69,10 @@ impl PlayerScreenHandler {
         self.behaviour.slots[slot].clone()
     }
 
-    /// Keeps an empty crafting grid stable until an uncontended close completes.
+    /// Keeps the crafting inputs stable while the region prepares and applies a close.
     #[must_use]
-    pub fn try_empty_crafting_grid(
-        &self,
-    ) -> Option<std::sync::RwLockReadGuard<'_, Vec<ItemStack>>> {
-        let grid = self
-            .crafting_inventory
-            .as_any()
-            .downcast_ref::<CraftingInventory>()?;
-        let items = grid.items.try_read().ok()?;
-        items.iter().all(ItemStack::is_empty).then_some(items)
+    pub fn try_crafting_inputs(&self) -> Option<RwLockWriteGuard<'_, Vec<ItemStack>>> {
+        self.crafting_inventory.items.try_write().ok()
     }
 
     /// Creates a new player screen handler.
@@ -94,8 +87,7 @@ impl PlayerScreenHandler {
         sync_id: u8,
         provider: Option<Arc<dyn crate::crafting::recipe_provider::RecipeProvider>>,
     ) -> Self {
-        let crafting_inventory: Arc<dyn RecipeInputInventory> =
-            Arc::new(CraftingInventory::new(2, 2));
+        let crafting_inventory = Arc::new(CraftingInventory::new(2, 2));
 
         let mut player_screen_handler = Self {
             behaviour: ScreenHandlerBehaviour::new(sync_id, window_type),

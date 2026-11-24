@@ -657,17 +657,17 @@ mod tests {
         tick_region(world, destination, at + TICK_PERIOD * 2);
         assert!(client.inventory_opened.load(Relaxed));
 
-        let cursor = player
-            .player_screen_handler
-            .lock()
-            .unwrap()
-            .get_behaviour()
-            .cursor_stack
-            .clone();
+        let (cursor, ingredient) = {
+            let handler = player.player_screen_handler.lock().unwrap();
+            let behaviour = handler.get_behaviour();
+            (behaviour.cursor_stack.clone(), behaviour.slots[1].clone())
+        };
         let previous = std::mem::replace(
             &mut *cursor.lock().unwrap(),
             ItemStack::new(2, &Item::STICK),
         );
+        let previous_ingredient = ingredient.get_cloned_stack();
+        ingredient.set_stack(ItemStack::new(3, &Item::STICK));
         let inventory = &player.inventory;
         let selected = inventory.get_selected_slot();
         inventory.set_selected_slot(0);
@@ -677,7 +677,8 @@ mod tests {
         tick_region(world, destination, at + TICK_PERIOD * 3);
         assert!(!client.inventory_opened.load(Relaxed));
         assert!(cursor.lock().unwrap().is_empty());
-        assert_eq!(inventory.get_slot(9).item_count, 3);
+        assert!(ingredient.get_cloned_stack().is_empty());
+        assert_eq!(inventory.get_slot(9).item_count, 6);
 
         client.enqueue_play_input(player, open());
         tick_region(world, destination, at + TICK_PERIOD * 4);
@@ -695,6 +696,7 @@ mod tests {
         *cursor.lock().unwrap() = previous;
         client.drain_world_input(player, None, Some(world), 8);
         assert!(!client.inventory_opened.load(Relaxed));
+        ingredient.set_stack(previous_ingredient);
 
         client.inventory_opened.store(was_open, Relaxed);
         player.set_client_loaded(was_loaded);

@@ -95,7 +95,7 @@ impl BedrockClient {
         can_apply: impl FnOnce() -> bool,
     ) -> Option<()> {
         let cursor = screen.get_behaviour().cursor_stack.clone();
-        let crafting = screen.try_empty_crafting_grid()?;
+        let mut crafting = screen.try_crafting_inputs()?;
         let mut cursor = cursor.try_lock().ok()?;
         let active = player.living_entity.item_in_use.try_lock().ok()?;
         if player.get_entity().is_sneaking()
@@ -110,18 +110,25 @@ impl BedrockClient {
         let mut main = inventory.main_inventory.try_write().ok()?;
         let equipment = inventory.entity_equipment.try_lock().ok()?;
         let selected = inventory.get_selected_slot();
-        let changes = if cursor.is_empty() {
+        let returned_inputs = crafting.iter().filter(|stack| !stack.is_empty()).count();
+        let changes = if cursor.is_empty() && returned_inputs == 0 {
             Vec::new()
         } else {
             let off_hand = inventory
                 .equipment_slots
                 .get(&PlayerInventory::OFF_HAND_SLOT)
                 .map_or_else(|| ItemStack::EMPTY.clone(), |slot| equipment.get(slot));
-            PlayerInventory::plan_offer_to_storage(&main, selected, &off_hand, &cursor)?
+            PlayerInventory::plan_offers_to_storage(
+                &main,
+                selected,
+                &off_hand,
+                std::iter::once(&*cursor).chain(crafting.iter()),
+            )?
         };
         let slots = main.iter().enumerate().map(|(index, stack)| {
             changes
                 .iter()
+                .rev()
                 .find(|(slot, _)| *slot == index)
                 .map_or(stack, |(_, updated)| updated)
         });
@@ -135,14 +142,19 @@ impl BedrockClient {
         if inventory.get_selected_slot() != selected || !can_apply() {
             return None;
         }
-        let returned_slots = changes.len();
+        let slot_updates = changes.len();
         if !changes.is_empty() {
             for (slot, stack) in &changes {
                 main[*slot] = stack.clone();
             }
             *cursor = ItemStack::EMPTY.clone();
+            let grid_size = crafting.len();
+            crafting.fill_with(|| ItemStack::EMPTY.clone());
             player.inventory_changed.store(true, Ordering::Relaxed);
             drop(crafting);
+            for slot in 1..=grid_size {
+                screen.set_received_stack(slot, ItemStack::EMPTY.clone());
+            }
             for (slot, stack) in changes {
                 if let Some(screen_slot) =
                     map_bedrock_slot_to_screen_handler(WINDOW_ID_INVENTORY, slot as u32)
@@ -162,7 +174,7 @@ impl BedrockClient {
                 break;
             }
         }
-        tracing::trace!(player = %player.gameprofile.name, returned_slots, "Closed Bedrock personal inventory on its region");
+        tracing::trace!(player = %player.gameprofile.name, slot_updates, returned_inputs, "Closed Bedrock personal inventory on its region");
         Some(())
     }
 

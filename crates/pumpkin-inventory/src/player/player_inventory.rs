@@ -544,38 +544,43 @@ impl PlayerInventory {
         }
     }
 
-    /// Plans a complete offer with the usual slot priority, leaving held slots to the caller's
-    /// equipment path. Failure leaves the original cursor and inventory untouched.
+    /// Plans complete offers in order with the usual slot priority, leaving held slots to the
+    /// caller's equipment path. Failure leaves the source stacks and inventory untouched.
     #[must_use]
-    pub fn plan_offer_to_storage(
+    pub fn plan_offers_to_storage<'a>(
         main: &[ItemStack; Self::MAIN_SIZE],
         selected_slot: u8,
         off_hand: &ItemStack,
-        stack: &ItemStack,
+        stacks: impl IntoIterator<Item = &'a ItemStack>,
     ) -> Option<Vec<(usize, ItemStack)>> {
         let selected = usize::from(selected_slot);
         if !Self::is_valid_hotbar_index(selected) {
             return None;
         }
-        let mut remaining = stack.clone();
         let mut after = main.clone();
         let mut changes = Vec::new();
-        while !remaining.is_empty() {
-            let index = Self::find_merge_slot(&after, selected, &remaining, || {
-                Self::can_stack_add_more(off_hand, &remaining)
-            })
-            .or_else(|| after.iter().position(ItemStack::is_empty))?;
-            if index == selected {
-                return None;
+        for mut remaining in stacks
+            .into_iter()
+            .filter(|stack| !stack.is_empty())
+            .cloned()
+        {
+            while !remaining.is_empty() {
+                let index = Self::find_merge_slot(&after, selected, &remaining, || {
+                    Self::can_stack_add_more(off_hand, &remaining)
+                })
+                .or_else(|| after.iter().position(ItemStack::is_empty))?;
+                if index == selected {
+                    return None;
+                }
+                let target = after.get_mut(index)?;
+                let fits = remaining
+                    .get_max_stack_size()
+                    .checked_sub(target.item_count)?;
+                if fits == 0 || Self::add_stack_to_main_slot(target, &remaining.split(fits)) != 0 {
+                    return None;
+                }
+                changes.push((index, target.clone()));
             }
-            let target = after.get_mut(index)?;
-            let fits = remaining
-                .get_max_stack_size()
-                .checked_sub(target.item_count)?;
-            if fits == 0 || Self::add_stack_to_main_slot(target, &remaining.split(fits)) != 0 {
-                return None;
-            }
-            changes.push((index, target.clone()));
         }
         Some(changes)
     }
@@ -757,21 +762,29 @@ mod tests {
         inv.set_slot(4, ItemStack::new(62, &Item::STONE));
         inv.set_slot(12, ItemStack::new(63, &Item::STONE));
         let before = inv.main_inventory.read().unwrap().clone();
-        let mut cursor = ItemStack::new(5, &Item::STONE);
-        let plan =
-            PlayerInventory::plan_offer_to_storage(&before, 0, ItemStack::EMPTY, &cursor).unwrap();
-        let mut world_slots = Vec::new();
-        inv.offer_to_slots(&mut cursor, |slot| world_slots.push(slot as usize));
-        assert!(cursor.is_empty());
-        assert_eq!(world_slots, [4, 12, 1]);
+        let mut returned = [2, 2, 1].map(|count| ItemStack::new(count, &Item::STONE));
+        let plan = PlayerInventory::plan_offers_to_storage(&before, 0, ItemStack::EMPTY, &returned)
+            .unwrap();
+        let mut world_updates = Vec::new();
+        for stack in &mut returned {
+            inv.offer_to_slots(stack, |slot| {
+                world_updates.push((slot as usize, inv.get_slot(slot as usize)));
+            });
+            assert!(stack.is_empty());
+        }
         assert_eq!(
-            plan.iter().map(|(slot, _)| *slot).collect::<Vec<_>>(),
-            world_slots
+            plan.iter()
+                .map(|(slot, stack)| (*slot, stack.item_count))
+                .collect::<Vec<_>>(),
+            [(4, 64), (12, 64), (1, 1), (1, 2)]
         );
-        for (slot, stack) in plan {
-            assert!(inv.get_slot(slot).are_equal(&stack));
-            if !before[slot].is_empty() {
-                assert_eq!(stack.uid, before[slot].uid);
+        assert_eq!(plan.len(), world_updates.len());
+        assert_eq!(plan[2].1.uid, plan[3].1.uid);
+        for ((slot, stack), (world_slot, world_stack)) in plan.iter().zip(world_updates) {
+            assert_eq!(*slot, world_slot);
+            assert!(stack.are_equal(&world_stack));
+            if !before[*slot].is_empty() {
+                assert_eq!(stack.uid, before[*slot].uid);
             }
         }
     }
@@ -780,13 +793,12 @@ mod tests {
     fn storage_offer_rejects_partial_returns_and_held_slots() {
         let mut main = std::array::from_fn(|_| ItemStack::new(64, &Item::DIRT));
         main[14] = ItemStack::new(63, &Item::ARROW);
-        let cursor = ItemStack::new(2, &Item::ARROW);
+        let returned = [1, 2].map(|count| ItemStack::new(count, &Item::ARROW));
         let plan = |main: &[ItemStack; PlayerInventory::MAIN_SIZE], off_hand: &ItemStack| {
-            PlayerInventory::plan_offer_to_storage(main, 0, off_hand, &cursor)
+            PlayerInventory::plan_offers_to_storage(main, 0, off_hand, &returned)
         };
         assert!(plan(&main, ItemStack::EMPTY).is_none());
         assert_eq!(main[14].item_count, 63);
-        assert_eq!(cursor.item_count, 2);
 
         main[15] = ItemStack::EMPTY.clone();
         assert!(plan(&main, &ItemStack::new(63, &Item::ARROW)).is_none());
