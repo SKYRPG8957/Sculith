@@ -107,8 +107,15 @@ request. The region prepares the reply and inventory refresh for the final
 state, checks that it still owns the player, and writes the changes together
 under the locks a player save uses.
 The ordered input queue keeps later packets behind the request. Predictions
-from other requests, recipe execution, other screens or slot types, drag
-state, and observed inventory or packet events use the world dispatcher.
+from other requests, other screens or slot types, drag state, and observed
+inventory or packet events use the world dispatcher.
+For a built-in 2×2 recipe, the same region can consume the ingredients, give
+the full result to one ordinary storage slot or the cursor, and record the
+crafted statistic. Player saves read the inventory and statistics under the
+same cursor lock. The region sends the result and refreshed four crafting
+inputs before the connection processes more requests. Recipes needing remainder
+placement, a matching advancement criterion, or an inventory, recipe or
+statistic callback run through the world dispatcher.
 An unmounted native Bedrock player can open or close the personal inventory
 on the current region. The region plans the return of the cursor stack and
 each of the four crafting inputs in the usual order. It applies the inventory

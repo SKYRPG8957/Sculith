@@ -8632,19 +8632,22 @@ impl EntityBase for Player {
             .bedrock()
             .filter(|client| client.is_current_protocol())
             .map(|_| self.living_entity.hold_effect_edit());
-        {
-            // Cursor moves and close restitution take this lock before changing inventory slots.
-            let cursor = self
-                .inventory_cursor
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            self.inventory.write_nbt(nbt);
-            if !cursor.is_empty() {
-                let mut item = NbtCompound::new();
-                cursor.write_item_stack(&mut item);
-                nbt.put_compound("SculithCursor", item);
-            }
+        // The region holds the cursor lock across inventory edits and crafting statistics.
+        let cursor = self
+            .inventory_cursor
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.inventory.write_nbt(nbt);
+        if !cursor.is_empty() {
+            let mut item = NbtCompound::new();
+            cursor.write_item_stack(&mut item);
+            nbt.put_compound("SculithCursor", item);
         }
+        self.stats
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .write_nbt(nbt);
+        drop(cursor);
         let abilities = self.lock_abilities_and_hunger();
         abilities.write_nbt(nbt);
         self.hunger_manager.write_nbt(nbt);
@@ -8753,10 +8756,6 @@ impl EntityBase for Player {
         if let Some(vehicle_uuid) = vehicle_uuid {
             write_root_vehicle(nbt, vehicle_uuid);
         }
-        self.stats
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .write_nbt(nbt);
     }
 
     #[expect(clippy::too_many_lines)]

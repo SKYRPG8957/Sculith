@@ -1,15 +1,78 @@
 use crate::entity::player::Player;
 use crate::entity::player::advancement::PlayerAdvancement;
 use crate::entity::player::advancement::predicate::{self, CriterionConditions};
+use pumpkin_data::item_stack::ItemStack;
 use sculith_util::math::position::BlockPos;
 
 const CONSUME_ITEM_TRIGGER: &str = "minecraft:consume_item";
+const RECIPE_CRAFTED_TRIGGER: &str = "minecraft:recipe_crafted";
+const RECIPE_UNLOCKED_TRIGGER: &str = "minecraft:recipe_unlocked";
+const INVENTORY_CHANGED_TRIGGER: &str = "minecraft:inventory_changed";
 
 fn matches_consumed_item(condition: &CriterionConditions, item_id: &str) -> bool {
     match condition {
         CriterionConditions::ConsumeItem(predicate) => predicate.matches(item_id, 1, &[]),
         CriterionConditions::Custom { .. } => true,
         _ => false,
+    }
+}
+
+fn matches_crafted_recipe(condition: &CriterionConditions, recipe_id: &str) -> bool {
+    match condition {
+        CriterionConditions::RecipeCrafted(predicate) => predicate.matches(recipe_id),
+        CriterionConditions::Custom { .. } => true,
+        _ => false,
+    }
+}
+
+fn matches_unlocked_recipe(condition: &CriterionConditions, recipe_id: &str) -> bool {
+    match condition {
+        CriterionConditions::RecipeUnlocked(predicate) => predicate.matches(recipe_id),
+        CriterionConditions::Custom { .. } => true,
+        _ => false,
+    }
+}
+
+#[derive(Default)]
+struct InventoryCriteriaSnapshot {
+    items: Vec<predicate::InventoryItemSnapshot<'static>>,
+    full: usize,
+    empty: usize,
+    occupied: usize,
+}
+
+impl InventoryCriteriaSnapshot {
+    fn add_stack(&mut self, stack: &ItemStack) {
+        self.items
+            .push((stack.item.registry_key, u32::from(stack.item_count), &[]));
+    }
+
+    fn add_main<'a>(&mut self, stacks: impl Iterator<Item = &'a ItemStack>) {
+        for stack in stacks {
+            if stack.is_empty() {
+                self.empty += 1;
+            } else {
+                self.occupied += 1;
+                self.full += usize::from(stack.item_count >= 64);
+                self.add_stack(stack);
+            }
+        }
+    }
+
+    fn add_equipment<'a>(&mut self, stacks: impl Iterator<Item = &'a ItemStack>) {
+        for stack in stacks.filter(|stack| !stack.is_empty()) {
+            self.add_stack(stack);
+        }
+    }
+
+    fn matches(&self, condition: &CriterionConditions) -> bool {
+        match condition {
+            CriterionConditions::InventoryChanged(predicate) => {
+                predicate.matches(&self.items, self.full, self.empty, self.occupied)
+            }
+            CriterionConditions::Custom { .. } => true,
+            _ => false,
+        }
     }
 }
 
@@ -23,6 +86,42 @@ impl PlayerAdvancement {
                     .iter()
                     .any(|listener| matches_consumed_item(&listener.conditions, &item_id))
             })
+    }
+
+    pub(crate) fn has_crafting_listener<'a>(
+        &self,
+        registry_key: &str,
+        main: impl Iterator<Item = &'a ItemStack>,
+        equipment: impl Iterator<Item = &'a ItemStack>,
+    ) -> bool {
+        let recipe_id = format!("minecraft:{registry_key}");
+        self.active_listeners
+            .get(RECIPE_CRAFTED_TRIGGER)
+            .is_some_and(|listeners| {
+                listeners
+                    .iter()
+                    .any(|listener| matches_crafted_recipe(&listener.conditions, &recipe_id))
+            })
+            || self
+                .active_listeners
+                .get(RECIPE_UNLOCKED_TRIGGER)
+                .is_some_and(|listeners| {
+                    listeners
+                        .iter()
+                        .any(|listener| matches_unlocked_recipe(&listener.conditions, &recipe_id))
+                })
+            || self
+                .active_listeners
+                .get(INVENTORY_CHANGED_TRIGGER)
+                .filter(|listeners| !listeners.is_empty())
+                .is_some_and(|listeners| {
+                    let mut snapshot = InventoryCriteriaSnapshot::default();
+                    snapshot.add_main(main);
+                    snapshot.add_equipment(equipment);
+                    listeners
+                        .iter()
+                        .any(|listener| snapshot.matches(&listener.conditions))
+                })
     }
 }
 
@@ -249,46 +348,15 @@ impl Player {
     pub fn trigger_advancement(&self, trigger: AdvancementTrigger) {
         match trigger {
             AdvancementTrigger::InventoryChanged => {
-                let mut inventory_items: Vec<predicate::InventoryItemSnapshot<'_>> = Vec::new();
-                let mut slots_full = 0;
-                let mut slots_empty = 0;
-                let mut slots_occupied = 0;
-
+                let mut snapshot = InventoryCriteriaSnapshot::default();
                 if let Ok(main_inv) = self.inventory.main_inventory.try_read() {
-                    for stack in main_inv.iter() {
-                        if stack.is_empty() {
-                            slots_empty += 1;
-                        } else {
-                            slots_occupied += 1;
-                            if stack.item_count >= 64 {
-                                slots_full += 1;
-                            }
-                            inventory_items.push((
-                                stack.item.registry_key,
-                                u32::from(stack.item_count),
-                                &[],
-                            ));
-                        }
-                    }
+                    snapshot.add_main(main_inv.iter());
                 }
                 if let Ok(equipment) = self.inventory.entity_equipment.try_lock() {
-                    for stack in equipment.equipment.values() {
-                        if !stack.is_empty() {
-                            inventory_items.push((
-                                stack.item.registry_key,
-                                u32::from(stack.item_count),
-                                &[],
-                            ));
-                        }
-                    }
+                    snapshot.add_equipment(equipment.equipment.values());
                 }
-
-                self.trigger_criterion_event("minecraft:inventory_changed", |cond| match cond {
-                    CriterionConditions::InventoryChanged(pred) => {
-                        pred.matches(&inventory_items, slots_full, slots_empty, slots_occupied)
-                    }
-                    CriterionConditions::Custom { .. } => true,
-                    _ => false,
+                self.trigger_criterion_event(INVENTORY_CHANGED_TRIGGER, |cond| {
+                    snapshot.matches(cond)
                 });
             }
 
@@ -598,18 +666,14 @@ impl Player {
             }
 
             AdvancementTrigger::RecipeCrafted { recipe_id } => {
-                self.trigger_criterion_event("minecraft:recipe_crafted", |cond| match cond {
-                    CriterionConditions::RecipeCrafted(pred) => pred.matches(&recipe_id),
-                    CriterionConditions::Custom { .. } => true,
-                    _ => false,
+                self.trigger_criterion_event(RECIPE_CRAFTED_TRIGGER, |cond| {
+                    matches_crafted_recipe(cond, &recipe_id)
                 });
             }
 
             AdvancementTrigger::RecipeUnlocked { recipe_id } => {
-                self.trigger_criterion_event("minecraft:recipe_unlocked", |cond| match cond {
-                    CriterionConditions::RecipeUnlocked(pred) => pred.matches(&recipe_id),
-                    CriterionConditions::Custom { .. } => true,
-                    _ => false,
+                self.trigger_criterion_event(RECIPE_UNLOCKED_TRIGGER, |cond| {
+                    matches_unlocked_recipe(cond, &recipe_id)
                 });
             }
 

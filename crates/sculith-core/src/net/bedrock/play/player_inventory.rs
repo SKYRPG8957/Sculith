@@ -9,6 +9,7 @@ use pumpkin_inventory::{
     crafting::{
         crafting_inventory::CraftingInventory,
         crafting_screen_handler::{CraftingTableScreenHandler, match_crafting_recipe},
+        recipe_provider::RecipeProvider,
     },
     double::DoubleInventory,
     entity_equipment::EntityEquipment,
@@ -49,8 +50,10 @@ use crate::{
             craft_item::CraftItemEvent, inventory_drag::InventoryDragEvent,
             inventory_interact::InventoryInteractEvent, prepare_item_craft::PrepareItemCraftEvent,
         },
-        player::inventory_interact::InventoryClickEvent,
-        player::player_drop_item::PlayerDropItemEvent,
+        player::{
+            inventory_interact::InventoryClickEvent, player_drop_item::PlayerDropItemEvent,
+            player_statistic_increment::PlayerStatisticIncrementEvent,
+        },
         server::packet::BedrockConnectionPacketSentEvent,
     },
     server::{Server, StorageTransferError},
@@ -105,12 +108,14 @@ struct CraftGrid {
 }
 
 impl CraftGrid {
+    const PERSONAL: Self = Self {
+        width: 2,
+        first_slot: 28,
+    };
+
     fn current(handler: &dyn ScreenHandler) -> Option<Self> {
         if handler.as_any().is::<PlayerScreenHandler>() {
-            Some(Self {
-                width: 2,
-                first_slot: 28,
-            })
+            Some(Self::PERSONAL)
         } else if handler.as_any().is::<CraftingTableScreenHandler>() {
             Some(Self {
                 width: 3,
@@ -134,22 +139,22 @@ struct ManualCraft {
 
 impl ManualCraft {
     fn prepare(
-        world: &World,
         grid: CraftGrid,
-        slots: &[ItemStack],
+        inputs: &[ItemStack],
         repetitions: u8,
+        provider: Option<&dyn RecipeProvider>,
     ) -> Result<Option<Self>, ()> {
-        let inputs = slots.get(1..=grid.len()).ok_or(())?;
+        if inputs.len() != grid.len() || repetitions == 0 {
+            return Err(());
+        }
         let inventory = CraftingInventory {
             width: grid.width,
             height: grid.width,
             items: std::sync::RwLock::new(inputs.to_vec()),
         };
-        let server = world.server.upgrade().ok_or(())?;
-        let recipe =
-            match_crafting_recipe(&inventory, Some(server.recipe_manager.as_ref())).ok_or(())?;
+        let recipe = match_crafting_recipe(&inventory, provider).ok_or(())?;
         let mut output = recipe.to_item_stack();
-        if output.is_empty() || repetitions == 0 {
+        if output.is_empty() {
             return Err(());
         }
         let mut remaining_inputs = [0; 9];
@@ -301,6 +306,7 @@ const fn matches_stack_id(info: &SlotInfo, stack: &ItemStack) -> bool {
 struct RegionalInventoryPlan {
     changes: Vec<(PersonalSlot, ItemStack)>,
     updates: Vec<SlotUpdate>,
+    crafted: Option<ItemStack>,
 }
 
 fn move_personal_stacks(
@@ -321,6 +327,38 @@ fn move_personal_stacks(
 }
 
 impl RegionalInventoryPlan {
+    fn prepare_request(
+        request: &ItemStackRequest,
+        handler: &PlayerScreenHandler,
+        inventory: PersonalInventoryContents<'_>,
+        server: &Server,
+    ) -> Option<Self> {
+        if !matches!(request.actions.first(), Some(Action::CraftRecipe { .. })) {
+            return Self::prepare(request, handler, inventory);
+        }
+        let plugins = &server.plugin_manager;
+        if plugins.has_handlers::<CraftItemEvent>()
+            || plugins.has_handlers::<PrepareItemCraftEvent>()
+            || plugins.has_handlers::<PlayerStatisticIncrementEvent>()
+        {
+            return None;
+        }
+        Self::prepare_craft(request, handler, inventory)
+    }
+
+    fn stage(changes: &mut Vec<(PersonalSlot, ItemStack)>, slot: PersonalSlot, stack: ItemStack) {
+        let stack = if stack.is_empty() {
+            ItemStack::EMPTY.clone()
+        } else {
+            stack
+        };
+        if let Some((_, current)) = changes.iter_mut().find(|(existing, _)| *existing == slot) {
+            *current = stack;
+        } else {
+            changes.push((slot, stack));
+        }
+    }
+
     fn prepare(
         request: &ItemStackRequest,
         handler: &PlayerScreenHandler,
@@ -373,16 +411,7 @@ impl RegionalInventoryPlan {
                 if !stack_fits(slot, &stack) {
                     return None;
                 }
-                let stack = if stack.is_empty() {
-                    ItemStack::EMPTY.clone()
-                } else {
-                    stack
-                };
-                if let Some((_, current)) = changes.iter_mut().find(|(slot, _)| *slot == target) {
-                    *current = stack;
-                } else {
-                    changes.push((target, stack));
-                }
+                Self::stage(&mut changes, target, stack);
                 touched.push((target, info));
             }
         }
@@ -395,7 +424,131 @@ impl RegionalInventoryPlan {
                 target.stack(inventory, &changes),
             );
         }
-        Some(Self { changes, updates })
+        Some(Self {
+            changes,
+            updates,
+            crafted: None,
+        })
+    }
+
+    fn prepare_craft(
+        request: &ItemStackRequest,
+        handler: &PlayerScreenHandler,
+        inventory: PersonalInventoryContents<'_>,
+    ) -> Option<Self> {
+        let [Action::CraftRecipe { repetitions, .. }, actions @ ..] = request.actions.as_slice()
+        else {
+            return None;
+        };
+        if request.actions.len() > REGIONAL_INVENTORY_ACTIONS {
+            return None;
+        }
+        // Built-in matches take precedence in the world planner as well.
+        let mut craft =
+            ManualCraft::prepare(CraftGrid::PERSONAL, inventory.crafting, *repetitions, None)
+                .ok()??;
+        let mut changes = Vec::with_capacity(actions.len());
+        let mut updates = Vec::with_capacity(actions.len());
+        let mut delivered = false;
+        for action in actions {
+            match action {
+                Action::Consume { count, source } if !delivered => {
+                    let index = craft.input(handler, source)?;
+                    let slot = PersonalSlot::Crafting(index);
+                    let mut stack = slot.stack(inventory, &changes).clone();
+                    if *count == 0
+                        || !matches_stack_id(source, &stack)
+                        || *count > craft.remaining_inputs[index]
+                    {
+                        return None;
+                    }
+                    craft.remaining_inputs[index] -= *count;
+                    stack.decrement(*count);
+                    record_update(
+                        &mut updates,
+                        source.container_name.clone(),
+                        source.slot_id,
+                        &stack,
+                    );
+                    Self::stage(&mut changes, slot, stack);
+                }
+                Action::Take {
+                    count,
+                    source,
+                    destination,
+                }
+                | Action::Place {
+                    count,
+                    source,
+                    destination,
+                } if !delivered => {
+                    if *count != craft.output.item_count
+                        || craft.remaining_inputs.iter().any(|&count| count != 0)
+                        || source.container_name.container_name != ContainerName::CreatedOutput
+                        || source.container_name.dynamic_id.is_some()
+                    {
+                        return None;
+                    }
+                    let target = PersonalSlot::from_request(handler, destination)?;
+                    if matches!(target, PersonalSlot::Crafting(_)) {
+                        return None;
+                    }
+                    let before = target.stack(inventory, &changes);
+                    if !matches_stack_id(destination, before) {
+                        return None;
+                    }
+                    let output = merge_stacks(&craft.output, before.clone(), *count)?;
+                    let slot = target
+                        .screen_index()
+                        .map(|index| handler.get_behaviour().slots[index].as_ref());
+                    if !stack_fits(slot, &output) {
+                        return None;
+                    }
+                    record_update(
+                        &mut updates,
+                        source.container_name.clone(),
+                        source.slot_id,
+                        ItemStack::EMPTY,
+                    );
+                    record_update(
+                        &mut updates,
+                        destination.container_name.clone(),
+                        destination.slot_id,
+                        &output,
+                    );
+                    Self::stage(&mut changes, target, output);
+                    delivered = true;
+                }
+                Action::CraftResultsDeprecated { .. } => {}
+                _ => return None,
+            }
+        }
+        delivered.then_some(Self {
+            changes,
+            updates,
+            crafted: Some(craft.output),
+        })
+    }
+
+    fn apply(
+        &self,
+        main: &mut [ItemStack; PlayerInventory::MAIN_SIZE],
+        crafting: &mut [ItemStack],
+        cursor: &mut ItemStack,
+    ) -> bool {
+        let mut inventory_changed = false;
+        for (target, stack) in &self.changes {
+            let destination = match *target {
+                PersonalSlot::Storage(index) => &mut main[index],
+                PersonalSlot::Crafting(index) => &mut crafting[index],
+                PersonalSlot::Cursor => &mut *cursor,
+            };
+            if !same_stack(destination, stack) {
+                *destination = stack.clone();
+                inventory_changed |= matches!(target, PersonalSlot::Storage(_));
+            }
+        }
+        inventory_changed
     }
 }
 
@@ -527,7 +680,15 @@ impl InventoryPlan {
             if creative {
                 return Err(());
             }
-            let Some(craft) = ManualCraft::prepare(&world, grid, &before, *repetitions)? else {
+            let server = world.server.upgrade().ok_or(())?;
+            let inputs = before.get(1..=grid.len()).ok_or(())?;
+            let Some(craft) = ManualCraft::prepare(
+                grid,
+                inputs,
+                *repetitions,
+                Some(server.recipe_manager.as_ref()),
+            )?
+            else {
                 return Ok(None);
             };
             (Some(craft), actions)
@@ -1045,6 +1206,49 @@ impl BedrockClient {
         Some(packets)
     }
 
+    fn encode_regional_inventory_reply(
+        &self,
+        request_id: VarInt,
+        plan: &mut RegionalInventoryPlan,
+        contents: PersonalInventoryContents<'_>,
+        inventory: &PlayerInventory,
+        equipment: &EntityEquipment,
+    ) -> Option<(Bytes, Vec<Bytes>)> {
+        let after = |target: PersonalSlot| target.stack(contents, &plan.changes);
+        let response = self
+            .serialize_packet(&CItemStackResponse {
+                responses: vec![build_stack_response(
+                    request_id,
+                    0,
+                    std::mem::take(&mut plan.updates),
+                )],
+            })
+            .ok()?;
+        let mut packets = self.encode_personal_inventory(
+            inventory,
+            equipment,
+            (0..PlayerInventory::MAIN_SIZE).map(|index| after(PersonalSlot::Storage(index))),
+            after(PersonalSlot::Cursor),
+        )?;
+        if plan.crafted.is_some() {
+            let grid = CraftGrid::PERSONAL;
+            for index in 0..grid.len() {
+                packets.push(
+                    self.serialize_inventory_slot(
+                        (
+                            CURSOR_SLOT.0,
+                            ContainerName::CraftingInput,
+                            u32::from(grid.first_slot) + index as u32,
+                        ),
+                        after(PersonalSlot::Crafting(index)),
+                    )
+                    .ok()?,
+                );
+            }
+        }
+        Some((response, packets))
+    }
+
     pub(in crate::net::bedrock) const fn can_route_inventory(packet: &RawPacket) -> bool {
         packet.id == SItemStackRequest::PACKET_ID
             && packet.payload.len() <= REGIONAL_INVENTORY_BYTES
@@ -1118,51 +1322,54 @@ impl BedrockClient {
             crafting: &crafting,
             cursor: &cursor,
         };
-        let RegionalInventoryPlan { changes, updates } =
-            RegionalInventoryPlan::prepare(request, handler, inventory)?;
-        let after = |target: PersonalSlot| target.stack(inventory, &changes);
-        let response = self
-            .serialize_packet(&CItemStackResponse {
-                responses: vec![build_stack_response(request.request_id, 0, updates)],
-            })
-            .ok()?;
-        let inventory_packets = self.encode_personal_inventory(
+        let mut plan = RegionalInventoryPlan::prepare_request(request, handler, inventory, server)?;
+        let mut craft_accounting = if let Some(output) = &plan.crafted {
+            let advancements = player.advancements.try_lock().ok()?;
+            if advancements.has_crafting_listener(
+                output.item.registry_key,
+                (0..PlayerInventory::MAIN_SIZE)
+                    .map(|index| PersonalSlot::Storage(index).stack(inventory, &plan.changes)),
+                equipment.equipment.values(),
+            ) {
+                return None;
+            }
+            Some((advancements, player.stats.try_lock().ok()?))
+        } else {
+            None
+        };
+        let (response, packets) = self.encode_regional_inventory_reply(
+            request.request_id,
+            &mut plan,
+            inventory,
             &player.inventory,
             &equipment,
-            (0..PlayerInventory::MAIN_SIZE).map(|index| after(PersonalSlot::Storage(index))),
-            after(PersonalSlot::Cursor),
         )?;
         if player.gamemode.load() != mode || !player.has_stable_world_membership() || !owns_player()
         {
             return None;
         }
-        let mut inventory_changed = false;
-        for (target, stack) in &changes {
-            let destination: &mut ItemStack = match *target {
-                PersonalSlot::Storage(index) => &mut main[index],
-                PersonalSlot::Crafting(index) => &mut crafting[index],
-                PersonalSlot::Cursor => &mut cursor,
-            };
-            if !same_stack(destination, stack) {
-                *destination = stack.clone();
-                inventory_changed |= matches!(target, PersonalSlot::Storage(_));
-            }
-        }
-        if inventory_changed {
+        let inventory_changed = plan.apply(&mut main, &mut crafting, &mut cursor);
+        if let (Some(output), Some((_, stats))) = (&plan.crafted, &mut craft_accounting) {
+            stats.increment(
+                StatisticCategory::Crafted,
+                i32::from(output.item.id),
+                i32::from(output.item_count),
+            );
+        } else if inventory_changed {
             player.inventory_changed.store(true, Relaxed);
         }
         drop(crafting);
-        for (target, stack) in changes {
+        for (target, stack) in plan.changes {
             if let Some(index) = target.screen_index() {
                 handler.set_received_stack(index, stack);
             }
         }
-        for packet in std::iter::once(response).chain(inventory_packets) {
+        for packet in std::iter::once(response).chain(packets) {
             if !self.try_enqueue_packet_data_unobserved(packet) {
                 break;
             }
         }
-        tracing::trace!(player = %player.gameprofile.name, request_id = request.request_id.0, "Completed Bedrock inventory request on its region");
+        tracing::trace!(player = %player.gameprofile.name, request_id = request.request_id.0, crafted = plan.crafted.is_some(), "Completed Bedrock inventory request on its region");
         Some(())
     }
 
@@ -1642,5 +1849,76 @@ mod tests {
         );
         assert!(crafting.iter().all(ItemStack::is_empty));
         assert_eq!((main[10].item_count, main[11].item_count), (11, 7));
+    }
+
+    #[test]
+    fn regional_recipe_checks_complete_consumption_and_result_capacity() {
+        let inventory = Arc::new(PlayerInventory::new(
+            Arc::new(Mutex::new(EntityEquipment::new())),
+            Arc::new(build_equipment_slots()),
+        ));
+        let handler = PlayerScreenHandler::new(&inventory, None, 0, None);
+        let mut main = inventory.main_inventory.write().unwrap();
+        main[10] = ItemStack::new(60, &Item::OAK_PLANKS);
+        let mut inputs = handler.try_crafting_inputs().unwrap();
+        inputs[0] = ItemStack::new(2, &Item::OAK_LOG);
+        let slot = |container_name, slot_id, stack_id| SlotInfo {
+            container_name: FullContainerName {
+                container_name,
+                dynamic_id: None,
+            },
+            slot_id,
+            stack_id,
+        };
+        let prepare = |main: &[ItemStack; PlayerInventory::MAIN_SIZE], consume, deliver| {
+            RegionalInventoryPlan::prepare_craft(
+                &ItemStackRequest {
+                    request_id: VarInt(-9),
+                    filter_cause: 0,
+                    filter_strings: Vec::new(),
+                    actions: vec![
+                        Action::CraftRecipe {
+                            recipe_id: VarUInt(1),
+                            repetitions: 1,
+                        },
+                        Action::Consume {
+                            count: consume,
+                            source: slot(ContainerName::CraftingInput, 28, inputs[0].uid.get()),
+                        },
+                        Action::Take {
+                            count: deliver,
+                            source: slot(ContainerName::CreatedOutput, 50, -10),
+                            destination: slot(ContainerName::Inventory, 10, main[10].uid.get()),
+                        },
+                    ],
+                },
+                &handler,
+                PersonalInventoryContents {
+                    main,
+                    crafting: &inputs,
+                    cursor: ItemStack::EMPTY,
+                },
+            )
+        };
+        let plan = prepare(&main, 1, 4).unwrap();
+        let contents = PersonalInventoryContents {
+            main: &main,
+            crafting: &inputs,
+            cursor: ItemStack::EMPTY,
+        };
+        let remaining = PersonalSlot::Crafting(0).stack(contents, &plan.changes);
+        let stored = PersonalSlot::Storage(10).stack(contents, &plan.changes);
+        assert_eq!((remaining.item_count, stored.item_count), (1, 64));
+        assert_eq!(remaining.uid, inputs[0].uid);
+        assert_eq!(stored.uid, main[10].uid);
+        let output = plan.crafted.unwrap();
+        assert_eq!((output.item, output.item_count), (&Item::OAK_PLANKS, 4));
+
+        assert!(prepare(&main, 0, 4).is_none());
+        assert!(prepare(&main, 2, 4).is_none());
+        assert!(prepare(&main, 1, 3).is_none());
+        main[10].item_count = 61;
+        assert!(prepare(&main, 1, 4).is_none());
+        assert_eq!((inputs[0].item_count, main[10].item_count), (2, 61));
     }
 }
