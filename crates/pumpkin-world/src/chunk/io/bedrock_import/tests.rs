@@ -220,6 +220,34 @@ fn preserves_valid_slots_without_importing_partial_containers() {
     );
 }
 
+fn bedrock_storage_item(name: &str, damage: i16) -> NbtCompound {
+    let mut entry = NbtCompound::new();
+    entry.put_string("Name", format!("minecraft:{name}"));
+    entry.put_byte("Count", 1);
+    entry.put_short("Damage", damage);
+    entry
+}
+
+fn round_trip_storage_item(
+    source: &NbtCompound,
+    terrain: &terrain::TerrainRegistry,
+    items: &storage::StorageItemRegistry,
+) -> (pumpkin_data::item_stack::ItemStack, NbtCompound) {
+    let stack = storage::convert_stack(source, terrain, items).unwrap();
+    let mut saved = NbtCompound::new();
+    stack.write_item_stack(&mut saved);
+    let decoded = storage::read_sculith_stack(&saved, items).unwrap();
+    assert!(stack.are_equal(&decoded));
+    let mut exported = storage::new_bedrock_stack(&decoded, items).unwrap();
+    exported.put_byte("Count", 1);
+    assert!(
+        storage::convert_stack(&exported, terrain, items)
+            .unwrap()
+            .are_equal(&decoded)
+    );
+    (decoded, exported)
+}
+
 #[test]
 fn storage_item_versions_guard_potion_and_enchantment_round_trips() {
     use pumpkin_data::{
@@ -227,7 +255,6 @@ fn storage_item_versions_guard_potion_and_enchantment_round_trips() {
         data_component_impl::{EnchantmentsImpl, PotionContentsImpl, StoredEnchantmentsImpl},
         potion::Potion,
     };
-    use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 
     let directory = tempfile::tempdir().unwrap();
     let legacy = storage::read_import_registry(directory.path()).unwrap();
@@ -240,36 +267,14 @@ fn storage_item_versions_guard_potion_and_enchantment_round_trips() {
     storage::write_item_version(directory.path()).unwrap();
     let items = storage::read_import_registry(directory.path()).unwrap();
     let terrain = terrain::TerrainRegistry::load().unwrap();
-    let as_bedrock = |name: &str, damage| {
-        let mut entry = NbtCompound::new();
-        entry.put_string("Name", format!("minecraft:{name}"));
-        entry.put_byte("Count", 1);
-        entry.put_short("Damage", damage);
-        entry
-    };
-    let round_trip = |source: &NbtCompound| {
-        let stack = storage::convert_stack(source, &terrain, &items).unwrap();
-        let mut saved = NbtCompound::new();
-        stack.write_item_stack(&mut saved);
-        let decoded = storage::read_sculith_stack(&saved, &items).unwrap();
-        assert!(stack.are_equal(&decoded));
-        let mut exported = storage::new_bedrock_stack(&decoded, &items).unwrap();
-        exported.put_byte("Count", 1);
-        assert!(
-            storage::convert_stack(&exported, &terrain, &items)
-                .unwrap()
-                .are_equal(&decoded)
-        );
-        (decoded, exported)
-    };
     for (name, aux, potion) in [
         ("potion", 0, &Potion::WATER),
         ("splash_potion", 16, &Potion::STRONG_SWIFTNESS),
         ("lingering_potion", 46, &Potion::INFESTED),
     ] {
-        let source = as_bedrock(name, aux);
+        let source = bedrock_storage_item(name, aux);
         assert!(storage::convert_stack(&source, &terrain, &legacy).is_err());
-        let (decoded, exported) = round_trip(&source);
+        let (decoded, exported) = round_trip_storage_item(&source, &terrain, &items);
         assert!(
             storage::convert_stack(&source, &terrain, &version_two)
                 .unwrap()
@@ -279,10 +284,61 @@ fn storage_item_versions_guard_potion_and_enchantment_round_trips() {
         assert_eq!(contents.potion_id, Some(i32::from(potion.id)));
         assert_eq!(exported.get_short("Damage"), Some(aux));
     }
-    let decay = as_bedrock("potion", 36);
+    for aux in [2, 47] {
+        assert!(
+            storage::convert_stack(&bedrock_storage_item("potion", aux), &terrain, &items).is_err()
+        );
+    }
+
+    let enchantment = |id, level| {
+        let mut tag = NbtCompound::new();
+        tag.put_short("id", id);
+        tag.put_short("lvl", level);
+        NbtTag::Compound(tag)
+    };
+    let mut gear = bedrock_storage_item("diamond_chestplate", 0);
+    let mut tag = NbtCompound::new();
+    tag.put_list("ench", vec![enchantment(17, 3), enchantment(0, 4)]);
+    gear.put_compound("tag", tag);
+    let (decoded, _) = round_trip_storage_item(&gear, &terrain, &items);
+    let entries = &decoded
+        .get_data_component::<EnchantmentsImpl>()
+        .unwrap()
+        .enchantment;
+    assert!(entries.contains(&(&Enchantment::PROTECTION, 4)));
+    assert!(entries.contains(&(&Enchantment::UNBREAKING, 3)));
+    assert!(storage::convert_stack(&gear, &terrain, &legacy).is_err());
+
+    let mut book = bedrock_storage_item("enchanted_book", 0);
+    let mut tag = NbtCompound::new();
+    tag.put_list("ench", vec![enchantment(26, 1)]);
+    book.put_compound("tag", tag);
+    let (decoded, _) = round_trip_storage_item(&book, &terrain, &items);
+    let stored = &decoded
+        .get_data_component::<StoredEnchantmentsImpl>()
+        .unwrap()
+        .enchantment;
+    assert_eq!(stored.len(), 1);
+    assert!(stored.contains(&(&Enchantment::MENDING, 1)));
+}
+
+#[test]
+fn storage_decay_stays_out_of_older_exports() {
+    let directory = tempfile::tempdir().unwrap();
+    let legacy = storage::read_import_registry(directory.path()).unwrap();
+    std::fs::write(
+        directory.path().join(".sculith-bedrock-storage-version"),
+        b"2\n",
+    )
+    .unwrap();
+    let version_two = storage::read_import_registry(directory.path()).unwrap();
+    storage::write_item_version(directory.path()).unwrap();
+    let items = storage::read_import_registry(directory.path()).unwrap();
+    let terrain = terrain::TerrainRegistry::load().unwrap();
+    let decay = bedrock_storage_item("potion", 36);
     assert!(storage::convert_stack(&decay, &terrain, &legacy).is_err());
     assert!(storage::convert_stack(&decay, &terrain, &version_two).is_err());
-    let (decoded, exported) = round_trip(&decay);
+    let (decoded, exported) = round_trip_storage_item(&decay, &terrain, &items);
     assert_eq!(exported.get_short("Damage"), Some(36));
 
     let mut saved = NbtCompound::new();
@@ -302,41 +358,6 @@ fn storage_item_versions_guard_potion_and_enchantment_round_trips() {
     components.put_compound("minecraft:potion_contents", potion);
     saved.put_compound("components", components);
     assert!(storage::read_sculith_stack(&saved, &items).is_err());
-
-    for aux in [2, 47] {
-        assert!(storage::convert_stack(&as_bedrock("potion", aux), &terrain, &items).is_err());
-    }
-
-    let enchantment = |id, level| {
-        let mut tag = NbtCompound::new();
-        tag.put_short("id", id);
-        tag.put_short("lvl", level);
-        NbtTag::Compound(tag)
-    };
-    let mut gear = as_bedrock("diamond_chestplate", 0);
-    let mut tag = NbtCompound::new();
-    tag.put_list("ench", vec![enchantment(17, 3), enchantment(0, 4)]);
-    gear.put_compound("tag", tag);
-    let (decoded, _) = round_trip(&gear);
-    let entries = &decoded
-        .get_data_component::<EnchantmentsImpl>()
-        .unwrap()
-        .enchantment;
-    assert!(entries.contains(&(&Enchantment::PROTECTION, 4)));
-    assert!(entries.contains(&(&Enchantment::UNBREAKING, 3)));
-    assert!(storage::convert_stack(&gear, &terrain, &legacy).is_err());
-
-    let mut book = as_bedrock("enchanted_book", 0);
-    let mut tag = NbtCompound::new();
-    tag.put_list("ench", vec![enchantment(26, 1)]);
-    book.put_compound("tag", tag);
-    let (decoded, _) = round_trip(&book);
-    let stored = &decoded
-        .get_data_component::<StoredEnchantmentsImpl>()
-        .unwrap()
-        .enchantment;
-    assert_eq!(stored.len(), 1);
-    assert!(stored.contains(&(&Enchantment::MENDING, 1)));
 }
 
 #[test]
