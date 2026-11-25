@@ -124,6 +124,17 @@ pub enum PacketHandlerResult {
 
 /// Maximum payload bytes that may be queued for a client before it is considered stalled/overflowing and disconnected.
 pub const MAX_PENDING_BYTES: usize = 64 * 1024 * 1024; // 64 MB
+/// The ordinary terrain share leaves room for other play packets.
+pub(crate) const TERRAIN_QUEUE_BYTES: usize = MAX_PENDING_BYTES / 4;
+
+/// Reserves queue room while allowing the caller to defer on temporary pressure.
+pub(crate) fn try_reserve_pending_bytes(pending: &AtomicUsize, bytes: usize, limit: usize) -> bool {
+    pending
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |queued| {
+            queued.checked_add(bytes).filter(|&total| total <= limit)
+        })
+        .is_ok()
+}
 
 /// Defensively decrement an atomic pending byte counter without underflowing.
 #[inline]

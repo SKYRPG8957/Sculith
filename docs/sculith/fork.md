@@ -291,6 +291,11 @@ Leaving the Bedrock view retires pending sends for the departed columns before
 the next publisher packet. Returning to those columns starts new deliveries.
 Work waiting on an encoder or plugin must still hold its original delivery
 token when its packets and blob hashes enter the queue.
+Bedrock terrain reserves outgoing bytes for a column and its plugin packets
+together. The usual terrain limit is 16 MiB per connection. Larger columns can
+use an empty queue within its 64 MiB limit. Congested columns retry after the
+writer drains the queue. Blob hashes become available after their packets are
+admitted.
 
 Loaded campfires in active regions advance their cooking or cooling counters
 on the region clock while the actor and block state are pinned. The region

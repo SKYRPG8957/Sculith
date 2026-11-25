@@ -85,8 +85,9 @@ use crate::{
     entity::player::Player,
     net::{
         ChunkSender, DisconnectReason, MAX_PENDING_BYTES, PacketHandlerResult, PacketRateLimiter,
+        TERRAIN_QUEUE_BYTES,
         chunk_sender::{ChunkSendOutcome, DeliveryFailure},
-        decrement_pending_bytes,
+        decrement_pending_bytes, try_reserve_pending_bytes,
     },
     plugin::{
         api::events::world::chunk_send::ChunkSend,
@@ -962,35 +963,68 @@ impl BedrockClient {
                 continue;
             };
             let revision = terrain.revision;
-            let queue = || self.queue_terrain_chunk(terrain);
-            let queued = if tracked.is_some() {
-                world.level.try_with_current_terrain(chunk, revision, queue)
+            let queue = || self.queue_terrain_chunk(terrain, tracked.is_some());
+            let delivery = if tracked.is_some() {
+                world
+                    .level
+                    .try_with_current_terrain(chunk, revision, queue)
+                    .unwrap_or(Err(DeliveryFailure::Deferred))
             } else {
-                Some(queue())
+                queue()
             };
-            if queued == Some(true) {
-                outcome.sent.push(pos);
-            } else {
-                outcome.failed.push((pos, DeliveryFailure::Deferred));
+            match delivery {
+                Ok(()) => outcome.sent.push(pos),
+                Err(failure) => outcome.failed.push((pos, failure)),
             }
         }
     }
 
-    fn queue_terrain_chunk(&self, terrain: PreparedTerrain<TranslatedPacket>) -> bool {
-        if !terrain.blobs.is_empty() {
-            let mut cache = self
-                .blob_cache
+    fn queue_terrain_chunk(
+        &self,
+        terrain: PreparedTerrain<TranslatedPacket>,
+        tracked: bool,
+    ) -> Result<(), DeliveryFailure> {
+        let (packet, extras) = terrain.packet;
+        let bytes = packet
+            .iter()
+            .chain(&extras)
+            .try_fold(0usize, |total, packet| total.checked_add(packet.len()))
+            .filter(|&total| total <= MAX_PENDING_BYTES)
+            .ok_or(DeliveryFailure::Unencodable)?;
+        let limit = if tracked {
+            // A single large column can be admitted when the queue is empty.
+            TERRAIN_QUEUE_BYTES.max(bytes)
+        } else {
+            MAX_PENDING_BYTES
+        };
+        if self.is_closed()
+            || (bytes != 0 && !try_reserve_pending_bytes(&self.pending_bytes, bytes, limit))
+        {
+            return Err(DeliveryFailure::Deferred);
+        }
+
+        // A cache reply can arrive as soon as the writer takes a frame.
+        // Publish the hashes before releasing the guard after queue admission.
+        let cache = (!terrain.blobs.is_empty()).then(|| {
+            self.blob_cache
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        });
+        let mut remaining = bytes;
+        for packet in packet.into_iter().chain(extras) {
+            let length = packet.len();
+            remaining -= length;
+            if !self.queue_outgoing(OutgoingPacket::normal(packet), length) {
+                decrement_pending_bytes(&self.pending_bytes, remaining);
+                return Err(DeliveryFailure::Deferred);
+            }
+        }
+        if let Some(mut cache) = cache {
             for (hash, blob) in terrain.blobs {
                 cache.insert(hash, blob);
             }
         }
-        match terrain.packet {
-            (Some(packet), extras) => self.queue_translated_packet(packet, extras),
-            // Queue replacements and settle a chunk deliberately replaced by an observer.
-            (None, extras) => self.queue_extra_packets(extras),
-        }
+        Ok(())
     }
 
     pub fn set_player(&self, player: Arc<Player>) {
@@ -2123,6 +2157,62 @@ mod tests {
         assert_eq!(cached, (false, true));
         client.close().await;
         world.level.shutdown().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn terrain_pressure_defers_the_bundle_without_installing_blob_hashes()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let address = "127.0.0.1:0".parse()?;
+        let client = BedrockClient::new(
+            1,
+            NetherNetSession::test_session(address).await,
+            address,
+            Arc::new(Mutex::new(HashMap::new())),
+            PacketRateLimiter::new(false, 0.0, 0.0),
+            Weak::new(),
+        );
+        let mut receiver = client
+            .outgoing_packet_queue_recv
+            .lock()
+            .await
+            .take()
+            .unwrap();
+        let chunk = Bytes::from_static(b"chunk");
+        let extension = Bytes::from_static(b"extra");
+        let terrain = || PreparedTerrain {
+            revision: (0, 0),
+            packet: (Some(chunk.clone()), vec![extension.clone()]),
+            blobs: vec![(7, Bytes::from_static(b"cached"))],
+        };
+        let existing = TERRAIN_QUEUE_BYTES - chunk.len();
+        client.pending_bytes.store(existing, Ordering::Release);
+        assert_eq!(
+            client.queue_terrain_chunk(terrain(), true),
+            Err(DeliveryFailure::Deferred)
+        );
+        assert_eq!(client.pending_bytes.load(Ordering::Acquire), existing);
+        assert!(client.blob_cache.lock().unwrap().get(7).is_none());
+        assert!(receiver.try_recv().is_err());
+        assert!(client.try_enqueue_raw_packet_direct(1, b"gameplay"));
+        assert!(
+            split_raw_packet(&receiver.try_recv()?.data)
+                .is_some_and(|(id, payload)| id == 1 && payload.as_ref() == b"gameplay")
+        );
+        assert!(!client.is_closed());
+
+        client.pending_bytes.store(0, Ordering::Release);
+        client
+            .queue_terrain_chunk(terrain(), true)
+            .expect("queue room available");
+        assert_eq!(receiver.try_recv()?.data, chunk);
+        assert_eq!(receiver.try_recv()?.data, extension);
+        assert_eq!(
+            client.pending_bytes.load(Ordering::Acquire),
+            chunk.len() + extension.len()
+        );
+        assert!(client.blob_cache.lock().unwrap().get(7).is_some());
+        client.close().await;
         Ok(())
     }
 }

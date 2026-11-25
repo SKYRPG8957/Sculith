@@ -78,7 +78,7 @@ use crate::entity::player::Player;
 use crate::net::chunk_sender::{ChunkSendOutcome, DeliveryFailure};
 use crate::net::{
     ClientPlatform, GameProfile, MAX_PENDING_BYTES, PacketRateLimiter, PlayerConfig,
-    decrement_pending_bytes,
+    TERRAIN_QUEUE_BYTES, decrement_pending_bytes, try_reserve_pending_bytes,
 };
 use crate::plugin::api::events::world::chunk_send::ChunkSend;
 use crate::plugin::player::player_custom_payload::PlayerCustomPayloadEvent;
@@ -90,9 +90,6 @@ use crate::{
         player_commands::{PlayerCommandIngress, submit_inbound_player_command},
     },
 };
-
-// Terrain may fill only this share of the queue, leaving room for other play packets.
-const JAVA_TERRAIN_QUEUE_BYTES: usize = MAX_PENDING_BYTES / 4;
 
 /// Packet id followed by its payload, as the outgoing writer expects it.
 fn frame_packet(packet_id: i32, payload: &[u8]) -> Option<Bytes> {
@@ -594,7 +591,7 @@ impl JavaClient {
     }
 
     pub(crate) fn terrain_queue_room(&self) -> usize {
-        JAVA_TERRAIN_QUEUE_BYTES.saturating_sub(self.pending_bytes.load(Ordering::Acquire))
+        TERRAIN_QUEUE_BYTES.saturating_sub(self.pending_bytes.load(Ordering::Acquire))
     }
 
     /// Queue one unmodified Java terrain batch. When the writer has no room, its
@@ -604,14 +601,7 @@ impl JavaClient {
             return false;
         }
         let total = packets.iter().map(Bytes::len).sum::<usize>();
-        if self
-            .pending_bytes
-            .try_update(Ordering::AcqRel, Ordering::Acquire, |pending| {
-                let bytes = pending.saturating_add(total);
-                (bytes <= JAVA_TERRAIN_QUEUE_BYTES).then_some(bytes)
-            })
-            .is_err()
-        {
+        if !try_reserve_pending_bytes(&self.pending_bytes, total, TERRAIN_QUEUE_BYTES) {
             return false;
         }
         self.enqueue_reserved_packet_batch(packets, total)
