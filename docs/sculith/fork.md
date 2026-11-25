@@ -762,10 +762,11 @@ published. Without the map the command imports world data only.
 ## Bedrock storage export
 
 `sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION`
-copies a stopped Bedrock world and transfers supported Overworld inventories
-from its stopped Sculith import. Use a new destination outside both inputs.
-The inputs must have the same seed and matching ordinary single chests or
-barrels at the template positions.
+copies a stopped Bedrock world and transfers supported inventories in the
+Overworld, Nether and End from its stopped Sculith import. Use a new
+destination outside both inputs. The inputs must have the same seed and
+matching ordinary single chests or barrels at the template positions in
+each dimension.
 
 The output uses the template's terrain, players and metadata. Imports record
 their storage conversion version alongside the saved world. New imports can

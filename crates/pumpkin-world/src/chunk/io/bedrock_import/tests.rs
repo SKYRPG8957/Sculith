@@ -115,9 +115,13 @@ fn string_tag(nbt: &mut Vec<u8>, key: &str, value: &str) {
 }
 
 fn container(nbt: &mut Vec<u8>, kind: &str, x: i32, items: &[(u8, &str, u8)]) {
+    container_at(nbt, kind, BlockPos::new(x, -60, 0), items);
+}
+
+fn container_at(nbt: &mut Vec<u8>, kind: &str, pos: BlockPos, items: &[(u8, &str, u8)]) {
     nbt.extend_from_slice(&[pumpkin_nbt::COMPOUND_ID, 0, 0]);
     string_tag(nbt, "id", kind);
-    for (name, value) in [("x", x), ("y", -60), ("z", 0)] {
+    for (name, value) in [("x", pos.0.x), ("y", pos.0.y), ("z", pos.0.z)] {
         named_tag(nbt, pumpkin_nbt::INT_ID, name, &value.to_le_bytes());
     }
     let mut list = vec![pumpkin_nbt::COMPOUND_ID];
@@ -355,6 +359,125 @@ fn storage_export_replaces_slots_and_keeps_unsupported_compound_bytes() {
         Nbt::read(&mut reader).unwrap().get_string("id"),
         Some("Furnace")
     );
+}
+
+fn write_storage_column(db: &DB, position: BlockPos, id: i32, count: u8) -> Vec<u8> {
+    let mut key = position.0.x.div_euclid(16).to_le_bytes().to_vec();
+    key.extend_from_slice(&position.0.z.div_euclid(16).to_le_bytes());
+    if id != 0 {
+        key.extend_from_slice(&id.to_le_bytes());
+    }
+    key.push(VERSION);
+    db.put(&key, &[CHUNK_VERSION]).unwrap();
+    let tag = key.len() - 1;
+    let dimension = SavedDimension::from_disk(id).unwrap();
+    key[tag] = BIOMES;
+    let mut biomes = vec![0; 512];
+    biomes.push(1);
+    biomes.extend_from_slice(&u32::from(Biome::PLAINS.be_network_id).to_le_bytes());
+    biomes.extend(std::iter::repeat_n(0xff, dimension.disk_sections() - 1));
+    db.put(&key, &biomes).unwrap();
+    let height = position.0.y.div_euclid(16) as u8;
+    key[tag] = SUBCHUNK;
+    key.push(height);
+    let mut states = Vec::new();
+    named_tag(
+        &mut states,
+        pumpkin_nbt::INT_ID,
+        "facing_direction",
+        &2i32.to_le_bytes(),
+    );
+    named_tag(&mut states, pumpkin_nbt::BYTE_ID, "open_bit", &[0]);
+    states.push(END_ID);
+    let mut section = vec![9, 1, height, 0];
+    block_entry(&mut section, "minecraft:barrel", &states);
+    db.put(&key, &section).unwrap();
+    key.pop();
+    key[tag] = BLOCK_ENTITY;
+    let mut record = Vec::new();
+    container_at(
+        &mut record,
+        "Barrel",
+        position,
+        &[(4, "minecraft:iron_ingot", count)],
+    );
+    db.put(&key, &record).unwrap();
+    key
+}
+
+#[test]
+fn storage_export_routes_same_coordinates_to_each_dimension() {
+    let directory = tempfile::tempdir().unwrap();
+    let template = directory.path().join("bedrock");
+    let shared = directory.path().join("sculith");
+    let exported = directory.path().join("exported");
+    let position = BlockPos::new(-1, 0, 0);
+    let chunk_pos = Vector2::new(-1, 0);
+    let region_pos = region_of(chunk_pos);
+    write_world(&template, false, FLAT_LAYERS);
+    let database = DB::open(template.join("db"), Options::default()).unwrap();
+    let records = [(0, 1), (1, 2), (2, 3)]
+        .map(|(id, count)| write_storage_column(&database, position, id, count));
+    database.close().unwrap();
+    let before = snapshot(&template);
+    assert_eq!(
+        import_terrain(&template, &shared)
+            .unwrap()
+            .containers_imported,
+        3
+    );
+    for (id, dimension) in [
+        SavedDimension::Overworld,
+        SavedDimension::Nether,
+        SavedDimension::End,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let folder = LevelFolder::for_dimension(shared.clone(), &dimension.target());
+        let path = folder
+            .region_folder
+            .join(AnvilRegion::file_name(region_pos));
+        let mut region = AnvilRegion::open(&path, region_pos).unwrap();
+        let index = region_chunk_index(chunk_pos);
+        let raw = region.read_chunk(index).unwrap().unwrap();
+        let bytes = AnvilRegion::decode_chunk(raw).unwrap();
+        let mut chunk = ChunkData::internal_from_bytes(&bytes, chunk_pos).unwrap();
+        let entity = chunk
+            .pending_block_entities
+            .get_mut()
+            .unwrap()
+            .get_mut(&position)
+            .unwrap();
+        let mut item = entity.get_list("Items").unwrap()[0]
+            .extract_compound()
+            .unwrap()
+            .clone();
+        item.put_int("count", 10 + id as i32);
+        entity.put_list("Items", vec![pumpkin_nbt::tag::NbtTag::Compound(item)]);
+        let encoded =
+            AnvilRegion::encode_chunk(chunk.internal_to_bytes(), &AnvilChunkConfig::default())
+                .unwrap();
+        region.stage_chunk(index, encoded);
+        region.flush(true).unwrap();
+    }
+    let stats = storage_export::export_storage(&template, &shared, &exported).unwrap();
+    assert_eq!(
+        (stats.containers_checked, stats.inventories_updated),
+        (3, 3)
+    );
+    assert_eq!(snapshot(&template), before);
+    let database = DB::open(exported.join("db"), bedrock_db_options()).unwrap();
+    for (id, key) in records.iter().enumerate() {
+        let data = database.try_get(key).unwrap().unwrap();
+        let mut reader = NbtReadHelperBedrockDisk::new(Cursor::new(data));
+        let barrel = Nbt::read(&mut reader).unwrap();
+        let item = barrel.get_list("Items").unwrap()[0]
+            .extract_compound()
+            .unwrap();
+        assert_eq!(item.get_byte("Slot"), Some(4));
+        assert_eq!(item.get_byte("Count"), Some(10 + id as i8));
+    }
 }
 
 #[test]

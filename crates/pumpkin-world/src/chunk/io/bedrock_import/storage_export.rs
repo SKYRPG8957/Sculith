@@ -15,13 +15,12 @@ use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use super::{
     AnvilLevelInfo, AnvilRegion, BLOCK_ENTITY, ChunkData, DB, Error, GeneratorPolicy, ImportStats,
-    MAX_TABLE_BLOCK_BYTES, RegionFile, SavedDimension, bedrock_db_options, copy_database,
-    ensure_absent, index_chunks, invalid, new_destination, read_chunk, read_level,
-    region_chunk_index,
+    MAX_TABLE_BLOCK_BYTES, RegionFile, bedrock_db_options, copy_database, ensure_absent,
+    index_chunks, invalid, new_destination, read_chunk, read_level, region_chunk_index,
     storage::{self, SLOTS, StorageItemRegistry},
     terrain::TerrainRegistry,
 };
-use crate::{chunk::ChunkReadingError, world_info::WorldInfoReader};
+use crate::{chunk::ChunkReadingError, level::LevelFolder, world_info::WorldInfoReader};
 
 #[derive(Debug)]
 pub struct StorageExportStats {
@@ -69,23 +68,24 @@ pub fn export_storage(
     copy_database(&template.join("db"), &database)?;
     let db = DB::open(database, bedrock_db_options())?;
     let mut preserved = ImportStats::default();
-    let mut regions = index_chunks(&db, &mut preserved, None, Err)?;
-    regions.retain(|&(dimension, _, _), _| dimension == SavedDimension::Overworld);
-    let region_folder = sculith.join("region");
+    let regions = index_chunks(&db, &mut preserved, None, Err)?;
     let mut inventories_updated = 0;
     for ((dimension, rx, rz), columns) in regions {
         let region_pos = Vector2::new(rx, rz);
-        let path = region_folder.join(AnvilRegion::file_name(region_pos));
+        let folders = LevelFolder::for_dimension(sculith.clone(), &dimension.target());
+        let path = folders
+            .region_folder
+            .join(AnvilRegion::file_name(region_pos));
         let mut region = None;
         for ((x, z), sections) in columns {
-            let mut key = [0; 9];
-            key[..4].copy_from_slice(&x.to_le_bytes());
-            key[4..8].copy_from_slice(&z.to_le_bytes());
-            key[8] = BLOCK_ENTITY;
-            let Some(record) = db.try_get(&key)? else {
+            let pos = Vector2::new(x, z);
+            let mut key = [0; 13];
+            let tag = dimension.write_column_prefix(pos, &mut key);
+            key[tag] = BLOCK_ENTITY;
+            let key = &key[..=tag];
+            let Some(record) = db.try_get(key)? else {
                 continue;
             };
-            let pos = Vector2::new(x, z);
             let original = read_chunk(
                 &db,
                 dimension,
@@ -95,7 +95,7 @@ pub fn export_storage(
                 &items,
                 &mut preserved,
             )
-            .map_err(|error| error.at_chunk(x, z))?;
+            .map_err(|error| dimension.chunk_error(pos, error))?;
             if original
                 .pending_block_entities
                 .lock()
@@ -104,21 +104,12 @@ pub fn export_storage(
             {
                 continue;
             }
-            let region = match &mut region {
-                Some(region) => region,
-                pending => pending.insert(AnvilRegion::open_read_only(&path, region_pos)?),
-            };
-            let raw = region
-                .read_chunk(region_chunk_index(pos))?
-                .ok_or_else(|| invalid("missing matching Sculith chunk").at_chunk(x, z))?;
-            let bytes = AnvilRegion::decode_chunk(raw)?;
-            let shared = ChunkData::internal_from_bytes(&bytes, pos).map_err(|error| {
-                Error::Read(ChunkReadingError::ParsingError(error)).at_chunk(x, z)
-            })?;
+            let shared = read_storage_chunk(&mut region, &path, region_pos, pos)
+                .map_err(|error| dimension.chunk_error(pos, error))?;
             let (updated, edited) = export_record(&record, &original, &shared, &terrain, &items)
-                .map_err(|error| error.at_chunk(x, z))?;
+                .map_err(|error| dimension.chunk_error(pos, error))?;
             if edited != 0 {
-                db.put(&key, &updated)?;
+                db.put(key, &updated)?;
                 inventories_updated += edited;
             }
         }
@@ -136,6 +127,24 @@ pub fn export_storage(
         inventories_updated,
         preserved,
     })
+}
+
+fn read_storage_chunk(
+    region: &mut Option<AnvilRegion>,
+    path: &Path,
+    region_pos: Vector2<i32>,
+    pos: Vector2<i32>,
+) -> Result<ChunkData, Error> {
+    let region = match region {
+        Some(region) => region,
+        pending => pending.insert(AnvilRegion::open_read_only(path, region_pos)?),
+    };
+    let raw = region
+        .read_chunk(region_chunk_index(pos))?
+        .ok_or_else(|| invalid("missing matching Sculith chunk"))?;
+    let bytes = AnvilRegion::decode_chunk(raw)?;
+    ChunkData::internal_from_bytes(&bytes, pos)
+        .map_err(|error| Error::Read(ChunkReadingError::ParsingError(error)))
 }
 
 fn copy_world_entry(entry: &DirEntry, output: &Path) -> Result<(), Error> {
