@@ -2880,17 +2880,20 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
     ) -> wasmtime::Result<Result<u32, String>> {
         let player = accessor.get_res(&player)?.clone();
         let locale = Locale::from_str(&player.config.load().locale).unwrap_or(Locale::EnUs);
-        let form = accessor.with(|mut host| {
+        let (form, fonts) = accessor.with(|mut host| {
             let state = host.get();
-            let json = match form {
+            let (json, fonts) = match form {
                 Form::Simple(form) => state.serialize_simple_form_v0_2(form, locale),
                 Form::Modal(form) => state.serialize_modal_form_v0_2(form, locale),
                 Form::Custom(form) => state.serialize_custom_form_v0_2(form, locale),
             };
-            sculith_core::entity::player::forms::Form::from_json(json)
+            (
+                sculith_core::entity::player::forms::Form::from_json(json),
+                fonts,
+            )
         });
         run_blocking(accessor, move || {
-            form.and_then(|form| player.open_form(form))
+            form.and_then(|form| player.open_form_with_fonts(form, &fonts))
         })
         .await
     }
@@ -4623,7 +4626,7 @@ impl pumpkin::plugin::player::HostBedrockPlayerWithStore<PluginHostState>
             let locale_str = player.config.load().locale.clone();
             let locale = Locale::from_str(&locale_str).unwrap_or(Locale::EnUs);
 
-            let form_json =
+            let (form_json, _) =
                 match form {
                     Form::Simple(simple) => accessor
                         .with(|mut host| host.get().serialize_simple_form_v0_2(simple, locale)),

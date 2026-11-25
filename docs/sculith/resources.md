@@ -74,6 +74,8 @@ properties fail validation. [Bedrock sound schema](https://github.com/Mojang/bed
 `bitmap_fonts` generates a Java font from a Bedrock PNG divided into the rows
 and columns in `chars`. The tile height becomes the glyph height. A Java
 dialog text component selects the font using the mapping's Java ID.
+Shared form text passed through the Wasm API keeps its top-level font on
+Java titles, messages, button captions and labeled inputs.
 Explicit texture overrides can also target `minecraft:gui/sprites/dialog/`.
 Arbitrary Bedrock UI JSON, behavior packs, scripts, animation and Molang are not
 converted. Unsupported mapped features fail validation. Unmapped native assets

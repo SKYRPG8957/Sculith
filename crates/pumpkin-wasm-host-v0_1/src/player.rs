@@ -2796,22 +2796,22 @@ impl pumpkin::plugin::player::HostPlayerWithStore<PluginHostState> for HasSelf<P
         player: Resource<Player>,
         form: Form,
     ) -> wasmtime::Result<Result<u32, String>> {
-        let (player, form, plugin) = {
+        let (player, form, fonts, plugin) = {
             let state = host.get();
             let player = state.get(&player)?.clone();
             let locale = Locale::from_str(&player.config.load().locale).unwrap_or(Locale::EnUs);
-            let json = match form {
+            let (json, fonts) = match form {
                 Form::Simple(form) => state.serialize_simple_form(form, locale),
                 Form::Modal(form) => state.serialize_modal_form(form, locale),
                 Form::Custom(form) => state.serialize_custom_form(form, locale),
             };
             let form = sculith_core::entity::player::forms::Form::from_json(json);
-            (player, form, plugin_from_state(state)?)
+            (player, form, fonts, plugin_from_state(state)?)
         };
         plugin
             .store
             .pump_blocking(&mut host, move || {
-                form.and_then(|form| player.open_form(form))
+                form.and_then(|form| player.open_form_with_fonts(form, &fonts))
             })
             .await
     }
@@ -4172,7 +4172,7 @@ impl pumpkin::plugin::player::HostBedrockPlayer for PluginHostState {
             let locale_str = player.config.load().locale.clone();
             let locale = Locale::from_str(&locale_str).unwrap_or(Locale::EnUs);
 
-            let form_json = match form {
+            let (form_json, _) = match form {
                 Form::Simple(simple) => self.serialize_simple_form(simple, locale),
                 Form::Modal(modal) => self.serialize_modal_form(modal, locale),
                 Form::Custom(custom) => self.serialize_custom_form(custom, locale),

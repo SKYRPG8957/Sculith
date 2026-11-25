@@ -116,6 +116,20 @@ fn check_text(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Java font overrides for the title, body and each control in a shared form.
+#[derive(Default)]
+pub struct JavaFormFonts {
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub controls: Vec<Option<String>>,
+}
+
+impl JavaFormFonts {
+    fn control(&self, index: usize) -> Option<&str> {
+        self.controls.get(index).and_then(Option::as_deref)
+    }
+}
+
 impl Form {
     pub fn from_json(value: Value) -> Result<Self, String> {
         let form: Self = serde_json::from_value(value).map_err(|error| error.to_string())?;
@@ -256,7 +270,12 @@ impl Form {
             .collect()
     }
 
-    fn java_dialog(&self, prefix: &str, images: &[Option<&str>]) -> NbtCompound {
+    fn java_dialog(
+        &self,
+        prefix: &str,
+        images: &[Option<&str>],
+        fonts: &JavaFormFonts,
+    ) -> NbtCompound {
         let (title, body, buttons) = match self {
             Self::Simple {
                 title,
@@ -264,13 +283,19 @@ impl Form {
                 buttons,
             } => (
                 title,
-                vec![plain_message(content)],
+                vec![plain_message(content, fonts.body.as_deref())],
                 buttons
                     .iter()
                     .enumerate()
                     .map(|(index, button)| {
                         let image = images.get(index).copied().flatten();
-                        action_button(&button.text, &format!("{prefix}/{index}"), false, image)
+                        action_button(
+                            &button.text,
+                            &format!("{prefix}/{index}"),
+                            false,
+                            image,
+                            fonts.control(index),
+                        )
                     })
                     .collect(),
             ),
@@ -281,18 +306,31 @@ impl Form {
                 button2,
             } => (
                 title,
-                vec![plain_message(content)],
+                vec![plain_message(content, fonts.body.as_deref())],
                 vec![
-                    action_button(button1, &format!("{prefix}/0"), false, None),
-                    action_button(button2, &format!("{prefix}/1"), false, None),
+                    action_button(
+                        button1,
+                        &format!("{prefix}/0"),
+                        false,
+                        None,
+                        fonts.control(0),
+                    ),
+                    action_button(
+                        button2,
+                        &format!("{prefix}/1"),
+                        false,
+                        None,
+                        fonts.control(1),
+                    ),
                 ],
             ),
             Self::Custom { title, content } => (
                 title,
                 content
                     .iter()
-                    .filter_map(|element| match element {
-                        Element::Label { text } => Some(plain_message(text)),
+                    .enumerate()
+                    .filter_map(|(index, element)| match element {
+                        Element::Label { text } => Some(plain_message(text, fonts.control(index))),
                         _ => None,
                     })
                     .collect(),
@@ -305,7 +343,7 @@ impl Form {
         };
         let mut dialog = NbtCompound::new();
         dialog.put_string("type", "minecraft:multi_action".into());
-        dialog.put("title", text_tag(title));
+        dialog.put("title", text_tag(title, fonts.title.as_deref()));
         dialog.put_bool("pause", false);
         dialog.put_bool("can_close_with_escape", true);
         dialog.put_string("after_action", "close".into());
@@ -327,7 +365,7 @@ impl Form {
             let inputs = content
                 .iter()
                 .enumerate()
-                .filter_map(|(index, element)| element.java_input(index))
+                .filter_map(|(index, element)| element.java_input(index, fonts.control(index)))
                 .map(NbtTag::Compound)
                 .collect();
             dialog.put("inputs", NbtTag::List(inputs));
@@ -458,7 +496,7 @@ impl Element {
         }
     }
 
-    fn java_input(&self, index: usize) -> Option<NbtCompound> {
+    fn java_input(&self, index: usize, font: Option<&str>) -> Option<NbtCompound> {
         let mut input = NbtCompound::new();
         input.put_string("key", format!("f{index}"));
         let (kind, text) = match self {
@@ -499,7 +537,7 @@ impl Element {
                             .map(|(index, text)| {
                                 let mut option = NbtCompound::new();
                                 option.put_string("id", index.to_string());
-                                option.put("display", text_tag(text));
+                                option.put("display", text_tag(text, None));
                                 option.put_bool("initial", index == *default as usize);
                                 NbtTag::Compound(option)
                             })
@@ -518,7 +556,7 @@ impl Element {
                 if !placeholder.is_empty() {
                     input.put(
                         "label",
-                        TextComponent::text(text.to_owned())
+                        form_text_component(text, font)
                             .hover_event(HoverEvent::show_text(TextComponent::text(
                                 placeholder.to_owned(),
                             )))
@@ -530,27 +568,45 @@ impl Element {
         };
         input.put_string("type", format!("minecraft:{kind}"));
         if input.get("label").is_none() {
-            input.put("label", text_tag(text));
+            input.put("label", text_tag(text, font));
         }
         Some(input)
     }
 }
 
-fn text_tag(text: &str) -> NbtTag {
-    TextComponent::text(text.to_owned()).to_nbt_tag_for_version(&JavaMinecraftVersion::V_26_3)
+fn valid_font(font: Option<&str>) -> Option<&str> {
+    font.filter(|name| sculith_packs::validate_resource_id(name).is_ok())
 }
 
-fn plain_message(text: &str) -> NbtTag {
+fn form_text_component(text: &str, font: Option<&str>) -> TextComponent {
+    let mut component = TextComponent::text(text.to_owned());
+    if let Some(font) = valid_font(font) {
+        component.0.style.font = Some(font.to_owned());
+    }
+    component
+}
+
+fn text_tag(text: &str, font: Option<&str>) -> NbtTag {
+    form_text_component(text, font).to_nbt_tag_for_version(&JavaMinecraftVersion::V_26_3)
+}
+
+fn plain_message(text: &str, font: Option<&str>) -> NbtTag {
     let mut message = NbtCompound::new();
     message.put_string("type", "minecraft:plain_message".into());
-    message.put("contents", text_tag(text));
+    message.put("contents", text_tag(text, font));
     NbtTag::Compound(message)
 }
 
-fn action_button(text: &str, id: &str, dynamic: bool, image: Option<&str>) -> NbtTag {
+fn action_button(
+    text: &str,
+    id: &str,
+    dynamic: bool,
+    image: Option<&str>,
+    font: Option<&str>,
+) -> NbtTag {
     let mut button = action_button_translated("", id, dynamic);
     let label = image.map_or_else(
-        || text_tag(text),
+        || text_tag(text, font),
         |sprite| {
             let mut icon = NbtCompound::new();
             icon.put_string("atlas", "minecraft:gui".into());
@@ -558,6 +614,9 @@ fn action_button(text: &str, id: &str, dynamic: bool, image: Option<&str>) -> Nb
             icon.put_string("fallback", String::new());
             let mut caption = NbtCompound::new();
             caption.put_string("text", format!(" {text}"));
+            if let Some(font) = valid_font(font) {
+                caption.put_string("font", font.to_owned());
+            }
             let mut label = NbtCompound::new();
             label.put_string("text", String::new());
             label.put_list(
@@ -631,6 +690,7 @@ impl FormSession {
         java: bool,
         now: Instant,
         images: &[Option<&str>],
+        fonts: &JavaFormFonts,
     ) -> Result<(u32, Option<NbtCompound>), String> {
         if self
             .pending
@@ -644,7 +704,7 @@ impl FormSession {
             .checked_add(1)
             .ok_or_else(|| invalid("Form IDs exhausted for this connection"))?;
         let prefix = format!("{ACTION_PREFIX}{id}/{:032x}", Uuid::new_v4().as_u128());
-        let dialog = java.then(|| form.java_dialog(&prefix, images));
+        let dialog = java.then(|| form.java_dialog(&prefix, images, fonts));
         self.pending = Some(PendingForm {
             id,
             prefix,
@@ -749,6 +809,11 @@ impl FormSession {
 impl Player {
     /// Opens one shared form. Replies use `BedrockFormResponseEvent` on both editions.
     pub fn open_form(&self, form: Form) -> Result<u32, String> {
+        self.open_form_with_fonts(form, &JavaFormFonts::default())
+    }
+
+    /// Opens a shared form with font overrides for its vanilla Java dialog.
+    pub fn open_form_with_fonts(&self, form: Form, fonts: &JavaFormFonts) -> Result<u32, String> {
         form.validate()?;
         if let ClientPlatform::Java(client) = self.client.as_ref()
             && (client.version.load() < JavaMinecraftVersion::V_1_21_6
@@ -794,6 +859,7 @@ impl Player {
                 matches!(self.client.as_ref(), ClientPlatform::Java(_)),
                 Instant::now(),
                 java_images,
+                fonts,
             )?;
             let native_json = match self.client.bedrock() {
                 Some(client) if client.is_current_protocol() => {
@@ -897,6 +963,43 @@ mod tests {
     }
 
     #[test]
+    fn java_dialog_keeps_bitmap_fonts_in_text_and_icons_without_changing_bedrock_json() {
+        let form = simple();
+        let fonts = JavaFormFonts {
+            title: Some("sculith:intro/title".into()),
+            body: Some("sculith:intro/engine".into()),
+            controls: vec![
+                Some("sculith:intro/nav".into()),
+                Some("invalid/font:".into()),
+            ],
+        };
+        let dialog = form.java_dialog("sculith:ui/font", &[Some("sculith:button")], &fonts);
+        let title = dialog.get_compound("title").unwrap();
+        assert_eq!(title.get_string("font"), Some("sculith:intro/title"));
+        let body = dialog.get_list("body").unwrap()[0]
+            .extract_compound()
+            .unwrap();
+        assert_eq!(
+            body.get_compound("contents").unwrap().get_string("font"),
+            Some("sculith:intro/engine")
+        );
+        let caption = dialog.get_list("actions").unwrap()[0]
+            .extract_compound()
+            .unwrap()
+            .get_compound("label")
+            .unwrap()
+            .get_list("extra")
+            .unwrap()[1]
+            .extract_compound()
+            .unwrap();
+        assert_eq!(caption.get_string("font"), Some("sculith:intro/nav"));
+        assert!(valid_font(fonts.control(1)).is_none());
+        let bedrock = serde_json::to_value(&form).unwrap();
+        assert!(bedrock["title"].is_string() && bedrock["content"].is_string());
+        assert!(bedrock["buttons"][0]["text"].is_string());
+    }
+
+    #[test]
     fn normalizes_both_editions_to_the_same_custom_response() {
         let form = custom();
         let expected = json!([null, true, 2.5, 1, 0, "가나다😀"]);
@@ -928,12 +1031,20 @@ mod tests {
     fn binds_java_replies_to_one_player_and_one_request() {
         let now = Instant::now();
         let mut session = FormSession::default();
-        let (id, dialog) = session.open(simple(), true, now, &[]).unwrap();
+        let (id, dialog) = session
+            .open(simple(), true, now, &[], &JavaFormFonts::default())
+            .unwrap();
         assert!(dialog.is_some());
-        assert!(session.open(simple(), true, now, &[]).is_err());
+        assert!(
+            session
+                .open(simple(), true, now, &[], &JavaFormFonts::default())
+                .is_err()
+        );
         let action = format!("{}/0", session.pending.as_ref().unwrap().prefix);
         let mut other = FormSession::default();
-        other.open(simple(), true, now, &[]).unwrap();
+        other
+            .open(simple(), true, now, &[], &JavaFormFonts::default())
+            .unwrap();
         assert_eq!(other.java_response(&action, None, now), FormReply::Invalid);
         assert_eq!(
             session.java_response("sculith:ui/forged/0", None, now),
@@ -958,7 +1069,9 @@ mod tests {
             session.java_response("example:other_dialog", None, now),
             FormReply::Unhandled
         );
-        let (new_id, _) = session.open(simple(), true, now, &[]).unwrap();
+        let (new_id, _) = session
+            .open(simple(), true, now, &[], &JavaFormFonts::default())
+            .unwrap();
         assert_ne!(new_id, id);
         assert_eq!(
             session.java_response(&action, None, now),
@@ -970,7 +1083,9 @@ mod tests {
     fn rejects_native_replay_wrong_ids_and_invalid_choices() {
         let now = Instant::now();
         let mut session = FormSession::default();
-        let (id, dialog) = session.open(simple(), false, now, &[]).unwrap();
+        let (id, dialog) = session
+            .open(simple(), false, now, &[], &JavaFormFonts::default())
+            .unwrap();
         assert!(dialog.is_none());
         assert_eq!(
             session.bedrock_response(1, Some("0"), now),
@@ -1006,13 +1121,17 @@ mod tests {
     fn expires_and_closes_sessions_without_reusing_ids() {
         let now = Instant::now();
         let mut session = FormSession::default();
-        let (id, _) = session.open(simple(), true, now, &[]).unwrap();
+        let (id, _) = session
+            .open(simple(), true, now, &[], &JavaFormFonts::default())
+            .unwrap();
         let cancel = format!("{}/cancel", session.pending.as_ref().unwrap().prefix);
         assert_eq!(
             session.java_response(&cancel, None, now),
             FormReply::Valid { id, data: None }
         );
-        let (next, _) = session.open(simple(), false, now, &[]).unwrap();
+        let (next, _) = session
+            .open(simple(), false, now, &[], &JavaFormFonts::default())
+            .unwrap();
         session.abort(id);
         assert!(session.pending.is_some());
         assert_eq!(
@@ -1021,7 +1140,13 @@ mod tests {
         );
         assert!(session.pending.is_none());
         let (last, _) = session
-            .open(simple(), false, now + FORM_LIFETIME, &[])
+            .open(
+                simple(),
+                false,
+                now + FORM_LIFETIME,
+                &[],
+                &JavaFormFonts::default(),
+            )
             .unwrap();
         assert!(last > next);
         assert_eq!(
@@ -1032,7 +1157,11 @@ mod tests {
             }
         );
         session.next_id = u32::MAX;
-        assert!(session.open(simple(), true, now, &[]).is_err());
+        assert!(
+            session
+                .open(simple(), true, now, &[], &JavaFormFonts::default())
+                .is_err()
+        );
     }
 
     #[test]
@@ -1047,9 +1176,15 @@ mod tests {
     fn bedrock_delivers_the_join_form_once_after_initialization() {
         let now = Instant::now();
         let mut session = FormSession::default();
-        let (id, _) = session.open(simple(), false, now, &[]).unwrap();
+        let (id, _) = session
+            .open(simple(), false, now, &[], &JavaFormFonts::default())
+            .unwrap();
         assert_eq!(session.hold_bedrock_until_loaded("join".into()), None);
-        assert!(session.open(simple(), false, now, &[]).is_err());
+        assert!(
+            session
+                .open(simple(), false, now, &[], &JavaFormFonts::default())
+                .is_err()
+        );
         assert_eq!(
             session.bedrock_response(id, Some("0"), now),
             FormReply::Invalid
@@ -1063,7 +1198,9 @@ mod tests {
                 data: Some("0".into())
             }
         );
-        session.open(simple(), false, now, &[]).unwrap();
+        session
+            .open(simple(), false, now, &[], &JavaFormFonts::default())
+            .unwrap();
         assert_eq!(
             session.hold_bedrock_until_loaded("later".into()),
             Some("later".into())
@@ -1074,11 +1211,15 @@ mod tests {
     fn bedrock_discards_an_expired_join_form_and_accepts_new_forms() {
         let now = Instant::now();
         let mut session = FormSession::default();
-        session.open(simple(), false, now, &[]).unwrap();
+        session
+            .open(simple(), false, now, &[], &JavaFormFonts::default())
+            .unwrap();
         assert_eq!(session.hold_bedrock_until_loaded("old".into()), None);
         let later = now + FORM_LIFETIME;
         assert_eq!(session.take_ready_bedrock(later), None);
-        session.open(simple(), false, later, &[]).unwrap();
+        session
+            .open(simple(), false, later, &[], &JavaFormFonts::default())
+            .unwrap();
         assert_eq!(
             session.hold_bedrock_until_loaded("fresh".into()),
             Some("fresh".into())
@@ -1106,7 +1247,11 @@ mod tests {
         );
 
         let sprite = "minecraft:dialog/sculith/welcome";
-        let dialog = form.java_dialog("sculith:ui/test", &[Some(sprite)]);
+        let dialog = form.java_dialog(
+            "sculith:ui/test",
+            &[Some(sprite)],
+            &JavaFormFonts::default(),
+        );
         let button = dialog.get_list("actions").unwrap()[0]
             .extract_compound()
             .unwrap();

@@ -540,7 +540,8 @@ fn validate_png(bytes: &[u8]) -> Result<(u32, u32)> {
     Ok((width, height))
 }
 
-fn validate_resource_id(id: &str) -> Result<(), String> {
+/// Validates a resource identifier used by the generated Java pack.
+pub fn validate_resource_id(id: &str) -> Result<(), String> {
     let valid = || {
         let (namespace, path) = id.split_once(':')?;
         if id.len() > 128
