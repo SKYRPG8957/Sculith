@@ -315,6 +315,8 @@ pub struct World {
     regional_entity_updates: RegionalEntityUpdates,
     regional_actors: RwLock<Arc<RegionalActors>>,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
+    /// Temporary references held by running game tests.
+    pub(crate) game_test_chunk_forces: std::sync::Mutex<FxHashMap<Vector2<i32>, usize>>,
     /// Block entities indexed by chunk, so ticking only visits the currently
     /// active chunks instead of scanning every loaded block entity each tick.
     pub block_entities: DashMap<Vector2<i32>, FxHashMap<BlockPos, Arc<dyn BlockEntity>>>,
@@ -515,6 +517,7 @@ impl World {
             regional_entity_updates: RegionalEntityUpdates::default(),
             regional_actors: RwLock::default(),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
+            game_test_chunk_forces: std::sync::Mutex::new(FxHashMap::default()),
             server,
             block_entities: DashMap::new(),
             hopper_moves: std::sync::Mutex::default(),
@@ -531,19 +534,52 @@ impl World {
         }
     }
 
+    /// Keeps the supplied columns loaded and eligible for simulation.
+    pub fn set_force_loaded_chunks(
+        &self,
+        positions: impl IntoIterator<Item = Vector2<i32>>,
+        keep_loaded: bool,
+    ) {
+        let changed = {
+            let mut forced = self
+                .forced_chunks
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut changed = false;
+            for pos in positions {
+                changed |= if keep_loaded {
+                    forced.insert(pos)
+                } else {
+                    forced.remove(&pos)
+                };
+            }
+            changed
+        };
+        if changed {
+            self.update_active_chunks();
+        }
+    }
+
     #[expect(clippy::too_many_lines)]
     pub fn update_active_chunks(&self) {
         let server = self.server.upgrade();
         let players = self.players.load();
-        let forced_chunks = self
-            .forced_chunks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
         let mut tracker = self
             .active_chunk_tracker
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut forced_chunks = self
+            .forced_chunks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        forced_chunks.extend(
+            self.game_test_chunk_forces
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .keys()
+                .copied(),
+        );
         let mut active_chunks = self
             .active_chunks
             .write()
@@ -582,7 +618,7 @@ impl World {
         for id in removed_players {
             tracker.remove_player(id, Arc::make_mut(&mut active_chunks));
         }
-        tracker.sync_forced_chunks(
+        let (force_added, force_removed) = tracker.sync_forced_chunks(
             &forced_chunks,
             Arc::make_mut(&mut active_chunks),
             &mut newly_active,
@@ -621,6 +657,21 @@ impl World {
         }
         let newly_inactive = std::mem::take(&mut tracker.newly_inactive);
         drop(active_chunks);
+        if !force_added.is_empty() || !force_removed.is_empty() {
+            let mut loading = self
+                .level
+                .chunk_loading
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let level = pumpkin_world::chunk_system::chunk_loading::ChunkLoading::FULL_CHUNK_LEVEL;
+            for pos in force_added {
+                loading.add_ticket(pos, level);
+            }
+            for pos in force_removed {
+                loading.remove_ticket(pos, level);
+            }
+            loading.send_change();
+        }
         drop(tracker);
         if !newly_inactive.is_empty() {
             self.queue_entity_chunk_changes(newly_inactive);

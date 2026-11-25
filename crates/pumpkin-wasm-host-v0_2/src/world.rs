@@ -784,25 +784,7 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
     ) -> wasmtime::Result<()> {
         let world_ref = self.get(&world)?.clone();
         let pos = sculith_util::math::vector2::Vector2::new(x, z);
-        let changed = {
-            let mut forced_chunks = world_ref.forced_chunks.lock_ignore_poison();
-            if forced {
-                forced_chunks.insert(pos)
-            } else {
-                forced_chunks.remove(&pos)
-            }
-        };
-        if changed {
-            let mut loading = world_ref.level.chunk_loading.lock_ignore_poison();
-            if forced {
-                loading.add_force_ticket(pos);
-            } else {
-                loading.remove_force_ticket(pos);
-            }
-            loading.send_change();
-            drop(loading);
-            world_ref.update_active_chunks();
-        }
+        world_ref.set_force_loaded_chunks([pos], forced);
         Ok(())
     }
 
@@ -2013,25 +1995,7 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
             return Err(wasmtime::Error::msg("Chunk unloaded"));
         };
         let pos = sculith_util::math::vector2::Vector2::new(chunk_data.x, chunk_data.z);
-        let changed = {
-            let mut forced_chunks = world.forced_chunks.lock_ignore_poison();
-            if forced {
-                forced_chunks.insert(pos)
-            } else {
-                forced_chunks.remove(&pos)
-            }
-        };
-        if changed {
-            let mut loading = world.level.chunk_loading.lock_ignore_poison();
-            if forced {
-                loading.add_force_ticket(pos);
-            } else {
-                loading.remove_force_ticket(pos);
-            }
-            loading.send_change();
-            drop(loading);
-            world.update_active_chunks();
-        }
+        world.set_force_loaded_chunks([pos], forced);
         Ok(())
     }
 

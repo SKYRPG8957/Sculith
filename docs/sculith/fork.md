@@ -85,6 +85,12 @@ simulation job. The existing simulation pool executes world jobs and their
 parallel work. A busy world skips expired deadlines while other ready worlds
 can process packets, run simulation and synchronize their own clocks.
 
+The `/forceload` command and Wasm chunk APIs feed the same loading tickets
+and simulation coverage. Columns can load when their world has no players.
+A running GameTest keeps its own references, so releasing an operator or
+plugin force cannot retire an active test's terrain. Releasing the last
+reference allows the ordinary save and unload path.
+
 Conditional plugin block edits compare the expected block in its loaded chunk.
 Rust and Wasm plugins can also queue a conditional player inventory edit with
 `schedule_inventory_edit`. Before writing the slot, the owner checks the active

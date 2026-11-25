@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
@@ -34,26 +34,6 @@ static PENDING_GAME_TESTS: AtomicUsize = AtomicUsize::new(0);
 pub fn has_pending_game_tests() -> bool {
     STOP_GAME_TESTS.load(Ordering::Acquire) || PENDING_GAME_TESTS.load(Ordering::Acquire) > 0
 }
-
-#[derive(Clone, Copy)]
-struct ForcedGameTestChunk {
-    users: usize,
-    was_forced: bool,
-}
-
-/// `GameTest` structures must keep their chunks loaded and ticking just like vanilla's
-/// `TestInstanceBlockEntity::forceLoadChunks`. Keep a small reference count so
-/// overlapping tests share the same force-load lease and pre-existing `/forceload`
-/// chunks are never released by the `GameTest` runtime.
-/// Key uniquely identifying a force-loaded chunk requested by a `GameTest`.
-type ForcedGameTestChunkKey = (uuid::Uuid, i32, i32);
-
-/// Reference-counted map of chunks force-loaded by active `GameTest`s.
-type ForcedGameTestChunkMap = StdMutex<HashMap<ForcedGameTestChunkKey, ForcedGameTestChunk>>;
-
-/// Global registry of chunks force-loaded by the `GameTest` runtime.
-static FORCED_GAME_TEST_CHUNKS: LazyLock<ForcedGameTestChunkMap> =
-    LazyLock::new(|| StdMutex::new(HashMap::new()));
 
 pub struct GameTestQueueEntry {
     test_id: String,
@@ -261,7 +241,7 @@ pub async fn prepare_test_run_with_reporter(
 struct ServerGameTestWorld {
     world: Arc<World>,
     /// Chunks for which this logical test owns one reference in
-    /// `FORCED_GAME_TEST_CHUNKS`. The same adapter is retained across copy-reset
+    /// the world. The same adapter is retained across copy-reset
     /// retries, so the chunks stay active for the complete retry lifecycle.
     forced_chunks: StdMutex<HashSet<(i32, i32)>>,
 }
@@ -360,72 +340,41 @@ impl Drop for ServerGameTestWorld {
 }
 
 fn acquire_forced_game_test_chunk(world: &World, chunk: Vector2<i32>) {
-    let key = (world.uuid, chunk.x, chunk.y);
-    let mut leases = FORCED_GAME_TEST_CHUNKS
+    let mut leases = world
+        .game_test_chunk_forces
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(lease) = leases.get_mut(&key) {
-        lease.users = lease.users.saturating_add(1);
-        return;
-    }
-
-    let was_forced = {
-        let mut forced_chunks = world
-            .forced_chunks
+    let count = leases.entry(chunk).or_default();
+    *count = count.saturating_add(1);
+    if *count == 1 {
+        let mut loading = world
+            .level
+            .chunk_loading
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let was_forced = forced_chunks.contains(&chunk);
-        forced_chunks.insert(chunk);
-        was_forced
-    };
-    let mut chunk_loading = world
-        .level
-        .chunk_loading
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    chunk_loading.add_force_ticket(chunk);
-    chunk_loading.send_change();
-    drop(chunk_loading);
-    leases.insert(
-        key,
-        ForcedGameTestChunk {
-            users: 1,
-            was_forced,
-        },
-    );
+        loading.add_force_ticket(chunk);
+        loading.send_change();
+    }
 }
 
 fn release_forced_game_test_chunk(world: &World, chunk: Vector2<i32>) {
-    let key = (world.uuid, chunk.x, chunk.y);
-    let mut leases = FORCED_GAME_TEST_CHUNKS
+    let mut leases = world
+        .game_test_chunk_forces
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let release_world_chunk = match leases.get_mut(&key) {
-        Some(lease) if lease.users > 1 => {
-            lease.users -= 1;
-            return;
-        }
-        Some(lease) => !lease.was_forced,
-        None => return,
+    let Some(count) = leases.get_mut(&chunk) else {
+        return;
     };
-    leases.remove(&key);
-    drop(leases);
-
-    let mut chunk_loading = world
-        .level
-        .chunk_loading
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    chunk_loading.remove_force_ticket(chunk);
-    chunk_loading.send_change();
-    drop(chunk_loading);
-
-    if release_world_chunk {
-        world
-            .forced_chunks
+    *count -= 1;
+    if *count == 0 {
+        leases.remove(&chunk);
+        let mut loading = world
+            .level
+            .chunk_loading
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&chunk);
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        loading.remove_force_ticket(chunk);
+        loading.send_change();
     }
 }
 
@@ -923,5 +872,46 @@ impl GameTestWorld for ServerGameTestWorld {
                     tick: 0,
                 })?;
         Ok(count.max(0).cast_unsigned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entity::ai::test_support::world;
+
+    #[tokio::test]
+    async fn manual_forces_and_game_tests_keep_their_own_chunk_references() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = world(&folder);
+        let chunk = Vector2::new(101, 0);
+        let ticket_count = || {
+            world
+                .level
+                .chunk_loading
+                .lock()
+                .unwrap()
+                .ticket
+                .get(&chunk)
+                .map_or(0, Vec::len)
+        };
+        world.set_force_loaded_chunks([chunk, chunk], true);
+        assert_eq!(ticket_count(), 1);
+
+        acquire_forced_game_test_chunk(&world, chunk);
+        acquire_forced_game_test_chunk(&world, chunk);
+        world.update_active_chunks();
+        assert_eq!(ticket_count(), 2);
+
+        release_forced_game_test_chunk(&world, chunk);
+        world.set_force_loaded_chunks([chunk], false);
+        assert!(world.active_chunks.read().unwrap().contains(&chunk));
+        assert_eq!(ticket_count(), 2);
+
+        release_forced_game_test_chunk(&world, chunk);
+        world.update_active_chunks();
+        assert_eq!(ticket_count(), 0);
+        assert!(!world.active_chunks.read().unwrap().contains(&chunk));
+        world.level.shutdown().await;
     }
 }

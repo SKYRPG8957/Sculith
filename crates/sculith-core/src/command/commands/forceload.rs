@@ -62,7 +62,7 @@ impl CommandExecutor for ForceloadAddExecutor {
 
         let count_x = max_x - min_x + 1;
         let count_z = max_z - min_z + 1;
-        let total_chunks = count_x * count_z;
+        let total_chunks = i64::from(count_x) * i64::from(count_z);
 
         if total_chunks > 256 {
             return Err(ERROR_TOO_MANY.create_without_context(
@@ -71,19 +71,9 @@ impl CommandExecutor for ForceloadAddExecutor {
             ));
         }
 
-        {
-            let mut forced = world
-                .forced_chunks
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for x in min_x..=max_x {
-                for z in min_z..=max_z {
-                    forced.insert(Vector2::new(x, z));
-                }
-            }
-        }
-
-        world.update_active_chunks();
+        let columns =
+            (min_x..=max_x).flat_map(|x| (min_z..=max_z).map(move |z| Vector2::new(x, z)));
+        world.set_force_loaded_chunks(columns, true);
 
         let dimension_name = world.dimension.minecraft_name.to_string();
 
@@ -110,7 +100,7 @@ impl CommandExecutor for ForceloadAddExecutor {
         };
         context.source.send_feedback(text, true);
 
-        Ok(total_chunks)
+        Ok(total_chunks as i32)
     }
 }
 
@@ -145,7 +135,7 @@ impl CommandExecutor for ForceloadRemoveExecutor {
 
         let count_x = max_x - min_x + 1;
         let count_z = max_z - min_z + 1;
-        let total_chunks = count_x * count_z;
+        let total_chunks = i64::from(count_x) * i64::from(count_z);
 
         if total_chunks > 256 {
             return Err(ERROR_TOO_MANY.create_without_context(
@@ -154,19 +144,9 @@ impl CommandExecutor for ForceloadRemoveExecutor {
             ));
         }
 
-        {
-            let mut forced = world
-                .forced_chunks
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for x in min_x..=max_x {
-                for z in min_z..=max_z {
-                    forced.remove(&Vector2::new(x, z));
-                }
-            }
-        }
-
-        world.update_active_chunks();
+        let columns =
+            (min_x..=max_x).flat_map(|x| (min_z..=max_z).map(move |z| Vector2::new(x, z)));
+        world.set_force_loaded_chunks(columns, false);
 
         let dimension_name = world.dimension.minecraft_name.to_string();
 
@@ -193,7 +173,7 @@ impl CommandExecutor for ForceloadRemoveExecutor {
         };
         context.source.send_feedback(text, true);
 
-        Ok(total_chunks)
+        Ok(total_chunks as i32)
     }
 }
 
