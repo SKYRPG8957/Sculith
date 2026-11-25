@@ -276,7 +276,7 @@ fn replace_slots(
             .map(|(entry, _)| entry);
         let mut entry = match prototype {
             Some(prototype) => prototype.clone(),
-            None => storage::new_bedrock_stack(&stack)?,
+            None => storage::new_bedrock_stack(&stack, items)?,
         };
         entry.put_byte("Slot", slot as i8);
         entry.put_byte("Count", stack.item_count as i8);

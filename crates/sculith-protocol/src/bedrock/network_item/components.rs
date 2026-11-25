@@ -11,10 +11,10 @@ pub(super) fn potion_aux(stack: &ItemStack, bedrock_id: i16) -> Option<u32> {
     if !bedrock::uses_potion_aux(bedrock_id) {
         return None;
     }
-    let id = stack
-        .get_data_component::<PotionContentsImpl>()?
-        .potion_id?;
-    bedrock::potion_aux(id)
+    bedrock::potion_aux_for_contents(
+        bedrock_id,
+        stack.get_data_component::<PotionContentsImpl>()?,
+    )
 }
 
 pub(super) fn enchantment_nbt(stack: &ItemStack) -> Nbt {

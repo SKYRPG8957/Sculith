@@ -1,9 +1,25 @@
 //! Edition mappings for Bedrock item variants and enchantments.
 
+use std::borrow::Cow;
+
 use crate::{
-    Enchantment, data_component_impl::PotionContentsImpl, item::BedrockItem, potion::Potion,
+    Enchantment,
+    data_component_impl::{PotionContentsImpl, StatusEffectInstance},
+    effect::StatusEffect,
+    item::BedrockItem,
+    potion::Potion,
 };
 use pumpkin_nbt::{NbtCompound, tag::NbtTag};
+
+const DECAY_AUX: u32 = 36;
+const DECAY_EFFECT: StatusEffectInstance = StatusEffectInstance {
+    effect_id: Cow::Borrowed(StatusEffect::WITHER.minecraft_name),
+    amplifier: 1,
+    duration: 800,
+    ambient: false,
+    show_particles: true,
+    show_icon: true,
+};
 
 // Bedrock aux values, checked against Dragonfly's potion registry and the
 // newer variants in Geyser. Bedrock's wither potion has no shared registry entry.
@@ -44,7 +60,7 @@ const POTIONS: [Option<&Potion>; 47] = [
     Some(&Potion::STRONG_STRENGTH),
     Some(&Potion::WEAKNESS),
     Some(&Potion::LONG_WEAKNESS),
-    None, // Wither.
+    None, // Decay uses a custom effect.
     Some(&Potion::TURTLE_MASTER),
     Some(&Potion::LONG_TURTLE_MASTER),
     Some(&Potion::STRONG_TURTLE_MASTER),
@@ -73,11 +89,35 @@ pub fn potion_aux(potion_id: i32) -> Option<u32> {
         .map(|aux| aux as u32)
 }
 
-/// Restores shared potion contents from a Bedrock item variant.
+/// Encodes standard shared potions and the canonical drinkable Decay effect.
+#[must_use]
+pub fn potion_aux_for_contents(id: i16, contents: &PotionContentsImpl) -> Option<u32> {
+    if !uses_potion_aux(id) {
+        return None;
+    }
+    if let Some(potion_id) = contents.potion_id {
+        return potion_aux(potion_id);
+    }
+    (id == BedrockItem::POTION.id
+        && contents.custom_color.is_none()
+        && contents.custom_name.is_none()
+        && contents.custom_effects == [DECAY_EFFECT])
+    .then_some(DECAY_AUX)
+}
+
+/// Restores potion contents from a Bedrock item variant.
 #[must_use]
 pub fn potion_contents_from_bedrock(id: i16, aux: u32) -> Option<PotionContentsImpl> {
     if !uses_potion_aux(id) {
         return None;
+    }
+    if id == BedrockItem::POTION.id && aux == DECAY_AUX {
+        return Some(PotionContentsImpl {
+            potion_id: None,
+            custom_color: None,
+            custom_effects: vec![DECAY_EFFECT],
+            custom_name: None,
+        });
     }
     let potion = (*POTIONS.get(aux as usize)?)?;
     Some(PotionContentsImpl {

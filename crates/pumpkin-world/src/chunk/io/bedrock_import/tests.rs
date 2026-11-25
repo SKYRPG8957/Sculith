@@ -231,6 +231,12 @@ fn storage_item_versions_guard_potion_and_enchantment_round_trips() {
 
     let directory = tempfile::tempdir().unwrap();
     let legacy = storage::read_import_registry(directory.path()).unwrap();
+    std::fs::write(
+        directory.path().join(".sculith-bedrock-storage-version"),
+        b"2\n",
+    )
+    .unwrap();
+    let version_two = storage::read_import_registry(directory.path()).unwrap();
     storage::write_item_version(directory.path()).unwrap();
     let items = storage::read_import_registry(directory.path()).unwrap();
     let terrain = terrain::TerrainRegistry::load().unwrap();
@@ -247,7 +253,7 @@ fn storage_item_versions_guard_potion_and_enchantment_round_trips() {
         stack.write_item_stack(&mut saved);
         let decoded = storage::read_sculith_stack(&saved, &items).unwrap();
         assert!(stack.are_equal(&decoded));
-        let mut exported = storage::new_bedrock_stack(&decoded).unwrap();
+        let mut exported = storage::new_bedrock_stack(&decoded, &items).unwrap();
         exported.put_byte("Count", 1);
         assert!(
             storage::convert_stack(&exported, &terrain, &items)
@@ -264,11 +270,40 @@ fn storage_item_versions_guard_potion_and_enchantment_round_trips() {
         let source = as_bedrock(name, aux);
         assert!(storage::convert_stack(&source, &terrain, &legacy).is_err());
         let (decoded, exported) = round_trip(&source);
+        assert!(
+            storage::convert_stack(&source, &terrain, &version_two)
+                .unwrap()
+                .are_equal(&decoded)
+        );
         let contents = decoded.get_data_component::<PotionContentsImpl>().unwrap();
         assert_eq!(contents.potion_id, Some(i32::from(potion.id)));
         assert_eq!(exported.get_short("Damage"), Some(aux));
     }
-    for aux in [2, 36] {
+    let decay = as_bedrock("potion", 36);
+    assert!(storage::convert_stack(&decay, &terrain, &legacy).is_err());
+    assert!(storage::convert_stack(&decay, &terrain, &version_two).is_err());
+    let (decoded, exported) = round_trip(&decay);
+    assert_eq!(exported.get_short("Damage"), Some(36));
+
+    let mut saved = NbtCompound::new();
+    decoded.write_item_stack(&mut saved);
+    assert!(storage::read_sculith_stack(&saved, &version_two).is_err());
+    let mut components = saved.get_compound("components").unwrap().clone();
+    let mut potion = components
+        .get_compound("minecraft:potion_contents")
+        .unwrap()
+        .clone();
+    let mut effect = potion.get_list("custom_effects").unwrap()[0]
+        .extract_compound()
+        .unwrap()
+        .clone();
+    effect.put_int("unknown_effect_field", 1);
+    potion.put_list("custom_effects", vec![NbtTag::Compound(effect)]);
+    components.put_compound("minecraft:potion_contents", potion);
+    saved.put_compound("components", components);
+    assert!(storage::read_sculith_stack(&saved, &items).is_err());
+
+    for aux in [2, 47] {
         assert!(storage::convert_stack(&as_bedrock("potion", aux), &terrain, &items).is_err());
     }
 

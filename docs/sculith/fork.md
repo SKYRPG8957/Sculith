@@ -739,11 +739,14 @@ generator, with supported Bedrock flat layers mapped to a flat preset.
 Ordinary single chests and barrels preserve the slots and counts of items
 with shared mappings. This includes default block items, standard drinkable,
 splash and lingering potion variants, and mapped enchantments on items and
-enchanted books. Variants with no reversible mapping, such as the Bedrock
-potion of Decay, still cause their container to be skipped as a unit. Paired
-chests and containers with other unsupported metadata are also skipped. The
-command reports excluded database records and shows the first 16 skipped block
-entities with their coordinates and reasons.
+enchanted books. Drinkable Bedrock Decay is stored with its Wither effect and
+sent back to Bedrock with its native variant. Java receives a potion with a
+custom Wither effect. Export from an earlier import keeps its original
+container eligibility so that a skipped Decay item remains in the source
+copy. Variants with no reversible mapping still cause their container to be
+skipped as a unit. Paired chests and containers with other unsupported metadata
+are also skipped. The command reports excluded database records and shows the
+first 16 skipped block entities with their coordinates and reasons.
 
 Modern actor records indexed to a saved chunk can also bring in pigs, cows,
 sheep and chickens. The importer preserves their dimension, position, age,

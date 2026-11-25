@@ -794,6 +794,40 @@ mod tests {
     }
 
     #[test]
+    fn drinkable_decay_preserves_its_effect_and_bedrock_aux() {
+        let potion_id = BedrockItem::POTION.id;
+        let mut contents = potion_contents_from_bedrock(potion_id, 36).unwrap();
+        assert_eq!(contents.potion_id, None);
+        let [effect] = contents.custom_effects.as_slice() else {
+            panic!("expected the Decay effect");
+        };
+        assert_eq!(effect.effect_id, "minecraft:wither");
+        assert_eq!((effect.amplifier, effect.duration), (1, 800));
+        assert!(!effect.ambient && effect.show_particles && effect.show_icon);
+
+        let mut stack = ItemStack::new(1, &Item::POTION);
+        stack.set_data_component(contents.clone());
+        let descriptor = NetworkItemDescriptor::from(&stack);
+        for aux in [
+            descriptor.aux_value,
+            ItemStackWrapper::from(&stack).aux_value,
+            NetworkItemStackDescriptor::from(&stack).aux_value,
+        ] {
+            assert_eq!(aux, VarUInt(36));
+        }
+        let mut bytes = Vec::new();
+        descriptor.write_item_instance(&mut bytes).unwrap();
+        let decoded = NetworkItemDescriptor::read_item_instance(&mut bytes.as_slice()).unwrap();
+        assert_eq!(decoded.aux_value, VarUInt(36));
+
+        contents.custom_effects[0].duration += 1;
+        stack.set_data_component(contents);
+        assert_ne!(NetworkItemDescriptor::from(&stack).aux_value, VarUInt(36));
+        assert!(potion_contents_from_bedrock(BedrockItem::SPLASH_POTION.id, 36).is_none());
+        assert!(potion_contents_from_bedrock(BedrockItem::LINGERING_POTION.id, 36).is_none());
+    }
+
+    #[test]
     fn writes_bedrock_enchantments_to_equipment_and_inventory() {
         let mut stack = ItemStack::new(1, &Item::DIAMOND_CHESTPLATE);
         stack.add_enchantment(&Enchantment::PROTECTION, 4);
