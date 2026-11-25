@@ -43,6 +43,7 @@ pub(super) struct BlockUpdates {
 struct PendingBlockUpdates {
     world: BlockStates,
     regional: HashMap<BlockPos, RegionalBlockUpdate>,
+    navigation: HashMap<BlockPos, u64>,
 }
 
 struct RegionalBlockUpdate {
@@ -117,6 +118,31 @@ impl BlockUpdates {
         }
     }
 
+    fn queue_regional_edit(&self, pos: BlockPos, state: BlockStateId, sequence: Option<u64>) {
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        pending.regional.insert(
+            pos,
+            RegionalBlockUpdate {
+                state,
+                sent: SentViewers::default(),
+            },
+        );
+        if let Some(sequence) = sequence {
+            let last = pending.navigation.entry(pos).or_default();
+            *last = (*last).max(sequence);
+        }
+    }
+
+    fn take_navigation_changes(&self) -> Vec<(BlockPos, u64)> {
+        let changes = {
+            let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            std::mem::take(&mut pending.navigation)
+        };
+        let mut changes: Vec<_> = changes.into_iter().collect();
+        changes.sort_unstable_by_key(|(_, sequence)| *sequence);
+        changes
+    }
+
     pub(super) fn try_publish(&self) -> Option<MutexGuard<'_, ()>> {
         try_lock(&self.publisher)
     }
@@ -125,8 +151,13 @@ impl BlockUpdates {
         &self,
         current_state: impl Fn(&BlockPos) -> Option<BlockStateId>,
     ) -> WorldSectionUpdates {
-        let PendingBlockUpdates { world, regional } =
-            std::mem::take(&mut *self.pending.lock().unwrap_or_else(PoisonError::into_inner));
+        let (world, regional) = {
+            let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            (
+                std::mem::take(&mut pending.world),
+                std::mem::take(&mut pending.regional),
+            )
+        };
         let mut sections = WorldSectionUpdates::new();
         let remaining = regional.into_iter().filter_map(|(pos, update)| {
             (!world.contains_key(&pos)).then_some((pos, update.state, update.sent))
@@ -167,6 +198,22 @@ impl World {
         self.block_updates.queue_regional(changes);
     }
 
+    pub(crate) fn queue_regional_edit_update(
+        &self,
+        pos: BlockPos,
+        previous: BlockStateId,
+        state: BlockStateId,
+    ) {
+        let sequence = self.navigation_change_sequence_for(&pos, previous, state);
+        self.block_updates.queue_regional_edit(pos, state, sequence);
+    }
+
+    pub(super) fn flush_regional_navigation_updates(&self) {
+        for (position, sequence) in self.block_updates.take_navigation_changes() {
+            self.notify_navigation_block_changed(&position, sequence);
+        }
+    }
+
     pub(super) fn flush_regional_block_updates(&self, owns: &impl Fn(Vector2<i32>) -> bool) {
         let Some(mut pending) = try_lock(&self.block_updates.pending) else {
             return;
@@ -182,7 +229,9 @@ impl World {
         let Some(_publishing) = self.block_updates.try_publish() else {
             return;
         };
-        let PendingBlockUpdates { world, regional } = &mut *pending;
+        let PendingBlockUpdates {
+            world, regional, ..
+        } = &mut *pending;
         let changes = group_by_section(
             regional
                 .extract_if(|pos, update| {
@@ -364,5 +413,23 @@ mod tests {
             sections[&(section, SentViewers::default())],
             vec![(second, gold), (replaced, stone)]
         );
+    }
+
+    #[test]
+    fn regional_navigation_changes_survive_packet_delivery_and_keep_newer_sequences() {
+        let queue = BlockUpdates::default();
+        let first = BlockPos::new(1, 64, 1);
+        let second = BlockPos::new(4, 64, 1);
+        let glass = Block::GLASS.default_state.id;
+        let air = BlockStateId::AIR;
+        queue.queue_regional_edit(first, glass, Some(10));
+        queue.queue_regional_edit(second, glass, Some(11));
+        queue.queue_regional_edit(first, air, Some(12));
+        queue.queue_regional_edit(first, air, None);
+        queue.queue_world([(second, air)]);
+        let sections = queue.take_world_sections(|_| None);
+        assert_eq!(sections.values().map(Vec::len).sum::<usize>(), 2);
+        assert_eq!(queue.take_navigation_changes(), [(second, 11), (first, 12)]);
+        assert!(queue.take_navigation_changes().is_empty());
     }
 }

@@ -20,7 +20,7 @@ protocol and utility packages are `sculith-core`, `sculith-config`,
 `sculith-protocol` and `sculith-util`. Embedders start `sculith_core::SculithServer`
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
-Native Rust plugins must be rebuilt against ABI 43. The native plugin macro
+Native Rust plugins must be rebuilt against ABI 44. The native plugin macro
 exports `SCULITH_API_VERSION`, and the loader also reads the earlier version
 marker. Wasm plugins load by WIT API version.
 Telemetry and update notifications default to off. The optional update checker
@@ -221,9 +221,12 @@ and observable flow or physics events use the world callbacks.
 
 On a regional deadline the owner can also apply queued Rust plugin block
 edits. The owner checks the expected state and its current extent under the
-palette lock. Edits can notify clients when their geometry, light and other
-chunk bookkeeping stay compatible and the adjacent shape checks have no
-callbacks to run. Requests stay ordered within a region. A deferred edit or
+palette lock. Edits can notify clients when light and block indexes stay
+compatible and the adjacent shape checks have no callbacks to run. The region
+updates affected heightmaps with the palette change. A collision change also
+queues a navigation notice for the world's next tick boundary. Packet delivery
+and a later block packet at the same position preserve the notice. Requests
+stay ordered within a region. A deferred edit or
 an edit claimed by the world holds that region's subsequent requests while
 other regions can process theirs. The world applies remaining requests and
 runs edits during coordinated ticks and freezes. Wasm receipts use the same

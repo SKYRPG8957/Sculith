@@ -9,7 +9,6 @@ use pumpkin_data::{BlockDirection, BlockStateId};
 use pumpkin_world::{
     chunk::{CHUNK_WIDTH, ChunkData},
     level::SyncChunk,
-    lighting::LightEngine,
     world::BlockFlags,
 };
 use rustc_hash::FxHashSet;
@@ -99,10 +98,6 @@ impl BlockEditRequest {
         if self
             .flags
             .intersects(BlockFlags::NOTIFY_NEIGHBORS | BlockFlags::MOVED | BlockFlags::FORCE_STATE)
-            || LightEngine::has_different_light_properties(
-                self.expected.to_state(),
-                self.replacement.to_state(),
-            )
             || [self.expected, self.replacement].into_iter().any(|state| {
                 let block = state.to_block();
                 let fluid = World::get_fluid_from_state_id(state);
@@ -138,7 +133,7 @@ impl BlockEditRequest {
             return Some(BlockEditStatus::Stale);
         }
         if self.expected != self.replacement && self.flags.contains(BlockFlags::NOTIFY_LISTENERS) {
-            world.queue_regional_block_updates([(self.position, self.replacement)]);
+            world.queue_regional_edit_update(self.position, self.expected, self.replacement);
         }
         Some(BlockEditStatus::Applied)
     }

@@ -275,22 +275,28 @@ impl ChunkHeightmapType {
     }
 }
 
-fn retains_block_bookkeeping(old: BlockStateId, new: BlockStateId) -> bool {
-    let old_state = old.to_state();
-    let new_state = new.to_state();
+fn retains_block_indexes(old: BlockStateId, new: BlockStateId) -> bool {
     has_random_ticks(old) == has_random_ticks(new)
         && has_random_ticking_fluid(old) == has_random_ticking_fluid(new)
-        && old_state.collision_shapes == new_state.collision_shapes
-        && old_state.block_entity_type == new_state.block_entity_type
+        && old.to_state().block_entity_type == new.to_state().block_entity_type
         && pumpkin_data::poi_type::PoiType::from_state_id(old.as_u16())
             == pumpkin_data::poi_type::PoiType::from_state_id(new.as_u16())
-        && [
-            ChunkHeightmapType::WorldSurface,
-            ChunkHeightmapType::MotionBlocking,
-            ChunkHeightmapType::MotionBlockingNoLeaves,
-        ]
-        .iter()
-        .all(|kind| kind.is_opaque(old_state) == kind.is_opaque(new_state))
+}
+
+fn retains_heightmaps(old: &BlockState, new: &BlockState) -> bool {
+    [
+        ChunkHeightmapType::WorldSurface,
+        ChunkHeightmapType::MotionBlocking,
+        ChunkHeightmapType::MotionBlockingNoLeaves,
+    ]
+    .iter()
+    .all(|kind| kind.is_opaque(old) == kind.is_opaque(new))
+}
+
+fn retains_block_bookkeeping(old: BlockStateId, new: BlockStateId) -> bool {
+    retains_block_indexes(old, new)
+        && old.to_state().collision_shapes == new.to_state().collision_shapes
+        && retains_heightmaps(old.to_state(), new.to_state())
 }
 
 #[derive(Debug, Clone)]
@@ -833,8 +839,7 @@ impl ChunkData {
             condition,
         )?;
         if old != block_state_id {
-            let state = BlockState::from_id(block_state_id);
-            self.update_heightmap(relative_x, relative_y, relative_z, state);
+            self.update_heightmap(relative_x, relative_y, relative_z);
         }
         Some(old)
     }
@@ -864,11 +869,34 @@ impl ChunkData {
         if old == replacement {
             return can_commit().then_some(true);
         }
-        if !retains_block_bookkeeping(old, replacement) || !validate(&read) || !can_commit() {
+        let old_state = old.to_state();
+        let new_state = replacement.to_state();
+        if !retains_block_indexes(old, replacement)
+            || crate::lighting::LightEngine::has_different_light_properties(old_state, new_state)
+            || !validate(&read)
+        {
+            return None;
+        }
+        let heightmap = if retains_heightmaps(old_state, new_state) {
+            None
+        } else {
+            // A concurrent heightmap refresh can hold the map while reading palettes.
+            Some(self.heightmap.try_lock().ok()?)
+        };
+        if !can_commit() {
             return None;
         }
         self.section.block_sections.mark_changed();
         self.write_regional_block(&mut sections, position, replacement);
+        if let Some(mut heightmap) = heightmap {
+            let relative = position.chunk_relative_position();
+            heightmap.update_for_block(relative, new_state, self.section.min_y, |y| {
+                self.section
+                    .read_block_from_palettes(&sections, Vector3::new(relative.x, y, relative.z))
+                    .unwrap_or(BlockStateId::AIR)
+                    .to_state()
+            });
+        }
         self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
         Some(true)
     }
@@ -1097,16 +1125,16 @@ impl ChunkData {
         results
     }
 
-    fn update_heightmap(
-        &self,
-        relative_x: usize,
-        relative_y: usize,
-        relative_z: usize,
-        block_state: &BlockState,
-    ) {
+    fn update_heightmap(&self, relative_x: usize, relative_y: usize, relative_z: usize) {
         let mut heightmap = self
             .heightmap
             .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Another edit can replace the block before this column update runs.
+        let palettes = self
+            .section
+            .block_sections
+            .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let min_y = self.section.min_y;
         let position = Vector3::new(
@@ -1114,12 +1142,13 @@ impl ChunkData {
             relative_y as i32 + min_y,
             relative_z as i32,
         );
-        heightmap.update_for_block(position, block_state, min_y, |y_at| {
+        let block_at = |y| {
             self.section
-                .get_block_absolute_y(relative_x, y_at, relative_z)
+                .read_block_from_palettes(&palettes, Vector3::new(position.x, y, position.z))
                 .unwrap_or(BlockStateId::AIR)
                 .to_state()
-        });
+        };
+        heightmap.update_for_block(position, block_at(position.y), min_y, block_at);
     }
 
     /// Gets the given block in the chunk
@@ -1144,10 +1173,9 @@ impl ChunkData {
         relative_z: usize,
         block_state_id: BlockStateId,
     ) {
-        let state = BlockState::from_id(block_state_id);
-        self.update_heightmap(relative_x, relative_y, relative_z, state);
         self.section
             .set_relative_block(relative_x, relative_y, relative_z, block_state_id);
+        self.update_heightmap(relative_x, relative_y, relative_z);
     }
 
     /// Sets the given block in the chunk, returning the old block
@@ -1265,7 +1293,7 @@ pub enum ChunkSerializingError {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChunkData, ChunkSections};
+    use super::{ChunkData, ChunkHeightmapType, ChunkSections};
     use crate::chunk::palette::BlockPalette;
     use pumpkin_data::{Block, block_properties::has_random_ticks};
     use sculith_util::math::position::BlockPos;
@@ -1289,6 +1317,53 @@ mod tests {
         assert_eq!(apply(stone, gold, true), Some(true));
         assert_eq!(apply(stone, gold, true), Some(false));
         assert_eq!(chunk.section.get_block_absolute_y(3, 64, 3), Some(gold));
+    }
+
+    #[test]
+    fn regional_edit_updates_heightmaps_with_its_palette() {
+        let chunk = ChunkData::empty(0, 0);
+        let position = BlockPos::new(3, 64, 3);
+        let stone = Block::STONE.default_state.id;
+        let air = Block::AIR.default_state.id;
+        let glass = Block::GLASS.default_state.id;
+        chunk.set_block_absolute_y(3, 63, 3, stone);
+        let apply = |old, new| {
+            chunk.try_apply_block_edit(position, old, new, &|_| None, &|| true, &|_| true)
+        };
+        let original_revision = chunk.section.terrain_revision();
+        let heightmap = chunk.heightmap.lock().unwrap();
+        assert_eq!(apply(air, glass), None);
+        assert_eq!(chunk.section.terrain_revision(), original_revision);
+        drop(heightmap);
+        for (old, new) in [(air, glass), (glass, air)] {
+            assert_eq!(apply(old, new), Some(true));
+            assert_eq!(chunk.section.get_block_absolute_y(3, 64, 3), Some(new));
+            let recomputed = chunk.calculate_heightmap();
+            let heightmap = chunk.heightmap.lock().unwrap();
+            for kind in [
+                ChunkHeightmapType::WorldSurface,
+                ChunkHeightmapType::MotionBlocking,
+                ChunkHeightmapType::MotionBlockingNoLeaves,
+            ] {
+                assert_eq!(
+                    heightmap.get(kind, 3, 3, -64),
+                    recomputed.get(kind, 3, 3, -64)
+                );
+            }
+        }
+        // Resume an ordinary column update after a region replaces its palette write.
+        chunk.section.set_block_absolute_y(3, 64, 3, glass);
+        assert_eq!(apply(glass, air), Some(true));
+        let min_y = chunk.section.min_y;
+        chunk.update_heightmap(3, (64 - min_y) as usize, 3);
+        assert_eq!(
+            chunk
+                .heightmap
+                .lock()
+                .unwrap()
+                .get(ChunkHeightmapType::WorldSurface, 3, 3, min_y),
+            63,
+        );
     }
 
     #[test]

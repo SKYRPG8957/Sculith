@@ -1816,6 +1816,7 @@ impl World {
         let coordinated = deadline.is_none();
         let start = std::time::Instant::now();
 
+        self.flush_regional_navigation_updates();
         self.flush_block_updates();
         self.flush_synced_block_events();
         self.update_active_chunks();
@@ -2104,9 +2105,21 @@ impl World {
         new_state: BlockStateId,
     ) {
         self.register_block_change(*position, new_state);
+        if let Some(sequence) = self.navigation_change_sequence_for(position, old_state, new_state)
+        {
+            self.notify_navigation_block_changed(position, sequence);
+        }
+    }
+
+    fn navigation_change_sequence_for(
+        &self,
+        position: &BlockPos,
+        old_state: BlockStateId,
+        new_state: BlockStateId,
+    ) -> Option<u64> {
         // Extracted collision lists are canonical VoxelShape.toAabbs() geometry.
         if old_state.to_state().collision_shapes == new_state.to_state().collision_shapes {
-            return;
+            return None;
         }
         let ticking = {
             let active = self
@@ -2115,13 +2128,14 @@ impl World {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             active.contains(&position.chunk_position())
         };
-        if !ticking {
-            return;
-        }
-        let sequence = self
-            .navigation_change_sequence
-            .fetch_add(1, Ordering::AcqRel)
-            + 1;
+        ticking.then(|| {
+            self.navigation_change_sequence
+                .fetch_add(1, Ordering::AcqRel)
+                + 1
+        })
+    }
+
+    fn notify_navigation_block_changed(&self, position: &BlockPos, sequence: u64) {
         let entities = self.entities.load_full();
         let notify = |entity: &dyn EntityBase| {
             if let Some(mob) = entity.get_mob() {
