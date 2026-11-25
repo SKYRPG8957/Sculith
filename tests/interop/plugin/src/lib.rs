@@ -44,6 +44,19 @@ fn open_form(player: &Player, stage: u8) {
             .button(text("Unused"), None)
             .build(),
         _ => {
+            if player.get_name() == "FormBedrock" {
+                // Keep the client connected until all legitimate replies have been processed.
+                player
+                    .open_form(
+                        SimpleFormBuilder::new(
+                            text("Forms verified"),
+                            text("The final reply arrived."),
+                        )
+                        .button(text("Done"), None)
+                        .build(),
+                    )
+                    .expect("final forms acknowledgment");
+            }
             tracing::info!(player=%player.get_name(), "PROBE_FORMS_COMPLETE");
             return;
         }

@@ -72,6 +72,29 @@ func checkForms(c *minecraft.Conn) error {
 	if err := c.Flush(); err != nil {
 		return err
 	}
-	fmt.Println("PASS: shared simple/modal/custom/cancel forms and invalid/replayed native responses")
-	return nil
+	if err := c.SetReadDeadline(time.Now().Add(12 * time.Second)); err != nil {
+		return err
+	}
+	for {
+		pk, err := c.ReadPacket()
+		if err != nil {
+			return fmt.Errorf("waiting for final form acknowledgment: %w", err)
+		}
+		form, ok := pk.(*packet.ModalFormRequest)
+		if !ok {
+			continue
+		}
+		var definition struct {
+			Title string
+			Type  string
+		}
+		if err := json.Unmarshal(form.FormData, &definition); err != nil {
+			return err
+		}
+		if form.FormID <= lastID || definition.Type != "form" || definition.Title != "Forms verified" {
+			return fmt.Errorf("unexpected final form acknowledgment: %#v", definition)
+		}
+		fmt.Println("PASS: shared simple/modal/custom/cancel forms and invalid/replayed native responses")
+		return nil
+	}
 }
