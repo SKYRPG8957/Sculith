@@ -706,16 +706,35 @@ impl BedrockClient {
         };
         let cache_enabled = server.advanced_config.networking.bedrock.chunk_caching
             && self.client_cache_supported.load(Ordering::Relaxed);
-
-        let encoded_payloads = Self::prepare_chunk_payloads(
-            &server,
-            world.clone(),
-            &valid_chunks,
-            bedrock_dimension,
-            cache_enabled,
-        )
-        .await;
-        let translated_chunks = self.translate_chunk_payloads(encoded_payloads).await;
+        let current_epoch = {
+            let player = Arc::downgrade(player);
+            move || {
+                epoch.is_none_or(|expected| {
+                    player.upgrade().is_some_and(|player| {
+                        player.chunk_send_epoch.load(Ordering::Relaxed) == expected
+                    })
+                })
+            }
+        };
+        let Some(encoded_payloads) = self
+            .prepare_chunk_payloads(
+                &server.compute_pool,
+                world.clone(),
+                &valid_chunks,
+                bedrock_dimension,
+                cache_enabled,
+                current_epoch.clone(),
+            )
+            .await
+        else {
+            return outcome;
+        };
+        let Some(translated_chunks) = self
+            .translate_chunk_payloads(encoded_payloads, &current_epoch)
+            .await
+        else {
+            return outcome;
+        };
 
         // Checked and queued under the sender lock: a world change resets the sender under it
         // before queueing `CChangeDimension`, so no old-world chunk can land behind that packet
@@ -725,7 +744,9 @@ impl BedrockClient {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
         });
-        if epoch.is_some_and(|epoch| player.chunk_send_epoch.load(Ordering::Relaxed) != epoch) {
+        if self.closing.is_closed()
+            || epoch.is_some_and(|epoch| player.chunk_send_epoch.load(Ordering::Relaxed) != epoch)
+        {
             outcome.failed.extend(
                 valid_chunks
                     .iter()
@@ -753,7 +774,8 @@ impl BedrockClient {
                     return false;
                 };
                 if outstanding < TERRAIN_SEND_WINDOW_BYTES - queued {
-                    return true;
+                    return !self.closing.is_closed()
+                        && player.chunk_send_epoch.load(Ordering::Relaxed) == epoch;
                 }
             }
             tokio::select! {
@@ -765,12 +787,17 @@ impl BedrockClient {
     }
 
     async fn prepare_chunk_payloads(
-        server: &Server,
+        &self,
+        workers: &rayon::ThreadPool,
         world: Arc<crate::world::World>,
         valid_chunks: &[SyncChunk],
         bedrock_dimension: i32,
         cache_enabled: bool,
-    ) -> Vec<Option<PreparedTerrain<Bytes>>> {
+        current_epoch: impl Fn() -> bool + Clone + Send + 'static,
+    ) -> Option<Vec<Option<PreparedTerrain<Bytes>>>> {
+        if self.closing.is_closed() || !current_epoch() {
+            return None;
+        }
         let mut encoded_payloads = Vec::with_capacity(valid_chunks.len());
         let mut misses = Vec::new();
         for chunk in valid_chunks {
@@ -795,11 +822,19 @@ impl BedrockClient {
 
         if !misses.is_empty() {
             let (tx, rx) = oneshot::channel();
-            server.compute_pool.spawn(move || {
+            let worker_epoch = current_epoch.clone();
+            workers.spawn(move || {
                 let mut results = Vec::with_capacity(misses.len());
+                let obsolete = || tx.is_closed() || !worker_epoch();
                 for (index, chunk) in misses {
+                    if obsolete() {
+                        return;
+                    }
                     let revision = chunk.section.terrain_revision();
                     let actors = world.bedrock_chunk_block_actors(&chunk);
+                    if obsolete() {
+                        return;
+                    }
                     // Other viewers may have encoded this chunk while this job was queued.
                     if !cache_enabled && actors.is_empty()
                         && let Some(packet) = world.bedrock_chunk_frames.get(&chunk, bedrock_dimension)
@@ -821,21 +856,30 @@ impl BedrockClient {
                 }
                 let _ = tx.send(results);
             });
-            if let Ok(results) = rx.await {
+            let results = tokio::select! {
+                biased;
+                () = self.closing.wait() => return None,
+                results = rx => results,
+            };
+            if let Ok(results) = results {
                 for (index, terrain) in results {
                     encoded_payloads[index] = Some(terrain);
                 }
             }
         }
-        encoded_payloads
+        (!self.closing.is_closed() && current_epoch()).then_some(encoded_payloads)
     }
 
     async fn translate_chunk_payloads(
         &self,
         encoded_payloads: Vec<Option<PreparedTerrain<Bytes>>>,
-    ) -> Vec<Option<PreparedTerrain<TranslatedPacket>>> {
+        current_epoch: &impl Fn() -> bool,
+    ) -> Option<Vec<Option<PreparedTerrain<TranslatedPacket>>>> {
         let mut translated_chunks = Vec::with_capacity(encoded_payloads.len());
         for terrain in encoded_payloads {
+            if self.closing.is_closed() || !current_epoch() {
+                return None;
+            }
             let Some(PreparedTerrain {
                 revision,
                 packet,
@@ -852,7 +896,7 @@ impl BedrockClient {
                 blobs,
             }));
         }
-        translated_chunks
+        Some(translated_chunks)
     }
 
     fn queue_translated_chunks(
@@ -1765,6 +1809,64 @@ impl BedrockClient {
 mod tests {
     use super::*;
     use sculith_protocol::bedrock::client::biome_definition_list::CBiomeDefinitionList;
+
+    #[tokio::test]
+    async fn obsolete_terrain_dispatch_skips_encoding_and_keeps_the_shared_cache_empty()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use std::{
+            sync::{atomic::AtomicBool, mpsc},
+            task::{Context, Poll, Waker},
+        };
+
+        let address = "127.0.0.1:0".parse()?;
+        let client = BedrockClient::new(
+            1,
+            NetherNetSession::test_session(address).await,
+            address,
+            Arc::new(Mutex::new(HashMap::new())),
+            PacketRateLimiter::new(false, 0.0, 0.0),
+            Weak::new(),
+        );
+        let folder = tempfile::tempdir()?;
+        let world = crate::entity::ai::test_support::world(&folder);
+        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunks = [chunk.clone()];
+        let workers = rayon::ThreadPoolBuilder::new().num_threads(1).build()?;
+        let (release, blocked) = mpsc::channel();
+        let (entered, ready) = oneshot::channel();
+        workers.spawn(move || {
+            let _ = entered.send(());
+            let _ = blocked.recv_timeout(Duration::from_secs(5));
+        });
+        ready.await?;
+
+        let current = Arc::new(AtomicBool::new(true));
+        let worker_epoch = current.clone();
+        let mut pending = std::pin::pin!(client.prepare_chunk_payloads(
+            &workers,
+            world.clone(),
+            &chunks,
+            0,
+            false,
+            move || worker_epoch.load(Ordering::Acquire),
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(matches!(pending.as_mut().poll(&mut cx), Poll::Pending));
+        current.store(false, Ordering::Release);
+        release.send(())?;
+        assert!(pending.await.is_none());
+        assert!(world.bedrock_chunk_frames.get(&chunk, 0).is_none());
+
+        let active = client
+            .prepare_chunk_payloads(&workers, world.clone(), &chunks, 0, false, || true)
+            .await
+            .ok_or("active terrain dispatch was canceled")?;
+        assert!(active[0].is_some());
+        assert!(world.bedrock_chunk_frames.get(&chunk, 0).is_some());
+        client.close().await;
+        world.level.shutdown().await;
+        Ok(())
+    }
 
     #[tokio::test]
     async fn food_drain_shares_one_deadline_across_owners() {
