@@ -2404,7 +2404,7 @@ impl World {
             weather.tick_weather(self);
             (
                 weather.raining || weather.thundering,
-                weather.weather_cycle_enabled,
+                weather.cycle_active(self),
             )
         };
 

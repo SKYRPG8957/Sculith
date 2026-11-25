@@ -3,6 +3,7 @@ use crate::game_rules::GameRule;
 /// Shared rules with their Bedrock 1.26.63 packet names. The disk names use lowercase.
 pub const BEDROCK_RULES: &[(GameRule, &str)] = &[
     (GameRule::AdvanceTime, "doDayLightCycle"),
+    (GameRule::AdvanceWeather, "doWeatherCycle"),
     (GameRule::BlockDrops, "doTileDrops"),
     (GameRule::CommandBlockOutput, "commandBlockOutput"),
     (GameRule::CommandBlocksWork, "commandBlocksEnabled"),

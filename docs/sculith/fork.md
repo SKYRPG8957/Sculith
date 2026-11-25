@@ -785,8 +785,11 @@ come from the source. The option preserves complete generator metadata when
 the source supplies it.
 
 Biome storage is sampled at the origin of each four-block Java biome cell.
-The import carries the seed and spawn into Sculith. New chunks use Sculith's
-generator, with supported Bedrock flat layers mapped to a flat preset.
+The import carries the seed, spawn, time of day and supported game rules into
+Sculith. Shared rules include inventory retention, day and weather cycles, mob
+loot, damage, random tick speed and sleeping percentage. Operators can use
+Bedrock rule names such as `/gamerule keepinventory true` in Sculith. New chunks
+use Sculith's generator, with supported Bedrock flat layers mapped to a flat preset.
 Ordinary single chests and barrels preserve the slots and counts of items
 with shared mappings. This includes default block items, standard drinkable,
 splash and lingering potion variants, tipped arrows from the Bedrock creative

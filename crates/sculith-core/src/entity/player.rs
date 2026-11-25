@@ -4087,8 +4087,13 @@ impl Player {
         // for the acknowledgement received from the client.
         self.client_loaded_timeout.store(0, Ordering::Relaxed);
         drop(sender);
-        self.world()
-            .sync_bedrock_game_rules_after_spawn(bedrock_client);
+        let world = self.world();
+        world.sync_bedrock_game_rules_after_spawn(bedrock_client);
+        world
+            .weather
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .sync_bedrock(bedrock_client);
         self.send_health();
         if self.living_entity.health.load() <= 0.0 {
             self.send_bedrock_respawn_state(RespawnState::SearchingForSpawn);

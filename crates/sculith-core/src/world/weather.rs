@@ -1,6 +1,10 @@
 use super::World;
 use rand::RngExt;
+use sculith_protocol::bedrock::client::level_event::CLevelEvent;
 use sculith_protocol::java::client::play::{CGameEvent, GameEvent};
+use sculith_util::math::vector3::Vector3;
+
+use crate::net::bedrock::BedrockClient;
 
 // Weather timing constants
 const RAIN_DELAY_MIN: i32 = 12_000;
@@ -13,6 +17,11 @@ const THUNDER_DURATION_MIN: i32 = 3_600;
 const THUNDER_DURATION_MAX: i32 = 15_600;
 
 const WEATHER_TRANSITION_SPEED: f32 = 0.01;
+const BEDROCK_WEATHER_STRENGTH: i32 = u16::MAX as i32;
+const BEDROCK_START_RAIN: i32 = 3001;
+const BEDROCK_START_THUNDER: i32 = 3002;
+const BEDROCK_STOP_RAIN: i32 = 3003;
+const BEDROCK_STOP_THUNDER: i32 = 3004;
 
 pub struct Weather {
     pub clear_weather_time: i32,
@@ -60,26 +69,27 @@ impl Weather {
         raining: bool,
         thundering: bool,
     ) {
-        let was_raining = self.raining;
+        let previous = (self.raining, self.thundering);
 
         self.clear_weather_time = clear_time;
         self.rain_time = rain_time;
-        self.thunder_time = rain_time;
+        self.thunder_time = if thundering { rain_time } else { 0 };
         self.raining = raining;
         self.thundering = thundering;
 
-        if was_raining != raining {
-            if was_raining {
-                world.broadcast_packet_all(&CGameEvent::new(GameEvent::EndRaining, 0.0));
-            } else {
-                world.broadcast_packet_all(&CGameEvent::new(GameEvent::BeginRaining, 0.0));
-            }
-        }
+        self.publish_weather_change(world, previous, 0);
+    }
+
+    pub(super) fn cycle_active(&self, world: &World) -> bool {
+        self.weather_cycle_enabled && world.level_info.load().game_rules.advance_weather
     }
 
     pub fn tick_weather(&mut self, world: &World) {
-        if !self.weather_cycle_enabled {
+        if self.cycle_active(world) {
+            let previous = (self.raining, self.thundering);
             self.advance_weather_cycle();
+            // Bedrock distinguishes a rain timer ending from a command clearing the rain.
+            self.publish_weather_change(world, previous, i32::MIN);
         }
 
         // Update visual transitions
@@ -114,8 +124,44 @@ impl Weather {
         }
     }
 
+    fn publish_weather_change(&self, world: &World, previous: (bool, bool), stop_rain_data: i32) {
+        let (was_raining, was_thundering) = previous;
+        if was_raining != self.raining {
+            let java_event = if self.raining {
+                GameEvent::BeginRaining
+            } else {
+                GameEvent::EndRaining
+            };
+            world.broadcast_packet_all(&CGameEvent::new(java_event, 0.0));
+            world.broadcast_bedrock_spawned(&self.bedrock_rain_event(stop_rain_data));
+        }
+        if was_thundering != self.thundering {
+            world.broadcast_bedrock_spawned(&self.bedrock_thunder_event());
+        }
+    }
+
+    pub(crate) fn sync_bedrock(&self, client: &BedrockClient) {
+        client.try_enqueue_client_packet(&self.bedrock_rain_event(0));
+        client.try_enqueue_client_packet(&self.bedrock_thunder_event());
+    }
+
+    fn bedrock_rain_event(&self, stop_rain_data: i32) -> CLevelEvent {
+        if self.raining {
+            bedrock_weather_event(BEDROCK_START_RAIN, BEDROCK_WEATHER_STRENGTH)
+        } else {
+            bedrock_weather_event(BEDROCK_STOP_RAIN, stop_rain_data)
+        }
+    }
+
+    fn bedrock_thunder_event(&self) -> CLevelEvent {
+        if self.thundering {
+            bedrock_weather_event(BEDROCK_START_THUNDER, BEDROCK_WEATHER_STRENGTH)
+        } else {
+            bedrock_weather_event(BEDROCK_STOP_THUNDER, 0)
+        }
+    }
+
     fn advance_weather_cycle(&mut self) {
-        // Removed async since there are no await calls
         if self.clear_weather_time > 0 {
             self.clear_weather_time -= 1;
             self.thunder_time = i32::from(!self.thundering);
@@ -152,6 +198,14 @@ impl Weather {
 
     pub fn reset_weather_cycle(&mut self, world: &World) {
         self.set_weather_parameters(world, 0, 0, false, false);
+    }
+}
+
+fn bedrock_weather_event(event: i32, data: i32) -> CLevelEvent {
+    CLevelEvent {
+        event_id: event.into(),
+        position: Vector3::new(0.0, 0.0, 0.0),
+        data: data.into(),
     }
 }
 
