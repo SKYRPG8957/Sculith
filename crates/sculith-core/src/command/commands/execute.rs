@@ -43,6 +43,7 @@ use crate::command::context::command_context::CommandContext;
 use crate::command::errors::command_syntax_error::CommandSyntaxError;
 use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::attached::{CommandNodeId, NodeId};
+use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::tree::Tree;
 use crate::command::node::{
@@ -60,7 +61,7 @@ use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector2::Vector2;
 use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use sculith_util::text::TextComponent;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use uuid::Uuid;
 
 const DESCRIPTION: &str = "Execute a command with a modified context.";
@@ -1108,13 +1109,9 @@ fn execute_on_passengers_modifier(
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
-    registry.register_permission_or_panic(Permission::new(
-        PERMISSION,
-        DESCRIPTION,
-        PermissionDefault::Op(PermissionLvl::Two),
-    ));
+pub(super) static EXECUTE_COMMAND: LazyLock<CommandDetachedNode> = LazyLock::new(build_command);
 
+fn build_command() -> CommandDetachedNode {
     let builder = command("execute", DESCRIPTION)
         .requires(PERMISSION)
         .then(literal("run").redirect(Redirection::Root))
@@ -1680,7 +1677,17 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
                 ),
         );
 
-    let execute_node_id = dispatcher.register(builder);
+    builder.build()
+}
+
+pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
+    registry.register_permission_or_panic(Permission::new(
+        PERMISSION,
+        DESCRIPTION,
+        PermissionDefault::Op(PermissionLvl::Two),
+    ));
+
+    let execute_node_id = dispatcher.register(EXECUTE_COMMAND.clone());
 
     set_redirects_to_execute(
         &mut dispatcher.tree,

@@ -183,6 +183,12 @@ current world owner. The registered built-in tree and the usual permissions
 apply. The strict write skips placement callbacks and neighbor propagation.
 Block-entity NBT, other placement modes and redirected commands use the
 coordinated boundary.
+A player can request their own absolute-coordinate transfer with `execute in … run tp
+@s …` on the source world owner. The command verifies the registered dimension
+redirect and teleport path. It submits the same transfer to the two world owners,
+so a busy destination can delay the move while the source serves other players.
+Commands with `PlayerTeleportEvent` handlers and more general selectors use
+the coordinated command path.
 
 Each dimension saves its elapsed ticks, time of day, fractional tick, clock
 rate and pause state in `.sculith-world-clock.json` beside its terrain. The

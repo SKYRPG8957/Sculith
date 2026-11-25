@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use pumpkin_data::translation;
 use sculith_util::PermissionLvl;
@@ -16,6 +16,7 @@ use crate::command::argument_types::entity_anchor::{
 };
 use crate::command::context::command_context::CommandContext;
 use crate::command::errors::error_types::CommandErrorType;
+use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::entity::EntityBase;
@@ -351,14 +352,10 @@ impl CommandExecutor for EntitiesToPosFacingEntityExecutor {
     }
 }
 
-pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
-    registry.register_permission_or_panic(Permission::new(
-        PERMISSION,
-        DESCRIPTION,
-        PermissionDefault::Op(PermissionLvl::Two),
-    ));
+pub(super) static TELEPORT_COMMAND: LazyLock<CommandDetachedNode> = LazyLock::new(build_command);
 
-    let cmd = command("teleport", DESCRIPTION)
+fn build_command() -> CommandDetachedNode {
+    command("teleport", DESCRIPTION)
         .requires(PERMISSION)
         .then(argument("location", Vec3ArgumentType::Default).executes(SelfToPosExecutor))
         .then(argument("destination", EntityArgumentType::Entity).executes(SelfToEntityExecutor))
@@ -397,7 +394,16 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
                     argument("destination", EntityArgumentType::Entity)
                         .executes(EntitiesToEntityExecutor),
                 ),
-        );
+        )
+        .build()
+}
 
-    dispatcher.register_with_aliases(cmd, &["tp"]);
+pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
+    registry.register_permission_or_panic(Permission::new(
+        PERMISSION,
+        DESCRIPTION,
+        PermissionDefault::Op(PermissionLvl::Two),
+    ));
+
+    dispatcher.register_with_aliases(TELEPORT_COMMAND.clone(), &["tp"]);
 }

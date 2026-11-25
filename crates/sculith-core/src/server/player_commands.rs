@@ -8,7 +8,7 @@ use crate::entity::player::{Player, SpamType};
 use crate::plugin::{
     player::{
         player_command_send::PlayerCommandSendEvent,
-        player_permission_check::PlayerPermissionCheckEvent,
+        player_permission_check::PlayerPermissionCheckEvent, player_teleport::PlayerTeleportEvent,
     },
     server::packet::PacketSentEvent,
 };
@@ -128,7 +128,9 @@ fn world_command_dispatcher(server: &Server, text: &str) -> Option<Arc<CommandDi
     (is_world_command(&dispatcher, text)
         && !plugins.has_handlers::<PlayerCommandSendEvent>()
         && !plugins.has_handlers::<PlayerPermissionCheckEvent>()
-        && !plugins.has_handlers::<PacketSentEvent>())
+        && !plugins.has_handlers::<PacketSentEvent>()
+        && (!text.trim_start_matches('/').starts_with("execute ")
+            || !plugins.has_handlers::<PlayerTeleportEvent>()))
     .then_some(dispatcher)
 }
 

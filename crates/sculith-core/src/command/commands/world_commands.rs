@@ -3,14 +3,17 @@ use std::sync::{Arc, LazyLock};
 use rustc_hash::FxHashMap;
 
 use crate::command::CommandSource;
-use crate::command::node::attached::AttachedNode;
-use crate::command::node::detached::DetachedNode;
+use crate::command::node::attached::{AttachedNode, LiteralAttachedNode, NodeId};
+use crate::command::node::detached::{DetachedNode, LiteralDetachedNode};
 use crate::command::node::dispatcher::{CommandDispatcher, ResultConsumer, ResultDeferrer};
 use crate::command::node::tree::ROOT_NODE_ID;
-use crate::command::node::{OwnedNodeData, RedirectModifier};
+use crate::command::node::{OwnedNodeData, RedirectModifier, Redirection};
 use crate::command::string_reader::StringReader;
 
-use super::{seed::SEED_COMMAND, setblock::SETBLOCK_COMMAND, time::TIME_COMMAND};
+use super::{
+    execute::EXECUTE_COMMAND, seed::SEED_COMMAND, setblock::SETBLOCK_COMMAND,
+    teleport::TELEPORT_COMMAND, time::TIME_COMMAND,
+};
 
 pub(super) static DEFAULT_CONSUMER: LazyLock<Arc<dyn ResultConsumer<CommandSource>>> =
     LazyLock::new(|| Arc::new(ResultDeferrer));
@@ -19,13 +22,6 @@ pub(super) static DEFAULT_CONSUMER: LazyLock<Arc<dyn ResultConsumer<CommandSourc
 pub fn is_world_command(dispatcher: &CommandDispatcher, input: &str) -> bool {
     let text = input.strip_prefix('/').unwrap_or(input);
     let name = text.split(' ').next().unwrap_or_default();
-    // These built-ins only access the sender's world for simulation state.
-    let original = match name {
-        "seed" if text == "seed" => &*SEED_COMMAND,
-        "time" => &*TIME_COMMAND,
-        "setblock" if strict_block_write(text) => &*SETBLOCK_COMMAND,
-        _ => return false,
-    };
     if dispatcher.is_disabled(name)
         || (text != input
             && dispatcher.has_command(input.split_whitespace().next().unwrap_or_default()))
@@ -33,18 +29,128 @@ pub fn is_world_command(dispatcher: &CommandDispatcher, input: &str) -> bool {
     {
         return false;
     }
+    if name == "execute" {
+        return self_transfer_matches(dispatcher, text);
+    }
 
-    // Use the same root selection as the parser. All descendants of the command
-    // must match because argument parsers can consume more than one word.
+    // These built-ins only access the sender's world for simulation state.
+    let original = match name {
+        "seed" if text == "seed" => &*SEED_COMMAND,
+        "time" => &*TIME_COMMAND,
+        "setblock" if strict_block_write(text) => &*SETBLOCK_COMMAND,
+        _ => return false,
+    };
+    command_root(dispatcher, text).is_some_and(|(_, live)| {
+        matches_subtree(dispatcher, live, &original.owned, &original.children)
+    })
+}
+
+fn command_root<'a>(
+    dispatcher: &'a CommandDispatcher,
+    text: &str,
+) -> Option<(NodeId, &'a AttachedNode)> {
+    // Use the same command root selection as the parser.
     let roots = dispatcher
         .tree
         .get_relevant_nodes(&mut StringReader::new(text), ROOT_NODE_ID);
     let [root] = roots.as_slice() else {
-        return false;
+        return None;
     };
     let live = &dispatcher.tree[*root];
-    matches!(live, AttachedNode::Command(_))
-        && matches_subtree(dispatcher, live, &original.owned, &original.children)
+    matches!(live, AttachedNode::Command(_)).then_some((*root, live))
+}
+
+fn self_transfer_matches(dispatcher: &CommandDispatcher, text: &str) -> bool {
+    // Only the exact built-in dimension redirect and the sender's own
+    // coordinate teleport can hand the destination change to its world owner.
+    let mut arguments = text.split_ascii_whitespace().skip(1);
+    if arguments.next() != Some("in") || arguments.nth(1) != Some("run") {
+        return false;
+    }
+    let Some(verb @ ("tp" | "teleport")) = arguments.next() else {
+        return false;
+    };
+    if arguments.next() != Some("@s") {
+        return false;
+    }
+    let [Some(x), Some(y), Some(z), None] = std::array::from_fn(|_| arguments.next()) else {
+        return false;
+    };
+    [x, y, z]
+        .into_iter()
+        .all(|axis| axis.parse::<f64>().is_ok_and(f64::is_finite))
+        && execute_dimension_path(dispatcher).is_some()
+        && verified_teleport(dispatcher, verb).is_some()
+}
+
+fn execute_literal<'a>(
+    dispatcher: &'a CommandDispatcher,
+    command: &'a AttachedNode,
+    name: &str,
+) -> Option<(&'a LiteralAttachedNode, &'static LiteralDetachedNode)> {
+    let AttachedNode::Literal(live) = &dispatcher.tree[*command.children_ref().get(name)?] else {
+        return None;
+    };
+    let DetachedNode::Literal(expected) = EXECUTE_COMMAND.children.get(name)? else {
+        return None;
+    };
+    (live.meta.literal == expected.meta.literal && matches_node(&live.owned, &expected.owned))
+        .then_some((live, expected))
+}
+
+fn execute_dimension_path(dispatcher: &CommandDispatcher) -> Option<()> {
+    let (execute, root) = command_root(dispatcher, "execute")?;
+    if root.redirect().is_some()
+        || !matches_node(root.owned_node_data_ref(), &EXECUTE_COMMAND.owned)
+    {
+        return None;
+    }
+    let (run, _) = execute_literal(dispatcher, root, "run")?;
+    let (dimension, expected) = execute_literal(dispatcher, root, "in")?;
+    let AttachedNode::Argument(live) = &dispatcher.tree[*dimension.children.get("dimension")?]
+    else {
+        return None;
+    };
+    let DetachedNode::Argument(expected) = expected.children.get("dimension")? else {
+        return None;
+    };
+    (run.redirect == Some(Redirection::Root)
+        && run.children.is_empty()
+        && dimension.redirect.is_none()
+        && dimension.children.len() == 1
+        && live.redirect == Some(Redirection::Local(execute))
+        && live.children.is_empty()
+        && live.meta.name == expected.meta.name
+        && Arc::ptr_eq(&live.meta.argument_type, &expected.meta.argument_type)
+        && matches_node(&live.owned, &expected.owned))
+    .then_some(())
+}
+
+fn verified_teleport(dispatcher: &CommandDispatcher, verb: &str) -> Option<()> {
+    if dispatcher.is_disabled(verb) || dispatcher.is_disabled("teleport") {
+        return None;
+    }
+    let (id, root) = command_root(dispatcher, "teleport")?;
+    if !matches_subtree(
+        dispatcher,
+        root,
+        &TELEPORT_COMMAND.owned,
+        &TELEPORT_COMMAND.children,
+    ) {
+        return None;
+    }
+    if verb == "teleport" {
+        return Some(());
+    }
+    let (_, alias) = command_root(dispatcher, "tp")?;
+    let owned = alias.owned_node_data_ref();
+    (alias.redirect() == Some(Redirection::Local(id))
+        && alias.children_ref().is_empty()
+        && owned.command.is_none()
+        && !owned.forks
+        && matches!(owned.modifier, RedirectModifier::KeepSource)
+        && matches_requirements(owned, &TELEPORT_COMMAND.owned))
+    .then_some(())
 }
 
 fn strict_block_write(text: &str) -> bool {
@@ -98,14 +204,27 @@ fn matches_node(
     expected: &OwnedNodeData<CommandSource>,
 ) -> bool {
     live.global_id == expected.global_id
-        && !live.forks
-        && matches!(live.modifier, RedirectModifier::KeepSource)
+        && live.forks == expected.forks
+        && match (&live.modifier, &expected.modifier) {
+            (RedirectModifier::KeepSource, RedirectModifier::KeepSource) => true,
+            (RedirectModifier::Custom(live), RedirectModifier::Custom(expected)) => {
+                Arc::ptr_eq(live, expected)
+            }
+            _ => false,
+        }
         && match (&live.command, &expected.command) {
             (Some(live), Some(expected)) => Arc::ptr_eq(live, expected),
             (None, None) => true,
             _ => false,
         }
-        && live.requirements.0.len() == expected.requirements.0.len()
+        && matches_requirements(live, expected)
+}
+
+fn matches_requirements(
+    live: &OwnedNodeData<CommandSource>,
+    expected: &OwnedNodeData<CommandSource>,
+) -> bool {
+    live.requirements.0.len() == expected.requirements.0.len()
         && live
             .requirements
             .0
@@ -134,6 +253,29 @@ mod tests {
             "setblock 0 0 0 chest{Items:[]} strict",
             "setblock 0 0 0 stone strict extra",
             "execute in minecraft:the_nether run setblock 0 0 0 stone strict",
+        ] {
+            assert!(!is_world_command(&dispatcher, command), "{command}");
+        }
+    }
+
+    #[test]
+    fn a_dimension_self_transfer_uses_only_its_registered_route() {
+        let mut dispatcher = CommandDispatcher::new();
+        dispatcher.consumer = DEFAULT_CONSUMER.clone();
+        let registry = PermissionRegistry::default();
+        super::super::execute::register(&mut dispatcher, &registry);
+        super::super::teleport::register(&mut dispatcher, &registry);
+        for verb in ["tp", "teleport"] {
+            let command = format!("execute in minecraft:the_nether run {verb} @s 3.5 72 2.5");
+            assert!(is_world_command(&dispatcher, &command));
+        }
+        for command in [
+            "execute in minecraft:the_nether run tp @a 3.5 72 2.5",
+            "execute as @s in minecraft:the_nether run tp @s 3.5 72 2.5",
+            "execute in minecraft:the_nether run tp @s @p",
+            "execute in minecraft:the_nether run tp @s @e[name=\"one two three\"]",
+            "execute in minecraft:the_nether run tp @s ~ ~ ~",
+            "execute in minecraft:the_nether run tp @s 3.5 72 2.5 10 0",
         ] {
             assert!(!is_world_command(&dispatcher, command), "{command}");
         }
