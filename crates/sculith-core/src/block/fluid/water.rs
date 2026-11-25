@@ -206,8 +206,8 @@ mod tests {
     use super::*;
     use pumpkin_data::Block;
 
-    #[test]
-    fn regional_water_uses_the_four_way_step_only_within_a_safe_floor() {
+    #[tokio::test]
+    async fn regional_water_uses_the_four_way_step_only_within_a_safe_floor() {
         let folder = tempfile::tempdir().unwrap();
         let world = crate::entity::ai::test_support::world(&folder);
         let fluid = &Fluid::FLOWING_WATER;
@@ -242,5 +242,6 @@ mod tests {
         assert!(FlowingWater::regional_water_tick(&world, home, source, &beside_hole).is_none());
         let edge = BlockPos::new(15, 64, 8);
         assert!(FlowingWater::regional_water_tick(&world, edge, source, &floor).is_none());
+        world.level.shutdown().await;
     }
 }
