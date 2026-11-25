@@ -173,9 +173,7 @@ impl TickRegions {
         scheduled: Vec<Vector2<i32>>,
         coordinated: bool,
     ) -> Vec<ScheduledTickGroup> {
-        if std::mem::take(&mut self.needs_rebuild) {
-            self.rebuild(active);
-        }
+        self.rebuild_active_layout(active);
 
         let mut inactive = Vec::new();
         let mut groups: FxHashMap<Option<RegionId>, Vec<_>> = FxHashMap::default();
@@ -187,13 +185,7 @@ impl TickRegions {
             }
             groups.entry(owner).or_default().push(chunk);
         }
-        inactive.sort_unstable_by_key(|pos| (pos.x, pos.y));
-        if self.layout.inactive.as_ref() != inactive.as_slice() {
-            self.layout = Arc::new(RegionLayout {
-                active: self.layout.active.clone(),
-                inactive: inactive.into(),
-            });
-        }
+        self.set_inactive_timers(inactive);
 
         let plan = groups
             .into_iter()
@@ -212,6 +204,38 @@ impl TickRegions {
             }
         }
         plan
+    }
+
+    fn rebuild_active_layout(&mut self, active: &FxHashSet<Vector2<i32>>) -> bool {
+        if !std::mem::take(&mut self.needs_rebuild) {
+            return false;
+        }
+        self.rebuild(active);
+        true
+    }
+
+    fn set_inactive_timers(&mut self, mut inactive: Vec<Vector2<i32>>) {
+        inactive.sort_unstable_by_key(|pos| (pos.x, pos.y));
+        if self.layout.inactive.as_ref() != inactive.as_slice() {
+            self.layout = Arc::new(RegionLayout {
+                active: self.layout.active.clone(),
+                inactive: inactive.into(),
+            });
+        }
+    }
+
+    pub(super) fn refresh_active_layout(
+        &mut self,
+        active: &FxHashSet<Vector2<i32>>,
+        scheduled: impl FnOnce() -> Vec<Vector2<i32>>,
+    ) -> Option<Arc<RegionLayout>> {
+        if !self.rebuild_active_layout(active) {
+            return None;
+        }
+        let mut inactive = scheduled();
+        inactive.retain(|pos| !active.contains(pos));
+        self.set_inactive_timers(inactive);
+        Some(self.layout.clone())
     }
 
     fn rebuild(&mut self, active: &FxHashSet<Vector2<i32>>) {

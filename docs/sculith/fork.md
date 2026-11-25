@@ -382,6 +382,13 @@ shares the player's guard with the world food tick. A step that triggers
 sound or vibration, a location enchantment, or an exhaustion hook stays on the
 ordered world path for those effects.
 
+A completed regional chunk crossing also moves the player's active chunk area.
+At the end of the region job, Sculith checks the player's connection and current
+chunk before publishing the new extent. New owners inherit their overlapping
+deadlines. Previously loaded frontier chunks can run their pending timers
+while another part of the world is waiting. Block-entity migration and
+retirement still run through the existing world queues.
+
 When a native Bedrock player moves between active regions, the destination
 receives that connection's ready work at the position change. Previously
 claimed work and the handoff use the same per-connection guard. The player

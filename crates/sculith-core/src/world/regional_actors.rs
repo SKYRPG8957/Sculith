@@ -296,6 +296,10 @@ impl World {
     }
 
     pub(super) fn reset_region_layout(&self) {
+        let mut tracker = self
+            .active_chunk_tracker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let mut published = self
             .regional_actors
             .write()
@@ -309,11 +313,7 @@ impl World {
         previous.transfer_regional_inputs(&empty);
         // A resumed world must replace its retired queues even when players
         // have stayed in the same chunks during a freeze.
-        self.active_chunk_tracker
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .tick_regions
-            .active_chunks_changed();
+        tracker.tick_regions.active_chunks_changed();
     }
 
     #[expect(

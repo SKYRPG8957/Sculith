@@ -15,7 +15,10 @@ use crate::{
     server::{Server, TickDeadline},
 };
 
-use super::{RegionChunks, RegionLayout, World, entity_tracker::EntityTracker};
+use super::{
+    RegionChunks, RegionLayout, World, active_chunks::ActivePlayerArea,
+    entity_tracker::EntityTracker,
+};
 
 bitflags::bitflags! {
     #[derive(Clone, Copy)]
@@ -93,14 +96,15 @@ impl RegionalInput {
         extent: &RegionChunks,
         deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
-    ) {
+    ) -> Vec<(Arc<Player>, Vector2<i32>)> {
         let ready = self.take_ready();
         if ready.is_empty() {
-            return;
+            return Vec::new();
         }
         let Some(_native) = server.plugin_manager.try_without_native_code() else {
-            return;
+            return Vec::new();
         };
+        let mut moved = Vec::new();
         let mut java_recipients = FxHashMap::default();
         for (id, (player, work)) in ready {
             let Some(player) = player.upgrade() else {
@@ -115,10 +119,16 @@ impl RegionalInput {
             };
             let owns = |position| player.can_simulate_in(world) && owns(position);
             let mut pending = RegionalWork::empty();
+            let mut entered = None;
             if work.contains(RegionalWork::INPUT)
-                && client.drain_regional_input(&player, server, extent, owns)
+                && client.drain_regional_input(&player, server, extent, owns, |chunk| {
+                    entered = Some(chunk);
+                })
             {
                 pending |= RegionalWork::INPUT;
+            }
+            if let Some(chunk) = entered {
+                moved.push((player.clone(), chunk));
             }
             if work.contains(RegionalWork::EXPERIENCE_PICKUP)
                 && client.advance_regional_experience_pickup(&player, deadline, || {
@@ -208,6 +218,7 @@ impl RegionalInput {
             }
         }
         EntityTracker::flush_regional_java_packets(java_recipients);
+        moved
     }
 }
 
@@ -226,6 +237,79 @@ impl RegionLayout {
 }
 
 impl World {
+    pub(super) fn refresh_areas_after_regional_moves(
+        &self,
+        server: &Server,
+        moved: Vec<(Arc<Player>, Vector2<i32>)>,
+    ) {
+        if moved.is_empty() {
+            return;
+        }
+        // The world step and region jobs publish under this same lock. Drop the
+        // active-set guard before publication, which also changes actor assignments.
+        let mut tracker = self
+            .active_chunk_tracker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if server.tick_rate_manager.is_frozen() {
+            return;
+        }
+        let layout = self.region_layout.load();
+        let mut active = self
+            .active_chunks
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut activated = Vec::new();
+        let spectator_chunks = self.level_info.load().game_rules.spectators_generate_chunks;
+        for (player, center) in moved {
+            let Some(client) = player.client.bedrock() else {
+                continue;
+            };
+            let Ok(_position) = client.regional_work().try_lock() else {
+                continue;
+            };
+            let id = player.gameprofile.id;
+            if let Some(&previous) = tracker.players.get(&id)
+                && previous.center != center
+                && layout.active_owner(center).is_some()
+                && player.can_simulate_in(self)
+                && player.has_stable_world_membership()
+                && (!player.is_spectator() || spectator_chunks)
+                && player.get_entity().chunk_pos.load() == center
+                && self
+                    .get_player_by_uuid(id)
+                    .is_some_and(|current| Arc::ptr_eq(&current, &player))
+            {
+                tracker.update_player(
+                    id,
+                    ActivePlayerArea { center, ..previous },
+                    Arc::make_mut(&mut active),
+                    &mut activated,
+                );
+            }
+        }
+        let active_snapshot = active.clone();
+        drop(active);
+        for pos in activated {
+            if self.level.is_chunk_loaded(&pos) && tracker.loaded_active_chunks.insert(pos) {
+                self.level.track_scheduled_chunk(&pos);
+                self.pending_block_entity_migrations.push(pos);
+            }
+        }
+        if let Some(layout) = tracker
+            .tick_regions
+            .refresh_active_layout(&active_snapshot, || {
+                self.level
+                    .chunks_with_scheduled_ticks
+                    .iter()
+                    .map(|pos| *pos)
+                    .collect()
+            })
+        {
+            self.publish_region_layout(&layout, false);
+        }
+    }
+
     fn drain_regional_player_food(
         &self,
         server: &Server,

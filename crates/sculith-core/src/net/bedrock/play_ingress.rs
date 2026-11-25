@@ -408,6 +408,7 @@ impl BedrockClient {
         server: &Server,
         extent: &RegionChunks,
         owns: impl Fn(Vector2<i32>) -> bool,
+        mut chunk_entered: impl FnMut(Vector2<i32>),
     ) -> bool {
         let Ok(mut head) = self.activity.inbound_head.try_lock() else {
             return true;
@@ -454,8 +455,16 @@ impl BedrockClient {
                     continue;
                 }
                 if movement && !was_waiting {
+                    let entity = player.get_entity();
+                    let previous = entity.chunk_pos.load();
                     match self.prepare_regional_move(player, server, extent, &mut queued, &owns) {
-                        RegionalMovePreparation::Consumed => continue,
+                        RegionalMovePreparation::Consumed => {
+                            let current = entity.chunk_pos.load();
+                            if previous != current {
+                                chunk_entered(current);
+                            }
+                            continue;
+                        }
                         RegionalMovePreparation::Deferred => {
                             *head = Some(queued);
                             return false;

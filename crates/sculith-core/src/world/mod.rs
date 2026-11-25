@@ -2363,8 +2363,8 @@ impl World {
                         .schedule_ticks(&active, scheduled, coordinated);
                     let layout = tracker.tick_regions.layout().clone();
                     drop(active);
-                    drop(tracker);
                     self.publish_region_layout(&layout, coordinated);
+                    drop(tracker);
                     plan
                 });
 
@@ -2526,12 +2526,13 @@ impl World {
         let region_server = (inhabited && same_extent)
             .then(|| self.server.upgrade())
             .flatten();
+        let mut moved = Vec::new();
         if let Some(server) = &region_server {
             if let Some(ready) = current.entity_chunk_work(owner) {
                 self.activate_regional_entity_chunks(server, owner, deadline, ready, &owns);
             }
             if let Some(input) = current.input(owner) {
-                input.drain(self, server, chunks, deadline, &owns);
+                moved = input.drain(self, server, chunks, deadline, &owns);
             }
         }
         let regional_campfires = region_server
@@ -2618,6 +2619,9 @@ impl World {
                 self.advance_regional_actors(server, owner, deadline, &owns);
             }
             self.flush_regional_block_updates(&owns);
+        }
+        if let Some(server) = region_server {
+            self.refresh_areas_after_regional_moves(&server, moved);
         }
     }
 
