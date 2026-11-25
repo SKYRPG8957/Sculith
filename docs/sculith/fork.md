@@ -238,6 +238,11 @@ The world reconciles deferred changes with the authoritative state. A viewer
 that already got that state in the same connection epoch skips the duplicate.
 Packet observers and translated clients use the world publication path. The
 Java chunk sender checks terrain revisions before reusing or queuing an encoding.
+For current Java clients without chunk-send or outgoing packet observers, each
+terrain batch reserves its start, chunk data and end packets together. Terrain
+can use up to 16 MiB of the connection's pending payload queue. Chunks that wait
+for room stay eligible on the next world tick. Control packets can still use
+the remaining queue capacity.
 
 Loaded campfires in active regions advance their cooking or cooling counters
 on the region clock while the actor and block state are pinned. The region

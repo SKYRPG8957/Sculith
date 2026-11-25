@@ -14,11 +14,11 @@ use pumpkin_world::level::{Level, SyncChunk};
 use sculith_protocol::codec::var_int::VarInt;
 use sculith_protocol::java::client::play::{CChunkBatchEnd, CChunkBatchStart, CUnloadChunk};
 use sculith_protocol::ser::NetworkWriteExt;
-use sculith_protocol::{ClientPacket, MultiVersionJavaPacket};
+use sculith_protocol::{ClientPacket, MAX_PACKET_DATA_SIZE, MultiVersionJavaPacket};
 use sculith_util::math::vector2::Vector2;
 use sculith_util::version::JavaMinecraftVersion;
 
-use crate::net::ClientPlatform;
+use crate::net::{ClientPlatform, java::JavaClient};
 
 const MIN_CHUNKS_PER_TICK: f32 = 0.01;
 const MAX_CHUNKS_PER_TICK: f32 = 64.0;
@@ -626,9 +626,86 @@ impl ChunkSender {
         }
     }
 
-    // TODO: a chunk's lifecycle is built twice: `commit_batch` (Java, marks sent once queued)
-    // and `commit_bedrock_batch` (Bedrock, marks sent first and settles through
-    // `mark_delivered` / `fail_delivery`). Both should share one token-based path.
+    /// Commit a current Java batch when its packets need no outgoing observers or translation.
+    pub(crate) fn commit_current_java_batch(
+        &mut self,
+        batch: &PreparedBatch,
+        encoded_chunks: &[EncodedChunk],
+        client: &JavaClient,
+        current_epoch: u32,
+    ) -> Vec<Vector2<i32>> {
+        if current_epoch != batch.epoch_snapshot {
+            return Vec::new();
+        }
+        self.settle_unencoded(batch, encoded_chunks);
+        if encoded_chunks.is_empty() {
+            return Vec::new();
+        }
+
+        let Ok(start) = client.serialize_packet(&CChunkBatchStart) else {
+            return Vec::new();
+        };
+        let Ok(largest_end) =
+            client.serialize_packet(&CChunkBatchEnd::new(encoded_chunks.len() as u16))
+        else {
+            return Vec::new();
+        };
+        let mut bytes = client
+            .terrain_queue_room()
+            .saturating_sub(start.len() + largest_end.len());
+        let mut selected = Vec::with_capacity(encoded_chunks.len());
+        for chunk in encoded_chunks {
+            if !self.pending_chunks.contains(&chunk.position) || !chunk.has_current_terrain() {
+                continue;
+            }
+            if chunk.payload.len() > MAX_PACKET_DATA_SIZE {
+                if !self.record_encode_failure(chunk.position) {
+                    self.pending_chunks.remove(&chunk.position);
+                }
+                continue;
+            }
+            let Some(remaining) = bytes.checked_sub(chunk.payload.len()) else {
+                if selected.is_empty() {
+                    tracing::trace!(
+                        connection = client.id,
+                        available_payload_bytes = bytes,
+                        required_payload_bytes = chunk.payload.len(),
+                        "Deferred Java terrain until the writer has room"
+                    );
+                }
+                break;
+            };
+            bytes = remaining;
+            selected.push(chunk);
+        }
+        if selected.is_empty() {
+            return Vec::new();
+        }
+        let Ok(end) = client.serialize_packet(&CChunkBatchEnd::new(selected.len() as u16)) else {
+            return Vec::new();
+        };
+        let mut packets = Vec::with_capacity(selected.len() + 2);
+        packets.push(start);
+        packets.extend(selected.iter().map(|chunk| chunk.payload.clone()));
+        packets.push(end);
+        if selected.iter().any(|chunk| !chunk.has_current_terrain())
+            || !client.try_enqueue_current_terrain_batch(&packets)
+        {
+            return Vec::new();
+        }
+        let sent = selected
+            .iter()
+            .map(|chunk| chunk.position)
+            .collect::<Vec<_>>();
+        for &pos in &sent {
+            self.mark_sent_out_of_band(pos);
+        }
+        self.in_flight_batches = self.in_flight_batches.saturating_add(1);
+        self.send_quota -= sent.len() as f32;
+        sent
+    }
+
+    /// Translated and observed batches preserve the per-packet send path.
     pub fn commit_batch(
         &mut self,
         batch: &PreparedBatch,
@@ -759,7 +836,84 @@ impl Default for ChunkSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::net::{
+        GameProfile, PacketRateLimiter, PlayerConfig, java::pending::PendingConnection,
+    };
+    use arc_swap::ArcSwap;
     use pumpkin_data::Block;
+    use std::sync::atomic::Ordering;
+
+    #[tokio::test]
+    async fn java_terrain_defers_without_losing_pending_chunks() {
+        let pending = PendingConnection::from_transport(
+            Box::new(tokio::io::empty()),
+            Box::new(tokio::io::sink()),
+            "127.0.0.1:25565".parse().unwrap(),
+            0,
+            PacketRateLimiter::new(false, 0.0, 0.0),
+            Weak::new(),
+        );
+        let client = JavaClient::from_pending(
+            pending,
+            GameProfile {
+                id: uuid::Uuid::nil(),
+                name: "TerrainBudget".into(),
+                properties: ArcSwap::from_pointee(Vec::new()),
+                profile_actions: None,
+            },
+            PlayerConfig::default(),
+        );
+        let first = Vector2::new(0, 0);
+        let second = Vector2::new(1, 0);
+        let mut batch = batch_for(first, 0);
+        batch.target_version = CURRENT_MC_VERSION;
+        batch.chunks.push(batch_for(second, 0).chunks.remove(0));
+        let encoded = ChunkSender::encode_batch(&batch, &mut FxHashMap::default());
+        let mut sender = ChunkSender::new();
+        sender.enqueue_chunk(first);
+        sender.enqueue_chunk(second);
+        sender.send_quota = 2.0;
+
+        let budget = client.terrain_queue_room();
+        let chunk_bytes = encoded[0].payload.len();
+        let headers = client.serialize_packet(&CChunkBatchStart).unwrap().len()
+            + client
+                .serialize_packet(&CChunkBatchEnd::new(1))
+                .unwrap()
+                .len();
+        client
+            .pending_bytes
+            .store(budget - chunk_bytes, Ordering::Release);
+        assert!(
+            sender
+                .commit_current_java_batch(&batch, &encoded, &client, 0)
+                .is_empty()
+        );
+        assert!(!client.is_closed());
+        assert_eq!(sender.in_flight_batches, 0);
+        assert_eq!(sender.pending_chunks.len(), 2);
+        assert_eq!(sender.send_quota, 2.0);
+
+        client
+            .pending_bytes
+            .store(budget - chunk_bytes - headers, Ordering::Release);
+        assert_eq!(
+            sender.commit_current_java_batch(&batch, &encoded, &client, 0),
+            [first]
+        );
+        assert_eq!(client.terrain_queue_room(), 0);
+        assert_eq!(sender.in_flight_batches, 1);
+        assert!(sender.pending_chunks.contains(&second));
+        assert!(sender.is_chunk_sent(&first));
+
+        client.pending_bytes.store(0, Ordering::Release);
+        assert_eq!(
+            sender.commit_current_java_batch(&batch, &encoded, &client, 0),
+            [second]
+        );
+        assert_eq!(sender.send_quota, 0.0);
+        assert!(sender.is_chunk_sent(&second));
+    }
 
     #[test]
     fn java_chunk_encoding_expires_when_the_same_chunk_changes() {

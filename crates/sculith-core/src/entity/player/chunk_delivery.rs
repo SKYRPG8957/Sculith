@@ -3,11 +3,15 @@ use std::sync::{
     atomic::Ordering::{Acquire, Relaxed},
 };
 
+use pumpkin_data::packet::CURRENT_MC_VERSION;
 use sculith_util::version::JavaMinecraftVersion;
 
 use crate::{
     entity::EntityBase,
-    net::{ChunkSender, ClientPlatform, bedrock::BedrockClient, chunk_sender::DispatchedChunk},
+    net::{
+        ChunkSender, ClientPlatform, bedrock::BedrockClient, chunk_sender::DispatchedChunk,
+        java::JavaClient,
+    },
     plugin::{server::packet::PacketSentEvent, world::chunk_send::ChunkSend},
     server::{Server, TickDeadline},
     world::{World, chunker},
@@ -20,7 +24,7 @@ impl Player {
         let world = self.world();
         match self.client.as_ref() {
             ClientPlatform::Java(client) => {
-                self.tick_java_chunk_delivery(&world, client.version.load());
+                self.tick_java_chunk_delivery(&world, client, server);
             }
             ClientPlatform::Bedrock(client) => {
                 if !self
@@ -46,7 +50,14 @@ impl Player {
         }
     }
 
-    fn tick_java_chunk_delivery(&self, world: &Arc<World>, version: JavaMinecraftVersion) {
+    fn tick_java_chunk_delivery(&self, world: &Arc<World>, client: &JavaClient, server: &Server) {
+        let version = client.version.load();
+        let budgeted = version == CURRENT_MC_VERSION
+            && !server.plugin_manager.has_handlers::<ChunkSend>()
+            && !server.plugin_manager.has_handlers::<PacketSentEvent>();
+        if budgeted && client.terrain_queue_room() == 0 {
+            return;
+        }
         let player_chunk = self.get_entity().chunk_pos.load();
         let epoch = self.chunk_send_epoch.load(Relaxed);
         let view_distance = self.watched_section.load().view_distance;
@@ -69,12 +80,19 @@ impl Player {
             _ => Vec::new(),
         };
         let encoded = ChunkSender::encode_batch_shared(&batch, &world.encoded_chunk_cache);
-        let current_epoch = self.chunk_send_epoch.load(Relaxed);
         let sent = self.chunk_sender.try_lock().map_or_else(
             |_| Vec::new(),
             |mut sender| {
+                let current_epoch = self.chunk_send_epoch.load(Relaxed);
                 sender.cancel_pending(&batch, current_epoch, &cancelled);
-                sender.commit_batch(&batch, &encoded, &self.client, current_epoch)
+                if budgeted
+                    && !server.plugin_manager.has_handlers::<ChunkSend>()
+                    && !server.plugin_manager.has_handlers::<PacketSentEvent>()
+                {
+                    sender.commit_current_java_batch(&batch, &encoded, client, current_epoch)
+                } else {
+                    sender.commit_batch(&batch, &encoded, &self.client, current_epoch)
+                }
             },
         );
         self.pair_entities_in_chunks(world, &sent);

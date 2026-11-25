@@ -91,6 +91,9 @@ use crate::{
     },
 };
 
+// Terrain may fill only this share of the queue, leaving room for other play packets.
+const JAVA_TERRAIN_QUEUE_BYTES: usize = MAX_PENDING_BYTES / 4;
+
 /// Packet id followed by its payload, as the outgoing writer expects it.
 fn frame_packet(packet_id: i32, payload: &[u8]) -> Option<Bytes> {
     let mut framed = Vec::with_capacity(5 + payload.len());
@@ -584,9 +587,37 @@ impl JavaClient {
             return false;
         }
         let total = packets.iter().map(Bytes::len).sum();
-        let Some(mut remaining) = self.reserve_bytes(total) else {
+        let Some(reserved) = self.reserve_bytes(total) else {
             return false;
         };
+        self.enqueue_reserved_packet_batch(packets, reserved)
+    }
+
+    pub(crate) fn terrain_queue_room(&self) -> usize {
+        JAVA_TERRAIN_QUEUE_BYTES.saturating_sub(self.pending_bytes.load(Ordering::Acquire))
+    }
+
+    /// Queue one unmodified Java terrain batch. When the writer has no room, its
+    /// chunks remain pending and the connection can continue to send play packets.
+    pub(crate) fn try_enqueue_current_terrain_batch(&self, packets: &[Bytes]) -> bool {
+        if self.close_token.is_cancelled() || self.version.load() != CURRENT_MC_VERSION {
+            return false;
+        }
+        let total = packets.iter().map(Bytes::len).sum::<usize>();
+        if self
+            .pending_bytes
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |pending| {
+                let bytes = pending.saturating_add(total);
+                (bytes <= JAVA_TERRAIN_QUEUE_BYTES).then_some(bytes)
+            })
+            .is_err()
+        {
+            return false;
+        }
+        self.enqueue_reserved_packet_batch(packets, total)
+    }
+
+    fn enqueue_reserved_packet_batch(&self, packets: &[Bytes], mut remaining: usize) -> bool {
         for packet in packets {
             remaining -= packet.len();
             if !self.queue_outgoing(OutgoingPacket::normal(packet.clone()), packet.len()) {
