@@ -28,7 +28,7 @@ pub mod brightness;
 pub mod chunker;
 mod entity_chunks;
 mod entity_index;
-pub(crate) use entity_index::EntityIndex;
+pub(crate) use entity_index::{EntityIndex, IsolatedMovement};
 pub mod cat_spawner;
 pub mod entity_islands;
 pub mod explosion;

@@ -1,6 +1,12 @@
 use std::sync::atomic::Ordering::{Acquire, Relaxed};
 
-use pumpkin_data::{BlockStateId, attributes::Attributes, entity::EntityType};
+use pumpkin_data::{
+    BlockStateId,
+    attributes::Attributes,
+    entity::EntityType,
+    game_event::GameEvent,
+    tag::{self, Taggable},
+};
 use sculith_util::math::{
     boundingbox::BoundingBox, position::BlockPos, vector2::Vector2, vector3::Vector3,
 };
@@ -15,8 +21,9 @@ use crate::{
         drop_motion::{ActorTickOwner, regional_floor_collision},
         mob::Mob,
     },
+    plugin::api::events::world::generic_game::GenericGameEvent,
     server::TickDeadline,
-    world::{COLLISION_LOOK_BELOW, RegionId, World},
+    world::{COLLISION_LOOK_BELOW, IsolatedMovement, RegionId, World, game_event::notified_area},
 };
 
 use super::{EquipmentSlot, LivingEntity};
@@ -39,6 +46,13 @@ struct GroundSteering<'a> {
 struct GroundTravel<'a> {
     movement: Vector3<f64>,
     steering: Option<GroundSteering<'a>>,
+}
+
+struct GroundStep {
+    supporting: BlockPos,
+    floor: BlockStateId,
+    sound: bool,
+    listeners: BoundingBox,
 }
 
 impl LivingEntity {
@@ -291,6 +305,7 @@ impl LivingEntity {
         let (read_min, read_max) = route_floor.map_or((min, max), |(footing, target, ..)| {
             extend_read_extent(min, max, [footing, target])
         });
+        let mut step_sound = None;
         world.level.try_with_regional_path(
             read_min,
             read_max,
@@ -324,12 +339,28 @@ impl LivingEntity {
                 {
                     return None;
                 }
-                let emission = if caller.movement_emission().emits_anything() {
-                    let (walked, flown) = entity.movement_distances(movement, false);
-                    if walked > entity.next_step.load() {
+                let emission = caller.movement_emission();
+                let distances = emission
+                    .emits_anything()
+                    .then(|| entity.movement_distances(movement, false));
+                let step = if distances.is_some_and(|(walked, _)| walked > entity.next_step.load())
+                {
+                    if entity.is_swimming()
+                        || floor
+                            .to_block()
+                            .has_tag(&tag::Block::MINECRAFT_CRYSTAL_SOUND_BLOCKS)
+                        || world.server.upgrade().is_some_and(|server| {
+                            server.plugin_manager.has_handlers::<GenericGameEvent>()
+                        })
+                    {
                         return None;
                     }
-                    Some((walked, flown))
+                    Some(GroundStep {
+                        supporting,
+                        floor,
+                        sound: emission.emits_sounds(),
+                        listeners: notified_area(position, GameEvent::Step.notification_radius()),
+                    })
                 } else {
                     None
                 };
@@ -345,17 +376,22 @@ impl LivingEntity {
                 );
                 velocity.length_squared().is_finite().then_some((
                     BlockPos::floored_v(position),
-                    (position, next, velocity, supporting, emission, border),
+                    (
+                        position, next, velocity, supporting, distances, step, border,
+                    ),
                 ))
             },
-            |(position, next, velocity, supporting, emission, border), biome| {
+            |(position, next, velocity, supporting, distances, step, border), biome| {
                 let vicinity = sweep.expand(1.0, 1.0, 1.0);
-                world.entity_index.try_update_isolated_actor_bounds(
+                world.entity_index.try_apply_isolated_movement(
                     world,
                     entity.entity_id,
-                    vicinity,
-                    vicinity,
-                    next,
+                    &IsolatedMovement {
+                        swept: vicinity,
+                        player_clearance: vicinity,
+                        bounds: next,
+                        listener_clearance: step.as_ref().map(|step| step.listeners),
+                    },
                     || {
                         if route_floor.is_some_and(|(.., revision)| {
                             world.navigation_change_sequence.load(Acquire) != revision
@@ -393,9 +429,15 @@ impl LivingEntity {
                             ));
                             plan.navigator.commit_ground_route(&plan.route, deadline);
                         }
-                        if let Some((walked, flown)) = emission {
+                        if let Some((walked, flown)) = distances {
                             entity.move_dist.store(walked);
                             entity.fly_dist.store(flown);
+                        }
+                        if let Some(step) = step {
+                            entity.next_step.store(caller.next_step());
+                            if step.sound {
+                                step_sound = Some((step.supporting, step.floor));
+                            }
                         }
                         true
                     },
@@ -403,6 +445,10 @@ impl LivingEntity {
                 drop(border);
             },
         );
+        if let Some((supporting, floor)) = step_sound {
+            // Publish after releasing terrain and index locks, while the actor is still owned.
+            caller.play_step_sound(&supporting, floor.to_state());
+        }
     }
 }
 
@@ -510,7 +556,7 @@ mod tests {
             pathfinder::{node::Node, path::Path},
             test_support,
         },
-        passive::cow::CowEntity,
+        passive::{allay::AllayEntity, cow::CowEntity},
     };
 
     fn grounded_cow(
@@ -549,6 +595,8 @@ mod tests {
         let velocity = Vector3::new(0.55, -0.08, 0.0);
         let (cow, chunk) = grounded_cow(&regional, origin, velocity);
         let (comparison, _) = grounded_cow(&ordinary, origin, velocity);
+        cow.get_entity().next_step.store(0.1);
+        comparison.get_entity().next_step.store(0.1);
         let living = cow
             .get_living_entity()
             .ok_or("missing regional living entity")?;
@@ -570,12 +618,51 @@ mod tests {
         );
         assert!(cow.get_entity().on_ground.load(Relaxed));
         assert!(cow.get_entity().vertical_collision.load(Relaxed));
+        assert!(cow.get_entity().next_step.load() > 0.1);
+        assert!(
+            (cow.get_entity().next_step.load() - comparison.get_entity().next_step.load()).abs()
+                < f32::EPSILON
+        );
 
         chunk.set_block_absolute_y(11, 63, 7, Block::AIR.default_state.id);
         living.try_regional_travel(cow.as_ref(), &regional, 0, step(now + period), &owns, || ());
         assert_eq!(cow.get_entity().pos.load(), position);
         regional.level.shutdown().await;
         ordinary.level.shutdown().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn regional_footstep_yields_to_a_game_event_listener_outside_the_collision_sweep()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let folder = tempfile::tempdir()?;
+        let world = test_support::world(&folder);
+        let origin = Vector3::new(10.5, 64.0, 7.5);
+        let (cow, _) = grounded_cow(&world, origin, Vector3::new(0.55, -0.08, 0.0));
+        let listener = AllayEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(14.5, 64.0, 7.5),
+            &EntityType::ALLAY,
+        ));
+        world.add_entity_silent(listener);
+        cow.get_entity().next_step.store(0.1);
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        cow.get_living_entity()
+            .ok_or("missing regional living entity")?
+            .try_regional_travel(
+                cow.as_ref(),
+                &world,
+                0,
+                deadline,
+                &|pos| pos == Vector2::new(0, 0),
+                || (),
+            );
+        assert_eq!(cow.get_entity().pos.load(), origin);
+        assert!((cow.get_entity().next_step.load() - 0.1).abs() < f32::EPSILON);
+        world.level.shutdown().await;
         Ok(())
     }
 

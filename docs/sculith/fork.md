@@ -533,9 +533,11 @@ surfaces and nearby actors use the ordinary world path. The region can also
 continue an installed ground route across a safe flat surface. It commits
 the next waypoint, steering and movement together under the actor's motion
 deadline. Goals, effects and route changes that need a world step go through
-the existing ordered phases. The
-tracker sends the full position to paired current-protocol Java and Bedrock
-viewers in range who already have the destination terrain. The world refreshes
+the existing ordered phases. Plain footsteps use the ordinary species sound
+when the region can commit the step and its movement distance together. The
+world handles steps with a game-event listener in range, an event hook or
+special surface sounds. The tracker sends the full position to paired
+current-protocol Java and Bedrock viewers who already have the destination terrain. The world refreshes
 pairings and handles travel across ownership boundaries. Both owners share
 the actor's motion deadline. The world runs AI, landing, fluid or block
 contact, coordinated ticks and work with plugin observers.

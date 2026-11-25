@@ -21,6 +21,13 @@ const CELL_SIZE: f64 = 4.0;
 // This limits index allocation, not entity size or query coverage.
 const MAX_ENTITY_CELLS: u64 = 64;
 
+pub struct IsolatedMovement {
+    pub swept: BoundingBox,
+    pub player_clearance: BoundingBox,
+    pub bounds: BoundingBox,
+    pub listener_clearance: Option<BoundingBox>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct CellRange {
     min: Cell,
@@ -520,6 +527,32 @@ impl EntityIndex {
         bounds: BoundingBox,
         apply: impl FnOnce() -> bool,
     ) {
+        self.try_apply_isolated_movement(
+            world,
+            entity_id,
+            &IsolatedMovement {
+                swept,
+                player_clearance,
+                bounds,
+                listener_clearance: None,
+            },
+            apply,
+        );
+    }
+
+    pub(crate) fn try_apply_isolated_movement(
+        &self,
+        world: &World,
+        entity_id: i32,
+        movement: &IsolatedMovement,
+        apply: impl FnOnce() -> bool,
+    ) {
+        let &IsolatedMovement {
+            swept,
+            player_clearance,
+            bounds,
+            listener_clearance,
+        } = movement;
         let Some((players, player_index)) = Self::try_read_current(
             &self.players,
             &world.players,
@@ -541,7 +574,8 @@ impl EntityIndex {
             return;
         };
         let next_range = Index::entity_range(&bounds);
-        if let Some(swept_range) = Index::entity_range(&swept)
+        if (listener_clearance.is_none() || index.listeners.is_empty())
+            && let Some(swept_range) = Index::entity_range(&swept)
             && let Some(player_range) = Index::entity_range(&player_clearance)
             && next_range.is_some()
             && next_range == index.ranges[own_slot]
@@ -564,7 +598,7 @@ impl EntityIndex {
         drop(index);
         drop(player_index);
 
-        // Nearby candidates can change their exact bounds under a shared membership lock.
+        // Nearby candidates and checked listeners can change their exact bounds under shared membership.
         let (Ok(player_index), Ok(mut index)) = (self.players.try_write(), self.inner.try_write())
         else {
             return;
@@ -583,6 +617,12 @@ impl EntityIndex {
                 .candidates(&player_clearance)
                 .into_iter()
                 .any(|slot| player_index.intersects(slot, &player_clearance))
+            || listener_clearance.is_some_and(|area| {
+                index
+                    .listeners
+                    .iter()
+                    .any(|&slot| index.intersects(slot, &area))
+            })
         {
             return;
         }
