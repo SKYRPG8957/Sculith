@@ -651,3 +651,122 @@ fn missing_generator_requires_an_explicit_policy_for_new_chunks() {
     );
     assert_eq!(snapshot(&source), before);
 }
+
+fn write_player_fixture(source: &Path, key: &str, body_key: &str) {
+    let mut alias = vec![COMPOUND_ID, 0, 0];
+    string_tag(&mut alias, "ServerId", body_key);
+    alias.push(END_ID);
+
+    let mut body = vec![COMPOUND_ID, 0, 0];
+    string_tag(&mut body, "identifier", "minecraft:player");
+    for (name, value) in [
+        ("DimensionId", 0i32),
+        ("PlayerGameMode", 0),
+        ("PlayerLevel", 4),
+        ("SelectedInventorySlot", 0),
+        ("SpawnX", -3),
+        ("SpawnY", -59),
+        ("SpawnZ", 3),
+        ("SpawnDimension", 0),
+        ("SpawnBlockPositionX", i32::MIN),
+    ] {
+        named_tag(&mut body, pumpkin_nbt::INT_ID, name, &value.to_le_bytes());
+    }
+    named_tag(
+        &mut body,
+        pumpkin_nbt::FLOAT_ID,
+        "PlayerLevelProgress",
+        &(7.0f32 / 15.0).to_le_bytes(),
+    );
+    for (name, values) in [
+        ("Pos", [-3.5, -57.38, 3.5].as_slice()),
+        ("Rotation", [47.0, -18.0].as_slice()),
+    ] {
+        let mut list = vec![pumpkin_nbt::FLOAT_ID];
+        list.extend_from_slice(&u32::try_from(values.len()).unwrap().to_le_bytes());
+        for &value in values {
+            list.extend_from_slice(&f32::to_le_bytes(value));
+        }
+        named_tag(&mut body, pumpkin_nbt::LIST_ID, name, &list);
+    }
+    let mut inventory = vec![COMPOUND_ID, 1, 0, 0, 0];
+    string_tag(&mut inventory, "Name", "minecraft:potion");
+    named_tag(
+        &mut inventory,
+        pumpkin_nbt::SHORT_ID,
+        "Damage",
+        &14i16.to_le_bytes(),
+    );
+    named_tag(&mut inventory, pumpkin_nbt::BYTE_ID, "Slot", &[12]);
+    named_tag(&mut inventory, pumpkin_nbt::BYTE_ID, "Count", &[1]);
+    inventory.push(END_ID);
+    named_tag(&mut body, pumpkin_nbt::LIST_ID, "Inventory", &inventory);
+    body.push(END_ID);
+
+    let db = DB::open(source.join("db"), Options::default()).unwrap();
+    db.put(key.as_bytes(), &alias).unwrap();
+    db.put(body_key.as_bytes(), &body).unwrap();
+    db.close().unwrap();
+}
+
+#[test]
+fn imports_a_selected_player_and_rejects_duplicate_player_links() {
+    use crate::data::player_data::PlayerDataStorage;
+    use uuid::Uuid;
+
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("bedrock");
+    write_world(&source, false, FLAT_LAYERS);
+    let key = "player_0123456";
+    let body_key = "player_server_eee37dc7-41a2-4e3f-9265-8877db158165";
+    let player = Uuid::from_u128(1);
+    write_player_fixture(&source, key, body_key);
+    let untouched = snapshot(&source);
+
+    let map = temp.path().join("map.json");
+    let selected = serde_json::json!({"source": key, "uuid": player});
+    fs::write(&map, serde_json::to_vec(&[&selected]).unwrap()).unwrap();
+    let options = ImportOptions {
+        generator: GeneratorPolicy::RequireSource,
+        player_map: Some(&map),
+    };
+    let report = inspect_world(&source, options).unwrap();
+    assert_eq!(report.blockers, 0);
+    assert_eq!(report.stats.players_imported, 1);
+    let output = temp.path().join("sculith");
+    assert_eq!(
+        import_world(&source, &output, options)
+            .unwrap()
+            .players_imported,
+        1
+    );
+    let data = PlayerDataStorage::new(output.join("players/data"), true);
+    let (found, record) = data.load_player_data(&player).unwrap();
+    assert!(found);
+    assert_eq!(record.get_int("XpTotal"), Some(47));
+    let position = record.get_list("Pos").unwrap();
+    assert!((position[1].extract_double().unwrap() + 59.0).abs() < 0.00001);
+    let inventory = record.get_list("Inventory").unwrap();
+    let potion = inventory[0].extract_compound().unwrap();
+    assert_eq!(potion.get_byte("Slot"), Some(12));
+    assert_eq!(potion.get_string("id"), Some("minecraft:potion"));
+    let respawn = record.get_compound("respawn").unwrap();
+    assert_eq!(
+        respawn.get("pos"),
+        Some(&NbtTag::IntArray(vec![-3, -59, 3]))
+    );
+
+    let repeated = serde_json::json!({"source": body_key, "uuid": Uuid::from_u128(2)});
+    fs::write(&map, serde_json::to_vec(&[selected, repeated]).unwrap()).unwrap();
+    let report = inspect_world(&source, options).unwrap();
+    assert_eq!(report.blockers, 1);
+    assert!(
+        report.blocker_examples[0]
+            .to_string()
+            .contains("repeated Bedrock player record")
+    );
+    let output = temp.path().join("duplicate");
+    assert!(import_world(&source, &output, options).is_err());
+    assert!(!output.exists());
+    assert_eq!(snapshot(&source), untouched);
+}

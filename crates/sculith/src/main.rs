@@ -10,8 +10,7 @@ use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_world::{
     CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION,
     chunk::io::bedrock_import::{
-        GeneratorPolicy, ImportStats, export_storage, import_terrain_with_generator,
-        inspect_terrain,
+        GeneratorPolicy, ImportOptions, ImportStats, export_storage, import_world, inspect_world,
     },
 };
 use std::{
@@ -502,13 +501,19 @@ fn check_settings(dir: &Path, offline: bool, mode: properties::LoadMode) -> i32 
     reason = "the import command runs before server logging is initialized"
 )]
 fn import_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
-    let (Some(source), Some(destination), Some(policy)) =
-        (args.next(), args.next(), bedrock_generator_policy(args))
+    let (Some(source), Some(destination), Some((generator, player_map))) =
+        (args.next(), args.next(), bedrock_import_flags(args))
     else {
-        eprintln!("Run sculith --import-bedrock-terrain SOURCE DESTINATION [--new-chunks=normal]");
+        eprintln!(
+            "Run sculith --import-bedrock-terrain SOURCE DESTINATION [--new-chunks=normal] [--player-map FILE]"
+        );
         return 2;
     };
-    match import_terrain_with_generator(Path::new(&source), Path::new(&destination), policy) {
+    let options = ImportOptions {
+        generator,
+        player_map: player_map.as_deref().map(Path::new),
+    };
+    match import_world(Path::new(&source), Path::new(&destination), options) {
         Ok(stats) => {
             println!(
                 "Imported {} Overworld chunks in {} regions to {}.",
@@ -532,11 +537,18 @@ fn import_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
     reason = "the inspection command runs before server logging is initialized"
 )]
 fn inspect_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
-    let (Some(source), Some(policy)) = (args.next(), bedrock_generator_policy(args)) else {
-        eprintln!("Run sculith --inspect-bedrock-world SOURCE [--new-chunks=normal]");
+    let (Some(source), Some((generator, player_map))) = (args.next(), bedrock_import_flags(args))
+    else {
+        eprintln!(
+            "Run sculith --inspect-bedrock-world SOURCE [--new-chunks=normal] [--player-map FILE]"
+        );
         return 2;
     };
-    let report = match inspect_terrain(Path::new(&source), policy) {
+    let options = ImportOptions {
+        generator,
+        player_map: player_map.as_deref().map(Path::new),
+    };
+    let report = match inspect_world(Path::new(&source), options) {
         Ok(report) => report,
         Err(error) => {
             eprintln!("Bedrock world inspection failed ({error}).");
@@ -565,14 +577,21 @@ fn inspect_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
     1
 }
 
-fn bedrock_generator_policy(mut args: impl Iterator<Item = OsString>) -> Option<GeneratorPolicy> {
-    match (args.next(), args.next()) {
-        (None, None) => Some(GeneratorPolicy::RequireSource),
-        (Some(flag), None) if flag == "--new-chunks=normal" => {
-            Some(GeneratorPolicy::NormalIfUnspecified)
+fn bedrock_import_flags(
+    mut args: impl Iterator<Item = OsString>,
+) -> Option<(GeneratorPolicy, Option<OsString>)> {
+    let mut generator = GeneratorPolicy::RequireSource;
+    let mut player_map = None;
+    while let Some(arg) = args.next() {
+        if arg == "--new-chunks=normal" && matches!(generator, GeneratorPolicy::RequireSource) {
+            generator = GeneratorPolicy::NormalIfUnspecified;
+        } else if arg == "--player-map" && player_map.is_none() {
+            player_map = Some(args.next()?);
+        } else {
+            return None;
         }
-        _ => None,
     }
+    Some((generator, player_map))
 }
 
 #[expect(
@@ -615,6 +634,15 @@ fn export_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
 fn print_bedrock_import_stats(stats: &ImportStats, verb: &str) {
     println!("{verb} {} storage containers.", stats.containers_imported);
     println!("{verb} {} livestock actors.", stats.entities_imported);
+    if stats.players_imported > 0 {
+        println!("{verb} {} selected players.", stats.players_imported);
+    }
+    if !stats.player_source_examples.is_empty() {
+        println!(
+            "Available Bedrock player keys include {}.",
+            stats.player_source_examples.join(", ")
+        );
+    }
     println!(
         "Excluded data in {} block-entity records, {} entity records and {} other LevelDB records.",
         stats.block_entity_records_excluded,

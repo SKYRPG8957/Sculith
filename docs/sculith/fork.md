@@ -715,6 +715,31 @@ imported block, and Java received the original flat strata in a newly generated
 column. An unmodified Java 26.3 client joined the imported flat world.
 Source file hashes matched after import and after a rejected conversion.
 
+### Selected Bedrock players
+
+The inspection lists examples of available player records. Pass the same
+`--player-map FILE` to inspection and import to select which players to
+transfer. The JSON file maps a source player key to the UUID that Sculith
+uses when the player logs in.
+
+```json
+[
+  {
+    "source": "player_021acad5-2ace-411d-bba2-389f6bb421e3",
+    "uuid": "96cc8a3a-b12d-4a9e-8597-f3019be82345"
+  }
+]
+```
+
+Use a destination UUID for the correct Java or Bedrock account. The importer
+writes that player's Overworld position, rotation, game mode, spawn point,
+experience, selected slot, mapped inventory and equipment, ender chest and
+basic vitals into the new world's `players/data` directory. This leaves the
+source player's identity and privileges with the source server. Invalid links,
+duplicate players, unsupported saved states or unmapped inventory items make
+a selected player fail inspection and stop import before the destination is
+published. Without the map the command imports world data only.
+
 ## Bedrock storage export
 
 `sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION`
@@ -821,8 +846,8 @@ replays a published group before admitting players.
 
 ## Remaining work
 
-Standalone Bedrock world export and conversion of player data, other actors
-and other block-entity contents remain open.
+Standalone Bedrock world export, player data outside the supported Overworld
+subset, other actors and other block-entity contents remain open.
 
 Automatic checkpoints for ground stack splits by mobs and automation, minecart
 inventories, and automation involving other block types remain open.

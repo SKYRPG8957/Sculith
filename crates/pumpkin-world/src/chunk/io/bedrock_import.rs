@@ -12,8 +12,10 @@ use std::{
 use leveldb::{CompactionMode, Compressor, CompressorList, DB, Options, Status, StatusCode};
 use pumpkin_data::{Block, BlockStateId, biome::Biome, dimension::Dimension};
 use pumpkin_nbt::{
-    Nbt,
+    COMPOUND_ID, END_ID, Nbt,
+    compound::NbtCompound,
     deserializer::{NbtReadHelper, NbtReadHelperBedrockDisk},
+    tag::NbtTag,
 };
 use sculith_config::chunk::AnvilChunkConfig;
 use sculith_util::{
@@ -35,6 +37,7 @@ use crate::{
 use super::{RegionFile, region_chunk_index, region_of};
 
 mod actors;
+mod players;
 mod storage;
 mod storage_export;
 mod terrain;
@@ -105,6 +108,12 @@ pub enum GeneratorPolicy {
     NormalIfUnspecified,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct ImportOptions<'a> {
+    pub generator: GeneratorPolicy,
+    pub player_map: Option<&'a Path>,
+}
+
 #[derive(Default, Debug)]
 pub struct ImportStats {
     pub regions: usize,
@@ -114,6 +123,8 @@ pub struct ImportStats {
     pub block_entities_skipped: usize,
     pub skipped_block_entity_examples: Vec<SkippedBlockEntity>,
     pub entities_imported: usize,
+    pub players_imported: usize,
+    pub player_source_examples: Vec<String>,
     pub entity_records_excluded: usize,
     pub skipped_actor_examples: Vec<SkippedActor>,
     pub other_records_excluded: usize,
@@ -177,6 +188,16 @@ impl Inspection {
 /// Checks the same saved data and generator settings used by the importer.
 /// Reads through a temporary `LevelDB` snapshot.
 pub fn inspect_terrain(source: &Path, policy: GeneratorPolicy) -> Result<Inspection, Error> {
+    inspect_world(
+        source,
+        ImportOptions {
+            generator: policy,
+            player_map: None,
+        },
+    )
+}
+
+pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspection, Error> {
     let source = source.canonicalize()?;
     let temp = std::env::temp_dir().canonicalize()?;
     let scratch = if temp.starts_with(&source) {
@@ -191,7 +212,7 @@ pub fn inspect_terrain(source: &Path, policy: GeneratorPolicy) -> Result<Inspect
     let items = storage::item_registry();
     let mut inspection = Inspection::default();
     let mut stats = ImportStats::default();
-    let seed = match read_level(&source, &registry, policy) {
+    let seed = match read_level(&source, &registry, options.generator) {
         Ok((info, default_selected)) => {
             stats.default_generator_selected = default_selected;
             info.world_gen_settings.seed
@@ -229,6 +250,11 @@ pub fn inspect_terrain(source: &Path, policy: GeneratorPolicy) -> Result<Inspect
             stats.regions += 1;
         }
     }
+    if let Err(error) =
+        players::read_selected(&db, options.player_map, &registry, &items, &mut stats)
+    {
+        inspection.record_blocker(error);
+    }
     inspection.stats = stats;
     Ok(inspection)
 }
@@ -244,11 +270,26 @@ pub fn import_terrain_with_generator(
     destination: &Path,
     policy: GeneratorPolicy,
 ) -> Result<ImportStats, Error> {
+    import_world(
+        source,
+        destination,
+        ImportOptions {
+            generator: policy,
+            player_map: None,
+        },
+    )
+}
+
+pub fn import_world(
+    source: &Path,
+    destination: &Path,
+    options: ImportOptions<'_>,
+) -> Result<ImportStats, Error> {
     let source = source.canonicalize()?;
     let destination = new_destination(destination, &source)?;
     let registry = terrain::TerrainRegistry::load()?;
     let items = storage::item_registry();
-    let (mut info, default_generator_selected) = read_level(&source, &registry, policy)?;
+    let (mut info, default_generator_selected) = read_level(&source, &registry, options.generator)?;
 
     let staging = tempfile::tempdir_in(
         destination
@@ -267,6 +308,7 @@ pub fn import_terrain_with_generator(
         return Err(invalid("the source contains no saved Overworld terrain"));
     }
 
+    let players = players::read_selected(&db, options.player_map, &registry, &items, &mut stats)?;
     let output = staging.path().join("world");
     let region_folder = output.join("region");
     let entity_folder = output.join("entities");
@@ -318,9 +360,65 @@ pub fn import_terrain_with_generator(
     if crate::world_info::data_files::read_world_gen_settings(&output).is_none() {
         return Err(invalid("failed to save imported world generation settings"));
     }
+    if !players.is_empty() {
+        crate::data::player_data::PlayerDataStorage::new(output.join("players/data"), true)
+            .save_batch(players)
+            .map_err(|error| invalid(format!("could not write imported player data: {error}")))?;
+    }
     ensure_absent(&destination)?;
     fs::rename(output, destination)?;
     Ok(stats)
+}
+
+fn read_record(
+    bytes: &[u8],
+    max_bytes: usize,
+    kind: &str,
+    include: impl Fn(&str) -> bool,
+) -> Result<NbtCompound, Error> {
+    if bytes.len() > max_bytes {
+        return Err(invalid(format!("oversized Bedrock {kind} record")));
+    }
+    let mut reader = NbtReadHelperBedrockDisk::new(Cursor::new(bytes));
+    if reader.get_u8()? != COMPOUND_ID {
+        return Err(invalid(format!("expected a Bedrock {kind} compound")));
+    }
+    reader.skip_string()?;
+    let mut saved = NbtCompound::new();
+    loop {
+        let tag = reader.get_u8()?;
+        if tag == END_ID {
+            break;
+        }
+        let name = reader.get_string()?;
+        if include(&name) {
+            let value = NbtTag::deserialize_data(&mut reader, tag)?;
+            if saved
+                .child_tags
+                .insert(name.as_ref().into(), value)
+                .is_some()
+            {
+                return Err(invalid(format!("duplicate Bedrock {kind} field")));
+            }
+        } else {
+            NbtTag::skip_data(&mut reader, tag)?;
+        }
+    }
+    if reader.reader().position() != bytes.len() as u64 {
+        return Err(invalid(format!(
+            "trailing bytes after Bedrock {kind} compound"
+        )));
+    }
+    Ok(saved)
+}
+
+fn finite_floats<const N: usize>(saved: &NbtCompound, field: &str) -> Option<[f32; N]> {
+    let entries: &[NbtTag; N] = saved.get_list(field)?.try_into().ok()?;
+    let mut values = [0.; N];
+    for (value, tag) in values.iter_mut().zip(entries) {
+        *value = tag.extract_float().filter(|coord| coord.is_finite())?;
+    }
+    Some(values)
 }
 
 fn open_database_copy(source: &Path, staging: &Path) -> Result<DB, Error> {
@@ -467,6 +565,11 @@ fn index_chunks(
                     on_blocker(error)?;
                 }
             } else {
+                if stats.player_source_examples.len() < DIAGNOSTIC_LIMIT
+                    && let Some(key) = players::source_key(&key)
+                {
+                    stats.player_source_examples.push(key.to_owned());
+                }
                 stats.other_records_excluded += 1;
             }
             continue;

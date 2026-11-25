@@ -1,20 +1,18 @@
-use std::{collections::BTreeSet, io::Cursor};
+use std::collections::BTreeSet;
 
 use leveldb::DB;
 use pumpkin_data::{
     attributes::Attributes, chicken_sound_variant::ChickenSoundVariant,
     cow_sound_variant::CowSoundVariant, entity::EntityType, pig_sound_variant::PigSoundVariant,
 };
-use pumpkin_nbt::{
-    COMPOUND_ID, END_ID,
-    compound::NbtCompound,
-    deserializer::{NbtReadHelper, NbtReadHelperBedrockDisk},
-    tag::NbtTag,
-};
+use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
 use uuid::Uuid;
 
-use super::{DIAGNOSTIC_LIMIT, Error, ImportStats, OVERWORLD, SkippedActor, invalid};
+use super::{
+    DIAGNOSTIC_LIMIT, Error, ImportStats, OVERWORLD, SkippedActor, finite_floats, invalid,
+    read_record,
+};
 
 pub(super) const ACTOR_PREFIX: &[u8; 11] = b"actorprefix";
 const ACTOR_INDEX_PREFIX: &[u8; 4] = b"digp";
@@ -62,7 +60,9 @@ pub(super) fn read_chunk(
             continue;
         };
         // The official writer stores the raw storage key as a string in this component.
-        let saved = match read_record(&bytes, |field| field != "internalComponents") {
+        let saved = match read_record(&bytes, MAX_ACTOR_BYTES, "actor", |field| {
+            field != "internalComponents"
+        }) {
             Ok(saved) => saved,
             Err(error) => {
                 skip(stats, chunk, "<actor record>", error.to_string());
@@ -103,7 +103,7 @@ pub(super) fn collect_riders(bytes: &[u8], riders: &mut BTreeSet<i64>) -> Result
     {
         return Ok(());
     }
-    let record = read_record(bytes, |field| field == "LinksTag")?;
+    let record = read_record(bytes, MAX_ACTOR_BYTES, "actor", |field| field == "LinksTag")?;
     if let Some(links) = record.get("LinksTag") {
         let links = links
             .extract_list()
@@ -117,50 +117,6 @@ pub(super) fn collect_riders(bytes: &[u8], riders: &mut BTreeSet<i64>) -> Result
         }
     }
     Ok(())
-}
-
-fn read_record(bytes: &[u8], include: impl Fn(&str) -> bool) -> Result<NbtCompound, Error> {
-    if bytes.len() > MAX_ACTOR_BYTES {
-        return Err(invalid("oversized Bedrock actor record"));
-    }
-    let mut reader = NbtReadHelperBedrockDisk::new(Cursor::new(bytes));
-    if reader.get_u8()? != COMPOUND_ID {
-        return Err(invalid("expected a Bedrock actor compound"));
-    }
-    reader.skip_string()?;
-    let mut saved = NbtCompound::new();
-    loop {
-        let tag = reader.get_u8()?;
-        if tag == END_ID {
-            break;
-        }
-        let name = reader.get_string()?;
-        if include(&name) {
-            let value = NbtTag::deserialize_data(&mut reader, tag)?;
-            if saved
-                .child_tags
-                .insert(name.as_ref().into(), value)
-                .is_some()
-            {
-                return Err(invalid("duplicate Bedrock actor field"));
-            }
-        } else {
-            NbtTag::skip_data(&mut reader, tag)?;
-        }
-    }
-    if reader.reader().position() != bytes.len() as u64 {
-        return Err(invalid("trailing bytes after Bedrock actor compound"));
-    }
-    Ok(saved)
-}
-
-fn floats<const N: usize>(saved: &NbtCompound, field: &str) -> Option<[f32; N]> {
-    let entries: &[NbtTag; N] = saved.get_list(field)?.try_into().ok()?;
-    let mut values = [0.; N];
-    for (value, tag) in values.iter_mut().zip(entries) {
-        *value = tag.extract_float().filter(|coord| coord.is_finite())?;
-    }
-    Some(values)
 }
 
 fn convert(
@@ -185,13 +141,13 @@ fn convert(
         return Err("unsupported actor riding relationship");
     }
     validate_unlinked(saved)?;
-    let [x, y, z] = floats(saved, "Pos").ok_or("invalid actor position")?;
+    let [x, y, z] = finite_floats(saved, "Pos").ok_or("invalid actor position")?;
     if BlockPos::new(x.floor() as i32, y.floor() as i32, z.floor() as i32).chunk_position() != chunk
         || !(OVERWORLD.min_y as f32..(OVERWORLD.min_y + OVERWORLD.height) as f32).contains(&y)
     {
         return Err("actor position is outside its indexed chunk");
     }
-    let rotation = floats::<2>(saved, "Rotation").ok_or("invalid actor rotation")?;
+    let rotation = finite_floats::<2>(saved, "Rotation").ok_or("invalid actor rotation")?;
     let mut record = NbtCompound::new();
     record.put_string("id", kind.to_owned());
     let identity = [
@@ -204,7 +160,7 @@ fn convert(
     record.put_list("Pos", [x, y, z].map(|axis| f64::from(axis).into()).into());
     record.put_list("Rotation", rotation.map(NbtTag::Float).into());
     if saved.has("Motion") {
-        let motion = floats::<3>(saved, "Motion").ok_or("invalid actor motion")?;
+        let motion = finite_floats::<3>(saved, "Motion").ok_or("invalid actor motion")?;
         record.put_list("Motion", motion.map(|axis| f64::from(axis).into()).into());
     }
     if let Some(name) = saved
