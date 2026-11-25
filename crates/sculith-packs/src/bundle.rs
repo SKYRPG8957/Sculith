@@ -1,18 +1,20 @@
 //! Immutable edition archives built from one bounded source snapshot.
 //! ZIP members use the stored method, fixed dates and sorted UTF-8 names.
 
-use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
+use std::{collections::BTreeMap, fs, io::Read, path::Path, sync::Arc};
 
 use anyhow::{Context, Result, ensure};
 use serde_json::Value;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+use zip::ZipArchive;
 
 use crate::{BedrockManifest, ConversionReport, TextureMap};
 
 pub const MAX_PACK_BYTES: usize = 32 * 1_048_576;
 const MAX_FILES: usize = 512;
+const MAX_ENTRIES: usize = 1024;
 const MAX_DEPTH: usize = 16;
 const MAX_FILE_BYTES: u64 = 16 * 1_048_576;
 
@@ -50,11 +52,109 @@ impl PackSource {
         let root = input
             .canonicalize()
             .context("missing Bedrock pack source")?;
-        ensure!(root.is_dir(), "Bedrock pack source must be a directory");
-        let mapping = Arc::new(crate::read_json(mapping)?);
+        if root.is_dir() {
+            ensure!(
+                !mapping.as_os_str().is_empty(),
+                "a directory source needs a mapping file"
+            );
+            let mapping = Arc::new(crate::read_json(mapping)?);
+            return Ok(Self {
+                files: snapshot(&root)?,
+                mapping,
+            });
+        }
+        ensure!(
+            root.is_file(),
+            "Bedrock pack source must be a directory or regular ZIP archive"
+        );
+        Self::read_archive(&root, mapping)
+            .with_context(|| format!("invalid pack archive {}", root.display()))
+    }
+
+    fn read_archive(path: &Path, mapping: &Path) -> Result<Self> {
+        let input = fs::File::open(path)?;
+        ensure!(
+            input.metadata()?.len() <= MAX_PACK_BYTES as u64,
+            "archive exceeds 32 MiB"
+        );
+        let mut archive = ZipArchive::new(input)?;
+        ensure!(!archive.has_duplicate_names(), "duplicate ZIP member names");
+        ensure!(
+            archive.len() <= MAX_ENTRIES,
+            "archive exceeds {MAX_ENTRIES} entries"
+        );
+        let plain = archive.index_for_name("manifest.json").is_some();
+        let bundle = archive.index_for_name("bedrock/manifest.json").is_some();
+        ensure!(
+            plain != bundle,
+            "archive must contain one resource pack manifest"
+        );
+        let use_embedded = mapping.as_os_str().is_empty();
+
+        let mut files = BTreeMap::new();
+        let mut embedded_mapping = None;
+        let mut total = 0usize;
+        for index in 0..archive.len() {
+            let mut member = archive.by_index(index)?;
+            let name = std::str::from_utf8(member.name_raw())?;
+            let directory = member.is_dir();
+            ensure!(
+                !member.encrypted()
+                    && !member.is_symlink()
+                    && member.unix_mode().is_none_or(|mode| {
+                        let kind = mode & 0o170_000;
+                        kind == 0
+                            || if directory {
+                                kind == 0o040_000
+                            } else {
+                                kind == 0o100_000
+                            }
+                    }),
+                "pack ZIP members must be unencrypted regular files or directories: {name}"
+            );
+            let name = if directory {
+                name.strip_suffix('/').unwrap_or(name)
+            } else {
+                name
+            };
+            if bundle && directory && name == "bedrock" {
+                continue;
+            }
+            if !directory && name == "mapping.json" && (bundle || use_embedded) {
+                if use_embedded {
+                    let data = read_archive_member(&mut member, crate::MAX_JSON_BYTES)
+                        .context("cannot read mapping.json from pack")?;
+                    embedded_mapping =
+                        Some(crate::parse_json(&data).context("invalid JSON in mapping.json")?);
+                }
+                continue;
+            }
+            let name = if bundle {
+                name.strip_prefix("bedrock/")
+                    .context("bundle entries must be inside bedrock/ or mapping.json")?
+            } else {
+                name
+            };
+            validate_member_path(name)?;
+            if directory {
+                continue;
+            }
+            ensure!(files.len() < MAX_FILES, "pack exceeds {MAX_FILES} files");
+            let name = name.to_owned();
+            let limit = MAX_FILE_BYTES.min((MAX_PACK_BYTES - total) as u64);
+            let data = read_archive_member(&mut member, limit)
+                .with_context(|| format!("cannot read archive member {name}"))?;
+            total += data.len();
+            files.insert(name, data.into());
+        }
+        let mapping = if use_embedded {
+            embedded_mapping.context("archive needs mapping.json or a configured mapping file")?
+        } else {
+            crate::read_json(mapping)?
+        };
         Ok(Self {
-            files: snapshot(&root)?,
-            mapping,
+            files,
+            mapping: Arc::new(mapping),
         })
     }
 
@@ -214,6 +314,18 @@ impl Bundle {
     }
 }
 
+fn read_archive_member<R: Read>(
+    member: &mut zip::read::ZipFile<'_, R>,
+    limit: u64,
+) -> Result<Vec<u8>> {
+    let size = member.size();
+    ensure!(size <= limit, "pack member exceeds {limit} bytes");
+    let mut bytes = Vec::new();
+    member.take(limit + 1).read_to_end(&mut bytes)?;
+    ensure!(bytes.len() as u64 == size, "inconsistent ZIP member size");
+    Ok(bytes)
+}
+
 fn validate_member_path(path: &str) -> Result<()> {
     ensure!(
         path.len() <= 240
@@ -244,7 +356,10 @@ fn snapshot(root: &Path) -> Result<BTreeMap<String, Arc<[u8]>>> {
         );
         for entry in fs::read_dir(dir)? {
             *entries += 1;
-            ensure!(*entries <= 1024, "pack exceeds 1024 directory entries");
+            ensure!(
+                *entries <= MAX_ENTRIES,
+                "pack exceeds {MAX_ENTRIES} directory entries"
+            );
             let entry = entry?;
             let path = entry.path();
             let kind = entry.file_type()?;
@@ -414,6 +529,65 @@ mod tests {
             fs::read(output.join("java.zip")).unwrap(),
             first.java.bytes.as_ref()
         );
+    }
+
+    #[test]
+    fn deflated_pack_and_bundle_match_the_directory_archives() {
+        use std::io::Write;
+        use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
+
+        let root = source();
+        let mapping = root.parent().unwrap().join("textures.json");
+        let expected = Bundle::prepare(&root, &mapping).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let original = snapshot(&root).unwrap();
+        for packaged in [false, true] {
+            let path = scratch.path().join(if packaged {
+                "resources.zip"
+            } else {
+                "plain.mcpack"
+            });
+            let mut zip = ZipWriter::new(fs::File::create(&path).unwrap());
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            for (name, bytes) in &original {
+                zip.start_file(
+                    if packaged {
+                        format!("bedrock/{name}")
+                    } else {
+                        name.clone()
+                    },
+                    options,
+                )
+                .unwrap();
+                zip.write_all(bytes).unwrap();
+            }
+            if packaged {
+                zip.start_file("mapping.json", options).unwrap();
+                zip.write_all(&fs::read(&mapping).unwrap()).unwrap();
+            }
+            zip.finish().unwrap();
+
+            let selected_mapping = if packaged { Path::new("") } else { &mapping };
+            let result = Bundle::prepare(&path, selected_mapping).unwrap();
+            assert_eq!(result.java.bytes, expected.java.bytes);
+            assert_eq!(result.bedrock.bytes, expected.bedrock.bytes);
+        }
+    }
+
+    #[test]
+    fn an_archive_rejects_ambiguous_manifests_before_conversion() {
+        use zip::{ZipWriter, write::SimpleFileOptions};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ambiguous.zip");
+        let mut zip = ZipWriter::new(fs::File::create(&path).unwrap());
+        zip.start_file("manifest.json", SimpleFileOptions::default())
+            .unwrap();
+        zip.start_file("bedrock/manifest.json", SimpleFileOptions::default())
+            .unwrap();
+        zip.finish().unwrap();
+        let error = Bundle::prepare(&path, Path::new("")).err().unwrap();
+        assert!(format!("{error:#}").contains("one resource pack manifest"));
     }
 
     #[test]

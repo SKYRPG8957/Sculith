@@ -17,9 +17,10 @@ pub struct ResourcePackConfig {
 /// Shared resource source and its explicit Java compatibility mapping.
 #[derive(Deserialize, Serialize, Clone)]
 pub struct SharedResourcePackConfig {
-    /// Authored Bedrock resource pack directory.
+    /// Authored Bedrock resource pack directory or ZIP archive.
     pub source: std::path::PathBuf,
-    /// Explicit texture, sound and model mappings for vanilla Java.
+    /// Java compatibility mappings. An archive can carry mapping.json internally.
+    #[serde(default)]
     pub mapping: std::path::PathBuf,
     /// Require clients to accept the shared resources before joining.
     #[serde(default = "required_by_default")]

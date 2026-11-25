@@ -12,9 +12,13 @@ mapping = "resource_packs/mapping.json"
 required = true
 ```
 
+Use a Bedrock `.mcpack` as the source with the same mapping file. A ZIP that
+contains `bedrock/manifest.json` and `mapping.json` can carry the mapping.
+Set `source` to that ZIP and omit `mapping` to use its embedded copy.
+
 Paths are relative to the server's working directory. Disable edition-specific
 pack settings when using `shared`. Source validation finishes before worlds are
-opened. The server reads changes to the source directory at startup. Native
+opened. The server reads the source at startup. Native
 plugins can also edit the active source in memory.
 
 The mapping names the resources to expose to vanilla Java. For example:
