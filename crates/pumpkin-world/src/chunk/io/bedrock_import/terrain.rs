@@ -61,6 +61,16 @@ impl BlockKey {
     }
 
     fn fallback_state(&self) -> Option<BlockStateId> {
+        if matches!(self.properties.as_slice(), [(property, BlockProperty::String(direction))]
+            if property.as_ref() == "torch_facing_direction" && direction.as_ref() == "unknown")
+        {
+            return match self.name.as_str() {
+                "minecraft:torch" => Some(Block::TORCH.default_state.id),
+                "minecraft:soul_torch" => Some(Block::SOUL_TORCH.default_state.id),
+                "minecraft:copper_torch" => Some(Block::COPPER_TORCH.default_state.id),
+                _ => None,
+            };
+        }
         let block = match self.name.as_str() {
             "minecraft:water" | "minecraft:flowing_water" => &Block::WATER,
             "minecraft:lava" | "minecraft:flowing_lava" => &Block::LAVA,

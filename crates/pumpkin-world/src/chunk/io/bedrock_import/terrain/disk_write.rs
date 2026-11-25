@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Cursor};
 
-use pumpkin_data::BlockStateId;
+use pumpkin_data::{BlockState, BlockStateId};
 use pumpkin_nbt::{
     Nbt, NbtCompound,
     deserializer::{NbtReadHelper, NbtReadHelperBedrock, NbtReadHelperBedrockDisk},
@@ -15,7 +15,7 @@ use super::{
 type DiskReader<'a> = NbtReadHelperBedrockDisk<Cursor<&'a [u8]>>;
 
 struct DiskState {
-    exact_name: bool,
+    preference: (bool, bool),
     bytes: Vec<u8>,
 }
 
@@ -36,9 +36,15 @@ impl DiskBlockStates {
                 .get_string("name")
                 .ok_or_else(|| invalid("missing block name"))?;
             let exact_name = name.strip_prefix("minecraft:") == Some(state.to_block().name);
+            // An imported alias can preserve its original NBT. New cells use
+            // the canonical network state when the registry provides one.
+            let canonical_state = entry
+                .get_int("network_id")
+                .is_some_and(|id| id.cast_unsigned() == BlockState::to_be_network_id(state));
+            let preference = (canonical_state, exact_name);
             if states
                 .get(&state)
-                .is_some_and(|current| current.exact_name || !exact_name)
+                .is_some_and(|current| current.preference >= preference)
             {
                 continue;
             }
@@ -60,7 +66,7 @@ impl DiskBlockStates {
             );
             let mut bytes = Vec::new();
             Nbt::new(String::new(), disk).write_to_writer_bedrock_disk(&mut bytes)?;
-            states.insert(state, DiskState { exact_name, bytes });
+            states.insert(state, DiskState { preference, bytes });
         }
         Ok(Self(states))
     }
@@ -207,4 +213,41 @@ pub(in crate::chunk::io::bedrock_import) fn rewrite_subchunk<'a>(
         layer.write(&mut written);
     }
     Ok(written)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_data::Block;
+
+    #[test]
+    fn imports_unspecified_standing_torches_and_writes_the_top_direction() {
+        let registry = TerrainRegistry::load().unwrap();
+        let disk = DiskBlockStates::load(&registry).unwrap();
+        for (name, block) in [
+            ("minecraft:torch", Block::TORCH),
+            ("minecraft:soul_torch", Block::SOUL_TORCH),
+            ("minecraft:copper_torch", Block::COPPER_TORCH),
+        ] {
+            let mut properties = NbtCompound::new();
+            properties.put_string("torch_facing_direction", "unknown".into());
+            let mut old = NbtCompound::new();
+            old.put_string("name", name.into());
+            old.put_compound("states", properties);
+            let state = block.default_state.id;
+            assert_eq!(registry.block(&old).unwrap(), state);
+
+            let mut reader = DiskReader::new(Cursor::new(disk.get(state).unwrap()));
+            let written = Nbt::read(&mut reader).unwrap();
+            assert_eq!(written.get_string("name"), Some(name));
+            assert_eq!(
+                written
+                    .get_compound("states")
+                    .unwrap()
+                    .get_string("torch_facing_direction"),
+                Some("top"),
+            );
+            assert_eq!(registry.block(&written).unwrap(), state);
+        }
+    }
 }

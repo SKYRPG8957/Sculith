@@ -839,6 +839,10 @@ published. Without the map the command imports world data only.
 
 ## Bedrock storage export
 
+Bedrock's unspecified standing torch directions import as upright torches for
+regular, soul and copper variants. Exported new torches use the native `top`
+state. Existing unedited cells retain their original palette data.
+
 `sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION`
 copies a stopped Bedrock world and transfers supported inventories in the
 Overworld, Nether and End from its stopped Sculith import. Use a new
