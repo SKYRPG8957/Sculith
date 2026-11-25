@@ -2,7 +2,10 @@ use std::sync::{Arc, Mutex, atomic::Ordering::Relaxed};
 
 use bytes::Bytes;
 use pumpkin_data::{
-    data_component_impl::BlocksAttacksImpl, item_stack::ItemStack, statistic::StatisticCategory,
+    data_component_impl::BlocksAttacksImpl,
+    item::{Item, JavaToBedrockItemMapping},
+    item_stack::{ItemStack, bedrock},
+    statistic::StatisticCategory,
 };
 use pumpkin_inventory::{
     container_click::SLOT_INDEX_OUTSIDE,
@@ -617,13 +620,15 @@ fn player_slot(player: &Player, slot: &dyn Slot) -> Option<usize> {
 fn creative_stack(network_id: u32) -> Option<ItemStack> {
     let index = network_id.checked_sub(1)? as usize;
     let entry = pumpkin_data::bedrock_creative::CREATIVE_ENTRIES.get(index)?;
-    let mapping = pumpkin_data::item::JavaToBedrockItemMapping::from_bedrock(
-        entry.item_id,
-        entry.item_aux_value,
-    )?;
-    let limit = ItemStack::static_new_java(1, mapping.java_item).get_max_stack_size();
-    let mut stack = ItemStack::new(limit, mapping.java_item);
-    if let Some(contents) = potion_contents_from_bedrock(entry.item_id, entry.item_aux_value) {
+    let contents = potion_contents_from_bedrock(entry.item_id, entry.item_aux_value);
+    let item = if bedrock::is_tipped_arrow(entry.item_id, entry.item_aux_value) {
+        &Item::TIPPED_ARROW
+    } else {
+        JavaToBedrockItemMapping::from_bedrock(entry.item_id, entry.item_aux_value)?.java_item
+    };
+    let limit = ItemStack::static_new_java(1, item).get_max_stack_size();
+    let mut stack = ItemStack::new(limit, item);
+    if let Some(contents) = contents {
         stack.set_data_component(contents);
     }
     Some(stack)
@@ -1663,8 +1668,40 @@ impl BedrockClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pumpkin_data::item::Item;
+    use pumpkin_data::{
+        data_component_impl::PotionDurationScaleImpl, effect::StatusEffect, item::BedrockItem,
+    };
     use pumpkin_inventory::{build_equipment_slots, entity_equipment::EntityEquipment};
+
+    #[test]
+    fn creative_bedrock_arrows_keep_their_tipped_effects() {
+        let arrow = |aux| {
+            let index = pumpkin_data::bedrock_creative::CREATIVE_ENTRIES
+                .iter()
+                .position(|entry| {
+                    entry.item_id == BedrockItem::ARROW.id && entry.item_aux_value == aux
+                })
+                .unwrap();
+            creative_stack(u32::try_from(index + 1).unwrap()).unwrap()
+        };
+        assert_eq!(arrow(0).item, &Item::ARROW);
+        for (aux, effect, amplifier, duration) in [
+            (26, &StatusEffect::POISON, 0, 112),
+            (37, &StatusEffect::WITHER, 1, 100),
+        ] {
+            let stack = arrow(aux);
+            assert_eq!(stack.item, &Item::TIPPED_ARROW);
+            assert_eq!(NetworkItemDescriptor::from(&stack).aux_value, VarUInt(aux));
+            let scale = stack
+                .get_data_component::<PotionDurationScaleImpl>()
+                .unwrap();
+            let effects = crate::item::potion::PotionContents::read_potion_effects(&stack);
+            assert_eq!(effects.len(), 1);
+            assert_eq!(effects[0].0, effect);
+            assert_eq!(effects[0].2, amplifier);
+            assert_eq!((effects[0].1 as f32 * scale.scale) as i32, duration);
+        }
+    }
 
     #[test]
     fn regional_inventory_move_checks_both_slot_ids_before_writing() {

@@ -12,6 +12,7 @@ use crate::{
 use pumpkin_nbt::{NbtCompound, tag::NbtTag};
 
 const DECAY_AUX: u32 = 36;
+const FIRST_TIPPED_ARROW_AUX: u32 = 6;
 const DECAY_EFFECT: StatusEffectInstance = StatusEffectInstance {
     effect_id: Cow::Borrowed(StatusEffect::WITHER.minecraft_name),
     amplifier: 1,
@@ -80,6 +81,12 @@ pub const fn uses_potion_aux(id: i16) -> bool {
         || id == BedrockItem::LINGERING_POTION.id
 }
 
+/// Tests whether the native arrow variant appears in the effect-arrow catalogue.
+#[must_use]
+pub const fn is_tipped_arrow(id: i16, aux: u32) -> bool {
+    id == BedrockItem::ARROW.id && aux >= FIRST_TIPPED_ARROW_AUX && aux <= POTIONS.len() as u32
+}
+
 /// Returns the Bedrock auxiliary value for a standard shared potion.
 #[must_use]
 pub fn potion_aux(potion_id: i32) -> Option<u32> {
@@ -89,29 +96,41 @@ pub fn potion_aux(potion_id: i32) -> Option<u32> {
         .map(|aux| aux as u32)
 }
 
-/// Encodes standard shared potions and the canonical drinkable Decay effect.
+/// Encodes a shared potion or tipped arrow in the Bedrock item auxiliary field.
 #[must_use]
 pub fn potion_aux_for_contents(id: i16, contents: &PotionContentsImpl) -> Option<u32> {
-    if !uses_potion_aux(id) {
+    let arrow = id == BedrockItem::ARROW.id;
+    if !arrow && !uses_potion_aux(id) {
         return None;
     }
-    if let Some(potion_id) = contents.potion_id {
-        return potion_aux(potion_id);
-    }
-    (id == BedrockItem::POTION.id
+    let potion = if let Some(potion_id) = contents.potion_id {
+        potion_aux(potion_id)?
+    } else if (arrow || id == BedrockItem::POTION.id)
         && contents.custom_color.is_none()
         && contents.custom_name.is_none()
-        && contents.custom_effects == [DECAY_EFFECT])
-    .then_some(DECAY_AUX)
+        && contents.custom_effects == [DECAY_EFFECT]
+    {
+        DECAY_AUX
+    } else {
+        return None;
+    };
+    let aux = potion + u32::from(arrow);
+    (!arrow || is_tipped_arrow(id, aux)).then_some(aux)
 }
 
 /// Restores potion contents from a Bedrock item variant.
 #[must_use]
 pub fn potion_contents_from_bedrock(id: i16, aux: u32) -> Option<PotionContentsImpl> {
-    if !uses_potion_aux(id) {
+    let arrow = is_tipped_arrow(id, aux);
+    let aux = if arrow {
+        // Bedrock's plain arrow occupies the zero auxiliary value.
+        aux - 1
+    } else if uses_potion_aux(id) {
+        aux
+    } else {
         return None;
-    }
-    if id == BedrockItem::POTION.id && aux == DECAY_AUX {
+    };
+    if (arrow || id == BedrockItem::POTION.id) && aux == DECAY_AUX {
         return Some(PotionContentsImpl {
             potion_id: None,
             custom_color: None,

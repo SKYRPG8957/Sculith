@@ -21,17 +21,30 @@ use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use super::super::{Error, invalid, terrain::TerrainRegistry};
 
 const VERSION_FILE: &str = ".sculith-bedrock-storage-version";
-const CURRENT_VERSION: &[u8] = b"3\n";
+const CURRENT_VERSION: &[u8] = b"4\n";
+
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+enum StorageVersion {
+    Plain,
+    PotionAndEnchantment,
+    DrinkableDecay,
+    TippedArrows,
+}
 
 pub(in crate::chunk::io::bedrock_import) struct StorageItemRegistry {
     by_name: HashMap<&'static str, i16>,
-    components: bool,
-    decay_potion: bool,
+    version: StorageVersion,
 }
 
 impl StorageItemRegistry {
+    fn supports_components(&self) -> bool {
+        self.version >= StorageVersion::PotionAndEnchantment
+    }
+
     fn potion_aux(&self, id: i16, contents: &PotionContentsImpl) -> Option<u32> {
-        if !self.decay_potion && contents.potion_id.is_none() {
+        if (id == BedrockItem::ARROW.id && self.version < StorageVersion::TippedArrows)
+            || (contents.potion_id.is_none() && self.version < StorageVersion::DrinkableDecay)
+        {
             return None;
         }
         bedrock::potion_aux_for_contents(id, contents)
@@ -44,8 +57,7 @@ pub(in crate::chunk::io::bedrock_import) fn item_registry() -> StorageItemRegist
             .iter()
             .map(|item| (item.registry_key, item.id))
             .collect(),
-        components: true,
-        decay_potion: true,
+        version: StorageVersion::TippedArrows,
     }
 }
 
@@ -57,23 +69,21 @@ pub(in crate::chunk::io::bedrock_import) fn read_import_registry(
     world: &Path,
 ) -> Result<StorageItemRegistry, Error> {
     let mut registry = item_registry();
-    match File::open(world.join(VERSION_FILE)) {
+    registry.version = match File::open(world.join(VERSION_FILE)) {
         Ok(file) => {
             let mut version = Vec::new();
             file.take(16).read_to_end(&mut version)?;
             match version.as_slice() {
-                CURRENT_VERSION => {}
-                b"2\n" => registry.decay_potion = false,
+                CURRENT_VERSION => StorageVersion::TippedArrows,
+                b"3\n" => StorageVersion::DrinkableDecay,
+                b"2\n" => StorageVersion::PotionAndEnchantment,
                 _ => return Err(invalid("unknown Bedrock storage import version")),
             }
         }
         // A legacy import may have replaced a previously skipped chest with an empty one.
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            registry.components = false;
-            registry.decay_potion = false;
-        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => StorageVersion::Plain,
         Err(error) => return Err(error.into()),
-    }
+    };
     Ok(registry)
 }
 
@@ -87,8 +97,8 @@ pub(in crate::chunk::io::bedrock_import) fn convert_stack(
         .iter()
         .filter(|(field, tag)| match field.as_ref() {
             "Slot" | "Name" | "Count" | "WasPickedUp" | "Block" => false,
-            "Damage" => !matches!(tag, NbtTag::Short(value) if *value >= 0 && (*value == 0 || items.components)),
-            "tag" => !matches!(tag, NbtTag::Compound(data) if data.is_empty() || items.components),
+            "Damage" => !matches!(tag, NbtTag::Short(value) if *value >= 0 && (*value == 0 || items.supports_components())),
+            "tag" => !matches!(tag, NbtTag::Compound(data) if data.is_empty() || items.supports_components()),
             _ => true,
         })
         .map(|(field, _)| field)
@@ -101,10 +111,17 @@ pub(in crate::chunk::io::bedrock_import) fn convert_stack(
         .by_name
         .get(name)
         .ok_or_else(|| format!("item {name:?} has no plain mapping"))?;
-    let item = JavaToBedrockItemMapping::from_bedrock(id, 0)
-        .map(|mapping| mapping.java_item)
-        .filter(|item| *item != &Item::AIR)
-        .ok_or_else(|| format!("item {name:?} has no plain mapping"))?;
+    let damage = u32::try_from(source.get_short("Damage").unwrap_or(0))
+        .map_err(|_| "invalid item Damage value")?;
+    let item =
+        if items.version >= StorageVersion::TippedArrows && bedrock::is_tipped_arrow(id, damage) {
+            &Item::TIPPED_ARROW
+        } else {
+            JavaToBedrockItemMapping::from_bedrock(id, 0)
+                .map(|mapping| mapping.java_item)
+                .filter(|item| *item != &Item::AIR)
+                .ok_or_else(|| format!("item {name:?} has no plain mapping"))?
+        };
     if let Some(block) = source.get("Block") {
         let block = block.extract_compound().ok_or("invalid block item data")?;
         let state = terrain
@@ -124,19 +141,17 @@ pub(in crate::chunk::io::bedrock_import) fn convert_stack(
     if count > stack.get_max_stack_size() {
         return Err(format!("item count {count} exceeds the stack limit"));
     }
-    let damage = source.get_short("Damage").unwrap_or(0);
     let potion = item
         .components
         .iter()
         .any(|(component, _)| *component == DataComponent::PotionContents);
     if potion {
-        if !items.components {
+        if !items.supports_components() {
             return Err(format!("item {name:?} requires potion data conversion"));
         }
-        let aux = u32::try_from(damage).map_err(|_| "invalid potion variant")?;
-        let contents = bedrock::potion_contents_from_bedrock(id, aux)
-            .filter(|contents| items.potion_aux(id, contents) == Some(aux))
-            .ok_or_else(|| format!("potion variant {aux} has no reversible mapping"))?;
+        let contents = bedrock::potion_contents_from_bedrock(id, damage)
+            .filter(|contents| items.potion_aux(id, contents) == Some(damage))
+            .ok_or_else(|| format!("potion variant {damage} has no reversible mapping"))?;
         stack.set_data_component(contents);
     } else if damage != 0 {
         return Err("unsupported item Damage value".into());
@@ -216,7 +231,7 @@ pub(in crate::chunk::io::bedrock_import) fn read_sculith_stack(
         .iter()
         .filter_map(|(field, value)| match field.as_ref() {
             "id" | "count" | "Slot" => None,
-            "components" if matches!(value, NbtTag::Compound(tag) if items.components || tag.is_empty()) => None,
+            "components" if matches!(value, NbtTag::Compound(tag) if items.supports_components() || tag.is_empty()) => None,
             _ => Some(field),
         })
         .min()
@@ -256,7 +271,10 @@ fn read_sculith_components(
                     .map(|mapping| mapping.bedrock_item.id)
                     .ok_or("unmapped potion item")?;
                 let potion = PotionContentsImpl::read_data(value)
-                    .filter(|potion| items.potion_aux(id, potion).is_some())
+                    .filter(|potion| {
+                        (bedrock::uses_potion_aux(id) || stack.item == &Item::TIPPED_ARROW)
+                            && items.potion_aux(id, potion).is_some()
+                    })
                     .ok_or("unmapped potion contents")?;
                 let reversible = if potion.potion_id.is_some() {
                     data.child_tags.len() == 1 && data.get("potion").is_some()
@@ -309,15 +327,16 @@ pub(in crate::chunk::io::bedrock_import) fn new_bedrock_stack(
         })?;
     let mut entry = NbtCompound::new();
     entry.put_string("Name", mapping.bedrock_item.registry_key.to_owned());
-    let damage = if bedrock::uses_potion_aux(mapping.bedrock_item.id) {
-        stack
-            .get_data_component::<PotionContentsImpl>()
-            .and_then(|potion| items.potion_aux(mapping.bedrock_item.id, potion))
-            .and_then(|aux| i16::try_from(aux).ok())
-            .ok_or("missing mapped potion contents")?
-    } else {
-        0
-    };
+    let damage =
+        if bedrock::uses_potion_aux(mapping.bedrock_item.id) || stack.item == &Item::TIPPED_ARROW {
+            stack
+                .get_data_component::<PotionContentsImpl>()
+                .and_then(|potion| items.potion_aux(mapping.bedrock_item.id, potion))
+                .and_then(|aux| i16::try_from(aux).ok())
+                .ok_or("missing mapped potion contents")?
+        } else {
+            0
+        };
     entry.put_short("Damage", damage);
     let enchantments = if stack.item == &Item::ENCHANTED_BOOK {
         stack

@@ -740,14 +740,13 @@ The import carries the seed and spawn into Sculith. New chunks use Sculith's
 generator, with supported Bedrock flat layers mapped to a flat preset.
 Ordinary single chests and barrels preserve the slots and counts of items
 with shared mappings. This includes default block items, standard drinkable,
-splash and lingering potion variants, and mapped enchantments on items and
-enchanted books. Drinkable Bedrock Decay is stored with its Wither effect and
-sent back to Bedrock with its native variant. Java receives a potion with a
-custom Wither effect. Export from an earlier import keeps its original
-container eligibility so that a skipped Decay item remains in the source
-copy. Variants with no reversible mapping still cause their container to be
-skipped as a unit. Paired chests and containers with other unsupported metadata
-are also skipped. The command reports excluded database records and shows the
+splash and lingering potion variants, tipped arrows from the Bedrock creative
+catalogue, and mapped enchantments on items and enchanted books. Drinkable
+Bedrock Decay and tipped arrows of Decay retain their Wither effect and native
+Bedrock variant. Java receives the corresponding potion or tipped arrow with a
+custom Wither effect. A container with an unsupported item variant is skipped
+as a unit. Paired chests and containers with other unsupported metadata are
+also skipped. The command reports excluded database records and shows the
 first 16 skipped block entities with their coordinates and reasons.
 
 Modern actor records indexed to a saved chunk can also bring in pigs, cows,
@@ -802,10 +801,10 @@ each dimension.
 
 The output uses the template's terrain, players and metadata. Imports record
 their storage conversion version alongside the saved world. New imports can
-transfer mapped potions and enchantments back into supported containers,
-including slot changes and additions. Exports from older imports use the
-plain-item rules used by those imports, preserving template containers that
-were originally skipped. The command reports preserved records. A missing or
+transfer mapped potions, tipped arrows and enchantments back into supported
+containers, including slot changes and additions. Exports from older imports
+use the item rules of those imports, preserving template containers that were
+originally skipped. The command reports preserved records. A missing or
 incompatible Sculith container blocks publication of the destination.
 
 ## Region header recovery

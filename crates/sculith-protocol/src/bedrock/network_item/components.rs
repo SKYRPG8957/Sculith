@@ -8,7 +8,7 @@ use pumpkin_nbt::{Nbt, NbtCompound};
 pub use bedrock::potion_contents_from_bedrock;
 
 pub(super) fn potion_aux(stack: &ItemStack, bedrock_id: i16) -> Option<u32> {
-    if !bedrock::uses_potion_aux(bedrock_id) {
+    if !bedrock::uses_potion_aux(bedrock_id) && stack.item != &Item::TIPPED_ARROW {
         return None;
     }
     bedrock::potion_aux_for_contents(

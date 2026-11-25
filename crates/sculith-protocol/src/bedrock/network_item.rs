@@ -790,7 +790,34 @@ mod tests {
             assert_eq!(decoded.aux_value, VarUInt(aux));
         }
         assert!(potion_contents_from_bedrock(BedrockItem::POTION.id, 100).is_none());
-        assert!(potion_contents_from_bedrock(BedrockItem::ARROW.id, 21).is_none());
+    }
+
+    #[test]
+    fn preserves_native_tipped_arrows_in_item_descriptors() {
+        let arrow = BedrockItem::ARROW.id;
+        for aux in 6..=47 {
+            let contents = potion_contents_from_bedrock(arrow, aux).unwrap();
+            let mut stack = ItemStack::new(1, &Item::TIPPED_ARROW);
+            stack.set_data_component(contents);
+            let item = NetworkItemDescriptor::from(&stack);
+            assert_eq!(item.id.0, i32::from(arrow));
+            for encoded_aux in [
+                item.aux_value,
+                ItemStackWrapper::from(&stack).aux_value,
+                NetworkItemStackDescriptor::from(&stack).aux_value,
+            ] {
+                assert_eq!(encoded_aux, VarUInt(aux));
+            }
+        }
+        let ordinary = ItemStack::new(1, &Item::ARROW);
+        assert_eq!(NetworkItemDescriptor::from(&ordinary).aux_value, VarUInt(0));
+        for invalid in [0, 5, 48] {
+            assert!(potion_contents_from_bedrock(arrow, invalid).is_none());
+        }
+        assert_eq!(
+            potion_contents_from_bedrock(arrow, 37),
+            potion_contents_from_bedrock(BedrockItem::POTION.id, 36)
+        );
     }
 
     #[test]
