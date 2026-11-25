@@ -10,7 +10,13 @@ use std::{
 };
 
 use leveldb::{CompactionMode, Compressor, CompressorList, DB, Options, Status, StatusCode};
-use pumpkin_data::{Block, BlockStateId, biome::Biome, dimension::Dimension};
+use pumpkin_data::{
+    Block, BlockStateId,
+    bedrock_game_rules::BEDROCK_RULES,
+    biome::Biome,
+    dimension::Dimension,
+    game_rules::{GameRuleRegistry, GameRuleValue},
+};
 use pumpkin_nbt::{
     COMPOUND_ID, END_ID, Nbt,
     compound::NbtCompound,
@@ -877,7 +883,26 @@ fn read_level(
     {
         return Err(invalid("Bedrock spawn is out of world bounds"));
     }
+    import_game_rules(&data, &mut info.game_rules)?;
+    if let Some(time) = data.get_long("Time") {
+        info.day_time = time;
+    }
     Ok((info, default_generator_selected))
+}
+
+fn import_game_rules(data: &NbtCompound, registry: &mut GameRuleRegistry) -> Result<(), Error> {
+    for (rule, wire_name) in BEDROCK_RULES {
+        let saved_name = wire_name.to_ascii_lowercase();
+        let Some(saved) = data.get(&saved_name) else {
+            continue;
+        };
+        match (saved, registry.get_mut(rule)) {
+            (NbtTag::Byte(value), GameRuleValue::Bool(target)) => *target = *value != 0,
+            (NbtTag::Int(value), GameRuleValue::Int(target)) => *target = i64::from(*value),
+            _ => return Err(invalid(format!("invalid Bedrock game rule {saved_name}"))),
+        }
+    }
+    Ok(())
 }
 
 fn flat_level(

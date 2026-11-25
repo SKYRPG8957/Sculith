@@ -1226,3 +1226,25 @@ fn imports_players_with_separate_saved_and_respawn_dimensions() {
     );
     assert_eq!(respawn.get("pos"), Some(&NbtTag::IntArray(vec![-3, 65, 3])));
 }
+
+#[test]
+fn retains_saved_bedrock_game_rules_with_their_native_types() {
+    let mut data = NbtCompound::new();
+    data.put_bool("dodaylightcycle", false);
+    data.put_bool("keepinventory", true);
+    data.put_bool("falldamage", false);
+    data.put_int("randomtickspeed", 7);
+    data.put_int("playerssleepingpercentage", 28);
+    data.put_bool("showcoordinates", true);
+    let mut rules = GameRuleRegistry::default();
+    import_game_rules(&data, &mut rules).unwrap();
+    assert!(!rules.advance_time);
+    assert!(rules.keep_inventory);
+    assert!(!rules.fall_damage);
+    assert_eq!(rules.random_tick_speed, 7);
+    assert_eq!(rules.players_sleeping_percentage, 28);
+    assert!(rules.pvp);
+
+    data.put_string("randomtickspeed", "7".to_owned());
+    assert!(import_game_rules(&data, &mut rules).is_err());
+}
