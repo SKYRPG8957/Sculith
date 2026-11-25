@@ -1,7 +1,7 @@
 //! Delivery of immutable editions compiled from the authored Bedrock source.
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{BTreeMap, HashSet, VecDeque},
     io,
     net::IpAddr,
     sync::{Arc, Mutex, RwLock, TryLockError, Weak},
@@ -62,6 +62,7 @@ pub struct SharedResources {
     // The authored files can change. Bindings stay stable for clients with older packs.
     models: Vec<ModelMapping>,
     sounds: Vec<SoundMapping>,
+    form_icons: BTreeMap<String, String>,
     pub actor_identifiers: Bytes,
     http_slots: Semaphore,
 }
@@ -117,6 +118,7 @@ pub async fn prepare(
     Ok(Some(Arc::new(SharedResources {
         models: report.converted_models.clone(),
         sounds: report.converted_sounds.clone(),
+        form_icons: report.form_icons.clone(),
         revisions: RwLock::new(Revisions {
             source,
             active: pack,
@@ -234,6 +236,12 @@ impl SharedResources {
 
     pub fn model(&self, name: &str) -> Option<&ModelMapping> {
         self.models.iter().find(|mapping| mapping.java == name)
+    }
+
+    pub(crate) fn form_icon(&self, path: &str) -> Option<&str> {
+        self.form_icons
+            .get(path.strip_suffix(".png").unwrap_or(path))
+            .map(String::as_str)
     }
 
     /// Resolve a shared Java sound identifier to its authored Bedrock event name.

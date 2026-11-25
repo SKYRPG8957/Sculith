@@ -8,7 +8,7 @@ mod models;
 mod sounds;
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fs,
     io::{Cursor, Read},
     path::{Component, Path},
@@ -112,6 +112,8 @@ pub struct ConversionReport {
     pub companion_forms: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub form_fonts: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub form_icons: BTreeMap<String, String>,
     pub converted_textures: usize,
     pub converted_sounds: Vec<SoundMapping>,
     pub converted_models: Vec<ModelMapping>,
@@ -213,6 +215,7 @@ fn convert_with_mapping(
         .prefix(".sculith-pack-")
         .tempdir_in(&parent)?;
     let mut targets = HashSet::new();
+    let mut form_icons = BTreeMap::new();
     let mut total_bytes = 0;
     for entry in &mapping.textures {
         let target = java_texture_path(&entry.java)?;
@@ -231,6 +234,13 @@ fn convert_with_mapping(
         let file = stage.path().join(target);
         fs::create_dir_all(file.parent().context("missing texture parent")?)?;
         fs::write(file, bytes)?;
+        if let Some(sprite) = entry.java.strip_prefix("minecraft:gui/sprites/dialog/")
+            && let Some(texture) = entry.bedrock.strip_suffix(".png")
+        {
+            form_icons
+                .entry(texture.to_owned())
+                .or_insert_with(|| format!("minecraft:dialog/{sprite}"));
+        }
     }
 
     if mapping.companion_forms {
@@ -266,6 +276,7 @@ fn convert_with_mapping(
         java_pack_format: pack_format,
         java_pack_format_minor: pack_format_minor,
         companion_forms: mapping.companion_forms,
+        form_icons,
         converted_textures: mapping.textures.len(),
         converted_sounds: mapping.sounds.clone(),
         converted_models: mapping.models.clone(),
@@ -679,7 +690,12 @@ mod tests {
         assert!(!dir.path().join("java").exists());
         data["bitmap_fonts"][0]["chars"] = serde_json::json!(["\u{e100}"]);
         fs::write(mapping, data.to_string()).unwrap();
-        assert_eq!(run(&dir).unwrap().form_fonts, ["sculith:intro/engine"]);
+        let report = run(&dir).unwrap();
+        assert_eq!(report.form_fonts, ["sculith:intro/engine"]);
+        assert_eq!(
+            report.form_icons["textures/blocks/stone"],
+            "minecraft:dialog/warning_button"
+        );
         let java = dir.path().join("java/assets");
         let font: serde_json::Value =
             read_json(&java.join("sculith/font/intro/engine.json")).unwrap();

@@ -26,6 +26,8 @@ use crate::{
     plugin::api::events::player::bedrock_form_response::BedrockFormResponseEvent, server::Server,
 };
 
+use crate::resource_pack::SharedResources;
+
 use super::Player;
 
 pub(crate) const SHARED_FORM_BIT: u32 = 1 << 31;
@@ -137,9 +139,7 @@ impl Form {
                 }
                 for button in buttons {
                     check_text(&button.text)?;
-                    if button.image.is_some() {
-                        return Err(invalid("Button images are not supported by shared forms"));
-                    }
+                    button.image_path()?;
                 }
             }
             Self::Modal {
@@ -233,7 +233,29 @@ impl Form {
         Ok(Some(value.to_string()))
     }
 
-    fn java_dialog(&self, prefix: &str) -> NbtCompound {
+    fn mapped_images<'a>(
+        &self,
+        shared: Option<&'a SharedResources>,
+    ) -> Result<Vec<Option<&'a str>>, String> {
+        let Self::Simple { buttons, .. } = self else {
+            return Ok(Vec::new());
+        };
+        buttons
+            .iter()
+            .map(|button| {
+                button.image_path()?.map_or(Ok(None), |path| {
+                    shared
+                        .and_then(|pack| pack.form_icon(path))
+                        .map(Some)
+                        .ok_or_else(|| {
+                            format!("Shared form image {path:?} has no dialog sprite mapping")
+                        })
+                })
+            })
+            .collect()
+    }
+
+    fn java_dialog(&self, prefix: &str, images: &[Option<&str>]) -> NbtCompound {
         let (title, body, buttons) = match self {
             Self::Simple {
                 title,
@@ -246,7 +268,8 @@ impl Form {
                     .iter()
                     .enumerate()
                     .map(|(index, button)| {
-                        action_button(&button.text, &format!("{prefix}/{index}"), false)
+                        let image = images.get(index).copied().flatten();
+                        action_button(&button.text, &format!("{prefix}/{index}"), false, image)
                     })
                     .collect(),
             ),
@@ -259,8 +282,8 @@ impl Form {
                 title,
                 vec![plain_message(content)],
                 vec![
-                    action_button(button1, &format!("{prefix}/0"), false),
-                    action_button(button2, &format!("{prefix}/1"), false),
+                    action_button(button1, &format!("{prefix}/0"), false, None),
+                    action_button(button2, &format!("{prefix}/1"), false, None),
                 ],
             ),
             Self::Custom { title, content } => (
@@ -309,6 +332,28 @@ impl Form {
             dialog.put("inputs", NbtTag::List(inputs));
         }
         dialog
+    }
+}
+
+impl Button {
+    fn image_path(&self) -> Result<Option<&str>, String> {
+        let Some(image) = &self.image else {
+            return Ok(None);
+        };
+        let invalid_path = || invalid("Shared form images require a local Bedrock texture path");
+        let object = image
+            .as_object()
+            .filter(|object| object.len() == 2)
+            .ok_or_else(invalid_path)?;
+        if object.get("type").and_then(Value::as_str) != Some("path") {
+            return Err(invalid_path());
+        }
+        let path = object
+            .get("data")
+            .and_then(Value::as_str)
+            .filter(|path| path.starts_with("textures/") && path.len() <= 512)
+            .ok_or_else(invalid_path)?;
+        Ok(Some(path))
     }
 }
 
@@ -501,9 +546,27 @@ fn plain_message(text: &str) -> NbtTag {
     NbtTag::Compound(message)
 }
 
-fn action_button(text: &str, id: &str, dynamic: bool) -> NbtTag {
+fn action_button(text: &str, id: &str, dynamic: bool, image: Option<&str>) -> NbtTag {
     let mut button = action_button_translated("", id, dynamic);
-    button.put("label", text_tag(text));
+    let label = image.map_or_else(
+        || text_tag(text),
+        |sprite| {
+            let mut icon = NbtCompound::new();
+            icon.put_string("atlas", "minecraft:gui".into());
+            icon.put_string("sprite", sprite.into());
+            icon.put_string("fallback", String::new());
+            let mut caption = NbtCompound::new();
+            caption.put_string("text", format!(" {text}"));
+            let mut label = NbtCompound::new();
+            label.put_string("text", String::new());
+            label.put_list(
+                "extra",
+                vec![NbtTag::Compound(icon), NbtTag::Compound(caption)],
+            );
+            NbtTag::Compound(label)
+        },
+    );
+    button.put("label", label);
     NbtTag::Compound(button)
 }
 
@@ -563,6 +626,7 @@ impl FormSession {
         form: Form,
         java: bool,
         now: Instant,
+        images: &[Option<&str>],
     ) -> Result<(u32, Option<NbtCompound>), String> {
         if self
             .pending
@@ -576,7 +640,7 @@ impl FormSession {
             .checked_add(1)
             .ok_or_else(|| invalid("Form IDs exhausted for this connection"))?;
         let prefix = format!("{ACTION_PREFIX}{id}/{:032x}", Uuid::new_v4().as_u128());
-        let dialog = java.then(|| form.java_dialog(&prefix));
+        let dialog = java.then(|| form.java_dialog(&prefix, images));
         self.pending = Some(PendingForm {
             id,
             prefix,
@@ -663,6 +727,24 @@ impl Player {
         {
             return Err(invalid("Shared forms require Java 1.21.6 or later in play"));
         }
+        let shared = match &form {
+            Form::Simple { buttons, .. } if buttons.iter().any(|button| button.image.is_some()) => {
+                self.world()
+                    .server
+                    .upgrade()
+                    .and_then(|server| server.shared_resources.clone())
+            }
+            _ => None,
+        };
+        let images = form.mapped_images(shared.as_deref())?;
+        let java_images = match self.client.as_ref() {
+            ClientPlatform::Java(client)
+                if client.version.load() >= JavaMinecraftVersion::V_26_3 =>
+            {
+                images.as_slice()
+            }
+            _ => &[],
+        };
         let native_json = if matches!(self.client.as_ref(), ClientPlatform::Bedrock(_)) {
             let data = serde_json::to_value(&form).map_err(|error| error.to_string())?;
             let encoded = CModalFormRequest::encode_plugin_form(data);
@@ -681,6 +763,7 @@ impl Player {
                 form,
                 matches!(self.client.as_ref(), ClientPlatform::Java(_)),
                 Instant::now(),
+                java_images,
             )?;
         // Packet observers can call back into the plugin and open another form.
         // Keep the session installed, with its lock released, until delivery succeeds.
@@ -785,12 +868,12 @@ mod tests {
     fn binds_java_replies_to_one_player_and_one_request() {
         let now = Instant::now();
         let mut session = FormSession::default();
-        let (id, dialog) = session.open(simple(), true, now).unwrap();
+        let (id, dialog) = session.open(simple(), true, now, &[]).unwrap();
         assert!(dialog.is_some());
-        assert!(session.open(simple(), true, now).is_err());
+        assert!(session.open(simple(), true, now, &[]).is_err());
         let action = format!("{}/0", session.pending.as_ref().unwrap().prefix);
         let mut other = FormSession::default();
-        other.open(simple(), true, now).unwrap();
+        other.open(simple(), true, now, &[]).unwrap();
         assert_eq!(other.java_response(&action, None, now), FormReply::Invalid);
         assert_eq!(
             session.java_response("sculith:ui/forged/0", None, now),
@@ -815,7 +898,7 @@ mod tests {
             session.java_response("example:other_dialog", None, now),
             FormReply::Unhandled
         );
-        let (new_id, _) = session.open(simple(), true, now).unwrap();
+        let (new_id, _) = session.open(simple(), true, now, &[]).unwrap();
         assert_ne!(new_id, id);
         assert_eq!(
             session.java_response(&action, None, now),
@@ -827,7 +910,7 @@ mod tests {
     fn rejects_native_replay_wrong_ids_and_invalid_choices() {
         let now = Instant::now();
         let mut session = FormSession::default();
-        let (id, dialog) = session.open(simple(), false, now).unwrap();
+        let (id, dialog) = session.open(simple(), false, now, &[]).unwrap();
         assert!(dialog.is_none());
         assert_eq!(
             session.bedrock_response(1, Some("0"), now),
@@ -863,13 +946,13 @@ mod tests {
     fn expires_and_closes_sessions_without_reusing_ids() {
         let now = Instant::now();
         let mut session = FormSession::default();
-        let (id, _) = session.open(simple(), true, now).unwrap();
+        let (id, _) = session.open(simple(), true, now, &[]).unwrap();
         let cancel = format!("{}/cancel", session.pending.as_ref().unwrap().prefix);
         assert_eq!(
             session.java_response(&cancel, None, now),
             FormReply::Valid { id, data: None }
         );
-        let (next, _) = session.open(simple(), false, now).unwrap();
+        let (next, _) = session.open(simple(), false, now, &[]).unwrap();
         session.abort(id);
         assert!(session.pending.is_some());
         assert_eq!(
@@ -877,7 +960,9 @@ mod tests {
             FormReply::Invalid
         );
         assert!(session.pending.is_none());
-        let (last, _) = session.open(simple(), false, now + FORM_LIFETIME).unwrap();
+        let (last, _) = session
+            .open(simple(), false, now + FORM_LIFETIME, &[])
+            .unwrap();
         assert!(last > next);
         assert_eq!(
             session.bedrock_response(last, Some("null\n"), now + FORM_LIFETIME),
@@ -887,7 +972,7 @@ mod tests {
             }
         );
         session.next_id = u32::MAX;
-        assert!(session.open(simple(), true, now).is_err());
+        assert!(session.open(simple(), true, now, &[]).is_err());
     }
 
     #[test]
@@ -896,6 +981,46 @@ mod tests {
         assert_eq!(form.java_response("0", None), Ok(Some("true".into())));
         assert_eq!(form.java_response("1", None), Ok(Some("false".into())));
         assert_eq!(form.java_response("cancel", None), Ok(None));
+    }
+
+    #[test]
+    fn preserves_native_path_and_projects_a_bound_image_into_the_java_label() {
+        let form = Form::from_json(json!({
+            "type": "form",
+            "title": "Welcome",
+            "content": "",
+            "buttons": [{
+                "text": "Start",
+                "image": {"type": "path", "data": "textures/ui/welcome"}
+            }]
+        }))
+        .unwrap();
+        assert!(form.mapped_images(None).is_err());
+        let native = CModalFormRequest::encode_plugin_form(serde_json::to_value(&form).unwrap());
+        let native: Value = serde_json::from_str(&native).unwrap();
+        assert_eq!(
+            native["elements"][0]["image"]["data"],
+            "textures/ui/welcome"
+        );
+
+        let sprite = "minecraft:dialog/sculith/welcome";
+        let dialog = form.java_dialog("sculith:ui/test", &[Some(sprite)]);
+        let button = dialog.get_list("actions").unwrap()[0]
+            .extract_compound()
+            .unwrap();
+        let label = button.get_compound("label").unwrap();
+        let parts = label.get_list("extra").unwrap();
+        let icon = parts[0].extract_compound().unwrap();
+        assert_eq!(icon.get_string("atlas"), Some("minecraft:gui"));
+        assert_eq!(icon.get_string("sprite"), Some(sprite));
+        assert_eq!(
+            parts[1].extract_compound().unwrap().get_string("text"),
+            Some(" Start")
+        );
+        assert_eq!(
+            button.get_compound("action").unwrap().get_string("id"),
+            Some("sculith:ui/test/0")
+        );
     }
 
     #[test]

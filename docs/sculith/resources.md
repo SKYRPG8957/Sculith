@@ -182,9 +182,15 @@ The lower half remains available to the edition-specific Bedrock form API.
 Closing a modal is distinct from choosing its second button.
 
 Shared forms support at most 64 buttons or elements, 32 KiB per definition or
-reply, and 1024 UTF-16 units per text input. Button images are rejected because
-vanilla Java dialogs cannot display them. The projection is verified on Java
-26.3; versions before 1.21.6 do not support dialogs.
+reply, and 1024 UTF-16 units per text input. A simple form button can use a
+Bedrock texture path when that PNG is mapped under
+`minecraft:gui/sprites/dialog/` in `textures`. For example, map the authored
+`textures/ui/welcome.png` to `minecraft:gui/sprites/dialog/sculith/welcome`
+and pass `path_image("textures/ui/welcome")` to the button builder. Bedrock
+uses the authored path. Java 26.3 uses the converted GUI sprite alongside the
+button label. Earlier Java versions that support shared forms show the label.
+Button images use local pack paths. Shared dialogs require Java 1.21.6 or
+later.
 Java displays custom-form labels above its input controls, uses cycle buttons
 for dropdowns and step sliders, and shows text placeholders as label tooltips.
 The layouts differ; the response types and element indices are shared. This API
