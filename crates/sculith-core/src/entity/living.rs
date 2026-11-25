@@ -2439,7 +2439,6 @@ impl LivingEntity {
         };
 
         let air_drag_modifier = self.get_attribute_value(&Attributes::AIR_DRAG_MODIFIER) as f32;
-        let air_drag = Self::compute_modified_friction(0.91, air_drag_modifier);
         let block_friction = self.get_block_friction();
         let speed = if self.entity.on_ground.load(Relaxed) {
             Self::friction_influenced_speed(effective_speed, block_friction)
@@ -2449,8 +2448,6 @@ impl LivingEntity {
                 super::player::Player::get_off_ground_speed,
             )
         };
-        let friction = block_friction * air_drag;
-
         self.entity
             .update_velocity_from_input(self.movement_input.load(), speed);
 
@@ -2484,14 +2481,27 @@ impl LivingEntity {
             // if below world's bottom y then -0.1, else 0.0
         }
 
-        if !self.discard_friction.load(Relaxed) {
-            velo.x *= friction;
-            velo.z *= friction;
-            velo.y *= Self::air_vertical_drag(caller, air_drag_modifier, air_drag);
-        }
-
-        self.entity.velocity.store(velo);
+        let (velocity, friction) =
+            self.apply_air_drag(caller, velo, air_drag_modifier, block_friction);
+        self.entity.velocity.store(velocity);
         friction
+    }
+
+    fn apply_air_drag(
+        &self,
+        caller: &dyn EntityBase,
+        mut velocity: Vector3<f64>,
+        modifier: f32,
+        block_friction: f64,
+    ) -> (Vector3<f64>, f64) {
+        let air_drag = Self::compute_modified_friction(0.91, modifier);
+        let friction = block_friction * air_drag;
+        if !self.discard_friction.load(Relaxed) {
+            velocity.x *= friction;
+            velocity.z *= friction;
+            velocity.y *= Self::air_vertical_drag(caller, modifier, air_drag);
+        }
+        (velocity, friction)
     }
 
     fn air_vertical_drag(caller: &dyn EntityBase, modifier: f32, horizontal_drag: f64) -> f64 {

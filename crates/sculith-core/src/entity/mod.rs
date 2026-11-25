@@ -3020,6 +3020,10 @@ impl Entity {
     // Part of LivingEntity.tickMovement() in yarn
 
     pub fn check_zero_velo(&self) {
+        self.velocity.store(self.velocity_after_cutoff());
+    }
+
+    fn velocity_after_cutoff(&self) -> Vector3<f64> {
         let mut motion = self.velocity.load();
 
         if self.entity_type == &EntityType::PLAYER {
@@ -3042,7 +3046,7 @@ impl Entity {
             motion.y = 0.0;
         }
 
-        self.velocity.store(motion);
+        motion
     }
 
     #[expect(dead_code)]

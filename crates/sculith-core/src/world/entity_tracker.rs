@@ -1348,7 +1348,14 @@ impl TrackedEntity {
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) {
         let chunk = entity.chunk_pos.load();
-        let Some(viewers) = self.try_regional_move_viewers(chunk) else {
+        let section = self.last_section_pos.load();
+        let crossed_chunk = (section.x, section.z) != (chunk.x, chunk.y);
+        if crossed_chunk && !entity.entity_type.mob {
+            return;
+        }
+        // Full positions can reach already paired mob viewers before the world
+        // refreshes the tracking section. The new chunk still has to be ready.
+        let Some(viewers) = self.try_regional_pairings() else {
             return;
         };
         let pos = entity.pos.load();
@@ -1376,10 +1383,17 @@ impl TrackedEntity {
         let mut java = RegionalMoveDelivery::default();
         let mut bedrock = RegionalMoveDelivery::default();
         for player in viewers.players.values() {
+            let in_range = !crossed_chunk
+                || in_tracking_range(
+                    player.get_entity().pos.load(),
+                    pos,
+                    get_view_distance(player).get() as i32,
+                    self.tracking_range,
+                );
             match player.client.as_ref() {
                 ClientPlatform::Java(client) if send_java => {
                     java.viewers += 1;
-                    if client.version.load() != CURRENT_MC_VERSION {
+                    if !in_range || client.version.load() != CURRENT_MC_VERSION {
                         continue;
                     }
                     let Some(_chunk) = try_ready_regional_viewer(player, world, chunk) else {
@@ -1403,7 +1417,7 @@ impl TrackedEntity {
                 }
                 ClientPlatform::Bedrock(client) if send_bedrock => {
                     bedrock.viewers += 1;
-                    if !client.is_current_protocol() {
+                    if !in_range || !client.is_current_protocol() {
                         continue;
                     }
                     let Some(_chunk) = try_ready_regional_viewer(player, world, chunk) else {

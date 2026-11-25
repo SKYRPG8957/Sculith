@@ -80,10 +80,10 @@ impl LivingEntity {
             return;
         }
 
-        let movement = entity.velocity.load();
-        if movement.x != 0.0
-            || movement.z != 0.0
-            || !(-2.0..=-0.003).contains(&movement.y)
+        let movement = entity.velocity_after_cutoff();
+        // Bound the span of the palette sweep for large external impulses.
+        if !(-2.0..=-0.003).contains(&movement.y)
+            || !(0.0..=1.0).contains(&movement.horizontal_length_squared())
             || self.movement_input.load() != Vector3::default()
         {
             return;
@@ -93,16 +93,12 @@ impl LivingEntity {
         let Ok(attributes) = self.attributes.try_read() else {
             return;
         };
-        let next_y = movement.y - Self::attribute_value_from(&attributes, &Attributes::GRAVITY);
-        let next_y = if self.discard_friction.load(Relaxed) {
-            next_y
-        } else {
-            let modifier =
-                Self::attribute_value_from(&attributes, &Attributes::AIR_DRAG_MODIFIER) as f32;
-            let air_drag = Self::compute_modified_friction(0.91, modifier);
-            next_y * Self::air_vertical_drag(caller, modifier, air_drag)
-        };
-        if !next_y.is_finite() {
+        let gravity = Self::attribute_value_from(&attributes, &Attributes::GRAVITY);
+        let modifier =
+            Self::attribute_value_from(&attributes, &Attributes::AIR_DRAG_MODIFIER) as f32;
+        let (velocity, _) =
+            self.apply_air_drag(caller, movement.add_raw(0.0, -gravity, 0.0), modifier, 1.0);
+        if !velocity.length_squared().is_finite() {
             return;
         }
         let position = entity.pos.load() + movement;
@@ -157,7 +153,7 @@ impl LivingEntity {
                         entity.horizontal_collision.store(false, Relaxed);
                         entity.vertical_collision.store(false, Relaxed);
                         entity.supporting_block_pos.store(None);
-                        entity.velocity.store(Vector3::new(0.0, next_y, 0.0));
+                        entity.velocity.store(velocity);
                         if caller.get_mob().is_some_and(Mob::should_check_fall_damage) {
                             self.accumulate_fall_distance(movement.y);
                         }

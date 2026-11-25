@@ -980,23 +980,27 @@ mod tests {
     async fn falling_livestock_shares_the_motion_deadline_with_its_world() {
         use pumpkin_data::Block;
         use pumpkin_world::world::BlockFlags;
-        use sculith_util::math::position::BlockPos;
+        use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos};
 
         let folder = tempfile::tempdir().unwrap();
         let server = test_server(folder.path()).await;
         let world = server.worlds.load()[0].clone();
-        let chunk = Vector2::new(0, 0);
-        let layout = Arc::new(RegionLayout::from_active(
-            FxHashMap::from_iter([(chunk, 0)]),
-            FxHashMap::from_iter([(0, [chunk].into())]),
+        let west = Vector2::new(0, 0);
+        let east = Vector2::new(1, 0);
+        let split = Arc::new(RegionLayout::from_active(
+            FxHashMap::from_iter([(west, 0), (east, 1)]),
+            FxHashMap::from_iter([(0, [west].into()), (1, [east].into())]),
         ));
-        world.publish_region_layout(&layout, false);
-        world
-            .level
-            .loaded_chunks
-            .insert(chunk, ChunkData::empty_sync(0, 0));
+        world.publish_region_layout(&split, false);
+        for chunk in [west, east] {
+            world
+                .level
+                .loaded_chunks
+                .insert(chunk, ChunkData::empty_sync(chunk.x, chunk.y));
+        }
 
-        let origin = Vector3::new(8.5, 80.0, 8.5);
+        let origin = Vector3::new(15.875, 80.0, 8.5);
+        let impulse = Vector3::new(0.25, -0.25, -0.0625);
         let cow = crate::entity::passive::cow::CowEntity::new(Entity::new(
             world.clone(),
             origin,
@@ -1004,7 +1008,7 @@ mod tests {
         ));
         let base = cow.get_entity();
         base.first_tick.store(false, Relaxed);
-        base.set_velocity(Vector3::new(0.0, -0.25, 0.0));
+        base.set_velocity(impulse);
         world.add_entity_silent(cow.clone());
 
         let deadline = TickDeadline {
@@ -1012,11 +1016,32 @@ mod tests {
             period: Duration::from_millis(50),
         };
         let living = cow.get_living_entity().unwrap();
+        world.advance_region_time(0, split.chunks(0).unwrap(), deadline);
+        assert_eq!(base.pos.load(), origin);
+        assert_eq!(base.velocity.load(), impulse);
+        assert_eq!(living.fall_distance.load(), 0.0);
+
+        let layout = Arc::new(RegionLayout::from_active(
+            FxHashMap::from_iter([(west, 0), (east, 0)]),
+            FxHashMap::from_iter([(0, [west, east].into())]),
+        ));
+        world.publish_region_layout(&layout, false);
         let chunks = layout.chunks(0).unwrap();
         world.advance_region_time(0, chunks, deadline);
-        let moved = origin.add_raw(0.0, -0.25, 0.0);
+        let moved = origin + impulse;
         assert_eq!(base.pos.load(), moved);
+        assert_eq!(base.chunk_pos.load(), east);
+        let velocity = base.velocity.load();
+        assert_eq!(velocity.x, impulse.x * f64::from(0.91f32));
+        assert_eq!(velocity.z, impulse.z * f64::from(0.91f32));
         assert_eq!(living.fall_distance.load(), 0.25);
+        let leading_edge = BoundingBox::of_size(Vector3::new(16.5, 80.0, 8.5), 0.1, 0.1, 0.1);
+        assert!(
+            world
+                .get_entities_at_box(&leading_edge)
+                .iter()
+                .any(|actor| { actor.get_entity().entity_id == base.entity_id })
+        );
         world.advance_region_time(0, chunks, deadline);
         tick_actor_with_deadline(base.entity_id, Some(deadline), || {
             cow.tick(cow.as_ref(), &server);
@@ -1025,7 +1050,7 @@ mod tests {
         assert_eq!(living.fall_distance.load(), 0.25);
 
         world.set_block_state(
-            &BlockPos::new(8, 78, 8),
+            &BlockPos::new(16, 78, 8),
             Block::STONE.default_state.id,
             BlockFlags::empty(),
         );

@@ -501,12 +501,15 @@ change, such as after a custom size override.
 The world handles relocation, attached actors, translated clients, observers
 and metadata delivery that the region could not queue.
 
-An isolated cow, pig or sheep descending vertically through clear air can
-advance its travel on its region. That step updates the position, bounds,
-velocity and accumulated fall distance together. Both owners share the
-actor's motion deadline. The existing tracker can queue the changed pose to
-paired current-protocol Java and Bedrock viewers. The world runs AI, landing,
-fluid or block contact, coordinated ticks and work with plugin observers.
+An isolated cow, pig or sheep descending through clear air can advance its
+travel on its region, including horizontal momentum. That step updates the
+position, bounds, velocity and accumulated fall distance together. A move
+can cross a chunk boundary when the same region owns the entire sweep. The
+tracker sends the full position to paired current-protocol Java and Bedrock
+viewers in range who already have the destination terrain. The world refreshes
+pairings and handles travel across ownership boundaries. Both owners share
+the actor's motion deadline. The world runs AI, landing, fluid or block
+contact, coordinated ticks and work with plugin observers.
 
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the
