@@ -211,6 +211,10 @@ Jobs with unchanged chunk membership keep their existing write authority.
 A late owner drops missed starts and cannot accumulate a queue of catch-up
 ticks.
 
+Loaded worlds share a bounded background pool for stronghold layouts. Local
+chunk searches and the full layout reuse each ring's calculated position.
+The pool stops preparing rings for a world once its cache is dropped.
+
 A timer that expires stays with its chunk until the world takes it for the
 block or fluid callback phase. While it waits, the same timer cannot be
 scheduled again and a save stores it with zero remaining delay. This uses

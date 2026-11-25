@@ -46,7 +46,7 @@ pub struct GlobalStructureCache {
     /// [`Self::ensure_strongholds_generated`]; readers then wait for it.
     stronghold_job: Option<StrongholdJob>,
     stronghold_job_started: Once,
-    stronghold_bounds: OnceLock<StrongholdRingBounds>,
+    stronghold_bounds: OnceLock<Arc<StrongholdRingBounds>>,
     /// Memoized structure starts, keyed by (structure, start chunk x, start chunk z).
     ///
     /// A jigsaw structure's placement is fully determined by its start chunk and the
@@ -70,6 +70,33 @@ struct StrongholdRingBounds {
     fallback_router: OnceLock<Arc<ProtoMultiNoiseRouter>>,
 }
 
+impl StrongholdRingBounds {
+    fn resolve(&self, index: usize, router: &ProtoMultiNoiseRouter) -> (i32, i32) {
+        *self.resolved[index].get_or_init(|| {
+            GlobalStructureCache::search_ring(self.tasks[index], router, self.preferred_biomes)
+        })
+    }
+}
+
+fn stronghold_workers() -> Option<&'static rayon::ThreadPool> {
+    static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
+    POOL.get_or_init(|| {
+        let cpus = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        match rayon::ThreadPoolBuilder::new()
+            .num_threads(cpus.div_ceil(4).min(4))
+            .thread_name(|i| format!("Stronghold-Cache-{i}"))
+            .build()
+        {
+            Ok(pool) => Some(pool),
+            Err(err) => {
+                tracing::warn!("Failed to start stronghold workers, computing inline: {err}");
+                None
+            }
+        }
+    })
+    .as_ref()
+}
+
 #[derive(Clone, Copy)]
 struct RingTask {
     initial_x: i32,
@@ -90,7 +117,7 @@ impl GlobalStructureCache {
         }
     }
 
-    /// Creates a cache whose stronghold ring positions are computed on a background thread
+    /// Creates a cache whose stronghold ring positions are computed on background workers
     /// once [`Self::ensure_strongholds_generated`] is first called.
     #[must_use]
     pub fn with_background_strongholds(
@@ -114,42 +141,35 @@ impl GlobalStructureCache {
             return;
         };
         self.stronghold_job_started.call_once(|| {
-            let (seed, placement) = (job.seed, job.placement);
-            let target = self.stronghold_chunks.clone();
+            let bounds = self.stronghold_bounds(job.seed, job.placement).clone();
+            let target = Arc::downgrade(&self.stronghold_chunks);
             let router = job.multi_noise.clone();
-            let spawned = std::thread::Builder::new()
-                .name("Stronghold-Rings".to_string())
-                .spawn(move || {
-                    let compute = || Self::calculate_strongholds(seed, placement, &router);
-                    // Global Rayon workers may block on this result, so the search must never
-                    // run on that pool: use a private pool, or this thread alone if none can be built.
-                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        rayon::ThreadPoolBuilder::new()
-                            .thread_name(|i| format!("Stronghold-Rings-{i}"))
-                            .build()
-                            .map_or_else(
-                                |_| {
-                                    Self::calculate_strongholds_sequential(seed, placement, &router)
-                                },
-                                |pool| pool.install(compute),
-                            )
-                    }));
-                    if result.is_err() {
-                        tracing::error!("Stronghold ring calculation panicked");
+            let compute = move |parallel: bool| {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let indices = 0..bounds.tasks.len();
+                    let resolve = |index| {
+                        // Stop preparing rings once this world no longer owns the cache.
+                        (target.strong_count() != 0).then(|| bounds.resolve(index, &router))
+                    };
+                    if parallel {
+                        indices.into_par_iter().panic_fuse().map(resolve).collect()
+                    } else {
+                        indices.map(resolve).collect()
                     }
-                    let _ = target.set(result.ok());
-                });
-            if let Err(err) = spawned {
-                tracing::warn!("Failed to spawn stronghold ring thread, computing inline: {err}");
-                // Sequential: the caller may be a pool worker that would otherwise steal a job
-                // re-entering this `call_once`.
-                let _ = self
-                    .stronghold_chunks
-                    .set(Some(Self::calculate_strongholds_sequential(
-                        seed,
-                        placement,
-                        &job.multi_noise,
-                    )));
+                }));
+                if result.is_err() {
+                    tracing::error!("Stronghold ring calculation panicked");
+                }
+                if let Some(target) = target.upgrade() {
+                    let _ = target.set(result.ok().flatten());
+                }
+            };
+            // Generation workers may wait for individual rings. Keep the bulk
+            // search on its own process-wide pool so it always has workers.
+            if let Some(pool) = stronghold_workers() {
+                pool.spawn_fifo(move || compute(true));
+            } else {
+                compute(false);
             }
         });
     }
@@ -226,19 +246,6 @@ impl GlobalStructureCache {
         tasks
             .into_par_iter()
             .panic_fuse()
-            .map(|task| Self::search_ring(task, multi_noise, preferred_biomes))
-            .collect()
-    }
-
-    /// Same as [`Self::calculate_strongholds`], but on the calling thread only.
-    fn calculate_strongholds_sequential(
-        seed: i64,
-        placement: &ConcentricRingsStructurePlacement,
-        multi_noise: &ProtoMultiNoiseRouter,
-    ) -> Vec<(i32, i32)> {
-        let (tasks, preferred_biomes) = Self::ring_tasks(seed, placement);
-        tasks
-            .into_iter()
             .map(|task| Self::search_ring(task, multi_noise, preferred_biomes))
             .collect()
     }
@@ -334,7 +341,7 @@ impl GlobalStructureCache {
         &self,
         seed: i64,
         placement: &ConcentricRingsStructurePlacement,
-    ) -> &StrongholdRingBounds {
+    ) -> &Arc<StrongholdRingBounds> {
         self.stronghold_bounds.get_or_init(|| {
             let (tasks, preferred_biomes) = Self::ring_tasks(seed, placement);
             let min_radius_sq = tasks
@@ -356,14 +363,14 @@ impl GlobalStructureCache {
                 .max()
                 .unwrap_or(0);
             let resolved = (0..tasks.len()).map(|_| OnceLock::new()).collect();
-            StrongholdRingBounds {
+            Arc::new(StrongholdRingBounds {
                 min_radius_sq,
                 max_radius_sq,
                 tasks: tasks.into_boxed_slice(),
                 preferred_biomes,
                 resolved,
                 fallback_router: OnceLock::new(),
-            }
+            })
         })
     }
 
@@ -373,25 +380,23 @@ impl GlobalStructureCache {
         seed: i64,
         index: usize,
     ) -> (i32, i32) {
-        *bounds.resolved[index].get_or_init(|| {
-            let multi_noise = self.stronghold_job.as_ref().map_or_else(
-                || {
-                    bounds.fallback_router.get_or_init(|| {
-                        let random_config = crate::GlobalRandomConfig::new(seed as u64, false);
-                        let base = pumpkin_data::noise_router::BaseNoiseRouters::from_dimension(
-                            &pumpkin_data::dimension::Dimension::OVERWORLD,
-                        );
-                        crate::generation::noise::router::proto_noise_router::ProtoNoiseRouters::generate(
-                            base,
-                            &random_config,
-                        )
-                        .multi_noise
-                    })
-                },
-                |job| &job.multi_noise,
-            );
-            Self::search_ring(bounds.tasks[index], multi_noise, bounds.preferred_biomes)
-        })
+        let multi_noise = self.stronghold_job.as_ref().map_or_else(
+            || {
+                bounds.fallback_router.get_or_init(|| {
+                    let random_config = crate::GlobalRandomConfig::new(seed as u64, false);
+                    let base = pumpkin_data::noise_router::BaseNoiseRouters::from_dimension(
+                        &pumpkin_data::dimension::Dimension::OVERWORLD,
+                    );
+                    crate::generation::noise::router::proto_noise_router::ProtoNoiseRouters::generate(
+                        base,
+                        &random_config,
+                    )
+                    .multi_noise
+                })
+            },
+            |job| &job.multi_noise,
+        );
+        bounds.resolve(index, multi_noise)
     }
 
     /// Checks whether `(chunk_x, chunk_z)` is a stronghold start chunk, resolving only
@@ -700,7 +705,8 @@ fn is_start_chunk_random_spread(
 #[cfg(test)]
 mod tests {
     use pumpkin_data::structures::{
-        RandomSpreadStructurePlacement, StructurePlacementCalculator, StructureSet,
+        ConcentricRingsStructurePlacement, RandomSpreadStructurePlacement,
+        StructurePlacementCalculator, StructureSet,
     };
     use sculith_util::random::{
         RandomGenerator, RandomImpl, get_region_seed, legacy_rand::LegacyRand,
@@ -708,8 +714,41 @@ mod tests {
 
     use crate::generation::structure::placement::{
         GlobalStructureCache, apply_frequency_reduction, get_start_chunk_random_spread,
-        is_start_chunk, should_generate_structure,
+        is_start_chunk, should_generate_structure, stronghold_workers,
     };
+
+    #[test]
+    fn background_and_chunk_searches_share_ring_results_across_worlds() {
+        use crate::{
+            GlobalRandomConfig, generation::noise::router::proto_noise_router::ProtoNoiseRouters,
+        };
+        use pumpkin_data::{dimension::Dimension, noise_router::BaseNoiseRouters};
+
+        static RINGS: ConcentricRingsStructurePlacement = ConcentricRingsStructurePlacement {
+            spread: 3,
+            distance: 32,
+            count: 3,
+            preferred_biomes: "#minecraft:stronghold_biased_to",
+        };
+        let workers = stronghold_workers().unwrap();
+        assert!((1..=4).contains(&workers.current_num_threads()));
+        let cases = [0i64, 99].map(|seed| {
+            let config = GlobalRandomConfig::new(seed.cast_unsigned(), false);
+            let base = BaseNoiseRouters::from_dimension(&Dimension::OVERWORLD);
+            let router = ProtoNoiseRouters::generate(base, &config).multi_noise;
+            let cache = GlobalStructureCache::with_background_strongholds(seed, &RINGS, &router);
+            cache.ensure_strongholds_generated();
+            (seed, router, cache)
+        });
+        for (seed, router, cache) in cases {
+            let bounds = cache.stronghold_bounds(seed, &RINGS);
+            let first = cache.resolve_ring_task(bounds, seed, 0);
+            let expected = GlobalStructureCache::calculate_strongholds(seed, &RINGS, &router);
+            assert_eq!(first, expected[0]);
+            assert_eq!(cache.get_stronghold_chunks(), expected);
+            assert!(bounds.resolved.iter().all(|result| result.get().is_some()));
+        }
+    }
 
     #[test]
     fn concurrent_structure_requests_share_computation() {
