@@ -522,7 +522,11 @@ and metadata delivery that the region could not queue.
 An isolated cow, pig or sheep descending through clear air can advance its
 travel on its region, including horizontal momentum. That step updates the
 position, bounds, velocity and accumulated fall distance together. A move
-can cross a chunk boundary when the same region owns the entire sweep. The
+can cross a chunk boundary when the same region owns the entire sweep.
+An isolated grounded mob of these species can coast over a continuous inert
+floor when its current input and fall distance are zero. The same collision
+and friction rules apply. Footstep events, equipment effects, unsupported
+surfaces and nearby actors use the ordinary world path. The
 tracker sends the full position to paired current-protocol Java and Bedrock
 viewers in range who already have the destination terrain. The world refreshes
 pairings and handles travel across ownership boundaries. Both owners share

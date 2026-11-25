@@ -79,11 +79,11 @@ use sculith_util::math::vector3::Vector3;
 use sculith_util::text::TextComponent;
 use std::sync::{RwLock, RwLockReadGuard};
 
-mod air_travel;
 mod food_use;
+mod regional_travel;
 
-pub(crate) use air_travel::supports_regional_air_travel;
 pub(crate) use food_use::RegionalFoodUseFinish;
+pub(crate) use regional_travel::supports_regional_travel;
 
 #[derive(Clone, Copy)]
 struct LastHurtByMob {
@@ -2301,7 +2301,7 @@ impl LivingEntity {
             self.entity.velocity.store(Vector3::default());
         } else if effective_ai && !caller.get_mob().is_some_and(|mob| mob.travel(caller)) {
             // A mob with its own travel, e.g. the allay, replaces the default one
-            let (_motion, advance) = if supports_regional_air_travel(self.entity.entity_type) {
+            let (_motion, advance) = if supports_regional_travel(self.entity.entity_type) {
                 self.entity
                     .begin_world_motion(crate::world::actor_deadline(self.entity.entity_id))
             } else {

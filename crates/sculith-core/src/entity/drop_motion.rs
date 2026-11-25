@@ -432,7 +432,7 @@ impl ExperienceOrbEntity {
 
 /// Air and inert full blocks below the drop need no fluid, contact or fall callbacks.
 #[expect(clippy::float_cmp)]
-fn regional_floor_collision(
+pub(super) fn regional_floor_collision(
     world: &World,
     bounds: BoundingBox,
     movement: Vector3<f64>,

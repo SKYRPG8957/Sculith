@@ -16,7 +16,7 @@ use crate::{
         ageable::{advance_regional_growth, try_mature_on_region},
         experience_orb::ExperienceOrbEntity,
         item::{ItemEntity, RegionalItemStep},
-        living::supports_regional_air_travel,
+        living::supports_regional_travel,
     },
     net::ClientPlatform,
     plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
@@ -61,10 +61,7 @@ impl ActorWork {
             let mut work = Self::empty();
             work.set(Self::PASSIVE_EFFECTS, base.regional_effects.load(Relaxed));
             work.set(Self::GROWTH, has_mob_growth(base));
-            work.set(
-                Self::AIR_TRAVEL,
-                supports_regional_air_travel(base.entity_type),
-            );
+            work.set(Self::AIR_TRAVEL, supports_regional_travel(base.entity_type));
             work
         }
     }
@@ -177,7 +174,7 @@ impl World {
             .iter()
             .filter_map(|actor| {
                 let base = actor.get_entity();
-                if !supports_regional_air_travel(base.entity_type) || !owns(base.chunk_pos.load()) {
+                if !supports_regional_travel(base.entity_type) || !owns(base.chunk_pos.load()) {
                     return None;
                 }
                 Some((base, actor.get_mob()?.get_mob_entity()))
@@ -495,10 +492,12 @@ impl World {
             {
                 let effects = base.regional_effects.load(Relaxed);
                 let grows = mob_growth && has_mob_growth(base);
+                let velocity = base.velocity.load();
                 let travels = mob_packets
-                    && supports_regional_air_travel(base.entity_type)
-                    && !base.on_ground.load(Relaxed)
-                    && base.velocity.load().y <= -0.003;
+                    && supports_regional_travel(base.entity_type)
+                    && velocity.y <= -0.003
+                    && (!base.on_ground.load(Relaxed)
+                        || velocity.horizontal_length_squared() > 0.0);
                 if !(effects || grows || travels) {
                     continue;
                 }
@@ -558,16 +557,9 @@ impl World {
                 }
                 drop(loaded);
                 if travels {
-                    living.try_regional_air_travel(
-                        actor.as_ref(),
-                        self,
-                        owner,
-                        deadline,
-                        owns,
-                        || {
-                            publish(&mut java_recipients);
-                        },
-                    );
+                    living.try_regional_travel(actor.as_ref(), self, owner, deadline, owns, || {
+                        publish(&mut java_recipients);
+                    });
                 }
             }
         }
