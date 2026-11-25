@@ -24,9 +24,11 @@ use crate::{
 };
 
 use super::{
-    RegionId, RegionLayout, World, entity_islands::plugins_observe_entity_ticks,
+    RegionChunks, RegionId, RegionLayout, World, entity_islands::plugins_observe_entity_ticks,
     entity_tracker::EntityTracker, regional_campfires::RegionalEntityUpdate,
 };
+
+const REGIONAL_NAVIGATORS_PER_STEP: usize = 4;
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -140,6 +142,61 @@ impl RegionalActors {
 }
 
 impl World {
+    pub(super) fn advance_regional_navigation(
+        self: &Arc<Self>,
+        server: &Server,
+        owner: RegionId,
+        extent: &RegionChunks,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) {
+        let changes = self.regional_navigation_changes(owns);
+        if changes.is_empty() || plugins_observe_entity_ticks(server) {
+            return;
+        }
+        let (Some(_native), Some(_checkpoint)) = (
+            server.plugin_manager.try_without_native_code(),
+            server.try_entity_save_guard(),
+        ) else {
+            return;
+        };
+        let Ok(time) = self.level_time.try_lock() else {
+            return;
+        };
+        let world_age = time.world_age as u64;
+        drop(time);
+        let (Ok(_snapshot), Ok(plan)) = (
+            self.entity_chunk_changes.snapshot.try_read(),
+            self.regional_actors.try_read(),
+        ) else {
+            return;
+        };
+        let Some(actors) = plan.by_region.get(&owner) else {
+            return;
+        };
+        for (actor, mob) in actors
+            .iter()
+            .filter_map(|actor| {
+                let base = actor.get_entity();
+                if !supports_regional_air_travel(base.entity_type) || !owns(base.chunk_pos.load()) {
+                    return None;
+                }
+                Some((base, actor.get_mob()?.get_mob_entity()))
+            })
+            .take(REGIONAL_NAVIGATORS_PER_STEP)
+        {
+            if let Some(nodes) =
+                mob.try_update_regional_navigation(self, owner, extent, &changes, world_age)
+            {
+                tracing::trace!(
+                    entity = actor.entity_id,
+                    region = owner,
+                    nodes,
+                    "Replanned a ground path on its region"
+                );
+            }
+        }
+    }
+
     pub(super) fn publish_region_layout(&self, layout: &Arc<RegionLayout>, coordinated: bool) {
         let previous = self.region_layout.load();
         if Arc::ptr_eq(&previous, layout) {

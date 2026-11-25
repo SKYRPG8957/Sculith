@@ -20,7 +20,7 @@ protocol and utility packages are `sculith-core`, `sculith-config`,
 `sculith-protocol` and `sculith-util`. Embedders start `sculith_core::SculithServer`
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
-Native Rust plugins must be rebuilt against ABI 44. The native plugin macro
+Native Rust plugins must be rebuilt against ABI 45. The native plugin macro
 exports `SCULITH_API_VERSION`, and the loader also reads the earlier version
 marker. Wasm plugins load by WIT API version.
 Telemetry and update notifications default to off. The optional update checker
@@ -224,8 +224,12 @@ edits. The owner checks the expected state and its current extent under the
 palette lock. Edits can notify clients when light and block indexes stay
 compatible and the adjacent shape checks have no callbacks to run. The region
 updates affected heightmaps with the palette change. A collision change also
-queues a navigation notice for the world's next tick boundary. Packet delivery
-and a later block packet at the same position preserve the notice. Requests
+queues a navigation notice. For an active cow, pig or sheep using ground
+navigation, the region can recompute a route to the current goal against its
+loaded block palettes. A route is installed when the read palettes and actor
+assignment still match. The world phase handles pending notices, wider search
+areas and goal selection. Packet delivery and later block packets preserve the
+notice. Requests
 stay ordered within a region. A deferred edit or
 an edit claimed by the world holds that region's subsequent requests while
 other regions can process theirs. The world applies remaining requests and

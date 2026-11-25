@@ -55,12 +55,20 @@ pub struct MobData {
 impl MobData {
     #[must_use]
     pub fn from_entity(entity: &LivingEntity, world: &World) -> Self {
+        Self::with_step_height(
+            entity,
+            world,
+            entity.get_attribute_value(&Attributes::STEP_HEIGHT) as f32,
+        )
+    }
+
+    pub(super) fn with_step_height(entity: &LivingEntity, world: &World, step_height: f32) -> Self {
         let dimensions = entity.entity.entity_dimension.load();
         let mut data = Self::new(
             entity.entity.pos.load(),
             dimensions.width,
             dimensions.height,
-            entity.get_attribute_value(&Attributes::STEP_HEIGHT) as f32,
+            step_height,
         );
         data.on_ground = entity.entity.on_ground.load(Ordering::Relaxed);
         data.is_in_water = entity.is_in_water();

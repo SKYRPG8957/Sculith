@@ -2631,6 +2631,7 @@ impl World {
         if inhabited && same_extent {
             if let Some(server) = &region_server {
                 self.advance_regional_actors(server, owner, deadline, &owns);
+                self.advance_regional_navigation(server, owner, chunks, &owns);
             }
             self.flush_regional_block_updates(&owns);
         }

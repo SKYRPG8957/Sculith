@@ -214,6 +214,23 @@ impl World {
         }
     }
 
+    pub(super) fn regional_navigation_changes(
+        &self,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Vec<(BlockPos, u64)> {
+        let Some(pending) = try_lock(&self.block_updates.pending) else {
+            return Vec::new();
+        };
+        pending
+            .navigation
+            .iter()
+            .take(REGIONAL_UPDATE_LIMIT)
+            .filter_map(|(&position, &sequence)| {
+                owns(position.chunk_position()).then_some((position, sequence))
+            })
+            .collect()
+    }
+
     pub(super) fn flush_regional_block_updates(&self, owns: &impl Fn(Vector2<i32>) -> bool) {
         let Some(mut pending) = try_lock(&self.block_updates.pending) else {
             return;

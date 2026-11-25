@@ -1620,7 +1620,10 @@ impl LivingEntity {
         Self::attribute_value_from(&map, attribute)
     }
 
-    fn attribute_value_from(map: &FxHashMap<u8, AttributeInstance>, attribute: &Attributes) -> f64 {
+    pub(super) fn attribute_value_from(
+        map: &FxHashMap<u8, AttributeInstance>,
+        attribute: &Attributes,
+    ) -> f64 {
         map.get(&attribute.id)
             .map_or(attribute.default_value, |instance| {
                 instance.sanitized_value(attribute)
@@ -1629,11 +1632,19 @@ impl LivingEntity {
 
     /// Returns the base attribute value for `attribute` for this entity's type.
     pub fn get_attribute_base(&self, attribute: &Attributes) -> f64 {
-        // Check the local base value first (could be modified)
         let map = self
             .attributes
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.attribute_base_from(&map, attribute)
+    }
+
+    pub(super) fn attribute_base_from(
+        &self,
+        map: &FxHashMap<u8, AttributeInstance>,
+        attribute: &Attributes,
+    ) -> f64 {
+        // Check the local base value first (could be modified)
         if let Some(instance) = map.get(&attribute.id) {
             return instance.base_value;
         }

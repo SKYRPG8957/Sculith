@@ -2,7 +2,7 @@ use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
 
 use crate::entity::living::LivingEntity;
-use crate::world::World;
+use crate::world::{RegionChunks, RegionId, World};
 
 use crate::entity::ai::pathfinder::amphibious_node_evaluator::AmphibiousNodeEvaluator;
 use crate::entity::ai::pathfinder::binary_heap::BinaryHeap;
@@ -17,7 +17,10 @@ use crate::entity::ai::pathfinder::walk_node_evaluator::WalkNodeEvaluator;
 use pumpkin_data::attributes::Attributes;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use self::regional_terrain::RegionalTerrain;
 
 pub mod amphibious_node_evaluator;
 pub mod binary_heap;
@@ -27,6 +30,7 @@ pub mod node_evaluator;
 pub mod path;
 pub mod path_type_cache;
 pub mod pathfinding_context;
+mod regional_terrain;
 pub mod swim_node_evaluator;
 pub mod walk_node_evaluator;
 
@@ -34,6 +38,8 @@ const TARGET_DISTANCE_MULTIPLIER: f32 = 1.5;
 const NODE_REACH_Y: f64 = 1.0;
 const MAX_TIME_RECOMPUTE: u64 = 20;
 const MAX_VISITED_NODES_MULTIPLIER: f32 = 16.0;
+const MAX_REGIONAL_PATH_LENGTH: f32 = 32.0;
+const MAX_REGIONAL_PATH_VISITS: f32 = 512.0;
 
 pub struct PathFinder {
     max_visited_nodes: usize,
@@ -433,6 +439,12 @@ pub trait PathNavigationTrait: Send + Sync {
     ) -> Option<Path>;
     fn recompute_path(&mut self, entity: &LivingEntity);
     fn should_recompute_path(&self, entity: &LivingEntity, position: BlockPos) -> bool;
+
+    #[doc(hidden)]
+    fn ground_navigation(&mut self) -> Option<&mut PathNavigation> {
+        None
+    }
+
     fn set_avoid_sun(&mut self, avoid_sun: bool);
     fn set_can_walk_over_fences(&mut self, can_walk: bool);
     fn set_can_open_doors(&mut self, can_open: bool);
@@ -650,8 +662,13 @@ impl PathNavigation {
             world.uuid,
             world.navigation_change_sequence.load(Ordering::Acquire),
         );
-        let mut mob_data = MobData::from_entity(entity, &world);
+        let mob_data = MobData::from_entity(entity, &world);
         let context = PathfindingContext::new(BlockPos::floored_v(mob_data.position).0, world);
+        self.prepare_evaluator_with(context, mob_data);
+        world_change
+    }
+
+    fn prepare_evaluator_with(&mut self, context: PathfindingContext, mut mob_data: MobData) {
         mob_data.can_swim = self.can_float;
 
         mob_data.set_pathfinding_malus(PathType::DangerFire, 16.0);
@@ -670,8 +687,6 @@ impl PathNavigation {
         self.evaluator
             .set_can_walk_over_fences(self.can_walk_over_fences);
         self.evaluator.prepare(context, mob_data);
-
-        world_change
     }
 
     fn get_path_type(&mut self, entity: &LivingEntity, position: BlockPos) -> PathType {
@@ -838,6 +853,90 @@ impl PathNavigation {
         }
     }
 
+    /// Replans an already selected ground destination against loaded terrain only.
+    fn try_recompute_on_region(
+        &mut self,
+        entity: &LivingEntity,
+        world: &Arc<World>,
+        owner: RegionId,
+        extent: &RegionChunks,
+        world_age: u64,
+    ) -> Option<usize> {
+        let mut target = self.target_pos?;
+        if world_age.saturating_sub(self.time_last_recompute) <= MAX_TIME_RECOMPUTE
+            || !matches!(self.evaluator, EvaluatorKind::Walk(_))
+            || !entity.entity.on_ground.load(Ordering::Relaxed)
+            || entity.entity.pos.load().y < f64::from(world.get_bottom_y())
+        {
+            return None;
+        }
+
+        let attributes = entity.attributes.try_read().ok()?;
+        let follow_range =
+            LivingEntity::attribute_value_from(&attributes, &Attributes::FOLLOW_RANGE);
+        let max_path_length = self
+            .path_length_override
+            .unwrap_or_else(|| (follow_range as f32).max(self.required_path_length));
+        let max_visited_nodes = if self.update_pathfinder_max_visited_nodes {
+            (max_path_length * MAX_VISITED_NODES_MULTIPLIER).floor() as usize
+        } else if let Some(finder) = &self.path_finder {
+            finder.get_max_visited_nodes()
+        } else {
+            (entity.attribute_base_from(&attributes, &Attributes::FOLLOW_RANGE)
+                * f64::from(MAX_VISITED_NODES_MULTIPLIER))
+            .floor() as usize
+        };
+        let visits = max_visited_nodes as f32 * self.max_visited_nodes_multiplier;
+        if !(1.0..=MAX_REGIONAL_PATH_LENGTH).contains(&max_path_length)
+            || !(1.0..=MAX_REGIONAL_PATH_VISITS).contains(&visits)
+        {
+            return None;
+        }
+
+        let terrain = Arc::new(RegionalTerrain::new(owner, extent.clone()));
+        let sequence = world.navigation_change_sequence.load(Ordering::Acquire);
+        if !self.can_path_to_targets_below_surface {
+            target = Self::find_surface_position_with(world, target, |pos| {
+                terrain
+                    .block_state(world, *pos)
+                    .unwrap_or(pumpkin_data::BlockStateId::AIR)
+                    .to_state()
+            });
+        }
+        let step_height = LivingEntity::attribute_value_from(&attributes, &Attributes::STEP_HEIGHT);
+        let mob_data = MobData::with_step_height(entity, world, step_height as f32);
+        let context = PathfindingContext::on_region(
+            BlockPos::floored_v(mob_data.position).0,
+            world.clone(),
+            terrain.clone(),
+        );
+        self.prepare_evaluator_with(context, mob_data);
+        let mut finder = PathFinder::new(max_visited_nodes);
+        let mut path = finder.find_path_single(
+            &mut self.evaluator,
+            target,
+            max_path_length,
+            self.reach_range,
+            self.max_visited_nodes_multiplier,
+        );
+        self.evaluator.done();
+
+        terrain.try_commit(world, || {
+            if let Some(path) = &mut path {
+                path.world_change = Some((world.uuid, sequence));
+                self.target_pos = Some(path.get_target());
+                self.reset_stuck_timeout();
+            }
+            let nodes = path.as_ref().map_or(0, Path::get_node_count);
+            self.path = path;
+            self.path_finder = Some(finder);
+            self.update_pathfinder_max_visited_nodes = false;
+            self.time_last_recompute = world_age;
+            self.has_delayed_recomputation = false;
+            nodes
+        })
+    }
+
     fn update_path(&mut self, entity: &LivingEntity) {
         if self.has_delayed_recomputation {
             self.recompute_path(entity);
@@ -883,30 +982,35 @@ impl PathNavigation {
             .is_miss
     }
 
-    pub fn find_surface_position(world: &World, mut pos: BlockPos) -> BlockPos {
-        let block_state = world.get_block_state(&pos);
+    pub fn find_surface_position(world: &World, pos: BlockPos) -> BlockPos {
+        Self::find_surface_position_with(world, pos, |pos| world.get_block_state(pos))
+    }
+
+    fn find_surface_position_with(
+        world: &World,
+        mut pos: BlockPos,
+        get_block: impl Fn(&BlockPos) -> &'static pumpkin_data::BlockState,
+    ) -> BlockPos {
+        let block_state = get_block(&pos);
         if block_state.is_air() {
             let mut column_pos = pos.down();
-            while column_pos.0.y >= world.get_bottom_y()
-                && world.get_block_state(&column_pos).is_air()
-            {
+            while column_pos.0.y >= world.get_bottom_y() && get_block(&column_pos).is_air() {
                 column_pos.0.y -= 1;
             }
             if column_pos.0.y >= world.get_bottom_y() {
                 return BlockPos::new(column_pos.0.x, column_pos.0.y + 1, column_pos.0.z);
             }
             column_pos.0.y = pos.0.y + 1;
-            while column_pos.0.y <= world.get_top_y() && world.get_block_state(&column_pos).is_air()
-            {
+            while column_pos.0.y <= world.get_top_y() && get_block(&column_pos).is_air() {
                 column_pos.0.y += 1;
             }
             pos = column_pos;
         }
-        if !world.get_block_state(&pos).is_solid() {
+        if !get_block(&pos).is_solid() {
             return pos;
         }
         let mut column_pos = pos.up();
-        while column_pos.0.y <= world.get_top_y() && world.get_block_state(&column_pos).is_solid() {
+        while column_pos.0.y <= world.get_top_y() && get_block(&column_pos).is_solid() {
             column_pos.0.y += 1;
         }
         column_pos
@@ -1181,6 +1285,10 @@ impl GroundPathNavigation {
 }
 
 impl PathNavigationTrait for GroundPathNavigation {
+    fn ground_navigation(&mut self) -> Option<&mut PathNavigation> {
+        Some(&mut self.inner)
+    }
+
     fn set_progress(&mut self, goal: NavigatorGoal) {
         self.inner.set_progress(goal);
     }
@@ -2581,6 +2689,19 @@ impl Default for Navigator {
 }
 
 impl Navigator {
+    pub(crate) fn try_recompute_on_region(
+        &mut self,
+        entity: &LivingEntity,
+        world: &Arc<World>,
+        owner: RegionId,
+        extent: &RegionChunks,
+        world_age: u64,
+    ) -> Option<usize> {
+        self.inner
+            .ground_navigation()?
+            .try_recompute_on_region(entity, world, owner, extent, world_age)
+    }
+
     #[must_use]
     pub fn new<N: PathNavigationTrait + 'static>(nav: N) -> Self {
         Self {
@@ -2645,6 +2766,8 @@ mod tests {
         Entity,
         ai::test_support::{world, world_in_dimension},
     };
+    use crate::world::RegionLayout;
+    use sculith_util::math::vector2::Vector2;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -2654,6 +2777,113 @@ mod tests {
             Vector3::new(0.5, 64.0, 0.5),
             entity_type,
         ))
+    }
+
+    #[tokio::test]
+    async fn ground_replan_matches_the_world_and_preserves_a_route_on_handoff() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let pos = Vector2::new(0, 0);
+        let extent: RegionChunks = Arc::from([pos]);
+        world
+            .region_layout
+            .store(Arc::new(RegionLayout::from_active(
+                std::iter::once((pos, 0)).collect(),
+                std::iter::once((0, extent.clone())).collect(),
+            )));
+        world.level_time.lock().unwrap().world_age = 42;
+        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        for x in 2..14 {
+            for z in 2..14 {
+                chunk.set_block_absolute_y(x, 63, z, pumpkin_data::Block::STONE.default_state.id);
+            }
+        }
+        chunk.set_block_absolute_y(8, 64, 7, pumpkin_data::Block::GLASS.default_state.id);
+        chunk.set_block_absolute_y(8, 65, 7, pumpkin_data::Block::GLASS.default_state.id);
+        world.level.loaded_chunks.insert(pos, chunk);
+        let living = LivingEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(5.5, 64.0, 7.5),
+            &EntityType::COW,
+        ));
+        living.entity.on_ground.store(true, Ordering::Relaxed);
+        let target = BlockPos::new(11, 64, 7);
+        let route = Path::new(vec![Node::new(target)], target, true);
+        let mut regional = GroundPathNavigation::new();
+        let mut ordinary = GroundPathNavigation::new();
+        for navigator in [&mut regional, &mut ordinary] {
+            assert!(navigator.move_to_path(Some(route.clone()), 1.0, &living));
+        }
+        ordinary.recompute_path(&living);
+        let expected = ordinary.get_path().ok_or("missing ordinary route")?;
+        assert!(expected.can_reach() && expected.get_node_count() > 1);
+        let nodes = regional
+            .inner
+            .try_recompute_on_region(&living, &world, 0, &extent, 42);
+        assert_eq!(nodes, Some(expected.get_node_count()));
+        let regional_path = regional.get_path().ok_or("missing regional route")?.clone();
+        assert!(regional_path.same_as_path(expected));
+        assert_eq!(regional_path.world_change, expected.world_change);
+
+        // Keep the same owner ID but retire the extent used by the dispatched job.
+        let new_extent: RegionChunks = Arc::from([pos]);
+        world
+            .region_layout
+            .store(Arc::new(RegionLayout::from_active(
+                std::iter::once((pos, 0)).collect(),
+                std::iter::once((0, new_extent)).collect(),
+            )));
+        assert_eq!(
+            regional
+                .inner
+                .try_recompute_on_region(&living, &world, 0, &extent, 80),
+            None
+        );
+        assert!(regional_path.same_as(regional.get_path()));
+        assert_eq!(regional.inner.time_last_recompute, 42);
+        world.level.shutdown().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn route_commit_rejects_changed_palettes_and_reads_outside_its_region() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let owned = Vector2::new(0, 0);
+        let outside = Vector2::new(1, 0);
+        let extent: RegionChunks = Arc::from([owned]);
+        world
+            .region_layout
+            .store(Arc::new(RegionLayout::from_active(
+                [(owned, 0), (outside, 1)].into_iter().collect(),
+                [(0, extent.clone()), (1, Arc::from([outside]))]
+                    .into_iter()
+                    .collect(),
+            )));
+        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        world.level.loaded_chunks.insert(owned, chunk.clone());
+        world
+            .level
+            .loaded_chunks
+            .insert(outside, pumpkin_world::chunk::ChunkData::empty_sync(1, 0));
+        let position = BlockPos::new(7, 64, 7);
+        let terrain = RegionalTerrain::new(0, extent.clone());
+        assert_eq!(
+            terrain.block_state(&world, position),
+            Some(pumpkin_data::BlockStateId::AIR)
+        );
+        chunk.set_block_absolute_y(7, 64, 7, pumpkin_data::Block::GLASS.default_state.id);
+        assert_eq!(terrain.try_commit(&world, || 1), None);
+        let terrain = RegionalTerrain::new(0, extent);
+        assert_eq!(
+            terrain.block_state(&world, position),
+            Some(pumpkin_data::Block::GLASS.default_state.id)
+        );
+        assert_eq!(terrain.try_commit(&world, || 1), Some(1));
+        assert_eq!(terrain.block_state(&world, BlockPos::new(16, 64, 7)), None);
+        assert_eq!(terrain.try_commit(&world, || 1), None);
+        world.level.shutdown().await;
+        Ok(())
     }
 
     #[tokio::test]

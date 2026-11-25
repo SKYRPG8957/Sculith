@@ -487,14 +487,49 @@ impl MobEntity {
         (position, world, sequence): (BlockPos, Uuid, u64),
     ) {
         if self.living_entity.entity.world.load().uuid == world
-            && navigator.get_path().is_some_and(|path| {
-                path.world_change
-                    .is_none_or(|(path_world, seen)| path_world == world && seen < sequence)
-            })
-            && navigator.should_recompute_path(&self.living_entity, position)
+            && self.navigation_needs_update(navigator, position, world, sequence)
         {
             navigator.recompute_path(&self.living_entity);
         }
+    }
+
+    fn navigation_needs_update(
+        &self,
+        navigator: &Navigator,
+        position: BlockPos,
+        world: Uuid,
+        sequence: u64,
+    ) -> bool {
+        navigator.get_path().is_some_and(|path| {
+            path.world_change
+                .is_none_or(|(path_world, seen)| path_world == world && seen < sequence)
+        }) && navigator.should_recompute_path(&self.living_entity, position)
+    }
+
+    pub(crate) fn try_update_regional_navigation(
+        &self,
+        world: &Arc<World>,
+        owner: crate::world::RegionId,
+        extent: &crate::world::RegionChunks,
+        changes: &[(BlockPos, u64)],
+        world_age: u64,
+    ) -> Option<usize> {
+        let base = &self.living_entity.entity;
+        base.try_with_unmounted_actor(|| {
+            if base.is_removed()
+                || self.is_no_ai()
+                || !std::ptr::eq(base.world.load().as_ref(), world.as_ref())
+            {
+                return None;
+            }
+            let mut navigator = self.try_navigator()?;
+            if !changes.iter().any(|&(position, sequence)| {
+                self.navigation_needs_update(&navigator, position, world.uuid, sequence)
+            }) {
+                return None;
+            }
+            navigator.try_recompute_on_region(&self.living_entity, world, owner, extent, world_age)
+        })?
     }
 
     /// Vanilla `Mob.serverAiStep`: sensing, goals, navigation and controls.

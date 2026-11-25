@@ -1,5 +1,5 @@
 use pumpkin_data::{
-    Block, BlockState,
+    Block, BlockState, BlockStateId,
     fluid::Fluid,
     tag::{self, Taggable},
 };
@@ -16,10 +16,13 @@ use crate::{
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
+use super::regional_terrain::RegionalTerrain;
+
 pub struct PathfindingContext {
     path_type_cache: Option<PathTypeCache>,
     mob_position: Vector3<i32>,
     world: Arc<World>,
+    regional_terrain: Option<Arc<RegionalTerrain>>,
     collision_cache: FxHashMap<[u64; 6], bool>,
 }
 
@@ -30,6 +33,7 @@ impl PathfindingContext {
             path_type_cache: Some(PathTypeCache::new()),
             mob_position,
             world,
+            regional_terrain: None,
             collision_cache: FxHashMap::default(),
         }
     }
@@ -40,8 +44,30 @@ impl PathfindingContext {
             path_type_cache: Some(cache),
             mob_position,
             world,
+            regional_terrain: None,
             collision_cache: FxHashMap::default(),
         }
+    }
+
+    pub(super) fn on_region(
+        mob_position: Vector3<i32>,
+        world: Arc<World>,
+        terrain: Arc<RegionalTerrain>,
+    ) -> Self {
+        let mut context = Self::new(mob_position, world);
+        context.regional_terrain = Some(terrain);
+        context
+    }
+
+    fn block_state_id(&self, pos: &BlockPos) -> BlockStateId {
+        self.regional_terrain.as_ref().map_or_else(
+            || self.world.get_block_state_id(pos),
+            |terrain| {
+                terrain
+                    .block_state(&self.world, *pos)
+                    .unwrap_or(BlockStateId::AIR)
+            },
+        )
     }
 
     #[must_use]
@@ -83,7 +109,7 @@ impl PathfindingContext {
     #[must_use]
     pub fn compute_path_type_from_state(&self, pos: Vector3<i32>) -> PathType {
         let block_pos = pos.as_blockpos();
-        let state_id = self.world.get_block_state_id(&block_pos);
+        let state_id = self.block_state_id(&block_pos);
         let block = Block::from_state_id(state_id);
         let state = BlockState::from_id(state_id);
 
@@ -244,7 +270,7 @@ impl PathfindingContext {
     #[must_use]
     pub fn get_floor_level(&self, pos: &BlockPos) -> f64 {
         let target = pos.down();
-        let state = self.world.get_block_state(&target);
+        let state = self.get_block_state(&target);
         let max_y = state
             .get_block_collision_shapes_at(&target)
             .map(|s| s.max.y)
@@ -271,7 +297,7 @@ impl PathfindingContext {
         let mut collided = false;
 
         for pos in BlockPos::iterate(min, max) {
-            let state = self.world.get_block_state(&pos);
+            let state = self.get_block_state(&pos);
             if state.is_air() || !state.is_solid() {
                 continue;
             }
@@ -293,24 +319,23 @@ impl PathfindingContext {
 
     #[must_use]
     pub fn is_water(&self, pos: &BlockPos) -> bool {
-        self.world
-            .get_fluid(pos)
+        World::get_fluid_from_state_id(self.block_state_id(pos))
             .has_tag(&tag::Fluid::MINECRAFT_WATER)
     }
 
     #[must_use]
     pub fn is_air(&self, pos: &BlockPos) -> bool {
-        self.world.get_block_state(pos).is_air()
+        self.get_block_state(pos).is_air()
     }
 
     #[must_use]
     pub fn get_block_state(&self, pos: &BlockPos) -> &'static BlockState {
-        self.world.get_block_state(pos)
+        self.block_state_id(pos).to_state()
     }
 
     #[must_use]
     pub fn is_pathfindable(&self, pos: &BlockPos, computation_type: PathComputationType) -> bool {
-        let (block, state) = self.world.get_block_and_state(pos);
+        let (block, state) = BlockState::from_id_with_block(self.block_state_id(pos));
         self.world
             .block_registry
             .is_pathfindable(block, state, computation_type)
