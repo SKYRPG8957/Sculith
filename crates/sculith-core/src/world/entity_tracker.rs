@@ -1340,8 +1340,8 @@ impl TrackedEntity {
         (self.pending_spawns.load(Ordering::Acquire) == 0).then_some(viewers)
     }
 
-    /// The region holds the drop motion guard and its current chunk assignment.
-    fn try_publish_drop_move(
+    /// The region holds the actor motion guard and its current chunk assignment.
+    fn try_publish_actor_move(
         &self,
         world: &World,
         entity: &Entity,
@@ -1352,11 +1352,13 @@ impl TrackedEntity {
             return;
         };
         let pos = entity.pos.load();
-        let send_java = entity
-            .tick_count
-            .load(Relaxed)
-            .cast_unsigned()
-            .is_multiple_of(self.update_interval.max(1))
+        // A living actor's world tick count can stay fixed during regional travel.
+        let send_java = (entity.entity_type.mob
+            || entity
+                .tick_count
+                .load(Relaxed)
+                .cast_unsigned()
+                .is_multiple_of(self.update_interval.max(1)))
             && (self.java_pose_needs_sync.load(Relaxed)
                 || (pos - entity.last_sent_pos.load()).length_squared()
                     >= f64::from(MIN_MOVE_DISTANCE_SQUARED));
@@ -2332,7 +2334,7 @@ impl EntityTracker {
         })
     }
 
-    pub(super) fn try_publish_regional_drop_move(
+    pub(super) fn try_publish_regional_actor_move(
         &self,
         world: &World,
         server: &Server,
@@ -2349,7 +2351,7 @@ impl EntityTracker {
         let tracked = entry.value().clone();
         drop(entry);
         if Arc::ptr_eq(&tracked.entity, actor) {
-            tracked.try_publish_drop_move(world, entity, java_recipients);
+            tracked.try_publish_actor_move(world, entity, java_recipients);
         }
     }
 

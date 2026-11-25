@@ -79,7 +79,10 @@ use sculith_util::math::vector3::Vector3;
 use sculith_util::text::TextComponent;
 use std::sync::{RwLock, RwLockReadGuard};
 
+mod air_travel;
 mod food_use;
+
+pub(crate) use air_travel::supports_regional_air_travel;
 pub(crate) use food_use::RegionalFoodUseFinish;
 
 #[derive(Clone, Copy)]
@@ -2287,7 +2290,15 @@ impl LivingEntity {
             self.entity.velocity.store(Vector3::default());
         } else if effective_ai && !caller.get_mob().is_some_and(|mob| mob.travel(caller)) {
             // A mob with its own travel, e.g. the allay, replaces the default one
-            self.travel(caller);
+            let (_motion, advance) = if supports_regional_air_travel(self.entity.entity_type) {
+                self.entity
+                    .begin_world_motion(crate::world::actor_deadline(self.entity.entity_id))
+            } else {
+                (None, true)
+            };
+            if advance {
+                self.travel(caller);
+            }
         }
 
         let suffocating = self.entity.tick_block_collisions(caller);
@@ -2476,17 +2487,21 @@ impl LivingEntity {
         if !self.discard_friction.load(Relaxed) {
             velo.x *= friction;
             velo.z *= friction;
-            velo.y *= caller.get_y_velocity_drag().unwrap_or_else(|| {
-                if caller.is_flutterer() {
-                    air_drag
-                } else {
-                    Self::compute_modified_friction(0.98, air_drag_modifier)
-                }
-            });
+            velo.y *= Self::air_vertical_drag(caller, air_drag_modifier, air_drag);
         }
 
         self.entity.velocity.store(velo);
         friction
+    }
+
+    fn air_vertical_drag(caller: &dyn EntityBase, modifier: f32, horizontal_drag: f64) -> f64 {
+        caller.get_y_velocity_drag().unwrap_or_else(|| {
+            if caller.is_flutterer() {
+                horizontal_drag
+            } else {
+                Self::compute_modified_friction(0.98, modifier)
+            }
+        })
     }
 
     pub(crate) fn travel_flying(&self, caller: &dyn EntityBase) {
@@ -2868,16 +2883,17 @@ impl LivingEntity {
                 .block_registry
                 .on_landed_upon(block, &world, fall_distance, caller);
         } else if height_difference < 0.0 {
-            let new_fall_distance = if !self.should_prevent_fall_damage()
-                && !self.should_prevent_fall_damage_in_area()
-            {
-                let distance = self.fall_distance.load();
-                distance - (height_difference as f32)
+            if !self.should_prevent_fall_damage() && !self.should_prevent_fall_damage_in_area() {
+                self.accumulate_fall_distance(height_difference);
             } else {
-                0f32
-            };
-            self.fall_distance.store(new_fall_distance);
+                self.fall_distance.store(0.0);
+            }
         }
+    }
+
+    fn accumulate_fall_distance(&self, height_difference: f64) {
+        self.fall_distance
+            .store(self.fall_distance.load() - height_difference as f32);
     }
 
     /// Applies fall damage through the mob's override when it has one.

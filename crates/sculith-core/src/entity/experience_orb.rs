@@ -202,7 +202,7 @@ impl ExperienceOrbEntity {
         deadline: Option<TickDeadline>,
     ) {
         let entity = &self.entity;
-        let (_permit, advance) = entity.begin_drop_world_tick(deadline);
+        let (_permit, advance) = entity.begin_world_motion(deadline);
         if entity.is_removed() {
             return;
         }

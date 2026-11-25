@@ -16,24 +16,24 @@ use crate::{
 use super::{Collision, Entity, EntityBase, experience_orb::ExperienceOrbEntity, item::ItemEntity};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum DropTickOwner {
+pub(super) enum ActorTickOwner {
     World,
     Region(RegionId),
 }
 
 #[derive(Default)]
-pub(super) struct DropClock {
-    last: Option<(DropTickOwner, std::time::Instant)>,
+pub(super) struct ActorClock {
+    last: Option<(ActorTickOwner, std::time::Instant)>,
 }
 
-impl DropClock {
-    fn can_claim(&self, owner: DropTickOwner, deadline: TickDeadline) -> bool {
+impl ActorClock {
+    fn can_claim(&self, owner: ActorTickOwner, deadline: TickDeadline) -> bool {
         self.last.is_none_or(|(previous, at)| {
             deadline.at > at && (previous == owner || deadline.at - at >= deadline.period)
         })
     }
 
-    pub(super) fn claim(&mut self, owner: DropTickOwner, deadline: TickDeadline) -> bool {
+    pub(super) fn claim(&mut self, owner: ActorTickOwner, deadline: TickDeadline) -> bool {
         if !self.can_claim(owner, deadline) {
             return false;
         }
@@ -44,7 +44,7 @@ impl DropClock {
 
 #[derive(Default)]
 pub(super) struct ActorMotion {
-    clock: DropClock,
+    clock: ActorClock,
     world_users: usize,
 }
 
@@ -106,7 +106,7 @@ impl Entity {
         Some(ActorWorldAccess(motion))
     }
 
-    pub(super) fn begin_drop_world_tick(
+    pub(super) fn begin_world_motion(
         &self,
         deadline: Option<TickDeadline>,
     ) -> (Option<ActorWorldAccess<'_>>, bool) {
@@ -116,9 +116,9 @@ impl Entity {
         let mut state = motion.lock().unwrap_or_else(PoisonError::into_inner);
         state.world_users += 1;
         let advance = if let Some(deadline) = deadline {
-            state.clock.claim(DropTickOwner::World, deadline)
+            state.clock.claim(ActorTickOwner::World, deadline)
         } else {
-            state.clock = DropClock::default();
+            state.clock = ActorClock::default();
             true
         };
         (Some(ActorWorldAccess(motion)), advance)
@@ -130,7 +130,7 @@ impl Entity {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clock
-                .claim(DropTickOwner::Region(owner), deadline);
+                .claim(ActorTickOwner::Region(owner), deadline);
         }
     }
     pub(crate) fn try_with_unmounted_actor<R>(&self, apply: impl FnOnce() -> R) -> Option<R> {
@@ -150,13 +150,13 @@ impl Entity {
         Some(apply())
     }
 
-    fn with_regional_drop_motion(
+    pub(super) fn with_regional_motion(
         &self,
         world: &World,
         chunk: Vector2<i32>,
         owner: RegionId,
         deadline: TickDeadline,
-        advance: impl FnOnce(&mut DropClock),
+        advance: impl FnOnce(&mut ActorClock),
         publish: impl FnOnce(),
     ) {
         let Some(motion) = self.motion_access.as_deref() else {
@@ -165,7 +165,7 @@ impl Entity {
         let Ok(mut motion) = motion.try_lock() else {
             return;
         };
-        let clock_owner = DropTickOwner::Region(owner);
+        let clock_owner = ActorTickOwner::Region(owner);
         if motion.world_users != 0 || !motion.clock.can_claim(clock_owner, deadline) {
             return;
         }
@@ -222,14 +222,14 @@ impl ItemEntity {
         owns: &impl Fn(Vector2<i32>) -> bool,
         publish: impl FnOnce(),
     ) {
-        self.get_entity().with_regional_drop_motion(
+        self.get_entity().with_regional_motion(
             world,
             chunk,
             owner,
             deadline,
             |clock| {
                 self.try_apply_regional_motion(world, owns, || {
-                    owns(chunk) && clock.claim(DropTickOwner::Region(owner), deadline)
+                    owns(chunk) && clock.claim(ActorTickOwner::Region(owner), deadline)
                 });
             },
             publish,
@@ -336,15 +336,15 @@ impl ExperienceOrbEntity {
         publish: impl FnOnce(),
     ) {
         let entity = self.get_entity();
-        let advance = |clock: &mut DropClock| {
+        let advance = |clock: &mut ActorClock| {
             if self.has_expired() || self.has_follow_target() {
                 return;
             }
             self.try_apply_regional_motion(world, owns, owner, || {
-                owns(chunk) && clock.claim(DropTickOwner::Region(owner), deadline)
+                owns(chunk) && clock.claim(ActorTickOwner::Region(owner), deadline)
             });
         };
-        entity.with_regional_drop_motion(world, chunk, owner, deadline, advance, publish);
+        entity.with_regional_motion(world, chunk, owner, deadline, advance, publish);
     }
 
     fn try_apply_regional_motion(

@@ -16,6 +16,7 @@ use crate::{
         ageable::{advance_regional_growth, try_mature_on_region},
         experience_orb::ExperienceOrbEntity,
         item::{ItemEntity, RegionalItemStep},
+        living::supports_regional_air_travel,
     },
     net::ClientPlatform,
     plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
@@ -34,6 +35,7 @@ bitflags::bitflags! {
         const EXPERIENCE = 2;
         const PASSIVE_EFFECTS = 4;
         const GROWTH = 8;
+        const AIR_TRAVEL = 16;
     }
 }
 
@@ -41,7 +43,10 @@ impl ActorWork {
     fn enabled(server: &Server) -> Self {
         let mut kinds = Self::EXPERIENCE | Self::PASSIVE_EFFECTS;
         kinds.set(Self::ITEM, ItemEntity::timers_unobserved(server));
-        kinds.set(Self::GROWTH, !plugins_observe_entity_ticks(server));
+        kinds.set(
+            Self::GROWTH | Self::AIR_TRAVEL,
+            !plugins_observe_entity_ticks(server),
+        );
         kinds
     }
 
@@ -54,6 +59,10 @@ impl ActorWork {
             let mut work = Self::empty();
             work.set(Self::PASSIVE_EFFECTS, base.regional_effects.load(Relaxed));
             work.set(Self::GROWTH, has_mob_growth(base));
+            work.set(
+                Self::AIR_TRAVEL,
+                supports_regional_air_travel(base.entity_type),
+            );
             work
         }
     }
@@ -61,6 +70,11 @@ impl ActorWork {
 
 pub(super) fn has_mob_growth(base: &Entity) -> bool {
     base.entity_type.mob && base.age.load(Relaxed) != 0
+}
+
+pub(super) fn has_mob_work(base: &Entity) -> bool {
+    ActorWork::of(base)
+        .intersects(ActorWork::PASSIVE_EFFECTS | ActorWork::GROWTH | ActorWork::AIR_TRAVEL)
 }
 
 thread_local! {
@@ -340,7 +354,7 @@ impl World {
         let native = server.plugin_manager.try_without_native_code();
         let pickups = native.is_some() && Self::regional_pickups_unobserved(server);
         let mob_growth = native.is_some() && !plugins_observe_entity_ticks(server);
-        let mob_maturation = mob_growth
+        let mob_packets = mob_growth
             && !server.plugin_manager.has_handlers::<PacketSentEvent>()
             && !server
                 .plugin_manager
@@ -366,7 +380,7 @@ impl World {
             }
             let publish = |java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>| {
                 if owns(base.chunk_pos.load()) {
-                    self.entity_tracker.try_publish_regional_drop_move(
+                    self.entity_tracker.try_publish_regional_actor_move(
                         self,
                         server,
                         actor,
@@ -420,18 +434,30 @@ impl World {
                     expired.push(actor);
                 }
             } else if native.is_some()
-                && (base.regional_effects.load(Relaxed) || mob_growth && has_mob_growth(base))
                 && let Some(living) = actor.get_living_entity()
-                && let Some(_checkpoint) = server.try_entity_save_guard()
-                && let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk)
             {
+                let effects = base.regional_effects.load(Relaxed);
+                let grows = mob_growth && has_mob_growth(base);
+                let travels = mob_packets
+                    && supports_regional_air_travel(base.entity_type)
+                    && !base.on_ground.load(Relaxed)
+                    && base.velocity.load().y <= -0.003;
+                if !(effects || grows || travels) {
+                    continue;
+                }
+                let Some(_checkpoint) = server.try_entity_save_guard() else {
+                    continue;
+                };
+                let TryResult::Present(loaded) = self.level.loaded_chunks.try_get(&chunk) else {
+                    continue;
+                };
                 let still_owned = || {
                     !base.is_removed()
                         && std::ptr::eq(base.world.load().as_ref(), self)
                         && base.chunk_pos.load() == chunk
                         && owns(chunk)
                 };
-                if base.regional_effects.load(Relaxed) {
+                if effects {
                     living.advance_regional_effects(deadline, still_owned, |expired, data| {
                         self.entity_tracker.try_publish_regional_effect_changes(
                             self,
@@ -443,10 +469,7 @@ impl World {
                         )
                     });
                 }
-                if mob_growth
-                    && has_mob_growth(base)
-                    && let Some(ageable) = actor.get_mob().and_then(|mob| mob.as_ageable())
-                {
+                if grows && let Some(ageable) = actor.get_mob().and_then(|mob| mob.as_ageable()) {
                     if let Some(age) = advance_regional_growth(ageable, deadline, || {
                         still_owned() && living.is_alive() && !living.is_dead_or_dying()
                     }) {
@@ -455,7 +478,7 @@ impl World {
                             age,
                             "Advanced growth on the mob region"
                         );
-                    } else if mob_maturation
+                    } else if mob_packets
                         && still_owned()
                         && let Some(delivered) = try_mature_on_region(
                             actor.as_ref(),
@@ -475,6 +498,19 @@ impl World {
                         }
                         tracing::trace!(entity = base.entity_id, "Matured livestock on its region");
                     }
+                }
+                drop(loaded);
+                if travels {
+                    living.try_regional_air_travel(
+                        actor.as_ref(),
+                        self,
+                        owner,
+                        deadline,
+                        owns,
+                        || {
+                            publish(&mut java_recipients);
+                        },
+                    );
                 }
             }
         }
@@ -937,6 +973,73 @@ mod tests {
         assert_eq!(ageable.get_age(), 2);
         region_step(1, 8);
         assert_eq!(ageable.get_age(), 1);
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn falling_livestock_shares_the_motion_deadline_with_its_world() {
+        use pumpkin_data::Block;
+        use pumpkin_world::world::BlockFlags;
+        use sculith_util::math::position::BlockPos;
+
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
+        let world = server.worlds.load()[0].clone();
+        let chunk = Vector2::new(0, 0);
+        let layout = Arc::new(RegionLayout::from_active(
+            FxHashMap::from_iter([(chunk, 0)]),
+            FxHashMap::from_iter([(0, [chunk].into())]),
+        ));
+        world.publish_region_layout(&layout, false);
+        world
+            .level
+            .loaded_chunks
+            .insert(chunk, ChunkData::empty_sync(0, 0));
+
+        let origin = Vector3::new(8.5, 80.0, 8.5);
+        let cow = crate::entity::passive::cow::CowEntity::new(Entity::new(
+            world.clone(),
+            origin,
+            &EntityType::COW,
+        ));
+        let base = cow.get_entity();
+        base.first_tick.store(false, Relaxed);
+        base.set_velocity(Vector3::new(0.0, -0.25, 0.0));
+        world.add_entity_silent(cow.clone());
+
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        let living = cow.get_living_entity().unwrap();
+        let chunks = layout.chunks(0).unwrap();
+        world.advance_region_time(0, chunks, deadline);
+        let moved = origin.add_raw(0.0, -0.25, 0.0);
+        assert_eq!(base.pos.load(), moved);
+        assert_eq!(living.fall_distance.load(), 0.25);
+        world.advance_region_time(0, chunks, deadline);
+        tick_actor_with_deadline(base.entity_id, Some(deadline), || {
+            cow.tick(cow.as_ref(), &server);
+        });
+        assert_eq!(base.pos.load(), moved);
+        assert_eq!(living.fall_distance.load(), 0.25);
+
+        world.set_block_state(
+            &BlockPos::new(8, 78, 8),
+            Block::STONE.default_state.id,
+            BlockFlags::empty(),
+        );
+        let next = TickDeadline {
+            at: deadline.at + deadline.period,
+            ..deadline
+        };
+        world.advance_region_time(0, chunks, next);
+        assert_eq!(base.pos.load(), moved);
+        tick_actor_with_deadline(base.entity_id, Some(next), || {
+            cow.tick(cow.as_ref(), &server);
+        });
+        assert!(base.pos.load().y < moved.y);
+        assert!(living.fall_distance.load() > 0.25);
         server.shutdown().await;
     }
 

@@ -454,8 +454,7 @@ impl World {
         };
         let schedules_actor = |entity: &dyn EntityBase| {
             let base = entity.get_entity();
-            base.regional_effects.load(Relaxed)
-                || super::regional_actors::has_mob_growth(base)
+            super::regional_actors::has_mob_work(base)
                 || base.entity_type == &EntityType::EXPERIENCE_ORB
                 || item_timers && base.entity_type == &EntityType::ITEM
         };

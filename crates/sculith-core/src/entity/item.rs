@@ -34,7 +34,7 @@ use std::sync::{
 
 use super::{
     Entity, EntityBase,
-    drop_motion::{DropClock, DropTickOwner},
+    drop_motion::{ActorClock, ActorTickOwner},
     living::LivingEntity,
     player::Player,
 };
@@ -63,7 +63,7 @@ pub(crate) enum RegionalItemStep {
 pub struct ItemEntity {
     entity: Entity,
     item_age: AtomicU32,
-    clock: Mutex<DropClock>,
+    clock: Mutex<ActorClock>,
     thrower: crossbeam::atomic::AtomicCell<Option<uuid::Uuid>>,
     // These cannot be atomic values because we mutate their state based on what they are; we run
     // into the ABA problem
@@ -609,7 +609,7 @@ impl ItemEntity {
         self.clock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .claim(DropTickOwner::Region(owner), deadline);
+            .claim(ActorTickOwner::Region(owner), deadline);
     }
 
     pub(crate) fn advance_regional_timers(
@@ -626,7 +626,7 @@ impl ItemEntity {
         };
         if stack.is_empty()
             || !still_owned()
-            || !clock.claim(DropTickOwner::Region(owner), deadline)
+            || !clock.claim(ActorTickOwner::Region(owner), deadline)
         {
             return RegionalItemStep::Skipped;
         }
@@ -655,7 +655,7 @@ impl ItemEntity {
         time: ItemTimerStep,
         deadline: Option<TickDeadline>,
     ) {
-        let (_permit, advance_motion) = self.entity.begin_drop_world_tick(deadline);
+        let (_permit, advance_motion) = self.entity.begin_world_motion(deadline);
         if self.entity.is_removed() {
             return;
         }
@@ -722,9 +722,9 @@ impl ItemEntity {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if let Some(deadline) = deadline {
-                    clock.claim(DropTickOwner::World, deadline)
+                    clock.claim(ActorTickOwner::World, deadline)
                 } else {
-                    *clock = DropClock::default();
+                    *clock = ActorClock::default();
                     true
                 }
             }
@@ -1191,7 +1191,7 @@ impl EntityBase for ItemEntity {
 
 #[cfg(test)]
 mod tests {
-    use super::{DropClock, DropTickOwner, ItemEntity, TickDeadline};
+    use super::{ActorClock, ActorTickOwner, ItemEntity, TickDeadline};
     use pumpkin_data::data_component_impl::{CustomDataImpl, CustomNameImpl};
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
@@ -1208,19 +1208,19 @@ mod tests {
             at: start + Duration::from_millis(ms),
             period,
         };
-        let mut clock = DropClock::default();
-        let old = DropTickOwner::Region(2);
-        let new = DropTickOwner::Region(4);
+        let mut clock = ActorClock::default();
+        let old = ActorTickOwner::Region(2);
+        let new = ActorTickOwner::Region(4);
 
-        assert!(clock.claim(DropTickOwner::World, step(0)));
+        assert!(clock.claim(ActorTickOwner::World, step(0)));
         assert!(!clock.claim(old, step(20)));
         assert!(clock.claim(old, step(70)));
         assert!(!clock.claim(old, step(70)));
         assert!(!clock.claim(new, step(100)));
         assert!(clock.claim(new, step(150)));
         assert!(!clock.claim(old, step(120)));
-        assert!(!clock.claim(DropTickOwner::World, step(180)));
-        assert!(clock.claim(DropTickOwner::World, step(200)));
+        assert!(!clock.claim(ActorTickOwner::World, step(180)));
+        assert!(clock.claim(ActorTickOwner::World, step(200)));
     }
 
     #[test]
