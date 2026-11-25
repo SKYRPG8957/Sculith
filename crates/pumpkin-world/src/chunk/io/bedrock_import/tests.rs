@@ -398,6 +398,34 @@ fn storage_tipped_arrows_keep_native_variants_and_original_export_scope() {
 }
 
 #[test]
+fn storage_thrown_decay_keeps_older_template_rules() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join(".sculith-bedrock-storage-version"),
+        b"4\n",
+    )
+    .unwrap();
+    let earlier = storage::read_import_registry(directory.path()).unwrap();
+    storage::write_item_version(directory.path()).unwrap();
+    let items = storage::read_import_registry(directory.path()).unwrap();
+    let terrain = terrain::TerrainRegistry::load().unwrap();
+    for item in ["splash_potion", "lingering_potion"] {
+        let source = bedrock_storage_item(item, 36);
+        assert!(storage::convert_stack(&source, &terrain, &earlier).is_err());
+        let (decoded, encoded) = round_trip_storage_item(&source, &terrain, &items);
+        assert_eq!(decoded.item.registry_key, item);
+        assert_eq!(encoded.get_short("Damage"), Some(36));
+        let mut saved = NbtCompound::new();
+        decoded.write_item_stack(&mut saved);
+        assert!(storage::read_sculith_stack(&saved, &earlier).is_err());
+    }
+    assert!(
+        storage::convert_stack(&bedrock_storage_item("potion", 36), &terrain, &earlier).is_ok()
+    );
+    assert!(storage::convert_stack(&bedrock_storage_item("arrow", 37), &terrain, &earlier).is_ok());
+}
+
+#[test]
 fn storage_export_replaces_slots_and_keeps_unsupported_compound_bytes() {
     let pos = BlockPos::new(-1, -60, 0);
     let mut raw = Vec::new();

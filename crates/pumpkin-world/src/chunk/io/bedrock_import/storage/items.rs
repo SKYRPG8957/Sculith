@@ -21,7 +21,7 @@ use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use super::super::{Error, invalid, terrain::TerrainRegistry};
 
 const VERSION_FILE: &str = ".sculith-bedrock-storage-version";
-const CURRENT_VERSION: &[u8] = b"4\n";
+const CURRENT_VERSION: &[u8] = b"5\n";
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 enum StorageVersion {
@@ -29,6 +29,7 @@ enum StorageVersion {
     PotionAndEnchantment,
     DrinkableDecay,
     TippedArrows,
+    ThrownDecay,
 }
 
 pub(in crate::chunk::io::bedrock_import) struct StorageItemRegistry {
@@ -42,8 +43,14 @@ impl StorageItemRegistry {
     }
 
     fn potion_aux(&self, id: i16, contents: &PotionContentsImpl) -> Option<u32> {
+        let decay_version =
+            if id == BedrockItem::SPLASH_POTION.id || id == BedrockItem::LINGERING_POTION.id {
+                StorageVersion::ThrownDecay
+            } else {
+                StorageVersion::DrinkableDecay
+            };
         if (id == BedrockItem::ARROW.id && self.version < StorageVersion::TippedArrows)
-            || (contents.potion_id.is_none() && self.version < StorageVersion::DrinkableDecay)
+            || (contents.potion_id.is_none() && self.version < decay_version)
         {
             return None;
         }
@@ -57,7 +64,7 @@ pub(in crate::chunk::io::bedrock_import) fn item_registry() -> StorageItemRegist
             .iter()
             .map(|item| (item.registry_key, item.id))
             .collect(),
-        version: StorageVersion::TippedArrows,
+        version: StorageVersion::ThrownDecay,
     }
 }
 
@@ -74,7 +81,8 @@ pub(in crate::chunk::io::bedrock_import) fn read_import_registry(
             let mut version = Vec::new();
             file.take(16).read_to_end(&mut version)?;
             match version.as_slice() {
-                CURRENT_VERSION => StorageVersion::TippedArrows,
+                CURRENT_VERSION => StorageVersion::ThrownDecay,
+                b"4\n" => StorageVersion::TippedArrows,
                 b"3\n" => StorageVersion::DrinkableDecay,
                 b"2\n" => StorageVersion::PotionAndEnchantment,
                 _ => return Err(invalid("unknown Bedrock storage import version")),

@@ -850,8 +850,27 @@ mod tests {
         contents.custom_effects[0].duration += 1;
         stack.set_data_component(contents);
         assert_ne!(NetworkItemDescriptor::from(&stack).aux_value, VarUInt(36));
-        assert!(potion_contents_from_bedrock(BedrockItem::SPLASH_POTION.id, 36).is_none());
-        assert!(potion_contents_from_bedrock(BedrockItem::LINGERING_POTION.id, 36).is_none());
+    }
+
+    #[test]
+    fn thrown_decay_preserves_its_effect_and_bedrock_aux() {
+        let expected = potion_contents_from_bedrock(BedrockItem::POTION.id, 36).unwrap();
+        for (item, native) in [
+            (&Item::SPLASH_POTION, &BedrockItem::SPLASH_POTION),
+            (&Item::LINGERING_POTION, &BedrockItem::LINGERING_POTION),
+        ] {
+            let contents = potion_contents_from_bedrock(native.id, 36).unwrap();
+            assert_eq!(contents, expected);
+            let mut stack = ItemStack::new(1, item);
+            stack.set_data_component(contents);
+            for aux in [
+                NetworkItemDescriptor::from(&stack).aux_value,
+                ItemStackWrapper::from(&stack).aux_value,
+                NetworkItemStackDescriptor::from(&stack).aux_value,
+            ] {
+                assert_eq!(aux, VarUInt(36));
+            }
+        }
     }
 
     #[test]

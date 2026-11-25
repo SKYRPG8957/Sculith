@@ -770,13 +770,18 @@ generator, with supported Bedrock flat layers mapped to a flat preset.
 Ordinary single chests and barrels preserve the slots and counts of items
 with shared mappings. This includes default block items, standard drinkable,
 splash and lingering potion variants, tipped arrows from the Bedrock creative
-catalogue, and mapped enchantments on items and enchanted books. Drinkable
-Bedrock Decay and tipped arrows of Decay retain their Wither effect and native
-Bedrock variant. Java receives the corresponding potion or tipped arrow with a
-custom Wither effect. A container with an unsupported item variant is skipped
-as a unit. Paired chests and containers with other unsupported metadata are
-also skipped. The command reports excluded database records and shows the
-first 16 skipped block entities with their coordinates and reasons.
+catalogue, and mapped enchantments on items and enchanted books. Drinkable,
+splash and lingering Bedrock Decay potions and tipped arrows of Decay retain
+their Wither effect and native Bedrock variant. Java receives the corresponding
+potion or tipped arrow with a custom Wither effect. A container with an
+unsupported item variant is skipped as a unit. Paired chests and containers
+with other unsupported metadata are also skipped. The command reports excluded
+database records and shows the first 16 skipped block entities with their
+coordinates and reasons.
+
+A direct splash hit applies the full effect. An eligible contact with a
+lingering potion cloud uses the same effect strength across the cloud. The
+shared rules follow the observed Bedrock result for Decay and Harming.
 
 Modern actor records indexed to a saved chunk can also bring in pigs, cows,
 sheep and chickens. The importer preserves their dimension, position, age,

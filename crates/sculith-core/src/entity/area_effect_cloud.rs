@@ -5,7 +5,7 @@ use crate::{
     entity::{Entity, EntityBase, projectile::owner::EntityReference},
     server::Server,
 };
-use pumpkin_data::effect::StatusEffect;
+use pumpkin_data::{effect::StatusEffect, item::Item};
 use sculith_util::math::boundingbox::BoundingBox;
 use sculith_util::math::vector3::Vector3;
 
@@ -345,6 +345,12 @@ impl EntityBase for AreaEffectCloudEntity {
         let max = Vector3::new(pos.x + r, pos.y + r, pos.z + r);
         let aabb = BoundingBox::new(min, max);
         let world = self.entity.world.load();
+        let lingering_potion = self
+            .item_stack
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .item
+            == &Item::LINGERING_POTION;
 
         let mut candidates = world.get_entities_at_box(&aabb);
         let players = world.get_players_at_box(&aabb);
@@ -396,7 +402,11 @@ impl EntityBase for AreaEffectCloudEntity {
                 continue;
             }
 
-            let scale = 1.0f32 - (dist as f32 / radius_f as f32);
+            let scale = if lingering_potion {
+                1.0
+            } else {
+                1.0f32 - (dist as f32 / radius_f as f32)
+            };
 
             // Decide whether this contact will actually apply an effect
             let effs_clone = self

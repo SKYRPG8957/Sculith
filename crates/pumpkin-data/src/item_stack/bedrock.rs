@@ -105,8 +105,7 @@ pub fn potion_aux_for_contents(id: i16, contents: &PotionContentsImpl) -> Option
     }
     let potion = if let Some(potion_id) = contents.potion_id {
         potion_aux(potion_id)?
-    } else if (arrow || id == BedrockItem::POTION.id)
-        && contents.custom_color.is_none()
+    } else if contents.custom_color.is_none()
         && contents.custom_name.is_none()
         && contents.custom_effects == [DECAY_EFFECT]
     {
@@ -130,7 +129,7 @@ pub fn potion_contents_from_bedrock(id: i16, aux: u32) -> Option<PotionContentsI
     } else {
         return None;
     };
-    if (arrow || id == BedrockItem::POTION.id) && aux == DECAY_AUX {
+    if aux == DECAY_AUX {
         return Some(PotionContentsImpl {
             potion_id: None,
             custom_color: None,

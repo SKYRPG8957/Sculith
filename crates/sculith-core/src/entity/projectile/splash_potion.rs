@@ -2,7 +2,10 @@ use crate::entity::projectile::owner::ProjectileOwner;
 use std::sync::{Arc, RwLock};
 
 use crate::{
-    entity::{Entity, EntityBase, projectile::ThrownItemEntity},
+    entity::{
+        Entity, EntityBase,
+        projectile::{ProjectileHit, ThrownItemEntity},
+    },
     server::Server,
 };
 use pumpkin_data::item_stack::ItemStack;
@@ -152,7 +155,7 @@ impl EntityBase for SplashPotionEntity {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn on_hit(&self, hit: crate::entity::projectile::ProjectileHit) {
+    fn on_hit(&self, hit: ProjectileHit) {
         let world = self.get_entity().world.load();
         let hit_pos = hit.hit_pos();
 
@@ -262,6 +265,10 @@ impl EntityBase for SplashPotionEntity {
             return;
         }
 
+        let direct_target = match hit {
+            ProjectileHit::Entity { entity, .. } => Some(entity.get_entity().entity_id),
+            ProjectileHit::Block { .. } => None,
+        };
         let radius = 4.0f64;
         let min = Vector3::new(hit_pos.x - radius, hit_pos.y - radius, hit_pos.z - radius);
         let max = Vector3::new(hit_pos.x + radius, hit_pos.y + radius, hit_pos.z + radius);
@@ -283,7 +290,11 @@ impl EntityBase for SplashPotionEntity {
                 let dz = pos.z - hit_pos.z;
                 let dist = (dx * dx + dy * dy + dz * dz).sqrt();
                 if dist <= radius {
-                    let scale = (1.0f32 - (dist as f32 / radius as f32)).max(0.0);
+                    let scale = if direct_target == Some(cand.get_entity().entity_id) {
+                        1.0
+                    } else {
+                        (1.0f32 - (dist as f32 / radius as f32)).max(0.0)
+                    };
                     affected.push((cand, scale));
                 }
             }
