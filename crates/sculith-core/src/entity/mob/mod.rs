@@ -571,7 +571,7 @@ impl MobEntity {
             let deadline = crate::world::actor_deadline(entity_id);
             let already_followed = navigator
                 .ground_navigation()
-                .is_some_and(|nav| nav.already_followed(deadline));
+                .is_some_and(|nav| nav.finish_regional_follow(&self.living_entity, deadline));
             let target = if already_followed {
                 None
             } else {

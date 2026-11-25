@@ -1217,6 +1217,21 @@ impl PathNavigation {
             .is_some_and(|(now, previous)| !now.follows(previous))
     }
 
+    pub(crate) fn finish_regional_follow(
+        &mut self,
+        entity: &LivingEntity,
+        deadline: Option<TickDeadline>,
+    ) -> bool {
+        if !self.already_followed(deadline) {
+            return false;
+        }
+        // The world already ran goal callbacks, which can submit or refresh a
+        // destination after the region moved. Consume their updates without
+        // stepping the newly selected route on the same deadline.
+        self.update_path(entity);
+        true
+    }
+
     /// Vanilla `PathNavigation.canCutCorner`.
     #[must_use]
     pub const fn can_cut_corner(path_type: PathType) -> bool {
@@ -1472,7 +1487,7 @@ impl PathNavigationTrait for GroundPathNavigation {
 
     fn tick(&mut self, entity: &LivingEntity) -> Option<NavigationTarget> {
         let current = crate::world::actor_deadline(entity.entity.entity_id);
-        if self.inner.already_followed(current) {
+        if self.inner.finish_regional_follow(entity, current) {
             return self.inner.ground_target(entity);
         }
         self.inner.regional_follow_completed = None;
@@ -2902,6 +2917,71 @@ mod tests {
             Vector3::new(0.5, 64.0, 0.5),
             entity_type,
         ))
+    }
+
+    #[tokio::test]
+    async fn world_finishes_goal_updates_after_a_regional_follow_step() -> TestResult {
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        for x in 2..14 {
+            for z in 2..14 {
+                chunk.set_block_absolute_y(x, 63, z, pumpkin_data::Block::STONE.default_state.id);
+            }
+        }
+        world.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
+        let start = Vector3::new(5.5, 64.0, 7.5);
+        let living = LivingEntity::new(Entity::new(world.clone(), start, &EntityType::COW));
+        living.entity.on_ground.store(true, Ordering::Relaxed);
+        let target = BlockPos::new(11, 64, 7);
+        let mut navigation = GroundPathNavigation::new();
+        let initial_path = Path::new(
+            vec![Node::new(BlockPos::floored_v(start)), Node::new(target)],
+            target,
+            true,
+        );
+        assert!(navigation.move_to_path(Some(initial_path), 1.0, &living));
+
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: std::time::Duration::from_millis(50),
+        };
+        let before = navigation
+            .inner
+            .prepare_ground_route(&living, &world, 42)
+            .ok_or("missing initial regional step")?;
+        navigation.inner.commit_ground_route(&before, deadline);
+        let tick = navigation.inner.tick_count;
+        navigation.set_progress(NavigatorGoal::new(start, target.0.to_f64(), 1.0));
+        assert!(
+            navigation
+                .inner
+                .finish_regional_follow(&living, Some(deadline))
+        );
+        assert_eq!(navigation.inner.tick_count, tick);
+        assert_eq!(
+            navigation.get_path().unwrap().get_next_node_index(),
+            before.next_node
+        );
+        assert!(
+            navigation
+                .inner
+                .prepare_ground_route(&living, &world, 42)
+                .is_some()
+        );
+
+        let updated = BlockPos::new(5, 64, 12);
+        navigation.set_progress(NavigatorGoal::new(start, updated.0.to_f64(), 1.0));
+        assert!(
+            navigation
+                .inner
+                .finish_regional_follow(&living, Some(deadline))
+        );
+        assert_eq!(navigation.inner.tick_count, tick);
+        assert_eq!(navigation.get_path().unwrap().get_target(), updated);
+        assert!(!navigation.inner.has_pending_path);
+        world.level.shutdown().await;
+        Ok(())
     }
 
     #[tokio::test]
