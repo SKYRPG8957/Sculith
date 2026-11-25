@@ -493,7 +493,11 @@ for an isolated pig, cow, sheep or chicken when the grown hitbox fits at its
 current position. It checks the loaded block palettes and updates the age,
 collision bounds and spatial index under the actor's motion guard. Paired
 current-protocol clients receive the adult metadata from the same step.
-Bedrock sheep use the observed half-size baby scale and adult scale of one.
+Both editions use the collision widths and heights measured in Bedrock
+1.26.63.1 for these four species at spawn and across the age transition.
+Bedrock clients receive base dimensions and the age scale. Growth sends
+the new scale and age flag, and sends dimensions when their encoded values
+change, such as after a custom size override.
 The world handles relocation, attached actors, translated clients, observers
 and metadata delivery that the region could not queue.
 

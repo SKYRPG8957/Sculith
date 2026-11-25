@@ -289,7 +289,9 @@ impl Mob for SheepEntity {
         let mut meta = crate::entity::mob::MobMetadata::new()
             .sheep_wool(DyeColor::from(self.get_color()), self.is_sheared());
         if self.is_baby() {
-            meta = meta.baby(true).scale(0.5);
+            meta = meta
+                .baby(true)
+                .scale(self.get_entity().bedrock_age_scale(true));
         }
         Some(meta)
     }

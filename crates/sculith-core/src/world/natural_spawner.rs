@@ -626,7 +626,7 @@ pub fn spawn_mobs_for_chunk_generation(
                 let pos = get_top_non_colliding_pos(world, cache, entity_type, x, z);
 
                 if entity_type.summonable && is_spawn_position_ok_cache(cache, &pos, entity_type) {
-                    let width = f64::from(entity_type.dimension[0]);
+                    let width = f64::from(entity_type.physical_dimensions(false).width);
                     let fx =
                         (f64::from(x)).clamp(f64::from(xo) + width, f64::from(xo) + 16.0 - width);
                     let fz =

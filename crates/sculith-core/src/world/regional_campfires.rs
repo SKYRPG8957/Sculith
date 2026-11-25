@@ -200,7 +200,7 @@ impl World {
                         && std::ptr::eq(base.world.load().as_ref(), self)
                         && let Some(mob) = entity.get_mob()
                     {
-                        crate::entity::ageable::publish_bedrock_age(mob);
+                        crate::entity::ageable::publish_bedrock_age(mob, None);
                     }
                 }
             }

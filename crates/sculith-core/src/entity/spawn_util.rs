@@ -6,11 +6,7 @@ use pumpkin_data::{
     tag::{Block as BlockTag, Taggable},
 };
 use rand::RngExt;
-use sculith_util::math::{
-    boundingbox::{BoundingBox, EntityDimensions},
-    position::BlockPos,
-    vector3::Vector3,
-};
+use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use uuid::Uuid;
 
 use crate::entity::{Entity, EntityBase, mob::Mob};
@@ -105,11 +101,7 @@ pub fn try_spawn_mob<T: Mob + 'static>(
             f64::from(spawn_pos.0.z) + 0.5,
         );
         if check_collisions {
-            let dimensions = EntityDimensions::new(
-                entity_type.dimension[0],
-                entity_type.dimension[1],
-                entity_type.eye_height,
-            );
+            let dimensions = entity_type.physical_dimensions(false);
             let bounding_box =
                 BoundingBox::new_from_pos(position.x, position.y, position.z, &dimensions);
             if !world.is_space_empty(bounding_box) {

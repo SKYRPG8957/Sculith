@@ -1,8 +1,13 @@
 use pumpkin_data::{Block, data_component_impl::EquipmentSlot, entity::EntityType, tracked_data};
 use rustc_hash::FxHashMap;
-use sculith_protocol::bedrock::client::set_actor_data::{SyncedActorDataList, entity_data_flag};
+use sculith_protocol::bedrock::client::set_actor_data::{
+    SyncedActorDataList, entity_data_flag, entity_data_key,
+};
 use sculith_util::math::{
-    boundingbox::BoundingBox, position::BlockPos, vector2::Vector2, vector3::Vector3,
+    boundingbox::{BoundingBox, EntityDimensions},
+    position::BlockPos,
+    vector2::Vector2,
+    vector3::Vector3,
 };
 use std::{
     sync::{
@@ -155,7 +160,8 @@ pub(crate) fn try_mature_on_region(
         let adult = entity.dimensions_for_age(entity.pose.load(), false);
         let new_bounds = Entity::make_bounding_box(entity.entity_type, position, &adult);
         let area = new_bounds.minmax(&entity.bounding_box.load());
-        let data = maturation_actor_data(entity.bedrock_metadata_for_size(adult, false), mob);
+        let mut data = maturation_actor_data(entity.bedrock_metadata_for_size(adult, false), mob);
+        omit_unchanged_bedrock_bounds(entity, &mut data, (before, true), (adult, false));
         let mut bedrock_delivered = None;
         let apply = || {
             entity.synched_data.try_publish_value(
@@ -285,25 +291,54 @@ fn fits_at_original_position(
     );
 }
 
-fn publish_age_boundary(mob: &(impl AgeableMob + ?Sized), before: i32, after: i32) {
+pub(super) fn publish_age_boundary(mob: &(impl AgeableMob + ?Sized), before: i32, after: i32) {
     if (before < 0) == (after < 0) {
         return;
     }
     let entity = mob.get_entity();
     entity.set_synced_data(tracked_data::ageable_mob::DATA_BABY_ID, after < 0);
-    entity.refresh_dimensions();
+    let previous = if entity.entity_type.bedrock_age_geometry().is_some() {
+        let previous = entity.entity_dimension.load();
+        entity.refresh_dimensions_into(None);
+        Some((previous, before < 0))
+    } else {
+        entity.refresh_dimensions();
+        None
+    };
     mob.age_boundary_reached();
-    publish_bedrock_age(mob);
+    publish_bedrock_age(mob, previous);
 }
 
-pub(crate) fn publish_bedrock_age(mob: &(impl Mob + ?Sized)) {
+pub(crate) fn publish_bedrock_age(
+    mob: &(impl Mob + ?Sized),
+    previous: Option<(EntityDimensions, bool)>,
+) {
     let entity = mob.get_entity();
     let _motion = entity.hold_actor_motion();
-    let mut actor_data = entity.bedrock_metadata();
+    let current = (entity.entity_dimension.load(), entity.age.load(Relaxed) < 0);
+    let mut actor_data = entity.bedrock_metadata_for_size(current.0, current.1);
     if let Some(meta) = mob.mob_metadata() {
         actor_data.merge(meta.to_bedrock_actor_data());
     }
+    if let Some(previous) = previous {
+        omit_unchanged_bedrock_bounds(entity, &mut actor_data, previous, current);
+    }
     entity.send_bedrock_actor_data(&actor_data);
+}
+
+fn omit_unchanged_bedrock_bounds(
+    entity: &Entity,
+    metadata: &mut SyncedActorDataList,
+    previous: (EntityDimensions, bool),
+    current: (EntityDimensions, bool),
+) {
+    if entity.entity_type.bedrock_age_geometry().is_some()
+        && entity.bedrock_packet_dimensions(previous.0, previous.1)
+            == entity.bedrock_packet_dimensions(current.0, current.1)
+    {
+        metadata.0.remove(&entity_data_key::WIDTH);
+        metadata.0.remove(&entity_data_key::HEIGHT);
+    }
 }
 
 #[must_use]

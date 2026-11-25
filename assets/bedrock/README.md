@@ -40,6 +40,9 @@ This directory contains a number of different data files used to help support co
 - `entity_identifiers.dat`
     - downloaded from [CloudburstMC/Data](https://github.com/CloudburstMC/Data/blob/8754b101680c9235fbf18e6c6072d5e35c5805ff/entity_identifiers.dat), alongside the 26.60 registry data above.
     - Contains the vanilla `AvailableActorIdentifiers` network NBT. Shared models append their native identifiers to an immutable startup copy; vanilla runtime IDs are preserved.
+- `livestock_geometry.json`
+    - Base collision dimensions and baby scale observed in `AddActor` on Bedrock Dedicated Server 1.26.63.1 for chickens, cows, pigs and sheep. Volume selector measurements on the same server confirmed the effective baby and adult collision bounds.
+    - The entity type generator uses these values for shared collision checks. Bedrock clients receive the base dimensions and the age scale as separate fields.
 - `player_geometry.json`
     - adapted from [GeyserMC/Geyser](https://github.com/GeyserMC/Geyser/blob/master/core/src/main/resources/bedrock/geometries/geo.json) (MIT License)
     - Provides valid standard wide and slim Bedrock player geometry for Java Edition player skins.

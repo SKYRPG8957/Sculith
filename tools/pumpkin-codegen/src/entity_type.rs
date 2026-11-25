@@ -106,6 +106,37 @@ pub struct Baby {
     poses: BTreeMap<String, PoseDimensions>,
 }
 
+#[derive(Deserialize)]
+struct BedrockAgeGeometry {
+    width: f32,
+    height: f32,
+    baby_scale: f32,
+}
+
+fn bedrock_age_geometry_tokens(entities: &BTreeMap<String, EntityType>) -> TokenStream {
+    let geometry: BTreeMap<String, BedrockAgeGeometry> = serde_json::from_str(
+        &fs::read_to_string("../../assets/bedrock/livestock_geometry.json")
+            .expect("Failed to read Bedrock livestock geometry"),
+    )
+    .expect("Failed to parse Bedrock livestock geometry");
+    geometry
+        .into_iter()
+        .map(|(name, BedrockAgeGeometry { width, height, baby_scale })| {
+            let entity = entities
+                .get(&name)
+                .unwrap_or_else(|| panic!("Unknown entity in Bedrock geometry: {name}"));
+            assert!(entity.baby.is_some(), "Bedrock geometry requires a baby form: {name}");
+            assert!(
+                width.is_finite() && width > 0.0 && height.is_finite() && height > 0.0
+                    && baby_scale > 0.0 && baby_scale <= 1.0,
+                "Invalid Bedrock age geometry: {name}"
+            );
+            let id = entity.id;
+            quote! { #id => Some(BedrockAgeGeometry { width: #width, height: #height, baby_scale: #baby_scale }), }
+        })
+        .collect()
+}
+
 fn poses_tokens(poses: &BTreeMap<String, PoseDimensions>) -> TokenStream {
     let poses = poses.iter().map(|(name, pose)| {
         let pose_ident = format_ident!("{}", name.to_pascal_case());
@@ -437,6 +468,7 @@ pub fn build() -> TokenStream {
     let json: BTreeMap<String, EntityType> =
         serde_json::from_str(&fs::read_to_string("../../assets/entities.json").unwrap())
             .expect("Failed to parse entities.json");
+    let bedrock_age_geometry = bedrock_age_geometry_tokens(&json);
 
     let mut consts = TokenStream::new();
     let mut type_from_raw_id_arms = TokenStream::new();
@@ -525,6 +557,21 @@ pub fn build() -> TokenStream {
             pub baby_poses: &'static [PoseDimensions],
             pub boat: Option<BoatSeats>,
             pub resource_name: &'static str,
+        }
+
+        /// Native Bedrock base collision dimensions and scale for a baby.
+        #[derive(Debug, Clone, Copy)]
+        pub struct BedrockAgeGeometry {
+            width: f32,
+            height: f32,
+            baby_scale: f32,
+        }
+
+        impl BedrockAgeGeometry {
+            #[must_use]
+            pub const fn scale(self, baby: bool) -> f32 {
+                if baby { self.baby_scale } else { 1.0 }
+            }
         }
 
         /// Where a boat seats its riders: the seat height and the lone rider's forward offset.
@@ -733,6 +780,30 @@ pub fn build() -> TokenStream {
             }
 
             #[must_use]
+            pub const fn bedrock_age_geometry(&self) -> Option<BedrockAgeGeometry> {
+                match self.id {
+                    #bedrock_age_geometry
+                    _ => None,
+                }
+            }
+
+            /// Default collision size in the shared simulation.
+            #[must_use]
+            pub const fn physical_dimensions(&self, baby: bool) -> EntityDimensions {
+                let mut dimensions = if baby && let Some(dimensions) = self.baby_dimensions {
+                    dimensions
+                } else {
+                    EntityDimensions::new(self.dimension[0], self.dimension[1], self.eye_height)
+                };
+                if let Some(geometry) = self.bedrock_age_geometry() {
+                    let scale = geometry.scale(baby);
+                    dimensions.width = geometry.width * scale;
+                    dimensions.height = geometry.height * scale;
+                }
+                dimensions
+            }
+
+            #[must_use]
             pub const fn width(&self) -> f32 {
                 self.dimension[0]
             }
@@ -744,8 +815,9 @@ pub fn build() -> TokenStream {
 
             #[must_use]
             pub fn get_spawn_bounding_box(&self, x: f64, y: f64, z: f64) -> BoundingBox {
-                let half_width = f64::from(self.spawn_dimensions_scale * self.dimension[0] / 2.0);
-                let height = f64::from(self.spawn_dimensions_scale * self.dimension[1]);
+                let dimensions = self.physical_dimensions(false);
+                let half_width = f64::from(self.spawn_dimensions_scale * dimensions.width / 2.0);
+                let height = f64::from(self.spawn_dimensions_scale * dimensions.height);
                 BoundingBox::new(
                     Vector3::new(x - half_width, y, z - half_width),
                     Vector3::new(x + half_width, y + height, z + half_width),

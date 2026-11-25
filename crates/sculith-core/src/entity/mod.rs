@@ -2136,6 +2136,23 @@ impl Entity {
         self.bedrock_metadata_for_size(self.entity_dimension.load(), self.age.load(Relaxed) < 0)
     }
 
+    fn bedrock_age_scale(&self, baby: bool) -> f32 {
+        self.entity_type
+            .bedrock_age_geometry()
+            .map_or(if baby { 0.5 } else { 1.0 }, |geometry| {
+                geometry.scale(baby)
+            })
+    }
+
+    fn bedrock_packet_dimensions(&self, dimensions: EntityDimensions, baby: bool) -> [f32; 2] {
+        // Bedrock applies the age scale to the advertised base size for these mobs.
+        let scale = self
+            .entity_type
+            .bedrock_age_geometry()
+            .map_or(1.0, |geometry| geometry.scale(baby));
+        [dimensions.width / scale, dimensions.height / scale]
+    }
+
     fn bedrock_metadata_for_size(
         &self,
         dimension: EntityDimensions,
@@ -2144,17 +2161,12 @@ impl Entity {
         self.init_bedrock_flags();
 
         let mut metadata = SyncedActorDataList::new();
-        metadata.set(
-            entity_data_key::WIDTH,
-            MetadataValue::Float(dimension.width),
-        );
-        metadata.set(
-            entity_data_key::HEIGHT,
-            MetadataValue::Float(dimension.height),
-        );
+        let [width, height] = self.bedrock_packet_dimensions(dimension, is_baby);
+        metadata.set(entity_data_key::WIDTH, MetadataValue::Float(width));
+        metadata.set(entity_data_key::HEIGHT, MetadataValue::Float(height));
         metadata.set(
             entity_data_key::SCALE,
-            MetadataValue::Float(if is_baby { 0.5 } else { 1.0 }),
+            MetadataValue::Float(self.bedrock_age_scale(is_baby)),
         );
         metadata.set(
             entity_data_key::FLAGS,
@@ -2242,21 +2254,14 @@ impl Entity {
 
     /// The type's baby size for babies, its adult size otherwise.
     #[must_use]
-    pub fn age_dimensions(entity_type: &EntityType, baby: bool) -> EntityDimensions {
-        entity_type
-            .baby_dimensions
-            .filter(|_| baby)
-            .unwrap_or_else(|| Self::type_dimensions(entity_type))
+    pub const fn age_dimensions(entity_type: &EntityType, baby: bool) -> EntityDimensions {
+        entity_type.physical_dimensions(baby)
     }
 
-    /// The type's default size, vanilla `EntityType.getDimensions`.
+    /// The entity type's default size in the shared simulation.
     #[must_use]
     pub const fn type_dimensions(entity_type: &EntityType) -> EntityDimensions {
-        EntityDimensions {
-            width: entity_type.dimension[0],
-            height: entity_type.dimension[1],
-            eye_height: entity_type.eye_height,
-        }
+        entity_type.physical_dimensions(false)
     }
 
     /// Vanilla `makeBoundingBox`: wind charges sit 0.15 below their position.
@@ -2281,7 +2286,15 @@ impl Entity {
         let _motion = self.hold_actor_motion();
         let old_age = self.age.swap(age, Relaxed);
         if (old_age < 0) != (age < 0) {
-            self.refresh_dimensions();
+            if self.entity_type.bedrock_age_geometry().is_some()
+                && let Some(actor) = self.world.load().get_entity_by_id(self.entity_id)
+                && std::ptr::eq(actor.get_entity(), self)
+                && let Some(mob) = actor.get_mob().and_then(|mob| mob.as_ageable())
+            {
+                ageable::publish_age_boundary(mob, old_age, age);
+            } else {
+                self.refresh_dimensions();
+            }
         }
     }
 
@@ -4852,7 +4865,7 @@ impl Entity {
                 let pose = pose as i32;
                 let mut bedrock_meta = SyncedActorDataList::new();
                 bedrock_meta.set(entity_data_key::POSE_INDEX, MetadataValue::Int(pose));
-                self.refresh_dimensions_into(&mut bedrock_meta);
+                self.refresh_dimensions_into(Some(&mut bedrock_meta));
                 self.set_synced_data(tracked_data::entity::DATA_POSE, VarInt(pose));
                 self.send_bedrock_actor_data(&bedrock_meta);
                 return;
@@ -4889,11 +4902,11 @@ impl Entity {
     pub fn refresh_dimensions(&self) {
         let _motion = self.hold_actor_motion();
         let mut metadata = SyncedActorDataList::new();
-        self.refresh_dimensions_into(&mut metadata);
+        self.refresh_dimensions_into(Some(&mut metadata));
         self.send_bedrock_actor_data(&metadata);
     }
 
-    fn refresh_dimensions_into(&self, metadata: &mut SyncedActorDataList) {
+    fn refresh_dimensions_into(&self, metadata: Option<&mut SyncedActorDataList>) {
         let dimensions = self.get_dimensions(self.pose.load());
         let old = {
             // Read the origin under the index guard so a regional move cannot leave a stale box.
@@ -4910,16 +4923,15 @@ impl Entity {
             );
             old
         };
-        metadata.set(
-            entity_data_key::WIDTH,
-            MetadataValue::Float(dimensions.width),
-        );
-        metadata.set(
-            entity_data_key::HEIGHT,
-            MetadataValue::Float(dimensions.height),
-        );
-        if self.sync_bedrock_crawling() {
-            self.write_bedrock_flags_two(metadata);
+        let crawling_changed = self.sync_bedrock_crawling();
+        if let Some(metadata) = metadata {
+            let [width, height] =
+                self.bedrock_packet_dimensions(dimensions, self.age.load(Relaxed) < 0);
+            metadata.set(entity_data_key::WIDTH, MetadataValue::Float(width));
+            metadata.set(entity_data_key::HEIGHT, MetadataValue::Float(height));
+            if crawling_changed {
+                self.write_bedrock_flags_two(metadata);
+            }
         }
         if !self.first_tick.load(Ordering::Relaxed)
             && !self.no_physics.load(Ordering::Relaxed)

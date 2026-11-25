@@ -57,6 +57,19 @@ pub struct EntityType {
     pub boat: Option<BoatSeats>,
     pub resource_name: &'static str,
 }
+#[doc = r" Native Bedrock base collision dimensions and scale for a baby."]
+#[derive(Debug, Clone, Copy)]
+pub struct BedrockAgeGeometry {
+    width: f32,
+    height: f32,
+    baby_scale: f32,
+}
+impl BedrockAgeGeometry {
+    #[must_use]
+    pub const fn scale(self, baby: bool) -> f32 {
+        if baby { self.baby_scale } else { 1.0 }
+    }
+}
 #[doc = r" Where a boat seats its riders: the seat height and the lone rider's forward offset."]
 #[derive(Debug, Clone, Copy)]
 pub struct BoatSeats {
@@ -14036,6 +14049,47 @@ impl EntityType {
         poses.iter().find(|entry| entry.pose == pose)
     }
     #[must_use]
+    pub const fn bedrock_age_geometry(&self) -> Option<BedrockAgeGeometry> {
+        match self.id {
+            26u16 => Some(BedrockAgeGeometry {
+                width: 0.6f32,
+                height: 0.8f32,
+                baby_scale: 0.5f32,
+            }),
+            30u16 => Some(BedrockAgeGeometry {
+                width: 0.9f32,
+                height: 1.3f32,
+                baby_scale: 0.5f32,
+            }),
+            101u16 => Some(BedrockAgeGeometry {
+                width: 0.9f32,
+                height: 0.9f32,
+                baby_scale: 0.5f32,
+            }),
+            114u16 => Some(BedrockAgeGeometry {
+                width: 0.9f32,
+                height: 1.3f32,
+                baby_scale: 0.5f32,
+            }),
+            _ => None,
+        }
+    }
+    #[doc = r" Default collision size in the shared simulation."]
+    #[must_use]
+    pub const fn physical_dimensions(&self, baby: bool) -> EntityDimensions {
+        let mut dimensions = if baby && let Some(dimensions) = self.baby_dimensions {
+            dimensions
+        } else {
+            EntityDimensions::new(self.dimension[0], self.dimension[1], self.eye_height)
+        };
+        if let Some(geometry) = self.bedrock_age_geometry() {
+            let scale = geometry.scale(baby);
+            dimensions.width = geometry.width * scale;
+            dimensions.height = geometry.height * scale;
+        }
+        dimensions
+    }
+    #[must_use]
     pub const fn width(&self) -> f32 {
         self.dimension[0]
     }
@@ -14045,8 +14099,9 @@ impl EntityType {
     }
     #[must_use]
     pub fn get_spawn_bounding_box(&self, x: f64, y: f64, z: f64) -> BoundingBox {
-        let half_width = f64::from(self.spawn_dimensions_scale * self.dimension[0] / 2.0);
-        let height = f64::from(self.spawn_dimensions_scale * self.dimension[1]);
+        let dimensions = self.physical_dimensions(false);
+        let half_width = f64::from(self.spawn_dimensions_scale * dimensions.width / 2.0);
+        let height = f64::from(self.spawn_dimensions_scale * dimensions.height);
         BoundingBox::new(
             Vector3::new(x - half_width, y, z - half_width),
             Vector3::new(x + half_width, y + height, z + half_width),

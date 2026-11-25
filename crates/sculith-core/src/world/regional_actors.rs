@@ -969,23 +969,27 @@ mod tests {
             }
         }
         let mut actors = Vec::new();
-        for (kind, x, z) in [
-            (&EntityType::PIG, 6.5, 6.5),
-            (&EntityType::COW, 10.5, 6.5),
-            (&EntityType::SHEEP, 6.5, 10.5),
-            (&EntityType::CHICKEN, 10.5, 10.5),
+        for (kind, x, z, width, height) in [
+            (&EntityType::PIG, 6.5, 6.5, 0.9, 0.9),
+            (&EntityType::COW, 10.5, 6.5, 0.9, 1.3),
+            (&EntityType::SHEEP, 6.5, 10.5, 0.9, 1.3),
+            (&EntityType::CHICKEN, 10.5, 10.5, 0.6, 0.8),
         ] {
             let position = Vector3::new(x, 80.0, z);
             let actor =
                 crate::entity::r#type::from_type(kind, position, &world, uuid::Uuid::new_v4());
             let base = actor.get_entity();
+            let initial = base.entity_dimension.load();
+            assert_eq!((initial.width, initial.height), (width, height));
             let ageable = actor.get_mob().unwrap().as_ageable().unwrap();
             ageable.set_age(-1);
+            let baby = base.entity_dimension.load();
+            assert_eq!((baby.width, baby.height), (width / 2.0, height / 2.0));
             base.first_tick.store(false, Relaxed);
             world.add_entity_silent(actor.clone());
-            actors.push((actor, position));
+            actors.push((actor, position, (width, height)));
         }
-        let assignments: Vec<_> = actors.iter().map(|(actor, _)| (actor, chunk)).collect();
+        let assignments: Vec<_> = actors.iter().map(|(actor, ..)| (actor, chunk)).collect();
         let previous = world.regional_actors.read().unwrap().clone();
         world.assign_regional_actors(&server, &assignments, true, &previous);
         let deadline = TickDeadline {
@@ -1003,14 +1007,19 @@ mod tests {
         assert_eq!((bounds.min, bounds.max), (before.min, before.max));
         drop(access);
         world.advance_region_time(0, layout.chunks(0).unwrap(), deadline);
-        for (actor, position) in &actors {
+        for (actor, position, size) in &actors {
             let base = actor.get_entity();
             assert_eq!(base.age.load(Relaxed), 0, "{}", base.entity_id);
             assert_eq!(base.pos.load(), *position);
             let dimensions = base.get_dimensions(base.pose.load());
+            assert_eq!((dimensions.width, dimensions.height), *size);
             let bounds = base.bounding_box.load();
             let expected = Entity::make_bounding_box(base.entity_type, *position, &dimensions);
             assert_eq!((bounds.min, bounds.max), (expected.min, expected.max));
+            let spawn = base
+                .entity_type
+                .get_spawn_bounding_box(position.x, position.y, position.z);
+            assert_eq!((spawn.min, spawn.max), (expected.min, expected.max));
         }
         assert!(
             world
