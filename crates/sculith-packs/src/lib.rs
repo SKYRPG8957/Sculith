@@ -296,7 +296,8 @@ fn convert_with_mapping(
         limitations: vec![
             "Only explicitly mapped PNG, OGG and static geometry definitions are converted; unmapped assets are not included.".into(),
             "PNG overrides target existing textures; custom sound events and presentation-only item models are registered by the pack.".into(),
-            "Form fonts support bitmap and spacing providers. Arbitrary UI, animated geometry, custom materials, behavior packs and weighted or streaming sounds are unsupported.".into(),
+            "Form fonts support bitmap and spacing providers. Arbitrary UI, animated geometry, custom materials and behavior packs are unsupported.".into(),
+            "Sound clips support positive scalar volume and pitch, positive integer weights and streaming.".into(),
             "Asset conversion does not register new gameplay blocks/items; archive delivery is configured separately.".into(),
         ],
     };

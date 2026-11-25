@@ -21,7 +21,40 @@ struct Definitions {
 struct NativeEvent<'a> {
     category: &'a str,
     #[serde(borrow)]
-    sounds: Vec<&'a str>,
+    sounds: Vec<NativeClip<'a>>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(untagged)]
+enum NativeClip<'a> {
+    Path(&'a str),
+    Options(#[serde(borrow)] ClipOptions<'a>),
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClipOptions<'a> {
+    name: &'a str,
+    #[serde(default)]
+    stream: bool,
+    volume: Option<f32>,
+    pitch: Option<f32>,
+    weight: Option<i32>,
+}
+
+impl<'a> NativeClip<'a> {
+    const fn options(self) -> ClipOptions<'a> {
+        match self {
+            Self::Path(name) => ClipOptions {
+                name,
+                stream: false,
+                volume: None,
+                pitch: None,
+                weight: None,
+            },
+            Self::Options(clip) => clip,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -33,6 +66,12 @@ struct JavaEvent {
 struct JavaClip {
     name: String,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    volume: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pitch: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    weight: Option<i32>,
 }
 
 pub fn convert(
@@ -84,7 +123,11 @@ pub fn convert(
             .strip_suffix(".ogg")
             .context("sounds must be OGG Vorbis")?;
         ensure!(
-            event.category == "player" && event.sounds.first() == Some(&primary),
+            event.category == "player"
+                && event
+                    .sounds
+                    .first()
+                    .is_some_and(|clip| clip.options().name == primary),
             "mapped event must be player category and start with its mapped clip: {}",
             entry.bedrock
         );
@@ -114,7 +157,7 @@ pub fn convert(
 
 fn convert_clips(
     root: &Path,
-    clips: Vec<&str>,
+    clips: Vec<NativeClip<'_>>,
     namespace: &str,
     event_name: &str,
     output: &Path,
@@ -123,7 +166,20 @@ fn convert_clips(
 ) -> Result<Vec<JavaClip>> {
     let mut converted = BTreeMap::new();
     let mut sounds = Vec::with_capacity(clips.len());
+    let mut total_weight = 0i32;
+    let positive = |value: f32| value.is_finite() && value > 0.0;
     for (index, clip) in clips.into_iter().enumerate() {
+        let options = clip.options();
+        let weight = options.weight.unwrap_or(1);
+        ensure!(weight > 0, "sound weights must be positive");
+        total_weight = total_weight
+            .checked_add(weight)
+            .context("sound weights exceed Java range")?;
+        ensure!(
+            options.volume.is_none_or(positive) && options.pitch.is_none_or(positive),
+            "sound volume and pitch must be positive finite numbers"
+        );
+        let clip = options.name;
         let id = match converted.entry(clip) {
             Entry::Occupied(existing) => existing.into_mut(),
             Entry::Vacant(vacant) => {
@@ -160,7 +216,10 @@ fn convert_clips(
         };
         sounds.push(JavaClip {
             name: id.clone(),
-            stream: false,
+            stream: options.stream,
+            volume: options.volume,
+            pitch: options.pitch,
+            weight: options.weight,
         });
     }
     Ok(sounds)
@@ -325,7 +384,10 @@ mod tests {
         fs::write(
             sounds.join("sound_definitions.json"),
             r#"{"format_version":"1.20.20","sound_definitions":{"example.bell":{
-                "category":"player","sounds":["sounds/first","sounds/second","sounds/first"]
+                "category":"player","sounds":[
+                    {"name":"sounds/first","volume":0.625,"pitch":0.75,"weight":3,"stream":true},
+                    "sounds/second",{"name":"sounds/first","weight":2}
+                ]
             }}}"#,
         )
         .unwrap();
@@ -341,9 +403,9 @@ mod tests {
         assert_eq!(
             java["bell"]["sounds"],
             serde_json::json!([
-                {"name":"example:bell","stream":false},
+                {"name":"example:bell","stream":true,"volume":0.625,"pitch":0.75,"weight":3},
                 {"name":"example:bell/2","stream":false},
-                {"name":"example:bell","stream":false},
+                {"name":"example:bell","stream":false,"weight":2},
             ])
         );
         assert_eq!(total, 2 * bytes.len());
@@ -368,5 +430,51 @@ mod tests {
                 .to_string()
                 .contains("invalid Vorbis clip sounds/second.ogg")
         );
+    }
+
+    #[test]
+    fn rejects_clip_options_java_cannot_use() {
+        let source = tempfile::tempdir().unwrap();
+        let root = source.path().canonicalize().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let sounds = root.join("sounds");
+        fs::create_dir(&sounds).unwrap();
+        fs::write(
+            sounds.join("first.ogg"),
+            include_bytes!("../tests/fixtures/tone.ogg"),
+        )
+        .unwrap();
+        let mapping = [SoundMapping {
+            bedrock: "example.bell".into(),
+            java: "example:bell".into(),
+            file: "sounds/first.ogg".into(),
+        }];
+        for (clip, expected) in [
+            (
+                r#"{"name":"sounds/first","weight":0}"#,
+                "sound weights must be positive",
+            ),
+            (
+                r#"{"name":"sounds/first","volume":0}"#,
+                "sound volume and pitch must be positive",
+            ),
+            (
+                r#"{"name":"sounds/first","weight":2147483647}"#,
+                "sound weights exceed Java range",
+            ),
+            (
+                r#"{"name":"sounds/first","pitch":[0.8,1.0]}"#,
+                "unsupported sound definition",
+            ),
+        ] {
+            let json = format!(
+                r#"{{"format_version":"1.14.0","sound_definitions":{{"example.bell":{{
+                "category":"player","sounds":[{clip},"sounds/first"]
+            }}}}}}"#
+            );
+            fs::write(sounds.join("sound_definitions.json"), json).unwrap();
+            let error = convert(&root, &mapping, output.path(), &mut 0).unwrap_err();
+            assert!(error.to_string().contains(expected), "{error:#}");
+        }
     }
 }
