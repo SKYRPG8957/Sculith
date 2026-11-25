@@ -1,10 +1,10 @@
-//! Bounded single-clip sound conversion. Ogg framing/CRC/identification are
+//! Bounded sound conversion. Ogg framing, CRC and identification are
 //! checked here; clients still perform the actual Vorbis setup/audio decode.
 use crate::{MAX_TOTAL_BYTES, SoundMapping, confined, read_bounded, read_json};
 use anyhow::{Context, Result, ensure};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     fs,
     path::Path,
 };
@@ -14,6 +14,25 @@ use std::{
 struct Definitions {
     format_version: String,
     sound_definitions: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeEvent<'a> {
+    category: &'a str,
+    #[serde(borrow)]
+    sounds: Vec<&'a str>,
+}
+
+#[derive(Serialize)]
+struct JavaEvent {
+    sounds: Vec<JavaClip>,
+}
+
+#[derive(Serialize)]
+struct JavaClip {
+    name: String,
+    stream: bool,
 }
 
 pub fn convert(
@@ -28,12 +47,13 @@ pub fn convert(
     }
     let definitions: Definitions = read_json(&confined(root, "sounds/sound_definitions.json")?)?;
     ensure!(
-        definitions.format_version == "1.14.0",
+        matches!(definitions.format_version.as_str(), "1.14.0" | "1.20.20"),
         "unsupported sound definition format"
     );
     let mut native = BTreeSet::new();
     let mut targets = BTreeSet::new();
-    let mut namespaces: BTreeMap<&str, BTreeMap<&str, serde_json::Value>> = BTreeMap::new();
+    let mut files = BTreeSet::new();
+    let mut namespaces: BTreeMap<&str, BTreeMap<&str, JavaEvent>> = BTreeMap::new();
     for entry in mappings {
         crate::validate_resource_id(&entry.java).map_err(anyhow::Error::msg)?;
         ensure!(
@@ -49,43 +69,39 @@ pub fn convert(
             native.insert(&entry.bedrock) && targets.insert(&entry.java),
             "duplicate sound event"
         );
-        let clip = entry
-            .file
-            .strip_suffix(".ogg")
-            .context("sounds must be OGG Vorbis")?;
-        ensure!(
-            clip.starts_with("sounds/")
-                && clip
-                    .split('/')
-                    .all(|p| !p.is_empty() && p != "." && p != ".."),
-            "sound must be under sounds/"
-        );
-        // Refuse selected definitions whose additional weighting, pitch, range,
-        // category or streaming semantics would be silently lost in conversion.
-        let expected = serde_json::json!({"category":"player","sounds":[clip]});
-        ensure!(
-            definitions.sound_definitions.get(&entry.bedrock) == Some(&expected),
-            "mapped native event must be one unmodified player-category clip: {}",
-            entry.bedrock
-        );
-        let data = read_bounded(&confined(root, &entry.file)?, 16 * 1_048_576)?;
-        validate_vorbis(&data).with_context(|| format!("invalid Vorbis clip {}", entry.file))?;
-        *total += data.len();
-        ensure!(
-            *total <= MAX_TOTAL_BYTES,
-            "converted content exceeds 256 MiB"
-        );
         let (namespace, name) = entry
             .java
             .split_once(':')
             .context("invalid sound identifier")?;
-        let file = output.join(format!("assets/{namespace}/sounds/{name}.ogg"));
-        fs::create_dir_all(file.parent().context("sound parent")?)?;
-        fs::write(file, data)?;
-        namespaces.entry(namespace).or_default().insert(
-            name,
-            serde_json::json!({"sounds":[{"name":entry.java,"stream":false}]}),
+        let event = definitions
+            .sound_definitions
+            .get(&entry.bedrock)
+            .with_context(|| format!("missing mapped sound event: {}", entry.bedrock))?;
+        let event = NativeEvent::deserialize(event)
+            .with_context(|| format!("unsupported sound definition: {}", entry.bedrock))?;
+        let primary = entry
+            .file
+            .strip_suffix(".ogg")
+            .context("sounds must be OGG Vorbis")?;
+        ensure!(
+            event.category == "player" && event.sounds.first() == Some(&primary),
+            "mapped event must be player category and start with its mapped clip: {}",
+            entry.bedrock
         );
+        let output_dir = output.join(format!("assets/{namespace}/sounds"));
+        let sounds = convert_clips(
+            root,
+            event.sounds,
+            namespace,
+            name,
+            &output_dir,
+            total,
+            &mut files,
+        )?;
+        namespaces
+            .entry(namespace)
+            .or_default()
+            .insert(name, JavaEvent { sounds });
     }
     for (namespace, events) in namespaces {
         fs::write(
@@ -94,6 +110,60 @@ pub fn convert(
         )?;
     }
     Ok(())
+}
+
+fn convert_clips(
+    root: &Path,
+    clips: Vec<&str>,
+    namespace: &str,
+    event_name: &str,
+    output: &Path,
+    total: &mut usize,
+    files: &mut BTreeSet<String>,
+) -> Result<Vec<JavaClip>> {
+    let mut converted = BTreeMap::new();
+    let mut sounds = Vec::with_capacity(clips.len());
+    for (index, clip) in clips.into_iter().enumerate() {
+        let id = match converted.entry(clip) {
+            Entry::Occupied(existing) => existing.into_mut(),
+            Entry::Vacant(vacant) => {
+                ensure!(
+                    clip.starts_with("sounds/")
+                        && clip
+                            .split('/')
+                            .all(|part| !part.is_empty() && part != "." && part != ".."),
+                    "sound must be under sounds/"
+                );
+                let source_name = format!("{clip}.ogg");
+                let data = read_bounded(&confined(root, &source_name)?, 16 * 1_048_576)?;
+                validate_vorbis(&data)
+                    .with_context(|| format!("invalid Vorbis clip {source_name}"))?;
+                *total += data.len();
+                ensure!(
+                    *total <= MAX_TOTAL_BYTES,
+                    "converted content exceeds 256 MiB"
+                );
+
+                let name = if index == 0 {
+                    event_name.to_owned()
+                } else {
+                    format!("{event_name}/{}", index + 1)
+                };
+                let id = format!("{namespace}:{name}");
+                crate::validate_resource_id(&id).map_err(anyhow::Error::msg)?;
+                ensure!(files.insert(id.clone()), "duplicate Java sound file {id}");
+                let target = output.join(format!("{name}.ogg"));
+                fs::create_dir_all(target.parent().context("sound parent")?)?;
+                fs::write(target, data)?;
+                vacant.insert(id)
+            }
+        };
+        sounds.push(JavaClip {
+            name: id.clone(),
+            stream: false,
+        });
+    }
+    Ok(sounds)
 }
 
 const fn crc_table() -> [u32; 256] {
@@ -240,5 +310,63 @@ mod tests {
         );
         mapping.bedrock = "nonexistent".into();
         assert!(convert(&root, &[mapping], dir.path(), &mut 0).is_err());
+    }
+
+    #[test]
+    fn sound_conversion_preserves_variant_order_and_repeated_choices() {
+        let source = tempfile::tempdir().unwrap();
+        let root = source.path().canonicalize().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let sounds = root.join("sounds");
+        fs::create_dir(&sounds).unwrap();
+        let bytes = include_bytes!("../tests/fixtures/tone.ogg");
+        fs::write(sounds.join("first.ogg"), bytes).unwrap();
+        fs::write(sounds.join("second.ogg"), bytes).unwrap();
+        fs::write(
+            sounds.join("sound_definitions.json"),
+            r#"{"format_version":"1.20.20","sound_definitions":{"example.bell":{
+                "category":"player","sounds":["sounds/first","sounds/second","sounds/first"]
+            }}}"#,
+        )
+        .unwrap();
+        let mappings = [SoundMapping {
+            bedrock: "example.bell".into(),
+            java: "example:bell".into(),
+            file: "sounds/first.ogg".into(),
+        }];
+        let mut total = 0;
+        convert(&root, &mappings, output.path(), &mut total).unwrap();
+        let java: serde_json::Value =
+            read_json(&output.path().join("assets/example/sounds.json")).unwrap();
+        assert_eq!(
+            java["bell"]["sounds"],
+            serde_json::json!([
+                {"name":"example:bell","stream":false},
+                {"name":"example:bell/2","stream":false},
+                {"name":"example:bell","stream":false},
+            ])
+        );
+        assert_eq!(total, 2 * bytes.len());
+        for name in ["bell", "bell/2"] {
+            let path = output
+                .path()
+                .join(format!("assets/example/sounds/{name}.ogg"));
+            assert_eq!(fs::read(path).unwrap(), bytes);
+        }
+        assert!(
+            !output
+                .path()
+                .join("assets/example/sounds/bell/3.ogg")
+                .exists()
+        );
+
+        fs::write(sounds.join("second.ogg"), b"invalid clip").unwrap();
+        let invalid = tempfile::tempdir().unwrap();
+        let error = convert(&root, &mappings, invalid.path(), &mut 0).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("invalid Vorbis clip sounds/second.ogg")
+        );
     }
 }

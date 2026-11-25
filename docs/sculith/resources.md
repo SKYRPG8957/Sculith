@@ -58,9 +58,12 @@ The direct listener currently requires a reachable join host and port. Java SRV
 records must resolve to that listener. Proxy mode is rejected for shared delivery;
 separate external pack URLs remain available through the edition-specific config.
 
-The supported conversion is explicit PNG texture overrides, single-clip Ogg Vorbis
-sounds, and static cuboid entity geometry with a direct texture and render
-controller. Java 26.3 uses pack format 97.1.
+The supported conversion is explicit PNG texture overrides, Ogg Vorbis sound
+events and static cuboid entity geometry with a direct texture and render
+controller. Java 26.3 uses pack format 97.1. A mapped player-category sound
+event can list several plain clip paths in Bedrock format 1.14.0 or 1.20.20.
+Set its mapping's `file` to the first clip, including `.ogg`. Java receives
+the same list of choices. Repeated entries reuse the copied audio asset.
 `bitmap_fonts` generates a Java font from a Bedrock PNG divided into the rows
 and columns in `chars`. The tile height becomes the glyph height. A Java
 dialog text component selects the font using the mapping's Java ID.

@@ -87,7 +87,7 @@ pub struct SoundMapping {
     pub bedrock: String,
     /// Canonical API name and Java event, e.g. `sculith:demo_tone`.
     pub java: String,
-    /// The exact single Vorbis clip used by the native event.
+    /// The first Vorbis clip used by the native event.
     pub file: String,
 }
 
@@ -285,7 +285,7 @@ fn convert_with_mapping(
         } else if mapping.companion_forms {
             "mapped textures, sounds, static models and an authored Bedrock form for Sculith Companion"
         } else {
-            "explicit PNG overrides, single-clip Vorbis sounds and static cuboid models"
+            "explicit PNG overrides, Vorbis sound events and static cuboid models"
         }.into(),
         form_fonts: mapping
             .form_fonts
