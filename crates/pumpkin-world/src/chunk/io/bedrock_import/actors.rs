@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use leveldb::DB;
 use pumpkin_data::{
@@ -10,7 +10,7 @@ use sculith_util::math::{position::BlockPos, vector2::Vector2};
 use uuid::Uuid;
 
 use super::{
-    DIAGNOSTIC_LIMIT, Error, ImportStats, OVERWORLD, SkippedActor, finite_floats, invalid,
+    DIAGNOSTIC_LIMIT, Error, ImportStats, SavedDimension, SkippedActor, finite_floats, invalid,
     read_record,
 };
 
@@ -22,37 +22,100 @@ const MAX_ACTORS_PER_CHUNK: usize = 4096;
 const MAX_ACTOR_TEXT_BYTES: usize = u16::MAX as usize / 2;
 type ConversionError = &'static str;
 
+#[derive(Default)]
+pub(super) struct References {
+    riders: BTreeSet<i64>,
+    dimensions: BTreeMap<([u8; 8], [i32; 2]), Option<i32>>,
+}
+
+impl References {
+    pub(super) fn observe(&mut self, key: &[u8], value: &[u8]) -> Result<(), Error> {
+        if key.starts_with(ACTOR_PREFIX) {
+            return collect_riders(value, &mut self.riders);
+        }
+        let Some((coordinates, dimension)) = key
+            .strip_prefix(ACTOR_INDEX_PREFIX)
+            .and_then(<[u8]>::split_first_chunk::<8>)
+        else {
+            return Ok(());
+        };
+        let dimension = match *dimension {
+            [] => 0,
+            [a, b, c, d] => i32::from_le_bytes([a, b, c, d]),
+            _ => return Ok(()),
+        };
+        let (actors, remainder) = value.as_chunks::<8>();
+        if remainder.is_empty() && actors.len() <= MAX_ACTORS_PER_CHUNK {
+            let [x0, x1, x2, x3, z0, z1, z2, z3] = *coordinates;
+            let column = [
+                i32::from_le_bytes([x0, x1, x2, x3]),
+                i32::from_le_bytes([z0, z1, z2, z3]),
+            ];
+            // The saved position resolves stale references in other columns.
+            // Matching horizontal coordinates cannot resolve two dimensions.
+            for &actor in actors {
+                self.dimensions
+                    .entry((actor, column))
+                    .and_modify(|known| {
+                        if *known != Some(dimension) {
+                            *known = None;
+                        }
+                    })
+                    .or_insert(Some(dimension));
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(super) fn read_chunk(
     db: &DB,
+    dimension: SavedDimension,
     chunk: Vector2<i32>,
     seed: i64,
-    riders: &BTreeSet<i64>,
+    references: &References,
     stats: &mut ImportStats,
 ) -> Result<Vec<NbtCompound>, Error> {
     let mut converted = Vec::new();
     if stats.entity_records_excluded == 0 {
         return Ok(converted);
     }
-    let mut index_key = [0; 12];
+    let mut index_key = [0; 16];
     index_key[..4].copy_from_slice(ACTOR_INDEX_PREFIX);
-    index_key[4..8].copy_from_slice(&chunk.x.to_le_bytes());
-    index_key[8..].copy_from_slice(&chunk.y.to_le_bytes());
-    let Some(index) = db.try_get(&index_key)? else {
+    let size = 4 + dimension.write_column_prefix(chunk, &mut index_key[4..]);
+    let Some(index) = db.try_get(&index_key[..size])? else {
         return Ok(converted);
     };
     let (keys, remainder) = index.as_chunks::<8>();
     if !remainder.is_empty() || keys.len() > MAX_ACTORS_PER_CHUNK {
-        skip(stats, chunk, "<actor index>", "invalid chunk actor index");
+        skip(
+            stats,
+            dimension,
+            chunk,
+            "<actor index>",
+            "invalid chunk actor index",
+        );
         return Ok(converted);
     }
     let mut entity_key = [0; 19];
     entity_key[..ACTOR_PREFIX.len()].copy_from_slice(ACTOR_PREFIX);
     let mut seen = BTreeSet::new();
     for key in keys.iter().filter(|key| seen.insert(**key)) {
+        if references.dimensions.get(&(*key, [chunk.x, chunk.y])) == Some(&None) {
+            skip(
+                stats,
+                dimension,
+                chunk,
+                "<actor index>",
+                "actor is indexed at the same coordinates in multiple dimensions",
+            );
+            continue;
+        }
         entity_key[ACTOR_PREFIX.len()..].copy_from_slice(key);
         let Some(bytes) = db.try_get(&entity_key)? else {
             skip(
                 stats,
+                dimension,
                 chunk,
                 "<missing actor>",
                 "actor index points to an absent record",
@@ -65,36 +128,50 @@ pub(super) fn read_chunk(
         }) {
             Ok(saved) => saved,
             Err(error) => {
-                skip(stats, chunk, "<actor record>", error.to_string());
+                skip(stats, dimension, chunk, "<actor record>", error.to_string());
                 continue;
             }
         };
         let kind = saved
             .get_string("identifier")
             .unwrap_or("<missing identifier>");
-        match convert(&saved, kind, chunk, seed, *key, riders) {
+        match convert(
+            &saved,
+            kind,
+            dimension,
+            chunk,
+            seed,
+            *key,
+            &references.riders,
+        ) {
             Ok(record) => {
                 converted.push(record);
                 stats.entities_imported += 1;
                 stats.entity_records_excluded -= 1;
             }
-            Err(reason) => skip(stats, chunk, kind, reason),
+            Err(reason) => skip(stats, dimension, chunk, kind, reason),
         }
     }
     Ok(converted)
 }
 
-fn skip(stats: &mut ImportStats, chunk: Vector2<i32>, kind: &str, reason: impl Into<String>) {
+fn skip(
+    stats: &mut ImportStats,
+    dimension: SavedDimension,
+    chunk: Vector2<i32>,
+    kind: &str,
+    reason: impl Into<String>,
+) {
     if stats.skipped_actor_examples.len() < DIAGNOSTIC_LIMIT {
         stats.skipped_actor_examples.push(SkippedActor {
             kind: kind.to_owned(),
             chunk,
-            reason: reason.into(),
+            reason: format!("{}: {}", dimension.target().minecraft_name, reason.into()),
         });
     }
 }
 
-pub(super) fn collect_riders(bytes: &[u8], riders: &mut BTreeSet<i64>) -> Result<(), Error> {
+fn collect_riders(bytes: &[u8], riders: &mut BTreeSet<i64>) -> Result<(), Error> {
     // Bedrock saves the passenger ID on the vehicle, even across actor types.
     const LINK_FIELD: &[u8] = b"\x08\0LinksTag";
     if !bytes
@@ -122,6 +199,7 @@ pub(super) fn collect_riders(bytes: &[u8], riders: &mut BTreeSet<i64>) -> Result
 fn convert(
     saved: &NbtCompound,
     kind: &str,
+    dimension: SavedDimension,
     chunk: Vector2<i32>,
     seed: i64,
     key: [u8; 8],
@@ -142,8 +220,10 @@ fn convert(
     }
     validate_unlinked(saved)?;
     let [x, y, z] = finite_floats(saved, "Pos").ok_or("invalid actor position")?;
+    let min_y = dimension.target().min_y;
+    let max_y = min_y + 16 * dimension.disk_sections() as i32;
     if BlockPos::new(x.floor() as i32, y.floor() as i32, z.floor() as i32).chunk_position() != chunk
-        || !(OVERWORLD.min_y as f32..(OVERWORLD.min_y + OVERWORLD.height) as f32).contains(&y)
+        || !(min_y as f32..max_y as f32).contains(&y)
     {
         return Err("actor position is outside its indexed chunk");
     }
@@ -375,4 +455,32 @@ fn variant(
         record.put_int("EggLayTime", timer);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod reference_tests {
+    use super::*;
+
+    #[test]
+    fn actor_index_checks_for_ambiguity_at_the_same_coordinates() {
+        let mut references = References::default();
+        let pos = Vector2::new(0, 0);
+        let mut index = [0; 16];
+        index[..4].copy_from_slice(ACTOR_INDEX_PREFIX);
+        let actor = [4; 8];
+        let overworld = 4 + SavedDimension::Overworld.write_column_prefix(pos, &mut index[4..]);
+        references
+            .observe(&index[..overworld], &[actor, actor].concat())
+            .unwrap();
+        let origin = (actor, [0, 0]);
+        assert_eq!(references.dimensions[&origin], Some(0));
+        let other =
+            4 + SavedDimension::Nether.write_column_prefix(Vector2::new(1, -1), &mut index[4..]);
+        references.observe(&index[..other], &actor).unwrap();
+        assert_eq!(references.dimensions[&origin], Some(0));
+        assert_eq!(references.dimensions[&(actor, [1, -1])], Some(1));
+        let nether = 4 + SavedDimension::Nether.write_column_prefix(pos, &mut index[4..]);
+        references.observe(&index[..nether], &actor).unwrap();
+        assert!(references.dimensions[&origin].is_none());
+    }
 }

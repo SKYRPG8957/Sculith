@@ -13,7 +13,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use super::{
-    CHUNK_COORDINATE_LIMIT, Error, ImportStats, OVERWORLD, finite_floats, invalid, read_record,
+    CHUNK_COORDINATE_LIMIT, Error, ImportStats, SavedDimension, finite_floats, invalid,
+    read_record,
     storage::{StorageItemRegistry, convert_stack},
     terrain::TerrainRegistry,
 };
@@ -115,11 +116,13 @@ fn convert(
     terrain: &TerrainRegistry,
     items: &StorageItemRegistry,
 ) -> Result<NbtCompound, String> {
-    if saved.get_string("identifier") != Some("minecraft:player")
-        || saved.get_int("DimensionId") != Some(0)
-    {
-        return Err("expected a modern Overworld player record".into());
+    if saved.get_string("identifier") != Some("minecraft:player") {
+        return Err("expected a modern Bedrock player record".into());
     }
+    let id = saved
+        .get_int("DimensionId")
+        .ok_or("missing player dimension ID")?;
+    let dimension = SavedDimension::from_disk(id).map_err(|error| error.to_string())?;
     for name in ["LinksTag", "ActiveEffects", "MobEffects", "PlayerUIItems"] {
         if !list(saved, name)?.is_empty() {
             return Err(format!("the {name} state is unsupported"));
@@ -146,7 +149,7 @@ fn convert(
     record.put_int("DataVersion", MAXIMUM_SUPPORTED_WORLD_DATA_VERSION);
     record.put_uuid("UUID", uuid);
     record.put_bool("HasPlayedBefore", true);
-    record.put_string("Dimension", OVERWORLD.minecraft_name.to_owned());
+    record.put_string("Dimension", dimension.target().minecraft_name.to_owned());
     record.put_int("playerGameType", mode as i32);
     record.put_list(
         "Pos",
@@ -201,9 +204,13 @@ fn copy_respawn(saved: &NbtCompound, record: &mut NbtCompound) -> Result<(), Str
                 Err("incomplete player respawn coordinates".into())
             }
         }
-        [Some(x), Some(y), Some(z)] if saved.get_int("SpawnDimension") == Some(0) => {
+        [Some(x), Some(y), Some(z)] => {
+            let dimension = saved
+                .get_int("SpawnDimension")
+                .and_then(|id| SavedDimension::from_disk(id).ok())
+                .ok_or("unsupported player respawn dimension")?;
             let mut respawn = NbtCompound::new();
-            respawn.put_string("dimension", OVERWORLD.minecraft_name.to_owned());
+            respawn.put_string("dimension", dimension.target().minecraft_name.to_owned());
             respawn.put("pos", NbtTag::IntArray(vec![x, y, z]));
             let from_command = saved.get_int("SpawnBlockPositionX") == Some(i32::MIN);
             respawn.put_bool("forced", from_command);

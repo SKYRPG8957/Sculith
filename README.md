@@ -54,7 +54,7 @@ sculith --import-bedrock-terrain "/path/to/bedrock-world" world
 Start Sculith normally to open the imported `world` from Java and Bedrock. The
 import writes a separate Anvil world with mapped blocks and biomes, the world
 seed and spawn. Supported chest and barrel inventories retain slots, counts,
-potion variants and enchantments. Supported Overworld livestock keep their
+potion variants and enchantments. Supported livestock keep their dimension,
 position, age, health and appearance in the imported world. For a different
 destination, set `level-name` in `server.properties` to that world folder.
 See [the fork notes](docs/sculith/fork.md) for format limits.

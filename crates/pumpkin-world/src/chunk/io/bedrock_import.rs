@@ -1,7 +1,7 @@
 //! Imports saved Bedrock terrain, supported storage and livestock into a new Anvil world.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs::{self, File},
     io::{self, Cursor, Read},
     num::NonZeroU8,
@@ -224,8 +224,8 @@ pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspec
         }
     };
     let db = open_database_copy(&source, staging.path())?;
-    let mut riders = BTreeSet::new();
-    let regions = index_chunks(&db, &mut stats, Some(&mut riders), |error| {
+    let mut actors = actors::References::default();
+    let regions = index_chunks(&db, &mut stats, Some(&mut actors), |error| {
         inspection.record_blocker(error);
         Ok(())
     })?;
@@ -242,10 +242,10 @@ pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspec
             match read_chunk(&db, dimension, pos, sections, &registry, &items, &mut stats) {
                 Ok(_) => {
                     stats.chunks += 1;
-                    if dimension == SavedDimension::Overworld
-                        && let Err(error) = actors::read_chunk(&db, pos, seed, &riders, &mut stats)
+                    if let Err(error) =
+                        actors::read_chunk(&db, dimension, pos, seed, &actors, &mut stats)
                     {
-                        inspection.record_blocker(error.at_chunk(x, z));
+                        inspection.record_blocker(dimension.chunk_error(pos, error));
                     }
                 }
                 Err(error) => inspection.record_blocker(dimension.chunk_error(pos, error)),
@@ -264,7 +264,7 @@ pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspec
     Ok(inspection)
 }
 
-/// Imports saved terrain, supported storage and Overworld livestock into a new directory.
+/// Imports saved terrain, supported storage and livestock into a new directory.
 /// The completed world is moved into place after conversion succeeds.
 pub fn import_terrain(source: &Path, destination: &Path) -> Result<ImportStats, Error> {
     import_terrain_with_generator(source, destination, GeneratorPolicy::RequireSource)
@@ -307,8 +307,8 @@ pub fn import_world(
         default_generator_selected,
         ..ImportStats::default()
     };
-    let mut riders = BTreeSet::new();
-    let regions = index_chunks(&db, &mut stats, Some(&mut riders), Err)?;
+    let mut actors = actors::References::default();
+    let regions = index_chunks(&db, &mut stats, Some(&mut actors), Err)?;
     if !regions
         .keys()
         .any(|&(dimension, _, _)| dimension == SavedDimension::Overworld)
@@ -331,13 +331,18 @@ pub fn import_world(
             let pos = Vector2::new(x, z);
             let chunk = read_chunk(&db, dimension, pos, sections, &registry, &items, &mut stats)
                 .map_err(|error| dimension.chunk_error(pos, error))?;
-            let records = if dimension == SavedDimension::Overworld {
+            if dimension == SavedDimension::Overworld {
                 update_spawn_height(&mut info, &chunk);
-                actors::read_chunk(&db, pos, info.world_gen_settings.seed, &riders, &mut stats)
-                    .map_err(|error| error.at_chunk(x, z))?
-            } else {
-                Vec::new()
-            };
+            }
+            let records = actors::read_chunk(
+                &db,
+                dimension,
+                pos,
+                info.world_gen_settings.seed,
+                &actors,
+                &mut stats,
+            )
+            .map_err(|error| dimension.chunk_error(pos, error))?;
             if !records.is_empty() {
                 let region = if let Some(region) = &mut entity_region {
                     region
@@ -598,6 +603,17 @@ impl SavedDimension {
             .ok_or_else(|| invalid(format!("subchunk {y} is out of world bounds")))
     }
 
+    fn write_column_prefix(self, pos: Vector2<i32>, key: &mut [u8]) -> usize {
+        key[..4].copy_from_slice(&pos.x.to_le_bytes());
+        key[4..8].copy_from_slice(&pos.y.to_le_bytes());
+        if self == Self::Overworld {
+            8
+        } else {
+            key[8..12].copy_from_slice(&(self as i32).to_le_bytes());
+            12
+        }
+    }
+
     fn output_folders(self, output: &Path) -> LevelFolder {
         let root = output.to_path_buf();
         match self {
@@ -620,20 +636,20 @@ type ChunkIndex = BTreeMap<(SavedDimension, i32, i32), BTreeMap<(i32, i32), u32>
 fn index_chunks(
     db: &DB,
     stats: &mut ImportStats,
-    mut riders: Option<&mut BTreeSet<i64>>,
+    mut actors: Option<&mut actors::References>,
     mut on_blocker: impl FnMut(Error) -> Result<(), Error>,
 ) -> Result<ChunkIndex, Error> {
     let mut regions = ChunkIndex::new();
     for entry in db.new_iter()?.entries() {
         let (key, bytes) = entry?;
         let Some(record) = ChunkKey::read(&key) else {
+            if let Some(actors) = actors.as_deref_mut()
+                && let Err(error) = actors.observe(&key, &bytes)
+            {
+                on_blocker(error)?;
+            }
             if key.starts_with(actors::ACTOR_PREFIX) {
                 stats.entity_records_excluded += 1;
-                if let Some(riders) = riders.as_deref_mut()
-                    && let Err(error) = actors::collect_riders(&bytes, riders)
-                {
-                    on_blocker(error)?;
-                }
             } else {
                 if stats.player_source_examples.len() < DIAGNOSTIC_LIMIT
                     && let Some(key) = players::source_key(&key)
@@ -749,14 +765,7 @@ fn read_chunk(
     stats: &mut ImportStats,
 ) -> Result<ChunkData, Error> {
     let mut key = [0; 14];
-    key[..4].copy_from_slice(&pos.x.to_le_bytes());
-    key[4..8].copy_from_slice(&pos.y.to_le_bytes());
-    let tag = if dimension == SavedDimension::Overworld {
-        8
-    } else {
-        key[8..12].copy_from_slice(&(dimension as i32).to_le_bytes());
-        12
-    };
+    let tag = dimension.write_column_prefix(pos, &mut key);
     key[tag] = VERSION;
     match db.try_get(&key[..=tag])?.as_deref() {
         Some([CHUNK_VERSION]) => {}

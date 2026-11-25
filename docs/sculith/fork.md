@@ -718,14 +718,15 @@ chests and containers with other unsupported metadata are also skipped. The
 command reports excluded database records and shows the first 16 skipped block
 entities with their coordinates and reasons.
 
-Modern actor records indexed to a saved Overworld chunk can also bring in pigs,
-cows, sheep and chickens. The importer preserves their position, age,
+Modern actor records indexed to a saved chunk can also bring in pigs, cows,
+sheep and chickens. The importer preserves their dimension, position, age,
 breeding cooldown, base health and movement attributes, current health, name,
 and mapped appearance. It reads the saved egg timer for an adult chicken's
 climate. Sculith assigns stable UUIDs from the source seed and actor keys.
 Actors with links, equipment or active effects and unsupported species remain
-in the source. Inspection and import report converted livestock and include
-examples of skipped actor records.
+in the source. Actors indexed at the same coordinates in multiple dimensions
+are skipped. Inspection and import report converted livestock and include
+examples of skipped records.
 
 The official Bedrock 1.26.63.1 server fixtures covered a flat column and 27
 ordinary terrain columns. Java and Bedrock protocol clients read the same
@@ -750,7 +751,7 @@ uses when the player logs in.
 ```
 
 Use a destination UUID for the correct Java or Bedrock account. The importer
-writes that player's Overworld position, rotation, game mode, spawn point,
+writes that player's dimension, position, rotation, game mode, spawn point,
 experience, selected slot, mapped inventory and equipment, ender chest and
 basic vitals into the new world's `players/data` directory. This leaves the
 source player's identity and privileges with the source server. Invalid links,
@@ -864,8 +865,8 @@ replays a published group before admitting players.
 
 ## Remaining work
 
-Standalone Bedrock world export, player data outside the supported Overworld
-subset, other actors and other block-entity contents remain open.
+Standalone Bedrock world export, unsupported player states, other actors and
+other block-entity contents remain open.
 
 Automatic checkpoints for ground stack splits by mobs and automation, minecart
 inventories, and automation involving other block types remain open.

@@ -748,7 +748,7 @@ fn missing_generator_requires_an_explicit_policy_for_new_chunks() {
     assert_eq!(snapshot(&source), before);
 }
 
-fn write_player_fixture(source: &Path, key: &str, body_key: &str) {
+fn write_player_fixture(source: &Path, key: &str, body_key: &str, dimensions: [i32; 2]) {
     let mut alias = vec![COMPOUND_ID, 0, 0];
     string_tag(&mut alias, "ServerId", body_key);
     alias.push(END_ID);
@@ -756,14 +756,14 @@ fn write_player_fixture(source: &Path, key: &str, body_key: &str) {
     let mut body = vec![COMPOUND_ID, 0, 0];
     string_tag(&mut body, "identifier", "minecraft:player");
     for (name, value) in [
-        ("DimensionId", 0i32),
+        ("DimensionId", dimensions[0]),
         ("PlayerGameMode", 0),
         ("PlayerLevel", 4),
         ("SelectedInventorySlot", 0),
         ("SpawnX", -3),
-        ("SpawnY", -59),
+        ("SpawnY", if dimensions[1] == 0 { -59 } else { 65 }),
         ("SpawnZ", 3),
-        ("SpawnDimension", 0),
+        ("SpawnDimension", dimensions[1]),
         ("SpawnBlockPositionX", i32::MIN),
     ] {
         named_tag(&mut body, pumpkin_nbt::INT_ID, name, &value.to_le_bytes());
@@ -774,8 +774,9 @@ fn write_player_fixture(source: &Path, key: &str, body_key: &str) {
         "PlayerLevelProgress",
         &(7.0f32 / 15.0).to_le_bytes(),
     );
+    let position = [-3.5, if dimensions[0] == 0 { -57.38 } else { 66.62 }, 3.5];
     for (name, values) in [
-        ("Pos", [-3.5, -57.38, 3.5].as_slice()),
+        ("Pos", position.as_slice()),
         ("Rotation", [47.0, -18.0].as_slice()),
     ] {
         let mut list = vec![pumpkin_nbt::FLOAT_ID];
@@ -816,7 +817,7 @@ fn imports_a_selected_player_and_rejects_duplicate_player_links() {
     let key = "player_0123456";
     let body_key = "player_server_eee37dc7-41a2-4e3f-9265-8877db158165";
     let player = Uuid::from_u128(1);
-    write_player_fixture(&source, key, body_key);
+    write_player_fixture(&source, key, body_key, [0, 0]);
     let untouched = snapshot(&source);
 
     let map = temp.path().join("map.json");
@@ -865,4 +866,42 @@ fn imports_a_selected_player_and_rejects_duplicate_player_links() {
     assert!(import_world(&source, &output, options).is_err());
     assert!(!output.exists());
     assert_eq!(snapshot(&source), untouched);
+}
+
+#[test]
+fn imports_players_with_separate_saved_and_respawn_dimensions() {
+    use crate::data::player_data::PlayerDataStorage;
+    use uuid::Uuid;
+
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("bedrock");
+    write_world(&source, false, FLAT_LAYERS);
+    let key = "player_0123456";
+    let body_key = "player_server_eee37dc7-41a2-4e3f-9265-8877db158165";
+    write_player_fixture(&source, key, body_key, [2, 1]);
+    let player = Uuid::from_u128(1);
+    let map = temp.path().join("map.json");
+    let selected = serde_json::json!([{"source": key, "uuid": player}]);
+    fs::write(&map, serde_json::to_vec(&selected).unwrap()).unwrap();
+    let output = temp.path().join("sculith");
+    let options = ImportOptions {
+        generator: GeneratorPolicy::RequireSource,
+        player_map: Some(&map),
+    };
+    assert_eq!(
+        import_world(&source, &output, options)
+            .unwrap()
+            .players_imported,
+        1
+    );
+    let data = PlayerDataStorage::new(output.join("players/data"), true);
+    let (found, record) = data.load_player_data(&player).unwrap();
+    assert!(found);
+    assert_eq!(record.get_string("Dimension"), Some("minecraft:the_end"));
+    let respawn = record.get_compound("respawn").unwrap();
+    assert_eq!(
+        respawn.get_string("dimension"),
+        Some("minecraft:the_nether")
+    );
+    assert_eq!(respawn.get("pos"), Some(&NbtTag::IntArray(vec![-3, 65, 3])));
 }
