@@ -10,7 +10,7 @@ use crate::command::node::tree::ROOT_NODE_ID;
 use crate::command::node::{OwnedNodeData, RedirectModifier};
 use crate::command::string_reader::StringReader;
 
-use super::{seed::SEED_COMMAND, time::TIME_COMMAND};
+use super::{seed::SEED_COMMAND, setblock::SETBLOCK_COMMAND, time::TIME_COMMAND};
 
 pub(super) static DEFAULT_CONSUMER: LazyLock<Arc<dyn ResultConsumer<CommandSource>>> =
     LazyLock::new(|| Arc::new(ResultDeferrer));
@@ -23,6 +23,7 @@ pub fn is_world_command(dispatcher: &CommandDispatcher, input: &str) -> bool {
     let original = match name {
         "seed" if text == "seed" => &*SEED_COMMAND,
         "time" => &*TIME_COMMAND,
+        "setblock" if strict_block_write(text) => &*SETBLOCK_COMMAND,
         _ => return false,
     };
     if dispatcher.is_disabled(name)
@@ -44,6 +45,15 @@ pub fn is_world_command(dispatcher: &CommandDispatcher, input: &str) -> bool {
     let live = &dispatcher.tree[*root];
     matches!(live, AttachedNode::Command(_))
         && matches_subtree(dispatcher, live, &original.owned, &original.children)
+}
+
+fn strict_block_write(text: &str) -> bool {
+    // This mode skips block callbacks and neighbor updates. Block-entity NBT
+    // is handled by the coordinated command path.
+    let mut arguments = text.split_ascii_whitespace();
+    arguments.nth(4).is_some_and(|block| !block.contains('{'))
+        && arguments.next() == Some("strict")
+        && arguments.next().is_none()
 }
 
 fn matches_subtree(
@@ -102,4 +112,30 @@ fn matches_node(
             .iter()
             .zip(&expected.requirements.0)
             .all(|(live, expected)| Arc::ptr_eq(&live.0, &expected.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sculith_util::permission::PermissionRegistry;
+
+    #[test]
+    fn only_the_plain_strict_block_route_runs_with_the_owner() {
+        let mut dispatcher = CommandDispatcher::new();
+        dispatcher.consumer = DEFAULT_CONSUMER.clone();
+        super::super::setblock::register(&mut dispatcher, &PermissionRegistry::default());
+        assert!(is_world_command(
+            &dispatcher,
+            "setblock ~ ~-1 ~ minecraft:hopper[facing=east,enabled=true] strict",
+        ));
+        for command in [
+            "setblock 0 0 0 stone",
+            "setblock 0 0 0 stone replace",
+            "setblock 0 0 0 chest{Items:[]} strict",
+            "setblock 0 0 0 stone strict extra",
+            "execute in minecraft:the_nether run setblock 0 0 0 stone strict",
+        ] {
+            assert!(!is_world_command(&dispatcher, command), "{command}");
+        }
+    }
 }

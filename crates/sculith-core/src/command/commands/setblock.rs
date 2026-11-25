@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use pumpkin_data::translation;
 use pumpkin_world::world::BlockFlags;
 use sculith_util::PermissionLvl;
@@ -9,6 +11,7 @@ use crate::command::argument_types::block::BlockArgumentType;
 use crate::command::argument_types::coordinates::block_pos::BlockPosArgumentType;
 use crate::command::context::command_context::CommandContext;
 use crate::command::errors::error_types::CommandErrorType;
+use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 
@@ -89,15 +92,10 @@ impl CommandExecutor for SetBlockExecutor {
     }
 }
 
-pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
-    registry.register_permission_or_panic(Permission::new(
-        PERMISSION,
-        DESCRIPTION,
-        PermissionDefault::Op(PermissionLvl::Two),
-    ));
-
-    dispatcher.register(
-        command("setblock", DESCRIPTION).requires(PERMISSION).then(
+pub(super) static SETBLOCK_COMMAND: LazyLock<CommandDetachedNode> = LazyLock::new(|| {
+    command("setblock", DESCRIPTION)
+        .requires(PERMISSION)
+        .then(
             argument("pos", BlockPosArgumentType).then(
                 argument("block", BlockArgumentType)
                     .executes(SetBlockExecutor(Mode::Replace))
@@ -106,6 +104,16 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
                     .then(literal("replace").executes(SetBlockExecutor(Mode::Replace)))
                     .then(literal("strict").executes(SetBlockExecutor(Mode::Strict))),
             ),
-        ),
-    );
+        )
+        .build()
+});
+
+pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
+    registry.register_permission_or_panic(Permission::new(
+        PERMISSION,
+        DESCRIPTION,
+        PermissionDefault::Op(PermissionLvl::Two),
+    ));
+
+    dispatcher.register(SETBLOCK_COMMAND.clone());
 }

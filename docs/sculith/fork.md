@@ -177,6 +177,11 @@ publish it to its Bedrock and Java clients. Admission checks the registered
 command tree and uses the same permission checks and parser as other commands.
 Plugin-extended routes, command or permission hooks, packet send hooks and
 commands queued behind coordinated work use the coordinated boundary.
+Plain `setblock` requests with the `strict` mode can also execute on the
+current world owner. The registered built-in tree and the usual permissions
+apply. The strict write skips placement callbacks and neighbor propagation.
+Block-entity NBT, other placement modes and redirected commands use the
+coordinated boundary.
 
 Each dimension saves its elapsed ticks, time of day, fractional tick, clock
 rate and pause state in `.sculith-world-clock.json` beside its terrain. The
