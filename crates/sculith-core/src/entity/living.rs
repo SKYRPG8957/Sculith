@@ -532,11 +532,13 @@ impl LivingEntity {
             attributes: {
                 let mut m = FxHashMap::default();
 
-                for (attr, base) in entity.entity_type.attributes {
+                for (attr, registry_base) in entity.entity_type.attributes {
+                    let base =
+                        Self::default_entity_attribute(entity.entity_type, attr, *registry_base);
                     if attr.id == Attributes::MAX_HEALTH.id {
-                        max_health = *base as f32;
+                        max_health = base as f32;
                     }
-                    m.insert(attr.id, AttributeInstance::new(*base));
+                    m.insert(attr.id, AttributeInstance::new(base));
                 }
                 std::sync::RwLock::new(m)
             },
@@ -1649,13 +1651,26 @@ impl LivingEntity {
             return instance.base_value;
         }
 
-        // Fall back to registry base value if no local instance exists
-        self.entity
-            .entity_type
+        let entity_type = self.entity.entity_type;
+        let registry_base = entity_type
             .attributes
             .iter()
             .find(|a| a.0.id == attribute.id)
-            .map_or(attribute.default_value, |a| a.1)
+            .map_or(attribute.default_value, |a| a.1);
+        Self::default_entity_attribute(entity_type, attribute, registry_base)
+    }
+
+    fn default_entity_attribute(
+        entity_type: &EntityType,
+        attribute: &Attributes,
+        registry_base: f64,
+    ) -> f64 {
+        if attribute.id == Attributes::MOVEMENT_SPEED.id
+            && (entity_type == &EntityType::COW || entity_type == &EntityType::SHEEP)
+        {
+            return 0.25;
+        }
+        registry_base
     }
 
     /// Undead: healing hurts them, harming heals them.
@@ -6293,6 +6308,38 @@ mod ai_step_tests {
     use sculith_util::math::vector3::Vector3;
 
     type TestResult = Result<(), Box<dyn Error>>;
+
+    #[tokio::test]
+    async fn bedrock_livestock_movement_defaults_yield_to_saved_attributes() -> TestResult {
+        use crate::entity::attributes::{apply_attributes, pack_attributes};
+
+        let folder = tempfile::tempdir()?;
+        let world = world(&folder);
+        let spawn = |kind: &'static EntityType| {
+            super::LivingEntity::new(Entity::new(
+                world.clone(),
+                Vector3::new(0.5, 64.0, 0.5),
+                kind,
+            ))
+        };
+        let speed = &Attributes::MOVEMENT_SPEED;
+        for kind in [&EntityType::COW, &EntityType::PIG, &EntityType::SHEEP] {
+            let fresh = spawn(kind);
+            assert!((fresh.get_attribute_base(speed) - 0.25).abs() < f64::EPSILON);
+            assert!((fresh.get_attribute_value(speed) - 0.25).abs() < f64::EPSILON);
+        }
+        let cow = spawn(&EntityType::COW);
+        let restored = spawn(&EntityType::COW);
+        for saved_speed in [f64::from(0.2f32), 0.375] {
+            cow.set_attribute_base(speed, saved_speed);
+            apply_attributes(&restored, &pack_attributes(&cow));
+            assert!((restored.get_attribute_base(speed) - saved_speed).abs() < f64::EPSILON);
+        }
+        let zombie = spawn(&EntityType::ZOMBIE);
+        assert!((zombie.get_attribute_base(speed) - f64::from(0.23f32)).abs() < f64::EPSILON);
+        world.level.shutdown().await;
+        Ok(())
+    }
 
     struct ProbeMob {
         mob: MobEntity,

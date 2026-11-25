@@ -95,7 +95,7 @@ impl SheepEntity {
             goal_selector.add_goal(
                 3,
                 Box::new(TemptGoal::with_tag(
-                    1.1,
+                    1.25,
                     &tag::Item::MINECRAFT_SHEEP_FOOD,
                     false,
                 )),

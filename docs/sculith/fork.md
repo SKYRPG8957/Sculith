@@ -519,6 +519,12 @@ Both editions use the collision widths and heights measured in Bedrock
 Bedrock clients receive base dimensions and the age scale. Growth sends
 the new scale and age flag, and sends dimensions when their encoded values
 change, such as after a custom size override.
+
+New cows and sheep use the Bedrock movement attribute default of `0.25` in
+the shared simulation. Sheep use the Bedrock wheat-following multiplier of
+`1.25`. Saved movement attributes are restored through the ordinary attribute
+loader. [Mojang Bedrock Samples](https://github.com/Mojang/bedrock-samples/tree/main/behavior_pack/entities)
+
 The world handles relocation, attached actors, translated clients, observers
 and metadata delivery that the region could not queue.
 
