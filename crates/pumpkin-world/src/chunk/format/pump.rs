@@ -66,6 +66,43 @@ pub struct PumpFile {
 }
 
 impl PumpFile {
+    pub(crate) fn open_read_only(
+        path: &Path,
+        region: Vector2<i32>,
+    ) -> Result<Self, ChunkReadingError> {
+        Self::open_with_access(path, region, false)
+    }
+
+    fn open_with_access(
+        path: &Path,
+        region: Vector2<i32>,
+        writable: bool,
+    ) -> Result<Self, ChunkReadingError> {
+        let mut this = Self {
+            path: path.to_path_buf(),
+            region,
+            file: None,
+            file_len: 0,
+            offsets: vec![0; CHUNK_COUNT].into_boxed_slice(),
+            lengths: vec![0; CHUNK_COUNT].into_boxed_slice(),
+            used_sectors: SectorBitmap::default(),
+            staged: FxHashMap::default(),
+            unsynced: false,
+            recovery_needed: false,
+        };
+        this.used_sectors.set(0, HEADER_SECTORS, true);
+
+        let Some(file) = journal::open_file(path, writable).map_err(ChunkReadingError::IoError)?
+        else {
+            return Ok(this);
+        };
+        let (header, file_len) = journal::read(path, region, &file, HEADER_BYTES, writable)
+            .map_err(ChunkReadingError::IoError)?;
+        this.load_header(&header, file_len)?;
+        this.file = Some(file);
+        Ok(this)
+    }
+
     fn load_header(&mut self, header: &[u8], file_len: u64) -> Result<(), ChunkReadingError> {
         if file_len != 0
             && (file_len < HEADER_BYTES as u64 || header[..SIGNATURE.len()] != SIGNATURE)
@@ -283,28 +320,7 @@ impl RegionFile for PumpFile {
     }
 
     fn open(path: &Path, region: Vector2<i32>) -> Result<Self, ChunkReadingError> {
-        let mut this = Self {
-            path: path.to_path_buf(),
-            region,
-            file: None,
-            file_len: 0,
-            offsets: vec![0; CHUNK_COUNT].into_boxed_slice(),
-            lengths: vec![0; CHUNK_COUNT].into_boxed_slice(),
-            used_sectors: SectorBitmap::default(),
-            staged: FxHashMap::default(),
-            unsynced: false,
-            recovery_needed: false,
-        };
-        this.used_sectors.set(0, HEADER_SECTORS, true);
-
-        let Some(file) = journal::open_file(path, true).map_err(ChunkReadingError::IoError)? else {
-            return Ok(this);
-        };
-        let (header, file_len) = journal::read(path, region, &file, HEADER_BYTES, true)
-            .map_err(ChunkReadingError::IoError)?;
-        this.load_header(&header, file_len)?;
-        this.file = Some(file);
-        Ok(this)
+        Self::open_with_access(path, region, true)
     }
 
     fn has_chunk(&self, index: usize) -> bool {

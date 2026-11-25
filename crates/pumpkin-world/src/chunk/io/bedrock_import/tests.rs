@@ -98,14 +98,18 @@ fn write_world(source: &Path, corrupt: bool, flat_layers: &str) {
 }
 
 fn snapshot(source: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    std::iter::once(source.join("level.dat"))
-        .chain(
-            fs::read_dir(source.join("db"))
-                .unwrap()
-                .map(|entry| entry.unwrap().path()),
-        )
-        .map(|path| (path.clone(), fs::read(path).unwrap()))
-        .collect()
+    let mut files = BTreeMap::new();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if entry.file_type().unwrap().is_dir() {
+            files.extend(snapshot(&path));
+        } else {
+            let content = fs::read(&path).unwrap();
+            files.insert(path, content);
+        }
+    }
+    files
 }
 
 fn string_tag(nbt: &mut Vec<u8>, key: &str, value: &str) {
@@ -496,10 +500,12 @@ fn write_storage_column(db: &DB, position: BlockPos, id: i32, count: u8) -> Vec<
 
 #[test]
 fn storage_export_routes_same_coordinates_to_each_dimension() {
+    use crate::chunk::io::converter::convert_world;
+    use sculith_config::chunk::ChunkConfig;
+
     let directory = tempfile::tempdir().unwrap();
     let template = directory.path().join("bedrock");
     let shared = directory.path().join("sculith");
-    let exported = directory.path().join("exported");
     let position = BlockPos::new(-1, 0, 0);
     let chunk_pos = Vector2::new(-1, 0);
     let region_pos = region_of(chunk_pos);
@@ -550,22 +556,32 @@ fn storage_export_routes_same_coordinates_to_each_dimension() {
         region.stage_chunk(index, encoded);
         region.flush(true).unwrap();
     }
-    let stats = storage_export::export_storage(&template, &shared, &exported).unwrap();
-    assert_eq!(
-        (stats.containers_checked, stats.inventories_updated),
-        (3, 3)
-    );
-    assert_eq!(snapshot(&template), before);
-    let database = DB::open(exported.join("db"), bedrock_db_options()).unwrap();
-    for (id, key) in records.iter().enumerate() {
-        let data = database.try_get(key).unwrap().unwrap();
-        let mut reader = NbtReadHelperBedrockDisk::new(Cursor::new(data));
-        let barrel = Nbt::read(&mut reader).unwrap();
-        let item = barrel.get_list("Items").unwrap()[0]
-            .extract_compound()
-            .unwrap();
-        assert_eq!(item.get_byte("Slot"), Some(4));
-        assert_eq!(item.get_byte("Count"), Some(10 + id as i8));
+    for (name, format) in [
+        ("anvil", ChunkConfig::Anvil(AnvilChunkConfig::default())),
+        ("pump", ChunkConfig::Pump),
+        ("linear", ChunkConfig::Linear),
+    ] {
+        convert_world(&shared, &format, true).unwrap();
+        let shared_before = snapshot(&shared);
+        let exported = directory.path().join(name);
+        let stats = storage_export::export_storage(&template, &shared, &exported).unwrap();
+        assert_eq!(
+            (stats.containers_checked, stats.inventories_updated),
+            (3, 3)
+        );
+        assert_eq!(snapshot(&template), before);
+        assert_eq!(snapshot(&shared), shared_before);
+        let database = DB::open(exported.join("db"), bedrock_db_options()).unwrap();
+        for (id, key) in records.iter().enumerate() {
+            let data = database.try_get(key).unwrap().unwrap();
+            let mut reader = NbtReadHelperBedrockDisk::new(Cursor::new(data));
+            let barrel = Nbt::read(&mut reader).unwrap();
+            let item = barrel.get_list("Items").unwrap()[0]
+                .extract_compound()
+                .unwrap();
+            assert_eq!(item.get_byte("Slot"), Some(4));
+            assert_eq!(item.get_byte("Count"), Some(10 + id as i8));
+        }
     }
 }
 

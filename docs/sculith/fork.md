@@ -826,7 +826,9 @@ copies a stopped Bedrock world and transfers supported inventories in the
 Overworld, Nether and End from its stopped Sculith import. Use a new
 destination outside both inputs. The inputs must have the same seed and
 matching ordinary single chests or barrels at the template positions in
-each dimension.
+each dimension. The command reads Anvil, Linear and Pump regions. If a
+matching region has multiple saved formats, finish the world conversion
+before exporting so there is one source for its inventory data.
 
 The output uses the template's terrain, players and metadata. Imports record
 their storage conversion version alongside the saved world. New imports can

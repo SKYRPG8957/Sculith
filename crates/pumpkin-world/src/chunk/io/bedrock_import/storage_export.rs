@@ -1,9 +1,10 @@
 use std::{
     fs::{self, DirEntry},
-    io::Cursor,
+    io::{Cursor, ErrorKind},
     path::Path,
 };
 
+use bytes::Bytes;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::{
     Nbt,
@@ -20,7 +21,15 @@ use super::{
     storage::{self, SLOTS, StorageItemRegistry},
     terrain::TerrainRegistry,
 };
-use crate::{chunk::ChunkReadingError, level::LevelFolder, world_info::WorldInfoReader};
+use crate::{
+    chunk::{
+        ChunkReadingError,
+        format::{linear::LinearV2File, pump::PumpFile},
+        io::converter::RegionFormat,
+    },
+    level::LevelFolder,
+    world_info::WorldInfoReader,
+};
 
 #[derive(Debug)]
 pub struct StorageExportStats {
@@ -73,9 +82,6 @@ pub fn export_storage(
     for ((dimension, rx, rz), columns) in regions {
         let region_pos = Vector2::new(rx, rz);
         let folders = LevelFolder::for_dimension(sculith.clone(), &dimension.target());
-        let path = folders
-            .region_folder
-            .join(AnvilRegion::file_name(region_pos));
         let mut region = None;
         for ((x, z), sections) in columns {
             let pos = Vector2::new(x, z);
@@ -104,7 +110,7 @@ pub fn export_storage(
             {
                 continue;
             }
-            let shared = read_storage_chunk(&mut region, &path, region_pos, pos)
+            let shared = read_storage_chunk(&mut region, &folders.region_folder, region_pos, pos)
                 .map_err(|error| dimension.chunk_error(pos, error))?;
             let (updated, edited) = export_record(&record, &original, &shared, &terrain, &items)
                 .map_err(|error| dimension.chunk_error(pos, error))?;
@@ -129,22 +135,70 @@ pub fn export_storage(
     })
 }
 
+enum StorageRegion {
+    Anvil(AnvilRegion),
+    Linear(LinearV2File),
+    Pump(PumpFile),
+}
+
+impl StorageRegion {
+    fn open(folder: &Path, region: Vector2<i32>) -> Result<Self, Error> {
+        let mut source = None;
+        for format in [
+            RegionFormat::Anvil,
+            RegionFormat::Linear,
+            RegionFormat::Pump,
+        ] {
+            let path = folder.join(format.file_name(region));
+            match fs::metadata(&path) {
+                Ok(metadata) if metadata.is_file() => {
+                    if source.replace((format, path)).is_some() {
+                        return Err(invalid("multiple Sculith formats for the matching region"));
+                    }
+                }
+                Ok(_) => return Err(invalid(format!("not a region file: {}", path.display()))),
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        let (format, path) = source.ok_or_else(|| invalid("missing matching Sculith chunk"))?;
+        Ok(match format {
+            RegionFormat::Anvil => Self::Anvil(AnvilRegion::open_read_only(&path, region)?),
+            RegionFormat::Linear => Self::Linear(LinearV2File::open(&path, region)?),
+            RegionFormat::Pump => Self::Pump(PumpFile::open_read_only(&path, region)?),
+        })
+    }
+
+    fn read_chunk(&self, pos: Vector2<i32>) -> Result<ChunkData, Error> {
+        let index = region_chunk_index(pos);
+        let bytes = match self {
+            Self::Anvil(region) => decode_storage_chunk(region, index),
+            Self::Linear(region) => decode_storage_chunk(region, index),
+            Self::Pump(region) => decode_storage_chunk(region, index),
+        }?;
+        ChunkData::internal_from_bytes(&bytes, pos)
+            .map_err(|error| Error::Read(ChunkReadingError::ParsingError(error)))
+    }
+}
+
+fn decode_storage_chunk<R: RegionFile>(region: &R, index: usize) -> Result<Bytes, Error> {
+    let raw = region
+        .read_chunk(index)?
+        .ok_or_else(|| invalid("missing matching Sculith chunk"))?;
+    Ok(R::decode_chunk(raw)?)
+}
+
 fn read_storage_chunk(
-    region: &mut Option<AnvilRegion>,
-    path: &Path,
+    region: &mut Option<StorageRegion>,
+    folder: &Path,
     region_pos: Vector2<i32>,
     pos: Vector2<i32>,
 ) -> Result<ChunkData, Error> {
     let region = match region {
         Some(region) => region,
-        pending => pending.insert(AnvilRegion::open_read_only(path, region_pos)?),
+        pending => pending.insert(StorageRegion::open(folder, region_pos)?),
     };
-    let raw = region
-        .read_chunk(region_chunk_index(pos))?
-        .ok_or_else(|| invalid("missing matching Sculith chunk"))?;
-    let bytes = AnvilRegion::decode_chunk(raw)?;
-    ChunkData::internal_from_bytes(&bytes, pos)
-        .map_err(|error| Error::Read(ChunkReadingError::ParsingError(error)))
+    region.read_chunk(pos)
 }
 
 fn copy_world_entry(entry: &DirEntry, output: &Path) -> Result<(), Error> {
