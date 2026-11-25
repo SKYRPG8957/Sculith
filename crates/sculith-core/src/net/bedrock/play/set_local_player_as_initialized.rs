@@ -17,5 +17,8 @@ impl BedrockClient {
         // pre-spawn update already populated the server's change-tracking cache.
         player.send_health();
         self.send_latency_probe();
+        if packet.player_id.0 == player.entity_id() as u64 {
+            player.deliver_initial_bedrock_form(self);
+        }
     }
 }

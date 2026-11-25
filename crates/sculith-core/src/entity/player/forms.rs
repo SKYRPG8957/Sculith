@@ -22,8 +22,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    net::ClientPlatform,
-    plugin::api::events::player::bedrock_form_response::BedrockFormResponseEvent, server::Server,
+    net::{ClientPlatform, bedrock::BedrockClient},
+    plugin::api::events::player::bedrock_form_response::BedrockFormResponseEvent,
+    server::Server,
 };
 
 use crate::resource_pack::SharedResources;
@@ -597,11 +598,13 @@ struct PendingForm {
     prefix: String,
     expires: Instant,
     form: Form,
+    deferred_bedrock: Option<String>,
 }
 
 pub(super) struct FormSession {
     next_id: u32,
     pending: Option<PendingForm>,
+    bedrock_initialized: bool,
 }
 
 impl Default for FormSession {
@@ -609,6 +612,7 @@ impl Default for FormSession {
         Self {
             next_id: SHARED_FORM_BIT,
             pending: None,
+            bedrock_initialized: false,
         }
     }
 }
@@ -646,8 +650,30 @@ impl FormSession {
             prefix,
             expires: now + FORM_LIFETIME,
             form,
+            deferred_bedrock: None,
         });
         Ok((id, dialog))
+    }
+
+    fn hold_bedrock_until_loaded(&mut self, json: String) -> Option<String> {
+        if !self.bedrock_initialized
+            && let Some(pending) = &mut self.pending
+        {
+            pending.deferred_bedrock = Some(json);
+            return None;
+        }
+        Some(json)
+    }
+
+    fn take_ready_bedrock(&mut self, now: Instant) -> Option<(u32, String)> {
+        self.bedrock_initialized = true;
+        let pending = self.pending.as_mut()?;
+        let json = pending.deferred_bedrock.take()?;
+        if pending.expires <= now {
+            self.pending = None;
+            return None;
+        }
+        Some((pending.id, json))
     }
 
     fn abort(&mut self, id: u32) {
@@ -694,6 +720,9 @@ impl FormSession {
         };
         if form.expires <= now {
             self.pending = None;
+            return FormReply::Invalid;
+        }
+        if form.deferred_bedrock.is_some() {
             return FormReply::Invalid;
         }
         let value = match data {
@@ -755,16 +784,25 @@ impl Player {
         } else {
             String::new()
         };
-        let (id, dialog) = self
-            .forms
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .open(
+        let (id, dialog, native_json) = {
+            let mut session = self
+                .forms
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let (id, dialog) = session.open(
                 form,
                 matches!(self.client.as_ref(), ClientPlatform::Java(_)),
                 Instant::now(),
                 java_images,
             )?;
+            let native_json = match self.client.bedrock() {
+                Some(client) if client.is_current_protocol() => {
+                    session.hold_bedrock_until_loaded(native_json)
+                }
+                _ => Some(native_json),
+            };
+            (id, dialog, native_json)
+        };
         // Packet observers can call back into the plugin and open another form.
         // Keep the session installed, with its lock released, until delivery succeeds.
         let sent = match self.client.as_ref() {
@@ -773,12 +811,9 @@ impl Player {
                     dialog,
                 ))))
             }),
-            ClientPlatform::Bedrock(client) => client
-                .serialize_packet(&CModalFormRequest {
-                    form_id: VarUInt(id),
-                    form_ui_json: native_json,
-                })
-                .is_ok_and(|bytes| client.try_enqueue_packet_data(bytes)),
+            ClientPlatform::Bedrock(client) => {
+                native_json.is_none_or(|json| Self::queue_bedrock_form(client, id, json))
+            }
         };
         if !sent {
             self.forms
@@ -788,6 +823,31 @@ impl Player {
             return Err(invalid("Form packet was not queued"));
         }
         Ok(id)
+    }
+
+    fn queue_bedrock_form(client: &BedrockClient, id: u32, json: String) -> bool {
+        client
+            .serialize_packet(&CModalFormRequest {
+                form_id: VarUInt(id),
+                form_ui_json: json,
+            })
+            .is_ok_and(|bytes| client.try_enqueue_packet_data(bytes))
+    }
+
+    pub(crate) fn deliver_initial_bedrock_form(&self, client: &BedrockClient) {
+        let waiting = self
+            .forms
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take_ready_bedrock(Instant::now());
+        if let Some((id, json)) = waiting
+            && !Self::queue_bedrock_form(client, id, json)
+        {
+            self.forms
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .abort(id);
+        }
     }
 
     pub(crate) fn java_form_response(&self, action: &str, payload: Option<&[u8]>) -> FormReply {
@@ -981,6 +1041,48 @@ mod tests {
         assert_eq!(form.java_response("0", None), Ok(Some("true".into())));
         assert_eq!(form.java_response("1", None), Ok(Some("false".into())));
         assert_eq!(form.java_response("cancel", None), Ok(None));
+    }
+
+    #[test]
+    fn bedrock_delivers_the_join_form_once_after_initialization() {
+        let now = Instant::now();
+        let mut session = FormSession::default();
+        let (id, _) = session.open(simple(), false, now, &[]).unwrap();
+        assert_eq!(session.hold_bedrock_until_loaded("join".into()), None);
+        assert!(session.open(simple(), false, now, &[]).is_err());
+        assert_eq!(
+            session.bedrock_response(id, Some("0"), now),
+            FormReply::Invalid
+        );
+        assert_eq!(session.take_ready_bedrock(now), Some((id, "join".into())));
+        assert_eq!(session.take_ready_bedrock(now), None);
+        assert_eq!(
+            session.bedrock_response(id, Some("0"), now),
+            FormReply::Valid {
+                id,
+                data: Some("0".into())
+            }
+        );
+        session.open(simple(), false, now, &[]).unwrap();
+        assert_eq!(
+            session.hold_bedrock_until_loaded("later".into()),
+            Some("later".into())
+        );
+    }
+
+    #[test]
+    fn bedrock_discards_an_expired_join_form_and_accepts_new_forms() {
+        let now = Instant::now();
+        let mut session = FormSession::default();
+        session.open(simple(), false, now, &[]).unwrap();
+        assert_eq!(session.hold_bedrock_until_loaded("old".into()), None);
+        let later = now + FORM_LIFETIME;
+        assert_eq!(session.take_ready_bedrock(later), None);
+        session.open(simple(), false, later, &[]).unwrap();
+        assert_eq!(
+            session.hold_bedrock_until_loaded("fresh".into()),
+            Some("fresh".into())
+        );
     }
 
     #[test]

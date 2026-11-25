@@ -181,6 +181,12 @@ action prefix and the upper half of Bedrock form IDs are reserved for this API.
 The lower half remains available to the edition-specific Bedrock form API.
 Closing a modal is distinct from choosing its second button.
 
+On the current Bedrock protocol, a shared form opened from `PlayerJoinEvent`
+waits for the client to acknowledge its first spawn. This uses the regular
+pending form and its existing expiry. Later shared forms can open immediately.
+Native plugins use ABI 43 for this change to the player layout. Build them
+against this server revision.
+
 Shared forms support at most 64 buttons or elements, 32 KiB per definition or
 reply, and 1024 UTF-16 units per text input. A simple form button can use a
 Bedrock texture path when that PNG is mapped under
