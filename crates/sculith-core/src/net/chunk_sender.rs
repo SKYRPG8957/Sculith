@@ -200,6 +200,13 @@ impl ChunkSender {
         self.sent_chunks.contains(pos)
     }
 
+    /// A view change can retire a delivery and request the same coordinates again.
+    pub(crate) fn still_awaits_bedrock_delivery(&self, pos: Vector2<i32>, token: u64) -> bool {
+        self.awaiting_delivery
+            .get(&pos)
+            .is_some_and(|pending| pending.token == token || pending.earlier.contains(&token))
+    }
+
     /// Vanilla `ChunkMap.isChunkTracked` -> the client holds this chunk (view checked by caller).
     #[must_use]
     pub fn is_chunk_ready(&self, pos: &Vector2<i32>) -> bool {
@@ -1078,11 +1085,14 @@ mod tests {
         sender.enqueue_chunk(position);
         let second = sender.commit_bedrock_batch(&batch_for(position, 0), 0);
         assert_ne!(first[0].delivery_token, second[0].delivery_token);
+        assert!(sender.still_awaits_bedrock_delivery(position, first[0].delivery_token));
+        assert!(sender.still_awaits_bedrock_delivery(position, second[0].delivery_token));
         assert!(!sender.is_chunk_ready(&position));
 
         // First task finishes last: its token is superseded, nothing clears.
         let delivered = sender.mark_delivered(&[(position, first[0].delivery_token)]);
         assert!(delivered.is_empty());
+        assert!(!sender.still_awaits_bedrock_delivery(position, first[0].delivery_token));
         assert!(!sender.is_chunk_ready(&position));
 
         let delivered = sender.mark_delivered(&[(position, second[0].delivery_token)]);

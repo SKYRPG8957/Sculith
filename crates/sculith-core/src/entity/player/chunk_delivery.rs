@@ -202,7 +202,9 @@ impl Player {
                 .into_iter()
                 .map(|chunk| ((chunk.position, chunk.delivery_token), chunk.chunk))
                 .unzip();
-            let outcome = client.send_chunks(&chunks, Some(epoch)).await;
+            let outcome = client
+                .send_dispatched_chunks(&chunks, epoch, &deliveries)
+                .await;
             let (deliveries, dropped): (Vec<_>, Vec<_>) = deliveries
                 .into_iter()
                 .partition(|(pos, _)| outcome.sent.contains(pos));

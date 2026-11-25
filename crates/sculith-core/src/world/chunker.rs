@@ -13,7 +13,7 @@ use crate::{
         EntityBase,
         player::{HeldChunkTickets, Player},
     },
-    net::ClientPlatform,
+    net::{ClientPlatform, bedrock::BedrockClient},
     world::World,
 };
 
@@ -233,6 +233,17 @@ pub fn update_position(player: &Arc<Player>) {
     );
     let new_entity_chunks = world.level.mark_chunks_as_newly_watched(&loading_chunks);
     let clean = world.level.mark_chunks_as_not_watched(&unloading_chunks);
+    // A Bedrock delivery commits under this lock. Retire the old part of the view
+    // before queueing the publisher packet, whose plugin callbacks run outside it.
+    if publication.is_some() && !unloading_chunks.is_empty() {
+        let mut sender = player
+            .chunk_sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for &pos in &unloading_chunks {
+            sender.unload_chunk(&player.client, pos);
+        }
+    }
     *registered = Some(new_cylindrical);
     player.watched_section.store(new_cylindrical);
     drop(registered);
@@ -246,22 +257,8 @@ pub fn update_position(player: &Arc<Player>) {
             });
             false
         }
-        ClientPlatform::Bedrock(bedrock_client) => {
-            let origin = if new_cylindrical.view_distance == distance {
-                pos
-            } else {
-                BlockPos::new(
-                    new_chunk_center.x * 16 + 8,
-                    pos.0.y,
-                    new_chunk_center.y * 16 + 8,
-                )
-            };
-            bedrock_client
-                .serialize_packet(&CNetworkChunkPublisherUpdate::new(
-                    origin,
-                    u32::from(new_cylindrical.view_distance.get()) * 16,
-                ))
-                .is_ok_and(|data| bedrock_client.try_enqueue_packet_data(data))
+        ClientPlatform::Bedrock(client) => {
+            queue_bedrock_view(client, new_cylindrical, pos, distance)
         }
     };
     {
@@ -269,8 +266,10 @@ pub fn update_position(player: &Arc<Player>) {
             .chunk_sender
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for pos in &unloading_chunks {
-            sender.unload_chunk(&player.client, *pos);
+        if publication.is_none() {
+            for pos in unloading_chunks {
+                sender.unload_chunk(&player.client, pos);
+            }
         }
         for pos in &loading_chunks {
             sender.enqueue_chunk(*pos);
@@ -283,6 +282,25 @@ pub fn update_position(player: &Arc<Player>) {
     if !new_entity_chunks.is_empty() {
         world.request_entity_chunks(new_entity_chunks);
     }
+}
+
+fn queue_bedrock_view(
+    client: &BedrockClient,
+    view: Cylindrical,
+    pos: BlockPos,
+    distance: NonZero<u8>,
+) -> bool {
+    let origin = if view.view_distance == distance {
+        pos
+    } else {
+        BlockPos::new(view.center.x * 16 + 8, pos.0.y, view.center.y * 16 + 8)
+    };
+    client
+        .serialize_packet(&CNetworkChunkPublisherUpdate::new(
+            origin,
+            u32::from(view.view_distance.get()) * 16,
+        ))
+        .is_ok_and(|data| client.try_enqueue_packet_data(data))
 }
 
 #[cfg(test)]

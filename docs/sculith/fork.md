@@ -278,6 +278,10 @@ encoder across packet observers. Before admitting a chunk to a viewer's
 queue, the sender pins the loaded entry and both palettes and checks those
 generations. A replaced chunk or a busy or changed palette defers delivery
 through the existing token, and stale blob hashes never enter the viewer cache.
+Leaving the Bedrock view retires pending sends for the departed columns before
+the next publisher packet. Returning to those columns starts new deliveries.
+Work waiting on an encoder or plugin must still hold its original delivery
+token when its packets and blob hashes enter the queue.
 
 Loaded campfires in active regions advance their cooking or cooling counters
 on the region clock while the actor and block state are pinned. The region

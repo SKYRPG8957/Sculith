@@ -188,6 +188,26 @@ pub struct BedrockStreamingPack {
 }
 
 type TranslatedPacket = (Option<Bytes>, Vec<Bytes>);
+type TerrainDelivery = (Vector2<i32>, u64);
+
+#[derive(Clone, Copy)]
+struct TrackedTerrain<'a> {
+    sender: &'a ChunkSender,
+    deliveries: Option<&'a [TerrainDelivery]>,
+}
+
+impl TrackedTerrain<'_> {
+    fn admits(&self, position: Vector2<i32>) -> bool {
+        self.deliveries.map_or_else(
+            || self.sender.is_chunk_sent(&position),
+            |deliveries| {
+                deliveries.iter().any(|(pos, token)| {
+                    *pos == position && self.sender.still_awaits_bedrock_delivery(*pos, *token)
+                })
+            },
+        )
+    }
+}
 
 struct PreparedTerrain<P> {
     revision: (u64, u64),
@@ -667,6 +687,25 @@ impl BedrockClient {
     /// With an `epoch`, chunks are dropped if the player's chunk epoch moved on (world change)
     /// while they were being encoded.
     pub async fn send_chunks(&self, chunks: &[SyncChunk], epoch: Option<u32>) -> ChunkSendOutcome {
+        self.send_chunk_payloads(chunks, epoch, None).await
+    }
+
+    pub(crate) async fn send_dispatched_chunks(
+        &self,
+        chunks: &[SyncChunk],
+        epoch: u32,
+        deliveries: &[TerrainDelivery],
+    ) -> ChunkSendOutcome {
+        self.send_chunk_payloads(chunks, Some(epoch), Some(deliveries))
+            .await
+    }
+
+    async fn send_chunk_payloads(
+        &self,
+        chunks: &[SyncChunk],
+        epoch: Option<u32>,
+        deliveries: Option<&[TerrainDelivery]>,
+    ) -> ChunkSendOutcome {
         let mut outcome = ChunkSendOutcome::default();
         let player = self.player.load_full();
         let Some(player) = player.as_ref() else {
@@ -763,7 +802,9 @@ impl BedrockClient {
             &world,
             &valid_chunks,
             translated_chunks,
-            sender.as_deref(),
+            sender
+                .as_deref()
+                .map(|sender| TrackedTerrain { sender, deliveries }),
             &mut outcome,
         );
         outcome
@@ -908,12 +949,12 @@ impl BedrockClient {
         world: &crate::world::World,
         chunks: &[SyncChunk],
         translated_chunks: Vec<Option<PreparedTerrain<TranslatedPacket>>>,
-        sender: Option<&ChunkSender>,
+        tracked: Option<TrackedTerrain<'_>>,
         outcome: &mut ChunkSendOutcome,
     ) {
         for (chunk, translated) in chunks.iter().zip(translated_chunks) {
             let pos = Vector2::new(chunk.x, chunk.z);
-            if sender.is_some_and(|sender| !sender.is_chunk_sent(&pos)) {
+            if tracked.is_some_and(|view| !view.admits(pos)) {
                 continue;
             }
             let Some(terrain) = translated else {
@@ -922,7 +963,7 @@ impl BedrockClient {
             };
             let revision = terrain.revision;
             let queue = || self.queue_terrain_chunk(terrain);
-            let queued = if sender.is_some() {
+            let queued = if tracked.is_some() {
                 world.level.try_with_current_terrain(chunk, revision, queue)
             } else {
                 Some(queue())
@@ -2005,5 +2046,83 @@ mod tests {
         let bytes = Bytes::from(buf);
         let (packet_id, _) = split_raw_packet(&bytes).expect("split CBiomeDefinitionList");
         assert_eq!(i32::from(packet_id), CBiomeDefinitionList::PACKET_ID);
+    }
+
+    #[tokio::test]
+    async fn departed_bedrock_delivery_cannot_queue_after_the_view_returns()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::net::{
+            ClientPlatform,
+            chunk_sender::{PreparedBatch, PreparedChunk},
+        };
+
+        let address = "127.0.0.1:0".parse()?;
+        let client = Arc::new(BedrockClient::new(
+            1,
+            NetherNetSession::test_session(address).await,
+            address,
+            Arc::new(Mutex::new(HashMap::new())),
+            PacketRateLimiter::new(false, 0.0, 0.0),
+            Weak::new(),
+        ));
+        let mut receiver = client
+            .outgoing_packet_queue_recv
+            .lock()
+            .await
+            .take()
+            .unwrap();
+        let folder = tempfile::tempdir()?;
+        let world = crate::entity::ai::test_support::world(&folder);
+        let position = Vector2::new(0, 0);
+        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        world.level.loaded_chunks.insert(position, chunk.clone());
+        let batch = PreparedBatch {
+            chunks: vec![PreparedChunk {
+                position,
+                chunk: chunk.clone(),
+            }],
+            epoch_snapshot: 0,
+            target_version: pumpkin_data::packet::CURRENT_MC_VERSION,
+        };
+        let mut sender = ChunkSender::new();
+        sender.enqueue_chunk(position);
+        let first = sender.commit_bedrock_batch(&batch, 0)[0].delivery_token;
+        let platform = ClientPlatform::Bedrock(client.clone());
+        sender.unload_chunk(&platform, position);
+        sender.enqueue_chunk(position);
+        let second = sender.commit_bedrock_batch(&batch, 0)[0].delivery_token;
+        assert!(sender.is_chunk_sent(&position));
+
+        let mut outcome = ChunkSendOutcome::default();
+        for (token, data) in [
+            (first, Bytes::from_static(b"departed")),
+            (second, Bytes::from_static(b"returned")),
+        ] {
+            client.queue_translated_chunks(
+                &world,
+                std::slice::from_ref(&chunk),
+                vec![Some(PreparedTerrain {
+                    revision: chunk.section.terrain_revision(),
+                    packet: (Some(data.clone()), Vec::new()),
+                    blobs: vec![(token, data)],
+                })],
+                Some(TrackedTerrain {
+                    sender: &sender,
+                    deliveries: Some(&[(position, token)]),
+                }),
+                &mut outcome,
+            );
+        }
+        assert_eq!(outcome.sent, [position]);
+        assert_eq!(receiver.try_recv()?.data, Bytes::from_static(b"returned"));
+        assert!(receiver.try_recv().is_err());
+        let cached = {
+            let cache = client.blob_cache.lock().unwrap();
+            (cache.get(first).is_some(), cache.get(second).is_some())
+        };
+        assert_eq!(cached, (false, true));
+        client.close().await;
+        world.level.shutdown().await;
+        Ok(())
     }
 }
