@@ -558,7 +558,30 @@ impl World {
         if changes.is_empty() {
             return;
         }
+        self.update_force_loaded_tickets(changes, keep_loaded);
+        drop(forced);
+        self.update_active_chunks();
+    }
 
+    pub(crate) fn clear_force_loaded_chunks(&self) -> usize {
+        let mut forced = self
+            .forced_chunks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let count = forced.len();
+        if count != 0 {
+            self.update_force_loaded_tickets(forced.drain(), false);
+            drop(forced);
+            self.update_active_chunks();
+        }
+        count
+    }
+
+    fn update_force_loaded_tickets(
+        &self,
+        changes: impl IntoIterator<Item = Vector2<i32>>,
+        keep_loaded: bool,
+    ) {
         // The public forced set owns one priority ticket per column. Test
         // structures keep their own temporary references in the same loader.
         let mut loading = self
@@ -574,9 +597,6 @@ impl World {
             }
         }
         loading.send_change();
-        drop(loading);
-        drop(forced);
-        self.update_active_chunks();
     }
 
     #[expect(clippy::too_many_lines)]

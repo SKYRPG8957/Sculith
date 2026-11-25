@@ -88,7 +88,8 @@ can process packets, run simulation and synchronize their own clocks.
 The `/forceload` command and Wasm chunk APIs feed the same priority loading tickets
 and simulation coverage. Columns can load when their world has no players.
 A running GameTest keeps its own references, so releasing an operator or
-plugin force cannot retire an active test's terrain. Releasing the last
+plugin force cannot retire an active test's terrain. The console's bulk removal
+releases each public ticket through the same loader. Releasing the last
 reference allows the ordinary save and unload path.
 
 Conditional plugin block edits compare the expected block in its loaded chunk.

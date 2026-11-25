@@ -885,33 +885,41 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         let world = world(&folder);
         let chunk = Vector2::new(101, 0);
-        let ticket_counts = || {
+        let other = Vector2::new(117, 0);
+        let ticket_counts = |column| {
             let loader = world.level.chunk_loading.lock().unwrap();
             (
-                loader.ticket.get(&chunk).map_or(0, Vec::len),
+                loader.ticket.get(&column).map_or(0, Vec::len),
                 loader
                     .high_priority
                     .iter()
-                    .filter(|&&pos| pos == chunk)
+                    .filter(|&&pos| pos == column)
                     .count(),
             )
         };
         world.set_force_loaded_chunks([chunk, chunk], true);
-        assert_eq!(ticket_counts(), (1, 1));
+        assert_eq!(ticket_counts(chunk), (1, 1));
 
         acquire_forced_game_test_chunk(&world, chunk);
         acquire_forced_game_test_chunk(&world, chunk);
         world.update_active_chunks();
-        assert_eq!(ticket_counts(), (2, 2));
+        assert_eq!(ticket_counts(chunk), (2, 2));
 
         release_forced_game_test_chunk(&world, chunk);
         world.set_force_loaded_chunks([chunk], false);
         assert!(world.active_chunks.read().unwrap().contains(&chunk));
-        assert_eq!(ticket_counts(), (1, 1));
+        assert_eq!(ticket_counts(chunk), (1, 1));
+
+        world.set_force_loaded_chunks([chunk, other], true);
+        assert_eq!(world.clear_force_loaded_chunks(), 2);
+        assert_eq!(world.clear_force_loaded_chunks(), 0);
+        assert_eq!(ticket_counts(other), (0, 0));
+        assert_eq!(ticket_counts(chunk), (1, 1));
+        assert!(world.active_chunks.read().unwrap().contains(&chunk));
 
         release_forced_game_test_chunk(&world, chunk);
         world.update_active_chunks();
-        assert_eq!(ticket_counts(), (0, 0));
+        assert_eq!(ticket_counts(chunk), (0, 0));
         assert!(!world.active_chunks.read().unwrap().contains(&chunk));
         world.level.shutdown().await;
     }

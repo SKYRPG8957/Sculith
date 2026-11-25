@@ -187,17 +187,7 @@ impl CommandExecutor for ForceloadRemoveAllExecutor {
             .as_ref()
             .ok_or_else(|| ERROR_FAILED_REMOVE.create_without_context())?;
 
-        let removed_count = {
-            let mut forced = world
-                .forced_chunks
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let count = forced.len();
-            forced.clear();
-            count
-        };
-
-        world.update_active_chunks();
+        let removed_count = world.clear_force_loaded_chunks();
 
         let dimension_name = world.dimension.minecraft_name.to_string();
 
