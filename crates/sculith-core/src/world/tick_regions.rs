@@ -1,4 +1,8 @@
-use std::{cmp::Reverse, collections::hash_map::Entry, sync::Arc};
+use std::{
+    cmp::Reverse,
+    collections::hash_map::Entry,
+    sync::{Arc, atomic::AtomicUsize},
+};
 
 use pumpkin_world::level::{ScheduledTickGroup, ScheduledTickStep};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -26,6 +30,7 @@ struct ActiveRegion {
     chunks: RegionChunks,
     input: RegionalInput,
     entity_chunks: RegionalEntityChunks,
+    navigation_cursor: AtomicUsize,
 }
 
 impl ActiveRegion {
@@ -34,6 +39,7 @@ impl ActiveRegion {
             chunks,
             input: RegionalInput::default(),
             entity_chunks: RegionalEntityChunks::default(),
+            navigation_cursor: AtomicUsize::new(0),
         }
     }
 }
@@ -100,6 +106,13 @@ impl RegionLayout {
             .regions
             .get(&owner)
             .map(|region| &region.entity_chunks)
+    }
+
+    pub(super) fn navigation_cursor(&self, owner: RegionId) -> Option<&AtomicUsize> {
+        self.active
+            .regions
+            .get(&owner)
+            .map(|region| &region.navigation_cursor)
     }
 
     pub(super) fn entity_chunk_work_at(&self, pos: Vector2<i32>) -> Option<&RegionalEntityChunks> {

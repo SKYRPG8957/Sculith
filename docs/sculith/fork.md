@@ -539,9 +539,11 @@ surfaces and nearby actors use the ordinary world path. The region can also
 continue an installed ground route across a safe flat surface. It commits
 the next waypoint, steering and movement together under the actor's motion
 deadline. The world commits goal updates submitted after a regional move.
-The next regional deadline can use the resulting route. Plain footsteps use
-the ordinary species sound when the region can commit the step and its
-movement distance together. The
+The next regional deadline can use the resulting route. Bounded path searches
+resume after the last actor considered so each actor can reach the search
+without increasing the work per deadline. Plain footsteps use the ordinary
+species sound when the region can commit the step and its movement distance
+together. The
 world handles steps with a game-event listener in range, an event hook or
 special surface sounds. The tracker sends the full position to paired
 current-protocol Java and Bedrock viewers who already have the destination terrain. The world refreshes

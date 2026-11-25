@@ -167,20 +167,34 @@ impl World {
         ) else {
             return;
         };
-        let Some(actors) = plan.by_region.get(&owner) else {
+        let Some(actors) = plan
+            .by_region
+            .get(&owner)
+            .filter(|actors| !actors.is_empty())
+        else {
             return;
         };
-        for (actor, mob) in actors
+        let layout = self.region_layout.load();
+        let Some(cursor) = layout.navigation_cursor(owner) else {
+            return;
+        };
+        let start = cursor.load(Relaxed) % actors.len();
+        let (earlier, remaining) = actors.split_at(start);
+        let mut next = start;
+        for (index, actor, mob) in remaining
             .iter()
-            .filter_map(|actor| {
+            .chain(earlier)
+            .enumerate()
+            .filter_map(|(index, actor)| {
                 let base = actor.get_entity();
                 if !supports_regional_travel(base.entity_type) || !owns(base.chunk_pos.load()) {
                     return None;
                 }
-                Some((base, actor.get_mob()?.get_mob_entity()))
+                Some((index, base, actor.get_mob()?.get_mob_entity()))
             })
             .take(REGIONAL_NAVIGATORS_PER_STEP)
         {
+            next = (start + index + 1) % actors.len();
             if let Some(nodes) =
                 mob.try_update_regional_navigation(self, owner, extent, &changes, world_age)
             {
@@ -192,6 +206,7 @@ impl World {
                 );
             }
         }
+        cursor.store(next, Relaxed);
     }
 
     pub(super) fn publish_region_layout(&self, layout: &Arc<RegionLayout>, coordinated: bool) {
@@ -652,17 +667,22 @@ mod tests {
     };
 
     use pumpkin_data::{
-        effect::StatusEffect, entity::EntityType, item::Item, item_stack::ItemStack, potion::Effect,
+        Block, BlockStateId, effect::StatusEffect, entity::EntityType, item::Item,
+        item_stack::ItemStack, potion::Effect,
     };
     use pumpkin_nbt::NbtCompound;
     use pumpkin_world::chunk::ChunkData;
     use sculith_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
-    use sculith_util::math::vector3::Vector3;
+    use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
     use crate::data::VanillaData;
-    use crate::entity::living::RegionalActorDelivery;
+    use crate::entity::{
+        ai::pathfinder::{node::Node, path::Path as NavigationPath},
+        living::RegionalActorDelivery,
+        passive::cow::CowEntity,
+    };
 
     use super::*;
 
@@ -689,6 +709,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn regional_path_budget_reaches_a_later_livestock_actor() {
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
+        let world = server.worlds.load()[0].clone();
+        let home = Vector2::new(0, 0);
+        let extent: RegionChunks = Arc::from([home]);
+        let layout = Arc::new(RegionLayout::from_active(
+            std::iter::once((home, 0)).collect(),
+            std::iter::once((0, extent.clone())).collect(),
+        ));
+        world.publish_region_layout(&layout, false);
+        *world.active_chunks.write().unwrap() = Arc::new(std::iter::once(home).collect());
+        world.level_time.lock().unwrap().world_age = 42;
+        let chunk = ChunkData::empty_sync(home.x, home.y);
+        for x in 2..14 {
+            for z in 2..14 {
+                chunk.set_block_absolute_y(x, 63, z, Block::STONE.default_state.id);
+            }
+        }
+        world.level.loaded_chunks.insert(home, chunk.clone());
+
+        let spawn = || {
+            let cow = CowEntity::new(Entity::new(
+                world.clone(),
+                Vector3::new(5.5, 64.0, 7.5),
+                &EntityType::COW,
+            ));
+            cow.get_entity().on_ground.store(true, Relaxed);
+            world.add_entity_silent(cow.clone());
+            cow
+        };
+        for _ in 0..REGIONAL_NAVIGATORS_PER_STEP {
+            spawn();
+        }
+        let later = spawn();
+        let target = BlockPos::new(11, 64, 7);
+        let route = NavigationPath::new(vec![Node::new(target)], target, true);
+        let mob = &later.mob_entity;
+        assert!(
+            mob.steered()
+                .navigator()
+                .move_to_path(Some(route), 1.0, &mob.living_entity)
+        );
+        let nodes = || {
+            mob.steered()
+                .navigator()
+                .get_path()
+                .map_or(0, NavigationPath::get_node_count)
+        };
+        let glass = Block::GLASS.default_state.id;
+        for y in 64..=65 {
+            chunk.set_block_absolute_y(8, y, 7, glass);
+            world.queue_regional_edit_update(BlockPos::new(8, y, 7), BlockStateId::AIR, glass);
+        }
+        let owns = |pos| pos == home;
+        world.advance_regional_navigation(&server, 0, &extent, &owns);
+        assert_eq!(
+            nodes(),
+            1,
+            "the region may attempt only four routes per step"
+        );
+        world.advance_regional_navigation(&server, 0, &extent, &owns);
+        assert!(
+            nodes() > 1,
+            "the fifth entry receives a turn on the next step"
+        );
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn a_handoff_in_another_region_preserves_the_running_item_step() {
         let folder = tempfile::tempdir().unwrap();
         let server = test_server(folder.path()).await;
@@ -705,7 +795,10 @@ mod tests {
             ]),
         ));
         world.publish_region_layout(&layout, false);
-        world.level.get_or_fetch_chunk(home, |_| ()).await;
+        world
+            .level
+            .loaded_chunks
+            .insert(home, ChunkData::empty_sync(home.x, home.y));
 
         let position =
             |chunk: Vector2<i32>| Vector3::new(f64::from(chunk.x) * 16.0 + 8.0, 80.0, 8.0);
