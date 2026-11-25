@@ -11,6 +11,11 @@ use crate::chunk::palette::{BiomePalette, BlockPalette, bedrock_water_state};
 
 use super::{Error, invalid};
 
+mod block_edits;
+mod disk_write;
+pub(super) use block_edits::export_column_blocks;
+pub(super) use disk_write::DiskBlockStates;
+
 const BLOCK_STATES: &[u8] = include_bytes!("../../../../../../assets/bedrock/block_states.nbt");
 const BIOME_IDS: &str = include_str!("../../../../../../assets/bedrock/biomes.json");
 const SUBCHUNK_VERSION: u8 = 9;

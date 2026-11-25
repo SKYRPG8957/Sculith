@@ -674,6 +674,71 @@ fn converts_a_saved_column_without_writing_to_the_source() {
 }
 
 #[test]
+fn exports_native_block_changes_and_keeps_the_template_copy_safe() {
+    let folder = tempfile::tempdir().unwrap();
+    let template = folder.path().join("bedrock");
+    let shared = folder.path().join("sculith");
+    let output = folder.path().join("exported");
+    write_world(&template, false, FLAT_LAYERS);
+    let template_before = snapshot(&template);
+    import_terrain(&template, &shared).unwrap();
+
+    let pos = Vector2::new(-1, 0);
+    let region_pos = region_of(pos);
+    let index = region_chunk_index(pos);
+    let mut region = AnvilRegion::open(
+        &shared
+            .join("region")
+            .join(AnvilRegion::file_name(region_pos)),
+        region_pos,
+    )
+    .unwrap();
+    let chunk = ChunkData::internal_from_bytes(
+        &AnvilRegion::decode_chunk(region.read_chunk(index).unwrap().unwrap()).unwrap(),
+        pos,
+    )
+    .unwrap();
+    let mut update = |state: BlockStateId| {
+        chunk.section.set_block_absolute_y(5, 70, 11, state);
+        let raw =
+            AnvilRegion::encode_chunk(chunk.internal_to_bytes(), &AnvilChunkConfig::default())
+                .unwrap();
+        region.stage_chunk(index, raw);
+        region.flush(true).unwrap();
+    };
+    update(Block::STONE.default_state.id);
+    let shared_before = snapshot(&shared);
+    let report = export_world_edits(&template, &shared, &output).unwrap();
+    assert_eq!(report.block_columns_updated, 1);
+    assert_eq!(report.storage.containers_checked, 0);
+    let db = DB::open(output.join("db"), bedrock_db_options()).unwrap();
+    let registry = terrain::TerrainRegistry::load().unwrap();
+    let mut key = [0; 14];
+    let tag = SavedDimension::Overworld.write_column_prefix(pos, &mut key);
+    key[tag] = SUBCHUNK;
+    key[tag + 1] = 4;
+    let raw = db.try_get(&key[..tag + 2]).unwrap().unwrap();
+    let palette = terrain::subchunk(&raw, 4, &registry).unwrap();
+    assert_eq!(palette.get(5, 6, 11), Block::STONE.default_state.id);
+    assert_eq!(palette.get(11, 6, 5), BlockStateId::AIR);
+    key[tag] = BIOMES;
+    let height_map = db.try_get(&key[..=tag]).unwrap().unwrap();
+    let offset = (11 * 16 + 5) * 2;
+    assert_eq!(height_map[offset..offset + 2], 135u16.to_le_bytes());
+    assert_eq!(snapshot(&template), template_before);
+    assert_eq!(snapshot(&shared), shared_before);
+
+    update(Block::CHEST.default_state.id);
+    let rejected = folder.path().join("rejected");
+    let before = snapshot(&shared);
+    let reason = export_world_edits(&template, &shared, &rejected).unwrap_err();
+    assert!(reason.to_string().contains("unsupported terrain edit"));
+    assert!(!rejected.exists());
+    assert_eq!(snapshot(&template), template_before);
+    assert_eq!(snapshot(&shared), before);
+}
+
+#[test]
 fn distinguishes_saved_dimensions_at_the_same_coordinates() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("bedrock");

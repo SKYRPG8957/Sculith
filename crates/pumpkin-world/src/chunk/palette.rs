@@ -10,7 +10,7 @@ use tracing::warn;
 
 use super::format::{ChunkSectionBiomes, ChunkSectionBlockStates};
 
-fn bedrock_palette_bits(palette_len: usize) -> u8 {
+pub(crate) fn bedrock_palette_bits(palette_len: usize) -> u8 {
     match encompassing_bits(palette_len) {
         bits @ 0..=6 => bits,
         7..=8 => 8,

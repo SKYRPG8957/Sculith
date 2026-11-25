@@ -10,7 +10,8 @@ use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_world::{
     CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION,
     chunk::io::bedrock_import::{
-        GeneratorPolicy, ImportOptions, ImportStats, export_storage, import_world, inspect_world,
+        GeneratorPolicy, ImportOptions, ImportStats, export_storage, export_world_edits,
+        import_world, inspect_world,
     },
 };
 use std::{
@@ -600,23 +601,42 @@ fn bedrock_import_flags(
     reason = "the export command runs before server logging is initialized"
 )]
 fn export_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
-    let (Some(template), Some(shared), Some(destination), None) =
-        (args.next(), args.next(), args.next(), args.next())
+    let template = args.next();
+    let shared = args.next();
+    let destination = args.next();
+    let include_block_edits = match (args.next(), args.next()) {
+        (None, None) => Some(false),
+        (Some(flag), None) if flag == "--include-block-edits" => Some(true),
+        _ => None,
+    };
+    let (Some(template), Some(shared), Some(destination), Some(include_block_edits)) =
+        (template, shared, destination, include_block_edits)
     else {
         eprintln!(
-            "Run sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION"
+            "Run sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION [--include-block-edits]"
         );
         return 2;
     };
     let destination = Path::new(&destination);
-    match export_storage(Path::new(&template), Path::new(&shared), destination) {
-        Ok(stats) => {
+    let template = Path::new(&template);
+    let shared = Path::new(&shared);
+    let result = if include_block_edits {
+        export_world_edits(template, shared, destination)
+            .map(|report| (report.storage, Some(report.block_columns_updated)))
+    } else {
+        export_storage(template, shared, destination).map(|report| (report, None))
+    };
+    match result {
+        Ok((stats, edited_columns)) => {
             println!(
                 "Updated {} of {} supported storage inventories in {}.",
                 stats.inventories_updated,
                 stats.containers_checked,
                 destination.display()
             );
+            if let Some(edited_columns) = edited_columns {
+                println!("Updated block edits in {edited_columns} Bedrock columns.");
+            }
             print_block_entity_examples(&stats.preserved, "Preserved");
             0
         }

@@ -843,6 +843,13 @@ use the item rules of those imports, preserving template containers that were
 originally skipped. The command reports preserved records. A missing or
 incompatible Sculith container blocks publication of the destination.
 
+Append `--include-block-edits` to copy supported block changes within the
+template's saved columns. The export keeps the template's biomes, actors,
+players and metadata. It checks native palette mappings and updates the saved
+surface heights for the affected cells. Edits involving block entities,
+fluids, partial opacity or pending ticks require a broader conversion and
+stop this export before the destination is published.
+
 ## Region header recovery
 
 Anvil and Pump write new inline chunk payloads into free sectors before

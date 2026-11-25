@@ -45,7 +45,9 @@ mod terrain;
 #[cfg(test)]
 mod tests;
 
-pub use storage_export::{StorageExportStats, export_storage};
+pub use storage_export::{
+    StorageExportStats, WorldEditsExportStats, export_storage, export_world_edits,
+};
 
 const OVERWORLD: Dimension = Dimension::OVERWORLD;
 const STORAGE_VERSION: u32 = 10;

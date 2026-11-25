@@ -19,7 +19,7 @@ use super::{
     MAX_TABLE_BLOCK_BYTES, RegionFile, bedrock_db_options, copy_database, ensure_absent,
     index_chunks, invalid, new_destination, read_chunk, read_level, region_chunk_index,
     storage::{self, SLOTS, StorageItemRegistry},
-    terrain::TerrainRegistry,
+    terrain::{DiskBlockStates, TerrainRegistry, export_column_blocks},
 };
 use crate::{
     chunk::{
@@ -38,6 +38,12 @@ pub struct StorageExportStats {
     pub preserved: ImportStats,
 }
 
+#[derive(Debug)]
+pub struct WorldEditsExportStats {
+    pub storage: StorageExportStats,
+    pub block_columns_updated: usize,
+}
+
 /// Copies a stopped Bedrock world and updates the inventories of its supported containers
 /// from the corresponding stopped Sculith world. The new copy is published after validation.
 pub fn export_storage(
@@ -45,6 +51,25 @@ pub fn export_storage(
     sculith_source: &Path,
     destination: &Path,
 ) -> Result<StorageExportStats, Error> {
+    export_world(bedrock_source, sculith_source, destination, false).map(|report| report.storage)
+}
+
+/// Also copies supported block edits within existing native columns. Preserves the source
+/// biomes, entities and metadata, and publishes the destination only after validation.
+pub fn export_world_edits(
+    bedrock_source: &Path,
+    sculith_source: &Path,
+    destination: &Path,
+) -> Result<WorldEditsExportStats, Error> {
+    export_world(bedrock_source, sculith_source, destination, true)
+}
+
+fn export_world(
+    bedrock_source: &Path,
+    sculith_source: &Path,
+    destination: &Path,
+    include_block_edits: bool,
+) -> Result<WorldEditsExportStats, Error> {
     let template = bedrock_source.canonicalize()?;
     let sculith = sculith_source.canonicalize()?;
     crate::data::checkpoint::SaveCheckpoint::require_materialized(&sculith)?;
@@ -53,6 +78,9 @@ pub fn export_storage(
         return Err(invalid("destination must be outside the Sculith world"));
     }
     let terrain = TerrainRegistry::load()?;
+    let block_states = include_block_edits
+        .then(|| DiskBlockStates::load(&terrain))
+        .transpose()?;
     let items = storage::read_import_registry(&sculith)?;
     let (template_info, _) = read_level(&template, &terrain, GeneratorPolicy::NormalIfUnspecified)?;
     let sculith_info = AnvilLevelInfo.read_world_info(&sculith)?;
@@ -76,51 +104,8 @@ pub fn export_storage(
     let database = output.join("db");
     copy_database(&template.join("db"), &database)?;
     let db = DB::open(database, bedrock_db_options())?;
-    let mut preserved = ImportStats::default();
-    let regions = index_chunks(&db, &mut preserved, None, Err)?;
-    let mut inventories_updated = 0;
-    for ((dimension, rx, rz), columns) in regions {
-        let region_pos = Vector2::new(rx, rz);
-        let folders = LevelFolder::for_dimension(sculith.clone(), &dimension.target());
-        let mut region = None;
-        for ((x, z), sections) in columns {
-            let pos = Vector2::new(x, z);
-            let mut key = [0; 13];
-            let tag = dimension.write_column_prefix(pos, &mut key);
-            key[tag] = BLOCK_ENTITY;
-            let key = &key[..=tag];
-            let Some(record) = db.try_get(key)? else {
-                continue;
-            };
-            let original = read_chunk(
-                &db,
-                dimension,
-                pos,
-                sections,
-                &terrain,
-                &items,
-                &mut preserved,
-            )
-            .map_err(|error| dimension.chunk_error(pos, error))?;
-            if original
-                .pending_block_entities
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .is_empty()
-            {
-                continue;
-            }
-            let shared = read_storage_chunk(&mut region, &folders.region_folder, region_pos, pos)
-                .map_err(|error| dimension.chunk_error(pos, error))?;
-            let (updated, edited) = export_record(&record, &original, &shared, &terrain, &items)
-                .map_err(|error| dimension.chunk_error(pos, error))?;
-            if edited != 0 {
-                db.put(key, &updated)?;
-                inventories_updated += edited;
-            }
-        }
-    }
-    if preserved.containers_imported == 0 {
+    let report = export_columns(&db, &sculith, &terrain, &items, block_states.as_ref())?;
+    if !include_block_edits && report.storage.containers_checked == 0 {
         return Err(invalid(
             "the Bedrock world contains no supported storage containers",
         ));
@@ -128,10 +113,68 @@ pub fn export_storage(
     db.close()?;
     ensure_absent(&destination)?;
     fs::rename(output, destination)?;
-    Ok(StorageExportStats {
-        containers_checked: preserved.containers_imported,
-        inventories_updated,
-        preserved,
+    Ok(report)
+}
+
+fn export_columns(
+    db: &DB,
+    sculith: &Path,
+    terrain: &TerrainRegistry,
+    items: &StorageItemRegistry,
+    block_states: Option<&DiskBlockStates>,
+) -> Result<WorldEditsExportStats, Error> {
+    let mut preserved = ImportStats::default();
+    let regions = index_chunks(db, &mut preserved, None, Err)?;
+    let mut inventories_updated = 0;
+    let mut block_columns_updated = 0;
+    for ((dimension, rx, rz), columns) in regions {
+        let region_pos = Vector2::new(rx, rz);
+        let folders = LevelFolder::for_dimension(sculith.to_path_buf(), &dimension.target());
+        let mut region = None;
+        for ((x, z), sections) in columns {
+            let pos = Vector2::new(x, z);
+            let mut key = [0; 13];
+            let tag = dimension.write_column_prefix(pos, &mut key);
+            key[tag] = BLOCK_ENTITY;
+            let key = &key[..=tag];
+            let record = db.try_get(key)?;
+            if record.is_none() && block_states.is_none() {
+                continue;
+            }
+            let original = read_chunk(db, dimension, pos, sections, terrain, items, &mut preserved)
+                .map_err(|error| dimension.chunk_error(pos, error))?;
+            let has_storage = !original
+                .pending_block_entities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_empty();
+            if !has_storage && block_states.is_none() {
+                continue;
+            }
+            let shared = read_storage_chunk(&mut region, &folders.region_folder, region_pos, pos)
+                .map_err(|error| dimension.chunk_error(pos, error))?;
+            if let Some(states) = block_states {
+                let edited = export_column_blocks(db, dimension, &original, &shared, states)
+                    .map_err(|error| dimension.chunk_error(pos, error))?;
+                block_columns_updated += usize::from(edited);
+            }
+            if has_storage && let Some(record) = record {
+                let (updated, edited) = export_record(&record, &original, &shared, terrain, items)
+                    .map_err(|error| dimension.chunk_error(pos, error))?;
+                if edited != 0 {
+                    db.put(key, &updated)?;
+                    inventories_updated += edited;
+                }
+            }
+        }
+    }
+    Ok(WorldEditsExportStats {
+        block_columns_updated,
+        storage: StorageExportStats {
+            containers_checked: preserved.containers_imported,
+            inventories_updated,
+            preserved,
+        },
     })
 }
 
