@@ -42,6 +42,10 @@ impl Default for MoveControl {
 impl Control for MoveControl {}
 
 impl MoveControlTrait for MoveControl {
+    fn idle_ground_control(&mut self) -> Option<&mut Self> {
+        (self.operation == Operation::Wait).then_some(self)
+    }
+
     fn tick(&mut self, mob: &dyn Mob) {
         let mob_entity = mob.get_mob_entity();
         let living_entity = &mob_entity.living_entity;
@@ -92,10 +96,9 @@ impl MoveControlTrait for MoveControl {
                 return;
             }
 
-            let y_rot_d = (zd.atan2(xd).to_degrees() as f32) - 90.0;
             entity
                 .yaw
-                .store(Self::rotlerp(entity.yaw.load(), y_rot_d, Self::MAX_TURN));
+                .store(Self::turn_toward(entity.yaw.load(), xd, zd));
 
             let movement_speed = living_entity.get_attribute_value(&Attributes::MOVEMENT_SPEED);
             let speed = self.speed_modifier * movement_speed;
@@ -175,6 +178,11 @@ impl MoveControlTrait for MoveControl {
 impl MoveControl {
     pub const MIN_SPEED_SQR: f32 = 2.5000003E-7;
     pub const MAX_TURN: f32 = 90.0;
+
+    pub(crate) fn turn_toward(yaw: f32, dx: f64, dz: f64) -> f32 {
+        let target = dz.atan2(dx).to_degrees() as f32 - 90.0;
+        Self::rotlerp(yaw, target, Self::MAX_TURN)
+    }
 
     #[must_use]
     pub fn rotlerp(start: f32, end: f32, max_change: f32) -> f32 {

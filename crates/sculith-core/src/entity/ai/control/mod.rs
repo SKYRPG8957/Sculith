@@ -23,6 +23,11 @@ pub trait Control: Send + Sync {
 pub trait MoveControlTrait: Control {
     fn tick(&mut self, mob: &dyn Mob);
 
+    #[doc(hidden)]
+    fn idle_ground_control(&mut self) -> Option<&mut move_control::MoveControl> {
+        None
+    }
+
     fn set_wanted_position(&mut self, _x: f64, _y: f64, _z: f64, _speed_modifier: f64) {}
 
     fn strafe(&mut self, _forward: f32, _right: f32) {}

@@ -481,6 +481,15 @@ impl MobEntity {
         }
     }
 
+    pub(super) fn try_navigator_for_regional_motion(
+        &self,
+    ) -> Option<std::sync::MutexGuard<'_, Navigator>> {
+        let navigator = self.try_navigator()?;
+        self.pending_navigation_updates
+            .is_empty()
+            .then_some(navigator)
+    }
+
     fn apply_navigation_update(
         &self,
         navigator: &mut Navigator,
@@ -553,13 +562,22 @@ impl MobEntity {
             GoalSelector::tick(&self.goals_selector, mob);
         }
 
-        let navigation_target = {
+        let (navigation_target, already_followed) = {
             let mut navigator = self
                 .navigator
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.apply_navigation_updates(&mut navigator);
-            navigator.tick(&self.living_entity)
+            let deadline = crate::world::actor_deadline(entity_id);
+            let already_followed = navigator
+                .ground_navigation()
+                .is_some_and(|nav| nav.already_followed(deadline));
+            let target = if already_followed {
+                None
+            } else {
+                navigator.tick(&self.living_entity)
+            };
+            (target, already_followed)
         };
 
         // Vanilla PathNavigation.tick hands its waypoint to `mob.getMoveControl()`.
@@ -574,13 +592,13 @@ impl MobEntity {
 
         mob.custom_server_ai_step(caller);
 
-        {
+        if !already_followed {
             let mut move_control = self
                 .move_control
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             move_control.tick(mob);
-        };
+        }
 
         if mob.ticks_look_control() {
             let mut look_control = self

@@ -20,7 +20,7 @@ protocol and utility packages are `sculith-core`, `sculith-config`,
 `sculith-protocol` and `sculith-util`. Embedders start `sculith_core::SculithServer`
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
-Native Rust plugins must be rebuilt against ABI 45. The native plugin macro
+Native Rust plugins must be rebuilt against ABI 46. The native plugin macro
 exports `SCULITH_API_VERSION`, and the loader also reads the earlier version
 marker. Wasm plugins load by WIT API version.
 Telemetry and update notifications default to off. The optional update checker
@@ -526,7 +526,11 @@ can cross a chunk boundary when the same region owns the entire sweep.
 An isolated grounded mob of these species can coast over a continuous inert
 floor when its current input and fall distance are zero. The same collision
 and friction rules apply. Footstep events, equipment effects, unsupported
-surfaces and nearby actors use the ordinary world path. The
+surfaces and nearby actors use the ordinary world path. The region can also
+continue an installed ground route across a safe flat surface. It commits
+the next waypoint, steering and movement together under the actor's motion
+deadline. Goals, effects and route changes that need a world step go through
+the existing ordered phases. The
 tracker sends the full position to paired current-protocol Java and Bedrock
 viewers in range who already have the destination terrain. The world refreshes
 pairings and handles travel across ownership boundaries. Both owners share

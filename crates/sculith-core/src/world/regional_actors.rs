@@ -497,7 +497,8 @@ impl World {
                     && supports_regional_travel(base.entity_type)
                     && velocity.y <= -0.003
                     && (!base.on_ground.load(Relaxed)
-                        || velocity.horizontal_length_squared() > 0.0);
+                        || velocity.horizontal_length_squared() > 0.0
+                        || living.movement_input.load().z > 0.0);
                 if !(effects || grows || travels) {
                     continue;
                 }

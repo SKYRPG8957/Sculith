@@ -2,6 +2,7 @@ use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
 
 use crate::entity::living::LivingEntity;
+use crate::server::TickDeadline;
 use crate::world::{RegionChunks, RegionId, World};
 
 use crate::entity::ai::pathfinder::amphibious_node_evaluator::AmphibiousNodeEvaluator;
@@ -19,6 +20,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use self::regional_terrain::RegionalTerrain;
 
@@ -281,6 +283,23 @@ pub struct NavigationTarget {
     pub speed_modifier: f64,
 }
 
+#[derive(Clone, Copy)]
+struct WaypointTimeout {
+    node: Vector3<i32>,
+    timer: u64,
+    limit: f64,
+}
+
+pub(crate) struct GroundRouteStep {
+    pub target: NavigationTarget,
+    pub terrain_revision: u64,
+    next_node: usize,
+    tick: u32,
+    margin: f32,
+    world_age: u64,
+    timeout: WaypointTimeout,
+}
+
 pub enum EvaluatorKind {
     Walk(WalkNodeEvaluator),
     Fly(FlyNodeEvaluator),
@@ -502,6 +521,7 @@ pub struct PathNavigation {
     path_finder: Option<PathFinder>,
     update_pathfinder_max_visited_nodes: bool,
     pub is_idle: AtomicBool,
+    regional_follow_completed: Option<Instant>,
 }
 
 impl Default for PathNavigation {
@@ -554,6 +574,7 @@ impl PathNavigation {
             path_finder: None,
             update_pathfinder_max_visited_nodes: false,
             is_idle: AtomicBool::new(true),
+            regional_follow_completed: None,
         }
     }
 
@@ -1073,32 +1094,127 @@ impl PathNavigation {
             && !path.is_done()
             && let Some(pos) = path.get_next_node_pos()
         {
-            if pos.0 == self.timeout_cached_node {
-                self.timeout_timer = self
-                    .timeout_timer
-                    .saturating_add(world_age.saturating_sub(self.last_timeout_check));
+            if let Some(timeout) =
+                self.waypoint_timeout(pos, mob_pos, entity.get_speed(), world_age)
+            {
+                self.install_timeout(timeout);
             } else {
-                self.timeout_cached_node = pos.0;
-                let node_center = Vector3::new(
-                    f64::from(pos.0.x) + 0.5,
-                    f64::from(pos.0.y),
-                    f64::from(pos.0.z) + 0.5,
-                );
-                let dist_to_node = (mob_pos - node_center).length();
-                let speed = entity.get_speed();
-                self.timeout_limit = if speed > 0.0 {
-                    dist_to_node / f64::from(speed) * 20.0
-                } else {
-                    0.0
-                };
-            }
-
-            if self.timeout_limit > 0.0 && self.timeout_timer as f64 > self.timeout_limit * 3.0 {
                 self.reset_stuck_timeout();
                 self.stop();
             }
             self.last_timeout_check = world_age;
         }
+    }
+
+    fn waypoint_timeout(
+        &self,
+        node: BlockPos,
+        mob_pos: Vector3<f64>,
+        speed: f32,
+        world_age: u64,
+    ) -> Option<WaypointTimeout> {
+        let (timer, limit) = if node.0 == self.timeout_cached_node {
+            (
+                self.timeout_timer
+                    .saturating_add(world_age.saturating_sub(self.last_timeout_check)),
+                self.timeout_limit,
+            )
+        } else if speed > 0.0 {
+            let center = node.0.to_f64().add_raw(0.5, 0.0, 0.5);
+            (
+                self.timeout_timer,
+                (mob_pos - center).length() / f64::from(speed) * 20.0,
+            )
+        } else {
+            (self.timeout_timer, 0.0)
+        };
+        (!(limit > 0.0 && timer as f64 > limit * 3.0)).then_some(WaypointTimeout {
+            node: node.0,
+            timer,
+            limit,
+        })
+    }
+
+    const fn install_timeout(&mut self, timeout: WaypointTimeout) {
+        self.timeout_cached_node = timeout.node;
+        self.timeout_timer = timeout.timer;
+        self.timeout_limit = timeout.limit;
+    }
+
+    /// Preview the next step of an existing level ground route. The motion commit
+    /// must still verify the target floor and the current world revision.
+    pub(crate) fn prepare_ground_route(
+        &self,
+        entity: &LivingEntity,
+        world: &World,
+        world_age: u64,
+    ) -> Option<GroundRouteStep> {
+        let tick = self.tick_count.checked_add(1)?;
+        if self.has_pending_path
+            || self.has_delayed_recomputation
+            || tick.saturating_sub(self.last_stuck_check) > 100
+            || self.is_stuck
+        {
+            return None;
+        }
+        let mut route = self.path.as_ref()?.clone();
+        let terrain_revision = world.navigation_change_sequence.load(Ordering::Acquire);
+        if route.world_change != Some((world.uuid, terrain_revision)) {
+            return None;
+        }
+        let position = entity.entity.pos.load();
+        let surface = Vector3::new(position.x, (position.y + 0.5).floor(), position.z);
+        let timeout = self.waypoint_timeout(
+            route.get_next_node_pos()?,
+            surface,
+            entity.get_speed(),
+            world_age,
+        )?;
+        let width = entity.entity.width();
+        let margin = Self::waypoint_margin(width);
+        Self::advance_ground_waypoint(
+            &mut route,
+            position,
+            surface,
+            f64::from(margin),
+            true,
+            self.cuts_water_border_corners,
+        )?;
+        let target = NavigationTarget {
+            position: route.get_next_entity_pos(width)?,
+            speed_modifier: self.speed_modifier,
+        };
+        Some(GroundRouteStep {
+            target,
+            terrain_revision,
+            next_node: route.get_next_node_index(),
+            tick,
+            margin,
+            world_age,
+            timeout,
+        })
+    }
+
+    pub(crate) const fn commit_ground_route(
+        &mut self,
+        step: &GroundRouteStep,
+        deadline: TickDeadline,
+    ) {
+        // The navigator is held exclusively from preview through successful motion.
+        if let Some(path) = &mut self.path {
+            path.set_next_node_index(step.next_node);
+        }
+        self.tick_count = step.tick;
+        self.max_distance_to_waypoint = step.margin;
+        self.install_timeout(step.timeout);
+        self.last_timeout_check = step.world_age;
+        self.regional_follow_completed = Some(deadline.at);
+    }
+
+    pub(crate) fn already_followed(&self, deadline: Option<TickDeadline>) -> bool {
+        deadline
+            .zip(self.regional_follow_completed)
+            .is_some_and(|(now, previous)| !now.follows(previous))
     }
 
     /// Vanilla `PathNavigation.canCutCorner`.
@@ -1222,46 +1338,50 @@ impl PathNavigation {
                 return None;
             }
 
-            let on_ground = entity.entity.on_ground.load(Ordering::Relaxed);
-
-            if let Some(next_block) = path.get_next_node_pos() {
-                let current_pos = entity.entity.pos.load();
-                // Vanilla followThePath compares |dx| and |dz| separately
-                let x_distance = (current_pos.x - (f64::from(next_block.0.x) + 0.5)).abs();
-                let y_distance = (current_pos.y - f64::from(next_block.0.y)).abs();
-                let z_distance = (current_pos.z - (f64::from(next_block.0.z) + 0.5)).abs();
-                let dy = f64::from(next_block.0.y) - current_pos.y;
-
-                let width = entity.entity.width();
-                self.max_distance_to_waypoint = Self::waypoint_margin(width);
-                let reach = f64::from(self.max_distance_to_waypoint);
-
-                if !on_ground && x_distance < reach && z_distance < reach && dy < -0.5 {
-                    path.advance();
-                    return self.ground_target(entity);
-                }
-
-                let close_enough =
-                    x_distance < reach && z_distance < reach && y_distance < NODE_REACH_Y;
-
-                let cuts_water_border = self.cuts_water_border_corners;
-                let corner_cut =
-                    path.get_next_node().is_some_and(|n| {
-                        Self::can_cut_corner(n.path_type)
-                            && (cuts_water_border || n.path_type != PathType::WaterBorder)
-                    }) && Self::should_target_next_node_in_direction(mob_pos, path, || false);
-
-                if close_enough || corner_cut {
-                    path.advance();
-                    return self.ground_target(entity);
-                }
-            } else {
+            self.max_distance_to_waypoint = Self::waypoint_margin(entity.entity.width());
+            if Self::advance_ground_waypoint(
+                path,
+                entity.entity.pos.load(),
+                mob_pos,
+                f64::from(self.max_distance_to_waypoint),
+                entity.entity.on_ground.load(Ordering::Relaxed),
+                self.cuts_water_border_corners,
+            )
+            .is_none()
+            {
                 self.stop();
                 return None;
             }
         }
 
         self.ground_target(entity)
+    }
+
+    fn advance_ground_waypoint(
+        path: &mut Path,
+        position: Vector3<f64>,
+        surface_position: Vector3<f64>,
+        reach: f64,
+        on_ground: bool,
+        cuts_water_border: bool,
+    ) -> Option<()> {
+        let node = path.get_next_node()?;
+        // Vanilla followThePath compares the two horizontal axes separately.
+        let x_distance = (position.x - (f64::from(node.pos.0.x) + 0.5)).abs();
+        let z_distance = (position.z - (f64::from(node.pos.0.z) + 0.5)).abs();
+        let dy = f64::from(node.pos.0.y) - position.y;
+        let within_horizontal_reach = x_distance < reach && z_distance < reach;
+        if within_horizontal_reach && (dy.abs() < NODE_REACH_Y || !on_ground && dy < -0.5) {
+            path.advance();
+            return Some(());
+        }
+        if Self::can_cut_corner(node.path_type)
+            && (cuts_water_border || node.path_type != PathType::WaterBorder)
+            && Self::should_target_next_node_in_direction(surface_position, path, || false)
+        {
+            path.advance();
+        }
+        Some(())
     }
 }
 
@@ -1351,6 +1471,11 @@ impl PathNavigationTrait for GroundPathNavigation {
     }
 
     fn tick(&mut self, entity: &LivingEntity) -> Option<NavigationTarget> {
+        let current = crate::world::actor_deadline(entity.entity.entity_id);
+        if self.inner.already_followed(current) {
+            return self.inner.ground_target(entity);
+        }
+        self.inner.regional_follow_completed = None;
         self.inner.tick_ground(entity)
     }
 
