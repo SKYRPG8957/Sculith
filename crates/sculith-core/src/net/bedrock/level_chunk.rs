@@ -7,9 +7,10 @@ use std::{
 };
 use xxhash_rust::xxh64::xxh64;
 
+use pumpkin_data::dimension::Dimension;
 use pumpkin_nbt::{Nbt, compound::NbtCompound};
 use pumpkin_world::chunk::{
-    ChunkData,
+    BedrockSectionBlobs, ChunkData,
     palette::{BeNetworkSerialization, NetworkPalette},
 };
 
@@ -18,7 +19,11 @@ use sculith_protocol::{
     serial::PacketWrite,
 };
 
+use crate::entity::player::bedrock_dimension_id;
+
 const VERSION: u8 = 9;
+static NETHER_DIMENSION: Dimension = Dimension::THE_NETHER;
+const NETHER_SECTIONS: usize = (NETHER_DIMENSION.logical_height / 16) as usize;
 
 fn write_block_storage(
     writer: &mut Vec<u8>,
@@ -136,12 +141,53 @@ fn blob(data: Vec<u8>) -> ChunkBlob {
     (xxh64(&data, 0), Bytes::from(data.into_boxed_slice()))
 }
 
-fn encode_block_actors(block_actors: &[NbtCompound]) -> Result<Vec<u8>, Error> {
+fn encode_block_actors<'a>(
+    block_actors: impl IntoIterator<Item = &'a NbtCompound>,
+) -> Result<Vec<u8>, Error> {
     let mut encoded = Vec::new();
     for block_actor in block_actors {
         encoded.write_all(&Nbt::from(block_actor.clone()).write_bedrock())?;
     }
     Ok(encoded)
+}
+
+fn encode_biomes(chunk: &ChunkData) -> Result<BedrockSectionBlobs, Error> {
+    chunk.section.biome_sections.bedrock_blobs(|biomes| {
+        let mut data = Vec::new();
+        let mut ceiling = None;
+        for (index, palette) in biomes.iter().enumerate() {
+            let network_repr = palette.convert_be_network();
+            (network_repr.bits_per_entry << 1 | 1).write(&mut data)?;
+            for word in network_repr.packed_data {
+                word.write(&mut data)?;
+            }
+            match network_repr.palette {
+                NetworkPalette::Single(id) => VarInt(i32::from(id)).write(&mut data)?,
+                NetworkPalette::Indirect(palette) => {
+                    VarInt(palette.len() as i32).write(&mut data)?;
+                    for id in palette {
+                        VarInt(i32::from(id)).write(&mut data)?;
+                    }
+                }
+                NetworkPalette::Direct => (),
+            }
+            if chunk.section.min_y == NETHER_DIMENSION.min_y
+                && index + 1 == NETHER_SECTIONS
+                && biomes.len() > NETHER_SECTIONS
+            {
+                ceiling = Some(data.len());
+            }
+        }
+
+        // A cached palette can supply the full frame and a Nether prefix from
+        // the same byte allocation, with a different hash for each view.
+        let full = blob(data);
+        let restricted = ceiling.map(|end| {
+            let bytes = full.1.slice(..end);
+            (xxh64(&bytes, 0), bytes)
+        });
+        Ok([Some(full), restricted].into_iter().flatten().collect())
+    })
 }
 
 impl CLevelChunk<'_> {
@@ -152,6 +198,7 @@ impl CLevelChunk<'_> {
         block_actors: &[NbtCompound],
     ) -> Result<EncodedChunk, Error> {
         let mut writer = Vec::new();
+        let nether = dimension == bedrock_dimension_id(&NETHER_DIMENSION);
 
         VarInt(chunk.x).write(&mut writer)?;
         VarInt(chunk.z).write(&mut writer)?;
@@ -184,43 +231,26 @@ impl CLevelChunk<'_> {
                 }
                 Ok(blobs)
             })?;
-        let biome_blobs = chunk
-            .section
-            .biome_sections
-            .bedrock_blobs(|biome_sections| {
-                let mut biome_buf = Vec::new();
-                for biome_palette in biome_sections {
-                    let network_repr = biome_palette.convert_be_network();
-
-                    (network_repr.bits_per_entry << 1 | 1).write(&mut biome_buf)?;
-
-                    for data in network_repr.packed_data {
-                        data.write(&mut biome_buf)?;
-                    }
-
-                    match network_repr.palette {
-                        NetworkPalette::Single(id) => {
-                            VarInt(i32::from(id)).write(&mut biome_buf)?;
-                        }
-                        NetworkPalette::Indirect(palette) => {
-                            VarInt(palette.len() as i32).write(&mut biome_buf)?;
-                            for id in palette {
-                                VarInt(i32::from(id)).write(&mut biome_buf)?;
-                            }
-                        }
-                        NetworkPalette::Direct => (),
-                    }
-                }
-
-                Ok(vec![blob(biome_buf)])
-            })?;
-        VarUInt(block_blobs.len() as u32).write(&mut writer)?;
+        let biome_blobs = encode_biomes(chunk)?;
+        let (block_count, biomes) = if nether {
+            (block_blobs.len().min(NETHER_SECTIONS), biome_blobs.last())
+        } else {
+            (block_blobs.len(), biome_blobs.first())
+        };
+        VarUInt(block_count as u32).write(&mut writer)?;
         false.write(&mut writer)?;
         cache_enabled.write(&mut writer)?;
 
         // Block entities can change independently of either palette.
-        let actors = encode_block_actors(block_actors)?;
-        let all_blobs = block_blobs.iter().chain(biome_blobs.iter());
+        let actors = encode_block_actors(block_actors.iter().filter(|actor| {
+            !nether
+                || actor.get_int("y").is_none_or(|y| {
+                    (NETHER_DIMENSION.min_y
+                        ..NETHER_DIMENSION.min_y + NETHER_DIMENSION.logical_height)
+                        .contains(&y)
+                })
+        }))?;
+        let all_blobs = block_blobs.iter().take(block_count).chain(biomes);
         let mut blobs = Vec::new();
         if cache_enabled {
             blobs.extend(all_blobs.cloned());
@@ -274,10 +304,13 @@ mod tests {
 
     use pumpkin_data::{Block, BlockState};
     use pumpkin_nbt::{Nbt, compound::NbtCompound, deserializer::NbtReadHelperBedrock};
-    use pumpkin_world::chunk::ChunkData;
+    use pumpkin_world::chunk::{ChunkData, ChunkSections};
 
-    use super::{CLevelChunk, VERSION};
-    use sculith_protocol::serial::PacketWrite;
+    use super::{CLevelChunk, NETHER_SECTIONS, VERSION};
+    use sculith_protocol::{
+        bedrock::client::level_chunk::CLevelChunkPayload,
+        serial::{PacketReadSlice, PacketWrite},
+    };
 
     fn read_var_uint(data: &[u8], offset: &mut usize) -> u32 {
         let mut value = 0;
@@ -448,6 +481,51 @@ mod tests {
         }
         assert_eq!(raw[raw_offset], 0); // Border block count.
         assert_eq!(raw_offset + 1, raw.len());
+    }
+
+    #[test]
+    fn nether_terrain_uses_only_the_native_height_even_after_an_end_send() {
+        let mut chunk = empty_chunk();
+        chunk.section = ChunkSections::new(16, 0);
+        for y in [64, 128] {
+            chunk
+                .section
+                .set_block_absolute_y(3, y, 3, Block::STONE.default_state.id);
+        }
+        let mut high_actor = NbtCompound::new();
+        high_actor.put_int("y", 128);
+        let actors = [high_actor];
+        let (end, end_blobs) = CLevelChunk::encode_chunk(&chunk, 2, true, &actors).unwrap();
+        let end = CLevelChunkPayload::read_slice(&mut end.as_slice()).unwrap();
+        assert_eq!(end.sub_chunk_count.0, 9);
+        assert!(end.chunk_data.len() > 1);
+
+        for cache in [false, true] {
+            let (body, blobs) = CLevelChunk::encode_chunk(&chunk, 1, cache, &actors).unwrap();
+            let payload = CLevelChunkPayload::read_slice(&mut body.as_slice()).unwrap();
+            assert_eq!(payload.sub_chunk_count.0 as usize, NETHER_SECTIONS);
+            assert_eq!(payload.cache_enabled, cache);
+            let (biomes, mut offset) = if cache {
+                assert_eq!(payload.chunk_data, &[0]);
+                assert_eq!(blobs.len(), NETHER_SECTIONS + 1);
+                let (hash, bytes) = blobs.last().unwrap();
+                assert_ne!(*hash, end_blobs.last().unwrap().0);
+                assert_eq!(payload.blob_hashes.last(), Some(hash));
+                (bytes.as_ref(), 0)
+            } else {
+                let mut offset = 0;
+                for _ in 0..NETHER_SECTIONS {
+                    assert_eq!(payload.chunk_data[offset], VERSION);
+                    offset += 3;
+                    skip_storage(payload.chunk_data, &mut offset);
+                }
+                (payload.chunk_data, offset)
+            };
+            for _ in 0..NETHER_SECTIONS {
+                skip_storage(biomes, &mut offset);
+            }
+            assert_eq!(&biomes[offset..], if cache { &[][..] } else { &[0][..] });
+        }
     }
 
     #[test]

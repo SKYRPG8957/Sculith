@@ -55,10 +55,16 @@ impl BlockKey {
         })
     }
 
-    fn liquid_state(&self) -> Option<BlockStateId> {
+    fn fallback_state(&self) -> Option<BlockStateId> {
         let block = match self.name.as_str() {
             "minecraft:water" | "minecraft:flowing_water" => &Block::WATER,
             "minecraft:lava" | "minecraft:flowing_lava" => &Block::LAVA,
+            "minecraft:bedrock" => {
+                // Official End pillars and portals can save the infiniburn variant.
+                return matches!(self.properties.as_slice(), [(property, BlockProperty::Byte(1))]
+                    if property.as_ref() == "infiniburn_bit")
+                .then_some(Block::BEDROCK.default_state.id);
+            }
             _ => return None,
         };
         let [(property, BlockProperty::Int(depth))] = self.properties.as_slice() else {
@@ -130,7 +136,11 @@ impl TerrainRegistry {
         for (name, mapping) in biome_mappings {
             if let Some(biome) = Biome::from_name(name.strip_prefix("minecraft:").unwrap_or(&name))
             {
-                biomes.entry(mapping.bedrock_id).or_insert(biome.id);
+                let shared = biomes.entry(mapping.bedrock_id).or_insert(biome.id);
+                // Bedrock uses one biome where Java splits the End into several.
+                if biome.id == Biome::THE_END.id {
+                    *shared = biome.id;
+                }
             }
         }
         Ok(Self { blocks, biomes })
@@ -148,7 +158,7 @@ impl TerrainRegistry {
         self.blocks
             .get(&key)
             .copied()
-            .or_else(|| key.liquid_state())
+            .or_else(|| key.fallback_state())
             .ok_or_else(|| invalid(format!("Bedrock block state {} has no mapping", key.name)))
     }
 }

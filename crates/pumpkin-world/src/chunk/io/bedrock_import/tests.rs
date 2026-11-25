@@ -55,7 +55,10 @@ fn write_world(source: &Path, corrupt: bool, flat_layers: &str) {
     let mut biomes = vec![0; 512];
     biomes.push(1); // Official disk biome palettes can set the low bit.
     biomes.extend_from_slice(&u32::from(Biome::PLAINS.be_network_id).to_le_bytes());
-    biomes.extend(std::iter::repeat_n(0xff, section_count() - 1));
+    biomes.extend(std::iter::repeat_n(
+        0xff,
+        SavedDimension::Overworld.disk_sections() - 1,
+    ));
     db.put(&key, &biomes).unwrap();
     key[8] = SUBCHUNK;
     key.push((-4i8).cast_unsigned());
@@ -412,6 +415,99 @@ fn converts_a_saved_column_without_writing_to_the_source() {
     );
     let error = import_terrain(&source, &destination).unwrap_err();
     assert!(error.to_string().contains("destination already exists"));
+}
+
+#[test]
+fn distinguishes_saved_dimensions_at_the_same_coordinates() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("bedrock");
+    let destination = directory.path().join("java");
+    write_world(&source, false, FLAT_LAYERS);
+    let scratch_dimensions = [
+        (
+            1i32,
+            &Biome::NETHER_WASTES,
+            &Block::GOLD_BLOCK,
+            "minecraft:gold_block",
+            8,
+        ),
+        (
+            2,
+            &Biome::THE_END,
+            &Block::EMERALD_BLOCK,
+            "minecraft:emerald_block",
+            16,
+        ),
+    ];
+    let db = DB::open(source.join("db"), Options::default()).unwrap();
+    for (dimension, biome, _, name, sections) in scratch_dimensions {
+        let mut key = (-1i32).to_le_bytes().to_vec();
+        key.extend_from_slice(&0i32.to_le_bytes());
+        key.extend_from_slice(&dimension.to_le_bytes());
+        key.push(VERSION);
+        db.put(&key, &[CHUNK_VERSION]).unwrap();
+        key[12] = BIOMES;
+        let mut biomes = vec![0; 512];
+        biomes.push(1);
+        biomes.extend_from_slice(&u32::from(biome.be_network_id).to_le_bytes());
+        biomes.extend(std::iter::repeat_n(0xff, sections - 1));
+        db.put(&key, &biomes).unwrap();
+        key[12] = SUBCHUNK;
+        key.push(0);
+        let mut terrain = vec![9, 1, 0, 0];
+        block_entry(&mut terrain, name, &[0]);
+        db.put(&key, &terrain).unwrap();
+        if dimension == 2 {
+            key[13] = 1;
+            let mut states = Vec::new();
+            named_tag(&mut states, pumpkin_nbt::BYTE_ID, "infiniburn_bit", &[1]);
+            states.push(END_ID);
+            let mut platform = vec![9, 1, 1, 0];
+            block_entry(&mut platform, "minecraft:bedrock", &states);
+            db.put(&key, &platform).unwrap();
+        }
+    }
+    db.close().unwrap();
+    let before = snapshot(&source);
+    let inspection = inspect_terrain(&source, GeneratorPolicy::RequireSource).unwrap();
+    assert_eq!(inspection.blockers, 0, "{:?}", inspection.blocker_examples);
+    assert_eq!((inspection.stats.chunks, inspection.stats.regions), (3, 3));
+    let stats = import_terrain(&source, &destination).unwrap();
+    assert_eq!((stats.chunks, stats.regions), (3, 3));
+    assert_eq!(snapshot(&source), before);
+
+    let pos = Vector2::new(-1, 0);
+    let region_pos = region_of(pos);
+    for (id, biome, expected, _, _) in scratch_dimensions {
+        let dimension = SavedDimension::from_disk(id).unwrap().target();
+        let folders = LevelFolder::for_dimension(destination.clone(), &dimension);
+        let path = folders
+            .region_folder
+            .join(AnvilRegion::file_name(region_pos));
+        assert!(path.is_file());
+        let region = AnvilRegion::open_read_only(&path, region_pos).unwrap();
+        let raw = region.read_chunk(region_chunk_index(pos)).unwrap().unwrap();
+        let bytes = AnvilRegion::decode_chunk(raw).unwrap();
+        let chunk = ChunkData::internal_from_bytes(&bytes, pos).unwrap();
+        assert_eq!(
+            chunk.section.get_block_absolute_y(0, 0, 0),
+            Some(expected.default_state.id)
+        );
+        assert_eq!(
+            chunk.section.get_block_absolute_y(0, 128, 0),
+            Some(BlockStateId::AIR)
+        );
+        assert_eq!(
+            chunk.section.get_rough_biome_absolute_y(0, 128, 0),
+            Some(biome.id)
+        );
+        if id == 2 {
+            assert_eq!(
+                chunk.section.get_block_absolute_y(0, 16, 0),
+                Some(Block::BEDROCK.default_state.id)
+            );
+        }
+    }
 }
 
 #[test]

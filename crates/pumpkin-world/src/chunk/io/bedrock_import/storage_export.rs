@@ -15,8 +15,9 @@ use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use super::{
     AnvilLevelInfo, AnvilRegion, BLOCK_ENTITY, ChunkData, DB, Error, GeneratorPolicy, ImportStats,
-    MAX_TABLE_BLOCK_BYTES, RegionFile, bedrock_db_options, copy_database, ensure_absent,
-    index_chunks, invalid, new_destination, read_chunk, read_level, region_chunk_index,
+    MAX_TABLE_BLOCK_BYTES, RegionFile, SavedDimension, bedrock_db_options, copy_database,
+    ensure_absent, index_chunks, invalid, new_destination, read_chunk, read_level,
+    region_chunk_index,
     storage::{self, SLOTS, StorageItemRegistry},
     terrain::TerrainRegistry,
 };
@@ -68,13 +69,13 @@ pub fn export_storage(
     copy_database(&template.join("db"), &database)?;
     let db = DB::open(database, bedrock_db_options())?;
     let mut preserved = ImportStats::default();
-    let regions = index_chunks(&db, &mut preserved, None, Err)?;
+    let mut regions = index_chunks(&db, &mut preserved, None, Err)?;
+    regions.retain(|&(dimension, _, _), _| dimension == SavedDimension::Overworld);
+    let region_folder = sculith.join("region");
     let mut inventories_updated = 0;
-    for ((rx, rz), columns) in regions {
+    for ((dimension, rx, rz), columns) in regions {
         let region_pos = Vector2::new(rx, rz);
-        let path = sculith
-            .join("region")
-            .join(AnvilRegion::file_name(region_pos));
+        let path = region_folder.join(AnvilRegion::file_name(region_pos));
         let mut region = None;
         for ((x, z), sections) in columns {
             let mut key = [0; 9];
@@ -84,8 +85,17 @@ pub fn export_storage(
             let Some(record) = db.try_get(&key)? else {
                 continue;
             };
-            let original = read_chunk(&db, x, z, sections, &terrain, &items, &mut preserved)
-                .map_err(|error| error.at_chunk(x, z))?;
+            let pos = Vector2::new(x, z);
+            let original = read_chunk(
+                &db,
+                dimension,
+                pos,
+                sections,
+                &terrain,
+                &items,
+                &mut preserved,
+            )
+            .map_err(|error| error.at_chunk(x, z))?;
             if original
                 .pending_block_entities
                 .lock()
@@ -98,7 +108,6 @@ pub fn export_storage(
                 Some(region) => region,
                 pending => pending.insert(AnvilRegion::open_read_only(&path, region_pos)?),
             };
-            let pos = Vector2::new(x, z);
             let raw = region
                 .read_chunk(region_chunk_index(pos))?
                 .ok_or_else(|| invalid("missing matching Sculith chunk").at_chunk(x, z))?;

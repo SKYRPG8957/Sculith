@@ -28,6 +28,7 @@ use crate::{
         ChunkData, ChunkEntityData, ChunkHeightmapType, ChunkReadingError, ChunkSections,
         ChunkWritingError, format::anvil::AnvilRegion, palette::BlockPalette,
     },
+    level::LevelFolder,
     world_info::{
         FlatPresetLayer, FlatPresetSettings, GeneratorSettings, LevelData, StructureOverrides,
         WorldInfoError, WorldInfoWriter, anvil::AnvilLevelInfo,
@@ -228,22 +229,26 @@ pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspec
         inspection.record_blocker(error);
         Ok(())
     })?;
-    if regions.is_empty() {
+    if !regions
+        .keys()
+        .any(|&(dimension, _, _)| dimension == SavedDimension::Overworld)
+    {
         inspection.record_blocker(invalid("the source contains no saved Overworld terrain"));
     }
-    for columns in regions.into_values() {
+    for ((dimension, _, _), columns) in regions {
         let before = stats.chunks;
         for ((x, z), sections) in columns {
-            match read_chunk(&db, x, z, sections, &registry, &items, &mut stats) {
+            let pos = Vector2::new(x, z);
+            match read_chunk(&db, dimension, pos, sections, &registry, &items, &mut stats) {
                 Ok(_) => {
                     stats.chunks += 1;
-                    if let Err(error) =
-                        actors::read_chunk(&db, Vector2::new(x, z), seed, &riders, &mut stats)
+                    if dimension == SavedDimension::Overworld
+                        && let Err(error) = actors::read_chunk(&db, pos, seed, &riders, &mut stats)
                     {
                         inspection.record_blocker(error.at_chunk(x, z));
                     }
                 }
-                Err(error) => inspection.record_blocker(error.at_chunk(x, z)),
+                Err(error) => inspection.record_blocker(dimension.chunk_error(pos, error)),
             }
         }
         if stats.chunks > before {
@@ -259,7 +264,7 @@ pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspec
     Ok(inspection)
 }
 
-/// Imports saved Overworld terrain, supported storage and livestock into a new directory.
+/// Imports saved terrain, supported storage and Overworld livestock into a new directory.
 /// The completed world is moved into place after conversion succeeds.
 pub fn import_terrain(source: &Path, destination: &Path) -> Result<ImportStats, Error> {
     import_terrain_with_generator(source, destination, GeneratorPolicy::RequireSource)
@@ -304,37 +309,42 @@ pub fn import_world(
     };
     let mut riders = BTreeSet::new();
     let regions = index_chunks(&db, &mut stats, Some(&mut riders), Err)?;
-    if regions.is_empty() {
+    if !regions
+        .keys()
+        .any(|&(dimension, _, _)| dimension == SavedDimension::Overworld)
+    {
         return Err(invalid("the source contains no saved Overworld terrain"));
     }
 
     let players = players::read_selected(&db, options.player_map, &registry, &items, &mut stats)?;
     let output = staging.path().join("world");
-    let region_folder = output.join("region");
-    let entity_folder = output.join("entities");
-    fs::create_dir_all(&region_folder)?;
     let config = AnvilChunkConfig::default();
-    for ((rx, rz), columns) in regions {
+    for ((dimension, rx, rz), columns) in regions {
+        let folders = dimension.output_folders(&output);
+        fs::create_dir_all(&folders.region_folder)?;
         let region_pos = Vector2::new(rx, rz);
         let filename = AnvilRegion::file_name(region_pos);
-        let path = region_folder.join(&filename);
+        let path = folders.region_folder.join(&filename);
         let mut region = AnvilRegion::open(&path, region_pos)?;
         let mut entity_region = None;
         for ((x, z), sections) in columns {
-            let chunk = read_chunk(&db, x, z, sections, &registry, &items, &mut stats)
-                .map_err(|error| error.at_chunk(x, z))?;
-            update_spawn_height(&mut info, &chunk);
             let pos = Vector2::new(x, z);
-            let records =
+            let chunk = read_chunk(&db, dimension, pos, sections, &registry, &items, &mut stats)
+                .map_err(|error| dimension.chunk_error(pos, error))?;
+            let records = if dimension == SavedDimension::Overworld {
+                update_spawn_height(&mut info, &chunk);
                 actors::read_chunk(&db, pos, info.world_gen_settings.seed, &riders, &mut stats)
-                    .map_err(|error| error.at_chunk(x, z))?;
+                    .map_err(|error| error.at_chunk(x, z))?
+            } else {
+                Vec::new()
+            };
             if !records.is_empty() {
                 let region = if let Some(region) = &mut entity_region {
                     region
                 } else {
-                    fs::create_dir_all(&entity_folder)?;
+                    fs::create_dir_all(&folders.entities_folder)?;
                     entity_region.insert(AnvilRegion::open(
-                        &entity_folder.join(&filename),
+                        &folders.entities_folder.join(&filename),
                         region_pos,
                     )?)
                 };
@@ -545,7 +555,67 @@ fn bedrock_db_options() -> Options {
     }
 }
 
-type ChunkIndex = BTreeMap<(i32, i32), BTreeMap<(i32, i32), u32>>;
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SavedDimension {
+    Overworld = 0,
+    Nether = 1,
+    End = 2,
+}
+
+impl SavedDimension {
+    fn from_disk(id: i32) -> Result<Self, Error> {
+        match id {
+            0 => Ok(Self::Overworld),
+            1 => Ok(Self::Nether),
+            2 => Ok(Self::End),
+            _ => Err(invalid(format!("unsupported Bedrock dimension {id}"))),
+        }
+    }
+
+    const fn target(self) -> Dimension {
+        match self {
+            Self::Overworld => OVERWORLD,
+            Self::Nether => Dimension::THE_NETHER,
+            Self::End => Dimension::THE_END,
+        }
+    }
+
+    fn disk_sections(self) -> usize {
+        // Bedrock saves the Nether up to its ceiling. Anvil has 256 blocks there.
+        let target = self.target();
+        let height = if matches!(self, Self::Nether) {
+            target.logical_height
+        } else {
+            target.height
+        };
+        (height / 16) as usize
+    }
+
+    fn section_index(self, y: i8) -> Result<usize, Error> {
+        usize::try_from(i32::from(y) - self.target().min_y.div_euclid(16))
+            .ok()
+            .filter(|index| *index < self.disk_sections())
+            .ok_or_else(|| invalid(format!("subchunk {y} is out of world bounds")))
+    }
+
+    fn output_folders(self, output: &Path) -> LevelFolder {
+        let root = output.to_path_buf();
+        match self {
+            Self::Overworld => LevelFolder::new(root.clone(), root),
+            _ => LevelFolder::for_dimension(root, &self.target()),
+        }
+    }
+
+    fn chunk_error(self, pos: Vector2<i32>, error: Error) -> Error {
+        let error = match self {
+            Self::Overworld => error,
+            _ => invalid(format!("{}: {error}", self.target().minecraft_name)),
+        };
+        error.at_chunk(pos.x, pos.y)
+    }
+}
+
+type ChunkIndex = BTreeMap<(SavedDimension, i32, i32), BTreeMap<(i32, i32), u32>>;
 
 fn index_chunks(
     db: &DB,
@@ -575,22 +645,30 @@ fn index_chunks(
             continue;
         };
         let (x, z) = record.pos;
-        if let Err(error) = record.validate() {
-            on_blocker(error.at_chunk(x, z))?;
-            continue;
-        }
+        let dimension = match record.validate() {
+            Ok(dimension) => dimension,
+            Err(error) => {
+                on_blocker(error.at_chunk(x, z))?;
+                continue;
+            }
+        };
+        let pos = Vector2::new(x, z);
         match record.tag {
             BIOMES | VERSION | SUBCHUNK => {
-                let section = match record.subchunk.map(section_index).transpose() {
+                let section = match record
+                    .subchunk
+                    .map(|y| dimension.section_index(y))
+                    .transpose()
+                {
                     Ok(section) => section,
                     Err(error) => {
-                        on_blocker(error.at_chunk(x, z))?;
+                        on_blocker(dimension.chunk_error(pos, error))?;
                         continue;
                     }
                 };
-                let region = region_of(Vector2::new(x, z));
+                let region = region_of(pos);
                 let sections = regions
-                    .entry((region.x, region.y))
+                    .entry((dimension, region.x, region.y))
                     .or_default()
                     .entry(record.pos)
                     .or_default();
@@ -601,7 +679,9 @@ fn index_chunks(
             BLOCK_ENTITY => stats.block_entity_records_excluded += 1,
             ENTITY => stats.entity_records_excluded += 1,
             0x30 | 0x76 => {
-                on_blocker(invalid("legacy Bedrock terrain is unsupported").at_chunk(x, z))?;
+                on_blocker(
+                    dimension.chunk_error(pos, invalid("legacy Bedrock terrain is unsupported")),
+                )?;
             }
             _ => stats.other_records_excluded += 1,
         }
@@ -646,74 +726,73 @@ impl ChunkKey {
         })
     }
 
-    fn validate(&self) -> Result<(), Error> {
+    fn validate(&self) -> Result<SavedDimension, Error> {
         if self.pos.0.unsigned_abs() >= CHUNK_COORDINATE_LIMIT
             || self.pos.1.unsigned_abs() >= CHUNK_COORDINATE_LIMIT
         {
             return Err(invalid("Bedrock chunk is out of world bounds"));
         }
-        if self.dimension != 0 {
-            return Err(invalid("only Overworld terrain is supported"));
-        }
         if self.tag == SUBCHUNK && self.subchunk.is_none() {
             return Err(invalid("subchunk key is missing its vertical index"));
         }
-        Ok(())
+        SavedDimension::from_disk(self.dimension)
     }
-}
-
-fn section_index(y: i8) -> Result<usize, Error> {
-    usize::try_from(i32::from(y) - OVERWORLD.min_y.div_euclid(16))
-        .ok()
-        .filter(|index| *index < section_count())
-        .ok_or_else(|| invalid(format!("subchunk {y} is out of world bounds")))
-}
-
-const fn section_count() -> usize {
-    (OVERWORLD.height / 16) as usize
 }
 
 fn read_chunk(
     db: &DB,
-    x: i32,
-    z: i32,
+    dimension: SavedDimension,
+    pos: Vector2<i32>,
     sections: u32,
     registry: &terrain::TerrainRegistry,
     items: &storage::StorageItemRegistry,
     stats: &mut ImportStats,
 ) -> Result<ChunkData, Error> {
-    let mut key = [0; 10];
-    key[..4].copy_from_slice(&x.to_le_bytes());
-    key[4..8].copy_from_slice(&z.to_le_bytes());
-    key[8] = VERSION;
-    match db.try_get(&key[..9])?.as_deref() {
+    let mut key = [0; 14];
+    key[..4].copy_from_slice(&pos.x.to_le_bytes());
+    key[4..8].copy_from_slice(&pos.y.to_le_bytes());
+    let tag = if dimension == SavedDimension::Overworld {
+        8
+    } else {
+        key[8..12].copy_from_slice(&(dimension as i32).to_le_bytes());
+        12
+    };
+    key[tag] = VERSION;
+    match db.try_get(&key[..=tag])?.as_deref() {
         Some([CHUNK_VERSION]) => {}
         Some(_) => return Err(invalid("unsupported Bedrock chunk version")),
         None => return Err(invalid("missing Bedrock chunk version")),
     }
-    key[8] = BIOMES;
+    key[tag] = BIOMES;
     let data = db
-        .try_get(&key[..9])?
+        .try_get(&key[..=tag])?
         .ok_or_else(|| invalid("missing biome record"))?;
-    let biomes = terrain::biomes(&data, section_count(), registry)?;
-    key[8] = SUBCHUNK;
+    let target = dimension.target();
+    let disk_sections = dimension.disk_sections();
+    let target_sections = (target.height / 16) as usize;
+    let mut biomes = terrain::biomes(&data, disk_sections, registry)?.into_vec();
+    if disk_sections < target_sections {
+        let roof_biome = biomes[disk_sections - 1].clone();
+        biomes.resize(target_sections, roof_biome);
+    }
+    key[tag] = SUBCHUNK;
     let mut blocks =
-        vec![BlockPalette::Homogeneous(BlockStateId::AIR); section_count()].into_boxed_slice();
-    for (index, palette) in blocks.iter_mut().enumerate() {
+        vec![BlockPalette::Homogeneous(BlockStateId::AIR); target_sections].into_boxed_slice();
+    for (index, palette) in blocks.iter_mut().take(disk_sections).enumerate() {
         if sections & (1 << index) != 0 {
-            let y = (OVERWORLD.min_y / 16 + index as i32) as i8;
-            key[9] = y.cast_unsigned();
+            let y = (target.min_y / 16 + index as i32) as i8;
+            key[tag + 1] = y.cast_unsigned();
             let bytes = db
-                .try_get(&key)?
+                .try_get(&key[..tag + 2])?
                 .ok_or_else(|| invalid("missing subchunk record"))?;
             *palette = terrain::subchunk(&bytes, y, registry)?;
         }
     }
-    let mut chunk = ChunkData::empty(x, z);
-    chunk.section = ChunkSections::from_palettes(blocks, biomes, OVERWORLD.min_y);
+    let mut chunk = ChunkData::empty(pos.x, pos.y);
+    chunk.section = ChunkSections::from_palettes(blocks, biomes.into_boxed_slice(), target.min_y);
     chunk.heightmap = std::sync::Mutex::new(chunk.calculate_heightmap());
-    key[8] = BLOCK_ENTITY;
-    if let Some(record) = db.try_get(&key[..9])? {
+    key[tag] = BLOCK_ENTITY;
+    if let Some(record) = db.try_get(&key[..=tag])? {
         let mut parsed = ImportStats::default();
         if storage::import_record(&record, &mut chunk, registry, items, &mut parsed)? {
             stats.block_entity_records_excluded -= 1;

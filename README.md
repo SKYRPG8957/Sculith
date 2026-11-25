@@ -44,8 +44,8 @@ To create a flat world, set `level-name` to a new folder name and
 Sculith records the generator and seed in the world save for later starts.
 
 Sculith supports Anvil, Linear and Pump storage. To bring in saved Bedrock
-1.26.63 Overworld terrain, stop the source server and choose a new destination.
-Run the import from the Sculith server directory.
+1.26.63 Overworld, Nether and End terrain, stop the source server and choose a
+new destination. Run the import from the Sculith server directory.
 
 ```sh
 sculith --import-bedrock-terrain "/path/to/bedrock-world" world
@@ -54,9 +54,9 @@ sculith --import-bedrock-terrain "/path/to/bedrock-world" world
 Start Sculith normally to open the imported `world` from Java and Bedrock. The
 import writes a separate Anvil world with mapped blocks and biomes, the world
 seed and spawn. Supported chest and barrel inventories retain slots, counts,
-potion variants and enchantments. Supported livestock keep their position,
-age, health and appearance in the imported world. For a different destination, set
-`level-name` in `server.properties` to that world folder.
+potion variants and enchantments. Supported Overworld livestock keep their
+position, age, health and appearance in the imported world. For a different
+destination, set `level-name` in `server.properties` to that world folder.
 See [the fork notes](docs/sculith/fork.md) for format limits.
 
 ## License

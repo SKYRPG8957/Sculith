@@ -689,9 +689,16 @@ when the source has blocking issues.
 
 `sculith --import-bedrock-terrain SOURCE DESTINATION` reads a stopped Bedrock
 world through a temporary LevelDB copy. The command accepts storage version 10,
-chunk version 42 and subchunk version 9 in the Overworld. It writes a new Anvil
-world after all imported columns have converted. Unknown block and biome
-palettes, unsupported generators and other dimensions fail the import.
+chunk version 42 and subchunk version 9 in the Overworld, Nether and End.
+Columns at the same coordinates go into their respective Anvil dimensions.
+The shared End biome maps to `the_end` and End bedrock with the infiniburn
+flag maps to the shared bedrock block. Fire uses the End's infiniburn tag.
+Additional Anvil sections above the saved Nether ceiling contain air and use
+the topmost saved biome palette. Nether terrain sent to Bedrock uses its
+native 0–127 block range and eight biome sections for both inline and cached
+delivery. The destination appears after all imported columns have converted.
+Unknown block and biome palettes, unsupported generators and custom dimension
+IDs fail the import.
 
 Dragonfly v0.11.6 can save flat terrain with its generator layers unspecified.
 Append `--new-chunks=normal` to either command to select Sculith's normal
@@ -754,10 +761,10 @@ published. Without the map the command imports world data only.
 ## Bedrock storage export
 
 `sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION`
-copies a stopped Bedrock world and transfers supported inventories from its
-stopped Sculith import. Use a new destination outside both inputs. The inputs
-must have the same seed and matching ordinary single chests or barrels at the
-template positions.
+copies a stopped Bedrock world and transfers supported Overworld inventories
+from its stopped Sculith import. Use a new destination outside both inputs.
+The inputs must have the same seed and matching ordinary single chests or
+barrels at the template positions.
 
 The output uses the template's terrain, players and metadata. Imports record
 their storage conversion version alongside the saved world. New imports can

@@ -516,7 +516,7 @@ fn import_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
     match import_world(Path::new(&source), Path::new(&destination), options) {
         Ok(stats) => {
             println!(
-                "Imported {} Overworld chunks in {} regions to {}.",
+                "Imported {} terrain chunks in {} regions to {}.",
                 stats.chunks,
                 stats.regions,
                 Path::new(&destination).display()
@@ -556,7 +556,7 @@ fn inspect_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
         }
     };
     println!(
-        "Read {} Overworld chunks in {} regions.",
+        "Read {} terrain chunks in {} regions.",
         report.stats.chunks, report.stats.regions
     );
     print_bedrock_import_stats(&report.stats, "Read");

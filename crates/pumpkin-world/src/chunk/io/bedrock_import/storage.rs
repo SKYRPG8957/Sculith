@@ -12,9 +12,7 @@ use pumpkin_nbt::{
 };
 use sculith_util::math::position::BlockPos;
 
-use super::{
-    Error, ImportStats, MAX_TABLE_BLOCK_BYTES, OVERWORLD, invalid, terrain::TerrainRegistry,
-};
+use super::{Error, ImportStats, MAX_TABLE_BLOCK_BYTES, invalid, terrain::TerrainRegistry};
 use crate::chunk::ChunkData;
 
 mod items;
@@ -90,7 +88,9 @@ pub(super) fn check_container_at(
     if (pos.x.div_euclid(16), pos.z.div_euclid(16)) != (chunk.x, chunk.z) {
         return Err("container coordinates are outside its chunk".into());
     }
-    if !(OVERWORLD.min_y..OVERWORLD.min_y + OVERWORLD.height).contains(&pos.y) {
+    let min_y = chunk.section.min_y;
+    let max_y = min_y + 16 * chunk.section.count as i32;
+    if !(min_y..max_y).contains(&pos.y) {
         return Err("container height is outside the world".into());
     }
     let state = chunk
