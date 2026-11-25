@@ -212,12 +212,16 @@ the committed properties and timer removals together. The shared lighting
 engine follows changes to light properties, and both editions read the
 authoritative state.
 
-The region also executes built-in water ticks for isolated vertical flow.
+The region also executes built-in water ticks for isolated sources.
 Canonical source and falling water can fill air directly below them. The
 falling block and both follow-up timers commit together, and consecutive
-ready ticks see earlier decisions in that batch. The same ownership guard
-applies to the neighboring reads. Horizontal flow, other fluid interactions
-and observable flow or physics events use the world callbacks.
+ready ticks see earlier decisions in that batch. An isolated source with
+four open sides can spread over an uninterrupted floor. The owner checks
+the floor through the normal search reach and commits the four placements
+with their follow-up timers. Each placement remains in the current chunk.
+The same ownership guard applies to neighboring reads. Flow around holes,
+other fluid interactions and observable flow or physics events use the world
+callbacks.
 
 On a regional deadline the owner can also apply queued Rust plugin block
 edits. The owner checks the expected state and its current extent under the

@@ -19,7 +19,7 @@ pub mod format;
 pub mod io;
 pub mod palette;
 mod regional_fluid;
-pub use regional_fluid::DownwardWaterTick;
+pub use regional_fluid::{DownwardWaterTick, RegionalWaterTick};
 
 // TODO
 pub const CHUNK_WIDTH: usize = BlockPalette::SIZE;

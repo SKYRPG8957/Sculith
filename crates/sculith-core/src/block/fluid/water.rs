@@ -11,8 +11,8 @@ use pumpkin_data::{
     BlockDirection, BlockStateId,
     fluid::{Fluid, FluidProperties, Level},
 };
-use pumpkin_world::{chunk::DownwardWaterTick, tick::TickPriority};
-use sculith_util::math::position::BlockPos;
+use pumpkin_world::{chunk::RegionalWaterTick, tick::TickPriority};
+use sculith_util::math::{position::BlockPos, vector3::Vector3};
 use std::sync::Arc;
 
 pub struct FlowingWater;
@@ -33,12 +33,12 @@ impl FlowingWater {
         })
     }
 
-    pub(crate) fn regional_downward_tick(
+    pub(crate) fn regional_water_tick(
         world: &World,
         position: BlockPos,
         state: BlockStateId,
         read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
-    ) -> Option<DownwardWaterTick> {
+    ) -> Option<RegionalWaterTick> {
         let read = |at| world.is_in_build_limit(at).then(|| read(at)).flatten();
         let water = &Fluid::FLOWING_WATER;
         let source = Self.get_source(water, false).to_state_id(water);
@@ -51,9 +51,12 @@ impl FlowingWater {
 
         let below = position.down();
         let destination = read(below)?;
-        if (destination != BlockStateId::AIR && destination != falling)
-            || !physics::can_be_replaced(destination.to_state(), destination.to_block(), water)
-        {
+        if !physics::can_be_replaced(destination.to_state(), destination.to_block(), water) {
+            return (state == source)
+                .then(|| Self::regional_horizontal_tick(world, position, &read))
+                .flatten();
+        }
+        if destination != BlockStateId::AIR && destination != falling {
             return None;
         }
 
@@ -75,27 +78,70 @@ impl FlowingWater {
             if at == position {
                 continue;
             }
-            let neighbor = read(at)?;
-            let fluid = World::get_fluid_from_state_id(neighbor);
-            if fluid != &Fluid::EMPTY
-                || world.block_registry.get_pumpkin_fluid(fluid.id).is_some()
-                || world
-                    .block_registry
-                    .get_pumpkin_block(neighbor.to_block_id())
-                    .is_some()
-            {
+            if !Self::regional_water_neighbor_is_inert(world, read(at)?) {
                 return None;
             }
         }
 
         Some(if destination == falling {
-            DownwardWaterTick::Settled
+            RegionalWaterTick::Settled
         } else {
-            DownwardWaterTick::Spread {
+            RegionalWaterTick::SpreadDown {
                 state: falling,
                 delay: WATER_FLOW_SPEED,
             }
         })
+    }
+
+    fn regional_horizontal_tick(
+        world: &World,
+        position: BlockPos,
+        read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> Option<RegionalWaterTick> {
+        let water = &Fluid::FLOWING_WATER;
+        for side in BlockDirection::horizontal() {
+            let target = position.offset(side.to_offset());
+            if target.chunk_position() != position.chunk_position()
+                || read(target)? != BlockStateId::AIR
+            {
+                return None;
+            }
+            for direction in BlockDirection::all() {
+                let neighbor = target.offset(direction.to_offset());
+                if neighbor != position
+                    && !Self::regional_water_neighbor_is_inert(world, read(neighbor)?)
+                {
+                    return None;
+                }
+            }
+        }
+
+        // The ordinary search can look this far from the first side it examines.
+        // A solid floor throughout means all four open directions tie.
+        let reach = Self.get_max_flow_distance(world) + 1;
+        for x in -reach..=reach {
+            let width = reach - x.abs();
+            for z in -width..=width {
+                let floor = read(position.offset(Vector3::new(x, -1, z)))?;
+                if physics::can_be_replaced(floor.to_state(), floor.to_block(), water) {
+                    return None;
+                }
+            }
+        }
+        Some(RegionalWaterTick::SpreadHorizontally {
+            state: Self.get_flowing(water, Level::L7, false).to_state_id(water),
+            delay: WATER_FLOW_SPEED,
+        })
+    }
+
+    fn regional_water_neighbor_is_inert(world: &World, state: BlockStateId) -> bool {
+        let fluid = World::get_fluid_from_state_id(state);
+        fluid == &Fluid::EMPTY
+            && world.block_registry.get_pumpkin_fluid(fluid.id).is_none()
+            && world
+                .block_registry
+                .get_pumpkin_block(state.to_block_id())
+                .is_none()
     }
 }
 
@@ -152,5 +198,49 @@ impl FlowingFluid for FlowingWater {
     /// Determines if water can convert to source blocks based on game rules.
     fn can_convert_to_source(&self, world: &Arc<World>) -> bool {
         world.level_info.load().game_rules.water_source_conversion
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_data::Block;
+
+    #[test]
+    fn regional_water_uses_the_four_way_step_only_within_a_safe_floor() {
+        let folder = tempfile::tempdir().unwrap();
+        let world = crate::entity::ai::test_support::world(&folder);
+        let fluid = &Fluid::FLOWING_WATER;
+        let source = FlowingWater.get_source(fluid, false).to_state_id(fluid);
+        let home = BlockPos::new(8, 64, 8);
+        let floor = |at: BlockPos| {
+            Some(if at.0.y == 63 {
+                Block::STONE.default_state.id
+            } else {
+                BlockStateId::AIR
+            })
+        };
+        let Some(RegionalWaterTick::SpreadHorizontally { state, delay }) =
+            FlowingWater::regional_water_tick(&world, home, source, &floor)
+        else {
+            panic!("open stone floor should spread into its four neighboring blocks");
+        };
+        assert_eq!(
+            state,
+            FlowingWater
+                .get_flowing(fluid, Level::L7, false)
+                .to_state_id(fluid)
+        );
+        assert_eq!(delay, WATER_FLOW_SPEED);
+        let beside_hole = |at| {
+            if at == BlockPos::new(12, 63, 8) {
+                Some(BlockStateId::AIR)
+            } else {
+                floor(at)
+            }
+        };
+        assert!(FlowingWater::regional_water_tick(&world, home, source, &beside_hole).is_none());
+        let edge = BlockPos::new(15, 64, 8);
+        assert!(FlowingWater::regional_water_tick(&world, edge, source, &floor).is_none());
     }
 }

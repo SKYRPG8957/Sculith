@@ -2595,12 +2595,12 @@ impl World {
                         },
                     )
                 } else {
-                    self.level.apply_regional_water_ticks(
+                    self.level.apply_regional_water_plan(
                         &expected,
                         CHUNK_TICK_BATCH_SIZE,
                         |pos| owns(pos) && FlowingWater::regional_events_unobserved(self),
                         |position, state, read| {
-                            FlowingWater::regional_downward_tick(self, position, state, read)
+                            FlowingWater::regional_water_tick(self, position, state, read)
                         },
                     )
                 };
