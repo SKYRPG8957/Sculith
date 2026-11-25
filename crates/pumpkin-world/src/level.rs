@@ -1311,6 +1311,27 @@ impl Level {
         self.loaded_chunks.get(coordinates).map(|x| f(x.value()))
     }
 
+    /// Pins a loaded chunk and the palette revisions used to encode its terrain.
+    /// The callback must not wait for work that can use the chunk or its palettes.
+    pub fn try_with_current_terrain<R>(
+        &self,
+        expected: &SyncChunk,
+        revision: (u64, u64),
+        apply: impl FnOnce() -> R,
+    ) -> Option<R> {
+        let pos = Vector2::new(expected.x, expected.z);
+        let TryResult::Present(chunk) = self.loaded_chunks.try_get(&pos) else {
+            return None;
+        };
+        if !Arc::ptr_eq(chunk.value(), expected) {
+            return None;
+        }
+        let sections = &chunk.section;
+        let _blocks = sections.block_sections.try_read()?;
+        let _biomes = sections.biome_sections.try_read()?;
+        (sections.terrain_revision() == revision).then(apply)
+    }
+
     /// Reads a block without waiting for a loaded chunk or palette lock.
     pub fn try_read_block_state(&self, position: BlockPos) -> Option<BlockStateId> {
         self.try_with_block_state(position, |_, state| state)
@@ -1709,6 +1730,39 @@ mod tests {
     use sculith_config::world::LevelConfig;
     use std::cell::Cell;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn terrain_dispatch_requires_current_loaded_palettes() {
+        let folder = TempDir::new().unwrap();
+        let level = Level::from_root_folder(
+            &LevelConfig::default(),
+            folder.path().to_path_buf(),
+            0,
+            Dimension::OVERWORLD,
+        );
+        let pos = Vector2::new(0, 0);
+        let chunk = ChunkData::empty_sync(pos.x, pos.y);
+        let revision = chunk.section.terrain_revision();
+        let dispatch = |revision| level.try_with_current_terrain(&chunk, revision, || true);
+        level.loaded_chunks.insert(pos, chunk.clone());
+        assert_eq!(dispatch(revision), Some(true));
+
+        chunk.set_block_absolute_y(0, 64, 0, Block::STONE.default_state.id);
+        assert_eq!(dispatch(revision), None);
+        let revision = chunk.section.terrain_revision();
+        let busy = chunk.section.biome_sections.write().unwrap();
+        assert_eq!(dispatch(chunk.section.terrain_revision()), None);
+        drop(busy);
+        assert_eq!(dispatch(revision), None);
+
+        let current = chunk.section.terrain_revision();
+        assert_eq!(dispatch(current), Some(true));
+        level
+            .loaded_chunks
+            .insert(pos, ChunkData::empty_sync(pos.x, pos.y));
+        assert_eq!(dispatch(current), None);
+        level.shutdown().await;
+    }
 
     #[tokio::test]
     async fn diagonal_regional_path_requires_all_four_chunks() {

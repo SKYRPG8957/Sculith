@@ -20,7 +20,7 @@ protocol and utility packages are `sculith-core`, `sculith-config`,
 `sculith-protocol` and `sculith-util`. Embedders start `sculith_core::SculithServer`
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
-Native Rust plugins must be rebuilt against ABI 42. The native plugin macro
+Native Rust plugins must be rebuilt against ABI 43. The native plugin macro
 exports `SCULITH_API_VERSION`, and the loader also reads the earlier version
 marker. Wasm plugins load by WIT API version.
 Telemetry and update notifications default to off. The optional update checker
@@ -243,6 +243,12 @@ terrain batch reserves its start, chunk data and end packets together. Terrain
 can use up to 16 MiB of the connection's pending payload queue. Chunks that wait
 for room stay eligible on the next world tick. Control packets can still use
 the remaining queue capacity.
+
+Bedrock terrain carries the block and biome palette generations used by its
+encoder across packet observers. Before admitting a chunk to a viewer's
+queue, the sender pins the loaded entry and both palettes and checks those
+generations. A replaced chunk or a busy or changed palette defers delivery
+through the existing token, and stale blob hashes never enter the viewer cache.
 
 Loaded campfires in active regions advance their cooking or cooling counters
 on the region clock while the actor and block state are pinned. The region

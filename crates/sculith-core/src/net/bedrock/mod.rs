@@ -84,7 +84,7 @@ use self::nethernet::NetherNetSession;
 use crate::{
     entity::player::Player,
     net::{
-        DisconnectReason, MAX_PENDING_BYTES, PacketHandlerResult, PacketRateLimiter,
+        ChunkSender, DisconnectReason, MAX_PENDING_BYTES, PacketHandlerResult, PacketRateLimiter,
         chunk_sender::{ChunkSendOutcome, DeliveryFailure},
         decrement_pending_bytes,
     },
@@ -188,6 +188,12 @@ pub struct BedrockStreamingPack {
 }
 
 type TranslatedPacket = (Option<Bytes>, Vec<Bytes>);
+
+struct PreparedTerrain<P> {
+    revision: (u64, u64),
+    packet: P,
+    blobs: Vec<level_chunk::ChunkBlob>,
+}
 
 /// Frames a raw Bedrock packet as `VarUInt(packet_id) + payload` for the outgoing queue.
 #[must_use]
@@ -701,9 +707,9 @@ impl BedrockClient {
         let cache_enabled = server.advanced_config.networking.bedrock.chunk_caching
             && self.client_cache_supported.load(Ordering::Relaxed);
 
-        let (encoded_payloads, new_blobs) = Self::prepare_chunk_payloads(
+        let encoded_payloads = Self::prepare_chunk_payloads(
             &server,
-            world,
+            world.clone(),
             &valid_chunks,
             bedrock_dimension,
             cache_enabled,
@@ -721,29 +727,20 @@ impl BedrockClient {
         });
         if epoch.is_some_and(|epoch| player.chunk_send_epoch.load(Ordering::Relaxed) != epoch) {
             outcome.failed.extend(
-                translated_chunks
-                    .into_iter()
-                    .map(|(pos, _)| (pos, DeliveryFailure::Deferred)),
+                valid_chunks
+                    .iter()
+                    .map(|chunk| (Vector2::new(chunk.x, chunk.z), DeliveryFailure::Deferred)),
             );
             return outcome;
         }
 
-        if !new_blobs.is_empty() {
-            let mut cache = self
-                .blob_cache
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (hash, blob) in new_blobs {
-                cache.insert(hash, blob);
-            }
-        }
-
-        let still_watched = translated_chunks.into_iter().filter(|(pos, _)| {
-            sender
-                .as_ref()
-                .is_none_or(|sender| sender.is_chunk_sent(pos))
-        });
-        self.queue_translated_chunks(still_watched, &mut outcome);
+        self.queue_translated_chunks(
+            &world,
+            &valid_chunks,
+            translated_chunks,
+            sender.as_deref(),
+            &mut outcome,
+        );
         outcome
     }
 
@@ -773,13 +770,11 @@ impl BedrockClient {
         valid_chunks: &[SyncChunk],
         bedrock_dimension: i32,
         cache_enabled: bool,
-    ) -> (
-        Vec<(Vector2<i32>, Option<Bytes>)>,
-        Vec<level_chunk::ChunkBlob>,
-    ) {
+    ) -> Vec<Option<PreparedTerrain<Bytes>>> {
         let mut encoded_payloads = Vec::with_capacity(valid_chunks.len());
         let mut misses = Vec::new();
         for chunk in valid_chunks {
+            let revision = chunk.section.terrain_revision();
             let framed = if cache_enabled {
                 None
             } else {
@@ -791,84 +786,121 @@ impl BedrockClient {
             if framed.is_none() {
                 misses.push((encoded_payloads.len(), chunk.clone()));
             }
-            encoded_payloads.push((Vector2::new(chunk.x, chunk.z), framed));
+            encoded_payloads.push(framed.map(|packet| PreparedTerrain {
+                revision,
+                packet,
+                blobs: Vec::new(),
+            }));
         }
 
-        let mut new_blobs = Vec::new();
         if !misses.is_empty() {
             let (tx, rx) = oneshot::channel();
             server.compute_pool.spawn(move || {
                 let mut results = Vec::with_capacity(misses.len());
-                let mut blobs = Vec::new();
                 for (index, chunk) in misses {
                     let revision = chunk.section.terrain_revision();
                     let actors = world.bedrock_chunk_block_actors(&chunk);
                     // Other viewers may have encoded this chunk while this job was queued.
                     if !cache_enabled && actors.is_empty()
-                        && let Some(frame) = world.bedrock_chunk_frames.get(&chunk, bedrock_dimension)
+                        && let Some(packet) = world.bedrock_chunk_frames.get(&chunk, bedrock_dimension)
                     {
-                        results.push((index, frame));
+                        results.push((index, PreparedTerrain { revision, packet, blobs: Vec::new() }));
                         continue;
                     }
                     match CLevelChunk::encode_chunk(&chunk, bedrock_dimension, cache_enabled, &actors) {
-                        Ok((payload, chunk_blobs)) => {
-                            if let Some(frame) = frame_raw_packet(CLevelChunk::PACKET_ID, &payload) {
+                        Ok((payload, blobs)) => {
+                            if let Some(packet) = frame_raw_packet(CLevelChunk::PACKET_ID, &payload) {
                                 if !cache_enabled && actors.is_empty() {
-                                    world.bedrock_chunk_frames.insert(&chunk, bedrock_dimension, revision, &frame);
+                                    world.bedrock_chunk_frames.insert(&chunk, bedrock_dimension, revision, &packet);
                                 }
-                                results.push((index, frame));
-                                blobs.extend(chunk_blobs);
+                                results.push((index, PreparedTerrain { revision, packet, blobs }));
                             }
                         }
                         Err(error) => error!(%error, x=chunk.x, z=chunk.z, "Failed to serialize Bedrock chunk"),
                     }
                 }
-                let _ = tx.send((results, blobs));
+                let _ = tx.send(results);
             });
-            if let Ok((results, blobs)) = rx.await {
-                for (index, frame) in results {
-                    encoded_payloads[index].1 = Some(frame);
+            if let Ok(results) = rx.await {
+                for (index, terrain) in results {
+                    encoded_payloads[index] = Some(terrain);
                 }
-                new_blobs = blobs;
             }
         }
-        (encoded_payloads, new_blobs)
+        encoded_payloads
     }
 
     async fn translate_chunk_payloads(
         &self,
-        encoded_payloads: Vec<(Vector2<i32>, Option<Bytes>)>,
-    ) -> Vec<(Vector2<i32>, Option<TranslatedPacket>)> {
+        encoded_payloads: Vec<Option<PreparedTerrain<Bytes>>>,
+    ) -> Vec<Option<PreparedTerrain<TranslatedPacket>>> {
         let mut translated_chunks = Vec::with_capacity(encoded_payloads.len());
-        for (pos, payload) in encoded_payloads {
-            let Some(framed) = payload else {
-                translated_chunks.push((pos, None));
+        for terrain in encoded_payloads {
+            let Some(PreparedTerrain {
+                revision,
+                packet,
+                blobs,
+            }) = terrain
+            else {
+                translated_chunks.push(None);
                 continue;
             };
-            let translated = self.translate_outgoing_async(framed, true).await;
-            translated_chunks.push((pos, Some(translated)));
+            let packet = self.translate_outgoing_async(packet, true).await;
+            translated_chunks.push(Some(PreparedTerrain {
+                revision,
+                packet,
+                blobs,
+            }));
         }
         translated_chunks
     }
 
     fn queue_translated_chunks(
         &self,
-        translated_chunks: impl IntoIterator<Item = (Vector2<i32>, Option<TranslatedPacket>)>,
+        world: &crate::world::World,
+        chunks: &[SyncChunk],
+        translated_chunks: Vec<Option<PreparedTerrain<TranslatedPacket>>>,
+        sender: Option<&ChunkSender>,
         outcome: &mut ChunkSendOutcome,
     ) {
-        for (pos, translated) in translated_chunks {
-            let queued = match translated {
-                Some((Some(packet), extras)) => Some(self.queue_translated_packet(packet, extras)),
-                // Cancelled by a PacketSentEvent handler: queue any replacement packets and mark
-                // sent so the chunk sender does not endlessly retry an intentionally replaced chunk.
-                Some((None, extras)) => Some(self.queue_extra_packets(extras)),
-                None => None,
-            };
-            match queued {
-                Some(true) => outcome.sent.push(pos),
-                Some(false) => outcome.failed.push((pos, DeliveryFailure::Deferred)),
-                None => outcome.failed.push((pos, DeliveryFailure::Unencodable)),
+        for (chunk, translated) in chunks.iter().zip(translated_chunks) {
+            let pos = Vector2::new(chunk.x, chunk.z);
+            if sender.is_some_and(|sender| !sender.is_chunk_sent(&pos)) {
+                continue;
             }
+            let Some(terrain) = translated else {
+                outcome.failed.push((pos, DeliveryFailure::Unencodable));
+                continue;
+            };
+            let revision = terrain.revision;
+            let queue = || self.queue_terrain_chunk(terrain);
+            let queued = if sender.is_some() {
+                world.level.try_with_current_terrain(chunk, revision, queue)
+            } else {
+                Some(queue())
+            };
+            if queued == Some(true) {
+                outcome.sent.push(pos);
+            } else {
+                outcome.failed.push((pos, DeliveryFailure::Deferred));
+            }
+        }
+    }
+
+    fn queue_terrain_chunk(&self, terrain: PreparedTerrain<TranslatedPacket>) -> bool {
+        if !terrain.blobs.is_empty() {
+            let mut cache = self
+                .blob_cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for (hash, blob) in terrain.blobs {
+                cache.insert(hash, blob);
+            }
+        }
+        match terrain.packet {
+            (Some(packet), extras) => self.queue_translated_packet(packet, extras),
+            // Queue replacements and settle a chunk deliberately replaced by an observer.
+            (None, extras) => self.queue_extra_packets(extras),
         }
     }
 
