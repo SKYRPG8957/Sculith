@@ -85,7 +85,7 @@ simulation job. The existing simulation pool executes world jobs and their
 parallel work. A busy world skips expired deadlines while other ready worlds
 can process packets, run simulation and synchronize their own clocks.
 
-The `/forceload` command and Wasm chunk APIs feed the same loading tickets
+The `/forceload` command and Wasm chunk APIs feed the same priority loading tickets
 and simulation coverage. Columns can load when their world has no players.
 A running GameTest keeps its own references, so releasing an operator or
 plugin force cannot retire an active test's terrain. Releasing the last

@@ -885,32 +885,33 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         let world = world(&folder);
         let chunk = Vector2::new(101, 0);
-        let ticket_count = || {
-            world
-                .level
-                .chunk_loading
-                .lock()
-                .unwrap()
-                .ticket
-                .get(&chunk)
-                .map_or(0, Vec::len)
+        let ticket_counts = || {
+            let loader = world.level.chunk_loading.lock().unwrap();
+            (
+                loader.ticket.get(&chunk).map_or(0, Vec::len),
+                loader
+                    .high_priority
+                    .iter()
+                    .filter(|&&pos| pos == chunk)
+                    .count(),
+            )
         };
         world.set_force_loaded_chunks([chunk, chunk], true);
-        assert_eq!(ticket_count(), 1);
+        assert_eq!(ticket_counts(), (1, 1));
 
         acquire_forced_game_test_chunk(&world, chunk);
         acquire_forced_game_test_chunk(&world, chunk);
         world.update_active_chunks();
-        assert_eq!(ticket_count(), 2);
+        assert_eq!(ticket_counts(), (2, 2));
 
         release_forced_game_test_chunk(&world, chunk);
         world.set_force_loaded_chunks([chunk], false);
         assert!(world.active_chunks.read().unwrap().contains(&chunk));
-        assert_eq!(ticket_count(), 2);
+        assert_eq!(ticket_counts(), (1, 1));
 
         release_forced_game_test_chunk(&world, chunk);
         world.update_active_chunks();
-        assert_eq!(ticket_count(), 0);
+        assert_eq!(ticket_counts(), (0, 0));
         assert!(!world.active_chunks.read().unwrap().contains(&chunk));
         world.level.shutdown().await;
     }

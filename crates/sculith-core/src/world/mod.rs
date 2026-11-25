@@ -540,24 +540,43 @@ impl World {
         positions: impl IntoIterator<Item = Vector2<i32>>,
         keep_loaded: bool,
     ) {
-        let changed = {
-            let mut forced = self
-                .forced_chunks
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut changed = false;
-            for pos in positions {
-                changed |= if keep_loaded {
-                    forced.insert(pos)
-                } else {
-                    forced.remove(&pos)
-                };
+        let mut forced = self
+            .forced_chunks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut changes = Vec::new();
+        for pos in positions {
+            let changed = if keep_loaded {
+                forced.insert(pos)
+            } else {
+                forced.remove(&pos)
+            };
+            if changed {
+                changes.push(pos);
             }
-            changed
-        };
-        if changed {
-            self.update_active_chunks();
         }
+        if changes.is_empty() {
+            return;
+        }
+
+        // The public forced set owns one priority ticket per column. Test
+        // structures keep their own temporary references in the same loader.
+        let mut loading = self
+            .level
+            .chunk_loading
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for pos in changes {
+            if keep_loaded {
+                loading.add_force_ticket(pos);
+            } else {
+                loading.remove_force_ticket(pos);
+            }
+        }
+        loading.send_change();
+        drop(loading);
+        drop(forced);
+        self.update_active_chunks();
     }
 
     #[expect(clippy::too_many_lines)]
@@ -618,7 +637,7 @@ impl World {
         for id in removed_players {
             tracker.remove_player(id, Arc::make_mut(&mut active_chunks));
         }
-        let (force_added, force_removed) = tracker.sync_forced_chunks(
+        tracker.sync_forced_chunks(
             &forced_chunks,
             Arc::make_mut(&mut active_chunks),
             &mut newly_active,
@@ -657,21 +676,6 @@ impl World {
         }
         let newly_inactive = std::mem::take(&mut tracker.newly_inactive);
         drop(active_chunks);
-        if !force_added.is_empty() || !force_removed.is_empty() {
-            let mut loading = self
-                .level
-                .chunk_loading
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let level = pumpkin_world::chunk_system::chunk_loading::ChunkLoading::FULL_CHUNK_LEVEL;
-            for pos in force_added {
-                loading.add_ticket(pos, level);
-            }
-            for pos in force_removed {
-                loading.remove_ticket(pos, level);
-            }
-            loading.send_change();
-        }
         drop(tracker);
         if !newly_inactive.is_empty() {
             self.queue_entity_chunk_changes(newly_inactive);
