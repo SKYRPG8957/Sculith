@@ -172,6 +172,11 @@ number of ticks. Explicit checkpoints coordinate the worlds for capture.
 Periodic player saves capture ready worlds and retry busy owners at later
 boundaries. The captures share the existing ordered asynchronous writer.
 
+Plugin world opens claim the canonical storage directory and dimension before
+opening a level. Requests for the same directory share the registered world.
+Different directories can open independently. Shutdown waits for admitted
+opens before taking its world snapshot. This server layout uses native ABI 47.
+
 During independent ticks, players can run built-in `/seed` and `/time` on
 the owner of their current world. Time changes update that world's clock and
 publish it to its Bedrock and Java clients. Admission checks the registered

@@ -50,10 +50,10 @@ use sculith_protocol::java::client::play::{CChangeDifficulty, CTabList};
 use sculith_protocol::{ClientPacket, java::client::config::CPluginMessage};
 use sculith_util::Difficulty;
 use sculith_util::text::TextComponent;
-use std::fs;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32};
+use std::{fs, io};
 use std::{future::Future, sync::atomic::Ordering, time::Duration};
 use tokio::sync::OnceCell;
 use tokio::task::JoinHandle;
@@ -79,6 +79,7 @@ pub mod tick_rate_manager;
 pub mod ticker;
 mod transfer_checkpoint;
 mod world_membership;
+mod world_openings;
 mod world_scheduler;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -232,6 +233,7 @@ pub struct Server {
     pub level_info: Arc<ArcSwap<LevelData>>,
     world_info_writer: Arc<dyn WorldInfoWriter>,
     world_operations: SegQueue<WorldOperation>,
+    world_openings: world_openings::WorldOpenings,
 }
 
 impl Server {
@@ -515,6 +517,7 @@ impl Server {
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
             world_info_writer: Arc::new(AnvilLevelInfo),
             world_operations: SegQueue::new(),
+            world_openings: world_openings::WorldOpenings::default(),
             level_info,
             management_hub,
             save_metadata_lock: tokio::sync::Mutex::new(()),
@@ -665,18 +668,39 @@ impl Server {
         name: String,
         dimension: Dimension,
     ) -> Result<Arc<World>, WorldInfoError> {
-        {
-            let worlds = self.worlds.load();
-            let world = worlds
-                .iter()
-                .find(|w| w.get_world_name() == name && w.dimension == dimension)
-                .cloned();
-            if let Some(world) = world {
-                return Ok(world);
+        let root = self.basic_config.get_world_path();
+        // The primary world's existing name still addresses its root directly.
+        let uses_primary_root = self.worlds.load().iter().any(|world| {
+            world.dimension == dimension
+                && world.level.level_folder.root_folder == root
+                && world.get_world_name() == name
+        });
+        let world_path = if uses_primary_root {
+            root
+        } else {
+            root.join(name)
+        };
+        fs::create_dir_all(&world_path)?;
+        let world_path = world_path.canonicalize()?;
+        let location = (world_path.clone(), dimension.minecraft_name);
+        let opening = self.world_openings.reserve(&location)?;
+        if let Some(world) = self.worlds.load().iter().find(|world| {
+            if world.dimension != dimension {
+                return false;
             }
+            let loaded = &world.level.level_folder.root_folder;
+            *loaded == world_path
+                || loaded
+                    .canonicalize()
+                    .is_ok_and(|loaded| loaded == world_path)
+        }) {
+            return if world.is_open() {
+                Ok(world.clone())
+            } else {
+                Err(io::Error::new(io::ErrorKind::WouldBlock, "World is unloading").into())
+            };
         }
 
-        let world_path = self.basic_config.get_world_path().join(name);
         let folder = LevelFolder::for_dimension(world_path.clone(), &dimension);
         let clock = WorldClockSnapshot::read(&folder.dim_folder)?.unwrap_or_else(|| {
             let legacy = read_world_clocks(&world_path);
@@ -695,6 +719,9 @@ impl Server {
             new_worlds.push(world.clone());
             new_worlds
         });
+        // Plugin hooks may request the same world. Its owner and storage are
+        // published before callbacks can attempt another opening.
+        drop(opening);
         let mut event =
             crate::plugin::api::events::world::world_init::WorldInitEvent::new(world.clone());
         self.plugin_manager.fire_blocking(self, &mut event);
@@ -1152,6 +1179,7 @@ impl Server {
 
     pub async fn shutdown(&self) {
         self.management_hub.broadcast_server_stopping();
+        self.world_openings.close().await;
 
         self.tasks.close();
         debug!("Awaiting tasks for server");
