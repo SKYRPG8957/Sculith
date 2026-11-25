@@ -73,13 +73,23 @@ impl Player {
         }) else {
             return;
         };
+        let current = || !client.is_closed() && self.chunk_send_epoch.load(Relaxed) == epoch;
         let cancelled = match world.server.upgrade() {
             Some(server) if server.plugin_manager.has_handlers::<ChunkSend>() => {
-                ChunkSend::retain_blocking(&server, world, &mut batch.chunks)
+                let Some(cancelled) =
+                    ChunkSend::retain_blocking_while(&server, world, &mut batch.chunks, current)
+                else {
+                    return;
+                };
+                cancelled
             }
             _ => Vec::new(),
         };
-        let encoded = ChunkSender::encode_batch_shared(&batch, &world.encoded_chunk_cache);
+        let Some(encoded) =
+            ChunkSender::encode_current_batch_shared(&batch, &world.encoded_chunk_cache, current)
+        else {
+            return;
+        };
         let sent = self.chunk_sender.try_lock().map_or_else(
             |_| Vec::new(),
             |mut sender| {

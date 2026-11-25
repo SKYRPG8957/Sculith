@@ -685,9 +685,23 @@ impl BedrockClient {
             return outcome;
         }
 
+        let current_epoch = {
+            let player = Arc::downgrade(player);
+            move || {
+                epoch.is_none_or(|expected| {
+                    player.upgrade().is_some_and(|player| {
+                        player.chunk_send_epoch.load(Ordering::Relaxed) == expected
+                    })
+                })
+            }
+        };
+        let current = || !self.closing.is_closed() && current_epoch();
         let world = player.world();
         let valid_chunks = if server.plugin_manager.has_handlers::<ChunkSend>() {
-            let valid = ChunkSend::filter(&server, &world, chunks).await;
+            let Some(valid) = ChunkSend::filter_while(&server, &world, chunks, current).await
+            else {
+                return outcome;
+            };
             outcome.record_cancelled(chunks, &valid);
             std::borrow::Cow::Owned(valid)
         } else {
@@ -706,16 +720,6 @@ impl BedrockClient {
         };
         let cache_enabled = server.advanced_config.networking.bedrock.chunk_caching
             && self.client_cache_supported.load(Ordering::Relaxed);
-        let current_epoch = {
-            let player = Arc::downgrade(player);
-            move || {
-                epoch.is_none_or(|expected| {
-                    player.upgrade().is_some_and(|player| {
-                        player.chunk_send_epoch.load(Ordering::Relaxed) == expected
-                    })
-                })
-            }
-        };
         let Some(encoded_payloads) = self
             .prepare_chunk_payloads(
                 &server.compute_pool,

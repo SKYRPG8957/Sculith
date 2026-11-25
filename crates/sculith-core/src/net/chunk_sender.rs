@@ -595,10 +595,24 @@ impl ChunkSender {
         batch: &PreparedBatch,
         cache: &dashmap::DashMap<Vector2<i32>, EncodedChunk>,
     ) -> Vec<EncodedChunk> {
-        batch
+        Self::encode_current_batch_shared(batch, cache, || true).unwrap_or_default()
+    }
+
+    pub(crate) fn encode_current_batch_shared(
+        batch: &PreparedBatch,
+        cache: &dashmap::DashMap<Vector2<i32>, EncodedChunk>,
+        current: impl Fn() -> bool + Sync,
+    ) -> Option<Vec<EncodedChunk>> {
+        if !current() {
+            return None;
+        }
+        let encoded = batch
             .chunks
             .par_iter()
             .filter_map(|candidate| {
+                if !current() {
+                    return None;
+                }
                 let pos = candidate.position;
                 if let Some(cached) = cache.get(&pos)
                     && cached.is_fresh_for(candidate)
@@ -607,10 +621,14 @@ impl ChunkSender {
                 }
 
                 let encoded = EncodedChunk::encode(candidate)?;
+                if !current() {
+                    return None;
+                }
                 cache.insert(pos, encoded.clone());
                 Some(encoded)
             })
-            .collect()
+            .collect();
+        current().then_some(encoded)
     }
 
     /// Chunks `encode_batch` dropped stay pending, retried a bounded number of times.

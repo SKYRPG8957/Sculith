@@ -10,6 +10,7 @@ use std::{collections::BTreeMap, num::NonZero};
 pub(super) struct View {
     pub center: Grid,
     pub radius: NonZero<u8>,
+    full_chunk_radius: NonZero<u8>,
     pub budget: usize,
 }
 
@@ -33,6 +34,26 @@ impl Tile {
 }
 
 impl View {
+    pub(super) const fn from_chunk_view(
+        chunks: Cylindrical,
+        radius: NonZero<u8>,
+        budget: usize,
+    ) -> Self {
+        Self {
+            center: (chunks.center.x, chunks.center.y),
+            radius,
+            full_chunk_radius: chunks.view_distance,
+            budget,
+        }
+    }
+
+    pub(super) const fn chunk_view(self) -> Cylindrical {
+        Cylindrical::new(
+            Vector2::new(self.center.0, self.center.1),
+            self.full_chunk_radius,
+        )
+    }
+
     pub fn regions(self) -> impl Iterator<Item = (Grid, i32)> {
         let reach = std::num::NonZeroI32::from(self.radius).get() * 4 + 2;
         let (x, z) = self.center;
@@ -44,7 +65,7 @@ impl View {
     }
 
     pub fn select(self, rows: &Atlas) -> BTreeMap<Tile, Surface> {
-        let near = Cylindrical::new(Vector2::new(self.center.0, self.center.1), self.radius);
+        let near = self.chunk_view();
         let radius = std::num::NonZeroI32::from(self.radius).get();
         let mut choices = Vec::new();
         let reach = radius * 4 + 2;
@@ -146,6 +167,29 @@ impl View {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn distant_tiles_leave_room_for_the_published_buffered_view() {
+        let surface = Some(Surface { y: 64, material: 1 });
+        let rows = Atlas::from([
+            ((6, 0), [surface; 5]),
+            ((9, 0), [surface; 5]),
+            ((18, 0), [surface; 5]),
+        ]);
+        let radius = NonZero::new(4).unwrap();
+        let requested = Cylindrical::new(Vector2::new(0, 0), radius);
+        let published = Cylindrical::new(Vector2::new(1, 0), NonZero::new(6).unwrap());
+        assert!(
+            View::from_chunk_view(requested, radius, 32)
+                .select(&rows)
+                .keys()
+                .any(|tile| tile.x.div_euclid(16) == 6)
+        );
+        let selected = View::from_chunk_view(published, radius, 32).select(&rows);
+        assert!(!selected.is_empty());
+        assert!(selected.keys().all(|tile| tile.x.div_euclid(16) == 9));
+    }
+
     #[test]
     fn continuous_terrain_covers_all_quadrants_and_scales_at_the_lowest_client_budget() {
         let surface = Some(Surface { y: 64, material: 1 });
@@ -155,6 +199,7 @@ mod tests {
         let view = View {
             center: (0, 0),
             radius: NonZero::new(16).unwrap(),
+            full_chunk_radius: NonZero::new(16).unwrap(),
             budget: 12,
         };
         let tiles = view.select(&rows);
@@ -180,6 +225,7 @@ mod tests {
             View {
                 center: (x, 0),
                 radius: NonZero::new(16).unwrap(),
+                full_chunk_radius: NonZero::new(16).unwrap(),
                 budget,
             }
             .select(rows)

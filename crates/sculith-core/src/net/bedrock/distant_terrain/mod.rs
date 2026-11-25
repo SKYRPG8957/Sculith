@@ -10,10 +10,10 @@ use self::{
 };
 use super::BedrockClient;
 use crate::{
-    entity::{EntityBase, player::Player},
+    entity::player::Player,
     net::ClientPlatform,
     server::Server,
-    world::chunker::get_view_distance,
+    world::chunker::{bedrock_view_is_current, get_view_distance},
 };
 use bytes::Bytes;
 use pumpkin_world::{
@@ -289,9 +289,20 @@ impl Presented {
         player: &Player,
         client: &BedrockClient,
         epoch: u32,
+        view: View,
         wanted: &Tiles,
         frames: &mut HashMap<(Tile, Action), Bytes>,
     ) {
+        let published = view.chunk_view();
+        let current = || {
+            !client.is_closed()
+                && client.chunk_view_published()
+                && player.chunk_send_epoch.load(Ordering::Relaxed) == epoch
+                && player.watched_section.load() == published
+        };
+        if !current() {
+            return;
+        }
         let mut actions = Vec::new();
         for (&k, &old) in &self.tiles {
             if self.epoch != epoch || wanted.get(&k).is_none_or(|s| s.material != old.material) {
@@ -315,6 +326,9 @@ impl Presented {
         }
         let mut translated = Vec::with_capacity(actions.len());
         for (k, a) in actions {
+            if !current() {
+                return;
+            }
             let buf = match frames.entry((k, a)) {
                 std::collections::hash_map::Entry::Occupied(slot) => slot.into_mut(),
                 std::collections::hash_map::Entry::Vacant(slot) => match packet(client, k, a) {
@@ -331,7 +345,7 @@ impl Presented {
             .chunk_sender
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if player.chunk_send_epoch.load(Ordering::Relaxed) != epoch {
+        if !current() {
             return;
         }
         for (packet, extras) in translated {
@@ -371,6 +385,7 @@ fn update(
             if client.is_closed()
                 || !player.bedrock_spawned.load(Ordering::Acquire)
                 || !client.is_current_protocol()
+                || !client.chunk_view_published()
             {
                 continue;
             }
@@ -378,21 +393,17 @@ fn update(
             if !Arc::ptr_eq(world, &player.world()) {
                 continue;
             }
-            let p = player.get_entity().pos.load();
+            let chunks = player.watched_section.load();
+            if !bedrock_view_is_current(player, chunks) {
+                continue;
+            }
             let memory = client.client_data.load();
             let budget = match memory.as_ref().as_ref().map(|d| d.memory_tier) {
                 Some(0 | 1) => 12,
                 Some(2) => 20,
                 _ => 32,
             };
-            let view = View {
-                center: (
-                    (p.x.floor() as i32).div_euclid(16),
-                    (p.z.floor() as i32).div_euclid(16),
-                ),
-                radius: get_view_distance(player),
-                budget,
-            };
+            let view = View::from_chunk_view(chunks, get_view_distance(player), budget);
             views.insert(view);
             clients.push((player, client, epoch, view));
         }
@@ -413,7 +424,7 @@ fn update(
                     client: Arc::downgrade(client),
                     ..Presented::default()
                 })
-                .sync(player, client, epoch, &selected[&v], &mut frames);
+                .sync(player, client, epoch, v, &selected[&v], &mut frames);
         }
     }
     terrain.retain(|w, _| active.contains(w));

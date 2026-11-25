@@ -422,8 +422,15 @@ chunks from the existing sender. A view becomes eligible after the publisher
 packet is queued and the sender has installed the new view. Regional and
 world dispatch share the sender's quota, deadline, and delivery tokens.
 Encoding and network credit stay in the existing workers. A closed connection
-or a reset of the sender's delivery epoch stops remaining preparation. The
-sender checks the epoch and terrain revision again when queueing a payload.
+or a reset of the sender's delivery epoch stops remaining preparation. Chunk
+send handlers on both editions finish their current callback and skip the
+remaining columns once the view changes. The shared Java encoder checks the
+same epoch before preparing each column. The sender checks the epoch and
+terrain revision again when queueing a payload.
+The distant terrain worker excludes the same full chunk view published to the
+Bedrock client, including its retained border. The requested view distance
+still defines the LOD range and tile sizes. The worker checks the published
+view before starting more model callbacks and when queueing the resulting tiles.
 A view change, initial spawn, coordinated step, or chunk/packet hook uses
 world dispatch.
 
