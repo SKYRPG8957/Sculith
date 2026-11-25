@@ -205,6 +205,7 @@ pub mod end_podium;
 pub mod entity_tracker;
 pub mod environment;
 mod game_rules;
+pub(crate) use game_rules::bedrock_rule_name;
 pub mod natural_spawner;
 mod player_touch;
 mod regional_pickup;
@@ -1280,6 +1281,17 @@ impl World {
     pub fn broadcast_packet_all<P: ClientPacket>(&self, packet: &P) {
         let players = self.players.load();
         Self::broadcast_java_players(packet, players.iter());
+    }
+
+    fn broadcast_bedrock_spawned<P: BClientPacket>(&self, packet: &P) {
+        let players = self.players.load();
+        Self::broadcast_bedrock_grouped(
+            packet,
+            players
+                .iter()
+                .filter(|player| player.bedrock_spawned.load(Ordering::SeqCst))
+                .filter_map(|player| player.client.bedrock()),
+        );
     }
 
     pub fn broadcast_bedrock_all<P: BClientPacket>(&self, packet: &P) {
@@ -3741,7 +3753,10 @@ impl World {
             platform_broadcast_setting: GamePublishSetting::Public,
             commands_enabled: level_info.allow_commands,
             is_texture_packs_required: false,
-            rule_data: vec![self.bedrock_pvp_rule(&server.advanced_config.pvp)],
+            rule_data: Self::bedrock_game_rules(
+                &level_info.game_rules,
+                &server.advanced_config.pvp,
+            ),
             experiments: Experiments {
                 toggles: Vec::new(),
                 experiments_ever_toggled: false,

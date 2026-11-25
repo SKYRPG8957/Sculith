@@ -9,6 +9,7 @@ use crate::command::argument_types::core::integer::IntegerArgumentType;
 use crate::command::context::command_context::CommandContext;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
+use crate::world::bedrock_rule_name;
 
 const DESCRIPTION: &str = "Sets or queries a game rule value.";
 const PERMISSION: &str = "minecraft:command.gamerule";
@@ -100,9 +101,15 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
     let mut cmd = command("gamerule", DESCRIPTION).requires(PERMISSION);
     let rule_registry = GameRuleRegistry::default();
 
-    // Vanilla takes each rule by its name and by its namespaced id.
     for rule in GameRule::all() {
-        for name in [rule.to_string(), format!("minecraft:{rule}")] {
+        let java = rule.to_string();
+        let bedrock = bedrock_rule_name(rule)
+            .map(str::to_ascii_lowercase)
+            .filter(|name| name != &java);
+        for name in [java, format!("minecraft:{rule}")]
+            .into_iter()
+            .chain(bedrock)
+        {
             let rule_literal = literal(name).executes(QueryExecutor(rule.clone()));
             let branch = match rule_registry.get(rule) {
                 GameRuleValue::Int(_) => {

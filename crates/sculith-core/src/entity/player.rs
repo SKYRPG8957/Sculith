@@ -4082,12 +4082,13 @@ impl Player {
             // Dropped -> a later tick tries again
             return;
         }
-        self.bedrock_spawned.store(true, Ordering::Release);
+        self.bedrock_spawned.store(true, Ordering::SeqCst);
         // Gameplay can proceed once the spawn is queued. Keep client_loaded
         // for the acknowledgement received from the client.
         self.client_loaded_timeout.store(0, Ordering::Relaxed);
         drop(sender);
-        self.world().sync_bedrock_pvp_after_spawn(bedrock_client);
+        self.world()
+            .sync_bedrock_game_rules_after_spawn(bedrock_client);
         self.send_health();
         if self.living_entity.health.load() <= 0.0 {
             self.send_bedrock_respawn_state(RespawnState::SearchingForSpawn);

@@ -159,6 +159,9 @@ pub mod game_event;
 #[path ="generated/game_rules.rs"]
 pub mod game_rules;
 
+#[cfg(feature = "game_rules")]
+pub mod bedrock_game_rules;
+
 #[cfg(feature = "entity_pose")]
 #[rustfmt::skip]
 #[path = "generated/entity_pose.rs"]
