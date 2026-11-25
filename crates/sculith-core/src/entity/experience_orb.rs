@@ -329,7 +329,7 @@ impl EntityBase for ExperienceOrbEntity {
     }
 
     fn read_custom_nbt(&self, nbt: &NbtCompound) {
-        let _motion = self.entity.hold_drop_motion();
+        let _motion = self.entity.hold_actor_motion();
         self.health.store(
             nbt.get_short("Health")
                 .map_or(Self::DEFAULT_HEALTH, i32::from),
@@ -406,7 +406,7 @@ impl EntityBase for ExperienceOrbEntity {
         _source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        let _motion = self.entity.hold_drop_motion();
+        let _motion = self.entity.hold_actor_motion();
         if self.entity.is_removed() || self.entity.is_invulnerable_to(&damage_type, cause) {
             return false;
         }
@@ -448,7 +448,7 @@ impl EntityBase for ExperienceOrbEntity {
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
-        let _motion = self.entity.hold_drop_motion();
+        let _motion = self.entity.hold_actor_motion();
         if !self.entity.is_removed() && !self.has_expired() && player.begin_experience_pickup() {
             player.living_entity.pickup(&self.entity, 1);
             self.entity.remove();

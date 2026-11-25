@@ -43,7 +43,7 @@ impl DropClock {
 }
 
 #[derive(Default)]
-pub(super) struct DropMotion {
+pub(super) struct ActorMotion {
     clock: DropClock,
     world_users: usize,
 }
@@ -84,9 +84,9 @@ impl DropMotionUpdate {
     }
 }
 
-pub struct DropWorldAccess<'a>(&'a Mutex<DropMotion>);
+pub struct ActorWorldAccess<'a>(&'a Mutex<ActorMotion>);
 
-impl Drop for DropWorldAccess<'_> {
+impl Drop for ActorWorldAccess<'_> {
     fn drop(&mut self) {
         self.0
             .lock()
@@ -97,20 +97,20 @@ impl Drop for DropWorldAccess<'_> {
 
 impl Entity {
     /// Prevents a regional move while a world operation may touch the actor.
-    pub(crate) fn hold_drop_motion(&self) -> Option<DropWorldAccess<'_>> {
-        let motion = self.drop_motion.as_deref()?;
+    pub(crate) fn hold_actor_motion(&self) -> Option<ActorWorldAccess<'_>> {
+        let motion = self.motion_access.as_deref()?;
         motion
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .world_users += 1;
-        Some(DropWorldAccess(motion))
+        Some(ActorWorldAccess(motion))
     }
 
     pub(super) fn begin_drop_world_tick(
         &self,
         deadline: Option<TickDeadline>,
-    ) -> (Option<DropWorldAccess<'_>>, bool) {
-        let Some(motion) = self.drop_motion.as_deref() else {
+    ) -> (Option<ActorWorldAccess<'_>>, bool) {
+        let Some(motion) = self.motion_access.as_deref() else {
             return (None, true);
         };
         let mut state = motion.lock().unwrap_or_else(PoisonError::into_inner);
@@ -121,11 +121,11 @@ impl Entity {
             state.clock = DropClock::default();
             true
         };
-        (Some(DropWorldAccess(motion)), advance)
+        (Some(ActorWorldAccess(motion)), advance)
     }
 
     pub(crate) fn start_regional_drop_motion(&self, owner: RegionId, deadline: TickDeadline) {
-        if let Some(motion) = self.drop_motion.as_deref() {
+        if let Some(motion) = self.motion_access.as_deref() {
             motion
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -133,8 +133,8 @@ impl Entity {
                 .claim(DropTickOwner::Region(owner), deadline);
         }
     }
-    pub(crate) fn try_with_unmounted_drop<R>(&self, use_drop: impl FnOnce() -> R) -> Option<R> {
-        let motion = self.drop_motion.as_deref()?.try_lock().ok()?;
+    pub(crate) fn try_with_unmounted_actor<R>(&self, apply: impl FnOnce() -> R) -> Option<R> {
+        let motion = self.motion_access.as_deref()?.try_lock().ok()?;
         if motion.world_users != 0 {
             return None;
         }
@@ -147,7 +147,7 @@ impl Entity {
         // so packet construction can read mount metadata under motion ownership.
         drop(vehicle);
         drop(passengers);
-        Some(use_drop())
+        Some(apply())
     }
 
     fn with_regional_drop_motion(
@@ -159,7 +159,7 @@ impl Entity {
         advance: impl FnOnce(&mut DropClock),
         publish: impl FnOnce(),
     ) {
-        let Some(motion) = self.drop_motion.as_deref() else {
+        let Some(motion) = self.motion_access.as_deref() else {
             return;
         };
         let Ok(mut motion) = motion.try_lock() else {
@@ -305,7 +305,7 @@ impl ItemEntity {
             |step, biome| {
                 // Match the pickup reach in the world phase, which also covers merge distance.
                 let area = swept.expand(1.0, 0.5, 1.0);
-                world.entity_index.try_move_isolated_drop(
+                world.entity_index.try_update_isolated_actor_bounds(
                     world,
                     entity.entity_id,
                     area,
@@ -399,7 +399,7 @@ impl ExperienceOrbEntity {
             },
             |step, biome| {
                 let radius = Self::FOLLOW_RANGE;
-                world.entity_index.try_move_isolated_drop(
+                world.entity_index.try_update_isolated_actor_bounds(
                     world,
                     entity.entity_id,
                     swept,

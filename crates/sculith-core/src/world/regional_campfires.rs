@@ -33,6 +33,7 @@ pub(super) enum RegionalEntityUpdate {
         item: Arc<dyn EntityBase>,
     },
     Removed(Arc<dyn EntityBase>),
+    Matured(Arc<dyn EntityBase>),
 }
 
 #[derive(Default)]
@@ -192,6 +193,15 @@ impl World {
                 RegionalEntityUpdate::Removed(entity) => {
                     self.spawn_state.load().remove_entity(self, entity.as_ref());
                     self.entity_tracker.remove_entity(entity.as_ref(), self);
+                }
+                RegionalEntityUpdate::Matured(entity) => {
+                    let base = entity.get_entity();
+                    if !base.is_removed()
+                        && std::ptr::eq(base.world.load().as_ref(), self)
+                        && let Some(mob) = entity.get_mob()
+                    {
+                        crate::entity::ageable::publish_bedrock_age(mob);
+                    }
                 }
             }
         }

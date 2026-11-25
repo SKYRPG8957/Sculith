@@ -279,7 +279,7 @@ impl ItemEntity {
 
     #[expect(clippy::too_many_lines)]
     fn try_merge_with(&self, other: &Self) {
-        let _motion = other.entity.hold_drop_motion();
+        let _motion = other.entity.hold_actor_motion();
         if !self
             .entity
             .bounding_box
@@ -960,7 +960,7 @@ impl EntityBase for ItemEntity {
     }
 
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
-        let _motion = self.entity.hold_drop_motion();
+        let _motion = self.entity.hold_actor_motion();
         if !self.entity.is_removed() {
             self.tick_with_time(caller, server, ItemTimerStep::World(None));
         }
@@ -989,7 +989,7 @@ impl EntityBase for ItemEntity {
     ) -> bool {
         // Vanilla `ItemEntity.hurtServer`.
         let entity = &self.entity;
-        let _motion = entity.hold_drop_motion();
+        let _motion = entity.hold_actor_motion();
         if entity.is_removed() || entity.is_invulnerable_to(&damage_type, cause) {
             return false;
         }
@@ -1050,7 +1050,7 @@ impl EntityBase for ItemEntity {
     }
 
     fn on_player_collision(&self, player: &Arc<Player>) {
-        let _motion = self.entity.hold_drop_motion();
+        let _motion = self.entity.hold_actor_motion();
         let Some((item, amount, empty)) = self.collect_for_player(player) else {
             return;
         };

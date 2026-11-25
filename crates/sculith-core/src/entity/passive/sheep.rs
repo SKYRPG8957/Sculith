@@ -126,8 +126,9 @@ impl SheepEntity {
     }
 
     fn set_packed_and_sync(&self, byte: u8) {
-        self.color_and_sheared.store(byte, Ordering::Relaxed);
         let entity = &self.mob_entity.living_entity.entity;
+        let _motion = entity.hold_actor_motion();
+        self.color_and_sheared.store(byte, Ordering::Relaxed);
         entity.set_synced_data(pumpkin_data::tracked_data::sheep::WOOL_ID, byte as i8);
         if let Some(meta) = self.mob_metadata() {
             entity.send_bedrock_actor_data(&meta.to_bedrock_actor_data());
@@ -288,7 +289,7 @@ impl Mob for SheepEntity {
         let mut meta = crate::entity::mob::MobMetadata::new()
             .sheep_wool(DyeColor::from(self.get_color()), self.is_sheared());
         if self.is_baby() {
-            meta = meta.baby(true);
+            meta = meta.baby(true).scale(0.5);
         }
         Some(meta)
     }

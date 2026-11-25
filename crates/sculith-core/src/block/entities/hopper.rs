@@ -525,7 +525,7 @@ impl HopperBlockEntity {
         into: &dyn Inventory,
         item_entity: &crate::entity::item::ItemEntity,
     ) -> bool {
-        let _motion = item_entity.get_entity().hold_drop_motion();
+        let _motion = item_entity.get_entity().hold_actor_motion();
         if item_entity.get_entity().is_removed() {
             return false;
         }
@@ -600,7 +600,7 @@ impl HopperBlockEntity {
                     continue;
                 }
                 if let Some(item_entity) = entity_base.get_item_entity() {
-                    let _motion = item_entity.get_entity().hold_drop_motion();
+                    let _motion = item_entity.get_entity().hold_actor_motion();
                     if item_entity.get_entity().is_removed() {
                         continue;
                     }

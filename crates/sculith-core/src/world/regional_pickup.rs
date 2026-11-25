@@ -88,7 +88,7 @@ impl World {
                             && item.can_be_picked_up_on_region()
                             && registered()
                     };
-                    source.try_with_unmounted_drop(|| {
+                    source.try_with_unmounted_actor(|| {
                         if !local() {
                             return None;
                         }

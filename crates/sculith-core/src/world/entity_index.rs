@@ -511,7 +511,7 @@ impl EntityIndex {
 
     /// Pins both current indices while committing an isolated movement.
     /// The caller holds the actor's bounds owner exclusively and publishes the bounds in `apply`.
-    pub fn try_move_isolated_drop(
+    pub fn try_update_isolated_actor_bounds(
         &self,
         world: &World,
         entity_id: i32,

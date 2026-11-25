@@ -312,7 +312,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
         true
     }
     fn write_nbt(&self, nbt: &mut NbtCompound) {
-        let _motion = self.get_entity().hold_drop_motion();
+        let _motion = self.get_entity().hold_actor_motion();
         self.get_entity().write_nbt(nbt);
         if let Some(living) = self.get_living_entity() {
             living.write_living_nbt(nbt);
@@ -343,7 +343,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     }
 
     fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
-        let _motion = self.get_entity().hold_drop_motion();
+        let _motion = self.get_entity().hold_actor_motion();
         self.get_entity()
             .read_nbt_with_max_air_supply(nbt, self.get_max_air_supply());
         if let Some(living) = self.get_living_entity() {
@@ -1035,7 +1035,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
 
     fn set_on_fire_for_ticks(&self, ticks: u32) {
         let entity = self.get_entity();
-        let _motion = entity.hold_drop_motion();
+        let _motion = entity.hold_actor_motion();
         let mut event = crate::plugin::api::events::entity::entity_combust::EntityCombustEvent::new(
             entity.entity_id,
             ticks as f32 / 20.0,
@@ -1743,7 +1743,7 @@ pub struct Entity {
     pub velocity_dirty: AtomicBool,
     /// velocity goes to the own client
     pub sync_velocity: AtomicBool,
-    drop_motion: Option<Box<std::sync::Mutex<drop_motion::DropMotion>>>,
+    motion_access: Option<Box<std::sync::Mutex<drop_motion::ActorMotion>>>,
     pub(crate) regional_effects: AtomicBool,
     /// Unsent entity pushes on a player. Bedrock clients don't predict them, so they stay
     /// pending at full size until `SetActorMotion` can layer them on the last client delta.
@@ -2034,9 +2034,10 @@ impl Entity {
             movement_multiplier: AtomicCell::new(Vector3::default()),
             velocity_dirty: AtomicBool::new(true),
             sync_velocity: AtomicBool::new(false),
-            drop_motion: (entity_type == &EntityType::ITEM
-                || entity_type == &EntityType::EXPERIENCE_ORB)
-                .then(Box::default),
+            motion_access: (entity_type == &EntityType::ITEM
+                || entity_type == &EntityType::EXPERIENCE_ORB
+                || ageable::supports_regional_maturation(entity_type))
+            .then(Box::default),
             regional_effects: AtomicBool::new(false),
             push_impulse: AtomicCell::new(Vector3::default()),
             removed: AtomicBool::new(false),
@@ -2050,26 +2051,26 @@ impl Entity {
     }
 
     pub fn add_velocity(&self, velocity: Vector3<f64>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         self.set_velocity(self.velocity.load() + velocity);
     }
 
     pub fn set_velocity(&self, velocity: Vector3<f64>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         self.velocity.store(velocity);
         self.send_velocity();
     }
 
     /// Changes the velocity without sending a packet immediately.
     pub fn store_velocity(&self, velocity: Vector3<f64>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         self.velocity.store(velocity);
     }
 
     /// Updates the world reference for this entity.
     /// Called when the entity changes dimensions (e.g., through a nether portal).
     pub fn set_world(&self, world: Arc<World>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         let previous = self.world.load();
         let changing_actor_world =
             self.entity_type != &EntityType::PLAYER && !Arc::ptr_eq(&previous, &world);
@@ -2132,10 +2133,17 @@ impl Entity {
     }
 
     pub fn bedrock_metadata(&self) -> SyncedActorDataList {
+        self.bedrock_metadata_for_size(self.entity_dimension.load(), self.age.load(Relaxed) < 0)
+    }
+
+    fn bedrock_metadata_for_size(
+        &self,
+        dimension: EntityDimensions,
+        is_baby: bool,
+    ) -> SyncedActorDataList {
         self.init_bedrock_flags();
 
         let mut metadata = SyncedActorDataList::new();
-        let dimension = self.entity_dimension.load();
         metadata.set(
             entity_data_key::WIDTH,
             MetadataValue::Float(dimension.width),
@@ -2144,7 +2152,6 @@ impl Entity {
             entity_data_key::HEIGHT,
             MetadataValue::Float(dimension.height),
         );
-        let is_baby = self.age.load(Relaxed) < 0;
         metadata.set(
             entity_data_key::SCALE,
             MetadataValue::Float(if is_baby { 0.5 } else { 1.0 }),
@@ -2271,6 +2278,7 @@ impl Entity {
 
     /// Sets the entity's growth age. Negative values indicate that the entity is a baby.
     pub fn set_age(&self, age: i32) {
+        let _motion = self.hold_actor_motion();
         let old_age = self.age.swap(age, Relaxed);
         if (old_age < 0) != (age < 0) {
             self.refresh_dimensions();
@@ -2301,6 +2309,7 @@ impl Entity {
 
     /// Sets a custom name for the entity, typically used with nametags
     pub fn set_custom_name(&self, name: TextComponent) {
+        let _motion = self.hold_actor_motion();
         self.custom_name.store(Arc::new(Some(name.clone())));
         let mut bedrock_meta = SyncedActorDataList::new();
         bedrock_meta.set(
@@ -2323,6 +2332,7 @@ impl Entity {
     }
 
     pub fn clear_custom_name(&self) {
+        let _motion = self.hold_actor_motion();
         if self.custom_name.load().is_none() {
             return;
         }
@@ -2337,6 +2347,7 @@ impl Entity {
     }
 
     pub fn set_custom_name_visible(&self, visible: bool) {
+        let _motion = self.hold_actor_motion();
         self.custom_name_visible.store(visible, Ordering::Relaxed);
         let mut bedrock_meta = SyncedActorDataList::new();
         if let Some(name) = &**self.custom_name.load() {
@@ -2384,6 +2395,7 @@ impl Entity {
     }
 
     pub fn set_silent(&self, silent: bool) {
+        let _motion = self.hold_actor_motion();
         self.silent.store(silent, Ordering::Relaxed);
         self.set_synced_data(tracked_data::entity::DATA_SILENT, silent);
     }
@@ -2393,6 +2405,7 @@ impl Entity {
     }
 
     pub fn set_has_no_gravity(&self, no_gravity: bool) {
+        let _motion = self.hold_actor_motion();
         self.has_no_gravity.store(no_gravity, Ordering::Relaxed);
         self.set_synced_data(tracked_data::entity::DATA_NO_GRAVITY, no_gravity);
     }
@@ -2440,7 +2453,10 @@ impl Entity {
     /// Vanilla `LivingEntity.getDimensions`: the pose size from data, else the scaled default.
     #[must_use]
     pub fn get_dimensions(&self, pose: EntityPose) -> EntityDimensions {
-        let baby = self.age.load(Relaxed) < 0;
+        self.dimensions_for_age(pose, self.age.load(Relaxed) < 0)
+    }
+
+    fn dimensions_for_age(&self, pose: EntityPose, baby: bool) -> EntityDimensions {
         if let Some(pose_dimensions) = self.entity_type.pose_dimensions(pose, baby) {
             // Vanilla `SLEEPING_DIMENSIONS` is fixed, so it ignores the scale
             if pose == EntityPose::Sleeping {
@@ -2470,7 +2486,7 @@ impl Entity {
     ///
     /// This function calculates the new position, block position, and chunk position based on the provided coordinates. If any of these values change, the corresponding fields are updated.
     pub fn set_pos(&self, new_position: Vector3<f64>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         let commit_position = || {
             // A regional player move pins the same index before changing any position fields.
             let player_index = (self.entity_type == &EntityType::PLAYER).then(|| {
@@ -2909,7 +2925,7 @@ impl Entity {
     /// `combat::knockback_after_resistance` first; callers modelling vanilla's raw
     /// `Entity.push` (such as the ender dragon) pass `strength` unscaled.
     pub fn apply_knockback(&self, strength: f64, mut x: f64, mut z: f64, attacker: Option<&Self>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         if strength <= 0.0 {
             // No vanilla knockback, but plugins can still add one
             if let Some(knockback) =
@@ -3168,7 +3184,7 @@ impl Entity {
     /// Vanilla `Entity.push(Vec3)`. A player's pushes are also kept apart for Bedrock,
     /// whose client doesn't predict them.
     pub fn push_by(&self, impulse: Vector3<f64>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         self.velocity.store(self.velocity.load() + impulse);
         self.velocity_dirty.store(true, Ordering::SeqCst);
         if self.entity_type == &EntityType::PLAYER {
@@ -3178,7 +3194,7 @@ impl Entity {
 
     /// `push_by` on the pusher in its own `pushEntities`, which stays off the Bedrock impulse.
     pub fn push_back_by(&self, impulse: Vector3<f64>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         self.velocity.store(self.velocity.load() + impulse);
         self.velocity_dirty.store(true, Ordering::SeqCst);
     }
@@ -3487,7 +3503,7 @@ impl Entity {
     }
 
     pub fn move_pos(&self, delta: Vector3<f64>) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         self.set_pos(self.pos.load() + delta);
     }
 
@@ -3498,7 +3514,7 @@ impl Entity {
         if caller.get_player().is_some() {
             return;
         }
-        let _drop_motion = self.hold_drop_motion();
+        let _drop_motion = self.hold_actor_motion();
 
         if self.no_physics.load(Ordering::Relaxed) {
             self.move_pos(motion);
@@ -4017,7 +4033,7 @@ impl Entity {
 
     /// Extinguishes this entity.
     pub fn extinguish(&self) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         self.fire_ticks.store(0, Ordering::Relaxed);
     }
 
@@ -4819,7 +4835,7 @@ impl Entity {
     }
 
     pub fn set_pose(&self, pose: EntityPose) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         if self.pose.load() != pose {
             let mut pose_event =
                 crate::plugin::api::events::entity::entity_pose_change::EntityPoseChangeEvent::new(
@@ -4851,6 +4867,7 @@ impl Entity {
 
     /// Vanilla `getDefaultDimensions` changed, e.g. a baby growing up.
     pub fn set_default_dimensions(&self, dimensions: EntityDimensions) {
+        let _motion = self.hold_actor_motion();
         self.default_dimensions.store(Some(dimensions));
         self.refresh_dimensions();
     }
@@ -4870,7 +4887,7 @@ impl Entity {
 
     /// Vanilla `refreshDimensions`: size and bounding box for the current pose.
     pub fn refresh_dimensions(&self) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         let mut metadata = SyncedActorDataList::new();
         self.refresh_dimensions_into(&mut metadata);
         self.send_bedrock_actor_data(&metadata);
@@ -4934,12 +4951,10 @@ impl Entity {
         let new = self.get_dimensions(self.pose.load());
         let previous_height = f64::from(previous.height);
         let (new_width, new_height) = (f64::from(new.width), f64::from(new.height));
-        let old_center = self.pos.load().add_raw(0.0, previous_height / 2.0, 0.0);
-        let width_delta = f64::from((new.width - previous.width).max(0.0)) + 1.0E-6;
-        let height_delta = f64::from((new.height - previous.height).max(0.0)) + 1.0E-6;
+        let (old_center, allowed) = Self::growth_centers(self.pos.load(), previous, new);
         if let Some(free) = world.find_free_position(
             this,
-            &BoundingBox::of_size(old_center, width_delta, height_delta, width_delta),
+            &allowed,
             old_center,
             Vector3::new(new_width, new_height, new_width),
         ) {
@@ -4951,7 +4966,12 @@ impl Entity {
             && new.height > previous.height
             && let Some(free) = world.find_free_position(
                 this,
-                &BoundingBox::of_size(old_center, width_delta, 1.0E-6, width_delta),
+                &BoundingBox::of_size(
+                    old_center,
+                    Self::growth_extent(previous.width, new.width),
+                    1.0E-6,
+                    Self::growth_extent(previous.width, new.width),
+                ),
                 old_center,
                 Vector3::new(new_width, previous_height, new_width),
             )
@@ -4960,6 +4980,21 @@ impl Entity {
             return true;
         }
         false
+    }
+
+    fn growth_extent(before: f32, after: f32) -> f64 {
+        f64::from((after - before).max(0.0)) + 1.0E-6
+    }
+
+    fn growth_centers(
+        position: Vector3<f64>,
+        before: EntityDimensions,
+        after: EntityDimensions,
+    ) -> (Vector3<f64>, BoundingBox) {
+        let center = position.add_raw(0.0, f64::from(before.height) / 2.0, 0.0);
+        let width = Self::growth_extent(before.width, after.width);
+        let height = Self::growth_extent(before.height, after.height);
+        (center, BoundingBox::of_size(center, width, height, width))
     }
 
     /// Vanilla `Entity.fireImmune`: the entity type.
@@ -5073,7 +5108,7 @@ impl Entity {
         pitch: Option<f32>,
         world: &World,
     ) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         if self.is_removed() {
             return;
         }
@@ -5215,6 +5250,7 @@ impl Entity {
         expected_holder_id: i32,
         holder: &Arc<dyn EntityBase>,
     ) -> bool {
+        let _motion = self.hold_actor_motion();
         let held_by = |leashed_to: &Option<Weak<dyn EntityBase>>| {
             leashed_to
                 .as_ref()
@@ -5267,6 +5303,7 @@ impl Entity {
     }
 
     pub fn attach_leash(&self, holder: &Arc<dyn EntityBase>) {
+        let _motion = self.hold_actor_motion();
         *self
             .leashed_to
             .lock()
@@ -5315,6 +5352,7 @@ impl Entity {
     }
 
     pub fn unleash(&self) {
+        let _motion = self.hold_actor_motion();
         let world = self.world.load();
         if let Some(server) = world.server.upgrade() {
             let mut event =
@@ -5357,6 +5395,7 @@ impl Entity {
     }
 
     pub fn remove_leash(&self) {
+        let _motion = self.hold_actor_motion();
         let old_holder = self
             .leashed_to
             .lock()
@@ -5783,8 +5822,8 @@ impl Entity {
     )]
     pub fn add_passenger(&self, vehicle: Arc<dyn EntityBase>, passenger: Arc<dyn EntityBase>) {
         let passenger_entity = passenger.get_entity();
-        let vehicle_access = self.hold_drop_motion();
-        let passenger_access = passenger_entity.hold_drop_motion();
+        let vehicle_access = self.hold_actor_motion();
+        let passenger_access = passenger_entity.hold_actor_motion();
         if vehicle_access.is_some() && self.is_removed()
             || passenger_access.is_some() && passenger_entity.is_removed()
         {
@@ -6459,7 +6498,7 @@ impl Entity {
 
 impl Entity {
     pub fn write_nbt(&self, nbt: &mut NbtCompound) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         let position = self.pos.load();
         nbt.put_string(
             "id",
@@ -6609,7 +6648,7 @@ impl Entity {
     }
 
     fn read_nbt_with_max_air_supply(&self, nbt: &NbtCompound, max_air_supply: i32) {
-        let _motion = self.hold_drop_motion();
+        let _motion = self.hold_actor_motion();
         self.read_placement_nbt(nbt);
         self.fire_ticks.store(
             i32::from(nbt.get_numeric_short("Fire").unwrap_or(0)),

@@ -488,9 +488,14 @@ share the same deadline to prevent a second step after a handoff.
 The active region can also count an ageable mob toward adulthood and advance
 its breeding cooldown. The remaining age and last step follow the mob across
 region extents. A restored mob begins counting after its registration deadline.
-Age locking preserves a baby's remaining age. The world applies maturation,
-including the size and metadata changes for both editions, and advances growth
-when native plugins or entity tick observers require the world path.
+Age locking preserves a baby's remaining age. The owner can complete maturation
+for an isolated pig, cow, sheep or chicken when the grown hitbox fits at its
+current position. It checks the loaded block palettes and updates the age,
+collision bounds and spatial index under the actor's motion guard. Paired
+current-protocol clients receive the adult metadata from the same step.
+Bedrock sheep use the observed half-size baby scale and adult scale of one.
+The world handles relocation, attached actors, translated clients, observers
+and metadata delivery that the region could not queue.
 
 Each current-protocol Bedrock connection with an active item cooldown advances
 it on the player's region. The same clock and cooldown entries follow the

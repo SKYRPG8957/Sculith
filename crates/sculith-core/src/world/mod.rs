@@ -2933,24 +2933,32 @@ impl World {
     ) -> Option<Vector3<f64>> {
         let (collisions, _) =
             self.get_block_collisions(allowed_centers.expand(size.x, size.y, size.z), source);
+        let border = self
+            .worldborder
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Self::nearest_free_center(allowed_centers, preferred_center, size, collisions, &border)
+    }
+
+    pub(crate) fn nearest_free_center(
+        allowed_centers: &BoundingBox,
+        preferred_center: Vector3<f64>,
+        size: Vector3<f64>,
+        collisions: Vec<BoundingBox>,
+        border: &Worldborder,
+    ) -> Option<Vector3<f64>> {
         let mut free_spots = vec![*allowed_centers];
-        {
-            let border = self
-                .worldborder
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for shape in collisions {
-                if !border.contains(shape.min.x, shape.min.z)
-                    || !border.contains(shape.max.x - 1.0E-5, shape.max.z - 1.0E-5)
-                {
-                    continue;
-                }
-                let blocked = shape.expand(size.x / 2.0, size.y / 2.0, size.z / 2.0);
-                free_spots = free_spots
-                    .iter()
-                    .flat_map(|spot| spot.subtract(&blocked))
-                    .collect();
+        for shape in collisions {
+            if !border.contains(shape.min.x, shape.min.z)
+                || !border.contains(shape.max.x - 1.0E-5, shape.max.z - 1.0E-5)
+            {
+                continue;
             }
+            let blocked = shape.expand(size.x / 2.0, size.y / 2.0, size.z / 2.0);
+            free_spots = free_spots
+                .iter()
+                .flat_map(|spot| spot.subtract(&blocked))
+                .collect();
         }
         free_spots
             .iter()
@@ -5486,7 +5494,7 @@ impl World {
         let registered = self.get_entity_by_id(entity.get_entity().entity_id);
         let entity = registered.as_deref().unwrap_or(entity);
         let base_entity = entity.get_entity();
-        let _motion = base_entity.hold_drop_motion();
+        let _motion = base_entity.hold_actor_motion();
         {
             let _placement = self
                 .regional_actors

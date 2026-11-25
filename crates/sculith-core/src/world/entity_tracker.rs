@@ -329,7 +329,7 @@ impl TrackedEntity {
     /// Vanilla `ServerEntity.sendChanges`. Non-player entities only.
     pub fn send_changes(&self, world: &World) {
         let entity = self.entity.get_entity();
-        let _motion = entity.hold_drop_motion();
+        let _motion = entity.hold_actor_motion();
         if entity.is_removed() {
             return;
         }
@@ -690,7 +690,7 @@ impl TrackedEntity {
                 }
                 // A drop stays at the checked chunk while its spawn is queued.
                 let base = self.entity.get_entity();
-                let pairing = base.hold_drop_motion();
+                let pairing = base.hold_actor_motion();
                 if base.is_removed() {
                     self.remove_player(player);
                     return;
@@ -1787,7 +1787,7 @@ impl EntityTracker {
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
     ) {
         let base = entity.get_entity();
-        base.try_with_unmounted_drop(|| {
+        base.try_with_unmounted_actor(|| {
             if !base.is_leashed() {
                 self.try_track_restored_actor(world, entity, chunk, None, java_recipients);
             }
@@ -2062,6 +2062,50 @@ impl EntityTracker {
             delivery.bedrock_queued &= queued;
         }
         Some(delivery)
+    }
+
+    pub(crate) fn try_publish_regional_maturation(
+        &self,
+        world: &World,
+        subject: &dyn EntityBase,
+        metadata: SyncedActorDataList,
+        java: Option<Box<[u8]>>,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+        apply: impl FnOnce() -> Option<()>,
+    ) -> Option<RegionalActorDelivery> {
+        let entity_id = subject.get_entity().entity_id;
+        self.try_send_regional_actor_packets(
+            world,
+            subject,
+            java_recipients,
+            || {
+                let java = java
+                    .map(|bytes| {
+                        JavaClient::serialize_packet_for_version(
+                            &CSetEntityMetadata::new(entity_id.into(), bytes),
+                            CURRENT_MC_VERSION,
+                        )
+                    })
+                    .transpose()
+                    .ok()?
+                    .into_iter()
+                    .collect();
+                let packet = CSetActorData {
+                    target_runtime_id: VarULong(entity_id as u64),
+                    actor_data: metadata,
+                    synced_properties: PropertySyncData::default(),
+                    tick: VarULong(0),
+                };
+                let mut bedrock = Vec::new();
+                BedrockClient::write_raw_packet(&packet, &mut bedrock).ok()?;
+                Some(RegionalActorPackets {
+                    java,
+                    bedrock: vec![Bytes::from(bedrock)],
+                    bedrock_viewer_equipment: None,
+                })
+            },
+            apply,
+        )
     }
 
     pub(super) fn try_publish_regional_player_metadata(

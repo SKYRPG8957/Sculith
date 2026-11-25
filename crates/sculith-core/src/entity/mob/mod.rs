@@ -421,8 +421,9 @@ impl MobEntity {
     }
 
     pub fn set_no_ai(&self, no_ai: bool) {
-        self.set_mob_flag(Self::AI_DISABLED_FLAG, no_ai);
         let entity = &self.living_entity.entity;
+        let _motion = entity.hold_actor_motion();
+        self.set_mob_flag(Self::AI_DISABLED_FLAG, no_ai);
         if entity.entity_type == &EntityType::HORSE {
             entity.update_bedrock_base_flags(1i64 << entity_data_flag::NO_AI, no_ai);
         }
@@ -1358,7 +1359,7 @@ pub(crate) fn pick_up_nearby_items(mob: &dyn Mob) {
         let Some(item) = candidate.get_item_entity() else {
             continue;
         };
-        let _motion = item.get_entity().hold_drop_motion();
+        let _motion = item.get_entity().hold_actor_motion();
         if item.get_entity().is_removed() || item.get_pickup_delay() != 0 {
             continue;
         }
@@ -2941,6 +2942,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
     #[allow(clippy::too_many_lines)]
     fn tick(&self, caller: &dyn EntityBase, server: &Server) {
         let mob_entity = self.get_mob_entity();
+        let _motion = mob_entity.living_entity.entity.hold_actor_motion();
         mob_entity.process_navigation_updates();
         mob_entity.tick_leash(self);
         sun_burn::tick(self);
@@ -3012,6 +3014,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
+        let _motion = self.get_entity().hold_actor_motion();
         if let Some(hurt) = self.mob_hurt_server(amount, damage_type, position, source, cause) {
             return hurt;
         }
@@ -3037,6 +3040,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
     }
 
     fn interact(&self, player: &Arc<Player>, item_stack: &mut ItemStack) -> bool {
+        let _motion = self.get_entity().hold_actor_motion();
         if item_stack.get_item() == &Item::SHEARS
             && self.can_shear_equipment(player)
             && !player.get_entity().is_sneaking()
@@ -3056,6 +3060,7 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         item_stack: &mut ItemStack,
         hand: sculith_util::Hand,
     ) -> Option<bool> {
+        let _motion = self.get_entity().hold_actor_motion();
         self.mob_interact_with_hand(player, item_stack, hand)
     }
 

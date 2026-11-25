@@ -45,7 +45,7 @@ pub(super) fn touch_entities(world: &World, player: &Arc<Player>) {
             orbs.push(entity);
             continue;
         }
-        let motion = base.hold_drop_motion();
+        let motion = base.hold_actor_motion();
         if motion.is_none() || area.intersects(&base.bounding_box.load()) {
             entity.on_player_collision(player);
         }
@@ -53,7 +53,7 @@ pub(super) fn touch_entities(world: &World, player: &Arc<Player>) {
     if !orbs.is_empty() {
         let orb = &orbs[rand::rng().random_range(0..orbs.len())];
         let base = orb.get_entity();
-        let _motion = base.hold_drop_motion();
+        let _motion = base.hold_actor_motion();
         if !base.is_removed() && area.intersects(&base.bounding_box.load()) {
             orb.on_player_collision(player);
         }

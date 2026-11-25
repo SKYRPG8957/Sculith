@@ -13,11 +13,12 @@ use sculith_util::math::vector2::Vector2;
 use crate::{
     entity::{
         Entity, EntityBase,
-        ageable::advance_regional_growth,
+        ageable::{advance_regional_growth, try_mature_on_region},
         experience_orb::ExperienceOrbEntity,
         item::{ItemEntity, RegionalItemStep},
     },
     net::ClientPlatform,
+    plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
     server::{Server, TickDeadline},
 };
 
@@ -339,6 +340,11 @@ impl World {
         let native = server.plugin_manager.try_without_native_code();
         let pickups = native.is_some() && Self::regional_pickups_unobserved(server);
         let mob_growth = native.is_some() && !plugins_observe_entity_ticks(server);
+        let mob_maturation = mob_growth
+            && !server.plugin_manager.has_handlers::<PacketSentEvent>()
+            && !server
+                .plugin_manager
+                .has_handlers::<BedrockConnectionPacketSentEvent>();
         let mut expired = Vec::new();
         let mut collected = FxHashSet::default();
         let mut java_recipients = FxHashMap::default();
@@ -440,15 +446,35 @@ impl World {
                 if mob_growth
                     && has_mob_growth(base)
                     && let Some(ageable) = actor.get_mob().and_then(|mob| mob.as_ageable())
-                    && let Some(age) = advance_regional_growth(ageable, deadline, || {
-                        still_owned() && living.is_alive() && !living.is_dead_or_dying()
-                    })
                 {
-                    tracing::trace!(
-                        entity = base.entity_id,
-                        age,
-                        "Advanced growth on the mob region"
-                    );
+                    if let Some(age) = advance_regional_growth(ageable, deadline, || {
+                        still_owned() && living.is_alive() && !living.is_dead_or_dying()
+                    }) {
+                        tracing::trace!(
+                            entity = base.entity_id,
+                            age,
+                            "Advanced growth on the mob region"
+                        );
+                    } else if mob_maturation
+                        && still_owned()
+                        && let Some(delivered) = try_mature_on_region(
+                            actor.as_ref(),
+                            ageable,
+                            self,
+                            deadline,
+                            owns,
+                            &mut java_recipients,
+                        )
+                    {
+                        if !delivered {
+                            self.regional_entity_updates
+                                .0
+                                .lock()
+                                .unwrap_or_else(PoisonError::into_inner)
+                                .push(RegionalEntityUpdate::Matured(actor.clone()));
+                        }
+                        tracing::trace!(entity = base.entity_id, "Matured livestock on its region");
+                    }
                 }
             }
         }
@@ -493,7 +519,7 @@ impl World {
             let TryResult::Present(_loaded) = self.level.loaded_chunks.try_get(&chunk) else {
                 continue;
             };
-            let _ = base.try_with_unmounted_drop(|| {
+            let _ = base.try_with_unmounted_actor(|| {
                 let actor_data = actor.as_ref() as &dyn Any;
                 let expired = actor_data.downcast_ref::<ItemEntity>().is_some_and(|item| {
                     item.has_expired() && ItemEntity::timers_unobserved(server)
@@ -911,6 +937,87 @@ mod tests {
         assert_eq!(ageable.get_age(), 2);
         region_step(1, 8);
         assert_eq!(ageable.get_age(), 1);
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn stationary_livestock_matures_with_its_region_and_updates_the_index() {
+        use pumpkin_data::Block;
+        use pumpkin_world::world::BlockFlags;
+        use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos};
+
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
+        let world = server.worlds.load()[0].clone();
+        let chunk = Vector2::new(0, 0);
+        let layout = Arc::new(RegionLayout::from_active(
+            FxHashMap::from_iter([(chunk, 0)]),
+            FxHashMap::from_iter([(0, [chunk].into())]),
+        ));
+        world.publish_region_layout(&layout, false);
+        world
+            .level
+            .loaded_chunks
+            .insert(chunk, ChunkData::empty_sync(0, 0));
+        for x in 4..=12 {
+            for z in 4..=12 {
+                world.set_block_state(
+                    &BlockPos::new(x, 79, z),
+                    Block::STONE.default_state.id,
+                    BlockFlags::empty(),
+                );
+            }
+        }
+        let mut actors = Vec::new();
+        for (kind, x, z) in [
+            (&EntityType::PIG, 6.5, 6.5),
+            (&EntityType::COW, 10.5, 6.5),
+            (&EntityType::SHEEP, 6.5, 10.5),
+            (&EntityType::CHICKEN, 10.5, 10.5),
+        ] {
+            let position = Vector3::new(x, 80.0, z);
+            let actor =
+                crate::entity::r#type::from_type(kind, position, &world, uuid::Uuid::new_v4());
+            let base = actor.get_entity();
+            let ageable = actor.get_mob().unwrap().as_ageable().unwrap();
+            ageable.set_age(-1);
+            base.first_tick.store(false, Relaxed);
+            world.add_entity_silent(actor.clone());
+            actors.push((actor, position));
+        }
+        let assignments: Vec<_> = actors.iter().map(|(actor, _)| (actor, chunk)).collect();
+        let previous = world.regional_actors.read().unwrap().clone();
+        world.assign_regional_actors(&server, &assignments, true, &previous);
+        let deadline = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        let pig = actors[0].0.get_entity();
+        let before = pig.bounding_box.load();
+        let upper_half = BoundingBox::of_size(Vector3::new(6.5, 80.7, 6.5), 0.1, 0.1, 0.1);
+        assert!(world.get_entities_at_box(&upper_half).is_empty());
+        let access = pig.hold_actor_motion();
+        world.advance_region_time(0, layout.chunks(0).unwrap(), deadline);
+        assert_eq!(pig.age.load(Relaxed), -1);
+        let bounds = pig.bounding_box.load();
+        assert_eq!((bounds.min, bounds.max), (before.min, before.max));
+        drop(access);
+        world.advance_region_time(0, layout.chunks(0).unwrap(), deadline);
+        for (actor, position) in &actors {
+            let base = actor.get_entity();
+            assert_eq!(base.age.load(Relaxed), 0, "{}", base.entity_id);
+            assert_eq!(base.pos.load(), *position);
+            let dimensions = base.get_dimensions(base.pose.load());
+            let bounds = base.bounding_box.load();
+            let expected = Entity::make_bounding_box(base.entity_type, *position, &dimensions);
+            assert_eq!((bounds.min, bounds.max), (expected.min, expected.max));
+        }
+        assert!(
+            world
+                .get_entities_at_box(&upper_half)
+                .iter()
+                .any(|actor| actor.get_entity().entity_id == pig.entity_id)
+        );
         server.shutdown().await;
     }
 
