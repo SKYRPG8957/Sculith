@@ -7293,103 +7293,75 @@ impl World {
             .collect()
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "keep the owned native block entity API"
+    )]
     pub fn add_block_entity(&self, block_entity: Arc<dyn BlockEntity>) {
         if let Some(weak) = self.weak_self() {
             block_entity.set_world(weak);
         }
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
-        let block_entity_nbt = block_entity.chunk_data_nbt();
-        let entity_id = block_entity.resource_location().to_string();
-
-        if let Some(nbt) = &block_entity_nbt {
-            let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
-            self.broadcast_to_chunk(
-                chunk_pos,
-                &CBlockEntityData::new(
-                    block_entity.get_position(),
-                    VarInt(block_entity.get_id() as i32),
-                    bytes.as_ref().into(),
-                ),
-            );
-        }
-
-        let state = self.get_block_state(&block_pos);
-        if let Some(data) = bedrock_chest_block_actor(state.id, block_pos)
-            .or_else(|| block_entity.bedrock_block_actor_data(state.id))
+        let install = || {
+            self.block_entities
+                .entry(chunk_pos)
+                .or_default()
+                .insert(block_pos, block_entity.clone());
+        };
+        if self
+            .level
+            .read_chunk_sync(&chunk_pos, |chunk| {
+                chunk.edit_block_actors(|_| {
+                    install();
+                    true
+                })
+            })
+            .is_none()
         {
-            self.broadcast_to_chunk_bedrock(chunk_pos, &CBlockActorData::new(block_pos, data));
+            install();
         }
-
-        self.block_entities
-            .entry(chunk_pos)
-            .or_default()
-            .insert(block_pos, block_entity);
-
-        if let Some(nbt) = block_entity_nbt {
-            let mut full_nbt = nbt;
-            full_nbt.put_string("id", entity_id);
-            full_nbt.put_int("x", block_pos.0.x);
-            full_nbt.put_int("y", block_pos.0.y);
-            full_nbt.put_int("z", block_pos.0.z);
-            self.add_block_entity_nbt(block_pos, &full_nbt);
-        }
-
-        self.level.read_chunk_sync(&chunk_pos, |chunk| {
-            chunk.mark_dirty(true);
-        });
+        self.update_block_entity(&block_entity);
     }
 
     pub fn add_block_entity_nbt(&self, block_pos: BlockPos, nbt: &NbtCompound) {
+        let chunk_pos = block_pos.chunk_position();
         if self
             .level
-            .read_chunk_sync(&block_pos.chunk_position(), |chunk| {
-                chunk
-                    .pending_block_entities
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(block_pos, nbt.clone());
-                chunk.mark_dirty(true);
+            .read_chunk_sync(&chunk_pos, |chunk| {
+                chunk.edit_block_actors(|pending| {
+                    pending.insert(block_pos, nbt.clone());
+                    true
+                })
             })
             .is_some()
         {
-            self.pending_block_entity_migrations
-                .push(block_pos.chunk_position());
+            self.pending_block_entity_migrations.push(chunk_pos);
         }
     }
 
     pub fn remove_block_entity(&self, block_pos: &BlockPos) {
         let chunk_pos = block_pos.chunk_position();
-        // The NBT copy also serves lazy loading; leaving it revives removed entities.
-        let removed_pending = self
-            .level
-            .read_chunk_sync(&chunk_pos, |chunk| {
-                let removed = chunk
-                    .pending_block_entities
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .remove(block_pos)
-                    .is_some();
-                if removed {
-                    chunk.mark_dirty(true);
-                }
-                removed
-            })
-            .unwrap_or(false);
-        let removed =
+        let remove_live = || {
             self.block_entities
                 .get_mut(&chunk_pos)
-                .is_some_and(|mut chunk_block_entities| {
-                    chunk_block_entities.remove(block_pos).is_some()
-                });
-        if removed || removed_pending {
+                .is_some_and(|mut entities| entities.remove(block_pos).is_some())
+        };
+        let removed = self
+            .level
+            .read_chunk_sync(&chunk_pos, |chunk| {
+                chunk.edit_block_actors(|pending| {
+                    // The NBT also serves lazy loading; leaving it revives removed entities.
+                    let removed_pending = pending.remove(block_pos).is_some();
+                    remove_live() || removed_pending
+                })
+            })
+            .unwrap_or_else(remove_live);
+        if removed {
             self.custom_block_entity_data.remove(block_pos);
             // Drop the chunk's map once its last block entity is gone.
             self.block_entities
                 .remove_if(&chunk_pos, |_, entities| entities.is_empty());
-            self.level.read_chunk_sync(&chunk_pos, |chunk| {
-                chunk.mark_dirty(true);
-            });
         }
     }
 
@@ -7420,25 +7392,27 @@ impl World {
     pub fn update_block_entity(&self, block_entity: &Arc<dyn BlockEntity>) {
         let block_pos = block_entity.get_position();
         let chunk_pos = block_pos.chunk_position();
-        let block_entity_nbt = block_entity.chunk_data_nbt();
 
-        if let Some(nbt) = &block_entity_nbt {
+        if let Some(nbt) = block_entity.chunk_data_nbt() {
             let bytes = pumpkin_nbt::Nbt::from(nbt.clone()).write_unnamed();
+            let mut full_nbt = nbt;
+            full_nbt.put_string("id", block_entity.resource_location().to_string());
+            full_nbt.put_int("x", block_pos.0.x);
+            full_nbt.put_int("y", block_pos.0.y);
+            full_nbt.put_int("z", block_pos.0.z);
+            self.add_block_entity_nbt(block_pos, &full_nbt);
             self.broadcast_to_chunk(
                 chunk_pos,
                 &CBlockEntityData::new(
-                    block_entity.get_position(),
+                    block_pos,
                     VarInt(block_entity.get_id() as i32),
                     bytes.as_ref().into(),
                 ),
             );
-            let mut full_nbt = nbt.clone();
-            full_nbt.put_string("id", block_entity.resource_location().to_string());
-            let pos = block_entity.get_position();
-            full_nbt.put_int("x", pos.0.x);
-            full_nbt.put_int("y", pos.0.y);
-            full_nbt.put_int("z", pos.0.z);
-            self.add_block_entity_nbt(block_pos, &full_nbt);
+        } else {
+            self.level.read_chunk_sync(&chunk_pos, |chunk| {
+                chunk.edit_block_actors(|_| true);
+            });
         }
 
         let state = self.get_block_state(&block_pos);
@@ -7447,10 +7421,6 @@ impl World {
         {
             self.broadcast_to_chunk_bedrock(chunk_pos, &CBlockActorData::new(block_pos, data));
         }
-
-        self.level.read_chunk_sync(&chunk_pos, |chunk| {
-            chunk.mark_dirty(true);
-        });
     }
 
     #[must_use]

@@ -212,6 +212,7 @@ impl TrackedTerrain<'_> {
 
 struct PreparedTerrain<P> {
     revision: (u64, u64),
+    actor_revision: u64,
     packet: P,
     blobs: Vec<level_chunk::ChunkBlob>,
 }
@@ -848,6 +849,7 @@ impl BedrockClient {
         let mut misses = Vec::new();
         for chunk in valid_chunks {
             let revision = chunk.section.terrain_revision();
+            let actor_revision = chunk.block_actor_revision();
             let framed = if cache_enabled {
                 None
             } else {
@@ -861,6 +863,7 @@ impl BedrockClient {
             }
             encoded_payloads.push(framed.map(|packet| PreparedTerrain {
                 revision,
+                actor_revision,
                 packet,
                 blobs: Vec::new(),
             }));
@@ -877,6 +880,7 @@ impl BedrockClient {
                         return;
                     }
                     let revision = chunk.section.terrain_revision();
+                    let actor_revision = chunk.block_actor_revision();
                     let actors = world.bedrock_chunk_block_actors(&chunk);
                     if obsolete() {
                         return;
@@ -885,7 +889,7 @@ impl BedrockClient {
                     if !cache_enabled && actors.is_empty()
                         && let Some(packet) = world.bedrock_chunk_frames.get(&chunk, bedrock_dimension)
                     {
-                        results.push((index, PreparedTerrain { revision, packet, blobs: Vec::new() }));
+                        results.push((index, PreparedTerrain { revision, actor_revision, packet, blobs: Vec::new() }));
                         continue;
                     }
                     match CLevelChunk::encode_chunk(&chunk, bedrock_dimension, cache_enabled, &actors) {
@@ -894,7 +898,7 @@ impl BedrockClient {
                                 if !cache_enabled && actors.is_empty() {
                                     world.bedrock_chunk_frames.insert(&chunk, bedrock_dimension, revision, &packet);
                                 }
-                                results.push((index, PreparedTerrain { revision, packet, blobs }));
+                                results.push((index, PreparedTerrain { revision, actor_revision, packet, blobs }));
                             }
                         }
                         Err(error) => error!(%error, x=chunk.x, z=chunk.z, "Failed to serialize Bedrock chunk"),
@@ -928,6 +932,7 @@ impl BedrockClient {
             }
             let Some(PreparedTerrain {
                 revision,
+                actor_revision,
                 packet,
                 blobs,
             }) = terrain
@@ -938,6 +943,7 @@ impl BedrockClient {
             let packet = self.translate_outgoing_async(packet, true).await;
             translated_chunks.push(Some(PreparedTerrain {
                 revision,
+                actor_revision,
                 packet,
                 blobs,
             }));
@@ -963,11 +969,15 @@ impl BedrockClient {
                 continue;
             };
             let revision = terrain.revision;
+            let actor_revision = terrain.actor_revision;
             let queue = || self.queue_terrain_chunk(terrain, tracked.is_some());
             let delivery = if tracked.is_some() {
                 world
                     .level
-                    .try_with_current_terrain(chunk, revision, queue)
+                    .try_with_current_terrain(chunk, revision, || {
+                        chunk.try_with_current_block_actors(actor_revision, queue)
+                    })
+                    .flatten()
                     .unwrap_or(Err(DeliveryFailure::Deferred))
             } else {
                 queue()
@@ -2137,6 +2147,7 @@ mod tests {
                 std::slice::from_ref(&chunk),
                 vec![Some(PreparedTerrain {
                     revision: chunk.section.terrain_revision(),
+                    actor_revision: chunk.block_actor_revision(),
                     packet: (Some(data.clone()), Vec::new()),
                     blobs: vec![(token, data)],
                 })],
@@ -2182,6 +2193,7 @@ mod tests {
         let extension = Bytes::from_static(b"extra");
         let terrain = || PreparedTerrain {
             revision: (0, 0),
+            actor_revision: 0,
             packet: (Some(chunk.clone()), vec![extension.clone()]),
             blobs: vec![(7, Bytes::from_static(b"cached"))],
         };

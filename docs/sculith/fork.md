@@ -287,6 +287,8 @@ encoder across packet observers. Before admitting a chunk to a viewer's
 queue, the sender pins the loaded entry and both palettes and checks those
 generations. A replaced chunk or a busy or changed palette defers delivery
 through the existing token, and stale blob hashes never enter the viewer cache.
+Delivery checks the published block actor revision too. A sign text change
+can invalidate an older column even while its blocks and biomes stay the same.
 Leaving the Bedrock view retires pending sends for the departed columns before
 the next publisher packet. Returning to those columns starts new deliveries.
 Work waiting on an encoder or plugin must still hold its original delivery

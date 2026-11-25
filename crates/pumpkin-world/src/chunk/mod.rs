@@ -77,6 +77,8 @@ pub struct ChunkData {
     pub block_ticks: ChunkTickScheduler<&'static Block>,
     pub fluid_ticks: ChunkTickScheduler<&'static Fluid>,
     pub pending_block_entities: std::sync::Mutex<FxHashMap<BlockPos, NbtCompound>>,
+    /// Published Bedrock block actor changes, pinned by the pending-block-entity lock.
+    pub block_actor_revision: AtomicU64,
     pub light_engine: std::sync::Mutex<ChunkLight>,
     pub light_populated: AtomicBool,
     pub status: ChunkStatus,
@@ -778,6 +780,41 @@ impl ChunkSections {
 
 impl ChunkData {
     #[must_use]
+    pub fn block_actor_revision(&self) -> u64 {
+        self.block_actor_revision
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Publishes a block actor change and marks the chunk for saving. The edit
+    /// must not call gameplay callbacks or acquire a palette lock.
+    pub fn edit_block_actors(
+        &self,
+        edit: impl FnOnce(&mut FxHashMap<BlockPos, NbtCompound>) -> bool,
+    ) -> bool {
+        let mut pending = self
+            .pending_block_entities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let changed = edit(&mut pending);
+        if changed {
+            self.block_actor_revision
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        changed
+    }
+
+    /// Pins published block actors through packet admission without waiting for an edit.
+    pub fn try_with_current_block_actors<R>(
+        &self,
+        revision: u64,
+        apply: impl FnOnce() -> R,
+    ) -> Option<R> {
+        let _actors = self.pending_block_entities.try_lock().ok()?;
+        (self.block_actor_revision() == revision).then(apply)
+    }
+
+    #[must_use]
     pub fn empty(x: i32, z: i32) -> Self {
         Self {
             section: ChunkSections::new(24, -64),
@@ -786,6 +823,7 @@ impl ChunkData {
             z,
             block_ticks: ChunkTickScheduler::default(),
             fluid_ticks: ChunkTickScheduler::default(),
+            block_actor_revision: AtomicU64::new(0),
             pending_block_entities: std::sync::Mutex::new(FxHashMap::default()),
             light_engine: std::sync::Mutex::new(ChunkLight::default()),
             light_populated: std::sync::atomic::AtomicBool::new(false),
@@ -1297,6 +1335,34 @@ mod tests {
     use crate::chunk::palette::BlockPalette;
     use pumpkin_data::{Block, block_properties::has_random_ticks};
     use sculith_util::math::position::BlockPos;
+
+    #[test]
+    fn a_published_block_actor_change_defers_an_older_terrain_snapshot() {
+        let chunk = ChunkData::empty(0, 0);
+        let pos = BlockPos::new(3, 64, 3);
+        let old_actor_revision = chunk.block_actor_revision();
+        let palette_revision = chunk.section.terrain_revision();
+        let mut tag = pumpkin_nbt::compound::NbtCompound::new();
+        tag.put_string("id", "minecraft:sign".into());
+        chunk.edit_block_actors(|pending| {
+            pending.insert(pos, tag);
+            assert_eq!(
+                chunk.try_with_current_block_actors(old_actor_revision, || ()),
+                None
+            );
+            true
+        });
+
+        assert_eq!(chunk.section.terrain_revision(), palette_revision);
+        assert_eq!(
+            chunk.try_with_current_block_actors(old_actor_revision, || ()),
+            None
+        );
+        assert_eq!(
+            chunk.try_with_current_block_actors(chunk.block_actor_revision(), || ()),
+            Some(())
+        );
+    }
 
     #[test]
     fn regional_edit_checks_the_expected_state_and_current_owner() {

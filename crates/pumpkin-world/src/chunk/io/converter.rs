@@ -488,6 +488,7 @@ mod tests {
             z: chunk_pos.y,
             block_ticks: ChunkTickScheduler::default(),
             fluid_ticks: ChunkTickScheduler::default(),
+            block_actor_revision: AtomicU64::new(0),
             pending_block_entities: Mutex::new(FxHashMap::default()),
             light_engine: Mutex::new(ChunkLight::default()),
             light_populated: AtomicBool::new(true),
