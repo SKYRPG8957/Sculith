@@ -17,6 +17,7 @@ use crate::{
         experience_orb::ExperienceOrbEntity,
         item::{ItemEntity, RegionalItemStep},
         living::supports_regional_travel,
+        projectile::regional::{regional_thrown_item, supports_regional_flight},
     },
     net::ClientPlatform,
     plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
@@ -38,12 +39,13 @@ bitflags::bitflags! {
         const PASSIVE_EFFECTS = 4;
         const GROWTH = 8;
         const AIR_TRAVEL = 16;
+        const THROWN_FLIGHT = 32;
     }
 }
 
 impl ActorWork {
     fn enabled(server: &Server) -> Self {
-        let mut kinds = Self::EXPERIENCE | Self::PASSIVE_EFFECTS;
+        let mut kinds = Self::EXPERIENCE | Self::PASSIVE_EFFECTS | Self::THROWN_FLIGHT;
         kinds.set(Self::ITEM, ItemEntity::timers_unobserved(server));
         kinds.set(
             Self::GROWTH | Self::AIR_TRAVEL,
@@ -57,6 +59,8 @@ impl ActorWork {
             Self::ITEM
         } else if base.entity_type == &EntityType::EXPERIENCE_ORB {
             Self::EXPERIENCE
+        } else if supports_regional_flight(base.entity_type) {
+            Self::THROWN_FLIGHT
         } else {
             let mut work = Self::empty();
             work.set(Self::PASSIVE_EFFECTS, base.regional_effects.load(Relaxed));
@@ -423,11 +427,12 @@ impl World {
         let native = server.plugin_manager.try_without_native_code();
         let pickups = native.is_some() && Self::regional_pickups_unobserved(server);
         let mob_growth = native.is_some() && !plugins_observe_entity_ticks(server);
-        let mob_packets = mob_growth
+        let actor_packets = native.is_some()
             && !server.plugin_manager.has_handlers::<PacketSentEvent>()
             && !server
                 .plugin_manager
                 .has_handlers::<BedrockConnectionPacketSentEvent>();
+        let mob_packets = mob_growth && actor_packets;
         let mut expired = Vec::new();
         let mut collected = FxHashSet::default();
         let mut java_recipients = FxHashMap::default();
@@ -502,6 +507,14 @@ impl World {
                 if orb.has_expired() {
                     expired.push(actor);
                 }
+            } else if actor_packets
+                && let Some(thrown) = regional_thrown_item(actor.as_ref())
+                && let Some(_checkpoint) = server.try_entity_save_guard()
+            {
+                thrown.try_regional_flight(self, chunk, owner, deadline, owns, || {
+                    thrown.queue_regional_java_velocity(self, &mut java_recipients);
+                    publish(&mut java_recipients);
+                });
             } else if native.is_some()
                 && let Some(living) = actor.get_living_entity()
             {
@@ -706,6 +719,79 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn thrown_flight_keeps_its_step_across_chunks_and_defers_a_hit() {
+        let folder = tempfile::tempdir().unwrap();
+        let server = test_server(folder.path()).await;
+        let world = server.worlds.load()[0].clone();
+        let west = Vector2::new(0, 0);
+        let east = Vector2::new(1, 0);
+        let extent: RegionChunks = Arc::from([west, east]);
+        let layout = Arc::new(RegionLayout::from_active(
+            [(west, 0), (east, 0)].into_iter().collect(),
+            std::iter::once((0, extent.clone())).collect(),
+        ));
+        *world.active_chunks.write().unwrap() = Arc::new([west, east].into_iter().collect());
+        world.publish_region_layout(&layout, false);
+        for chunk in [west, east] {
+            world
+                .level
+                .loaded_chunks
+                .insert(chunk, ChunkData::empty_sync(chunk.x, chunk.y));
+        }
+        let projectile = crate::entity::r#type::from_type(
+            &EntityType::SNOWBALL,
+            Vector3::new(14.0, 65.0, 8.5),
+            &world,
+            uuid::Uuid::new_v4(),
+        );
+        let base = projectile.get_entity();
+        base.velocity.store(Vector3::new(1.3, 0.0, 0.0));
+        world.add_entity_silent(projectile.clone());
+        let previous = world.regional_actors.read().unwrap().clone();
+        world.assign_regional_actors(&server, &[(&projectile, west)], true, &previous);
+        let thrown = regional_thrown_item(projectile.as_ref()).unwrap();
+        let first = TickDeadline {
+            at: Instant::now(),
+            period: Duration::from_millis(50),
+        };
+        let second = TickDeadline {
+            at: first.at + first.period,
+            ..first
+        };
+        let third = TickDeadline {
+            at: second.at + second.period,
+            ..second
+        };
+
+        world.advance_region_time(0, &extent, first);
+        assert_eq!(base.tick_count.load(Relaxed), 0);
+        thrown.tick_from_world(projectile.as_ref(), &server, Some(first));
+        assert_eq!(base.chunk_pos.load(), west);
+
+        world.advance_region_time(0, &extent, second);
+        let position = base.pos.load();
+        assert_eq!(base.chunk_pos.load(), east);
+        assert_eq!(base.tick_count.load(Relaxed), 2);
+        assert!((position.x - 16.56113).abs() < 1.0e-8);
+        thrown.tick_from_world(projectile.as_ref(), &server, Some(second));
+        assert_eq!(base.pos.load(), position);
+        assert_eq!(base.tick_count.load(Relaxed), 2);
+
+        world
+            .level
+            .loaded_chunks
+            .get(&east)
+            .unwrap()
+            .set_block_absolute_y(1, 64, 8, Block::STONE.default_state.id);
+        world.advance_region_time(0, &extent, third);
+        assert_eq!(base.pos.load(), position);
+        assert_eq!(base.tick_count.load(Relaxed), 2);
+        thrown.tick_from_world(projectile.as_ref(), &server, Some(third));
+        assert_eq!(base.tick_count.load(Relaxed), 3);
+        assert!(base.is_removed());
     }
 
     #[tokio::test]

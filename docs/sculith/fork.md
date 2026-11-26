@@ -369,6 +369,15 @@ and expiry because native plugins can write live actor fields. Merge and despawn
 handlers use the world clock, as do coordinated steps and sprints. Saved items
 retain their remaining timers and last position.
 
+Snowballs and eggs can continue a clear-air flight on their region after the
+launch and owner checks complete. The region pins the swept terrain, both
+entity indices and the current owner before advancing the projectile. It uses
+the same velocity calculation and tick clock as the world, including when the
+move crosses into another loaded chunk of the same region. Existing viewers
+receive the motion through their edition's tracking path. Terrain or actors
+near the sweep, hits, translated Java velocity and observed packets retain the
+world path. Saving and chunk retirement use the same entity snapshot guards.
+
 For a player who touches a drop, the world owner prepares the slots that can
 accept it in normal inventory order. A pickup observer receives the item key
 and the proposed amount before the inventory changes. After the callback the

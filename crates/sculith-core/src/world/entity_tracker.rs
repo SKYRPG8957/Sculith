@@ -1472,10 +1472,13 @@ impl TrackedEntity {
         let chunk = entity.chunk_pos.load();
         let section = self.last_section_pos.load();
         let crossed_chunk = (section.x, section.z) != (chunk.x, chunk.y);
-        if crossed_chunk && !entity.entity_type.mob {
+        if crossed_chunk
+            && !entity.entity_type.mob
+            && !crate::entity::projectile::regional::supports_regional_flight(entity.entity_type)
+        {
             return;
         }
-        // Full positions can reach already paired mob viewers before the world
+        // Full positions can reach already paired viewers before the world
         // refreshes the tracking section. The new chunk still has to be ready.
         let Some(viewers) = self.try_regional_pairings() else {
             return;

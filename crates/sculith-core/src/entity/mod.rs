@@ -367,6 +367,7 @@ pub trait EntityBase: Send + Sync + std::any::Any {
 
     /// Explicit removal of top-level keys, since a missing key on read keeps the field.
     fn remove_nbt(&self, removed: &[Box<str>]) {
+        let _motion = self.get_entity().hold_actor_motion();
         if let Some(owner) = self.get_projectile_owner() {
             owner.remove_nbt(removed);
         }
@@ -2044,7 +2045,8 @@ impl Entity {
             sync_velocity: AtomicBool::new(false),
             motion_access: (entity_type == &EntityType::ITEM
                 || entity_type == &EntityType::EXPERIENCE_ORB
-                || ageable::supports_regional_maturation(entity_type))
+                || ageable::supports_regional_maturation(entity_type)
+                || projectile::regional::supports_regional_flight(entity_type))
             .then(Box::default),
             regional_effects: AtomicBool::new(false),
             push_impulse: AtomicCell::new(Vector3::default()),

@@ -29,6 +29,7 @@ pub mod fishing_bobber;
 pub mod lingering_potion;
 pub mod llama_spit;
 pub mod owner;
+pub(crate) mod regional;
 pub mod shulker_bullet;
 pub mod small_fireball;
 pub mod snowball;
@@ -110,6 +111,8 @@ impl ThrownItemEntity {
         fn next_triangular(mode: f64, deviation: f64) -> f64 {
             deviation.mul_add(rand::random::<f64>() - rand::random::<f64>(), mode)
         }
+
+        let _motion = self.entity.hold_actor_motion();
         let velocity = Vector3::new(x, y, z)
             .normalize()
             .add_raw(
@@ -145,14 +148,7 @@ impl ThrownItemEntity {
             handle_first_tick_bubble_column(caller, &world);
         }
 
-        let mut velocity = entity.velocity.load();
-        velocity.y -= self.get_gravity();
-        let inertia = if entity.touching_water.load(Ordering::Relaxed) {
-            WATER_INERTIA
-        } else {
-            AIR_INERTIA
-        };
-        velocity = velocity * inertia;
+        let velocity = self.flight_velocity(entity.touching_water.load(Ordering::Relaxed));
         entity.velocity.store(velocity);
 
         let hit = get_hit_result_on_move_vector(
@@ -182,6 +178,12 @@ impl ThrownItemEntity {
         other.can_be_hit_by_projectile() && self.owner.can_hit(world, other.get_entity())
     }
 
+    fn flight_velocity(&self, in_water: bool) -> Vector3<f64> {
+        let mut velocity = self.entity.velocity.load();
+        velocity.y -= self.gravity;
+        velocity * if in_water { WATER_INERTIA } else { AIR_INERTIA }
+    }
+
     const fn get_entity(&self) -> &Entity {
         &self.entity
     }
@@ -189,9 +191,6 @@ impl ThrownItemEntity {
     #[allow(dead_code, clippy::unused_self)]
     const fn get_living_entity(&self) -> Option<&LivingEntity> {
         None
-    }
-    const fn get_gravity(&self) -> f64 {
-        self.gravity
     }
 }
 

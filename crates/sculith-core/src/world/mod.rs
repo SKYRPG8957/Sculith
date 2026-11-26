@@ -77,7 +77,7 @@ use crate::{
     command::client_suggestions,
     entity::{
         Entity, EntityBase, effect::bedrock_particles::BedrockEffectParticles, player::Player,
-        r#type::load_static_entity_from_nbt,
+        projectile::regional::regional_thrown_item, r#type::load_static_entity_from_nbt,
     },
     error::PumpkinError,
     net::{ClientPlatform, bedrock::BedrockClient, java::JavaClient},
@@ -2108,6 +2108,8 @@ impl World {
                     (entity.as_ref() as &dyn std::any::Any).downcast_ref::<ExperienceOrbEntity>()
             {
                 orb.tick_from_world(entity.as_ref(), server_ref, deadline);
+            } else if let Some(thrown) = regional_thrown_item(entity.as_ref()) {
+                thrown.tick_from_world(entity.as_ref(), server_ref, deadline);
             } else {
                 base.tick_count.fetch_add(1, Relaxed);
                 // Vanilla `rideTick`: a rider starts its tick without motion.

@@ -100,6 +100,7 @@ pub fn deflect(
     by_attack: bool,
     power: Vector3<f64>,
 ) -> bool {
+    let _motion = projectile.get_entity().hold_actor_motion();
     if !projectile.can_be_deflected() {
         return false;
     }

@@ -155,6 +155,10 @@ impl ProjectileOwner {
         self.check_left_owner(projectile);
     }
 
+    pub(super) fn ready_for_regional_flight(&self) -> bool {
+        self.has_been_shot.load(Relaxed) && self.left_owner.load(Relaxed)
+    }
+
     /// The entity that deflected the projectile last, which can't deflect it again in a row.
     #[must_use]
     pub fn last_deflected_by(&self) -> Option<i32> {
