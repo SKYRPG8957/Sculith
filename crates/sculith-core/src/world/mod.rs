@@ -286,6 +286,7 @@ pub struct World {
     pub min_y: i32,
     /// The world's weather, including rain and thunder levels.
     pub weather: std::sync::Mutex<Weather>,
+    weather_publications: weather::WeatherPublications,
     /// Block Behaviour
     pub block_registry: Arc<BlockRegistry>,
     pub server: Weak<Server>,
@@ -495,6 +496,7 @@ impl World {
             level_time: std::sync::Mutex::new(LevelTime::new()),
             dimension,
             weather: std::sync::Mutex::new(weather),
+            weather_publications: weather::WeatherPublications::default(),
             block_registry,
             sea_level: generation_settings.sea_level,
             min_y: i32::from(generation_settings.shape.min_y),
@@ -2399,17 +2401,11 @@ impl World {
             (level_time.is_night(), level_time.time_of_day)
         };
 
-        let (should_reset_weather, weather_cycle_enabled) = {
-            let mut weather = self
-                .weather
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            weather.tick_weather(self);
-            (
-                weather.raining || weather.thundering,
-                weather.cycle_active(self),
-            )
-        };
+        let (should_reset_weather, weather_cycle_enabled) = self.edit_weather(|weather| {
+            let cycle_active = weather.cycle_active(self);
+            let delta = weather.step(cycle_active);
+            ((weather.raining || weather.thundering, cycle_active), delta)
+        });
 
         if self.should_skip_night() && is_night {
             let level_time = {
@@ -2428,11 +2424,7 @@ impl World {
             }
 
             if weather_cycle_enabled && should_reset_weather {
-                let mut weather = self
-                    .weather
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                weather.reset_weather_cycle(self);
+                self.set_weather_parameters(0, 0, false, false);
             }
         }
     }
@@ -3545,14 +3537,43 @@ impl World {
             .raining
     }
 
-    pub(crate) fn sync_bedrock_weather(&self, client: &BedrockClient) {
-        let weather = self
-            .weather
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        // Packet callbacks can read this world's weather.
-        weather.sync_bedrock(client);
+    pub(crate) fn sync_bedrock_weather(&self, client: &Arc<BedrockClient>) {
+        self.weather_publications
+            .queue_sync(client.clone(), &self.weather);
+        self.weather_publications.publish(self);
+    }
+
+    fn edit_weather<T>(
+        &self,
+        change: impl FnOnce(&mut Weather) -> (T, weather::WeatherDelta),
+    ) -> T {
+        let (value, queued) = {
+            let mut weather = self
+                .weather
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let (value, delta) = change(&mut weather);
+            (value, self.weather_publications.queue_change(delta))
+        };
+        if queued {
+            self.weather_publications.publish(self);
+        }
+        value
+    }
+
+    pub(crate) fn set_weather_parameters(
+        &self,
+        clear_time: i32,
+        rain_time: i32,
+        raining: bool,
+        thundering: bool,
+    ) {
+        self.edit_weather(|weather| {
+            (
+                (),
+                weather.update_parameters(clear_time, rain_time, raining, thundering),
+            )
+        });
     }
 
     pub fn is_raining_at(&self, pos: &BlockPos) -> bool {
@@ -3582,14 +3603,14 @@ impl World {
                 return;
             }
         }
-        let mut weather = self
-            .weather
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if weather.raining != raining {
-            let thunder = weather.thundering;
-            weather.set_weather_parameters(self, 0, 0, raining, thunder);
-        }
+        self.edit_weather(|weather| {
+            let delta = if weather.raining == raining {
+                weather::WeatherDelta::default()
+            } else {
+                weather.update_parameters(0, 0, raining, weather.thundering)
+            };
+            ((), delta)
+        });
     }
 
     pub fn is_thundering(&self) -> bool {
@@ -3612,14 +3633,14 @@ impl World {
                 return;
             }
         }
-        let mut weather = self
-            .weather
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if weather.thundering != thundering {
-            let raining = weather.raining;
-            weather.set_weather_parameters(self, 0, 0, raining, thundering);
-        }
+        self.edit_weather(|weather| {
+            let delta = if weather.thundering == thundering {
+                weather::WeatherDelta::default()
+            } else {
+                weather.update_parameters(0, 0, weather.raining, thundering)
+            };
+            ((), delta)
+        });
     }
 
     /// Gets the y position of the first non air block from the top down

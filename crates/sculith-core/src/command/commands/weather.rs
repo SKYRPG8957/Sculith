@@ -33,55 +33,48 @@ impl CommandExecutor for WeatherExecutor {
         };
 
         let world = context.source.world();
-        let (message, return_val) = {
-            let mut weather = world
-                .weather
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (message, return_val) = match self.mode {
+            WeatherMode::Clear => {
+                let processed_duration =
+                    duration.unwrap_or_else(|| rand::random_range(12_000..=180_000));
 
-            match self.mode {
-                WeatherMode::Clear => {
-                    let processed_duration =
-                        duration.unwrap_or_else(|| rand::random_range(12_000..=180_000));
+                world.set_weather_parameters(processed_duration, 0, false, false);
+                (
+                    TextComponent::translate_cross(
+                        translation::java::COMMANDS_WEATHER_SET_CLEAR,
+                        translation::bedrock::COMMANDS_WEATHER_CLEAR,
+                        [],
+                    ),
+                    duration.unwrap_or(-1),
+                )
+            }
+            WeatherMode::Rain => {
+                let processed_duration =
+                    duration.unwrap_or_else(|| rand::random_range(12_000..=24_000));
 
-                    weather.set_weather_parameters(world, processed_duration, 0, false, false);
-                    (
-                        TextComponent::translate_cross(
-                            translation::java::COMMANDS_WEATHER_SET_CLEAR,
-                            translation::bedrock::COMMANDS_WEATHER_CLEAR,
-                            [],
-                        ),
-                        duration.unwrap_or(-1),
-                    )
-                }
-                WeatherMode::Rain => {
-                    let processed_duration =
-                        duration.unwrap_or_else(|| rand::random_range(12_000..=24_000));
+                world.set_weather_parameters(0, processed_duration, true, false);
+                (
+                    TextComponent::translate_cross(
+                        translation::java::COMMANDS_WEATHER_SET_RAIN,
+                        translation::bedrock::COMMANDS_WEATHER_RAIN,
+                        [],
+                    ),
+                    duration.unwrap_or(-1),
+                )
+            }
+            WeatherMode::Thunder => {
+                let processed_duration =
+                    duration.unwrap_or_else(|| rand::random_range(3600..=15_600));
 
-                    weather.set_weather_parameters(world, 0, processed_duration, true, false);
-                    (
-                        TextComponent::translate_cross(
-                            translation::java::COMMANDS_WEATHER_SET_RAIN,
-                            translation::bedrock::COMMANDS_WEATHER_RAIN,
-                            [],
-                        ),
-                        duration.unwrap_or(-1),
-                    )
-                }
-                WeatherMode::Thunder => {
-                    let processed_duration =
-                        duration.unwrap_or_else(|| rand::random_range(3600..=15_600));
-
-                    weather.set_weather_parameters(world, 0, processed_duration, true, true);
-                    (
-                        TextComponent::translate_cross(
-                            translation::java::COMMANDS_WEATHER_SET_THUNDER,
-                            translation::bedrock::COMMANDS_WEATHER_THUNDER,
-                            [],
-                        ),
-                        duration.unwrap_or(-1),
-                    )
-                }
+                world.set_weather_parameters(0, processed_duration, true, true);
+                (
+                    TextComponent::translate_cross(
+                        translation::java::COMMANDS_WEATHER_SET_THUNDER,
+                        translation::bedrock::COMMANDS_WEATHER_THUNDER,
+                        [],
+                    ),
+                    duration.unwrap_or(-1),
+                )
             }
         };
 
