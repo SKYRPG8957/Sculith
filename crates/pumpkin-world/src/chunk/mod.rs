@@ -19,7 +19,7 @@ pub mod format;
 pub mod io;
 pub mod palette;
 mod regional_fluid;
-pub use regional_fluid::{DownwardWaterTick, RegionalWaterTick};
+pub use regional_fluid::{DownwardWaterTick, RegionalFluid, RegionalFluidTick, RegionalWaterTick};
 
 // TODO
 pub const CHUNK_WIDTH: usize = BlockPalette::SIZE;
@@ -671,54 +671,57 @@ impl ChunkSections {
                 return Some(replaced_block_state_id);
             }
 
-            if (has_random_ticks(block_state_id) || has_random_ticking_fluid(block_state_id))
-                && random_tick_sections_guard.is_none()
-            {
-                let new_cache =
-                    vec![RandomTickSectionCache::default(); self.count].into_boxed_slice();
-                *random_tick_sections_guard = Some(new_cache);
-            }
-
-            if let Some(random_tick_sections) = random_tick_sections_guard.as_mut() {
-                let random_tick_cache = &mut random_tick_sections[section_index];
-                if has_random_ticks(replaced_block_state_id) {
-                    random_tick_cache.random_ticking_block_count = random_tick_cache
-                        .random_ticking_block_count
-                        .saturating_sub(1);
-                }
-                if has_random_ticking_fluid(replaced_block_state_id) {
-                    random_tick_cache.random_ticking_fluid_count = random_tick_cache
-                        .random_ticking_fluid_count
-                        .saturating_sub(1);
-                }
-
-                if has_random_ticks(block_state_id) {
-                    random_tick_cache.random_ticking_block_count = random_tick_cache
-                        .random_ticking_block_count
-                        .saturating_add(1);
-                }
-                if has_random_ticking_fluid(block_state_id) {
-                    random_tick_cache.random_ticking_fluid_count = random_tick_cache
-                        .random_ticking_fluid_count
-                        .saturating_add(1);
-                }
-
-                // Update the bitmask
-                let mut mask = self
-                    .randomly_ticking_mask
-                    .load(std::sync::atomic::Ordering::Relaxed);
-                if random_tick_cache.is_randomly_ticking() {
-                    mask |= 1 << section_index;
-                } else {
-                    mask &= !(1 << section_index);
-                }
-                self.randomly_ticking_mask
-                    .store(mask, std::sync::atomic::Ordering::Relaxed);
-            }
+            self.update_random_tick_cache(
+                &mut random_tick_sections_guard,
+                section_index,
+                replaced_block_state_id,
+                block_state_id,
+            );
 
             return Some(replaced_block_state_id);
         }
         None
+    }
+
+    fn update_random_tick_cache(
+        &self,
+        cache: &mut Option<Box<[RandomTickSectionCache]>>,
+        section: usize,
+        old: BlockStateId,
+        new: BlockStateId,
+    ) {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        let random_block = has_random_ticks(new);
+        let random_fluid = has_random_ticking_fluid(new);
+        if (random_block || random_fluid) && cache.is_none() {
+            *cache = Some(vec![RandomTickSectionCache::default(); self.count].into_boxed_slice());
+        }
+        let Some(cache) = cache else { return };
+        let entry = &mut cache[section];
+        if has_random_ticks(old) {
+            entry.random_ticking_block_count = entry.random_ticking_block_count.saturating_sub(1);
+        }
+        if has_random_ticking_fluid(old) {
+            entry.random_ticking_fluid_count = entry.random_ticking_fluid_count.saturating_sub(1);
+        }
+        if random_block {
+            entry.random_ticking_block_count = entry.random_ticking_block_count.saturating_add(1);
+        }
+        if random_fluid {
+            entry.random_ticking_fluid_count = entry.random_ticking_fluid_count.saturating_add(1);
+        }
+
+        let mask = self.randomly_ticking_mask.load(Relaxed);
+        let bit = 1 << section;
+        self.randomly_ticking_mask.store(
+            if entry.is_randomly_ticking() {
+                mask | bit
+            } else {
+                mask & !bit
+            },
+            Relaxed,
+        );
     }
 
     pub fn set_relative_biome(
@@ -1093,50 +1096,12 @@ impl ChunkData {
                 if replaced_id != new_state_id {
                     modified = true;
                     changed_columns.insert((rel_x, rel_z));
-                    if (has_random_ticks(new_state_id) || has_random_ticking_fluid(new_state_id))
-                        && random_tick_sections_guard.is_none()
-                    {
-                        let new_cache = vec![RandomTickSectionCache::default(); self.section.count]
-                            .into_boxed_slice();
-                        *random_tick_sections_guard = Some(new_cache);
-                    }
-
-                    if let Some(random_tick_sections) = random_tick_sections_guard.as_mut() {
-                        let random_tick_cache = &mut random_tick_sections[section_index];
-                        if has_random_ticks(replaced_id) {
-                            random_tick_cache.random_ticking_block_count = random_tick_cache
-                                .random_ticking_block_count
-                                .saturating_sub(1);
-                        }
-                        if has_random_ticking_fluid(replaced_id) {
-                            random_tick_cache.random_ticking_fluid_count = random_tick_cache
-                                .random_ticking_fluid_count
-                                .saturating_sub(1);
-                        }
-                        if has_random_ticks(new_state_id) {
-                            random_tick_cache.random_ticking_block_count = random_tick_cache
-                                .random_ticking_block_count
-                                .saturating_add(1);
-                        }
-                        if has_random_ticking_fluid(new_state_id) {
-                            random_tick_cache.random_ticking_fluid_count = random_tick_cache
-                                .random_ticking_fluid_count
-                                .saturating_add(1);
-                        }
-
-                        let mut mask = self
-                            .section
-                            .randomly_ticking_mask
-                            .load(std::sync::atomic::Ordering::Relaxed);
-                        if random_tick_cache.is_randomly_ticking() {
-                            mask |= 1 << section_index;
-                        } else {
-                            mask &= !(1 << section_index);
-                        }
-                        self.section
-                            .randomly_ticking_mask
-                            .store(mask, std::sync::atomic::Ordering::Relaxed);
-                    }
+                    self.section.update_random_tick_cache(
+                        &mut random_tick_sections_guard,
+                        section_index,
+                        replaced_id,
+                        new_state_id,
+                    );
                 }
                 results.push((rel_x, y, rel_z, replaced_id));
             }

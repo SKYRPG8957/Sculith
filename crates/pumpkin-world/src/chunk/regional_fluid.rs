@@ -13,8 +13,24 @@ pub enum DownwardWaterTick {
     Spread { state: BlockStateId, delay: u8 },
 }
 
-/// A water step whose changes and scheduled successors fit in one chunk.
-pub enum RegionalWaterTick {
+/// Fluids whose isolated movement can use the regional storage transaction.
+#[derive(Clone, Copy)]
+pub enum RegionalFluid {
+    Water,
+    Lava,
+}
+
+impl RegionalFluid {
+    const fn kind(self) -> (&'static Fluid, &'static Block) {
+        match self {
+            Self::Water => (&Fluid::FLOWING_WATER, &Block::WATER),
+            Self::Lava => (&Fluid::FLOWING_LAVA, &Block::LAVA),
+        }
+    }
+}
+
+/// A fluid step whose changes and scheduled successors fit in one chunk.
+pub enum RegionalFluidTick {
     Settled,
     SpreadDown {
         state: BlockStateId,
@@ -31,7 +47,9 @@ pub enum RegionalWaterTick {
     },
 }
 
-impl From<DownwardWaterTick> for RegionalWaterTick {
+pub type RegionalWaterTick = RegionalFluidTick;
+
+impl From<DownwardWaterTick> for RegionalFluidTick {
     fn from(step: DownwardWaterTick) -> Self {
         match step {
             DownwardWaterTick::Settled => Self::Settled,
@@ -41,8 +59,9 @@ impl From<DownwardWaterTick> for RegionalWaterTick {
 }
 
 impl ChunkData {
-    pub(crate) fn try_apply_regional_water_ticks(
+    pub(crate) fn try_apply_regional_fluid_ticks(
         &self,
+        fluid: RegionalFluid,
         limit: usize,
         read_neighbor: &dyn Fn(BlockPos) -> Option<BlockStateId>,
         can_commit: &dyn Fn() -> bool,
@@ -50,17 +69,17 @@ impl ChunkData {
             BlockPos,
             BlockStateId,
             &dyn Fn(BlockPos) -> Option<BlockStateId>,
-        ) -> Option<RegionalWaterTick>,
+        ) -> Option<RegionalFluidTick>,
         next_order: impl Fn() -> u64,
     ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
         let mut sections = self.section.block_sections.try_write_unmarked()?;
-        let water = &Fluid::FLOWING_WATER;
+        let (fluid, block) = fluid.kind();
         self.fluid_ticks
             .apply_and_schedule_ready_batch(limit, |ready| {
                 let mut changes = Vec::new();
                 let mut scheduled = Vec::new();
                 for tick in ready {
-                    if tick.value != water
+                    if tick.value != fluid
                         || (
                             tick.position.chunk_position().x,
                             tick.position.chunk_position().y,
@@ -82,17 +101,17 @@ impl ChunkData {
                     };
                     let at = tick.position;
                     let (directions, state, delay) = match evaluate(at, read(at)?, &read)? {
-                        RegionalWaterTick::Settled => continue,
-                        RegionalWaterTick::SpreadDown { state, delay } => {
+                        RegionalFluidTick::Settled => continue,
+                        RegionalFluidTick::SpreadDown { state, delay } => {
                             ([Some(BlockDirection::Down), None, None, None], state, delay)
                         }
-                        RegionalWaterTick::SpreadHorizontally { state, delay } => (
+                        RegionalFluidTick::SpreadHorizontally { state, delay } => (
                             BlockDirection::horizontal()
                                 .map(|side| Some(side.to_block_direction())),
                             state,
                             delay,
                         ),
-                        RegionalWaterTick::SpreadToSides {
+                        RegionalFluidTick::SpreadToSides {
                             sides,
                             state,
                             delay,
@@ -104,18 +123,16 @@ impl ChunkData {
                             delay,
                         ),
                     };
-                    if state.to_block() != &Block::WATER
+                    if state.to_block() != block
                         || state.to_state().collision_shapes
                             != BlockStateId::AIR.to_state().collision_shapes
-                        || has_random_ticks(state)
-                        || has_random_ticking_fluid(state)
                     {
                         return None;
                     }
                     let followup = |position| ScheduledTick {
                         delay,
                         position,
-                        value: water,
+                        value: fluid,
                         priority: TickPriority::Normal,
                     };
                     let targets = directions
@@ -142,7 +159,7 @@ impl ChunkData {
                 }
 
                 if !changes.is_empty() {
-                    self.write_water_changes(&mut sections, &changes)?;
+                    self.write_fluid_changes(&mut sections, &changes)?;
                 }
                 self.dirty.store(true, Ordering::Relaxed);
                 Some((
@@ -155,7 +172,7 @@ impl ChunkData {
             })
     }
 
-    fn write_water_changes(
+    fn write_fluid_changes(
         &self,
         sections: &mut [BlockPalette],
         changes: &[(BlockPos, BlockStateId, BlockStateId)],
@@ -167,8 +184,20 @@ impl ChunkData {
             Err(TryLockError::Poisoned(error)) => error.into_inner(),
             Err(TryLockError::WouldBlock) => return None,
         };
+        let mut random = if changes
+            .iter()
+            .any(|&(_, _, new)| has_random_ticks(new) || has_random_ticking_fluid(new))
+        {
+            Some(match self.section.random_tick_sections.try_write() {
+                Ok(guard) => guard,
+                Err(TryLockError::Poisoned(error)) => error.into_inner(),
+                Err(TryLockError::WouldBlock) => return None,
+            })
+        } else {
+            None
+        };
         self.section.block_sections.mark_changed();
-        for &(position, _, state) in changes {
+        for &(position, old, state) in changes {
             let relative = position.chunk_relative_position();
             let y = (relative.y - self.section.min_y) as usize;
             sections[y / BlockPalette::SIZE].set(
@@ -177,6 +206,10 @@ impl ChunkData {
                 relative.z as usize,
                 state,
             );
+            if let Some(cache) = &mut random {
+                self.section
+                    .update_random_tick_cache(cache, y / BlockPalette::SIZE, old, state);
+            }
             heightmap.update_for_block(relative, state.to_state(), self.section.min_y, |y| {
                 self.section
                     .read_block_from_palettes(sections, Vector3::new(relative.x, y, relative.z))
@@ -227,7 +260,8 @@ mod tests {
             order.get()
         };
         let apply = || {
-            chunk.try_apply_regional_water_ticks(
+            chunk.try_apply_regional_fluid_ticks(
+                RegionalFluid::Water,
                 4,
                 &|_| None,
                 &|| true,
@@ -283,6 +317,85 @@ mod tests {
     }
 
     #[test]
+    fn regional_lava_updates_the_random_tick_index_with_the_fall() {
+        let lava = &Fluid::FLOWING_LAVA;
+        let source = BlockPos::new(3, 64, 3);
+        let chunk = ChunkData::empty(0, 0);
+        let falling = FlowingWaterLikeFluidProperties {
+            level: Level::L8,
+            falling: Falling::True,
+        }
+        .to_state_id(lava);
+        chunk.set_block_absolute_y(3, 64, 3, Block::LAVA.default_state.id);
+        let below = ((63 - chunk.section.min_y) as usize) / BlockPalette::SIZE;
+        assert_eq!(
+            chunk.section.randomly_ticking_mask.load(Ordering::Relaxed) & (1 << below),
+            0
+        );
+        chunk.fluid_ticks.schedule_tick(
+            &ScheduledTick {
+                position: source,
+                value: lava,
+                delay: 0,
+                priority: TickPriority::Normal,
+            },
+            0,
+        );
+        chunk.fluid_ticks.advance();
+        let order = Cell::new(0);
+        let step = || {
+            chunk.try_apply_regional_fluid_ticks(
+                RegionalFluid::Lava,
+                4,
+                &|_| None,
+                &|| true,
+                |_, _, _| {
+                    Some(RegionalFluidTick::SpreadDown {
+                        state: falling,
+                        delay: 30,
+                    })
+                },
+                || {
+                    order.set(order.get() + 1);
+                    order.get()
+                },
+            )
+        };
+        let cache = chunk.section.random_tick_sections.read().unwrap();
+        assert_eq!(step(), None);
+        assert_eq!(
+            chunk.section.get_block_absolute_y(3, 63, 3),
+            Some(BlockStateId::AIR)
+        );
+        assert!(chunk.fluid_ticks.is_scheduled(source, lava));
+        assert_eq!(order.get(), 0);
+        drop(cache);
+        assert_eq!(
+            step(),
+            Some(vec![(source.down(), BlockStateId::AIR, falling)])
+        );
+        let cache = chunk.section.random_tick_sections.read().unwrap();
+        assert_eq!(cache.as_ref().unwrap()[below].random_ticking_fluid_count, 1);
+        assert_ne!(
+            chunk.section.randomly_ticking_mask.load(Ordering::Relaxed) & (1 << below),
+            0
+        );
+        drop(cache);
+        for bytes in [chunk.internal_to_bytes(), chunk.internal_to_pump_bytes()] {
+            let saved = ChunkData::internal_from_bytes(&bytes, source.chunk_position()).unwrap();
+            assert_eq!(saved.section.get_block_absolute_y(3, 63, 3), Some(falling));
+            assert_eq!(saved.fluid_ticks.to_vec().len(), 2);
+            assert!(
+                saved
+                    .fluid_ticks
+                    .to_vec()
+                    .iter()
+                    .all(|tick| tick.value == lava && tick.delay == 30)
+            );
+        }
+    }
+
+    #[test]
     fn saves_all_four_horizontal_placements_and_their_follow_up_ticks() {
         let water = &Fluid::FLOWING_WATER;
         let source = BlockPos::new(8, 64, 8);
@@ -310,7 +423,8 @@ mod tests {
         chunk.fluid_ticks.advance();
         let order = Cell::new(0);
         let changes = chunk
-            .try_apply_regional_water_ticks(
+            .try_apply_regional_fluid_ticks(
+                RegionalFluid::Water,
                 4,
                 &|_| None,
                 &|| true,

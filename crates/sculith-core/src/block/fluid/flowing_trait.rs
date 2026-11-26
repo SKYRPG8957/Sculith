@@ -1,13 +1,85 @@
 use super::{pathfinder, physics};
-use crate::world::World;
+use crate::{
+    plugin::api::events::block::{
+        block_from_to::BlockFromToEvent, block_physics::BlockPhysicsEvent,
+    },
+    world::World,
+};
 use pumpkin_data::{
-    Block, BlockDirection, BlockStateId,
+    Block, BlockDirection, BlockStateId, HorizontalFacingExt,
     fluid::{EnumVariants, Falling, Fluid, FluidProperties, Level},
 };
-use pumpkin_world::{tick::TickPriority, world::BlockFlags};
+use pumpkin_world::{chunk::RegionalFluidTick, tick::TickPriority, world::BlockFlags};
 use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 pub type FlowingFluidProperties = pumpkin_data::fluid::FlowingWaterLikeFluidProperties;
+
+pub(crate) fn regional_flow_events_unobserved(world: &World) -> bool {
+    !world.server.upgrade().is_some_and(|server| {
+        server.plugin_manager.has_handlers::<BlockFromToEvent>()
+            || server.plugin_manager.has_handlers::<BlockPhysicsEvent>()
+    })
+}
+
+pub(super) fn regional_fluid_neighbor_is_inert(world: &World, state: BlockStateId) -> bool {
+    let fluid = World::get_fluid_from_state_id(state);
+    fluid == &Fluid::EMPTY
+        && world.block_registry.get_pumpkin_fluid(fluid.id).is_none()
+        && world
+            .block_registry
+            .get_pumpkin_block(state.to_block_id())
+            .is_none()
+}
+
+pub(super) fn isolated_falling_plan(
+    world: &World,
+    position: BlockPos,
+    fluid: &Fluid,
+    falling: BlockStateId,
+    delay: u8,
+    read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+) -> Option<RegionalFluidTick> {
+    let below = position.down();
+    let destination = read(below)?;
+    let settled = destination == falling;
+    if !settled && destination != BlockStateId::AIR {
+        return None;
+    }
+
+    for side in BlockDirection::horizontal() {
+        let neighbor = read(position.offset(side.to_offset()))?;
+        if World::get_fluid_from_state_id(neighbor) != &Fluid::EMPTY {
+            return None;
+        }
+    }
+    let may_form_basalt = !settled
+        && fluid == &Fluid::FLOWING_LAVA
+        && read(below.down())?.to_block() == &Block::SOUL_SOIL;
+    for side in BlockDirection::all() {
+        if settled && matches!(side, BlockDirection::Up | BlockDirection::Down) {
+            continue;
+        }
+        let at = below.offset(side.to_offset());
+        if at == position {
+            continue;
+        }
+        let state = read(at)?;
+        if !regional_fluid_neighbor_is_inert(world, state)
+            || (may_form_basalt && state.to_block() == &Block::BLUE_ICE)
+        {
+            return None;
+        }
+    }
+
+    Some(if settled {
+        RegionalFluidTick::Settled
+    } else {
+        RegionalFluidTick::SpreadDown {
+            state: falling,
+            delay,
+        }
+    })
+}
 
 #[allow(async_fn_in_trait)]
 pub trait FlowingFluid: Send + Sync {
@@ -340,11 +412,7 @@ pub trait FlowingFluid: Send + Sync {
             }
         }
 
-        let mut event = crate::plugin::api::events::block::block_from_to::BlockFromToEvent::new(
-            *pos,
-            *pos,
-            &pumpkin_data::Block::WATER,
-        );
+        let mut event = BlockFromToEvent::new(*pos, *pos, state_id.to_block());
         if let Some(server) = world.server.upgrade() {
             server.plugin_manager.fire_blocking(&server, &mut event);
         }

@@ -1,10 +1,10 @@
-use super::{flowing_trait::FlowingFluid, pathfinder, physics};
+use super::{
+    flowing_trait::{FlowingFluid, isolated_falling_plan, regional_fluid_neighbor_is_inert},
+    pathfinder, physics,
+};
 use crate::{
     block::{FluidMetadata, fluid::FluidBehaviour},
     entity::EntityBase,
-    plugin::api::events::block::{
-        block_from_to::BlockFromToEvent, block_physics::BlockPhysicsEvent,
-    },
     world::World,
 };
 use pumpkin_data::{
@@ -26,13 +26,6 @@ impl FluidMetadata for FlowingWater {
 const WATER_FLOW_SPEED: u8 = 5;
 
 impl FlowingWater {
-    pub(crate) fn regional_events_unobserved(world: &World) -> bool {
-        !world.server.upgrade().is_some_and(|server| {
-            server.plugin_manager.has_handlers::<BlockFromToEvent>()
-                || server.plugin_manager.has_handlers::<BlockPhysicsEvent>()
-        })
-    }
-
     pub(crate) fn regional_water_tick(
         world: &World,
         position: BlockPos,
@@ -56,41 +49,7 @@ impl FlowingWater {
                 .then(|| Self::regional_horizontal_tick(world, position, &read))
                 .flatten();
         }
-        if destination != BlockStateId::AIR && destination != falling {
-            return None;
-        }
-
-        // Dry sides keep the ordinary tick on its vertical path, with no
-        // horizontal spreading or source formation.
-        for side in BlockDirection::horizontal() {
-            let neighbor = read(position.offset(side.to_offset()))?;
-            if World::get_fluid_from_state_id(neighbor) != &Fluid::EMPTY {
-                return None;
-            }
-        }
-        for side in BlockDirection::all() {
-            // A settled destination only needs the horizontal source check;
-            // it does not run placement or neighbor callbacks again.
-            if destination == falling && matches!(side, BlockDirection::Up | BlockDirection::Down) {
-                continue;
-            }
-            let at = below.offset(side.to_offset());
-            if at == position {
-                continue;
-            }
-            if !Self::regional_water_neighbor_is_inert(world, read(at)?) {
-                return None;
-            }
-        }
-
-        Some(if destination == falling {
-            RegionalWaterTick::Settled
-        } else {
-            RegionalWaterTick::SpreadDown {
-                state: falling,
-                delay: WATER_FLOW_SPEED,
-            }
-        })
+        isolated_falling_plan(world, position, water, falling, WATER_FLOW_SPEED, &read)
     }
 
     fn regional_horizontal_tick(
@@ -126,8 +85,7 @@ impl FlowingWater {
             }
             for nearby in BlockDirection::all() {
                 let neighbor = target.offset(nearby.to_offset());
-                if neighbor != position
-                    && !Self::regional_water_neighbor_is_inert(world, read(neighbor)?)
+                if neighbor != position && !regional_fluid_neighbor_is_inert(world, read(neighbor)?)
                 {
                     return None;
                 }
@@ -160,16 +118,6 @@ impl FlowingWater {
             state,
             delay: WATER_FLOW_SPEED,
         })
-    }
-
-    fn regional_water_neighbor_is_inert(world: &World, state: BlockStateId) -> bool {
-        let fluid = World::get_fluid_from_state_id(state);
-        fluid == &Fluid::EMPTY
-            && world.block_registry.get_pumpkin_fluid(fluid.id).is_none()
-            && world
-                .block_registry
-                .get_pumpkin_block(state.to_block_id())
-                .is_none()
     }
 }
 

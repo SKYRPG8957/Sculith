@@ -1,4 +1,4 @@
-use super::flowing_trait::FlowingFluid;
+use super::flowing_trait::{FlowingFluid, isolated_falling_plan};
 use crate::{
     block::{
         FluidMetadata,
@@ -15,7 +15,7 @@ use pumpkin_data::{
     tag::{self, Taggable},
     world::WorldEvent,
 };
-use pumpkin_world::{tick::TickPriority, world::BlockFlags};
+use pumpkin_world::{chunk::RegionalFluidTick, tick::TickPriority, world::BlockFlags};
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::{vector2::Vector2, vector3::Vector3};
 use std::sync::Arc;
@@ -30,6 +30,31 @@ impl FluidMetadata for FlowingLava {
 }
 
 impl FlowingLava {
+    pub(crate) fn regional_lava_tick(
+        world: &World,
+        position: BlockPos,
+        state: BlockStateId,
+        read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> Option<RegionalFluidTick> {
+        let read = |at| world.is_in_build_limit(at).then(|| read(at)).flatten();
+        let lava = &Fluid::FLOWING_LAVA;
+        let source = Self.get_source(lava, false).to_state_id(lava);
+        let falling = Self.get_flowing(lava, Level::L8, true).to_state_id(lava);
+        if state != source
+            && (state != falling || ![source, falling].contains(&read(position.up())?))
+        {
+            return None;
+        }
+        isolated_falling_plan(
+            world,
+            position,
+            lava,
+            falling,
+            Self.get_flow_speed(world),
+            &read,
+        )
+    }
+
     fn can_spread_fire_around(world: &Arc<World>, pos: &BlockPos) -> bool {
         let spread_radius = world
             .level_info

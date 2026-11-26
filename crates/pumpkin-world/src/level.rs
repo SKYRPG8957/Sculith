@@ -3,7 +3,8 @@ use crate::generation::generator::WorldGenerator;
 use crate::lighting::DynamicLightEngine;
 use crate::{
     chunk::{
-        ChunkData, ChunkEntityData, DownwardWaterTick, RegionalWaterTick,
+        ChunkData, ChunkEntityData, DownwardWaterTick, RegionalFluid, RegionalFluidTick,
+        RegionalWaterTick,
         io::{Dirtiable, FileIO, LoadedData, file_manager::LevelFileIO},
         palette::has_random_ticking_fluid,
     },
@@ -1657,14 +1658,35 @@ impl Level {
             &dyn Fn(BlockPos) -> Option<BlockStateId>,
         ) -> Option<RegionalWaterTick>,
     ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
+        self.apply_regional_fluid_plan(expected, RegionalFluid::Water, limit, owns, evaluate)
+    }
+
+    /// Applies a ready fluid batch using the region's pinned chunks and scheduled ticks.
+    pub fn apply_regional_fluid_plan(
+        &self,
+        expected: &SyncChunk,
+        fluid: RegionalFluid,
+        limit: usize,
+        owns: impl Fn(Vector2<i32>) -> bool,
+        evaluate: impl Fn(
+            BlockPos,
+            BlockStateId,
+            &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        ) -> Option<RegionalFluidTick>,
+    ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
         apply_regional_chunk_tick(
             &self.loaded_chunks,
             expected,
             owns,
             |chunk, read, can_commit| {
-                chunk.try_apply_regional_water_ticks(limit, read, can_commit, &evaluate, || {
-                    self.next_scheduled_tick_order()
-                })
+                chunk.try_apply_regional_fluid_ticks(
+                    fluid,
+                    limit,
+                    read,
+                    can_commit,
+                    &evaluate,
+                    || self.next_scheduled_tick_order(),
+                )
             },
         )
     }

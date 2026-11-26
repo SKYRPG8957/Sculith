@@ -196,6 +196,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockState};
 use pumpkin_inventory::screen_handler::ScreenHandlerFactory;
+use pumpkin_world::chunk::RegionalFluid;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rustc_hash::FxHashMap;
 use sculith_util::math::boundingbox::BoundingBox;
@@ -515,6 +516,7 @@ impl BlockActionResult {
 const NO_BEHAVIOUR: u16 = u16::MAX;
 const REGIONAL_WATER: u8 = 4;
 const REGIONAL_WATER_BLOCK: u8 = 8;
+const REGIONAL_LAVA: u8 = 16;
 
 #[derive(Clone, Copy)]
 pub(crate) enum RegionalBlockTick {
@@ -979,13 +981,32 @@ impl BlockRegistry {
         self.fluids.reserve(ids.len());
         for i in ids {
             self.fluids.insert(i, val.clone());
-            if i == Fluid::FLOWING_WATER.id {
-                if std::any::TypeId::of::<T>() == std::any::TypeId::of::<FlowingWater>() {
-                    self.regional_ticks |= REGIONAL_WATER;
-                } else {
-                    self.regional_ticks &= !REGIONAL_WATER;
-                }
+            let (flag, behaviour) = if i == Fluid::FLOWING_WATER.id {
+                (REGIONAL_WATER, std::any::TypeId::of::<FlowingWater>())
+            } else if i == Fluid::FLOWING_LAVA.id {
+                (REGIONAL_LAVA, std::any::TypeId::of::<FlowingLava>())
+            } else {
+                continue;
+            };
+            if std::any::TypeId::of::<T>() == behaviour {
+                self.regional_ticks |= flag;
+            } else {
+                self.regional_ticks &= !flag;
             }
+        }
+    }
+
+    pub(crate) fn regional_fluid(&self, fluid: &Fluid) -> Option<RegionalFluid> {
+        if fluid == &Fluid::FLOWING_WATER && self.uses_regional_water() {
+            Some(RegionalFluid::Water)
+        } else if fluid == &Fluid::FLOWING_LAVA
+            && self.regional_ticks & REGIONAL_LAVA != 0
+            && self.get_pumpkin_block(BlockId::AIR).is_none()
+            && self.get_pumpkin_block(BlockId::LAVA).is_none()
+        {
+            Some(RegionalFluid::Lava)
+        } else {
+            None
         }
     }
 
@@ -1728,7 +1749,10 @@ impl BlockRegistry {
 
 #[cfg(test)]
 mod regional_water_tests {
-    use super::{BlockBehaviour, BlockId, BlockMetadata, BubbleColumnBlock, default_registry};
+    use super::{
+        BlockBehaviour, BlockId, BlockMetadata, BubbleColumnBlock, FlowingLava, Fluid,
+        FluidBehaviour, FluidMetadata, RegionalFluid, default_registry,
+    };
     use std::sync::Arc;
 
     struct WaterOverride;
@@ -1752,6 +1776,34 @@ mod regional_water_tests {
 
         registry.register(BubbleColumnBlock);
         assert!(registry.uses_regional_water());
+    }
+
+    struct LavaOverride;
+
+    impl FluidBehaviour for LavaOverride {}
+
+    impl FluidMetadata for LavaOverride {
+        fn ids() -> Box<[u16]> {
+            [Fluid::FLOWING_LAVA.id].into()
+        }
+    }
+
+    #[test]
+    fn defers_lava_to_replacement_behaviour() {
+        let mut registry = default_registry();
+        let registry = Arc::get_mut(&mut registry).unwrap();
+        let lava = &Fluid::FLOWING_LAVA;
+        assert!(matches!(
+            registry.regional_fluid(lava),
+            Some(RegionalFluid::Lava)
+        ));
+        registry.register_fluid(LavaOverride);
+        assert!(registry.regional_fluid(lava).is_none());
+        registry.register_fluid(FlowingLava);
+        assert!(matches!(
+            registry.regional_fluid(lava),
+            Some(RegionalFluid::Lava)
+        ));
     }
 }
 

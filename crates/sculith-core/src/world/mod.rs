@@ -58,7 +58,9 @@ pub mod wandering_trader_spawner;
 
 use crate::block::RandomTickArgs;
 use crate::block::blocks::redstone::{redstone_lamp::RedstoneLamp, target_block::TargetBlock};
-use crate::block::fluid::water::FlowingWater;
+use crate::block::fluid::{
+    flowing_trait::regional_flow_events_unobserved, lava::FlowingLava, water::FlowingWater,
+};
 use crate::plugin::api::events::block::block_physics::BlockPhysicsEvent;
 use crate::world::chunker::is_within_chebyshev_distance;
 use crate::{
@@ -121,7 +123,7 @@ use pumpkin_world::{
     chunk::{io::Dirtiable, palette::bedrock_water_state},
 };
 use pumpkin_world::{
-    chunk::{ChunkData, ChunkEntityData},
+    chunk::{ChunkData, ChunkEntityData, RegionalFluid},
     chunk_system::ChunkPos,
     data::checkpoint::EntityChunkImage,
     world::BlockAccessor,
@@ -2661,10 +2663,12 @@ impl World {
                 }
                 let regional_block = block
                     .is_some_and(|block| self.block_registry.regional_tick(block.id).is_some());
-                let regional_water = block.is_none()
-                    && fluid == Some(&Fluid::FLOWING_WATER)
-                    && self.block_registry.uses_regional_water();
-                if !regional_block && !regional_water {
+                let regional_fluid = if block.is_none() {
+                    fluid.and_then(|fluid| self.block_registry.regional_fluid(fluid))
+                } else {
+                    None
+                };
+                if !regional_block && regional_fluid.is_none() {
                     continue;
                 }
                 let expected = chunk.value().clone();
@@ -2681,15 +2685,23 @@ impl World {
                             self.regional_block_replacement(block.id, position, state, read)
                         },
                     )
-                } else {
-                    self.level.apply_regional_water_plan(
+                } else if let Some(fluid) = regional_fluid {
+                    self.level.apply_regional_fluid_plan(
                         &expected,
+                        fluid,
                         CHUNK_TICK_BATCH_SIZE,
-                        |pos| owns(pos) && FlowingWater::regional_events_unobserved(self),
-                        |position, state, read| {
-                            FlowingWater::regional_water_tick(self, position, state, read)
+                        |pos| owns(pos) && regional_flow_events_unobserved(self),
+                        |position, state, read| match fluid {
+                            RegionalFluid::Water => {
+                                FlowingWater::regional_water_tick(self, position, state, read)
+                            }
+                            RegionalFluid::Lava => {
+                                FlowingLava::regional_lava_tick(self, position, state, read)
+                            }
                         },
                     )
+                } else {
+                    continue;
                 };
                 let Some(changes) = applied else {
                     continue;
