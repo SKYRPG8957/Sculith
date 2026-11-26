@@ -244,7 +244,7 @@ mod tests {
     use super::*;
     use crate::entity::{Entity, ai::test_support::world};
     use pumpkin_data::entity::EntityType;
-    use pumpkin_world::chunk::{
+    use sculith_world::chunk::{
         ChunkData,
         io::{Dirtiable, FileIO},
     };

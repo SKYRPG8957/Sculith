@@ -9,7 +9,7 @@ use xxhash_rust::xxh64::xxh64;
 
 use pumpkin_data::dimension::Dimension;
 use pumpkin_nbt::{Nbt, compound::NbtCompound};
-use pumpkin_world::chunk::{
+use sculith_world::chunk::{
     BedrockSectionBlobs, ChunkData,
     palette::{BeNetworkSerialization, NetworkPalette},
 };
@@ -304,7 +304,7 @@ mod tests {
 
     use pumpkin_data::{Block, BlockState};
     use pumpkin_nbt::{Nbt, compound::NbtCompound, deserializer::NbtReadHelperBedrock};
-    use pumpkin_world::chunk::{ChunkData, ChunkSections};
+    use sculith_world::chunk::{ChunkData, ChunkSections};
 
     use super::{CLevelChunk, NETHER_SECTIONS, VERSION};
     use sculith_protocol::{

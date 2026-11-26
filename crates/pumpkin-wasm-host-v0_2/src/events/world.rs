@@ -71,20 +71,20 @@ impl ToFromWasmEvent for ChunkLoad {
         match event {
             Event::ChunkLoadEvent(data) => {
                 let world = consume_world(state, &data.target_world);
-                let chunk_data = pumpkin_world::chunk::ChunkData {
-                    section: pumpkin_world::chunk::ChunkSections::new(24, -64),
+                let chunk_data = sculith_world::chunk::ChunkData {
+                    section: sculith_world::chunk::ChunkSections::new(24, -64),
                     heightmap: std::sync::Mutex::new(
-                        pumpkin_world::chunk::ChunkHeightmaps::default(),
+                        sculith_world::chunk::ChunkHeightmaps::default(),
                     ),
                     x: data.chunk_x,
                     z: data.chunk_z,
-                    block_ticks: pumpkin_world::tick::scheduler::ChunkTickScheduler::default(),
-                    fluid_ticks: pumpkin_world::tick::scheduler::ChunkTickScheduler::default(),
+                    block_ticks: sculith_world::tick::scheduler::ChunkTickScheduler::default(),
+                    fluid_ticks: sculith_world::tick::scheduler::ChunkTickScheduler::default(),
                     block_actor_revision: std::sync::atomic::AtomicU64::new(0),
                     pending_block_entities: std::sync::Mutex::new(
                         std::collections::HashMap::default(),
                     ),
-                    light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
+                    light_engine: std::sync::Mutex::new(sculith_world::chunk::ChunkLight::default()),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,
@@ -125,20 +125,20 @@ impl ToFromWasmEvent for ChunkSave {
         match event {
             Event::ChunkSaveEvent(data) => {
                 let world = consume_world(state, &data.target_world);
-                let chunk_data = pumpkin_world::chunk::ChunkData {
-                    section: pumpkin_world::chunk::ChunkSections::new(24, -64),
+                let chunk_data = sculith_world::chunk::ChunkData {
+                    section: sculith_world::chunk::ChunkSections::new(24, -64),
                     heightmap: std::sync::Mutex::new(
-                        pumpkin_world::chunk::ChunkHeightmaps::default(),
+                        sculith_world::chunk::ChunkHeightmaps::default(),
                     ),
                     x: data.chunk_x,
                     z: data.chunk_z,
-                    block_ticks: pumpkin_world::tick::scheduler::ChunkTickScheduler::default(),
-                    fluid_ticks: pumpkin_world::tick::scheduler::ChunkTickScheduler::default(),
+                    block_ticks: sculith_world::tick::scheduler::ChunkTickScheduler::default(),
+                    fluid_ticks: sculith_world::tick::scheduler::ChunkTickScheduler::default(),
                     block_actor_revision: std::sync::atomic::AtomicU64::new(0),
                     pending_block_entities: std::sync::Mutex::new(
                         std::collections::HashMap::default(),
                     ),
-                    light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
+                    light_engine: std::sync::Mutex::new(sculith_world::chunk::ChunkLight::default()),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,
@@ -175,20 +175,20 @@ impl ToFromWasmEvent for ChunkSend {
         match event {
             Event::ChunkSendEvent(data) => {
                 let world = consume_world(state, &data.target_world);
-                let chunk_data = pumpkin_world::chunk::ChunkData {
-                    section: pumpkin_world::chunk::ChunkSections::new(24, -64),
+                let chunk_data = sculith_world::chunk::ChunkData {
+                    section: sculith_world::chunk::ChunkSections::new(24, -64),
                     heightmap: std::sync::Mutex::new(
-                        pumpkin_world::chunk::ChunkHeightmaps::default(),
+                        sculith_world::chunk::ChunkHeightmaps::default(),
                     ),
                     x: data.chunk_x,
                     z: data.chunk_z,
-                    block_ticks: pumpkin_world::tick::scheduler::ChunkTickScheduler::default(),
-                    fluid_ticks: pumpkin_world::tick::scheduler::ChunkTickScheduler::default(),
+                    block_ticks: sculith_world::tick::scheduler::ChunkTickScheduler::default(),
+                    fluid_ticks: sculith_world::tick::scheduler::ChunkTickScheduler::default(),
                     block_actor_revision: std::sync::atomic::AtomicU64::new(0),
                     pending_block_entities: std::sync::Mutex::new(
                         std::collections::HashMap::default(),
                     ),
-                    light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
+                    light_engine: std::sync::Mutex::new(sculith_world::chunk::ChunkLight::default()),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,

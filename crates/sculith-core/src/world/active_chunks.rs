@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn scheduled_chunks_follow_active_region_merges_and_splits() {
-        use pumpkin_world::level::ScheduledTickStep::Advance;
+        use sculith_world::level::ScheduledTickStep::Advance;
 
         let mut tracker = ActiveChunkTracker::default();
         let mut active = FxHashSet::default();

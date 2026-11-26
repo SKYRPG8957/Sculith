@@ -1,5 +1,5 @@
 use pumpkin_data::{Block, block_properties::is_air};
-use pumpkin_world::chunk::ChunkData;
+use sculith_world::chunk::ChunkData;
 
 pub(super) const MATERIALS: [&str; 6] = ["earth", "green", "sand", "snow", "stone", "water"];
 

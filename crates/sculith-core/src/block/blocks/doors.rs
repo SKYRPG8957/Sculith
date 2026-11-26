@@ -9,10 +9,10 @@ use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockState, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::world::BlockAccessor;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::world::BlockAccessor;
+use sculith_world::world::BlockFlags;
 use std::sync::Arc;
 
 use crate::block::BlockBehaviour;

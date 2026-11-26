@@ -1,10 +1,10 @@
 use pumpkin_data::game_event::GameEvent;
-use pumpkin_world::generation::section_coords::section_to_block;
 use sculith_util::math::{
     boundingbox::BoundingBox,
     position::{BlockPos, chunk_section_from_pos},
     vector3::Vector3,
 };
+use sculith_world::generation::section_coords::section_to_block;
 
 use super::{World, entity_islands};
 use crate::entity::EntityBase;

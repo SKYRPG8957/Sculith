@@ -6,16 +6,16 @@ use std::sync::{
 
 use pumpkin_data::block_properties::{JigsawLikeProperties, Orientation};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::generation::structure::structures::{
+use sculith_util::{
+    math::position::BlockPos,
+    random::{RandomGenerator, xoroshiro128::Xoroshiro},
+};
+use sculith_world::generation::structure::structures::{
     StructureGeneratorContext, StructurePosition,
     jigsaw::{JigsawJointType, PoolElementStructurePiece},
     jigsaw_placement::{
         DimensionPadding, JigsawPlacement, LiquidSettings, MaxDistance, PoolAliasLookup,
     },
-};
-use sculith_util::{
-    math::position::BlockPos,
-    random::{RandomGenerator, xoroshiro128::Xoroshiro},
 };
 
 use crate::block::blocks::jigsaw::JigsawBlock;
@@ -136,7 +136,7 @@ impl JigsawBlockEntity {
         let mut placer = crate::world::block_placer::WorldBlockPlacer::new(world);
         for piece in &mut pieces {
             if let Some(pool_piece) = piece.as_any().downcast_ref::<PoolElementStructurePiece>() {
-                pumpkin_world::generation::structure::structures::jigsaw::place_pool_element_templates(
+                sculith_world::generation::structure::structures::jigsaw::place_pool_element_templates(
                     pool_piece,
                     &mut placer,
                     None,

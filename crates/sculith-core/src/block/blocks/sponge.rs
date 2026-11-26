@@ -7,8 +7,8 @@ use crate::block::{BlockBehaviour, OnNeighborUpdateArgs, PlacedArgs};
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 
 #[pumpkin_block("minecraft:sponge")]
 pub struct SpongeBlock;

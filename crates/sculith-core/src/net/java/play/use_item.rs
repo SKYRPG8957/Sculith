@@ -40,14 +40,14 @@ impl JavaClient {
 
         let item_id = item_in_hand.item.id;
 
-        let hit = player.world().clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = player.world().clip(&sculith_world::clip::ClipContext::new(
             player.eye_position(),
             player.eye_position().add(
                 &(Vector3::rotation_vector(f64::from(use_item.pitch), f64::from(use_item.yaw))
                     * 4.5),
             ),
-            pumpkin_world::clip::ClipBlock::Outline,
-            pumpkin_world::clip::ClipFluid::None,
+            sculith_world::clip::ClipBlock::Outline,
+            sculith_world::clip::ClipFluid::None,
         ));
 
         let mut event = if hit.is_miss {

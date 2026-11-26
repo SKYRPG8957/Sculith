@@ -9,8 +9,8 @@ use pumpkin_data::{
     Block, BlockDirection, BlockStateId,
     fluid::{EnumVariants, Falling, Fluid, FluidProperties, Level},
 };
-use pumpkin_world::{chunk::RegionalFluidTick, tick::TickPriority, world::BlockFlags};
 use sculith_util::math::position::BlockPos;
+use sculith_world::{chunk::RegionalFluidTick, tick::TickPriority, world::BlockFlags};
 use std::sync::Arc;
 pub type FlowingFluidProperties = pumpkin_data::fluid::FlowingWaterLikeFluidProperties;
 

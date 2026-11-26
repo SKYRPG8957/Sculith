@@ -7,12 +7,12 @@ use std::sync::{
 use pumpkin_data::BlockId;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::world::WorldEvent;
-use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use sculith_util::Difficulty;
 use sculith_util::math::boundingbox::BoundingBox;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::world::BlockFlags;
 
 use crate::block::blocks::fire::FireBlockBase;
 use crate::entity::player::Player;

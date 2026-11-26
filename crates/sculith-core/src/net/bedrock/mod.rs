@@ -101,10 +101,10 @@ use crate::{
     },
 };
 use arc_swap::{ArcSwap, ArcSwapOption};
-use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, level::SyncChunk};
 use sculith_protocol::{bedrock::server::login::ClientData, codec::var_uint::VarUInt};
 use sculith_util::math::vector2::Vector2;
 use sculith_util::version::BedrockMinecraftVersion;
+use sculith_world::{CURRENT_BEDROCK_MC_PROTOCOL, level::SyncChunk};
 pub use versions::BedrockVersions;
 
 pub struct OutgoingPacket {
@@ -2053,7 +2053,7 @@ mod tests {
         );
         let folder = tempfile::tempdir()?;
         let world = crate::entity::ai::test_support::world(&folder);
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         let chunks = [chunk.clone()];
         let workers = rayon::ThreadPoolBuilder::new().num_threads(1).build()?;
         let (release, blocked) = mpsc::channel();
@@ -2271,7 +2271,7 @@ mod tests {
         let folder = tempfile::tempdir()?;
         let world = crate::entity::ai::test_support::world(&folder);
         let position = Vector2::new(0, 0);
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         world.level.loaded_chunks.insert(position, chunk.clone());
         let batch = PreparedBatch {
             chunks: vec![PreparedChunk {

@@ -1,12 +1,12 @@
 use super::BlockEntity;
 use pumpkin_data::Block;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector2::Vector2;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::random::xoroshiro128::Xoroshiro;
 use sculith_util::random::{RandomGenerator, RandomImpl};
+use sculith_world::world::BlockFlags;
 use std::sync::{Arc, Mutex};
 
 use crate::world::World;
@@ -343,10 +343,10 @@ impl EndGatewayBlockEntity {
                     .read()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 sections.iter().all(|s| match s {
-                    pumpkin_world::chunk::palette::BlockPalette::Homogeneous(id) => {
+                    sculith_world::chunk::palette::BlockPalette::Homogeneous(id) => {
                         pumpkin_data::block_properties::is_air(*id)
                     }
-                    pumpkin_world::chunk::palette::BlockPalette::Heterogeneous(_) => false,
+                    sculith_world::chunk::palette::BlockPalette::Heterogeneous(_) => false,
                 })
             })
             .unwrap_or(true)

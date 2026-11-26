@@ -3,11 +3,11 @@ use std::sync::Arc;
 use pumpkin_data::block_properties::{NetherWartLikeProperties, blocks_movement};
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockState, BlockStateId, Enchantment};
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use sculith_util::GameMode;
 use sculith_util::math::position::BlockPos;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 use crate::block::{
     BlockBehaviour, BlockMetadata, BrokenArgs, OnNeighborUpdateArgs, OnScheduledTickArgs,

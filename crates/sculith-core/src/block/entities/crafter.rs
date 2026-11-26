@@ -8,8 +8,8 @@ use pumpkin_inventory::{
 };
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 use std::any::Any;
 use std::array::from_fn;
 use std::sync::Arc;

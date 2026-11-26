@@ -4,8 +4,8 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection, BlockState};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockAccessor;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockAccessor;
 
 #[pumpkin_block("minecraft:cactus_flower")]
 pub struct CactusFlowerBlock;
@@ -30,7 +30,7 @@ impl BlockBehaviour for CactusFlowerBlock {
 impl PlantBlockBase for CactusFlowerBlock {
     fn can_place_at(
         &self,
-        block_accessor: &dyn pumpkin_world::world::BlockAccessor,
+        block_accessor: &dyn sculith_world::world::BlockAccessor,
         pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         let support_pos = pos.down();

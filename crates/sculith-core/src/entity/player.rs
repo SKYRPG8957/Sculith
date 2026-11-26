@@ -40,7 +40,6 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_inventory::Inventory;
 use pumpkin_inventory::player::ender_chest_inventory::EnderChestInventory;
-use pumpkin_world::chunk::ChunkData;
 use sculith_config::PVPConfig;
 use sculith_protocol::RawPacket;
 use sculith_protocol::bedrock::client::play_status::CPlayStatus;
@@ -67,6 +66,7 @@ use sculith_protocol::bedrock::server::{
 use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use sculith_util::translation::Locale;
 use sculith_util::version::JavaMinecraftVersion;
+use sculith_world::chunk::ChunkData;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -289,9 +289,6 @@ use pumpkin_inventory::sync_handler::SyncHandler;
 use pumpkin_macros::send_cancellable;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_world::biome;
-use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
-use pumpkin_world::world::BlockFlags;
 use sculith_protocol::IdOr;
 use sculith_protocol::SoundEvent;
 use sculith_protocol::bedrock::client::container_open::CContainerOpen;
@@ -326,6 +323,9 @@ use sculith_util::text::click::ClickEvent;
 use sculith_util::text::color::NamedColor;
 use sculith_util::text::hover::HoverEvent;
 use sculith_util::{Difficulty, GameMode, Hand};
+use sculith_world::biome;
+use sculith_world::cylindrical_chunk_iterator::Cylindrical;
+use sculith_world::world::BlockFlags;
 
 use crate::block;
 use crate::block::blocks::straw_bed::StrawBedBlock;
@@ -1741,7 +1741,7 @@ impl Player {
             .add_passenger(vehicle.clone(), self.clone());
     }
 
-    pub fn clean_up_chunk_tickets(&self, level: &Arc<pumpkin_world::level::Level>) {
+    pub fn clean_up_chunk_tickets(&self, level: &Arc<sculith_world::level::Level>) {
         let mut held = self
             .held_chunk_tickets
             .lock()
@@ -1767,7 +1767,7 @@ impl Player {
 
     pub fn change_world_chunks(
         &self,
-        old_level: &Arc<pumpkin_world::level::Level>,
+        old_level: &Arc<sculith_world::level::Level>,
         new_world: &Arc<crate::world::World>,
     ) {
         if let Some(client) = self.client.bedrock() {
@@ -4978,11 +4978,11 @@ impl Player {
             pitch_rad.cos() * yaw_rad.sin(),
         );
         let end_pos = eye_pos + dir * max_distance;
-        let hit = world.clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = world.clip(&sculith_world::clip::ClipContext::new(
             eye_pos,
             end_pos,
-            pumpkin_world::clip::ClipBlock::Outline,
-            pumpkin_world::clip::ClipFluid::None,
+            sculith_world::clip::ClipBlock::Outline,
+            sculith_world::clip::ClipFluid::None,
         ));
         if hit.is_miss {
             None
@@ -10038,7 +10038,7 @@ impl InventoryPlayer for Player {
                         world.set_block_state(
                             &pos,
                             new_state,
-                            pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                            sculith_world::world::BlockFlags::NOTIFY_ALL,
                         );
                         world.sync_world_event(
                             pumpkin_data::world::WorldEvent::SoundAnvilUsed,
@@ -10049,7 +10049,7 @@ impl InventoryPlayer for Player {
                         world.set_block_state(
                             &pos,
                             pumpkin_data::BlockStateId::AIR,
-                            pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                            sculith_world::world::BlockFlags::NOTIFY_ALL,
                         );
                         world.sync_world_event(
                             pumpkin_data::world::WorldEvent::SoundAnvilBroken,

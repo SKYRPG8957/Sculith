@@ -10,7 +10,7 @@ use pumpkin_data::{BlockDirection, BlockStateId};
 use pumpkin_macros::pumpkin_block;
 use sculith_util::{GameMode, PermissionLvl};
 
-use pumpkin_world::generation::structure::structures::jigsaw::JigsawJointType;
+use sculith_world::generation::structure::structures::jigsaw::JigsawJointType;
 
 #[pumpkin_block("minecraft:jigsaw")]
 pub struct JigsawBlock;

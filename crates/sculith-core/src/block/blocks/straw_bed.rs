@@ -6,10 +6,10 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::translation;
 use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::GameMode;
 use sculith_util::math::position::BlockPos;
 use sculith_util::text::TextComponent;
+use sculith_world::world::BlockFlags;
 
 use crate::block::registry::BlockActionResult;
 use crate::block::{

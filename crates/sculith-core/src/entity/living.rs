@@ -6720,7 +6720,7 @@ mod ai_step_tests {
         let world = world(&folder);
         world.level.loaded_chunks.insert(
             sculith_util::math::vector2::Vector2::new(0, 0),
-            pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
+            sculith_world::chunk::ChunkData::empty_sync(0, 0),
         );
         let bat = crate::entity::mob::bat::BatEntity::new(Entity::new(
             world.clone(),
@@ -6769,8 +6769,8 @@ mod ai_step_tests {
     #[tokio::test]
     async fn strafe_checks_live_collision_before_publishing_original_inputs() -> TestResult {
         use pumpkin_data::Block;
-        use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
         use sculith_util::math::vector2::Vector2;
+        use sculith_world::{chunk::ChunkData, world::BlockFlags};
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
         world
@@ -6872,13 +6872,13 @@ mod ai_step_tests {
         let velocity = living.entity.velocity.load();
         world.level.loaded_chunks.insert(
             sculith_util::math::vector2::Vector2::new(0, 0),
-            pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
+            sculith_world::chunk::ChunkData::empty_sync(0, 0),
         );
         world.set_block_state(
             &BlockPos::new(0, 64, 1),
             pumpkin_data::Block::STONE.default_state.id,
-            pumpkin_world::world::BlockFlags::SKIP_BLOCK_ADDED_CALLBACK
-                | pumpkin_world::world::BlockFlags::UPDATE_KNOWN_SHAPE,
+            sculith_world::world::BlockFlags::SKIP_BLOCK_ADDED_CALLBACK
+                | sculith_world::world::BlockFlags::UPDATE_KNOWN_SHAPE,
         );
         living.entity.set_pos(Vector3::new(0.5, 64.0, 0.5));
         living.entity.velocity.store(Vector3::new(0.0, 0.0, 1.0));
@@ -7026,9 +7026,9 @@ mod ai_step_tests {
 mod player_wall_tests {
     use pumpkin_data::attributes::Attributes;
     use pumpkin_data::entity::EntityType;
-    use pumpkin_world::world::BlockFlags;
     use sculith_util::math::position::BlockPos;
     use sculith_util::math::vector3::Vector3;
+    use sculith_world::world::BlockFlags;
 
     use super::LivingEntity;
     use crate::entity::Entity;
@@ -7042,7 +7042,7 @@ mod player_wall_tests {
         let world = world(&folder);
         world.level.loaded_chunks.insert(
             sculith_util::math::vector2::Vector2::new(0, 0),
-            pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
+            sculith_world::chunk::ChunkData::empty_sync(0, 0),
         );
         world.set_block_state(
             &BlockPos::new(1, 64, 0),

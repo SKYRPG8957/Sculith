@@ -6,10 +6,10 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_world::world::BlockFlags;
 use sculith_protocol::bedrock::client::CUpdateBlock;
 use sculith_protocol::java::client::play::CBlockUpdate;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 use std::sync::{Arc, atomic::Ordering};
 
 use crate::{

@@ -5,7 +5,7 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use bytes::Bytes;
-use pumpkin_world::level::SyncChunk;
+use sculith_world::level::SyncChunk;
 use std::{
     net::SocketAddr,
     num::NonZero,

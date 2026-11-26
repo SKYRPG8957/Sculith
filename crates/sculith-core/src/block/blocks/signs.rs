@@ -17,7 +17,6 @@ use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_nbt::serializer::{NbtWriteHelper, NbtWriteHelperJava};
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_world::tick::TickPriority;
 use sculith_protocol::IdOr;
 use sculith_protocol::java::client::dialog::DialogNBT;
 use sculith_util::math::position::BlockPos;
@@ -26,6 +25,7 @@ use sculith_util::math::vector3::Vector3;
 use sculith_util::text::TextComponent;
 use sculith_util::text::click::{ClickEvent, ClickPayload};
 use sculith_util::text::color::NamedColor;
+use sculith_world::tick::TickPriority;
 use tracing::debug;
 use uuid::Uuid;
 

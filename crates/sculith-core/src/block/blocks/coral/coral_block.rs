@@ -3,7 +3,7 @@ use crate::block::{
     blocks::coral::{is_dead_coral, scan_for_water, try_schedule_die_tick},
 };
 use pumpkin_data::{Block, BlockId, BlockStateId, tag};
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 pub struct CoralBlock;
 impl BlockMetadata for CoralBlock {
     fn ids() -> Box<[BlockId]> {

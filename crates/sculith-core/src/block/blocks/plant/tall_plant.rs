@@ -6,7 +6,7 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{DoubleBlockHalf, TallSeagrassLikeProperties};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 use crate::block::{
     BlockBehaviour, BlockMetadata, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,

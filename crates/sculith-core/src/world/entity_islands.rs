@@ -13,8 +13,8 @@ use sculith_util::math::{
     vector3::Vector3,
 };
 
-use pumpkin_world::chunk::CHUNK_WIDTH;
 use sculith_config::world::EntityIslandsConfig;
+use sculith_world::chunk::CHUNK_WIDTH;
 
 use crate::block::blocks::redstone::SIGNAL_MAX;
 use crate::entity::{DelayedLeash, EntityBase, PUSH_STRENGTH, tnt::TNTEntity};
@@ -1561,7 +1561,7 @@ mod tests {
         let world = crate::entity::ai::test_support::world(&folder);
         world.level.loaded_chunks.insert(
             Vector2::new(0, 0),
-            pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
+            sculith_world::chunk::ChunkData::empty_sync(0, 0),
         );
         let mut reaches = vec![node(0, 1.0, 0.0).1, node(1, 32.0, 0.0).1];
         reaches[0].block_writes = Some(reaches[0].body);
@@ -1624,7 +1624,7 @@ mod tests {
         for x in 0..=4 {
             world.level.loaded_chunks.insert(
                 Vector2::new(x, 0),
-                pumpkin_world::chunk::ChunkData::empty_sync(x, 0),
+                sculith_world::chunk::ChunkData::empty_sync(x, 0),
             );
         }
         let mut reaches: Vec<_> = [30.0, 20.0, 10.0, 60.0]
@@ -1666,7 +1666,7 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let folder = tempfile::tempdir()?;
         let world = crate::entity::ai::test_support::world(&folder);
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         world
             .level
             .loaded_chunks
@@ -1686,7 +1686,7 @@ mod tests {
         )
         .ok_or("unexpected pruning budget exhaustion")?;
         assert!(reach.block_writes.is_some());
-        let neighbor = pumpkin_world::chunk::ChunkData::empty_sync(1, 0);
+        let neighbor = sculith_world::chunk::ChunkData::empty_sync(1, 0);
         world
             .level
             .loaded_chunks
@@ -1719,7 +1719,7 @@ mod tests {
 
         let folder = tempfile::tempdir()?;
         let world = crate::entity::ai::test_support::world(&folder);
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         world
             .level
             .loaded_chunks

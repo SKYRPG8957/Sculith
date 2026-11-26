@@ -10,12 +10,12 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::chunk::ChunkHeightmapType;
 use rand::RngExt;
 use sculith_util::math::boundingbox::EntityDimensions;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::math::{approach, approach_degrees, degrees_difference_abs, wrap_degrees};
+use sculith_world::chunk::ChunkHeightmapType;
 
 use crate::entity::ai::brain::memory::codec::{block_pos_from_tag, block_pos_to_tag};
 use crate::entity::ai::control::move_control::MoveControl;

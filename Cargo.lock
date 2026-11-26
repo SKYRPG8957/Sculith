@@ -3068,7 +3068,7 @@ dependencies = [
  "pumpkin-nbt",
  "sculith-protocol",
  "sculith-util",
- "pumpkin-world",
+ "sculith-world",
  "rand 0.10.3",
  "rayon",
  "reqwest",
@@ -3135,7 +3135,7 @@ dependencies = [
  "pumpkin-macros",
  "pumpkin-nbt",
  "sculith-util",
- "pumpkin-world",
+ "sculith-world",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -3328,7 +3328,7 @@ dependencies = [
  "pumpkin-inventory",
  "pumpkin-plugin-runtime",
  "sculith-util",
- "pumpkin-world",
+ "sculith-world",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -3356,7 +3356,7 @@ dependencies = [
  "sculith-protocol",
  "sculith-util",
  "pumpkin-wasm-host-common",
- "pumpkin-world",
+ "sculith-world",
  "rand 0.10.3",
  "serde_json",
  "sysinfo",
@@ -3381,7 +3381,7 @@ dependencies = [
  "sculith-protocol",
  "sculith-util",
  "pumpkin-wasm-host-common",
- "pumpkin-world",
+ "sculith-world",
  "rand 0.10.3",
  "serde_json",
  "sysinfo",
@@ -3393,7 +3393,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pumpkin-world"
+name = "sculith-world"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "arc-swap",
@@ -4204,7 +4204,7 @@ dependencies = [
  "pumpkin-data",
  "sculith-util",
  "pumpkin-wasm-host",
- "pumpkin-world",
+ "sculith-world",
  "rayon",
  "rustls",
  "tempfile",
@@ -4232,7 +4232,7 @@ dependencies = [
  "pumpkin-data",
  "pumpkin-inventory",
  "sculith-protocol",
- "pumpkin-world",
+ "sculith-world",
  "serde_json",
 ]
 

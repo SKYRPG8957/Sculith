@@ -8,9 +8,9 @@ use pumpkin_data::block_properties::{
 };
 use pumpkin_data::{Block, BlockDirection, BlockStateId, HorizontalFacingExt, Mirror, Rotation};
 use pumpkin_macros::{pumpkin_block, pumpkin_block_from_tag};
-use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::{BlockAccessor, BlockFlags};
 
 #[pumpkin_block_from_tag("minecraft:wool_carpets")]
 pub struct CarpetBlock;

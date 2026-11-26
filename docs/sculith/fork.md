@@ -16,13 +16,14 @@ transaction through the existing inventory handler. It preserves the bounded
 input reader and the existing transaction fields and game rules.
 
 The executable and discovery name are Sculith. The server, configuration,
-protocol and utility packages are `sculith-core`, `sculith-config`,
-`sculith-protocol` and `sculith-util`. Embedders start `sculith_core::SculithServer`
+protocol, world and utility packages are `sculith-core`, `sculith-config`,
+`sculith-protocol`, `sculith-world` and `sculith-util`. Embedders start `sculith_core::SculithServer`
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
-Native Rust plugins must be rebuilt against ABI 46. The native plugin macro
-exports `SCULITH_API_VERSION`, and the loader also reads the earlier version
-marker. Wasm plugins load by WIT API version.
+Native Rust plugins must be rebuilt for the `sculith-world` crate identity.
+The native plugin macro exports `SCULITH_API_VERSION`. The loader expects
+ABI 54 and recognizes the earlier marker name. Wasm plugins load by WIT API
+version.
 Telemetry and update notifications default to off. The optional update checker
 queries Sculith releases. CI builds and tests source;
 it has no release, artifact-upload, container-push or automatic publication job.
@@ -75,7 +76,7 @@ four region-file hashes remained unchanged. These are debug-build correctness
 checks; they are not performance results or Windows GDK client verification.
 
 Official readback was captured with REA 6.9.0. Versioned test fixtures are under
-`crates/pumpkin-world/tests/fixtures/java26_3`; the native socket probe is under
+`crates/sculith-world/tests/fixtures/java26_3`; the native socket probe is under
 `tests/interop/bedrock`. Reproduction commands are in that directory's README.
 
 ## World scheduling
@@ -187,8 +188,8 @@ A bed, respawn anchor or `/spawnpoint` records its world directory and dimension
 After a restart, respawning uses that owner even if the player died in a different
 world with the same dimension. An unavailable owner sends the player to the current
 world family's spawn and retains the stored point. Older player files resolve
-points within the current world family. Native plugins use ABI 53 for the
-additional field on `RespawnPoint`.
+points within the current world family. Native ABI 53 introduced the additional
+field on `RespawnPoint`.
 Automatic inventory checkpoints capture the worlds that contributed to the
 batch. Shutdown drains world jobs before kicking players and saving.
 

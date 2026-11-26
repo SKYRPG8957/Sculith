@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::environment_attribute::DayTimeline;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_world::chunk::ChunkHeightmapType;
 use rand::RngExt;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::chunk::ChunkHeightmapType;
 use uuid::Uuid;
 
 use crate::entity::EntityBase;

@@ -21,11 +21,11 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
     world::WorldEvent,
 };
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use sculith_util::Difficulty;
 use sculith_util::math::position::BlockPos;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 const WARNING_SOUND_RADIUS: i32 = 10;
 const WARDEN_SPAWN_ATTEMPTS: i32 = 20;

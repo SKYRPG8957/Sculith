@@ -5,10 +5,10 @@ use pumpkin_data::{
     tag,
     tag::Taggable,
 };
-use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
 use sculith_util::math::{
     boundingbox::EntityDimensions, position::BlockPos, vector2::Vector2, vector3::Vector3,
 };
+use sculith_world::{chunk::ChunkHeightmapType, world::BlockFlags};
 use std::sync::Arc;
 
 use crate::world::World;

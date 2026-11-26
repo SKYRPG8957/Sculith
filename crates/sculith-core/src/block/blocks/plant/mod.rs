@@ -1,6 +1,6 @@
 use pumpkin_data::{Block, BlockStateId, tag, tag::Taggable};
-use pumpkin_world::world::BlockAccessor;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockAccessor;
 
 pub mod azalea;
 pub mod bamboo;

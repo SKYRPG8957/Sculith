@@ -8,10 +8,10 @@ use pumpkin_data::{Block, BlockDirection, BlockStateId};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::boundingbox::BoundingBox;
 use sculith_util::math::position::BlockPos;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 use crate::block::BlockBehaviour;
 use crate::block::CanPlaceAtArgs;

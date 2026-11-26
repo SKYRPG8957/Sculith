@@ -18,13 +18,13 @@ use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::structures::StructureSet;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockDirection};
-use pumpkin_world::generation::generator::structure_finder::{
-    StructureSearch, find_nearest_structure,
-};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::Hand;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::generation::generator::structure_finder::{
+    StructureSearch, find_nearest_structure,
+};
+use sculith_world::world::BlockFlags;
 
 use crate::entity::player::Player;
 
@@ -78,11 +78,11 @@ impl ItemBehaviour for EnderEyeItem {
         let world = player.world();
 
         let (start_pos, end_pos) = self.get_start_and_end_pos_with_rotation(player, yaw, pitch);
-        let hit = world.clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = world.clip(&sculith_world::clip::ClipContext::new(
             start_pos,
             end_pos,
-            pumpkin_world::clip::ClipBlock::Outline,
-            pumpkin_world::clip::ClipFluid::None,
+            sculith_world::clip::ClipBlock::Outline,
+            sculith_world::clip::ClipFluid::None,
         ));
         if !hit.is_miss && world.get_block(&hit.block_pos) == &Block::END_PORTAL_FRAME {
             return;

@@ -1,8 +1,8 @@
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::poi_type::PoiType;
-use pumpkin_world::poi::Occupancy;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::poi::Occupancy;
 
 use super::super::OneShot;
 use crate::entity::ai::brain::memory::{

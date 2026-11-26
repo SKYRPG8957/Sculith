@@ -9,8 +9,8 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection, block_properties::NoteBlockLikeProperties};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 
 use crate::{
     block::{BlockBehaviour, OnSyncedBlockEventArgs},

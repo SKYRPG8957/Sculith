@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use pumpkin_world::{
+use sculith_world::{
     GlobalRandomConfig, bench_create_and_populate_biome, bench_create_and_populate_noise,
     bench_create_and_populate_noise_with_surface,
 };

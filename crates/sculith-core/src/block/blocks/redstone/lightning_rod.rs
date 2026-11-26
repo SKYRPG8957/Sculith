@@ -15,9 +15,9 @@ use pumpkin_data::fluid::Fluid;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, BlockState, BlockStateId, FacingExt};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 #[pumpkin_block_from_tag("minecraft:lightning_rods")]
 pub struct LightningRodBlock;

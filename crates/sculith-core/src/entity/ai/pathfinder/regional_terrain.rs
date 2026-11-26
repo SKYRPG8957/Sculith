@@ -5,9 +5,9 @@ use std::{
 
 use dashmap::try_result::TryResult;
 use pumpkin_data::BlockStateId;
-use pumpkin_world::level::SyncChunk;
 use rustc_hash::FxHashMap;
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_world::level::SyncChunk;
 
 use crate::world::{RegionChunks, RegionId, World};
 

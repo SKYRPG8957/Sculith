@@ -8,12 +8,12 @@ use std::{
 use dashmap::try_result::TryResult;
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::{
+use rustc_hash::{FxHashMap, FxHashSet};
+use sculith_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
+use sculith_world::{
     chunk::{ChunkEntityData, io::Dirtiable},
     level::SyncEntityChunk,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
-use sculith_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use uuid::Uuid;
 
 use crate::{
@@ -1266,7 +1266,7 @@ mod tests {
         assert!(world.entity_chunk_changes.pending.lock().unwrap()[&pos].is_none());
         world.level.loaded_chunks.insert(
             pos,
-            pumpkin_world::chunk::ChunkData::empty_sync(pos.x, pos.y),
+            sculith_world::chunk::ChunkData::empty_sync(pos.x, pos.y),
         );
         assert!(!world.try_process_regional_chunk(pos, 0, deadline, false, &|_| false));
         assert!(world.get_entity_by_uuid(uuid).is_none());
@@ -1336,7 +1336,7 @@ mod tests {
         let pos = Vector2::new(10, 0);
         world.level.loaded_chunks.insert(
             pos,
-            pumpkin_world::chunk::ChunkData::empty_sync(pos.x, pos.y),
+            sculith_world::chunk::ChunkData::empty_sync(pos.x, pos.y),
         );
         world.level.spawn_entity_generation(pos);
         let saved = world.level.get_entity_chunk_sync(&pos).unwrap();

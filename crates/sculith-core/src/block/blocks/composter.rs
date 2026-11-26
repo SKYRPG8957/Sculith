@@ -27,9 +27,9 @@ use pumpkin_data::{
 };
 use pumpkin_inventory::{Clearable, Inventory, screen_handler::InventoryPlayer};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 use rand::RngExt;
 use sculith_util::math::position::BlockPos;
+use sculith_world::{tick::TickPriority, world::BlockFlags};
 
 #[pumpkin_block("minecraft:composter")]
 pub struct ComposterBlock;

@@ -8,7 +8,7 @@ use pumpkin_data::environment_attribute::EnvironmentAttribute;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 use crate::block::entities::creaking_heart::CreakingHeartBlockEntity;
 use crate::block::{BlockBehaviour, BrokenArgs, OnNeighborUpdateArgs, OnPlaceArgs, PlacedArgs};
@@ -38,7 +38,7 @@ impl CreakingHeartBlock {
     }
 
     fn check_active_logs(
-        world: &dyn pumpkin_world::world::BlockAccessor,
+        world: &dyn sculith_world::world::BlockAccessor,
         pos: &sculith_util::math::position::BlockPos,
         axis: Axis,
     ) -> bool {

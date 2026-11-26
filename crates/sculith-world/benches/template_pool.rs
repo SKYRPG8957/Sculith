@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use pumpkin_world::generation::structure::structures::create_chunk_random;
-use pumpkin_world::generation::structure::structures::jigsaw::TemplatePool;
+use sculith_world::generation::structure::structures::create_chunk_random;
+use sculith_world::generation::structure::structures::jigsaw::TemplatePool;
 use std::hint::black_box;
 
 const POOL: &str = "minecraft:ancient_city/structures";

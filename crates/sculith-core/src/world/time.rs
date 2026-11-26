@@ -1,5 +1,5 @@
-use pumpkin_world::world_info::clock::WorldClockSnapshot;
 use sculith_protocol::{bedrock::client::set_time::CSetTime, java::client::play::CUpdateTime};
+use sculith_world::world_info::clock::WorldClockSnapshot;
 
 use super::World;
 

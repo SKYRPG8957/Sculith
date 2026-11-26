@@ -13,13 +13,13 @@ use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::world::World;
 use pumpkin_data::{Block, BlockState, BlockStateId, translation};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::PermissionLvl;
 use sculith_util::identifier::Identifier;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector2::Vector2;
 use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use sculith_util::text::TextComponent;
+use sculith_world::world::BlockFlags;
 
 const DESCRIPTION: &str = "Clones blocks from one region to another.";
 const PERMISSION: &str = "minecraft:command.clone";

@@ -4,10 +4,6 @@ use pumpkin_data::biome::Biome;
 use pumpkin_data::structures::{StructureKeys, StructurePlacementType, StructureSet};
 use pumpkin_data::tag::{self, RegistryKey};
 use pumpkin_data::translation;
-use pumpkin_world::generation::generator::biome_finder::find_closest_biome_3d;
-use pumpkin_world::generation::generator::structure_finder::{
-    StructureSearch, find_nearest_structure, find_nearest_structure_start,
-};
 use rustc_hash::FxHashSet;
 use sculith_util::PermissionLvl;
 use sculith_util::math::position::BlockPos;
@@ -15,6 +11,10 @@ use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry
 use sculith_util::text::click::ClickEvent;
 use sculith_util::text::hover::HoverEvent;
 use sculith_util::text::{TextComponent, color::NamedColor};
+use sculith_world::generation::generator::biome_finder::find_closest_biome_3d;
+use sculith_world::generation::generator::structure_finder::{
+    StructureSearch, find_nearest_structure, find_nearest_structure_start,
+};
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::resource_key::BIOME_REGISTRY;

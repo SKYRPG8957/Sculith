@@ -10,11 +10,11 @@ use crate::{
 };
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::{Block, BlockId};
-use pumpkin_world::world::BlockFlags;
 use sculith_protocol::java::client::play::CWorldEvent;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::math::{boundingbox::BoundingBox, vector2::Vector2};
 use sculith_util::math::{position::BlockPos, vector2::to_chunk_pos};
+use sculith_world::world::BlockFlags;
 
 const GRAVITY: f64 = 0.05;
 

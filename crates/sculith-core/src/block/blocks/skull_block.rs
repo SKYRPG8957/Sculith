@@ -9,7 +9,7 @@ use pumpkin_data::block_properties::{
     Facing, SkeletonSkullLikeProperties, SkeletonWallSkullLikeProperties,
 };
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockState, BlockStateId, FacingExt};
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 use std::sync::Arc;
 
 pub struct SkullBlock;

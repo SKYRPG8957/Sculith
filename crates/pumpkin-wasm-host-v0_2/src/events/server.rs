@@ -12,7 +12,6 @@ use crate::{
     },
 };
 use pumpkin_wasm_host_common::state::PluginHostState;
-use pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
 use sculith_core::net::ClientPlatform;
 use sculith_core::plugin::server::{
     list_ping::ServerListPingEvent,
@@ -29,6 +28,7 @@ use sculith_core::plugin::server::{
     server_tick_start::ServerTickStartEvent,
 };
 use sculith_protocol::ConnectionState as ProtoConnectionState;
+use sculith_world::CURRENT_BEDROCK_MC_PROTOCOL;
 use std::sync::atomic::Ordering;
 
 fn read_bedrock_received(

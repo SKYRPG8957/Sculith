@@ -343,7 +343,7 @@ impl Inventory for JukeboxBlockEntity {
                 world.set_block_state(
                     &self.position,
                     state_id,
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                    sculith_world::world::BlockFlags::NOTIFY_ALL,
                 );
                 world.sync_world_event(
                     pumpkin_data::world::WorldEvent::SoundStopJukeboxSong,
@@ -385,7 +385,7 @@ impl Inventory for JukeboxBlockEntity {
                 world.set_block_state(
                     &self.position,
                     state_id,
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                    sculith_world::world::BlockFlags::NOTIFY_ALL,
                 );
                 world.emit_game_event(
                     pumpkin_data::game_event::GameEvent::BlockChange.name(),
@@ -508,7 +508,7 @@ mod tests {
         let world = world(&folder);
         world.level.loaded_chunks.insert(
             Vector2::new(0, 0),
-            pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
+            sculith_world::chunk::ChunkData::empty_sync(0, 0),
         );
         let allay = AllayEntity::new(Entity::new(
             world.clone(),

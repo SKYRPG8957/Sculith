@@ -15,7 +15,7 @@ sculith-core.workspace = true
 pumpkin-data.workspace = true
 pumpkin-inventory.workspace = true
 sculith-protocol.workspace = true
-pumpkin-world.workspace = true
+sculith-world.workspace = true
 serde_json.workspace = true
 
 [lints]

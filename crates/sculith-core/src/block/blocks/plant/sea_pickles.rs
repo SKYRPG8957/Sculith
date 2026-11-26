@@ -10,13 +10,13 @@ use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::{
-    tick::TickPriority,
-    world::{BlockAccessor, BlockFlags},
-};
 use sculith_util::{
     math::position::BlockPos,
     random::{RandomImpl, get_seed, legacy_rand::LegacyRand},
+};
+use sculith_world::{
+    tick::TickPriority,
+    world::{BlockAccessor, BlockFlags},
 };
 
 type SeaPickleProperties = pumpkin_data::block_properties::SeaPickleLikeProperties;

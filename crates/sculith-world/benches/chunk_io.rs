@@ -2,13 +2,13 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use pumpkin_data::{BlockStateId, dimension::Dimension};
-use pumpkin_world::{
+use sculith_util::{math::vector2::Vector2, world_seed::Seed};
+use sculith_world::{
     chunk::{ChunkData, format::anvil::SingleChunkDataSerializer},
     chunk_system::{Chunk, StagedChunkEnum, generate_single_chunk},
     generation::get_world_gen,
     world::WorldPortalExt,
 };
-use sculith_util::{math::vector2::Vector2, world_seed::Seed};
 use std::hint::black_box;
 
 struct BlockRegistry;
@@ -18,7 +18,7 @@ impl WorldPortalExt for BlockRegistry {
         &self,
         _block: &pumpkin_data::Block,
         _state: &pumpkin_data::BlockState,
-        _block_accessor: &dyn pumpkin_world::world::BlockAccessor,
+        _block_accessor: &dyn sculith_world::world::BlockAccessor,
         _block_pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         true
@@ -44,7 +44,7 @@ impl WorldPortalExt for BlockRegistry {
 
     fn spawn_mobs_for_chunk_generation(
         &self,
-        _cache: &mut dyn pumpkin_world::generation::proto_chunk::GenerationCache,
+        _cache: &mut dyn sculith_world::generation::proto_chunk::GenerationCache,
         _biome: &'static pumpkin_data::chunk::Biome,
         _chunk_x: i32,
         _chunk_z: i32,

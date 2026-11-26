@@ -1032,14 +1032,14 @@ impl PathNavigation {
             stop_pos.z,
         );
         world
-            .clip(&pumpkin_world::clip::ClipContext::new(
+            .clip(&sculith_world::clip::ClipContext::new(
                 start_pos,
                 to,
-                pumpkin_world::clip::ClipBlock::Collider,
+                sculith_world::clip::ClipBlock::Collider,
                 if blocked_by_fluids {
-                    pumpkin_world::clip::ClipFluid::Any
+                    sculith_world::clip::ClipFluid::Any
                 } else {
-                    pumpkin_world::clip::ClipFluid::None
+                    sculith_world::clip::ClipFluid::None
                 },
             ))
             .is_miss
@@ -2971,7 +2971,7 @@ mod tests {
     async fn world_finishes_goal_updates_after_a_regional_follow_step() -> TestResult {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         for x in 2..14 {
             for z in 2..14 {
                 chunk.set_block_absolute_y(x, 63, z, pumpkin_data::Block::STONE.default_state.id);
@@ -3045,7 +3045,7 @@ mod tests {
                 std::iter::once((0, extent.clone())).collect(),
             )));
         world.level_time.lock().unwrap().world_age = 42;
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         for x in 2..14 {
             for z in 2..14 {
                 chunk.set_block_absolute_y(x, 63, z, pumpkin_data::Block::STONE.default_state.id);
@@ -3145,12 +3145,12 @@ mod tests {
                     .into_iter()
                     .collect(),
             )));
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         world.level.loaded_chunks.insert(owned, chunk.clone());
         world
             .level
             .loaded_chunks
-            .insert(outside, pumpkin_world::chunk::ChunkData::empty_sync(1, 0));
+            .insert(outside, sculith_world::chunk::ChunkData::empty_sync(1, 0));
         let position = BlockPos::new(7, 64, 7);
         let terrain = RegionalTerrain::new(0, extent.clone());
         assert_eq!(
@@ -3192,7 +3192,7 @@ mod tests {
     async fn fish_paths_cross_water_plants() -> TestResult {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         for z in 0..=4 {
             chunk.set_block_absolute_y(0, 64, z, pumpkin_data::Block::WATER.default_state.id);
         }

@@ -7,11 +7,11 @@ use pumpkin_data::{
         RepeaterLikeProperties,
     },
 };
-use pumpkin_world::{
+use sculith_util::math::position::BlockPos;
+use sculith_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
-use sculith_util::math::position::BlockPos;
 
 use crate::{
     block::{GetRedstonePowerArgs, OnNeighborUpdateArgs, OnStateReplacedArgs, PlayerPlacedArgs},

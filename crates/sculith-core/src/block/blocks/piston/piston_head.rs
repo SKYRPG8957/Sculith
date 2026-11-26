@@ -1,8 +1,8 @@
 use pumpkin_data::block_properties::{MovingPistonLikeProperties, PistonType};
 use pumpkin_data::{Block, BlockState, BlockStateId, FacingExt};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::GameMode;
+use sculith_world::world::BlockFlags;
 
 use crate::block::{
     BlockBehaviour, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,

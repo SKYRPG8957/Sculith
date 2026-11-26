@@ -9,10 +9,10 @@ use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::{Block, tag};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::GameMode;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::world::BlockFlags;
 
 pub struct HoeItem;
 

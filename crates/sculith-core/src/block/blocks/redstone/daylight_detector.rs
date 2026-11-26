@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::block::entities::daylight_detector::DaylightDetectorBlockEntity;
 use pumpkin_data::game_event::GameEvent;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::{cos, position::BlockPos};
+use sculith_world::world::BlockFlags;
 
 use crate::block::{
     BlockActionResult, BlockBehaviour, BrokenArgs, EmitsRedstonePowerArgs, GetRedstonePowerArgs,

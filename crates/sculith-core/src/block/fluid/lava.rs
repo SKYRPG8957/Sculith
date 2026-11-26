@@ -15,9 +15,9 @@ use pumpkin_data::{
     tag::{self, Taggable},
     world::WorldEvent,
 };
-use pumpkin_world::{chunk::RegionalFluidTick, tick::TickPriority, world::BlockFlags};
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::{vector2::Vector2, vector3::Vector3};
+use sculith_world::{chunk::RegionalFluidTick, tick::TickPriority, world::BlockFlags};
 use std::sync::Arc;
 type FlowingFluidProperties = pumpkin_data::fluid::FlowingWaterLikeFluidProperties;
 

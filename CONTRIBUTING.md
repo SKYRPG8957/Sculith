@@ -89,7 +89,7 @@ Note: Pumpkin's clippy settings are relatively strict, this can be frustrating b
 - **Code Style:** Adhere to consistent coding style throughout your contributions.
 - **Documentation:** If your changes introduce new functionality, consider updating the relevant documentation.
 - **Working with Tokio and Rayon:**
-  When dealing with CPU-intensive tasks, it's recommended to utilize Rayon's thread pool (`rayon::spawn`), parallel iterators, or similar mechanisms instead of the Tokio runtime. However, it's crucial to avoid blocking the Tokio runtime on Rayon calls. Instead, use asynchronous methods like `tokio::sync::mpsc` to transfer data between the two runtimes. Refer to `pumpkin_world::level::Level::fetch_chunks` for an example of this approach.
+  When dealing with CPU-intensive tasks, it's recommended to utilize Rayon's thread pool (`rayon::spawn`), parallel iterators, or similar mechanisms instead of the Tokio runtime. However, it's crucial to avoid blocking the Tokio runtime on Rayon calls. Instead, use asynchronous methods like `tokio::sync::mpsc` to transfer data between the two runtimes. Refer to `sculith_world::level::Level::fetch_chunks` for an example of this approach.
 
 ### Mob AI
 

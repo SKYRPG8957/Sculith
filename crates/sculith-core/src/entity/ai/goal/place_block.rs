@@ -10,10 +10,10 @@ use crate::world::game_event::GameEventContext;
 use pumpkin_data::block_properties::is_air;
 use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::{Block, BlockState, BlockStateId};
-use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use sculith_util::math::boundingbox::BoundingBox;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 
 pub struct PlaceBlockGoal {
     enderman: Weak<EndermanEntity>,

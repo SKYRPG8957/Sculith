@@ -1,10 +1,10 @@
 use std::cell::{Cell, RefCell};
 
 use pumpkin_data::poi_type::PoiType;
-use pumpkin_world::poi::Occupancy;
 use rand::RngExt;
 use rustc_hash::FxHashMap;
 use sculith_util::math::position::BlockPos;
+use sculith_world::poi::Occupancy;
 
 use super::super::BrainTick;
 use super::super::behavior::job_site::acquire_poi::{SCAN_RANGE, find_path_to_pois};

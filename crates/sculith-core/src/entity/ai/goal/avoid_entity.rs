@@ -291,11 +291,11 @@ mod tests {
     use crate::entity::passive::wolf::WolfEntity;
     use crate::entity::{Entity, EntityBase};
     use pumpkin_data::Block;
-    use pumpkin_world::chunk::ChunkData;
-    use pumpkin_world::world::BlockFlags;
     use sculith_util::math::position::BlockPos;
     use sculith_util::math::vector2::Vector2;
     use sculith_util::math::vector3::Vector3;
+    use sculith_world::chunk::ChunkData;
+    use sculith_world::world::BlockFlags;
     use std::sync::atomic::Ordering;
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;

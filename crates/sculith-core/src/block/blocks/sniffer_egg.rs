@@ -4,8 +4,8 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 use uuid::Uuid;
 
 use crate::block::{
@@ -18,7 +18,7 @@ pub struct SnifferEggBlock;
 
 impl SnifferEggBlock {
     fn hatch_boost(
-        world: &dyn pumpkin_world::world::BlockAccessor,
+        world: &dyn sculith_world::world::BlockAccessor,
         pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         world

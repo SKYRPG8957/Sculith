@@ -1,6 +1,7 @@
 use super::surface::{MATERIALS, Summary, Surface, summarize};
 use bytes::Bytes;
-use pumpkin_world::{
+use sculith_util::math::vector2::Vector2;
+use sculith_world::{
     chunk::{
         ChunkData,
         format::{
@@ -12,7 +13,6 @@ use pumpkin_world::{
     },
     level::LevelFolder,
 };
-use sculith_util::math::vector2::Vector2;
 use std::{
     collections::BTreeMap,
     fs,

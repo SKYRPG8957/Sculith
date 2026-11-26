@@ -6,13 +6,13 @@ use std::{
 };
 
 use pumpkin_data::{BlockDirection, BlockStateId};
-use pumpkin_world::{
+use rustc_hash::FxHashSet;
+use sculith_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
+use sculith_world::{
     chunk::{CHUNK_WIDTH, ChunkData},
     level::SyncChunk,
     world::BlockFlags,
 };
-use rustc_hash::FxHashSet;
-use sculith_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
 use tokio::sync::oneshot;
 
 use crate::world::World;

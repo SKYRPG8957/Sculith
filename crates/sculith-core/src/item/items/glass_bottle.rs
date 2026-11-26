@@ -151,11 +151,11 @@ impl ItemBehaviour for GlassBottleItem {
         }
 
         let (start_pos, end_pos) = self.get_start_and_end_pos_with_rotation(player, yaw, pitch);
-        let hit = world.clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = world.clip(&sculith_world::clip::ClipContext::new(
             start_pos,
             end_pos,
-            pumpkin_world::clip::ClipBlock::Outline,
-            pumpkin_world::clip::ClipFluid::SourceOnly,
+            sculith_world::clip::ClipBlock::Outline,
+            sculith_world::clip::ClipFluid::SourceOnly,
         ));
 
         if !hit.is_miss {

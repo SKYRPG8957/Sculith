@@ -1,7 +1,7 @@
 use pumpkin_data::Block;
 use pumpkin_nbt::{NbtCompound, tag::NbtTag};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_world::world::BlockFlags;
 
 use crate::error::GameTestResult;
 use crate::model::GameTestRotation;

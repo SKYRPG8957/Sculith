@@ -3,11 +3,11 @@ use pumpkin_data::{
     tag, tag::Taggable,
 };
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::{
+use sculith_util::math::position::BlockPos;
+use sculith_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
-use sculith_util::math::position::BlockPos;
 
 use crate::block::blocks::plant::mangrove_propagule::MangrovePropaguleBlock;
 use crate::block::{

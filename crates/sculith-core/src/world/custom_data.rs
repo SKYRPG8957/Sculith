@@ -10,7 +10,7 @@ use pumpkin_nbt::{
     deserializer::{NbtReadHelper, NbtReadHelperJava},
     serializer::{NbtWriteHelper, NbtWriteHelperJava},
 };
-use pumpkin_world::level::LevelFolder;
+use sculith_world::level::LevelFolder;
 
 const CUSTOM_DATA_FILE: &str = "sculith_custom_data.nbt";
 const LEGACY_CUSTOM_DATA_FILE: &str = "pumpkin_custom_data.nbt";

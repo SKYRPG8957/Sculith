@@ -1,5 +1,5 @@
 use pumpkin_data::{BlockId, BlockStateId, item::Item, item_stack::ItemStack};
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 use crate::block::blocks::plant::PlantBlockBase;
 

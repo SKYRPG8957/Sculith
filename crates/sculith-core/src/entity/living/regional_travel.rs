@@ -548,7 +548,7 @@ mod tests {
     };
 
     use pumpkin_data::Block;
-    use pumpkin_world::{chunk::ChunkData, level::SyncChunk};
+    use sculith_world::{chunk::ChunkData, level::SyncChunk};
 
     use super::*;
     use crate::entity::{

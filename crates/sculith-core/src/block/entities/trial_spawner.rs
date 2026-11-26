@@ -996,7 +996,7 @@ impl TrialSpawner {
                 world.set_block_state(
                     &spawner_pos,
                     props.to_state_id(block),
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                    sculith_world::world::BlockFlags::NOTIFY_ALL,
                 );
             }
         }
@@ -1012,7 +1012,7 @@ impl TrialSpawner {
                 world.set_block_state(
                     &spawner_pos,
                     props.to_state_id(block),
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                    sculith_world::world::BlockFlags::NOTIFY_ALL,
                 );
             }
         }
@@ -1191,11 +1191,11 @@ impl TrialSpawner {
     }
 
     fn in_line_of_sight(world: &Arc<World>, origin: Vector3<f64>, dest: Vector3<f64>) -> bool {
-        let hit = world.clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = world.clip(&sculith_world::clip::ClipContext::new(
             dest,
             origin,
-            pumpkin_world::clip::ClipBlock::Visual,
-            pumpkin_world::clip::ClipFluid::None,
+            sculith_world::clip::ClipBlock::Visual,
+            sculith_world::clip::ClipFluid::None,
         ));
         let origin_block = BlockPos::floored(origin.x, origin.y, origin.z);
         hit.is_miss || hit.block_pos == origin_block
@@ -1318,11 +1318,11 @@ impl TrialSpawner {
             entity_pos.y + f64::from(entity_height) + 2.0 + f64::from(rng.random_range(0..4)),
             entity_pos.z,
         );
-        let hit = world.clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = world.clip(&sculith_world::clip::ClipContext::new(
             entity_pos,
             try_spawn_pos,
-            pumpkin_world::clip::ClipBlock::Visual,
-            pumpkin_world::clip::ClipFluid::None,
+            sculith_world::clip::ClipBlock::Visual,
+            sculith_world::clip::ClipFluid::None,
         ));
         let down = hit
             .block_pos

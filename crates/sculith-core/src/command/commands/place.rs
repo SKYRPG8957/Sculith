@@ -3,14 +3,14 @@ use pumpkin_data::placed_feature::PlacedFeature as PlacedFeatureKey;
 use pumpkin_data::structures::{Structure, StructureKeys, StructureType};
 use pumpkin_data::translation;
 use pumpkin_data::{Block, BlockStateId, Mirror, Rotation};
-use pumpkin_world::generation::proto_chunk::ProtoChunk;
-use pumpkin_world::world::{BlockAccessor, WorldPortalExt};
 use sculith_util::identifier::Identifier;
 use sculith_util::math::block_box::BlockBox;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::random::hash_block_pos;
 use sculith_util::text::TextComponent;
+use sculith_world::generation::proto_chunk::ProtoChunk;
+use sculith_world::world::{BlockAccessor, WorldPortalExt};
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::argument_type::JavaClientArgumentType;
@@ -24,16 +24,16 @@ use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use crate::world::block_placer::WorldBlockPlacer;
-use pumpkin_world::generation::feature::configured_features::CONFIGURED_FEATURES;
-use pumpkin_world::generation::feature::placed_features::{Feature, PLACED_FEATURES};
-use pumpkin_world::generation::structure::structures::StructureGeneratorContext;
-use pumpkin_world::generation::structure::structures::jigsaw::{
+use sculith_world::generation::feature::configured_features::CONFIGURED_FEATURES;
+use sculith_world::generation::feature::placed_features::{Feature, PLACED_FEATURES};
+use sculith_world::generation::structure::structures::StructureGeneratorContext;
+use sculith_world::generation::structure::structures::jigsaw::{
     PoolElementStructurePiece, place_pool_element_templates,
 };
-use pumpkin_world::generation::structure::structures::jigsaw_placement::{
+use sculith_world::generation::structure::structures::jigsaw_placement::{
     DimensionPadding, JigsawPlacement, LiquidSettings, MaxDistance, PoolAliasLookup,
 };
-use pumpkin_world::generation::structure::template::BlockPlacer;
+use sculith_world::generation::structure::template::BlockPlacer;
 
 use sculith_util::PermissionLvl;
 use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
@@ -119,7 +119,7 @@ impl WorldPortalExt for CommandBlockRegistry {
 
     fn spawn_mobs_for_chunk_generation(
         &self,
-        _cache: &mut dyn pumpkin_world::generation::proto_chunk::GenerationCache,
+        _cache: &mut dyn sculith_world::generation::proto_chunk::GenerationCache,
         _biome: &'static pumpkin_data::biome::Biome,
         _chunk_x: i32,
         _chunk_z: i32,
@@ -143,7 +143,7 @@ impl CommandExecutor for PlaceTemplateExecutor {
             .unwrap_or(&template_name)
             .to_string();
         let Some(template) =
-            pumpkin_world::generation::structure::template::get_template(&template_name)
+            sculith_world::generation::structure::template::get_template(&template_name)
         else {
             return Err(
                 TEMPLATE_NOT_FOUND.create_without_context(TextComponent::text(template_name))
@@ -151,7 +151,7 @@ impl CommandExecutor for PlaceTemplateExecutor {
         };
 
         let mut placer = WorldBlockPlacer::new(context.world());
-        pumpkin_world::generation::structure::template::place_template(
+        sculith_world::generation::structure::template::place_template(
             &mut placer,
             &template,
             block_pos.0,
@@ -363,7 +363,7 @@ impl CommandExecutor for PlaceStructureExecutor {
             } else {
                 let random = RandomGenerator::Legacy(LegacyRand::from_seed(seed));
 
-                let position = pumpkin_world::generation::structure::generate_structure_position(
+                let position = sculith_world::generation::structure::generate_structure_position(
                     &key,
                     structure,
                     StructureGeneratorContext {
@@ -717,7 +717,7 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
                                 identifier: Identifier::vanilla_static("worldgen/template_pool"),
                             },
                             || {
-                                pumpkin_world::generation::structure::template::all_pool_names()
+                                sculith_world::generation::structure::template::all_pool_names()
                                     .iter()
                                     .map(|name| format!("minecraft:{name}"))
                                     .collect()

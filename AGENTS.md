@@ -39,17 +39,17 @@ Things worth knowing before you start:
 
 - Java protocol support targets one version at a time. `CURRENT_MC_VERSION` and `LOWEST_SUPPORTED_MC_VERSION` in `crates/pumpkin-data/src/generated/packet.rs` say which. Older clients are handled by plugins. Bedrock has a separate implementation that is still in progress.
 - Game logic (block, item, entity and AI behaviour) runs synchronously inside the tick. Networking, disk I/O, plugins and events are async on Tokio. CPU-heavy work such as chunk generation and lighting runs on Rayon.
-- Chunk loading, world generation, lighting and saves live in `pumpkin-world`.
+- Chunk loading, world generation, lighting and saves live in `sculith-world`.
 - Pumpkin deliberately differs from vanilla in a few places. The most important one is that the player's own movement is client authoritative. A change that is correct against the Java code can still break an assumption like that, so check how Pumpkin already handles the thing you're touching.
 
 ## Layout
 
-Crates live in `crates/` and are named after what they do (`pumpkin-world` for chunks and generation, `sculith-protocol` for packets, and so on). `crates/sculith-core` is the server itself, `crates/pumpkin-wasm-host` (with `-common`, `-v0_1` and `-v0_2`) is the Wasm plugin host, and `crates/sculith` is the binary that wires them together. `assets/` holds the extracted vanilla data and `tools/pumpkin-codegen` turns it into `pumpkin-data`. The server is GPL-3.0; the plugin crates have their own licenses (see Plugin API below).
+Crates live in `crates/` and are named after what they do (`sculith-world` for chunks and generation, `sculith-protocol` for packets, and so on). `crates/sculith-core` is the server itself, `crates/pumpkin-wasm-host` (with `-common`, `-v0_1` and `-v0_2`) is the Wasm plugin host, and `crates/sculith` is the binary that wires them together. `assets/` holds the extracted vanilla data and `tools/pumpkin-codegen` turns it into `pumpkin-data`. The server is GPL-3.0; the plugin crates have their own licenses (see Plugin API below).
 
 Some directories have their own `AGENTS.md` with details for that area. Read it when you work there:
 
 - `crates/sculith-protocol/AGENTS.md`: adding and changing packets.
-- `crates/pumpkin-world/AGENTS.md`: chunk loading, world generation and how to check it against vanilla.
+- `crates/sculith-world/AGENTS.md`: chunk loading, world generation and how to check it against vanilla.
 - `tools/pumpkin-codegen/AGENTS.md`: generators, regenerating and generated-file churn.
 
 ## Vanilla parity

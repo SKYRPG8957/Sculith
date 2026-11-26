@@ -1,7 +1,7 @@
 use pumpkin_data::poi_type::PoiType;
-use pumpkin_world::poi::Occupancy;
 use rand::RngExt;
 use rustc_hash::FxHashMap;
+use sculith_world::poi::Occupancy;
 
 use super::super::OneShot;
 use super::super::job_site::find_path_to_pois;

@@ -557,7 +557,7 @@ impl VillagerEntity {
         use pumpkin_data::data_component::DataComponent;
         use pumpkin_data::data_component_impl::{DataComponentImpl, ItemNameImpl, MapIdImpl};
         use pumpkin_data::structures::StructureSet;
-        use pumpkin_world::generation::generator::structure_finder::find_nearest_structure_start;
+        use sculith_world::generation::generator::structure_finder::find_nearest_structure_start;
 
         let (structure_set, structure, name, icon_type) = explorer_map_target(destination)?;
 

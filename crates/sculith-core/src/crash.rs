@@ -7,12 +7,12 @@ use std::{
     thread::{self, Thread},
 };
 
-use pumpkin_world::{CURRENT_BEDROCK_MC_VERSION, CURRENT_MC_VERSION};
 use rustc_hash::FxHashMap;
 use sculith_util::text::{
     TextComponent,
     color::{Color, NamedColor},
 };
+use sculith_world::{CURRENT_BEDROCK_MC_VERSION, CURRENT_MC_VERSION};
 use sysinfo::{Cpu, System};
 use time::OffsetDateTime;
 use tracing::error;

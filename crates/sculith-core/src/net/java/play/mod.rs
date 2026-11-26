@@ -44,8 +44,6 @@ use pumpkin_inventory::InventoryError;
 use pumpkin_inventory::merchant::merchant_screen_handler::MerchantScreenHandler;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{InventoryPlayer, ScreenHandler};
-use pumpkin_world::generation::structure::structures::jigsaw::JigsawJointType;
-use pumpkin_world::world::BlockFlags;
 use sculith_protocol::bedrock::server::actor_event::ActorEventID;
 use sculith_protocol::codec::var_int::VarInt;
 use sculith_protocol::java::client::play::{
@@ -67,6 +65,8 @@ use sculith_protocol::java::server::play::{
 use sculith_util::math::vector3::Vector3;
 use sculith_util::math::{polynomial_rolling_hash, position::BlockPos};
 use sculith_util::{GameMode, text::TextComponent};
+use sculith_world::generation::structure::structures::jigsaw::JigsawJointType;
+use sculith_world::world::BlockFlags;
 
 /// In secure chat mode, Player will be kicked if they send a chat message with a timestamp that is older than this (in ms)
 /// Vanilla: 2 minutes

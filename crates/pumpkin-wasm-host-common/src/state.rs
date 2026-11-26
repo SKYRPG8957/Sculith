@@ -120,7 +120,7 @@ pub struct ChunkBuffer {
     pub z: i32,
     pub min_y: i32,
     pub height: u32,
-    pub proto_chunk: Arc<std::sync::Mutex<pumpkin_world::ProtoChunk>>,
+    pub proto_chunk: Arc<std::sync::Mutex<sculith_world::ProtoChunk>>,
 }
 
 pub struct PluginHostState {

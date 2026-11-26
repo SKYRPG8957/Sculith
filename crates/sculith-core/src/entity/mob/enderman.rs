@@ -23,10 +23,10 @@ use pumpkin_data::{
     world::WorldEvent,
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::block::BlockStateCodec;
 use rand::RngExt;
 use sculith_protocol::codec::var_int::VarInt;
 use sculith_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_world::block::BlockStateCodec;
 
 use crate::entity::{
     Entity, EntityBase,
@@ -399,11 +399,11 @@ impl EndermanEntity {
         entity
             .world
             .load()
-            .clip(&pumpkin_world::clip::ClipContext::new(
+            .clip(&sculith_world::clip::ClipContext::new(
                 from,
                 to,
-                pumpkin_world::clip::ClipBlock::Collider,
-                pumpkin_world::clip::ClipFluid::None,
+                sculith_world::clip::ClipBlock::Collider,
+                sculith_world::clip::ClipFluid::None,
             ))
             .is_miss
     }

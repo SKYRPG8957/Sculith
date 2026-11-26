@@ -7,8 +7,8 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos};
+use sculith_world::{tick::TickPriority, world::BlockFlags};
 
 use crate::{
     block::{

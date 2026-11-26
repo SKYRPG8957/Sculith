@@ -25,24 +25,15 @@ use connection_cache::{CachedBranding, CachedStatus};
 use crossbeam::queue::SegQueue;
 use key_store::KeyStore;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_world::generation::generator::GeneratorInit;
-use pumpkin_world::level::{Level, LevelFolder};
-use pumpkin_world::world::WorldPortalExt;
 use sculith_config::world::WorldPreset;
 use sculith_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use sculith_util::permission::PermissionManager;
 use sculith_util::text::color::NamedColor;
+use sculith_world::generation::generator::GeneratorInit;
+use sculith_world::level::{Level, LevelFolder};
+use sculith_world::world::WorldPortalExt;
 use tracing::{debug, error, info, warn};
 
-use pumpkin_world::data::checkpoint::CheckpointFence;
-use pumpkin_world::world_info::anvil::{
-    AnvilLevelInfo, LEVEL_DAT_BACKUP_FILE_NAME, LEVEL_DAT_FILE_NAME,
-};
-use pumpkin_world::world_info::clock::WorldClockSnapshot;
-use pumpkin_world::world_info::data_files::read_world_clocks;
-use pumpkin_world::world_info::{
-    GeneratorSettings, LevelData, WorldInfoError, WorldInfoReader, WorldInfoWriter,
-};
 use rand::seq::IndexedRandom;
 use rayon::prelude::*;
 use rsa::PublicKey as RsaPublicKey;
@@ -51,6 +42,15 @@ use sculith_protocol::java::client::play::{CChangeDifficulty, CTabList};
 use sculith_protocol::{ClientPacket, java::client::config::CPluginMessage};
 use sculith_util::Difficulty;
 use sculith_util::text::TextComponent;
+use sculith_world::data::checkpoint::CheckpointFence;
+use sculith_world::world_info::anvil::{
+    AnvilLevelInfo, LEVEL_DAT_BACKUP_FILE_NAME, LEVEL_DAT_FILE_NAME,
+};
+use sculith_world::world_info::clock::WorldClockSnapshot;
+use sculith_world::world_info::data_files::read_world_clocks;
+use sculith_world::world_info::{
+    GeneratorSettings, LevelData, WorldInfoError, WorldInfoReader, WorldInfoWriter,
+};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -334,7 +334,7 @@ impl Server {
                 let mut default_data = match advanced_config.world.generator {
                     WorldPreset::Normal => {
                         let overworld_gen =
-                            pumpkin_world::generation::generator::VanillaGenerator::new(
+                            sculith_world::generation::generator::VanillaGenerator::new(
                                 seed,
                                 Dimension::OVERWORLD,
                             );

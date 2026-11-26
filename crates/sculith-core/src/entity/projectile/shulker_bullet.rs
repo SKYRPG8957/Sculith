@@ -22,8 +22,8 @@ use crate::entity::{Entity, EntityBase};
 use crate::server::Server;
 use crate::world::game_event::GameEventContext;
 use pumpkin_data::game_event::GameEvent;
-use pumpkin_world::clip::ClipBlock;
 use sculith_util::Difficulty;
+use sculith_world::clip::ClipBlock;
 
 // Direction ordinal constants
 const DIR_DOWN: u8 = 0;

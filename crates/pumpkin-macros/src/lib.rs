@@ -536,7 +536,7 @@ pub fn pumpkin_block_from_tag(args: TokenStream, item: TokenStream) -> TokenStre
 
 //     let code = quote! {
 //         #item
-//         impl #impl_generics pumpkin_world::block::properties::BlockPropertyMetadata for #name #ty_generics {
+//         impl #impl_generics sculith_world::block::properties::BlockPropertyMetadata for #name #ty_generics {
 //             fn name(&self) -> &'static str {
 //                 #property_name
 //             }

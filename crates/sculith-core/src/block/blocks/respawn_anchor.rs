@@ -5,7 +5,7 @@ use pumpkin_data::item::Item;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{BlockState, translation};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 use crate::block::registry::BlockActionResult;
 use crate::block::{

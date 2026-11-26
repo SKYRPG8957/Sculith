@@ -19,9 +19,9 @@ use pumpkin_inventory::{
     screen_handler::{InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler},
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::tick::TickPriority;
 use sculith_util::math::position::BlockPos;
 use sculith_util::text::TextComponent;
+use sculith_world::tick::TickPriority;
 
 pub struct EnderChestScreenFactory {
     pub inventory: Arc<EnderChestInventory>,

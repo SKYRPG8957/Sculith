@@ -1,7 +1,7 @@
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockDirection, HorizontalFacingExt};
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 use super::super::memory::{MemoryStatus, types};
 use super::OneShot;

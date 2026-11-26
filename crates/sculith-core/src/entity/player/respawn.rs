@@ -6,12 +6,12 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockStateId, tag};
 use pumpkin_inventory::Clearable;
-use pumpkin_world::world::BlockFlags;
 use sculith_protocol::codec::var_int::VarInt;
 use sculith_protocol::java::client::play::{
     CGameEvent, CPlayerSpawnPosition, CRespawn, GameEvent, PlayerSpawnData,
 };
 use sculith_util::math::{position::BlockPos, vector2::Vector2, vector3::Vector3};
+use sculith_world::world::BlockFlags;
 use tokio::task::JoinHandle;
 
 use crate::entity::EntityBase;
@@ -451,7 +451,7 @@ impl Player {
         self.send_client_packet(&CRespawn::new(
             PlayerSpawnData::new(
                 world.dimension.clone(),
-                pumpkin_world::biome::hash_seed(world.level.seed.0),
+                sculith_world::biome::hash_seed(world.level.seed.0),
                 self.gamemode.load() as u8,
                 self.gamemode.load() as i8,
                 false,

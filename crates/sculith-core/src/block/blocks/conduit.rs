@@ -5,7 +5,7 @@ use crate::block::{
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::{BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::tick::TickPriority;
+use sculith_world::tick::TickPriority;
 use std::sync::Arc;
 
 #[pumpkin_block("minecraft:conduit")]

@@ -994,7 +994,7 @@ impl DatapackManager {
         let structure_id = format!("{namespace}:{path}");
 
         if let Some(template) =
-            pumpkin_world::generation::structure::template::get_template(&structure_id)
+            sculith_world::generation::structure::template::get_template(&structure_id)
         {
             return Ok(template.save());
         }
@@ -1092,13 +1092,13 @@ impl DatapackManager {
 
     #[must_use]
     pub fn is_embedded_pack(name: &str) -> bool {
-        pumpkin_world::generation::structure::template::all_embedded_datapack_names()
+        sculith_world::generation::structure::template::all_embedded_datapack_names()
             .contains(&name)
     }
 
     pub fn get_all_known_packs(server: &Server) -> Vec<String> {
         let mut packs: Vec<String> =
-            pumpkin_world::generation::structure::template::all_embedded_datapack_names()
+            sculith_world::generation::structure::template::all_embedded_datapack_names()
                 .iter()
                 .map(|name| (*name).to_owned())
                 .collect();
@@ -1160,7 +1160,7 @@ impl DatapackManager {
         // Compile-time embedded datapacks cannot be disabled at runtime, so
         // expose them as permanently enabled.
         let mut packs: Vec<String> =
-            pumpkin_world::generation::structure::template::all_embedded_datapack_names()
+            sculith_world::generation::structure::template::all_embedded_datapack_names()
                 .iter()
                 .map(|name| (*name).to_owned())
                 .collect();

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tracing::error;
 
 /// Recursively scans `<namespace_dir>/structure/` for `.nbt` structure templates
-/// and registers them into [`pumpkin_world::generation::structure::template::global_cache()`].
+/// and registers them into [`sculith_world::generation::structure::template::global_cache()`].
 #[must_use]
 pub fn load_structures_from_dir(namespace: &str, structure_dir: &Path) -> usize {
     let mut count = 0;
@@ -54,7 +54,7 @@ fn visit_structure_dir(dir: &Path, namespace: &str, prefix: &str, count: &mut us
         let resource_id = format!("{namespace}:{template_name}");
         match fs::read(&path) {
             Ok(bytes) => {
-                pumpkin_world::generation::structure::template::global_cache()
+                sculith_world::generation::structure::template::global_cache()
                     .register_template(&resource_id, Arc::from(bytes.into_boxed_slice()));
                 *count += 1;
             }
@@ -67,7 +67,7 @@ fn visit_structure_dir(dir: &Path, namespace: &str, prefix: &str, count: &mut us
 
 /// Recursively scans `<namespace_dir>/worldgen/template_pool/` for `.json` template pool definitions.
 ///
-/// Registers them into [`pumpkin_world::generation::structure::structures::jigsaw::register_dynamic_template_pool_json`].
+/// Registers them into [`sculith_world::generation::structure::structures::jigsaw::register_dynamic_template_pool_json`].
 #[must_use]
 pub fn load_template_pools_from_dir(namespace: &str, template_pool_dir: &Path) -> usize {
     let mut count = 0;
@@ -117,7 +117,7 @@ fn visit_template_pool_dir(dir: &Path, namespace: &str, prefix: &str, count: &mu
         let resource_id = format!("{namespace}:{pool_name}");
         match fs::read_to_string(&path) {
             Ok(json_content) => {
-                match pumpkin_world::generation::structure::structures::jigsaw::register_dynamic_template_pool_json(
+                match sculith_world::generation::structure::structures::jigsaw::register_dynamic_template_pool_json(
                     &resource_id,
                     &json_content,
                 ) {
@@ -138,7 +138,7 @@ fn visit_template_pool_dir(dir: &Path, namespace: &str, prefix: &str, count: &mu
 
 /// Recursively scans `<namespace_dir>/worldgen/processor_list/` for `.json` processor lists.
 ///
-/// Registers them into [`pumpkin_world::generation::structure::template::processor::register_dynamic_processor_list`].
+/// Registers them into [`sculith_world::generation::structure::template::processor::register_dynamic_processor_list`].
 #[must_use]
 pub fn load_processor_lists_from_dir(namespace: &str, processor_list_dir: &Path) -> usize {
     let mut count = 0;
@@ -188,7 +188,7 @@ fn visit_processor_list_dir(dir: &Path, namespace: &str, prefix: &str, count: &m
         let resource_id = format!("{namespace}:{list_name}");
         match fs::read_to_string(&path) {
             Ok(json_content) => {
-                match pumpkin_world::generation::structure::template::processor::register_dynamic_processor_list(
+                match sculith_world::generation::structure::template::processor::register_dynamic_processor_list(
                     &resource_id,
                     &json_content,
                 ) {
@@ -209,9 +209,9 @@ fn visit_processor_list_dir(dir: &Path, namespace: &str, prefix: &str, count: &m
 
 /// Clears all dynamically registered worldgen structures, template pools, and processor lists.
 pub fn clear_dynamic_worldgen_data() {
-    pumpkin_world::generation::structure::template::global_cache().clear_dynamic();
-    pumpkin_world::generation::structure::structures::jigsaw::clear_dynamic_template_pools();
-    pumpkin_world::generation::structure::template::processor::clear_dynamic_processors();
+    sculith_world::generation::structure::template::global_cache().clear_dynamic();
+    sculith_world::generation::structure::structures::jigsaw::clear_dynamic_template_pools();
+    sculith_world::generation::structure::template::processor::clear_dynamic_processors();
 }
 
 #[cfg(test)]
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(pools_loaded, 1);
 
         let discovered =
-            pumpkin_world::generation::structure::structures::jigsaw::TemplatePool::discover(
+            sculith_world::generation::structure::structures::jigsaw::TemplatePool::discover(
                 "test_ns:test_pool",
             );
         assert!(discovered.is_some());

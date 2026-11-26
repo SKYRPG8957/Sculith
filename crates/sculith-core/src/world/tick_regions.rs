@@ -4,9 +4,9 @@ use std::{
     sync::{Arc, atomic::AtomicUsize},
 };
 
-use pumpkin_world::level::{ScheduledTickGroup, ScheduledTickStep};
 use rustc_hash::{FxHashMap, FxHashSet};
 use sculith_util::math::vector2::Vector2;
+use sculith_world::level::{ScheduledTickGroup, ScheduledTickStep};
 
 use super::{entity_chunks::RegionalEntityChunks, regional_input::RegionalInput};
 

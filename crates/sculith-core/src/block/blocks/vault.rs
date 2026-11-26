@@ -5,7 +5,7 @@ use pumpkin_data::block_properties::{LadderLikeProperties, VaultLikeProperties, 
 use pumpkin_data::item::Item;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 use crate::block::entities::vault::VaultBlockEntity;
 use crate::block::registry::BlockActionResult;

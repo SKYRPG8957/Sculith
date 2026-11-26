@@ -4,12 +4,12 @@ use crate::command::{
     node::{CommandExecutor, CommandExecutorResult, dispatcher::CommandDispatcher},
 };
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
 use sculith_util::{
     PermissionLvl,
     permission::{Permission, PermissionDefault, PermissionRegistry},
     text::TextComponent,
 };
+use sculith_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
 
 // Permission files from older servers may explicitly grant or deny this command.
 pub(super) const PERMISSION: &str = "pumpkin:command.pumpkin";

@@ -15,8 +15,8 @@ use pumpkin_data::tag;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 
 type FenceGateProperties = pumpkin_data::block_properties::OakFenceGateLikeProperties;
 

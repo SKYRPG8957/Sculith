@@ -11,9 +11,9 @@ use pumpkin_gametest::{
 };
 pub use pumpkin_gametest::{GameTestBatchReport, GameTestRetryOptions};
 use pumpkin_nbt::NbtCompound;
-use pumpkin_world::{chunk::ChunkHeightmapType, world::BlockFlags};
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
 use sculith_util::text::TextComponent;
+use sculith_world::{chunk::ChunkHeightmapType, world::BlockFlags};
 use tracing::{info, warn};
 
 use crate::{

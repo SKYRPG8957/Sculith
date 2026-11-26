@@ -1,9 +1,9 @@
 use pumpkin_data::{BlockState, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::generation::structure::template::BlockPlacer;
-use pumpkin_world::level::Level;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::generation::structure::template::BlockPlacer;
+use sculith_world::level::Level;
 
 use crate::world::World;
 

@@ -53,8 +53,8 @@
 /crates/sculith-core/src/world/natural_spawner.rs                           @RoosterBooster007 @MegalithOfficial
 
 # --- World generation ---
-/crates/pumpkin-world/src/generation/feature/                               @Snowiiii @RoosterBooster007 @MegalithOfficial
-/crates/pumpkin-world/src/generation/noise/                                 @Snowiiii @RoosterBooster007 @MegalithOfficial
+/crates/sculith-world/src/generation/feature/                               @Snowiiii @RoosterBooster007 @MegalithOfficial
+/crates/sculith-world/src/generation/noise/                                 @Snowiiii @RoosterBooster007 @MegalithOfficial
 
 # --- Data and codegen ---
 /crates/pumpkin-data/                                                       @Snowiiii @KairuDeibisu @QuantumSegfault

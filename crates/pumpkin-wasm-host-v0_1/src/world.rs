@@ -1,9 +1,9 @@
 use pumpkin_data::block_properties::NoteblockInstrument as InternalNoteblockInstrument;
 use pumpkin_data::block_state::PistonBehavior;
 use pumpkin_data::{BlockDirection as InternalBlockDirection, BlockId, BlockStateId};
-use pumpkin_world::chunk::ChunkHeightmapType;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_world::chunk::ChunkHeightmapType;
+use sculith_world::world::BlockFlags;
 use std::sync::{Arc, Mutex as StdMutex};
 use wasmtime::component::{Access, HasSelf, Resource};
 
@@ -1059,7 +1059,7 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
         });
 
         world_ref.level.set_world_gen(Arc::new(
-            pumpkin_world::generation::generator::WorldGenerator::Custom(wasm_gen),
+            sculith_world::generation::generator::WorldGenerator::Custom(wasm_gen),
         ));
         Ok(())
     }
@@ -1972,9 +1972,9 @@ impl pumpkin::plugin::world::HostChunkBuffer for PluginHostState {
         let res = self.get(&this)?;
         if x < 16 && z < 16 {
             let world_x =
-                pumpkin_world::generation::positions::chunk_pos::start_block_x(res.x) + x as i32;
+                sculith_world::generation::positions::chunk_pos::start_block_x(res.x) + x as i32;
             let world_z =
-                pumpkin_world::generation::positions::chunk_pos::start_block_z(res.z) + z as i32;
+                sculith_world::generation::positions::chunk_pos::start_block_z(res.z) + z as i32;
             let mut proto = res
                 .proto_chunk
                 .lock()
@@ -2021,8 +2021,8 @@ impl pumpkin::plugin::world::HostChunkBuffer for PluginHostState {
         state_id: u16,
     ) -> wasmtime::Result<()> {
         let res = self.get(&this)?;
-        let start_x = pumpkin_world::generation::positions::chunk_pos::start_block_x(res.x);
-        let start_z = pumpkin_world::generation::positions::chunk_pos::start_block_z(res.z);
+        let start_x = sculith_world::generation::positions::chunk_pos::start_block_x(res.x);
+        let start_z = sculith_world::generation::positions::chunk_pos::start_block_z(res.z);
         let block_state = pumpkin_data::BlockState::from_id(
             pumpkin_data::BlockStateId::new(state_id).unwrap_or(pumpkin_data::BlockStateId::AIR),
         );
@@ -2050,9 +2050,9 @@ impl pumpkin::plugin::world::HostChunkBuffer for PluginHostState {
         let res = self.get(&this)?;
         if x < 16 && z < 16 {
             let world_x =
-                pumpkin_world::generation::positions::chunk_pos::start_block_x(res.x) + x as i32;
+                sculith_world::generation::positions::chunk_pos::start_block_x(res.x) + x as i32;
             let world_z =
-                pumpkin_world::generation::positions::chunk_pos::start_block_z(res.z) + z as i32;
+                sculith_world::generation::positions::chunk_pos::start_block_z(res.z) + z as i32;
             let block_state = pumpkin_data::BlockState::from_id(
                 pumpkin_data::BlockStateId::new(state_id)
                     .unwrap_or(pumpkin_data::BlockStateId::AIR),
@@ -2080,8 +2080,8 @@ impl pumpkin::plugin::world::HostChunkBuffer for PluginHostState {
         state_id: u16,
     ) -> wasmtime::Result<()> {
         let res = self.get(&this)?;
-        let start_x = pumpkin_world::generation::positions::chunk_pos::start_block_x(res.x);
-        let start_z = pumpkin_world::generation::positions::chunk_pos::start_block_z(res.z);
+        let start_x = sculith_world::generation::positions::chunk_pos::start_block_x(res.x);
+        let start_z = sculith_world::generation::positions::chunk_pos::start_block_z(res.z);
         let block_state = pumpkin_data::BlockState::from_id(
             pumpkin_data::BlockStateId::new(state_id).unwrap_or(pumpkin_data::BlockStateId::AIR),
         );
@@ -2150,8 +2150,8 @@ impl pumpkin::plugin::world::HostChunkBuffer for PluginHostState {
 }
 
 struct ProtoChunkRestore<'a> {
-    target: &'a mut pumpkin_world::ProtoChunk,
-    source: Arc<StdMutex<pumpkin_world::ProtoChunk>>,
+    target: &'a mut sculith_world::ProtoChunk,
+    source: Arc<StdMutex<sculith_world::ProtoChunk>>,
 }
 
 impl Drop for ProtoChunkRestore<'_> {
@@ -2177,15 +2177,15 @@ impl WasmChunkGenerator {
     fn invoke_phase(
         &self,
         phase: pumpkin::plugin::world::GenerationPhase,
-        proto_chunk: &mut pumpkin_world::ProtoChunk,
+        proto_chunk: &mut sculith_world::ProtoChunk,
     ) {
         let x = proto_chunk.x;
         let z = proto_chunk.z;
         let min_y = proto_chunk.bottom_y() as i32;
         let height = proto_chunk.height() as u32;
         let placeholder_generator =
-            pumpkin_world::generation::generator::WorldGenerator::Custom(Arc::new(self.clone()));
-        let placeholder = pumpkin_world::ProtoChunk::new(x, z, &placeholder_generator);
+            sculith_world::generation::generator::WorldGenerator::Custom(Arc::new(self.clone()));
+        let placeholder = sculith_world::ProtoChunk::new(x, z, &placeholder_generator);
         let owned_proto_chunk = std::mem::replace(proto_chunk, placeholder);
         let shared_proto_chunk = Arc::new(StdMutex::new(owned_proto_chunk));
         let _restore = ProtoChunkRestore {
@@ -2244,7 +2244,7 @@ impl WasmChunkGenerator {
     }
 }
 
-impl pumpkin_world::generation::generator::CustomChunkGenerator for WasmChunkGenerator {
+impl sculith_world::generation::generator::CustomChunkGenerator for WasmChunkGenerator {
     fn dimension(&self) -> &pumpkin_data::dimension::Dimension {
         &self.dimension
     }
@@ -2253,34 +2253,34 @@ impl pumpkin_world::generation::generator::CustomChunkGenerator for WasmChunkGen
         self.seed
     }
 
-    fn step_to_biomes(&self, chunk: &mut pumpkin_world::ProtoChunk) {
+    fn step_to_biomes(&self, chunk: &mut sculith_world::ProtoChunk) {
         self.invoke_phase(pumpkin::plugin::world::GenerationPhase::Biomes, chunk);
-        chunk.stage = pumpkin_world::chunk_system::StagedChunkEnum::Biomes;
+        chunk.stage = sculith_world::chunk_system::StagedChunkEnum::Biomes;
     }
 
-    fn step_to_noise(&self, chunk: &mut pumpkin_world::ProtoChunk) {
+    fn step_to_noise(&self, chunk: &mut sculith_world::ProtoChunk) {
         self.invoke_phase(pumpkin::plugin::world::GenerationPhase::Noise, chunk);
-        chunk.stage = pumpkin_world::chunk_system::StagedChunkEnum::Noise;
+        chunk.stage = sculith_world::chunk_system::StagedChunkEnum::Noise;
     }
 
-    fn step_to_surface(&self, chunk: &mut pumpkin_world::ProtoChunk) {
+    fn step_to_surface(&self, chunk: &mut sculith_world::ProtoChunk) {
         self.invoke_phase(pumpkin::plugin::world::GenerationPhase::Surface, chunk);
-        chunk.stage = pumpkin_world::chunk_system::StagedChunkEnum::Surface;
+        chunk.stage = sculith_world::chunk_system::StagedChunkEnum::Surface;
     }
 
-    fn step_to_carvers(&self, chunk: &mut pumpkin_world::ProtoChunk) {
-        chunk.stage = pumpkin_world::chunk_system::StagedChunkEnum::Carvers;
+    fn step_to_carvers(&self, chunk: &mut sculith_world::ProtoChunk) {
+        chunk.stage = sculith_world::chunk_system::StagedChunkEnum::Carvers;
     }
 
     fn step_to_features(
         &self,
-        cache: &mut pumpkin_world::chunk_system::generation_cache::Cache,
-        _block_registry: &dyn pumpkin_world::world::WorldPortalExt,
+        cache: &mut sculith_world::chunk_system::generation_cache::Cache,
+        _block_registry: &dyn sculith_world::world::WorldPortalExt,
     ) {
         let mid = ((cache.size * cache.size) >> 1) as usize;
         let chunk = cache.chunks[mid].get_proto_chunk_mut();
         self.invoke_phase(pumpkin::plugin::world::GenerationPhase::Features, chunk);
-        chunk.stage = pumpkin_world::chunk_system::StagedChunkEnum::Features;
+        chunk.stage = sculith_world::chunk_system::StagedChunkEnum::Features;
     }
 }
 

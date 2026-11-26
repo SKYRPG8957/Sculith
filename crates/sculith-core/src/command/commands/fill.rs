@@ -1,12 +1,12 @@
 use pumpkin_data::translation;
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::PermissionLvl;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector2::Vector2;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use sculith_util::text::TextComponent;
+use sculith_world::world::BlockFlags;
 
 use crate::command::argument_builder::{
     ArgumentBuilder, RequiredArgumentBuilder, argument, command, literal,

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pumpkin_data::block_properties::SuspiciousSandLikeProperties;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockId, BlockStateId};
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 use crate::block::blocks::falling::FallingBlock;
 use crate::block::entities::brushable_block::BrushableBlockBlockEntity;

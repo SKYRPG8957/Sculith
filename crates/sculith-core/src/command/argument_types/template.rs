@@ -23,7 +23,7 @@ impl<S: CommandSource> ArgumentType<S> for TemplateNameArgumentType {
         _context: &CommandContext<S>,
         builder: SuggestionsBuilder,
     ) -> Suggestions {
-        let names = pumpkin_world::generation::structure::template::all_template_names();
+        let names = sculith_world::generation::structure::template::all_template_names();
         builder
             .filter_and_suggest_iter(names.iter().map(|n| format!("minecraft:{n}")))
             .build()

@@ -14,7 +14,7 @@
 //! # Example Usage
 //!
 //! ```ignore
-//! use pumpkin_world::generation::structure::template::{TemplateCache, TemplatePiece};
+//! use sculith_world::generation::structure::template::{TemplateCache, TemplatePiece};
 //! use pumpkin_data::Rotation;
 //!
 //! // Load a template from the cache

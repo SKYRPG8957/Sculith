@@ -5194,11 +5194,11 @@ impl Entity {
         }
         self.world
             .load_full()
-            .clip(&pumpkin_world::clip::ClipContext::new(
+            .clip(&sculith_world::clip::ClipContext::new(
                 from,
                 to,
-                pumpkin_world::clip::ClipBlock::Visual,
-                pumpkin_world::clip::ClipFluid::None,
+                sculith_world::clip::ClipBlock::Visual,
+                sculith_world::clip::ClipFluid::None,
             ))
             .is_miss
     }

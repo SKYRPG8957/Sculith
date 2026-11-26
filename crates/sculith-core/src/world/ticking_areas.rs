@@ -7,12 +7,12 @@ use std::{
     time::Duration,
 };
 
-use pumpkin_world::world_info::ticking_areas::{
-    self as metadata, TickingAreaDimensions, same_name, valid_name,
-};
-pub use pumpkin_world::world_info::ticking_areas::{AreaShape, MAX_AREAS, TickingArea};
 use rustc_hash::FxHashSet;
 use sculith_util::math::vector2::Vector2;
+use sculith_world::world_info::ticking_areas::{
+    self as metadata, TickingAreaDimensions, same_name, valid_name,
+};
+pub use sculith_world::world_info::ticking_areas::{AreaShape, MAX_AREAS, TickingArea};
 
 use super::World;
 

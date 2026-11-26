@@ -11,12 +11,12 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockState, BlockStateId};
 use pumpkin_inventory::Inventory;
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
 use sculith_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use sculith_protocol::java::client::play::CSetPlayerInventory;
 use sculith_util::GameMode;
 use sculith_util::math::position::BlockPos;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::entities::shelf::ShelfBlockEntity;

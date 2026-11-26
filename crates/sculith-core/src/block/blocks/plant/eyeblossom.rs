@@ -8,12 +8,12 @@ use pumpkin_data::{
     sound::{Sound, SoundCategory},
     tag::{self, Taggable},
 };
-use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 use rand::RngExt;
 use sculith_util::{
     Difficulty,
     math::{position::BlockPos, vector3::Vector3},
 };
+use sculith_world::{tick::TickPriority, world::BlockFlags};
 
 use crate::{
     block::{

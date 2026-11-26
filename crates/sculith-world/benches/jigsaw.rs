@@ -2,9 +2,9 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use pumpkin_data::Rotation;
-use pumpkin_world::generation::structure::structures::jigsaw::TemplatePool;
 use sculith_util::math::position::BlockPos;
 use sculith_util::random::{RandomGenerator, xoroshiro128::Xoroshiro};
+use sculith_world::generation::structure::structures::jigsaw::TemplatePool;
 use std::hint::black_box;
 
 /// Pools that drive large, deep jigsaw structures, so the per-element template

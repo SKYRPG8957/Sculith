@@ -549,7 +549,6 @@ mod tests {
         potion::Effect,
     };
     use pumpkin_inventory::screen_handler::ScreenHandler;
-    use pumpkin_world::world::BlockFlags;
     use sculith_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
@@ -569,6 +568,7 @@ mod tests {
         serial::PacketWrite,
     };
     use sculith_util::{GameMode, Hand, math::vector3::Vector3};
+    use sculith_world::world::BlockFlags;
     use std::{
         sync::{Mutex, atomic::AtomicBool, mpsc},
         time::{Duration, Instant},
@@ -1687,7 +1687,7 @@ mod tests {
         origin: Vector2<i32>,
     ) {
         use crate::entity::player::statistics::CustomStatistic;
-        use pumpkin_world::chunk::ChunkData;
+        use sculith_world::chunk::ChunkData;
 
         let destination = Vector2::new(origin.x + 1, origin.y);
         world
@@ -1842,7 +1842,7 @@ mod tests {
                 .level
                 .loaded_chunks
                 .entry(Vector2::new(x, 0))
-                .or_insert_with(|| pumpkin_world::chunk::ChunkData::empty_sync(x, 0));
+                .or_insert_with(|| sculith_world::chunk::ChunkData::empty_sync(x, 0));
         }
         let refresh = |joined| {
             let mut forced = world.forced_chunks.lock().unwrap();

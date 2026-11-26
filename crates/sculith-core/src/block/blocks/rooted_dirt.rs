@@ -1,6 +1,6 @@
 use pumpkin_data::Block;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 use crate::block::{BlockBehaviour, BonemealArgs};
 

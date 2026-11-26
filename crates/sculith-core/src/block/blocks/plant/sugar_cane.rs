@@ -3,9 +3,9 @@ use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, block_properties::CactusLikeProperties, tag};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use sculith_util::math::position::BlockPos;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::{BlockAccessor, BlockFlags};
 
 use crate::{
     block::{

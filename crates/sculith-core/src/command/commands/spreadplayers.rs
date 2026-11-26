@@ -1,9 +1,9 @@
 use pumpkin_data::translation;
-use pumpkin_world::chunk::ChunkHeightmapType;
 use sculith_util::PermissionLvl;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use sculith_util::text::TextComponent;
+use sculith_world::chunk::ChunkHeightmapType;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::coordinates::vec2::Vec2ArgumentType;

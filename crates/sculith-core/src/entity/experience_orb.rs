@@ -484,11 +484,11 @@ mod tests {
     use super::*;
     use crate::data::VanillaData;
     use pumpkin_data::Block;
-    use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
     use sculith_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
     use sculith_util::math::position::BlockPos;
+    use sculith_world::{chunk::ChunkData, world::BlockFlags};
     use std::time::{Duration, Instant};
 
     #[tokio::test]

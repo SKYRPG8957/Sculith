@@ -1,6 +1,6 @@
 use pumpkin_data::{BlockDirection, BlockId, BlockStateId};
-use pumpkin_world::world::BlockFlags;
 use rand::seq::SliceRandom;
+use sculith_world::world::BlockFlags;
 
 use crate::block::{
     BlockBehaviour, BlockMetadata, BonemealArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,

@@ -9,10 +9,10 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::chunk::ChunkHeightmapType;
 use rand::RngExt;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::chunk::ChunkHeightmapType;
 
 use crate::entity::ai::target_predicate::TargetPredicate;
 use crate::entity::custom_sound::CustomSound;

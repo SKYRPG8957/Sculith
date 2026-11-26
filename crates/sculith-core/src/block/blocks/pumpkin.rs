@@ -8,7 +8,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 use std::sync::Arc;
 
 #[pumpkin_block("minecraft:pumpkin")]

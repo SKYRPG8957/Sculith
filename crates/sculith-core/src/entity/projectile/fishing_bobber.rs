@@ -17,10 +17,10 @@ use pumpkin_data::entity::{EntityStatus, EntityType};
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
-use pumpkin_world::clip::ClipBlock;
 use rand::RngExt;
 use sculith_protocol::bedrock::server::ActorEventID;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::clip::ClipBlock;
 
 pub struct FishingBobberEntity {
     pub entity: Entity,

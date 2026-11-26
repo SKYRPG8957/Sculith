@@ -11,10 +11,10 @@ use pumpkin_data::{
     structures::{StructureKeys, StructureSet},
     tag::{self, Taggable},
 };
-use pumpkin_world::generation::generator::structure_finder::find_nearest_structure_start_in_sets;
 use rand::RngExt;
 use sculith_protocol::bedrock::server::ActorEventID;
 use sculith_util::math::{position::BlockPos, vector3::Vector3, wrap_degrees};
+use sculith_world::generation::generator::structure_finder::find_nearest_structure_start_in_sets;
 
 use super::DolphinEntity;
 use crate::entity::{

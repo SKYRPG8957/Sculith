@@ -2,9 +2,9 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::LightLikeProperties;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::{GameMode, PermissionLvl};
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 use crate::block::registry::BlockActionResult;
 use crate::block::{BlockBehaviour, GetStateForNeighborUpdateArgs, NormalUseArgs, OnPlaceArgs};

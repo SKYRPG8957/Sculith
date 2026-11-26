@@ -10,9 +10,9 @@ use pumpkin_data::{
     sound::Sound,
     tag::{Tag, Taggable},
 };
-use pumpkin_world::chunk::ChunkData;
 use rustc_hash::FxHashMap;
 use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
+use sculith_world::chunk::ChunkData;
 
 use crate::{
     block::{ExplodeArgs, drop_loot},
@@ -649,11 +649,11 @@ impl<'a> Explosion<'a> {
                     let vec3d = Vector3::new(n + offset_x, o, p + offset_z);
 
                     if world
-                        .clip(&pumpkin_world::clip::ClipContext::new(
+                        .clip(&sculith_world::clip::ClipContext::new(
                             vec3d,
                             *explosion_pos,
-                            pumpkin_world::clip::ClipBlock::Collider,
-                            pumpkin_world::clip::ClipFluid::None,
+                            sculith_world::clip::ClipBlock::Collider,
+                            sculith_world::clip::ClipFluid::None,
                         ))
                         .is_miss
                     {

@@ -3,9 +3,9 @@ use std::f64::consts::FRAC_PI_2;
 
 use pumpkin_data::poi_type::PoiType;
 use pumpkin_data::tag::{PointOfInterestType, Taggable};
-use pumpkin_world::poi::Occupancy;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::poi::Occupancy;
 
 use super::{Controls, Goal};
 use crate::block::blocks::doors::DoorBlock;

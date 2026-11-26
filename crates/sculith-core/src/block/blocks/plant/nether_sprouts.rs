@@ -25,7 +25,7 @@ impl BlockBehaviour for NetherSproutsBlock {
 impl PlantBlockBase for NetherSproutsBlock {
     fn can_plant_on_top(
         &self,
-        block_accessor: &dyn pumpkin_world::world::BlockAccessor,
+        block_accessor: &dyn sculith_world::world::BlockAccessor,
         pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         let block = block_accessor.get_block(pos);

@@ -1,8 +1,8 @@
 use pumpkin_data::entity::EntityType;
-use pumpkin_world::poi::{Occupancy, SectionPos};
 use rand::RngExt;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::poi::{Occupancy, SectionPos};
 
 use super::wander_around::WanderAroundGoal;
 use crate::entity::EntityBase;

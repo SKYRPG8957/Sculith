@@ -7,7 +7,7 @@
 compile_error!("Compiling for WASI targets is not supported!");
 
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_world::{
+use sculith_world::{
     CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION,
     chunk::io::bedrock_import::{
         GeneratorPolicy, ImportOptions, ImportStats, StorageExportOptions, export_world,
@@ -151,7 +151,7 @@ async fn main() {
             _ => sculith_config::chunk::AnvilChunkConfig::default(),
         };
         let Some(target_config) =
-            pumpkin_world::chunk::io::converter::parse_chunk_config(&target_arg, anvil_default)
+            sculith_world::chunk::io::converter::parse_chunk_config(&target_arg, anvil_default)
         else {
             tracing::error!(
                 "Unknown chunk format '{target_arg}'. Expected 'pump', 'anvil', or 'linear'."
@@ -159,14 +159,14 @@ async fn main() {
             exit(1);
         };
         let target_format =
-            pumpkin_world::chunk::io::converter::RegionFormat::from_config(&target_config);
+            sculith_world::chunk::io::converter::RegionFormat::from_config(&target_config);
         let world_dir = exec_dir.join(config.basic.get_world_path());
         info!(
             "Converting world at {} to {} format...",
             world_dir.display(),
             target_format.name()
         );
-        match pumpkin_world::chunk::io::converter::convert_world(&world_dir, &target_config, true) {
+        match sculith_world::chunk::io::converter::convert_world(&world_dir, &target_config, true) {
             Ok(stats) => {
                 info!(
                     "Converted {} region(s) ({} chunk(s)) to {} format in {}ms",

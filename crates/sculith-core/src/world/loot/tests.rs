@@ -641,8 +641,8 @@ async fn double_plants_keep_their_adjacent_half_location_checks() {
         Block,
         block_properties::{DoubleBlockHalf, LargeFernProperties},
     };
-    use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
     use sculith_util::math::{position::BlockPos, vector2::Vector2};
+    use sculith_world::{chunk::ChunkData, world::BlockFlags};
     let folder = tempfile::tempdir().unwrap();
     let world = world(&folder);
     world

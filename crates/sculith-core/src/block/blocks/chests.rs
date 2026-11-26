@@ -18,11 +18,11 @@ use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::{pumpkin_block, pumpkin_block_from_tag};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::GameMode;
 use sculith_util::math::boundingbox::BoundingBox;
 use sculith_util::math::position::BlockPos;
 use sculith_util::text::TextComponent;
+use sculith_world::world::BlockFlags;
 use std::sync::Mutex;
 
 use crate::block::{

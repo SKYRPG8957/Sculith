@@ -16,13 +16,13 @@ use pumpkin_data::{
     world::WorldEvent,
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::world::BlockFlags;
 use sculith_protocol::codec::var_int::VarInt;
 use sculith_util::{
     Difficulty,
     math::{position::BlockPos, vector3::Vector3},
     text::TextComponent,
 };
+use sculith_world::world::BlockFlags;
 
 use crate::{
     entity::{

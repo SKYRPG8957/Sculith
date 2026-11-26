@@ -1,9 +1,9 @@
 use pumpkin_data::poi_type::PoiType;
-use pumpkin_world::chunk::ChunkData;
-use pumpkin_world::chunk::palette::BlockPalette;
-use pumpkin_world::poi::{PoiStorage, SectionPos};
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::chunk::ChunkData;
+use sculith_world::chunk::palette::BlockPalette;
+use sculith_world::poi::{PoiStorage, SectionPos};
 
 pub(crate) const MAX_CHUNKS_PER_TICK: usize = 8;
 

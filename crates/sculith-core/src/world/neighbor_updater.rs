@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use pumpkin_data::{Block, BlockDirection, BlockId, BlockStateId};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 use tracing::error;
 
 use super::World;
@@ -243,9 +243,9 @@ mod tests {
         cascade_in_progress,
     };
     use pumpkin_data::{BlockDirection, BlockId};
-    use pumpkin_world::world::BlockFlags;
     use sculith_util::math::position::BlockPos;
     use sculith_util::math::vector3::Vector3;
+    use sculith_world::world::BlockFlags;
 
     const OVERWORLD: &str = "overworld";
     const NETHER: &str = "nether";

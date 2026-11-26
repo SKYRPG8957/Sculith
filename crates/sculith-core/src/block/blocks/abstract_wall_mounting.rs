@@ -3,8 +3,8 @@ use pumpkin_data::{
     Block, BlockDirection, BlockStateId, FacingExt, HorizontalFacingExt,
     block_properties::{AttachFace, HorizontalFacing},
 };
-use pumpkin_world::world::BlockAccessor;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockAccessor;
 
 use crate::{
     block::{BlockIsReplacing, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs},

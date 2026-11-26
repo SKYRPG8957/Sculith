@@ -14,9 +14,9 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::{BlockAccessor, BlockFlags};
 
 #[pumpkin_block("minecraft:vine")]
 pub struct VineBlock;

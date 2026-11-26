@@ -7,10 +7,10 @@ use pumpkin_data::block_properties::{Facing, LadderLikeProperties};
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::{Block, BlockDirection, FacingExt, HorizontalFacingExt};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockAccessor;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockAccessor;
 
 #[pumpkin_block("minecraft:ladder")]
 pub struct LadderBlock;

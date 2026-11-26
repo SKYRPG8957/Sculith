@@ -588,7 +588,7 @@ mod tests {
     async fn dolphin_air_distinguishes_nautilus_breathing_and_no_ai() -> TestResult {
         let folder = tempfile::tempdir()?;
         let world = world(&folder);
-        let chunk = pumpkin_world::chunk::ChunkData::empty_sync(0, 0);
+        let chunk = sculith_world::chunk::ChunkData::empty_sync(0, 0);
         chunk.set_block_absolute_y(0, 64, 0, pumpkin_data::Block::WATER.default_state.id);
         world.level.loaded_chunks.insert(Vector2::new(0, 0), chunk);
         let dolphin = DolphinEntity::new(Entity::new(

@@ -8,9 +8,9 @@ use crate::world::game_event::GameEventContext;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::tag::{self, Taggable};
-use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use sculith_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_world::world::BlockFlags;
 
 pub struct PickUpBlockGoal {
     enderman: Weak<EndermanEntity>,
@@ -77,11 +77,11 @@ impl Goal for PickUpBlockGoal {
             enderman_block.0.z as f64 + 0.5,
         );
         let block_center = Vector3::new(bx as f64 + 0.5, by as f64 + 0.5, bz as f64 + 0.5);
-        let hit = world.clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = world.clip(&sculith_world::clip::ClipContext::new(
             enderman_center,
             block_center,
-            pumpkin_world::clip::ClipBlock::Outline,
-            pumpkin_world::clip::ClipFluid::None,
+            sculith_world::clip::ClipBlock::Outline,
+            sculith_world::clip::ClipFluid::None,
         ));
         if !hit.is_miss && hit.block_pos != target_pos {
             return;

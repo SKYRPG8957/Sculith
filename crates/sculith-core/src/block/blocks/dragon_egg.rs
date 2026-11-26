@@ -46,12 +46,12 @@ impl DragonEggBlock {
                 world.set_block_state(
                     &test_pos,
                     current_state.id,
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                    sculith_world::world::BlockFlags::NOTIFY_ALL,
                 );
                 world.set_block_state(
                     pos,
                     pumpkin_data::Block::AIR.default_state.id,
-                    pumpkin_world::world::BlockFlags::NOTIFY_ALL,
+                    sculith_world::world::BlockFlags::NOTIFY_ALL,
                 );
                 return;
             }

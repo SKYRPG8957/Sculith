@@ -6,10 +6,10 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::world::{BlockAccessor, BlockFlags};
 use uuid::Uuid;
 
 use crate::block::{

@@ -5,8 +5,6 @@ use pumpkin_data::chunk::Biome;
 use pumpkin_data::item::{BedrockItem, BedrockItemVersion};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_data::poi_type::PoiType;
-use pumpkin_world::generation::proto_chunk::GenerationCache;
-use pumpkin_world::poi::{PoiStorage, SectionPos};
 use rayon::prelude::*;
 use sculith_protocol::bedrock::client::item_registry::{CItemRegistry, ItemData};
 use sculith_protocol::bedrock::client::level_event::{CLevelEvent, LevelEvent};
@@ -16,6 +14,8 @@ use sculith_protocol::bedrock::client::{
 };
 use sculith_protocol::bedrock::network_item::NetworkItemDescriptor;
 use sculith_protocol::codec::data_component::data_to_proto_sound;
+use sculith_world::generation::proto_chunk::GenerationCache;
+use sculith_world::poi::{PoiStorage, SectionPos};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, RwLock, Weak};
 use std::{collections::HashMap, path::Path, sync::atomic::Ordering};
@@ -117,23 +117,6 @@ use pumpkin_inventory::Inventory;
 use pumpkin_inventory::crafting::recipe_provider::RecipeProvider;
 use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::world::{GetBlockError, WorldPortalExt};
-use pumpkin_world::world_info::clock::WorldClockSnapshot;
-use pumpkin_world::{
-    CURRENT_BEDROCK_MC_VERSION, biome,
-    chunk::{io::Dirtiable, palette::bedrock_water_state},
-};
-use pumpkin_world::{
-    chunk::{ChunkData, ChunkEntityData, RegionalFluid},
-    chunk_system::ChunkPos,
-    data::checkpoint::EntityChunkImage,
-    world::BlockAccessor,
-};
-use pumpkin_world::{
-    level::{Level, SyncChunk, apply_regional_block_properties},
-    tick::{TickPriority, order},
-};
-pub use pumpkin_world::{world::BlockFlags, world_info::LevelData};
 use rand::seq::{IndexedRandom, SliceRandom};
 use rand::{RngExt, rng};
 use scoreboard::Scoreboard;
@@ -198,6 +181,23 @@ use sculith_util::{
     math::vector2::Vector2,
     random::{RandomImpl, get_seed, xoroshiro128::Xoroshiro},
 };
+use sculith_world::world::{GetBlockError, WorldPortalExt};
+use sculith_world::world_info::clock::WorldClockSnapshot;
+use sculith_world::{
+    CURRENT_BEDROCK_MC_VERSION, biome,
+    chunk::{io::Dirtiable, palette::bedrock_water_state},
+};
+use sculith_world::{
+    chunk::{ChunkData, ChunkEntityData, RegionalFluid},
+    chunk_system::ChunkPos,
+    data::checkpoint::EntityChunkImage,
+    world::BlockAccessor,
+};
+use sculith_world::{
+    level::{Level, SyncChunk, apply_regional_block_properties},
+    tick::{TickPriority, order},
+};
+pub use sculith_world::{world::BlockFlags, world_info::LevelData};
 use time::LevelTime;
 
 pub mod block_placer;
@@ -223,8 +223,8 @@ use crate::world::natural_spawner::{SpawnState, spawn_for_chunk};
 use crate::world::player_touch::{pickup_body, touch_entities};
 pub(crate) use player_touch::pickup_area;
 use pumpkin_data::effect::StatusEffect;
-use pumpkin_world::chunk::ChunkHeightmapType::{self, MotionBlocking, WorldSurface};
 use sculith_config::lighting::LightingEngineConfig;
+use sculith_world::chunk::ChunkHeightmapType::{self, MotionBlocking, WorldSurface};
 use uuid::Uuid;
 use weather::Weather;
 
@@ -709,7 +709,7 @@ impl World {
         }
         for change in self.level.loaded_chunk_changes() {
             match change {
-                pumpkin_world::level::LoadedChunkChange::Loaded(pos) => {
+                sculith_world::level::LoadedChunkChange::Loaded(pos) => {
                     if active_chunks.contains(&pos) && self.level.is_chunk_loaded(&pos) {
                         self.level.track_scheduled_chunk(&pos);
                         if tracker.loaded_active_chunks.insert(pos) {
@@ -717,7 +717,7 @@ impl World {
                         }
                     }
                 }
-                pumpkin_world::level::LoadedChunkChange::Unloaded(pos) => {
+                sculith_world::level::LoadedChunkChange::Unloaded(pos) => {
                     if !self.level.is_chunk_loaded(&pos) {
                         tracker.loaded_active_chunks.remove(&pos);
                     }
@@ -2740,7 +2740,7 @@ impl World {
                     );
                 }
                 for (position, old, new) in changes {
-                    if pumpkin_world::lighting::LightEngine::has_different_light_properties(
+                    if sculith_world::lighting::LightEngine::has_different_light_properties(
                         old.to_state(),
                         new.to_state(),
                     ) {
@@ -6020,7 +6020,7 @@ impl World {
 
         let old_state = replaced_block_state_id.to_state();
         let new_state = block_state_id.to_state();
-        if pumpkin_world::lighting::LightEngine::has_different_light_properties(
+        if sculith_world::lighting::LightEngine::has_different_light_properties(
             old_state, new_state,
         ) {
             self.level
@@ -7674,17 +7674,17 @@ impl World {
     /// Vanilla: `BlockGetter.clip(ClipContext)`.
     pub fn clip(
         &self,
-        context: &pumpkin_world::clip::ClipContext,
-    ) -> pumpkin_world::clip::BlockHitResult {
-        pumpkin_world::clip::clip(self, context)
+        context: &sculith_world::clip::ClipContext,
+    ) -> sculith_world::clip::BlockHitResult {
+        sculith_world::clip::clip(self, context)
     }
 
     /// Like [`Self::clip`], but a ray leaving the world border stops at it. The flag says whether
     /// the hit is the border rather than a block.
     pub fn clip_including_border(
         &self,
-        context: &pumpkin_world::clip::ClipContext,
-    ) -> (pumpkin_world::clip::BlockHitResult, bool) {
+        context: &sculith_world::clip::ClipContext,
+    ) -> (sculith_world::clip::BlockHitResult, bool) {
         let hit = self.clip(context);
         let Ok(border) = self.worldborder.lock() else {
             return (hit, false);
@@ -7697,7 +7697,7 @@ impl World {
         }
         let delta = hit.location - from;
         let location = border.clamp_to_bounds(hit.location);
-        let border_hit = pumpkin_world::clip::BlockHitResult::hit(
+        let border_hit = sculith_world::clip::BlockHitResult::hit(
             location,
             BlockDirection::get_nearest(delta.x, delta.y, delta.z),
             BlockPos::floored(location.x, location.y, location.z),
@@ -7713,14 +7713,14 @@ impl World {
         include_fluids: bool,
     ) -> Option<(BlockPos, BlockDirection, Vector3<f64>)> {
         let fluid = if include_fluids {
-            pumpkin_world::clip::ClipFluid::Any
+            sculith_world::clip::ClipFluid::Any
         } else {
-            pumpkin_world::clip::ClipFluid::None
+            sculith_world::clip::ClipFluid::None
         };
-        let hit = self.clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = self.clip(&sculith_world::clip::ClipContext::new(
             start_pos,
             end_pos,
-            pumpkin_world::clip::ClipBlock::Outline,
+            sculith_world::clip::ClipBlock::Outline,
             fluid,
         ));
         if hit.is_miss {
@@ -9063,8 +9063,8 @@ mod tests {
             passive::cow::CowEntity,
         };
         use pumpkin_data::entity::EntityType;
-        use pumpkin_world::{chunk::ChunkData, world::BlockFlags};
         use sculith_util::math::{vector2::Vector2, vector3::Vector3};
+        use sculith_world::{chunk::ChunkData, world::BlockFlags};
         use std::sync::Arc;
 
         let folder = tempfile::tempdir()?;

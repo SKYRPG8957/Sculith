@@ -3,10 +3,10 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use pumpkin_data::BlockStateId;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_world::chunk_system::{StagedChunkEnum, generate_single_chunk};
-use pumpkin_world::generation::get_world_gen;
-use pumpkin_world::world::WorldPortalExt;
 use sculith_util::world_seed::Seed;
+use sculith_world::chunk_system::{StagedChunkEnum, generate_single_chunk};
+use sculith_world::generation::get_world_gen;
+use sculith_world::world::WorldPortalExt;
 use std::hint::black_box;
 use std::sync::Arc;
 use std::time::Instant;
@@ -22,7 +22,7 @@ impl WorldPortalExt for BlockRegistry {
         &self,
         _block: &pumpkin_data::Block,
         _state: &pumpkin_data::BlockState,
-        _block_accessor: &dyn pumpkin_world::world::BlockAccessor,
+        _block_accessor: &dyn sculith_world::world::BlockAccessor,
         _block_pos: &sculith_util::math::position::BlockPos,
     ) -> bool {
         true
@@ -48,7 +48,7 @@ impl WorldPortalExt for BlockRegistry {
 
     fn spawn_mobs_for_chunk_generation(
         &self,
-        _cache: &mut dyn pumpkin_world::generation::proto_chunk::GenerationCache,
+        _cache: &mut dyn sculith_world::generation::proto_chunk::GenerationCache,
         _biome: &'static pumpkin_data::chunk::Biome,
         _chunk_x: i32,
         _chunk_z: i32,

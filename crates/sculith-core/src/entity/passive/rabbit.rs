@@ -17,13 +17,13 @@ use pumpkin_data::tag::{self, Taggable, WorldgenBiome};
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{Block, translation};
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use sculith_protocol::bedrock::server::actor_event::ActorEventID;
 use sculith_protocol::codec::var_int::VarInt;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::text::TextComponent;
+use sculith_world::world::BlockFlags;
 
 use crate::block::blocks::plant::crop::MAX_AGE;
 use crate::entity::ai::behavior::hunting::{self, Hunt};

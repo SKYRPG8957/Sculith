@@ -6,9 +6,9 @@ use crate::world::World;
 use pumpkin_data::block_properties::RedstoneOreLikeProperties;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::{Block, BlockId};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::Hand;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 use std::sync::Arc;
 
 pub struct RedstoneOreBlock;

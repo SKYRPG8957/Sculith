@@ -9,8 +9,8 @@ use pumpkin_data::{
     Block,
     block_properties::{HorizontalFacing, WallTorchLikeProperties},
 };
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 
 use super::World;
 

@@ -14,9 +14,9 @@ use pumpkin_data::{
     fluid::Fluid,
     tag::{self, Taggable},
 };
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use sculith_util::math::position::BlockPos;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::{BlockAccessor, BlockFlags};
 
 pub struct CoralFanBlock;
 

@@ -10,12 +10,12 @@ use pumpkin_data::{
     block_properties::{HorizontalFacing, WallTorchLikeProperties, WheatLikeProperties},
     tag::{self, Taggable},
 };
-use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use rand::RngExt;
 use sculith_util::{
     math::position::BlockPos,
     random::{RandomGenerator, xoroshiro128::Xoroshiro},
 };
+use sculith_world::world::{BlockAccessor, BlockFlags};
 
 type StemProperties = WheatLikeProperties;
 type AttachedStemProperties = WallTorchLikeProperties;

@@ -11,11 +11,11 @@ use pumpkin_data::{
     tag::{self, Taggable},
 };
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::{
     math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3},
     random::{RandomImpl, xoroshiro128::Xoroshiro},
 };
+use sculith_world::world::BlockFlags;
 
 use crate::{
     block::blocks::potent_sulfur::PotentSulfurBlock, entity::living::LivingEntity, world::World,

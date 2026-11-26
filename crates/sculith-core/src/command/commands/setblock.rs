@@ -1,10 +1,10 @@
 use std::sync::LazyLock;
 
 use pumpkin_data::translation;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::PermissionLvl;
 use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use sculith_util::text::TextComponent;
+use sculith_world::world::BlockFlags;
 
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::block::BlockArgumentType;

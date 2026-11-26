@@ -12,7 +12,7 @@ use axum::{
     routing::{get, post},
 };
 use pumpkin_auth::{jwt::Jwks, p384::ecdsa::SigningKey};
-use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
+use sculith_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
 use serde::Serialize;
 use tokio::{
     net::TcpListener,

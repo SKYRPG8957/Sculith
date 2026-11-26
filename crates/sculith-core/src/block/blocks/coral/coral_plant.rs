@@ -2,8 +2,8 @@ use pumpkin_data::{
     BlockDirection, BlockId, BlockStateId, block_properties::MangroveRootsLikeProperties,
     fluid::Fluid, tag,
 };
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 use crate::block::{
     BlockBehaviour, BlockMetadata, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,

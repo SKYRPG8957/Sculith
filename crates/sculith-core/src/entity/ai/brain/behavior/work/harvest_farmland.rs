@@ -4,9 +4,9 @@ use pumpkin_data::game_event::GameEvent;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockStateId, Property};
-use pumpkin_world::world::BlockFlags;
 use rand::{Rng, RngExt};
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 
 use super::super::super::BrainTick;
 use super::super::super::memory::position_tracker::{BlockPosTracker, PositionTracker};

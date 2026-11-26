@@ -1,4 +1,4 @@
-# pumpkin-world
+# sculith-world
 
 The root [AGENTS.md](../../AGENTS.md) applies here too. This file covers chunk loading, world generation and how to check changes against vanilla.
 

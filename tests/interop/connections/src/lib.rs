@@ -658,7 +658,7 @@ impl EventHandler<BedrockConnectionPacketReceivedEvent> for Observer {
         event: &'a mut BedrockConnectionPacketReceivedEvent,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            let current = pumpkin_world::CURRENT_BEDROCK_MC_PROTOCOL;
+            let current = sculith_world::CURRENT_BEDROCK_MC_PROTOCOL;
             let rewrite = [SRequestNetworkSettings::PACKET_ID, SLogin::PACKET_ID]
                 .contains(&event.packet_id)
                 && event.payload.get(..4) == Some((current - 1).to_be_bytes().as_slice());

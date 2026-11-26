@@ -5,11 +5,11 @@ use crate::{
 use crossbeam::atomic::AtomicCell;
 use pumpkin_inventory::screen_handler::ScreenHandler;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::data::{
+use rustc_hash::FxHashSet;
+use sculith_world::data::{
     checkpoint::CheckpointFence,
     player_data::{PlayerDataError, PlayerDataStorage},
 };
-use rustc_hash::FxHashSet;
 use std::sync::Arc;
 use std::{
     path::PathBuf,
@@ -280,7 +280,7 @@ fn unresolved_checkpoint() -> PlayerDataError {
 mod test {
     use crate::data::player_server::ServerPlayerData;
     use pumpkin_nbt::compound::NbtCompound;
-    use pumpkin_world::data::player_data::PlayerDataStorage;
+    use sculith_world::data::player_data::PlayerDataStorage;
     use std::time::Duration;
     use std::time::Instant;
     use tempfile::tempdir;

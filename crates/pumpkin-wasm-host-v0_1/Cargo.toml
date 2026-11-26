@@ -19,7 +19,7 @@ pumpkin-macros.workspace = true
 pumpkin-nbt.workspace = true
 sculith-protocol = { workspace = true, features = ["default"] }
 sculith-util.workspace = true
-pumpkin-world.workspace = true
+sculith-world.workspace = true
 bytes.workspace = true
 rand.workspace = true
 serde_json.workspace = true

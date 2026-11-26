@@ -5,7 +5,6 @@ use std::{
 
 use bytes::Bytes;
 use pumpkin_data::{BlockState, BlockStateId, packet::CURRENT_MC_VERSION};
-use pumpkin_world::chunk::palette::bedrock_water_state;
 use sculith_protocol::{
     bedrock::client::CUpdateBlock,
     java::client::play::{CBlockUpdate, CMultiBlockUpdate},
@@ -15,6 +14,7 @@ use sculith_util::math::{
     vector2::Vector2,
     vector3::Vector3,
 };
+use sculith_world::chunk::palette::bedrock_water_state;
 
 use crate::{
     entity::player::Player,

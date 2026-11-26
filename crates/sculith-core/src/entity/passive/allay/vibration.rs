@@ -240,7 +240,7 @@ fn is_occluded(world: &World, origin: Vector3<f64>, destination: Vector3<f64>) -
     let to = BlockPos::floored_v(destination).to_centered_f64();
     BlockDirection::all().iter().all(|direction| {
         let nudged_source = from + direction.to_offset().to_f64() * f64::from(1.0e-5f32);
-        pumpkin_world::clip::traverse_blocks(nudged_source, to, |pos| {
+        sculith_world::clip::traverse_blocks(nudged_source, to, |pos| {
             world
                 .get_block(pos)
                 .has_tag(&tag::Block::MINECRAFT_OCCLUDES_VIBRATION_SIGNALS)
@@ -377,7 +377,7 @@ mod tests {
         let world = world(&folder);
         world.level.loaded_chunks.insert(
             sculith_util::math::vector2::Vector2::new(0, 0),
-            pumpkin_world::chunk::ChunkData::empty_sync(0, 0),
+            sculith_world::chunk::ChunkData::empty_sync(0, 0),
         );
         let allay = AllayEntity::new(Entity::new(
             world.clone(),
@@ -389,7 +389,7 @@ mod tests {
         world.set_block_state(
             &blocker,
             pumpkin_data::Block::STONE.default_state.id,
-            pumpkin_world::world::BlockFlags::empty(),
+            sculith_world::world::BlockFlags::empty(),
         );
         VibrationListener(&allay).handle_game_event(
             &world,
@@ -411,7 +411,7 @@ mod tests {
         world.set_block_state(
             &blocker,
             pumpkin_data::Block::WHITE_WOOL.default_state.id,
-            pumpkin_world::world::BlockFlags::empty(),
+            sculith_world::world::BlockFlags::empty(),
         );
         VibrationListener(&allay).handle_game_event(
             &world,

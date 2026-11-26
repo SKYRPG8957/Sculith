@@ -2,8 +2,8 @@ use super::{
     region::{Atlas, Grid},
     surface::{Surface, coarse},
 };
-use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 use sculith_util::math::vector2::Vector2;
+use sculith_world::cylindrical_chunk_iterator::Cylindrical;
 use std::{collections::BTreeMap, num::NonZero};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]

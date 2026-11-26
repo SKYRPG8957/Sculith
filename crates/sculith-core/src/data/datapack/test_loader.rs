@@ -25,8 +25,8 @@ pub fn load_embedded_test_instances(registry: &mut TestInstanceRegistry) -> usiz
         }
     }
 
-    for &id in pumpkin_world::test_instance::all_names() {
-        let Some(content) = pumpkin_world::test_instance::json(id) else {
+    for &id in sculith_world::test_instance::all_names() {
+        let Some(content) = sculith_world::test_instance::json(id) else {
             warn!("Embedded test instance '{id}' has no JSON payload");
             continue;
         };

@@ -85,7 +85,7 @@ impl JavaClient {
                     &block_type,
                     pos,
                     1,
-                    pumpkin_world::tick::TickPriority::Normal,
+                    sculith_world::tick::TickPriority::Normal,
                 );
             }
         }

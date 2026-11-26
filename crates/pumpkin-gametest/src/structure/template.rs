@@ -1,6 +1,6 @@
 use pumpkin_data::{Block, BlockStateId};
 use pumpkin_nbt::NbtCompound;
-use pumpkin_world::{CURRENT_MC_DATA_VERSION, CURRENT_MC_VERSION};
+use sculith_world::{CURRENT_MC_DATA_VERSION, CURRENT_MC_VERSION};
 
 use crate::error::{GameTestError, GameTestResult};
 
@@ -301,7 +301,7 @@ mod tests {
     use std::io::Cursor;
 
     use pumpkin_nbt::nbt_compress::read_gzip_compound_tag;
-    use pumpkin_world::generation::structure::template::get_template;
+    use sculith_world::generation::structure::template::get_template;
 
     use super::*;
 

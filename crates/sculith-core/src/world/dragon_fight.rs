@@ -9,11 +9,11 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use pumpkin_data::{Block, entity::EntityType, world::WorldEvent};
-use pumpkin_world::world::BlockFlags;
 use sculith_util::{
     math::{position::BlockPos, vector2::Vector2, vector3::Vector3},
     text::TextComponent,
 };
+use sculith_world::world::BlockFlags;
 
 use super::{
     World,
@@ -37,7 +37,7 @@ pub const EVENT_DISPLAY_NAME: &str = "entity.minecraft.ender_dragon";
 
 // ── End Spike definition ─────────────────────────────────────────────────────
 
-pub use pumpkin_world::generation::feature::features::end_spike::Spike as EndSpike;
+pub use sculith_world::generation::feature::features::end_spike::Spike as EndSpike;
 
 // ── Respawn stage ─────────────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ impl DragonFight {
 
     #[must_use]
     pub fn get_spikes() -> [EndSpike; 10] {
-        pumpkin_world::generation::feature::features::end_spike::EndSpikeFeature::get_spikes_for_seed(0)
+        sculith_world::generation::feature::features::end_spike::EndSpikeFeature::get_spikes_for_seed(0)
     }
 
     // ── Main tick ─────────────────────────────────────────────────────────────

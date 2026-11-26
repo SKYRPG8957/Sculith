@@ -11,8 +11,8 @@ use pumpkin_data::{
     world::WorldEvent,
 };
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::tick::TickPriority;
 use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
+use sculith_world::tick::TickPriority;
 
 use crate::block::entities::campfire::CampfireBlockEntity;
 use crate::entity::projectile::may_interact;
@@ -25,7 +25,7 @@ use crate::{
     },
     entity::EntityBase,
 };
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 use std::sync::Arc;
 
 #[pumpkin_block_from_tag("minecraft:campfires")]

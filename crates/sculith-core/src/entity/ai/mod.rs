@@ -15,9 +15,9 @@ pub(crate) mod test_support {
 
     use arc_swap::ArcSwap;
     use pumpkin_data::dimension::Dimension;
-    use pumpkin_world::{level::Level, world_info::LevelData};
     use sculith_config::world::LevelConfig;
     use sculith_util::world_seed::Seed;
+    use sculith_world::{level::Level, world_info::LevelData};
 
     use crate::{block::registry::default_registry, world::World};
 

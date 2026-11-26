@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use pumpkin_world::{chunk_system::ChunkLoading, level::Level};
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_world::{chunk_system::ChunkLoading, level::Level};
 
 use super::AllayEntity;
 use crate::world::World;

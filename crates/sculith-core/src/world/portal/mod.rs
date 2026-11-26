@@ -3,10 +3,10 @@ use std::sync::Arc;
 use pumpkin_data::Block;
 use pumpkin_data::block_properties::HorizontalAxis;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector2::Vector2;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::world::BlockFlags;
 
 use super::World;
 

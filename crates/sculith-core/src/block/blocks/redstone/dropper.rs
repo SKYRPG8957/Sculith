@@ -25,10 +25,10 @@ use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::text::TextComponent;
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 struct DropperScreenFactory(Arc<dyn Inventory>);
 

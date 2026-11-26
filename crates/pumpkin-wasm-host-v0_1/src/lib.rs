@@ -98,7 +98,7 @@ mod resource_with {
         type Internal = sculith_core::server::BlockEditReceipt;
     }
     impl FromResource for plugin::world::Chunk {
-        type Internal = (Arc<World>, Weak<pumpkin_world::chunk::ChunkData>);
+        type Internal = (Arc<World>, Weak<sculith_world::chunk::ChunkData>);
     }
     impl FromResource for plugin::world::WorldBorder {
         type Internal = Arc<World>;

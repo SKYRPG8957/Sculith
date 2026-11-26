@@ -1,6 +1,6 @@
 use crate::block::{BlockBehaviour, BlockMetadata, OnPlaceArgs, OnScheduledTickArgs};
 use pumpkin_data::{BlockId, BlockStateId, block_properties::SculkCatalystLikeProperties};
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 pub struct SculkCatalystBlock;
 

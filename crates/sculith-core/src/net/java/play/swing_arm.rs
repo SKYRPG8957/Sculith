@@ -27,13 +27,13 @@ impl JavaClient {
         }
 
         let (yaw, pitch) = player.rotation();
-        let hit = player.world().clip(&pumpkin_world::clip::ClipContext::new(
+        let hit = player.world().clip(&sculith_world::clip::ClipContext::new(
             player.eye_position(),
             player
                 .eye_position()
                 .add(&(Vector3::rotation_vector(f64::from(pitch), f64::from(yaw)) * 4.5)),
-            pumpkin_world::clip::ClipBlock::Outline,
-            pumpkin_world::clip::ClipFluid::None,
+            sculith_world::clip::ClipBlock::Outline,
+            sculith_world::clip::ClipFluid::None,
         ));
 
         if hit.is_miss {

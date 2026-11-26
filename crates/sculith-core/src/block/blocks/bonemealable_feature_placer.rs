@@ -1,9 +1,9 @@
 use pumpkin_data::configured_feature::ConfiguredFeature as FeatureKey;
 use pumpkin_data::placed_feature::PlacedFeature;
 use pumpkin_data::{Block, BlockId};
-use pumpkin_world::generation::feature::configured_features::CONFIGURED_FEATURES;
-use pumpkin_world::generation::height_limit::HeightLimitView;
 use sculith_util::random::{RandomGenerator, xoroshiro128::Xoroshiro};
+use sculith_world::generation::feature::configured_features::CONFIGURED_FEATURES;
+use sculith_world::generation::height_limit::HeightLimitView;
 
 use crate::block::{BlockBehaviour, BlockMetadata, BonemealArgs};
 use crate::world::generation_cache::WorldGenerationCache;

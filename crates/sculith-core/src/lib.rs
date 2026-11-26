@@ -26,13 +26,13 @@ use crate::server::{
     ticker::{CONSOLE_COMMAND_CAPACITY, ConsoleCommand, Ticker},
 };
 use plugin::server::server_load::{LoadType, ServerLoadEvent};
-use pumpkin_world::world_info::WorldInfoError;
 use rustyline::Editor;
 use rustyline::history::FileHistory;
 use rustyline::{Config, error::ReadlineError};
 use sculith_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
 use sculith_util::text::TextComponent;
 use sculith_util::text::color::{Color, NamedColor};
+use sculith_world::world_info::WorldInfoError;
 use std::collections::HashMap;
 use std::io::{ErrorKind, IsTerminal, stdin};
 use std::process::exit;

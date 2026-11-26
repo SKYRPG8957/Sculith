@@ -2,7 +2,7 @@ use pumpkin_data::block_properties::SlabType;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::{BlockDirection, BlockState, BlockStateId};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::tick::TickPriority;
+use sculith_world::tick::TickPriority;
 
 use crate::block::{
     BlockBehaviour, BlockIsReplacing, CanUpdateAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,

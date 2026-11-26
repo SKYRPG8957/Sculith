@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use pumpkin_data::BlockStateId;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use sculith_util::Difficulty;
+use sculith_world::world::BlockFlags;
 
 use super::door_interact::DoorInteractGoal;
 use super::{Controls, Goal};

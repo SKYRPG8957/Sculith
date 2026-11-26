@@ -9,7 +9,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockId, BlockState};
 use pumpkin_macros::pumpkin_block_from_tag;
-use pumpkin_world::world::BlockFlags;
+use sculith_world::world::BlockFlags;
 
 #[pumpkin_block_from_tag("minecraft:flower_pots")]
 pub struct FlowerPotBlock;

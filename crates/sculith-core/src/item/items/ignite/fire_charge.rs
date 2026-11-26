@@ -5,10 +5,10 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::{Block, BlockStateId};
-use pumpkin_world::world::BlockFlags;
 use rand::{RngExt, rng};
 use sculith_util::math::position::BlockPos;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::world::BlockFlags;
 use std::sync::Arc;
 
 use crate::block::registry::BlockActionResult;

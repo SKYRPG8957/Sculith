@@ -16,13 +16,6 @@ use crate::{
     world::chunker::{bedrock_view_is_current, get_view_distance},
 };
 use bytes::Bytes;
-use pumpkin_world::{
-    chunk::{
-        ChunkData,
-        io::{converter::RegionFormat, file_manager::LevelFileIO},
-    },
-    level::Level,
-};
 use sculith_protocol::{
     bedrock::client::{
         CAddActor, CMoveActorAbsolute, CRemoveActor, MetadataValue, SyncedActorDataList,
@@ -31,6 +24,13 @@ use sculith_protocol::{
     codec::{var_long::VarLong, var_ulong::VarULong},
 };
 use sculith_util::math::{vector2::Vector2, vector3::Vector3};
+use sculith_world::{
+    chunk::{
+        ChunkData,
+        io::{converter::RegionFormat, file_manager::LevelFileIO},
+    },
+    level::Level,
+};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     io,

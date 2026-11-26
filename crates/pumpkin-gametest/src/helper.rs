@@ -6,8 +6,8 @@ use std::sync::{Arc, LazyLock, Mutex, RwLock};
 use async_trait::async_trait;
 use pumpkin_data::{Block, BlockStateId};
 use pumpkin_nbt::NbtCompound;
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::{position::BlockPos, vector3::Vector3};
+use sculith_world::world::BlockFlags;
 
 use crate::error::{GameTestError, GameTestResult};
 use crate::model::{GameTestDefinition, GameTestRotation, TestType};

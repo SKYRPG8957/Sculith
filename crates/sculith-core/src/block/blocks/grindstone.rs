@@ -13,9 +13,9 @@ use pumpkin_inventory::screen_handler::{
     InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::BlockAccessor;
 use sculith_util::math::position::BlockPos;
 use sculith_util::text::TextComponent;
+use sculith_world::world::BlockAccessor;
 
 use crate::block::registry::BlockActionResult;
 use crate::block::{

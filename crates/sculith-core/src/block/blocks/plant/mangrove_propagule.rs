@@ -5,12 +5,12 @@ use pumpkin_data::{
     tag::Taggable,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::{
+use sculith_util::math::position::BlockPos;
+use sculith_util::random::{RandomGenerator, xoroshiro128::Xoroshiro};
+use sculith_world::{
     tick::TickPriority,
     world::{BlockAccessor, BlockFlags},
 };
-use sculith_util::math::position::BlockPos;
-use sculith_util::random::{RandomGenerator, xoroshiro128::Xoroshiro};
 
 use crate::block::blocks::plant::tree_grower::TreeGrower;
 use crate::block::{

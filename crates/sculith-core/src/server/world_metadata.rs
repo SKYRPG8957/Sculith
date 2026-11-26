@@ -6,7 +6,9 @@ use std::{
 
 use arc_swap::ArcSwap;
 use pumpkin_data::dimension::Dimension;
-use pumpkin_world::{
+use rustc_hash::FxHashSet;
+use sculith_util::{Difficulty, world_seed::Seed};
+use sculith_world::{
     level::LevelFolder,
     world_info::{
         LevelData, WorldGenSettings, WorldInfoError, WorldInfoReader, WorldInfoWriter,
@@ -14,8 +16,6 @@ use pumpkin_world::{
         data_files::{minecraft_data_dir, read_world_clocks, read_world_gen_settings},
     },
 };
-use rustc_hash::FxHashSet;
-use sculith_util::{Difficulty, world_seed::Seed};
 use tokio::sync::OwnedMutexGuard;
 use tracing::error;
 

@@ -3,7 +3,7 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::MangroveRootsLikeProperties as BarrierLikeProperties;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::tick::TickPriority;
+use sculith_world::tick::TickPriority;
 
 #[pumpkin_block("minecraft:barrier")]
 pub struct BarrierBlock;

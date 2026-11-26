@@ -218,8 +218,7 @@ mod tests {
     fn exports_ticking_areas_with_stable_ids_and_preserves_other_records() {
         let sculith = tempfile::tempdir().unwrap();
         let db = DB::open("native-areas", leveldb::in_memory()).unwrap();
-        let (_dimension, original) = decode(&record(0, 1008, 1)).unwrap();
-        let mut edited = original.clone();
+        let (_, mut edited) = decode(&record(0, 1008, 1)).unwrap();
         edited.preload = false;
         let added = TickingArea {
             name: "Inside Nether".to_owned(),

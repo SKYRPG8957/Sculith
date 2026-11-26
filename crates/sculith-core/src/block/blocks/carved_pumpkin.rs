@@ -4,8 +4,8 @@ use pumpkin_data::{
     Block, BlockDirection, BlockId, BlockStateId, block_properties::WallTorchLikeProperties,
     entity::EntityType, world::WorldEvent,
 };
-use pumpkin_world::world::BlockFlags;
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
 
 use crate::{
     block::{BlockBehaviour, BlockMetadata, OnPlaceArgs, PlacedArgs, PlayerPlacedArgs},

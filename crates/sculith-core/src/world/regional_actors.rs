@@ -671,11 +671,11 @@ mod tests {
         item_stack::ItemStack, potion::Effect,
     };
     use pumpkin_nbt::NbtCompound;
-    use pumpkin_world::chunk::ChunkData;
     use sculith_config::{
         AdvancedConfiguration, BasicConfiguration, telemetry::TelemetryConfig, world::WorldPreset,
     };
     use sculith_util::math::{position::BlockPos, vector3::Vector3};
+    use sculith_world::chunk::ChunkData;
 
     use crate::data::VanillaData;
     use crate::entity::{
@@ -1122,8 +1122,8 @@ mod tests {
     #[tokio::test]
     async fn falling_livestock_shares_the_motion_deadline_with_its_world() {
         use pumpkin_data::Block;
-        use pumpkin_world::world::BlockFlags;
         use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos};
+        use sculith_world::world::BlockFlags;
 
         let folder = tempfile::tempdir().unwrap();
         let server = test_server(folder.path()).await;
@@ -1214,8 +1214,8 @@ mod tests {
     #[tokio::test]
     async fn stationary_livestock_matures_with_its_region_and_updates_the_index() {
         use pumpkin_data::Block;
-        use pumpkin_world::world::BlockFlags;
         use sculith_util::math::{boundingbox::BoundingBox, position::BlockPos};
+        use sculith_world::world::BlockFlags;
 
         let folder = tempfile::tempdir().unwrap();
         let server = test_server(folder.path()).await;

@@ -5,11 +5,11 @@ pub mod v1_18;
 pub use light::ChunkLightExt;
 
 use pumpkin_data::packet::clientbound::play::LEVEL_CHUNK_WITH_LIGHT;
-use pumpkin_world::chunk::ChunkData;
 use sculith_protocol::ClientPacket;
 use sculith_protocol::packet::MultiVersionJavaPacket;
 use sculith_protocol::ser::WritingError;
 use sculith_util::version::JavaMinecraftVersion;
+use sculith_world::chunk::ChunkData;
 use std::io::Write;
 
 /// Sent by the server to provide the client with the full data for a chunk.
@@ -46,7 +46,7 @@ impl ClientPacket for CChunkData<'_> {
 mod tests {
     use super::*;
     use crate::world::BLOCK_ENTITY_CUSTOM_DATA_TAG;
-    use pumpkin_world::chunk::ChunkData;
+    use sculith_world::chunk::ChunkData;
 
     #[test]
     fn chunk_data_all_versions() {

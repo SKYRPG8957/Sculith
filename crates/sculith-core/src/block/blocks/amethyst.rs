@@ -3,8 +3,8 @@ use pumpkin_data::{
     block_properties::AmethystClusterLikeProperties, fluid::Fluid,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 use rand::RngExt;
+use sculith_world::{tick::TickPriority, world::BlockFlags};
 
 use crate::block::{
     BlockBehaviour, BlockMetadata, CanPlaceAtArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,

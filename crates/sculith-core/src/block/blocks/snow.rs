@@ -3,8 +3,8 @@ use pumpkin_data::{
     Block, BlockDirection, BlockState, BlockStateId, block_properties::SnowLikeProperties, tag,
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_world::world::{BlockAccessor, BlockFlags};
 use sculith_util::math::position::BlockPos;
+use sculith_world::world::{BlockAccessor, BlockFlags};
 
 use crate::block::{
     BlockBehaviour, BlockIsReplacing, CanPlaceAtArgs, CanUpdateAtArgs,

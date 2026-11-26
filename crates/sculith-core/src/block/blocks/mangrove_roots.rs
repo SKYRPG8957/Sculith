@@ -4,7 +4,7 @@ use crate::block::{
 use pumpkin_data::block_properties::MangroveRootsLikeProperties;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::{Block, BlockId, BlockState, BlockStateId};
-use pumpkin_world::tick::TickPriority;
+use sculith_world::tick::TickPriority;
 
 pub struct MangroveRootsBlock;
 

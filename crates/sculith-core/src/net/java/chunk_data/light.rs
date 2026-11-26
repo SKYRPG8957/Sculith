@@ -1,10 +1,10 @@
-use pumpkin_world::chunk::ChunkData;
-use pumpkin_world::chunk::format::LightContainer;
 use sculith_protocol::codec::bit_set::BitSet;
 use sculith_protocol::codec::var_int::VarInt;
 use sculith_protocol::java::client::play::{CLightUpdate, LightData};
 use sculith_protocol::ser::WritingError;
 use sculith_util::version::JavaMinecraftVersion;
+use sculith_world::chunk::ChunkData;
+use sculith_world::chunk::format::LightContainer;
 
 pub trait ChunkLightExt {
     fn from_chunk(chunk: &ChunkData, version: JavaMinecraftVersion) -> Result<Self, WritingError>

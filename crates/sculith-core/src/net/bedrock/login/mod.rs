@@ -7,7 +7,6 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use pumpkin_auth::jwt::AuthError;
-use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
 use sculith_protocol::bedrock::{
     client::{
         network_settings::CNetworkSettings, play_status::CPlayStatus,
@@ -26,6 +25,7 @@ use sculith_protocol::bedrock::{
     server::{login::ClientData, resource_pack_client_response::SResourcePackClientResponse},
 };
 use sculith_util::version::BedrockMinecraftVersion;
+use sculith_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};
 use serde::{Deserialize, de::Error};
 use serde_repr::Deserialize_repr;
 use sha2::{Digest, Sha256};

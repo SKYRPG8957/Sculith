@@ -1,14 +1,14 @@
 use pumpkin_data::block_properties::{DoubleBlockHalf, TallSeagrassLikeProperties};
 use pumpkin_data::{Block, BlockId, BlockState, BlockStateId};
-use pumpkin_world::generation::feature::{
-    configured_features::{BONE_MEAL_FEATURES, CONFIGURED_FEATURES, ConfiguredFeature},
-    placed_features::{Feature, PLACED_FEATURES},
-};
-use pumpkin_world::tick::TickPriority;
-use pumpkin_world::world::BlockFlags;
 use rand::RngExt;
 use sculith_util::math::position::BlockPos;
 use sculith_util::random::{RandomGenerator, RandomImpl, xoroshiro128::Xoroshiro};
+use sculith_world::generation::feature::{
+    configured_features::{BONE_MEAL_FEATURES, CONFIGURED_FEATURES, ConfiguredFeature},
+    placed_features::{Feature, PLACED_FEATURES},
+};
+use sculith_world::tick::TickPriority;
+use sculith_world::world::BlockFlags;
 
 use super::spreading_snowy_block::{SnowyBlock, SpreadingSnowyBlock};
 use crate::block::{

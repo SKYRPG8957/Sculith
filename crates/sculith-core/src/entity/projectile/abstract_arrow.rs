@@ -6,12 +6,12 @@ use crossbeam::atomic::AtomicCell;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
-use pumpkin_world::block::BlockStateCodec;
-use pumpkin_world::clip::{ClipBlock, ClipContext, ClipFluid};
 use sculith_protocol::java::client::play::CEntityVelocity;
 use sculith_util::math::boundingbox::BoundingBox;
 use sculith_util::math::signum;
 use sculith_util::math::vector3::Vector3;
+use sculith_world::block::BlockStateCodec;
+use sculith_world::clip::{ClipBlock, ClipContext, ClipFluid};
 
 use super::owner::ProjectileOwner;
 use super::{HitOutcome, ProjectileHit, compute_margin, hit_target_or_deflect_self};
@@ -298,7 +298,7 @@ fn step_move_and_hit<A: AbstractArrow + ?Sized>(
     arrow: &A,
     caller: &dyn EntityBase,
     server: &Server,
-    (block_hit, world_border): (pumpkin_world::clip::BlockHitResult, bool),
+    (block_hit, world_border): (sculith_world::clip::BlockHitResult, bool),
 ) {
     let entity = arrow.get_entity();
     let world = entity.world.load();

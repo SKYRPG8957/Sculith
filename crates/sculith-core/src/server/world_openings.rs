@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(primary_count, 3);
         let stopped = server.try_create_world("copy".into(), Dimension::OVERWORLD);
         assert!(
-            matches!(stopped, Err(pumpkin_world::world_info::WorldInfoError::IoError(error))
+            matches!(stopped, Err(sculith_world::world_info::WorldInfoError::IoError(error))
             if error.kind() == io::ErrorKind::Interrupted)
         );
     }

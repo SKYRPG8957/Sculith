@@ -12,7 +12,6 @@ use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use sculith_protocol::bedrock::client::move_actor_delta::{
@@ -40,6 +39,7 @@ use sculith_util::GameMode;
 use sculith_util::math::vector2::Vector2;
 use sculith_util::math::vector3::Vector3;
 use sculith_util::math::{pack_degrees, position::chunk_section_from_pos};
+use sculith_world::cylindrical_chunk_iterator::Cylindrical;
 use uuid::Uuid;
 
 use crate::entity::attributes::bedrock_health_update;
