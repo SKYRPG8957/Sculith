@@ -256,7 +256,6 @@ use crate::net::bedrock::play::{
     bedrock_inventory_slot, bedrock_player_inventory_slot, send_bedrock_cursor_stack,
     send_bedrock_inventory_slot,
 };
-use pumpkin_data::Enchantment;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::damage::DamageScaling;
