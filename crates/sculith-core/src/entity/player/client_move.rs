@@ -587,6 +587,7 @@ impl Player {
         server: &Server,
         extent: &RegionChunks,
         movement: ClientMove,
+        input: PlayerInput,
         stationary_action: Option<impl FnOnce() -> Option<()>>,
     ) -> Option<RegionalClientMove> {
         let entity = self.get_entity();
@@ -644,6 +645,9 @@ impl Player {
             Some(movement),
             stationary_action,
         )?;
+        // A partially completed move leaves its remaining effects on the same
+        // input queue. Its accepted controls already apply to the player.
+        self.last_input.store(input.bits(), Ordering::Relaxed);
         let rotation_changed = pose.rotation_changed;
         let position_changed = from != to;
         if pose.stationary_settled && !rotation_changed {

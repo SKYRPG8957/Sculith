@@ -437,13 +437,15 @@ region share the same ordered drain for that connection. Stationary grounded
 inputs can finish on the region once movement, landing and footstep effects
 are settled. A change of look also requires queuing the updates for every
 paired viewer.
-The region records the client's current prediction and can then process the
-next packet within the same budget. A finishing world step serves any viewers
-whose packets the region could not queue.
+The region records the client's current prediction and the accepted directions
+from keyboard, classic touch or analog controls. Direction presses and releases
+can accompany an accepted step. A finishing world step serves any viewers whose
+packets the region could not queue. Input observers and control changes that
+trigger gameplay effects use the ordered world input path.
 A grounded input can also carry a personal inventory request. When the player
-is stationary, the look and controls are unchanged, and movement effects are
-settled, the region applies the same inventory checks as for a standalone
-request. The connection advances past the input after the inventory commit.
+is stationary, the look is unchanged, and movement effects are settled, the
+region applies the same inventory checks as for a standalone request. The
+connection advances past the input after the inventory commit.
 The region can also complete a short level step across loaded chunks under
 the same owner and then apply the inventory request. A completed crossing
 shifts the player's simulation ticket and active area even when the inventory

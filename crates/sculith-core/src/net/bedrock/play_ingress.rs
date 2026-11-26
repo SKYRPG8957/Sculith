@@ -641,7 +641,7 @@ mod tests {
 
     use crate::{
         data::VanillaData,
-        entity::{Entity, interaction::InteractionEntity},
+        entity::{Entity, interaction::InteractionEntity, player::PlayerInput},
         net::{ClientPlatform, GameProfile, PlayerConfig, packet_limiter::PacketRateLimiter},
         plugin::{EventHandler, api::events::EventPriority},
         server::TickDeadline,
@@ -1341,6 +1341,8 @@ mod tests {
         flags: &[InputData],
         request: Option<&[u8]>,
     ) -> RawPacket {
+        use sculith_protocol::bedrock::server::player_auth_input::InputMode;
+
         let mut payload = Vec::new();
         for value in [0.0, yaw, position.x, position.y, position.z, 0.0, 0.0, yaw] {
             value.write(&mut payload).unwrap();
@@ -1351,8 +1353,8 @@ mod tests {
         for &flag in flags {
             VarInt(flag as i32).write(&mut payload).unwrap();
         }
-        for _ in 0..2 {
-            VarUInt(0).write(&mut payload).unwrap();
+        for value in [InputMode::Mouse as u32, 0] {
+            VarUInt(value).write(&mut payload).unwrap();
         }
         VarInt(0).write(&mut payload).unwrap();
         payload.extend([0; 8]);
@@ -1443,6 +1445,31 @@ mod tests {
             assert!(!entity.is_sneaking());
         }
         player.abilities.lock().unwrap().flying = false;
+
+        let tick = end + 7;
+        queue_auth_input(
+            client,
+            player,
+            position,
+            tick,
+            0.0,
+            &[
+                InputData::VerticalCollision,
+                InputData::Up,
+                InputData::JumpDown,
+            ],
+        );
+        tick_region(world, chunk, at + TICK_PERIOD * 8);
+        assert_eq!(client.input_tick.load(Relaxed), tick - 1);
+        assert!(player.player_input().is_empty());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(
+            player.player_input().bits(),
+            (PlayerInput::FORWARD | PlayerInput::JUMP).bits()
+        );
+        enqueue(tick + 1);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(player.player_input().is_empty());
     }
 
     fn inline_inventory_swap(
@@ -1717,23 +1744,26 @@ mod tests {
             .add_entity(&(player.clone() as Arc<dyn EntityBase>), world);
         chunker::update_position(player);
 
-        let walk = |x, tick| {
+        let walk = |x, tick, direction: Option<InputData>| {
+            let mut flags = vec![InputData::VerticalCollision];
+            flags.extend(direction);
             queue_auth_input(
                 client,
                 player,
                 Vector3::new(x, position.y, position.z),
                 tick,
                 entity.yaw.load(),
-                &[InputData::VerticalCollision],
+                &flags,
             );
         };
         let distance = || player.get_custom_stat(CustomStatistic::WalkOneCm);
         let at = Instant::now() + TICK_PERIOD * 30;
         let start = client.input_tick.load(Relaxed) + 1;
-        walk(8.25, start);
-        walk(8.5, start + 1);
+        walk(8.25, start, Some(InputData::Up));
+        walk(8.5, start + 1, Some(InputData::Left));
         tick_region(world, chunk, at);
         assert_eq!(entity.pos.load().x, 8.5);
+        assert_eq!(player.player_input().bits(), PlayerInput::LEFT.bits());
         assert_eq!(distance(), 50);
         assert_eq!(entity.movement.load(), Vector3::new(0.25, 0.0, 0.0));
         assert_eq!(entity.move_dist.load(), 0.30);
@@ -1742,18 +1772,21 @@ mod tests {
 
         // A step crossing the sound threshold applies its effects once through the world.
         entity.next_step.store(0.38);
-        walk(8.75, start + 2);
-        walk(8.875, start + 3);
+        walk(8.75, start + 2, Some(InputData::Right));
+        walk(8.875, start + 3, None);
         tick_region(world, chunk, at + TICK_PERIOD);
         assert_eq!(entity.pos.load().x, 8.75);
+        assert_eq!(player.player_input().bits(), PlayerInput::RIGHT.bits());
         assert_eq!(distance(), 50);
         assert!(client.activity.inbound_head.lock().unwrap().is_some());
         client.drain_world_input(player, None, Some(world), 1);
         assert_eq!(distance(), 75);
+        assert_eq!(player.player_input().bits(), PlayerInput::RIGHT.bits());
         assert!(entity.next_step.load() > 0.38);
         tick_region(world, chunk, at + TICK_PERIOD * 2);
         assert_eq!(entity.pos.load().x, 8.875);
         assert_eq!(distance(), 87);
+        assert!(player.player_input().is_empty());
         assert!(player.inbound_packets.is_empty());
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
         verify_grounded_sprints(world, player, client, chunk);

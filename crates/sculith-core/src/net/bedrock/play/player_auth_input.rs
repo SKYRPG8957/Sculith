@@ -30,6 +30,9 @@ impl BedrockClient {
         packet: &SPlayerAuthInput,
     ) -> Option<RegionalClientMove> {
         let flags = &packet.input_data;
+        let input = player_input_from_auth(packet, false);
+        let directions =
+            PlayerInput::FORWARD | PlayerInput::BACKWARD | PlayerInput::LEFT | PlayerInput::RIGHT;
         let needs_world = [
             InputData::HandledTeleport,
             InputData::ClientPredictedVehicle,
@@ -62,11 +65,14 @@ impl BedrockClient {
                 packet.delta.x,
                 packet.delta.y,
                 packet.delta.z,
+                packet.analog_move.x,
+                packet.analog_move.y,
             ]
             .into_iter()
             .all(f32::is_finite)
             || player.get_entity().is_sneaking()
-            || player_input_from_auth(packet, false).bits() != player.player_input().bits()
+            || input.difference(directions).bits()
+                != player.player_input().difference(directions).bits()
         {
             return None;
         }
@@ -87,7 +93,7 @@ impl BedrockClient {
             }
         });
         let accepted =
-            player.try_accept_regional_client_move(server, extent, movement, inventory)?;
+            player.try_accept_regional_client_move(server, extent, movement, input, inventory)?;
         self.store_input_state(packet);
         Some(accepted)
     }
