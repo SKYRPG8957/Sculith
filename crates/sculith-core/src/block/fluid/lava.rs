@@ -173,8 +173,8 @@ impl FlowingLava {
     }
 }
 
-const LAVA_FLOW_SPEED_NETHER: u8 = 10;
-const LAVA_FLOW_SPEED_SLOW: u8 = 30;
+const LAVA_FLOW_INTERVAL_NETHER: u8 = 10;
+const LAVA_FLOW_INTERVAL_SLOW: u8 = 30;
 
 impl FluidBehaviour for FlowingLava {
     fn placed(
@@ -280,11 +280,12 @@ impl FlowingFluid for FlowingLava {
     }
 
     fn get_flow_speed(&self, world: &World) -> u8 {
-        // EnvironmentAttributes.FAST_LAVA
+        // The ring offset already points at the next tick. Schedule the lava
+        // at the measured interval from the step that changed the block.
         if world.dimension.fast_lava {
-            LAVA_FLOW_SPEED_NETHER
+            LAVA_FLOW_INTERVAL_NETHER - 1
         } else {
-            LAVA_FLOW_SPEED_SLOW
+            LAVA_FLOW_INTERVAL_SLOW - 1
         }
     }
 

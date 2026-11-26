@@ -259,8 +259,7 @@ chosen placements with their follow-up timers. Isolated lava can fall on the
 same regional path. A lava placement updates heightmaps, lighting and the
 random-tick index with its scheduled successors. Bedrock 1.26.63.1 tests
 observed vertical steps every 30 ticks in the Overworld and every 10 ticks in
-the Nether. Sculith's coordinated tests currently measure 31 ticks in the
-Overworld and 11 ticks in the Nether. Lava that can interact with
+the Nether. New scheduled steps use those two intervals. Lava that can interact with
 water or form basalt, and observable flow or physics events, use the world
 callbacks. Lava ignition stays on the random-tick path.
 
