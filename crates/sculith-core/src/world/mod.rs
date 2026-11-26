@@ -4620,9 +4620,6 @@ impl World {
         player.get_entity().refresh_synced_data();
 
         chunker::update_position(player);
-        // Update commands
-
-        player.set_health(20.0);
     }
 
     pub fn explode(

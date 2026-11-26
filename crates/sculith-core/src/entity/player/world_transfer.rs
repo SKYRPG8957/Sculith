@@ -291,7 +291,6 @@ impl Player {
                     self.get_inventory().get_selected_slot() as i8,
                 ));
                 self.on_screen_handler_opened(&self.player_screen_handler);
-                self.send_health();
                 world.send_world_info(self);
             }
             ArrivalPhase::PrepareRespawn {
@@ -301,8 +300,12 @@ impl Player {
                 self.prepare_respawn_in_world(world, same_world, keep_inventory);
                 world.send_world_info(self);
             }
-            ArrivalPhase::FinishTeleport => self.send_arriving_position(),
+            ArrivalPhase::FinishTeleport => {
+                self.send_arrival_health();
+                self.send_arriving_position();
+            }
             ArrivalPhase::FinishRespawn { death } => {
+                self.send_arrival_health();
                 self.send_arriving_position();
                 world.refresh_java_player_for_bedrock(self);
                 self.complete_respawn_in_world(server, death);

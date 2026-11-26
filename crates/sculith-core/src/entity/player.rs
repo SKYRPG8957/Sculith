@@ -5616,10 +5616,18 @@ impl Player {
     }
 
     fn send_health_inner(&self) {
-        if !self.has_client_loaded() {
-            return;
+        if self.has_client_loaded() {
+            self.send_current_health();
         }
+    }
 
+    fn send_arrival_health(&self) {
+        let _effect_edit = self.living_entity.hold_effect_edit();
+        // The arrival owner has already sent the client's new world header.
+        self.send_current_health();
+    }
+
+    fn send_current_health(&self) {
         let max_health = self.living_entity.get_max_health();
         let (food, saturation) = {
             let _abilities = self.lock_abilities_and_hunger();

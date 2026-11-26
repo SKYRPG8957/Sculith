@@ -4233,16 +4233,10 @@ impl LivingEntity {
         let _effect_edit = self.hold_living_effect_edit();
         self.entity.reset_state();
 
-        // Restore to maximum health for this entity type
-        let max_health = self.get_max_health();
-        self.set_health(max_health);
-        // Clear any absorption
-        self.absorption.store(0.0);
-        // Send health metadata
-        self.entity
-            .set_synced_data(tracked_data::living_entity::DATA_HEALTH_ID, max_health);
-
+        // Finish clearing effect modifiers before using the restored maximum.
         self.reset_effects_and_attributes();
+        self.set_health(self.get_max_health());
+        self.absorption.store(0.0);
 
         // Fresh damage cooldown, as on a new vanilla player
         self.hurt_cooldown.store(0, Relaxed);
