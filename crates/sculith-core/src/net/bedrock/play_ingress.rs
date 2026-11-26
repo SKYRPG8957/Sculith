@@ -55,7 +55,19 @@ impl From<RawPacket> for QueuedPlayInput {
 
 struct PreparedAttack {
     extent: Weak<[Vector2<i32>]>,
+    target: Weak<dyn EntityBase>,
     packet: SInventoryTransaction,
+}
+
+impl PreparedAttack {
+    fn is_current(&self, player: &Player) -> bool {
+        let Some(extent) = owned_extent(&self.extent, player) else {
+            return false;
+        };
+        self.target.upgrade().is_some_and(|target| {
+            prepared_attack_target_is_current(&player.world(), &extent, &target)
+        })
+    }
 }
 
 struct PreparedMovement {
@@ -81,6 +93,24 @@ fn owned_extent(owner: &Weak<[Vector2<i32>]>, player: &Player) -> Option<RegionC
             .and_then(|owner| layout.chunks(owner))
             .is_some_and(|current| Arc::ptr_eq(current, &extent)))
     .then_some(extent)
+}
+
+fn prepared_attack_target_is_current(
+    world: &World,
+    extent: &RegionChunks,
+    target: &Arc<dyn EntityBase>,
+) -> bool {
+    let base = target.get_entity();
+    let layout = world.region_layout.load();
+    !base.is_removed()
+        && std::ptr::eq(base.world.load().as_ref(), world)
+        && layout
+            .owner(base.chunk_pos.load())
+            .and_then(|owner| layout.chunks(owner))
+            .is_some_and(|current| Arc::ptr_eq(current, extent))
+        && world
+            .get_entity_by_id(base.entity_id)
+            .is_some_and(|registered| Arc::ptr_eq(&registered, target))
 }
 
 impl BedrockClient {
@@ -212,7 +242,7 @@ impl BedrockClient {
                 && unchanged
                 && packet.id == SInventoryTransaction::PACKET_ID
                 && owned
-                && owned_extent(&attack.extent, &player).is_some()
+                && attack.is_current(&player)
             {
                 tracing::trace!(player = %player.gameprofile.name, "Applying region-prepared Bedrock melee attack");
                 self.handle_inventory_action(&player, attack.packet);
@@ -300,6 +330,7 @@ impl BedrockClient {
             && owns(player.get_entity().chunk_pos.load()))
         .then(|| PreparedAttack {
             extent: Arc::downgrade(extent),
+            target: Arc::downgrade(&target),
             packet,
         })
     }
@@ -552,6 +583,56 @@ mod tests {
     };
 
     const TICK_PERIOD: Duration = Duration::from_millis(50);
+
+    #[test]
+    fn prepared_bedrock_attack_requires_the_current_target_and_region() {
+        use crate::world::RegionLayout;
+
+        let folder = tempfile::tempdir().unwrap();
+        let world = crate::entity::ai::test_support::world(&folder);
+        let origin = Vector2::new(0, 0);
+        let same_region = Vector2::new(1, 0);
+        let elsewhere = Vector2::new(2, 0);
+        let extent: RegionChunks = Arc::from([origin, same_region]);
+        let other_extent: RegionChunks = Arc::from([elsewhere]);
+        let set_regions = |expected: RegionChunks| {
+            world
+                .region_layout
+                .store(Arc::new(RegionLayout::from_active(
+                    [(origin, 1), (same_region, 1), (elsewhere, 2)]
+                        .into_iter()
+                        .collect(),
+                    [(1, expected), (2, other_extent.clone())]
+                        .into_iter()
+                        .collect(),
+                )));
+        };
+        set_regions(extent.clone());
+
+        let target: Arc<dyn EntityBase> = InteractionEntity::new(Entity::new(
+            world.clone(),
+            Vector3::new(8.0, 64.0, 8.0),
+            &EntityType::INTERACTION,
+        ));
+        world.entities.store(Arc::new(vec![target.clone()]));
+        let matches = || prepared_attack_target_is_current(&world, &extent, &target);
+        assert!(matches());
+
+        target.get_entity().set_pos(Vector3::new(24.0, 64.0, 8.0));
+        assert!(matches());
+        target.get_entity().set_pos(Vector3::new(40.0, 64.0, 8.0));
+        assert!(!matches());
+        target.get_entity().set_pos(Vector3::new(24.0, 64.0, 8.0));
+        assert!(matches());
+
+        set_regions(Arc::from([origin, same_region]));
+        assert!(!matches());
+        set_regions(extent.clone());
+        let entities = world.entities.swap(Arc::new(Vec::new()));
+        assert!(!matches());
+        world.entities.store(entities);
+        assert!(matches());
+    }
 
     #[derive(Default)]
     struct HealthPacketObserver(AtomicBool);
