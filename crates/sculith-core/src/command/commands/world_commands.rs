@@ -13,6 +13,7 @@ use crate::command::string_reader::StringReader;
 use super::{
     difficulty::DIFFICULTY_COMMAND,
     execute::EXECUTE_COMMAND,
+    forceload::FORCELOAD_COMMAND,
     gamerule::{GAMERULE_COMMAND, world_owned_rule},
     seed::SEED_COMMAND,
     setblock::SETBLOCK_COMMAND,
@@ -45,6 +46,7 @@ pub fn is_world_command(dispatcher: &CommandDispatcher, input: &str) -> bool {
         "time" => &*TIME_COMMAND,
         "weather" => &*WEATHER_COMMAND,
         "difficulty" if text == "difficulty" => &*DIFFICULTY_COMMAND,
+        "forceload" => &*FORCELOAD_COMMAND,
         "gamerule" if world_owned_rule(text) => &*GAMERULE_COMMAND,
         "setblock" if strict_block_write(text) => &*SETBLOCK_COMMAND,
         _ => return false,
@@ -317,5 +319,32 @@ mod tests {
         ] {
             assert!(!is_world_command(&dispatcher, command), "{command}");
         }
+    }
+
+    #[test]
+    fn force_loaded_chunks_use_the_owner_for_the_builtin_tree() {
+        use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
+        use crate::command::argument_types::core::string::StringArgumentType;
+
+        let mut dispatcher = CommandDispatcher::new();
+        dispatcher.consumer = DEFAULT_CONSUMER.clone();
+        super::super::forceload::register(&mut dispatcher, &PermissionRegistry::default());
+        for command in [
+            "forceload add -48 16",
+            "/forceload remove -48 16",
+            "forceload remove all",
+            "forceload query -48 16",
+        ] {
+            assert!(is_world_command(&dispatcher, command), "{command}");
+        }
+        assert!(!is_world_command(
+            &dispatcher,
+            "execute in minecraft:the_nether run forceload remove all"
+        ));
+        dispatcher.register(
+            command("forceload", "extension")
+                .then(literal("query").then(argument("scope", StringArgumentType::SingleWord))),
+        );
+        assert!(!is_world_command(&dispatcher, "forceload query"));
     }
 }

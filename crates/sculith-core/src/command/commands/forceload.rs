@@ -1,8 +1,11 @@
+use std::sync::LazyLock;
+
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::coordinates::Coordinates;
 use crate::command::argument_types::coordinates::column_pos::ColumnPosArgumentType;
 use crate::command::context::command_context::CommandContext;
 use crate::command::errors::error_types::CommandErrorType;
+use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 use pumpkin_data::translation;
@@ -302,14 +305,8 @@ impl CommandExecutor for ForceloadQueryExecutor {
     }
 }
 
-pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
-    registry.register_permission_or_panic(Permission::new(
-        PERMISSION,
-        DESCRIPTION,
-        PermissionDefault::Op(PermissionLvl::Two),
-    ));
-
-    let builder = command("forceload", DESCRIPTION)
+pub(super) static FORCELOAD_COMMAND: LazyLock<CommandDetachedNode> = LazyLock::new(|| {
+    command("forceload", DESCRIPTION)
         .requires(PERMISSION)
         .then(
             literal("add").then(
@@ -333,7 +330,16 @@ pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistr
             literal("query")
                 .executes(ForceloadQueryExecutor)
                 .then(argument("pos", ColumnPosArgumentType).executes(ForceloadQueryExecutor)),
-        );
+        )
+        .build()
+});
 
-    dispatcher.register(builder);
+pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
+    registry.register_permission_or_panic(Permission::new(
+        PERMISSION,
+        DESCRIPTION,
+        PermissionDefault::Op(PermissionLvl::Two),
+    ));
+
+    dispatcher.register(FORCELOAD_COMMAND.clone());
 }

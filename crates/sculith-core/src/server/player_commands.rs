@@ -10,7 +10,7 @@ use crate::plugin::{
         player_command_send::PlayerCommandSendEvent,
         player_permission_check::PlayerPermissionCheckEvent, player_teleport::PlayerTeleportEvent,
     },
-    server::packet::PacketSentEvent,
+    server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
 };
 use crate::world::World;
 
@@ -129,6 +129,7 @@ fn world_command_dispatcher(server: &Server, text: &str) -> Option<Arc<CommandDi
         && !plugins.has_handlers::<PlayerCommandSendEvent>()
         && !plugins.has_handlers::<PlayerPermissionCheckEvent>()
         && !plugins.has_handlers::<PacketSentEvent>()
+        && !plugins.has_handlers::<BedrockConnectionPacketSentEvent>()
         && (!text.trim_start_matches('/').starts_with("execute ")
             || !plugins.has_handlers::<PlayerTeleportEvent>()))
     .then_some(dispatcher)
