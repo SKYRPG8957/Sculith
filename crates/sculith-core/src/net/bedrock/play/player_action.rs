@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::net::bedrock::mining::MIN_PREDICTED_BREAK_PROGRESS;
 use pumpkin_data::{BlockState, BlockStateId};
 
 impl BedrockClient {
@@ -98,11 +99,7 @@ impl BedrockClient {
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
                         let progress = if starts_breaking {
-                            self.clear_mining_clock();
-                            player.start_mining_time.store(
-                                player.tick_counter.load(Ordering::Relaxed),
-                                Ordering::Relaxed,
-                            );
+                            self.begin_world_mining(player, &world, location, state.id);
                             player.mining.store(true, Ordering::Relaxed);
                             *mining_pos = location;
                             (speed * 10.0) as i32
@@ -157,18 +154,25 @@ impl BedrockClient {
                     let speed = crate::block::calc_block_breaking(player, state, block);
                     let baseline =
                         player.mining_ticks_since(player.start_mining_time.load(Ordering::Relaxed));
-                    let elapsed = self.mining_prediction_ticks(
-                        server, player, &world, location, state.id, baseline,
-                    );
-                    let same_block = *player
-                        .mining_pos
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        == location;
-                    if player.mining.load(Ordering::Relaxed)
-                        && same_block
-                        && speed * elapsed as f32 >= MIN_PREDICTED_BREAK_PROGRESS
-                    {
+                    let active = player.mining.load(Ordering::Relaxed)
+                        && *player
+                            .mining_pos
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            == location;
+                    let elapsed = if active {
+                        let Some(elapsed) = self.mining_prediction_ticks(
+                            server, player, &world, location, state.id, baseline,
+                        ) else {
+                            self.sync_mining_block(location, state.id);
+                            player.stop_mining();
+                            return;
+                        };
+                        elapsed
+                    } else {
+                        0
+                    };
+                    if active && speed * elapsed as f32 >= MIN_PREDICTED_BREAK_PROGRESS {
                         player.stop_mining();
                         if (elapsed > baseline
                             && !player.is_current_mining_target(&world, location, state.id))

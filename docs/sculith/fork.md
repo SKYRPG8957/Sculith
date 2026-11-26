@@ -727,20 +727,24 @@ mining speed. It can also consume a standalone abort. It checks the loaded
 block, reach and ownership, then publishes the start or stop animation to
 current-protocol viewers. The region also advances the Java crack stage while
 the target and mining speed stay steady. Bedrock animates at that speed from
-the start event. At full progress the region can finish a bare-hand break
-with no loot, experience, light changes, local block behavior or event
-listeners. It rechecks the live block, neighbors, reach, input order, spawn
-protection and region ownership before updating the chunk, mining stats and
-exhaustion and publishing the stop, particles and block update. The existing
-world path handles the remaining cases, including datapack loot overrides,
-pending input and plugin callbacks. Replacement targets, an abort, and a
-change of world invalidate the old mining session.
-The same region can handle a single start or abort carried in a Bedrock
-movement packet after it completes the pose and its movement effects. A
-pending mining action stays at the head of the input queue when the move or
-action still needs the world. The world checks the committed pose before
-applying it. A packet with several block actions or with both mining and item
-operations goes through the full world handler in the original order.
+the start event. The region can finish a bare-hand break with no loot,
+experience, light changes, local block behavior or event listeners. It
+commits at full progress or on a prediction or stop input that meets the
+server's existing 65% progress threshold. It rechecks the live block,
+neighbors, reach, input order, spawn protection and region ownership before
+updating the chunk, mining stats and exhaustion and publishing the stop,
+particles and block update. It corrects the client after an early prediction
+and cancels the session on an early stop. Both owners compare the live
+block state with the state recorded at the beginning of the session.
+Observing a replacement invalidates the previous progress for that session.
+
+The same region can handle a single start, abort, prediction or stop
+carried in a Bedrock movement packet after it completes the pose and its
+movement effects. An action that needs the world stays at the head of the
+input queue. The world checks the committed pose before applying it and
+handles plugin callbacks, loot overrides and other block effects. A packet
+with several block actions or with both mining and item operations goes
+through the world handler in the original order.
 
 When many viewers are spread out, the entity tracker narrows its candidate
 list using horizontal positions in the tick snapshot. It also checks already

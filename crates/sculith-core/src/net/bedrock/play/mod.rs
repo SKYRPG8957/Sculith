@@ -69,8 +69,6 @@ use crate::{
 use pumpkin_data::BlockDirection;
 use tracing::{debug, info};
 
-const MIN_PREDICTED_BREAK_PROGRESS: f32 = 0.65;
-
 /// The offhand is slot 1 of Bedrock's hand container (`HandSlot::Offhand`) in item stack requests
 pub(crate) const OFF_HAND_BEDROCK_SLOT: u32 = 1;
 

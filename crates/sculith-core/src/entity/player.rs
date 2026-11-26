@@ -3601,14 +3601,19 @@ impl Player {
             } else {
                 let baseline = p.mining_ticks_since(p.start_mining_time.load(Ordering::Relaxed));
                 if let Some(client) = p.client.bedrock() {
-                    let elapsed =
-                        client.tick_mining_clock(server, &p, &world, pos, state.id, deadline);
-                    if p.continue_mining(pos, &world, state, elapsed) {
-                        p.stop_mining();
-                        if elapsed <= baseline || p.is_current_mining_target(&world, pos, state.id)
-                        {
-                            p.break_block(&pos);
+                    if let Some(elapsed) =
+                        client.tick_mining_clock(server, &p, &world, pos, state.id, deadline)
+                    {
+                        if p.continue_mining(pos, &world, state, elapsed) {
+                            p.stop_mining();
+                            if elapsed <= baseline
+                                || p.is_current_mining_target(&world, pos, state.id)
+                            {
+                                p.break_block(&pos);
+                            }
                         }
+                    } else {
+                        p.stop_mining();
                     }
                 } else {
                     p.continue_mining(pos, &world, state, baseline);

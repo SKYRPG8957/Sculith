@@ -1242,7 +1242,7 @@ mod tests {
         };
         assert_eq!(
             client.tick_mining_clock(server, player, world, target, dirt, Some(step)),
-            1
+            Some(1)
         );
         // Background chunk work can temporarily prevent the region from reading
         // the block. Keep the deadline fixed while waiting for that work.
@@ -1261,11 +1261,11 @@ mod tests {
             .await
             .expect("regional mining should finish once the chunk can be read");
         };
-        advance_mining(at + TICK_PERIOD, 2).await;
+        advance_mining(at + TICK_PERIOD, Some(2)).await;
         tick_region(world, chunk, at + TICK_PERIOD);
         assert_eq!(
             client.mining_prediction_ticks(server, player, world, target, dirt, 1),
-            2
+            Some(2)
         );
         player.inbound_packets.push(RawPacket {
             id: -1,
@@ -1277,23 +1277,24 @@ mod tests {
         };
         assert_eq!(
             client.tick_mining_clock(server, player, world, target, dirt, Some(repeated)),
-            1
+            Some(1)
         );
         assert!(player.inbound_packets.pop().is_some());
         assert_eq!(
             client.tick_mining_clock(server, player, world, target, dirt, Some(repeated)),
-            2
+            Some(2)
         );
 
         set_target(stone);
-        advance_mining(at + TICK_PERIOD * 2, 1).await;
-        assert_eq!(
-            client.mining_prediction_ticks(server, player, world, target, dirt, 1),
-            1
-        );
+        advance_mining(at + TICK_PERIOD * 2, None).await;
         assert_eq!(
             client.mining_prediction_ticks(server, player, world, target, stone, 1),
-            1
+            None
+        );
+        set_target(dirt);
+        assert_eq!(
+            client.tick_mining_clock(server, player, world, target, dirt, Some(repeated)),
+            None
         );
         player.reset_mining();
     }
@@ -1354,12 +1355,12 @@ mod tests {
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
         assert_eq!(
             client.mining_prediction_ticks(server, player, world, target, dirt, 1),
-            1
+            Some(1)
         );
         tick_region(world, chunk, at + TICK_PERIOD);
         assert_eq!(
             client.mining_prediction_ticks(server, player, world, target, dirt, 1),
-            2
+            Some(2)
         );
         assert_eq!(player.current_block_destroy_stage.load(Relaxed), 1);
         tick_region(world, chunk, at + TICK_PERIOD);
@@ -1411,7 +1412,7 @@ mod tests {
     fn verify_regional_mining_completion(
         world: &Arc<World>,
         player: &Arc<Player>,
-        client: &BedrockClient,
+        client: &Arc<BedrockClient>,
         chunk: Vector2<i32>,
     ) {
         use pumpkin_data::{BlockStateId, statistic::StatisticCategory};
@@ -1453,11 +1454,154 @@ mod tests {
         assert!(!player.mining.load(Relaxed));
         assert!(client.activity.mining.lock().unwrap().is_none());
         assert_eq!(mined(), before + 1);
+
+        let placed = |state| terrain.set_block_absolute_y(9, 100, 8, state);
+        let at = at + TICK_PERIOD * 12;
+        placed(glass);
+        verify_regional_mining_predictions(world, player, client, at, target);
+        placed(glass);
+        verify_inline_mining_prediction(world, player, client, at + TICK_PERIOD * 11, target);
+        assert_eq!(mined(), before + 3);
+
+        placed(glass);
+        queue_mining_action(client, player, PlayerActionType::StartDestroyBlock, target);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(player.mining.load(Relaxed));
+        let replacement = Block::STONE.default_state.id;
+        placed(replacement);
+        let ticks = player.tick_counter.fetch_add(100, Relaxed);
+        queue_mining_action(
+            client,
+            player,
+            PlayerActionType::PredictDestroyBlock,
+            target,
+        );
+        client.drain_world_input(player, None, Some(world), 1);
+        player.tick_counter.store(ticks, Relaxed);
+        assert_eq!(world.get_block_state_id(&target), replacement);
+        assert!(!player.mining.load(Relaxed));
+
         take_tool(tool);
         player.get_entity().on_ground.store(grounded, Relaxed);
         player.permission_lvl.store(permission);
         player.set_client_loaded(loaded);
         terrain.set_block_absolute_y(9, 100, 8, prior);
+    }
+
+    fn verify_regional_mining_predictions(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        at: Instant,
+        target: BlockPos,
+    ) {
+        use PlayerActionType::{PredictDestroyBlock, StartDestroyBlock, StopDestroyBlock};
+        use pumpkin_data::{BlockState, BlockStateId};
+        use sculith_protocol::{
+            bedrock::client::{CLevelEvent, CUpdateBlock, level_event::LevelEvent},
+            codec::var_uint::VarUInt,
+        };
+
+        let chunk = target.chunk_position();
+        let glass = Block::GLASS.default_state.id;
+        let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
+        let put = |state| terrain.set_block_absolute_y(9, 100, 8, state);
+        let advance = |tick| tick_region(world, chunk, at + TICK_PERIOD * tick);
+        let send = |action, tick| {
+            queue_mining_action(client, player, action, target);
+            advance(tick);
+            assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        };
+        let mut outgoing = client.outgoing_packet_queue_recv.try_lock().unwrap();
+        let receiver = outgoing.as_mut().unwrap();
+        while receiver.try_recv().is_ok() {}
+        let check_correction =
+            |receiver: &mut tokio::sync::mpsc::UnboundedReceiver<super::super::OutgoingPacket>,
+             state,
+             event: LevelEvent| {
+                let mut correction = None;
+                let mut animation = None;
+                while let Ok(packet) = receiver.try_recv() {
+                    let (id, data) = super::super::split_raw_packet(&packet.data).unwrap();
+                    let mut data = data.as_ref();
+                    match i32::from(id) {
+                        CUpdateBlock::PACKET_ID => {
+                            assert_eq!(BlockPos::read(&mut data).unwrap(), target);
+                            correction = Some(VarUInt::read(&mut data).unwrap().0);
+                        }
+                        CLevelEvent::PACKET_ID => {
+                            animation = Some(VarInt::read(&mut data).unwrap().0);
+                        }
+                        _ => {}
+                    }
+                }
+                assert_eq!(correction, Some(BlockState::to_be_network_id(state)));
+                assert_eq!(animation, Some(event as i32));
+            };
+
+        send(StartDestroyBlock, 0);
+        send(PredictDestroyBlock, 1);
+        check_correction(receiver, glass, LevelEvent::BlockUpdateBreak);
+        assert!(player.mining.load(Relaxed));
+        assert_eq!(world.get_block_state_id(&target), glass);
+        for tick in 2..6 {
+            advance(tick);
+        }
+        send(PredictDestroyBlock, 6);
+        assert_eq!(world.get_block_state_id(&target), BlockStateId::AIR);
+        assert!(!player.mining.load(Relaxed));
+
+        put(glass);
+        send(StartDestroyBlock, 7);
+        send(StopDestroyBlock, 8);
+        check_correction(receiver, glass, LevelEvent::BlockStopBreak);
+        assert_eq!(world.get_block_state_id(&target), glass);
+        assert!(!player.mining.load(Relaxed));
+
+        send(StartDestroyBlock, 9);
+        let replacement = Block::STONE.default_state.id;
+        put(replacement);
+        send(PredictDestroyBlock, 10);
+        check_correction(receiver, replacement, LevelEvent::BlockStopBreak);
+        assert_eq!(world.get_block_state_id(&target), replacement);
+        assert!(!player.mining.load(Relaxed));
+    }
+
+    fn verify_inline_mining_prediction(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        at: Instant,
+        target: BlockPos,
+    ) {
+        let entity = player.get_entity();
+        let previous_position = entity.pos.load();
+        let wire = player.bedrock_pos().to_f32_lossy();
+        entity.set_pos(player.feet_from_bedrock_pos(wire.to_f64()));
+        let previous_delta = client.client_delta.load();
+        client.client_delta.store(Vector3::new(0.0, -0.08, 0.0));
+        let chunk = target.chunk_position();
+        queue_mining_action(client, player, PlayerActionType::StartDestroyBlock, target);
+        for tick in 0..6 {
+            tick_region(world, chunk, at + TICK_PERIOD * tick);
+        }
+        client.enqueue_play_input(
+            player,
+            auth_input_packet(
+                wire,
+                client.input_tick.load(Relaxed) + 1,
+                entity.yaw.load(),
+                &[InputData::VerticalCollision, InputData::PerformBlockActions],
+                None,
+                &[(PlayerActionType::PredictDestroyBlock, target)],
+            ),
+        );
+        tick_region(world, chunk, at + TICK_PERIOD * 6);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        assert!(world.get_block_state_id(&target).to_state().is_air());
+        assert!(!player.mining.load(Relaxed));
+        client.client_delta.store(previous_delta);
+        entity.set_pos(previous_position);
     }
 
     fn verify_chunk_delivery_clock(client: &BedrockClient) {
@@ -2057,7 +2201,7 @@ mod tests {
         // The clock can advance only from the pose that started the dig.
         assert_eq!(
             client.mining_prediction_ticks(&server, player, world, target, dirt, 1),
-            2
+            Some(2)
         );
 
         let cancelled = moved + 0.125;
