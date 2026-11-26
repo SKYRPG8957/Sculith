@@ -128,6 +128,8 @@ pub async fn io_read_work(
         let (t_send, mut t_recv) = tokio::sync::mpsc::channel(1000);
 
         let batch_len = batch.len();
+        let started =
+            tracing::enabled!(target: "sculith::terrain", tracing::Level::TRACE).then(Instant::now);
         let level_clone = level.clone();
 
         let fetch_task = tokio::spawn(async move {
@@ -180,6 +182,15 @@ pub async fn io_read_work(
             }
         }
         let _ = fetch_task.await;
+        if let Some(started) = started {
+            tracing::trace!(
+                target: "sculith::terrain",
+                phase = "load",
+                requested = batch_len,
+                elapsed_us = started.elapsed().as_micros(),
+                "Terrain load and decode batch"
+            );
+        }
     }
     debug!("io read thread stop");
 }
@@ -317,6 +328,8 @@ pub fn run_generation(
             error: "World portal is not initialized".to_string(),
         };
     };
+    let started =
+        tracing::enabled!(target: "sculith::terrain", tracing::Level::TRACE).then(Instant::now);
     // Run generation with panic catching
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         cache.advance(
@@ -327,6 +340,18 @@ pub fn run_generation(
         );
         cache // Return cache on success
     }));
+    if let Some(started) = started {
+        tracing::trace!(
+            target: "sculith::terrain",
+            phase = "generate",
+            x = pos.x,
+            z = pos.y,
+            stage = ?stage,
+            elapsed_us = started.elapsed().as_micros(),
+            succeeded = result.is_ok(),
+            "Terrain generation stage"
+        );
+    }
 
     match result {
         Ok(cache) => RecvChunk::Generation(cache),

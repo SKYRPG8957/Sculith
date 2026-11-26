@@ -3,7 +3,11 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
 use std::num::NonZero;
-use std::sync::{Arc, Weak};
+use std::sync::{
+    Arc, Weak,
+    atomic::{AtomicUsize, Ordering::Relaxed},
+};
+use std::time::Instant;
 use tracing::warn;
 
 use crate::net::java::chunk_data::CChunkData;
@@ -28,6 +32,10 @@ const MAX_CONCURRENT_BATCHES: u16 = 10;
 const MAX_ENCODE_ATTEMPTS: u8 = 3;
 /// Ticks a chunk cancelled by `ChunkSend` waits before it is offered again.
 const CANCELLED_RETRY_TICKS: u64 = 20;
+
+pub(crate) fn terrain_trace_start() -> Option<Instant> {
+    tracing::enabled!(target: "sculith::terrain", tracing::Level::TRACE).then(Instant::now)
+}
 
 pub struct PreparedChunk {
     pub position: Vector2<i32>,
@@ -613,7 +621,9 @@ impl ChunkSender {
         if !current() {
             return None;
         }
-        let encoded = batch
+        let started = terrain_trace_start();
+        let cache_hits = AtomicUsize::new(0);
+        let encoded: Vec<_> = batch
             .chunks
             .par_iter()
             .filter_map(|candidate| {
@@ -624,6 +634,9 @@ impl ChunkSender {
                 if let Some(cached) = cache.get(&pos)
                     && cached.is_fresh_for(candidate)
                 {
+                    if started.is_some() {
+                        cache_hits.fetch_add(1, Relaxed);
+                    }
                     return Some(cached.value().clone());
                 }
 
@@ -635,6 +648,18 @@ impl ChunkSender {
                 Some(encoded)
             })
             .collect();
+        if let Some(started) = started {
+            tracing::trace!(
+                target: "sculith::terrain",
+                edition = "java",
+                phase = "encode",
+                elapsed_us = started.elapsed().as_micros(),
+                requested = batch.chunks.len(),
+                prepared = encoded.len(),
+                cache_hits = cache_hits.load(Relaxed),
+                "Terrain encoding batch"
+            );
+        }
         current().then_some(encoded)
     }
 
@@ -718,6 +743,15 @@ impl ChunkSender {
         {
             return Vec::new();
         }
+        tracing::trace!(
+            target: "sculith::terrain",
+            edition = "java",
+            phase = "queue",
+            connection = client.id,
+            columns = selected.len(),
+            payload_bytes = packets.iter().map(Bytes::len).sum::<usize>(),
+            "Terrain accepted by the writer queue"
+        );
         let sent = selected
             .iter()
             .map(|chunk| chunk.position)

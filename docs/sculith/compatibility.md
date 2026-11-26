@@ -29,3 +29,12 @@ Bedrock packet IDs with implemented codecs. [Packet events](packets.md).
 
 The supported shapes and limits for fonts, sounds, form layouts and static
 models are documented with their configuration and plugin methods. [Shared resources](resources.md).
+
+## Terrain diagnostics
+
+`RUST_LOG=info,sculith::terrain=trace` records shared loading and generation
+times, and reports preparation, encoding and queue admission for current
+clients by edition. The encoding events report cache hits. Bedrock also
+reports its initial cache lookup and the time spent waiting for transport
+credit and the encoding worker. The queue events count admitted payload bytes
+before connection compression and transport framing.

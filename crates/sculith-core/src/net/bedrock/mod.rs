@@ -86,7 +86,7 @@ use crate::{
     net::{
         ChunkSender, DisconnectReason, MAX_PENDING_BYTES, PacketHandlerResult, PacketRateLimiter,
         TERRAIN_QUEUE_BYTES,
-        chunk_sender::{ChunkSendOutcome, DeliveryFailure},
+        chunk_sender::{ChunkSendOutcome, DeliveryFailure, terrain_trace_start},
         decrement_pending_bytes, try_reserve_pending_bytes,
     },
     plugin::{
@@ -815,24 +815,39 @@ impl BedrockClient {
     }
 
     async fn wait_for_terrain_credit(&self, player: &Player, epoch: u32) -> bool {
-        while !self.closing.is_closed() && player.chunk_send_epoch.load(Ordering::Relaxed) == epoch
-        {
+        let waiting = terrain_trace_start();
+        let ready = loop {
+            if self.closing.is_closed() || player.chunk_send_epoch.load(Ordering::Relaxed) != epoch
+            {
+                break false;
+            }
             let queued = self.pending_bytes.load(Ordering::Acquire);
             if queued < TERRAIN_SEND_WINDOW_BYTES {
                 let Some(outstanding) = self.session.reliable_outstanding_bytes().await else {
-                    return false;
+                    break false;
                 };
                 if outstanding < TERRAIN_SEND_WINDOW_BYTES - queued {
-                    return !self.closing.is_closed()
+                    break !self.closing.is_closed()
                         && player.chunk_send_epoch.load(Ordering::Relaxed) == epoch;
                 }
             }
             tokio::select! {
-                () = self.closing.wait() => return false,
+                () = self.closing.wait() => break false,
                 () = tokio::time::sleep(TERRAIN_CREDIT_POLL_INTERVAL) => {}
             }
+        };
+        if let Some(waiting) = waiting {
+            tracing::trace!(
+                target: "sculith::terrain",
+                edition = "bedrock",
+                phase = "credit",
+                connection = self.id,
+                elapsed_us = waiting.elapsed().as_micros(),
+                ready,
+                "Terrain transport credit"
+            );
         }
-        false
+        ready
     }
 
     async fn prepare_chunk_payloads(
@@ -847,6 +862,7 @@ impl BedrockClient {
         if self.closing.is_closed() || !current_epoch() {
             return None;
         }
+        let lookup = terrain_trace_start();
         let mut encoded_payloads = Vec::with_capacity(valid_chunks.len());
         let mut misses = Vec::new();
         for chunk in valid_chunks {
@@ -870,56 +886,130 @@ impl BedrockClient {
                 blobs: Vec::new(),
             }));
         }
+        if let Some(lookup) = lookup {
+            tracing::trace!(
+                target: "sculith::terrain",
+                edition = "bedrock",
+                phase = "lookup",
+                connection = self.id,
+                elapsed_us = lookup.elapsed().as_micros(),
+                columns = valid_chunks.len(),
+                cache_hits = valid_chunks.len() - misses.len(),
+                "Bedrock terrain cache lookup"
+            );
+        }
 
         if !misses.is_empty() {
-            let (tx, rx) = oneshot::channel();
-            let worker_epoch = current_epoch.clone();
-            workers.spawn(move || {
-                let mut results = Vec::with_capacity(misses.len());
-                let obsolete = || tx.is_closed() || !worker_epoch();
-                for (index, chunk) in misses {
-                    if obsolete() {
-                        return;
-                    }
-                    let revision = chunk.section.terrain_revision();
-                    let actor_revision = chunk.block_actor_revision();
-                    let actors = world.bedrock_chunk_block_actors(&chunk);
-                    if obsolete() {
-                        return;
-                    }
-                    // Other viewers may have encoded this chunk while this job was queued.
-                    if !cache_enabled && actors.is_empty()
-                        && let Some(packet) = world.bedrock_chunk_frames.get(&chunk, bedrock_dimension)
-                    {
-                        results.push((index, PreparedTerrain { revision, actor_revision, packet, blobs: Vec::new() }));
-                        continue;
-                    }
-                    match CLevelChunk::encode_chunk(&chunk, bedrock_dimension, cache_enabled, &actors) {
-                        Ok((payload, blobs)) => {
-                            if let Some(packet) = frame_raw_packet(CLevelChunk::PACKET_ID, &payload) {
-                                if !cache_enabled && actors.is_empty() {
-                                    world.bedrock_chunk_frames.insert(&chunk, bedrock_dimension, revision, &packet);
-                                }
-                                results.push((index, PreparedTerrain { revision, actor_revision, packet, blobs }));
-                            }
-                        }
-                        Err(error) => error!(%error, x=chunk.x, z=chunk.z, "Failed to serialize Bedrock chunk"),
-                    }
-                }
-                let _ = tx.send(results);
-            });
-            let results = tokio::select! {
-                biased;
-                () = self.closing.wait() => return None,
-                results = rx => results,
-            };
-            if let Ok(results) = results {
-                for (index, terrain) in results {
-                    encoded_payloads[index] = Some(terrain);
-                }
+            let results = self
+                .encode_missing_chunk_payloads(
+                    workers,
+                    world,
+                    misses,
+                    bedrock_dimension,
+                    cache_enabled,
+                    current_epoch.clone(),
+                )
+                .await?;
+            for (index, terrain) in results {
+                encoded_payloads[index] = Some(terrain);
             }
         }
         (!self.closing.is_closed() && current_epoch()).then_some(encoded_payloads)
+    }
+
+    async fn encode_missing_chunk_payloads(
+        &self,
+        workers: &rayon::ThreadPool,
+        world: Arc<crate::world::World>,
+        misses: Vec<(usize, SyncChunk)>,
+        bedrock_dimension: i32,
+        cache_enabled: bool,
+        current_epoch: impl Fn() -> bool + Send + 'static,
+    ) -> Option<Vec<(usize, PreparedTerrain<Bytes>)>> {
+        let (tx, rx) = oneshot::channel();
+        let queued = terrain_trace_start();
+        let connection = self.id;
+        workers.spawn(move || {
+            let started = queued.map(|queued| (queued.elapsed(), Instant::now()));
+            let requested = misses.len();
+            let mut results = Vec::with_capacity(requested);
+            let mut cache_hits = 0;
+            let obsolete = || tx.is_closed() || !current_epoch();
+            for (index, chunk) in misses {
+                if obsolete() {
+                    return;
+                }
+                let revision = chunk.section.terrain_revision();
+                let actor_revision = chunk.block_actor_revision();
+                let actors = world.bedrock_chunk_block_actors(&chunk);
+                if obsolete() {
+                    return;
+                }
+                // Other viewers may have encoded this chunk while this job was queued.
+                if !cache_enabled
+                    && actors.is_empty()
+                    && let Some(packet) = world.bedrock_chunk_frames.get(&chunk, bedrock_dimension)
+                {
+                    cache_hits += 1;
+                    results.push((
+                        index,
+                        PreparedTerrain {
+                            revision,
+                            actor_revision,
+                            packet,
+                            blobs: Vec::new(),
+                        },
+                    ));
+                    continue;
+                }
+                match CLevelChunk::encode_chunk(&chunk, bedrock_dimension, cache_enabled, &actors) {
+                    Ok((payload, blobs)) => {
+                        if let Some(packet) = frame_raw_packet(CLevelChunk::PACKET_ID, &payload) {
+                            if !cache_enabled && actors.is_empty() {
+                                world.bedrock_chunk_frames.insert(
+                                    &chunk,
+                                    bedrock_dimension,
+                                    revision,
+                                    &packet,
+                                );
+                            }
+                            results.push((
+                                index,
+                                PreparedTerrain {
+                                    revision,
+                                    actor_revision,
+                                    packet,
+                                    blobs,
+                                },
+                            ));
+                        }
+                    }
+                    Err(error) => {
+                        error!(%error, x=chunk.x, z=chunk.z, "Failed to serialize Bedrock chunk")
+                    }
+                }
+            }
+            if let Some((wait, started)) = started {
+                tracing::trace!(
+                    target: "sculith::terrain",
+                    edition = "bedrock",
+                    phase = "encode",
+                    connection,
+                    worker_wait_us = wait.as_micros(),
+                    elapsed_us = started.elapsed().as_micros(),
+                    requested,
+                    prepared = results.len(),
+                    cache_hits,
+                    "Terrain encoding batch"
+                );
+            }
+            let _ = tx.send(results);
+        });
+        tokio::select! {
+            biased;
+            () = self.closing.wait() => None,
+            results = rx => Some(results.unwrap_or_default()),
+        }
     }
 
     async fn translate_chunk_payloads(
@@ -1036,6 +1126,15 @@ impl BedrockClient {
                 cache.insert(hash, blob);
             }
         }
+        tracing::trace!(
+            target: "sculith::terrain",
+            edition = "bedrock",
+            phase = "queue",
+            connection = self.id,
+            columns = 1,
+            payload_bytes = bytes,
+            "Terrain accepted by the writer queue"
+        );
         Ok(())
     }
 

@@ -9,7 +9,9 @@ use sculith_util::version::JavaMinecraftVersion;
 use crate::{
     entity::EntityBase,
     net::{
-        ChunkSender, ClientPlatform, bedrock::BedrockClient, chunk_sender::DispatchedChunk,
+        ChunkSender, ClientPlatform,
+        bedrock::BedrockClient,
+        chunk_sender::{DispatchedChunk, terrain_trace_start},
         java::JavaClient,
     },
     plugin::{server::packet::PacketSentEvent, world::chunk_send::ChunkSend},
@@ -61,6 +63,7 @@ impl Player {
         let player_chunk = self.get_entity().chunk_pos.load();
         let epoch = self.chunk_send_epoch.load(Relaxed);
         let view_distance = self.watched_section.load().view_distance;
+        let preparing = terrain_trace_start();
         let Some(mut batch) = self.chunk_sender.try_lock().ok().and_then(|mut sender| {
             sender.prepare_batch(
                 &world.level,
@@ -73,6 +76,17 @@ impl Player {
         }) else {
             return;
         };
+        if let Some(preparing) = preparing {
+            tracing::trace!(
+                target: "sculith::terrain",
+                edition = "java",
+                phase = "prepare",
+                connection = client.id,
+                elapsed_us = preparing.elapsed().as_micros(),
+                columns = batch.chunks.len(),
+                "Terrain selected for a batch"
+            );
+        }
         let current = || !client.is_closed() && self.chunk_send_epoch.load(Relaxed) == epoch;
         let cancelled = match world.server.upgrade() {
             Some(server) if server.plugin_manager.has_handlers::<ChunkSend>() => {
@@ -153,6 +167,7 @@ impl Player {
         } else {
             (256usize / world.players.load().len().max(1)).max(1)
         };
+        let preparing = terrain_trace_start();
         let batch = if regional.is_some() {
             sender.prepare_regional_bedrock_batch(
                 &world.level,
@@ -174,6 +189,17 @@ impl Player {
         let Some(batch) = batch else {
             return sender.has_bedrock_chunk_work();
         };
+        if let Some(preparing) = preparing {
+            tracing::trace!(
+                target: "sculith::terrain",
+                edition = "bedrock",
+                phase = "prepare",
+                connection = client.id,
+                elapsed_us = preparing.elapsed().as_micros(),
+                columns = batch.chunks.len(),
+                "Terrain selected for a batch"
+            );
+        }
         if regional.is_some_and(|owns| !owns() || !client.chunk_view_published()) {
             return true;
         }

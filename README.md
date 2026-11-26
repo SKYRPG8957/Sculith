@@ -29,7 +29,8 @@ uses NetherNet on TCP and UDP. Set `java-enabled=true` for Java access on
 Properties present in the file take precedence over their TOML equivalents.
 `sculith --check` prints the effective listeners and world settings.
 Existing TOML-only installations can keep using `sculith.toml`.
-Plugins use the upstream Rust/Wasm API.
+Write plugins in Rust using the native API or the Wasm SDK. Build native
+plugins against the deployed Sculith revision.
 
 Place a 64×64 PNG named `server-icon.png` in the server directory to set the
 Java server list icon.
