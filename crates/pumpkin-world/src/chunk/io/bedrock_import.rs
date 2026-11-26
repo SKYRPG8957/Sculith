@@ -37,7 +37,7 @@ use crate::{
     level::LevelFolder,
     world_info::{
         FlatPresetLayer, FlatPresetSettings, GeneratorSettings, LevelData, StructureOverrides,
-        WorldInfoError, WorldInfoWriter, anvil::AnvilLevelInfo,
+        WorldInfoError, WorldInfoWriter, anvil::AnvilLevelInfo, data_files::WeatherData,
     },
 };
 
@@ -884,6 +884,7 @@ fn read_level(
         return Err(invalid("Bedrock spawn is out of world bounds"));
     }
     import_game_rules(&data, &mut info.game_rules)?;
+    import_weather(&data, &mut info)?;
     if let Some(time) = data.get_long("Time") {
         info.day_time = time;
     }
@@ -902,6 +903,32 @@ fn import_game_rules(data: &NbtCompound, registry: &mut GameRuleRegistry) -> Res
             _ => return Err(invalid(format!("invalid Bedrock game rule {saved_name}"))),
         }
     }
+    Ok(())
+}
+
+fn import_weather(data: &NbtCompound, info: &mut LevelData) -> Result<(), Error> {
+    let weather_keys = ["rainLevel", "rainTime", "lightningLevel", "lightningTime"];
+    if !weather_keys.into_iter().any(|key| data.has(key)) {
+        return Ok(());
+    }
+    let raining = |name| match data.get(name) {
+        None => Ok(false),
+        Some(NbtTag::Float(value)) if (0.0..=1.0).contains(value) => Ok(*value > 0.0),
+        _ => Err(invalid(format!("invalid Bedrock weather level {name}"))),
+    };
+    let time = |name| match data.get(name) {
+        None => Ok(0),
+        Some(NbtTag::Int(value)) => Ok(*value),
+        _ => Err(invalid(format!("invalid Bedrock weather timer {name}"))),
+    };
+    info.weather = Some(WeatherData {
+        raining: raining("rainLevel")?,
+        thundering: raining("lightningLevel")?,
+        rain_time: time("rainTime")?,
+        thunder_time: time("lightningTime")?,
+        clear_weather_time: info.clear_weather_time,
+        data_version: info.data_version,
+    });
     Ok(())
 }
 

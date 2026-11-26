@@ -473,6 +473,19 @@ impl World {
             let _ = level.rt_handle.set(server_arc.runtime.clone());
         }
 
+        let weather = if dimension == Dimension::OVERWORLD {
+            let info = level_info.load();
+            let mut weather = info
+                .weather
+                .as_ref()
+                .map(Weather::from_saved)
+                .unwrap_or_default();
+            weather.clear_weather_time = info.clear_weather_time.max(0);
+            weather
+        } else {
+            Weather::new()
+        };
+
         Self {
             uuid: Uuid::new_v4(),
             level,
@@ -492,7 +505,7 @@ impl World {
             )),
             level_time: std::sync::Mutex::new(LevelTime::new()),
             dimension,
-            weather: std::sync::Mutex::new(Weather::new()),
+            weather: std::sync::Mutex::new(weather),
             block_registry,
             sea_level: generation_settings.sea_level,
             min_y: i32::from(generation_settings.shape.min_y),

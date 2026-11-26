@@ -18,7 +18,7 @@ use crate::world_info::{
     DataPacks, MAXIMUM_SUPPORTED_LEVEL_VERSION, MAXIMUM_SUPPORTED_WORLD_DATA_VERSION,
     MINIMUM_SUPPORTED_LEVEL_VERSION, MINIMUM_SUPPORTED_WORLD_DATA_VERSION, WorldVersion,
     data_files::{
-        minecraft_data_dir, read_game_rules, read_wandering_trader, read_weather,
+        WeatherData, minecraft_data_dir, read_game_rules, read_wandering_trader, read_weather,
         read_world_clocks, read_world_gen_settings, write_custom_boss_events_stub,
         write_game_rules, write_random_sequences_stub, write_scheduled_events_stub,
         write_scoreboard_stub, write_stopwatches_stub, write_wandering_trader, write_weather,
@@ -285,6 +285,15 @@ fn level_data_from_nbt(data: &NbtCompound, seed: i64) -> LevelData {
     if let Some(clear_weather_time) = data.get_int("clearWeatherTime") {
         level_data.clear_weather_time = clear_weather_time;
     }
+    let weather = WeatherData {
+        raining: data.get_bool("raining").unwrap_or(false),
+        thundering: data.get_bool("thundering").unwrap_or(false),
+        rain_time: data.get_int("rainTime").unwrap_or(0),
+        thunder_time: data.get_int("thunderTime").unwrap_or(0),
+        clear_weather_time: level_data.clear_weather_time,
+        data_version: level_data.data_version,
+    };
+    level_data.weather = weather.has_cycle_state().then_some(weather);
     if let Some(spawn_delay) = data.get_int("WanderingTraderSpawnDelay") {
         level_data.wandering_trader_spawn_delay = spawn_delay;
     }
@@ -420,6 +429,7 @@ impl WorldInfoReader for AnvilLevelInfo {
         {
             let weather = read_weather(level_folder);
             level_data.clear_weather_time = weather.clear_weather_time;
+            level_data.weather = weather.has_cycle_state().then_some(weather);
         }
 
         if minecraft_data_dir(level_folder)
@@ -491,7 +501,10 @@ impl WorldInfoWriter for AnvilLevelInfo {
         write_world_clocks(level_folder, &clocks)?;
 
         // weather.dat
-        let mut weather = read_weather(level_folder);
+        let mut weather = info
+            .weather
+            .clone()
+            .unwrap_or_else(|| read_weather(level_folder));
         weather.clear_weather_time = info.clear_weather_time;
         weather.data_version = data_version;
         write_weather(level_folder, &weather)?;
@@ -863,6 +876,14 @@ mod test {
         original.border_center_x = 8.0;
         original.day_time = 12_345;
         original.map_id = 3;
+        original.weather = Some(crate::world_info::data_files::WeatherData {
+            raining: true,
+            thundering: true,
+            rain_time: 640,
+            thunder_time: 480,
+            clear_weather_time: original.clear_weather_time,
+            data_version: original.data_version,
+        });
 
         AnvilLevelInfo
             .write_world_info(&original, temp_dir.path())
@@ -931,6 +952,7 @@ mod test {
             border_warning_blocks: 5.0,
             border_warning_time: 15.0,
             clear_weather_time: 0,
+            weather: None,
             wandering_trader_spawn_delay: 24_000,
             wandering_trader_spawn_chance: 25,
             data_packs: DataPacks {

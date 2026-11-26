@@ -46,6 +46,12 @@ impl Default for WeatherData {
     }
 }
 
+impl WeatherData {
+    pub(super) const fn has_cycle_state(&self) -> bool {
+        self.raining || self.thundering || self.rain_time != 0 || self.thunder_time != 0
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct WorldGenSettingsData {
     #[serde(flatten)]
@@ -164,7 +170,10 @@ pub fn read_weather(level_folder: &Path) -> WeatherData {
                     thunder_time: c.get_int("thunder_time").unwrap_or(0),
                     raining: c.get_bool("raining").unwrap_or(false),
                     thundering: c.get_bool("thundering").unwrap_or(false),
-                    data_version: c.get_int("DataVersion").unwrap_or(0),
+                    data_version: compound
+                        .get_int("DataVersion")
+                        .or_else(|| c.get_int("DataVersion"))
+                        .unwrap_or(0),
                 }
             }
             Err(e) => {

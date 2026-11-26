@@ -99,6 +99,10 @@ pub struct LevelData {
     #[serde(rename = "clearWeatherTime", skip_serializing, default)]
     pub clear_weather_time: i32,
 
+    /// Active precipitation and its timers from the weather sidecar.
+    #[serde(skip)]
+    pub weather: Option<data_files::WeatherData>,
+
     /// Persisted to `data/minecraft/wandering_trader.dat`.
     #[serde(
         rename = "WanderingTraderSpawnDelay",
@@ -571,6 +575,7 @@ impl LevelData {
             world_gen_settings: WorldGenSettings::new(seed),
             day_time: 0,
             clear_weather_time: -1,
+            weather: None,
             wandering_trader_spawn_delay: data_files::DEFAULT_WANDERING_TRADER_SPAWN_DELAY,
             wandering_trader_spawn_chance: data_files::DEFAULT_WANDERING_TRADER_SPAWN_CHANCE,
         }

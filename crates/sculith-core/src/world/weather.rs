@@ -1,4 +1,5 @@
 use super::World;
+use pumpkin_world::world_info::data_files::WeatherData;
 use rand::RngExt;
 use sculith_protocol::bedrock::client::level_event::CLevelEvent;
 use sculith_protocol::java::client::play::{CGameEvent, GameEvent};
@@ -58,6 +59,34 @@ impl Weather {
             thunder_level: 0.0,
             old_thunder_level: 0.0,
             weather_cycle_enabled: true,
+        }
+    }
+
+    pub(super) fn from_saved(data: &WeatherData) -> Self {
+        let rain_level = f32::from(u8::from(data.raining));
+        let thunder_level = f32::from(u8::from(data.thundering));
+        Self {
+            clear_weather_time: data.clear_weather_time,
+            raining: data.raining,
+            rain_time: data.rain_time,
+            thundering: data.thundering,
+            thunder_time: data.thunder_time,
+            rain_level,
+            old_rain_level: rain_level,
+            thunder_level,
+            old_thunder_level: thunder_level,
+            weather_cycle_enabled: true,
+        }
+    }
+
+    pub(crate) const fn saved_state(&self, data_version: i32) -> WeatherData {
+        WeatherData {
+            clear_weather_time: self.clear_weather_time,
+            raining: self.raining,
+            rain_time: self.rain_time,
+            thundering: self.thundering,
+            thunder_time: self.thunder_time,
+            data_version,
         }
     }
 

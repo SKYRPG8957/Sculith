@@ -43,6 +43,8 @@ impl Server {
             Err(WorldInfoError::InfoNotFound) => {
                 let primary = self.level_info.load();
                 let mut info = (**primary).clone();
+                info.clear_weather_time = -1;
+                info.weather = None;
                 let overworld =
                     LevelFolder::for_dimension(root.to_path_buf(), &Dimension::OVERWORLD);
                 let data = minecraft_data_dir(root);
@@ -135,7 +137,7 @@ impl Server {
         let worlds = self.worlds.load();
         let mut main = (**self.level_info.load()).clone();
         if let Some(overworld) = worlds.first() {
-            main.day_time = overworld.get_time_of_day();
+            copy_overworld_state(overworld, &mut main);
         }
         std::iter::once((self.storage_root.clone(), main))
             .chain(
@@ -164,9 +166,20 @@ pub(super) fn metadata_owners(worlds: &[Arc<World>]) -> impl Iterator<Item = &Wo
 fn metadata_snapshot(world: &World) -> (PathBuf, LevelData) {
     let mut info = (**world.level_info.load()).clone();
     if world.dimension == Dimension::OVERWORLD {
-        info.day_time = world.get_time_of_day();
+        copy_overworld_state(world, &mut info);
     }
     (world.level.level_folder.root_folder.clone(), info)
+}
+
+fn copy_overworld_state(world: &World, info: &mut LevelData) {
+    info.day_time = world.get_time_of_day();
+    let state = world
+        .weather
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .saved_state(info.data_version);
+    info.clear_weather_time = state.clear_weather_time;
+    info.weather = Some(state);
 }
 
 async fn save_snapshots(
