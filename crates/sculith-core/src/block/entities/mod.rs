@@ -214,15 +214,8 @@ impl ContainerMetadata {
     }
 
     pub fn write_nbt(&self, nbt: &mut NbtCompound) {
-        use pumpkin_data::data_component_impl::{CustomNameImpl, DataComponentImpl};
-        if let Some(name) = self
-            .custom_name
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-        {
-            nbt.put("CustomName", CustomNameImpl { name }.write_data());
-        }
+        use pumpkin_data::data_component_impl::DataComponentImpl;
+        self.write_custom_name(nbt);
         if let Some(lock) = self
             .lock
             .lock()
@@ -230,6 +223,14 @@ impl ContainerMetadata {
             .clone()
         {
             nbt.put("lock", lock.write_data());
+        }
+    }
+
+    /// Writes the visible container name to saved or client NBT.
+    pub fn write_custom_name(&self, nbt: &mut NbtCompound) {
+        use pumpkin_data::data_component_impl::{CustomNameImpl, DataComponentImpl};
+        if let Some(name) = self.get_custom_name() {
+            nbt.put("CustomName", CustomNameImpl { name }.write_data());
         }
     }
 

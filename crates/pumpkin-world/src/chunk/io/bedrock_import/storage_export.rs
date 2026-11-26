@@ -367,11 +367,15 @@ fn replace_slots(
         .filter_map(|(field, value)| match field.as_ref() {
             "id" | "x" | "y" | "z" | "Items" => None,
             "keepPacked" if matches!(value, NbtTag::Byte(0)) => None,
+            "CustomName" if items.supports_named_containers() => None,
             _ => Some(field),
         })
         .min()
     {
         return Err(format!("unsupported Sculith container field {field:?}"));
+    }
+    if previous.get("CustomName") != current.get("CustomName") {
+        return Err("container name changed".into());
     }
     let before = java_slots(previous, items)?;
     let after = java_slots(current, items)?;

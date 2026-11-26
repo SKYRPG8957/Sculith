@@ -128,11 +128,12 @@ fn convert_container(
     if let Some(field) = saved
         .child_tags
         .keys()
-        .filter(|field| {
-            !matches!(
-                field.as_ref(),
-                "id" | "x" | "y" | "z" | "Items" | "BlockEntityVersion" | "Findable" | "isMovable"
-            )
+        .filter(|field| match field.as_ref() {
+            "id" | "x" | "y" | "z" | "Items" | "BlockEntityVersion" | "Findable" | "isMovable" => {
+                false
+            }
+            "CustomName" => !items.supports_named_containers(),
+            _ => true,
         })
         .min()
     {
@@ -183,6 +184,13 @@ fn convert_container(
     entity.put_int("x", pos.x);
     entity.put_int("y", pos.y);
     entity.put_int("z", pos.z);
+    if let Some(name) = saved.get("CustomName") {
+        let name = name.extract_string().ok_or("invalid container name")?;
+        if u16::try_from(pumpkin_nbt::cesu8::to_java_cesu8(name).len()).is_err() {
+            return Err("container name is too long for Java NBT".into());
+        }
+        entity.put_string("CustomName", name.to_owned());
+    }
     if !converted.is_empty() {
         entity.put_list("Items", converted);
     }

@@ -426,10 +426,56 @@ fn storage_thrown_decay_keeps_older_template_rules() {
 }
 
 #[test]
+fn named_storage_preserves_legacy_export_scope_and_checks_java_name_length() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join(".sculith-bedrock-storage-version"),
+        b"5\n",
+    )
+    .unwrap();
+    let earlier = storage::read_import_registry(directory.path()).unwrap();
+    let current = storage::item_registry();
+    let terrain = terrain::TerrainRegistry::load().unwrap();
+    let mut chunk = ChunkData::empty(-1, 0);
+    chunk
+        .section
+        .set_block_absolute_y(15, -60, 0, Block::BARREL.default_state.id);
+    let mut unnamed = Vec::new();
+    container(&mut unnamed, "Barrel", -1, &[]);
+    assert_eq!(unnamed.pop(), Some(pumpkin_nbt::END_ID));
+    let too_long = "🌍".repeat(11_000);
+    for (items, name, expected) in [
+        (
+            &earlier,
+            "Guild reserves",
+            "unsupported container field \"CustomName\"",
+        ),
+        (
+            &current,
+            too_long.as_str(),
+            "container name is too long for Java NBT",
+        ),
+    ] {
+        let mut raw = unnamed.clone();
+        string_tag(&mut raw, "CustomName", name);
+        raw.push(pumpkin_nbt::END_ID);
+        let mut stats = ImportStats::default();
+        assert!(!storage::import_record(&raw, &mut chunk, &terrain, items, &mut stats).unwrap());
+        assert_eq!(stats.skipped_block_entity_examples[0].reason, expected);
+        let (exported, edited) =
+            storage_export::export_record(&raw, &chunk, &chunk, &terrain, items).unwrap();
+        assert_eq!((exported, edited), (raw, 0));
+    }
+}
+
+#[test]
 fn storage_export_replaces_slots_and_keeps_unsupported_compound_bytes() {
     let pos = BlockPos::new(-1, -60, 0);
     let mut raw = Vec::new();
     container(&mut raw, "Chest", -1, &[(0, "minecraft:iron_ingot", 19)]);
+    assert_eq!(raw.pop(), Some(pumpkin_nbt::END_ID));
+    string_tag(&mut raw, "CustomName", "길드 창고");
+    raw.push(pumpkin_nbt::END_ID);
     let boundary = raw.len();
     container(&mut raw, "Furnace", -2, &[]);
     let terrain = terrain::TerrainRegistry::load().unwrap();
@@ -452,6 +498,7 @@ fn storage_export_replaces_slots_and_keeps_unsupported_compound_bytes() {
         .section
         .set_block_absolute_y(15, -60, 0, Block::CHEST.default_state.id);
     let mut entity = original.pending_block_entities.get_mut().unwrap()[&pos].clone();
+    assert_eq!(entity.get_string("CustomName"), Some("길드 창고"));
     let mut entry = pumpkin_nbt::compound::NbtCompound::new();
     entry.put_byte("Slot", 8);
     entry.put_string("id", "minecraft:diamond".into());
@@ -469,6 +516,7 @@ fn storage_export_replaces_slots_and_keeps_unsupported_compound_bytes() {
     assert!(exported.ends_with(&raw[boundary..]));
     let mut reader = NbtReadHelperBedrockDisk::new(Cursor::new(exported.as_slice()));
     let chest = Nbt::read(&mut reader).unwrap();
+    assert_eq!(chest.get_string("CustomName"), Some("길드 창고"));
     let stacks = chest.get_list("Items").unwrap();
     assert_eq!(stacks.len(), 1);
     let stack = stacks[0].extract_compound().unwrap();
@@ -480,6 +528,17 @@ fn storage_export_replaces_slots_and_keeps_unsupported_compound_bytes() {
         Nbt::read(&mut reader).unwrap().get_string("id"),
         Some("Furnace")
     );
+
+    shared
+        .pending_block_entities
+        .get_mut()
+        .unwrap()
+        .get_mut(&pos)
+        .unwrap()
+        .put_string("CustomName", "New name".into());
+    let error =
+        storage_export::export_record(&raw, &original, &shared, &terrain, &items).unwrap_err();
+    assert!(error.to_string().contains("container name changed"));
 }
 
 fn write_storage_column(db: &DB, position: BlockPos, id: i32, count: u8) -> Vec<u8> {

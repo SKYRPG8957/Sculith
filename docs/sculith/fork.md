@@ -816,7 +816,7 @@ Sculith. Shared rules include inventory retention, day and weather cycles, mob
 loot, damage, random tick speed and sleeping percentage. Operators can use
 Bedrock rule names such as `/gamerule keepinventory true` in Sculith. New chunks
 use Sculith's generator, with supported Bedrock flat layers mapped to a flat preset.
-Ordinary single chests and barrels preserve the slots and counts of items
+Single chests and barrels preserve names and the slots and counts of items
 with shared mappings. This includes default block items, standard drinkable,
 splash and lingering potion variants, tipped arrows from the Bedrock creative
 catalogue, and mapped enchantments on items and enchanted books. Drinkable,
@@ -891,10 +891,11 @@ before exporting so there is one source for its inventory data.
 The output uses the template's terrain, players and metadata. Imports record
 their storage conversion version alongside the saved world. New imports can
 transfer mapped potions, tipped arrows and enchantments back into supported
-containers, including slot changes and additions. Exports from older imports
-use the item rules of those imports, preserving template containers that were
-originally skipped. The command reports preserved records. A missing or
-incompatible Sculith container blocks publication of the destination.
+containers, including slot changes and additions. Named chests and barrels
+keep their template names on inventory export. Exports from older imports
+use the storage rules of those imports, preserving template containers that
+were originally skipped. The command reports preserved records. A missing
+or incompatible Sculith container blocks publication of the destination.
 
 Append `--include-block-edits` to copy supported block changes within the
 template's saved columns. The export keeps the template's biomes, actors,

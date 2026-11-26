@@ -131,6 +131,7 @@ impl BlockEntity for BarrelBlockEntity {
         if let Ok(guard) = self.items.try_read() {
             sync_write_items_to_nbt(&*guard, &mut nbt);
         }
+        self.metadata.write_custom_name(&mut nbt);
         Some(nbt)
     }
 
@@ -138,10 +139,14 @@ impl BlockEntity for BarrelBlockEntity {
         &self,
         _state_id: pumpkin_data::BlockStateId,
     ) -> Option<NbtCompound> {
+        let name = self
+            .metadata
+            .get_custom_name()
+            .map(sculith_util::text::TextComponent::get_text);
         Some(crate::block::entities::bedrock::build_container_actor(
             "Barrel",
             self.position,
-            None,
+            name.as_deref(),
         ))
     }
 

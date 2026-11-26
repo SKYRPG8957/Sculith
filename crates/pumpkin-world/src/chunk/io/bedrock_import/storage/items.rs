@@ -21,7 +21,7 @@ use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use super::super::{Error, invalid, terrain::TerrainRegistry};
 
 const VERSION_FILE: &str = ".sculith-bedrock-storage-version";
-const CURRENT_VERSION: &[u8] = b"5\n";
+const CURRENT_VERSION: &[u8] = b"6\n";
 
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 enum StorageVersion {
@@ -30,6 +30,7 @@ enum StorageVersion {
     DrinkableDecay,
     TippedArrows,
     ThrownDecay,
+    NamedContainers,
 }
 
 pub(in crate::chunk::io::bedrock_import) struct StorageItemRegistry {
@@ -38,6 +39,10 @@ pub(in crate::chunk::io::bedrock_import) struct StorageItemRegistry {
 }
 
 impl StorageItemRegistry {
+    pub(in crate::chunk::io::bedrock_import) fn supports_named_containers(&self) -> bool {
+        self.version >= StorageVersion::NamedContainers
+    }
+
     fn supports_components(&self) -> bool {
         self.version >= StorageVersion::PotionAndEnchantment
     }
@@ -64,7 +69,7 @@ pub(in crate::chunk::io::bedrock_import) fn item_registry() -> StorageItemRegist
             .iter()
             .map(|item| (item.registry_key, item.id))
             .collect(),
-        version: StorageVersion::ThrownDecay,
+        version: StorageVersion::NamedContainers,
     }
 }
 
@@ -81,7 +86,8 @@ pub(in crate::chunk::io::bedrock_import) fn read_import_registry(
             let mut version = Vec::new();
             file.take(16).read_to_end(&mut version)?;
             match version.as_slice() {
-                CURRENT_VERSION => StorageVersion::ThrownDecay,
+                CURRENT_VERSION => StorageVersion::NamedContainers,
+                b"5\n" => StorageVersion::ThrownDecay,
                 b"4\n" => StorageVersion::TippedArrows,
                 b"3\n" => StorageVersion::DrinkableDecay,
                 b"2\n" => StorageVersion::PotionAndEnchantment,

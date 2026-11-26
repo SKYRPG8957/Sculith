@@ -122,6 +122,7 @@ macro_rules! impl_block_entity_for_chest {
                         pumpkin_inventory::sync_write_items_to_nbt(&*items, &mut nbt);
                     }
                 }
+                self.metadata.write_custom_name(&mut nbt);
                 Some(nbt)
             }
 
@@ -129,10 +130,14 @@ macro_rules! impl_block_entity_for_chest {
                 &self,
                 state_id: pumpkin_data::BlockStateId,
             ) -> Option<pumpkin_nbt::compound::NbtCompound> {
+                let name = self
+                    .metadata
+                    .get_custom_name()
+                    .map(sculith_util::text::TextComponent::get_text);
                 $crate::block::entities::chest_like_block_entity::build_chest_actor(
                     self.position,
                     state_id,
-                    None,
+                    name.as_deref(),
                 )
             }
 

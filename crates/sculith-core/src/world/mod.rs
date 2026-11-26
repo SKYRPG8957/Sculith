@@ -232,8 +232,12 @@ pub(crate) const COLLISION_LOOK_BELOW: f64 = 0.50001;
 pub(crate) const BLOCK_ENTITY_CUSTOM_DATA_TAG: &str = "SculithCustomData";
 pub const MOON_BRIGHTNESS_PER_PHASE: [f32; 8] = [1.0, 0.75, 0.5, 0.25, 0.0, 0.25, 0.5, 0.75];
 
-fn bedrock_chest_block_actor(state_id: BlockStateId, position: BlockPos) -> Option<NbtCompound> {
-    crate::block::entities::chest_like_block_entity::build_chest_actor(position, state_id, None)
+fn bedrock_chest_block_actor(
+    state_id: BlockStateId,
+    position: BlockPos,
+    name: Option<&str>,
+) -> Option<NbtCompound> {
+    crate::block::entities::chest_like_block_entity::build_chest_actor(position, state_id, name)
 }
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -7341,7 +7345,8 @@ impl World {
                     .section
                     .get_block_absolute_y(relative.x as usize, relative.y, relative.z as usize)
                     .and_then(|state_id| {
-                        bedrock_chest_block_actor(state_id, *position)
+                        let name = entity.get_custom_name().map(TextComponent::get_text);
+                        bedrock_chest_block_actor(state_id, *position, name.as_deref())
                             .or_else(|| entity.bedrock_block_actor_data(state_id))
                     })
             })
@@ -7356,7 +7361,10 @@ impl World {
                             relative.y,
                             relative.z as usize,
                         )?;
-                        bedrock_chest_block_actor(state_id, *position).or_else(|| {
+                        let name = nbt
+                            .get_string("CustomName")
+                            .or_else(|| nbt.get_string("custom_name"));
+                        bedrock_chest_block_actor(state_id, *position, name).or_else(|| {
                             block_entity_from_nbt(nbt)?.bedrock_block_actor_data(state_id)
                         })
                     }),
@@ -7487,7 +7495,8 @@ impl World {
         }
 
         let state = self.get_block_state(&block_pos);
-        if let Some(data) = bedrock_chest_block_actor(state.id, block_pos)
+        let name = block_entity.get_custom_name().map(TextComponent::get_text);
+        if let Some(data) = bedrock_chest_block_actor(state.id, block_pos, name.as_deref())
             .or_else(|| block_entity.bedrock_block_actor_data(state.id))
         {
             self.broadcast_to_chunk_bedrock(chunk_pos, &CBlockActorData::new(block_pos, data));
@@ -8951,12 +8960,17 @@ mod tests {
             r#type: ChestType::Right,
             waterlogged: false,
         };
-        let actor =
-            bedrock_chest_block_actor(properties.to_state_id(&Block::CHEST), position).unwrap();
+        let actor = bedrock_chest_block_actor(
+            properties.to_state_id(&Block::CHEST),
+            position,
+            Some("Guild reserves"),
+        )
+        .unwrap();
 
         assert_eq!(actor.get_int("pairx"), Some(4));
         assert_eq!(actor.get_int("pairz"), Some(7));
         assert_eq!(actor.get_bool("pairlead"), Some(true));
+        assert_eq!(actor.get_string("CustomName"), Some("Guild reserves"));
     }
 
     #[test]
