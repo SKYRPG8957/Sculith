@@ -400,17 +400,7 @@ pub fn import_world(
         }
         stats.regions += 1;
     }
-    if info.spawn_y == AUTOMATIC_SPAWN_Y {
-        info.spawn_y = LevelData::default(Seed(0)).spawn_y;
-    }
-    AnvilLevelInfo.write_world_info(&info, &output)?;
-    storage::write_item_version(&output)?;
-    if !ticking_areas.is_empty() {
-        area_metadata::write(&output, &ticking_areas)?;
-    }
-    if crate::world_info::data_files::read_world_gen_settings(&output).is_none() {
-        return Err(invalid("failed to save imported world generation settings"));
-    }
+    write_import_metadata(&output, &mut info, &ticking_areas)?;
     if !players.is_empty() {
         crate::data::player_data::PlayerDataStorage::new(output.join("players/data"), true)
             .save_batch(players)
@@ -419,6 +409,25 @@ pub fn import_world(
     ensure_absent(&destination)?;
     fs::rename(output, destination)?;
     Ok(stats)
+}
+
+fn write_import_metadata(
+    output: &Path,
+    info: &mut LevelData,
+    ticking_areas: &TickingAreaDimensions,
+) -> Result<(), Error> {
+    if info.spawn_y == AUTOMATIC_SPAWN_Y {
+        info.spawn_y = LevelData::default(Seed(0)).spawn_y;
+    }
+    AnvilLevelInfo.write_world_info(info, output)?;
+    storage::write_item_version(output)?;
+    if !ticking_areas.is_empty() {
+        area_metadata::write(output, ticking_areas)?;
+    }
+    if crate::world_info::data_files::read_world_gen_settings(output).is_none() {
+        return Err(invalid("failed to save imported world generation settings"));
+    }
+    Ok(())
 }
 
 fn read_record(
