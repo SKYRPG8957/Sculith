@@ -18,6 +18,7 @@ use super::{
     seed::SEED_COMMAND,
     setblock::SETBLOCK_COMMAND,
     teleport::TELEPORT_COMMAND,
+    tickingarea::TICKING_AREA_COMMAND,
     time::TIME_COMMAND,
     weather::WEATHER_COMMAND,
 };
@@ -47,6 +48,7 @@ pub fn is_world_command(dispatcher: &CommandDispatcher, input: &str) -> bool {
         "weather" => &*WEATHER_COMMAND,
         "difficulty" if text == "difficulty" => &*DIFFICULTY_COMMAND,
         "forceload" => &*FORCELOAD_COMMAND,
+        "tickingarea" => &*TICKING_AREA_COMMAND,
         "gamerule" if world_owned_rule(text) => &*GAMERULE_COMMAND,
         "setblock" if strict_block_write(text) => &*SETBLOCK_COMMAND,
         _ => return false,

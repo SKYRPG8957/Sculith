@@ -92,6 +92,24 @@ plugin force cannot retire an active test's terrain. The console's bulk removal
 releases each public ticket through the same loader. Releasing the last
 reference allows the ordinary save and unload path.
 
+Operators can use `/tickingarea` from Bedrock or Java to add, list and remove
+named ticking areas. A rectangle can contain up to 100 columns. The circle
+variant accepts a radius of 0 to 4 columns. Each level directory has ten
+slots shared across dimensions. Names are case-insensitive within a
+dimension, and `list all-dimensions` shows the level's stored areas.
+
+The named areas keep separate references to the same priority loader.
+Removing an area releases its columns if overlapping areas no longer need
+them. Manual forces and active GameTests retain their own references.
+Wasm v0.2 queries include both explicit forces and named areas. Its setters
+update the explicit force.
+Sculith saves the areas and their preload setting in
+`sculith-ticking-areas.json` in the level directory. On server startup,
+preload areas in enabled dimensions must have their columns ready before the
+listener opens. Dimensions opened later start loading saved areas through
+their usual priority queue. The built-in `/forceload` and `/tickingarea`
+subtrees can run with a player's world owner when unobserved by plugins.
+
 Conditional plugin block edits compare the expected block in its loaded chunk.
 Rust and Wasm plugins can also queue a conditional player inventory edit with
 `schedule_inventory_edit`. Before writing the slot, the owner checks the active

@@ -15,6 +15,7 @@ use crate::plugin::server::server_broadcast::ServerBroadcastEvent;
 use crate::server::tick_rate_manager::ServerTickRateManager;
 use crate::world::WorldPortal;
 use crate::world::custom_bossbar::CustomBossbars;
+use crate::world::ticking_areas::TickingAreas;
 use crate::{
     command::node::dispatcher::CommandDispatcher, entity::player::Player, world::World,
     world::map::MapManager,
@@ -293,6 +294,7 @@ impl Server {
         );
 
         let world_path = basic_config.get_world_path();
+        let ticking_areas = Arc::new(TickingAreas::read(&world_path)?);
         let mut dimensions = vec![Dimension::OVERWORLD];
         if basic_config.allow_nether {
             dimensions.push(Dimension::THE_NETHER);
@@ -608,10 +610,12 @@ impl Server {
                 server.level_info.clone(),
                 dim.clone(),
                 clock,
+                ticking_areas.clone(),
             ));
         }
 
         for world in &worlds_vec {
+            world.preload_ticking_areas().await?;
             let mut world_init_event =
                 crate::plugin::api::events::world::world_init::WorldInitEvent::new(world.clone());
             server
@@ -686,7 +690,7 @@ impl Server {
     /// Opens a plugin world.
     ///
     /// # Panics
-    /// Panics if its saved clock cannot be read. Use [`Self::try_create_world`]
+    /// Panics if its saved metadata cannot be read. Use [`Self::try_create_world`]
     /// to handle a storage error.
     #[expect(clippy::expect_used)]
     pub fn create_world(self: &Arc<Self>, name: String, dimension: Dimension) -> Arc<World> {
@@ -741,11 +745,22 @@ impl Server {
                 ..WorldClockSnapshot::default()
             }
         });
-        let level_info = match sibling {
-            Some(world) => world.level_info.clone(),
-            None => self.load_independent_world_info(&world_path)?,
+        let (level_info, ticking_areas) = if let Some(world) = sibling {
+            (world.level_info.clone(), world.ticking_areas.clone())
+        } else {
+            let ticking_areas = Arc::new(TickingAreas::read(&world_path)?);
+            (
+                self.load_independent_world_info(&world_path)?,
+                ticking_areas,
+            )
         };
-        let world = self.open_world(world_path.clone(), level_info, dimension, clock);
+        let world = self.open_world(
+            world_path.clone(),
+            level_info,
+            dimension,
+            clock,
+            ticking_areas,
+        );
         let _initializing = world.try_simulation();
         self.worlds.rcu(|worlds| {
             let mut new_worlds = (**worlds).clone();
@@ -767,6 +782,7 @@ impl Server {
         level_info: Arc<ArcSwap<LevelData>>,
         dimension: Dimension,
         clock: WorldClockSnapshot,
+        ticking_areas: Arc<TickingAreas>,
     ) -> Arc<World> {
         let level = Level::with_checkpoint_fence(
             &self.advanced_config.world,
@@ -782,10 +798,12 @@ impl Server {
             self.block_registry.clone(),
             Arc::downgrade(self),
         );
+        world.ticking_areas = ticking_areas;
         world.level_time = std::sync::Mutex::new(clock.into());
         let world = Arc::new(world);
         let portal: Arc<dyn WorldPortalExt> = Arc::new(WorldPortal(world.clone()));
         level.world_portal.store(Arc::new(Some(portal)));
+        world.restore_ticking_area_tickets();
         world
     }
 

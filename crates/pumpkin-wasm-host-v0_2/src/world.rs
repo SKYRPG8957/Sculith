@@ -772,7 +772,7 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
     ) -> wasmtime::Result<bool> {
         let world_ref = self.get(&world)?;
         let pos = sculith_util::math::vector2::Vector2::new(x, z);
-        Ok(world_ref.forced_chunks.lock_ignore_poison().contains(&pos))
+        Ok(world_ref.is_chunk_force_loaded(pos))
     }
 
     fn set_chunk_force_loaded(
@@ -793,8 +793,11 @@ impl pumpkin::plugin::world::HostWorld for PluginHostState {
         world: Resource<World>,
     ) -> wasmtime::Result<Vec<(i32, i32)>> {
         let world_ref = self.get(&world)?;
-        let forced = world_ref.forced_chunks.lock_ignore_poison();
-        Ok(forced.iter().map(|pos| (pos.x, pos.y)).collect())
+        Ok(world_ref
+            .force_loaded_chunks()
+            .into_iter()
+            .map(|pos| (pos.x, pos.y))
+            .collect())
     }
 
     fn get_loaded_chunks(
@@ -1982,7 +1985,7 @@ impl pumpkin::plugin::world::HostChunk for PluginHostState {
             return Ok(false);
         };
         let pos = sculith_util::math::vector2::Vector2::new(chunk_data.x, chunk_data.z);
-        Ok(world.forced_chunks.lock_ignore_poison().contains(&pos))
+        Ok(world.is_chunk_force_loaded(pos))
     }
 
     fn set_force_loaded(

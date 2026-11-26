@@ -723,10 +723,10 @@ interface %world {
         /// Returns whether this chunk is currently loaded in memory.
         is-loaded: func() -> bool;
 
-        /// Returns whether this chunk is marked as force-loaded.
+        /// Checks explicit force requests and named ticking areas.
         is-force-loaded: func() -> bool;
 
-        /// Sets whether this chunk is marked as force-loaded.
+        /// Sets the explicit force request. Named ticking areas keep their own references.
         set-force-loaded: func(forced: bool);
 
         /// Returns all entities (including players) currently inside this chunk.
@@ -941,13 +941,13 @@ interface %world {
         /// Returns `false` if the chunk is currently loaded or did not exist on disk.
         delete-chunk: async func(x: s32, z: s32) -> bool;
 
-        /// Returns whether the chunk at the specified chunk coordinates is marked as force-loaded.
+        /// Checks explicit force requests and named ticking areas for a chunk.
         is-chunk-force-loaded: func(x: s32, z: s32) -> bool;
 
-        /// Sets whether the chunk at the specified chunk coordinates is force-loaded.
+        /// Sets the explicit force request. Named ticking areas keep their own references.
         set-chunk-force-loaded: func(x: s32, z: s32, forced: bool);
 
-        /// Returns the coordinates `(x, z)` of all force-loaded chunks in this world.
+        /// Returns the coordinates `(x, z)` held by explicit forces and named ticking areas.
         get-force-loaded-chunks: func() -> list<tuple<s32, s32>>;
 
         /// Gets the block state ID at the specified position.

@@ -86,6 +86,7 @@ mod teleport;
 mod tellraw;
 mod test;
 mod tick;
+mod tickingarea;
 mod time;
 mod title;
 mod tps;
@@ -141,6 +142,7 @@ pub fn default_dispatcher(
     stop::register(&mut dispatcher, registry);
     tag::register(&mut dispatcher, registry);
     tick::register(&mut dispatcher, registry);
+    tickingarea::register(&mut dispatcher, registry);
     advancement::register(&mut dispatcher, registry);
     data::register(&mut dispatcher, registry);
     stopwatch::register(&mut dispatcher, registry);

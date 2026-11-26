@@ -7,6 +7,7 @@ The tested targets are unmodified Java 26.3 and Bedrock 1.26.63 (protocol
 | --- | --- | --- | --- |
 | Joining, moving and building | Supported | Supported | Both editions have joined the same world and received each other's position and block edits. |
 | World clocks and rules | Shared | Shared | Named worlds keep independent deadlines, time, weather and supported rules. Transfers and reconnect restore their respective world and saved position. |
+| Ticking areas | Shared | Shared | Operators manage the same persistent areas with `/tickingarea`. The area keeps its dimension's columns loaded and simulating. |
 | Region execution | Partial | Partial | Active regions advance eligible block, fluid, entity and player work on their own deadlines. Complex mob AI and several player interactions still run in world phases. |
 | Gameplay rules | Partial | Partial | Covered Bedrock rules include natural healing, ordinary melee damage and selected mob attributes. Additional mob behavior and item interactions remain open. |
 | Shared resource packs | Projected | Native | Mapped PNGs, fonts, sound events and static models have Java entries. Bedrock receives the authored resource pack. |

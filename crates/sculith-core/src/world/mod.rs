@@ -51,6 +51,7 @@ use regional_actors::RegionalActors;
 pub(crate) use regional_actors::actor_deadline;
 pub mod stopwatches;
 mod tick_regions;
+pub(crate) mod ticking_areas;
 pub(crate) use tick_regions::{RegionChunks, RegionId, RegionLayout};
 pub mod time;
 pub mod village_siege;
@@ -325,6 +326,8 @@ pub struct World {
     regional_entity_updates: RegionalEntityUpdates,
     regional_actors: RwLock<Arc<RegionalActors>>,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
+    pub(crate) ticking_areas: Arc<ticking_areas::TickingAreas>,
+    ticking_area_columns: ArcSwap<FxHashSet<Vector2<i32>>>,
     /// Temporary references held by running game tests.
     pub(crate) game_test_chunk_forces: std::sync::Mutex<FxHashMap<Vector2<i32>, usize>>,
     /// Block entities indexed by chunk, so ticking only visits the currently
@@ -465,6 +468,9 @@ impl World {
 
         let (custom_data_file, custom_data) =
             custom_data::CustomDataFile::load(&level.level_folder);
+        let ticking_areas = Arc::new(ticking_areas::TickingAreas::empty(
+            &level.level_folder.root_folder,
+        ));
 
         if let Some(server_arc) = server.upgrade() {
             let _ = level.rt_handle.set(server_arc.runtime.clone());
@@ -529,6 +535,8 @@ impl World {
             regional_entity_updates: RegionalEntityUpdates::default(),
             regional_actors: RwLock::default(),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
+            ticking_areas,
+            ticking_area_columns: ArcSwap::from_pointee(FxHashSet::default()),
             game_test_chunk_forces: std::sync::Mutex::new(FxHashMap::default()),
             server,
             block_entities: DashMap::new(),
@@ -590,6 +598,28 @@ impl World {
         count
     }
 
+    /// Checks public force tickets from explicit requests and ticking areas.
+    #[must_use]
+    pub fn is_chunk_force_loaded(&self, position: Vector2<i32>) -> bool {
+        let forced = self
+            .forced_chunks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        forced.contains(&position) || self.ticking_area_columns.load().contains(&position)
+    }
+
+    /// Collects public force tickets from explicit requests and ticking areas.
+    #[must_use]
+    pub fn force_loaded_chunks(&self) -> FxHashSet<Vector2<i32>> {
+        let forced = self
+            .forced_chunks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut columns = forced.clone();
+        columns.extend(self.ticking_area_columns.load().iter().copied());
+        columns
+    }
+
     fn update_force_loaded_tickets(
         &self,
         changes: impl IntoIterator<Item = Vector2<i32>>,
@@ -620,11 +650,7 @@ impl World {
             .active_chunk_tracker
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut forced_chunks = self
-            .forced_chunks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+        let mut forced_chunks = self.force_loaded_chunks();
         forced_chunks.extend(
             self.game_test_chunk_forces
                 .lock()
@@ -8079,6 +8105,7 @@ impl World {
             .map_err(|err| format!("Failed to save portal POI: {err}"));
 
         let custom_data_result = self.custom_data_file.save(&self.custom_data).await;
+        let ticking_areas_result = self.save_ticking_areas().await;
 
         let save = {
             let time = self
@@ -8090,7 +8117,10 @@ impl World {
         };
         let regions_result = save.await;
         drop(snapshot);
-        portal_result.and(custom_data_result).and(regions_result)?;
+        portal_result
+            .and(custom_data_result)
+            .and(ticking_areas_result)
+            .and(regions_result)?;
 
         let mut save_event = crate::plugin::api::events::world::world_save::WorldSaveEvent::new(
             format!("{:?}", self.dimension),
