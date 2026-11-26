@@ -23,7 +23,8 @@ impl FluidMetadata for FlowingWater {
     }
 }
 
-const WATER_FLOW_SPEED: u8 = 5;
+// Bedrock water steps every five ticks. The ring offset starts at the next tick.
+const WATER_FLOW_DELAY: u8 = 5 - 1;
 
 impl FlowingWater {
     pub(crate) fn regional_water_tick(
@@ -49,7 +50,7 @@ impl FlowingWater {
                 .then(|| Self::regional_horizontal_tick(world, position, &read))
                 .flatten();
         }
-        isolated_falling_plan(world, position, water, falling, WATER_FLOW_SPEED, &read)
+        isolated_falling_plan(world, position, water, falling, WATER_FLOW_DELAY, &read)
     }
 
     fn regional_horizontal_tick(
@@ -116,7 +117,7 @@ impl FlowingWater {
         Some(RegionalWaterTick::SpreadToSides {
             sides,
             state,
-            delay: WATER_FLOW_SPEED,
+            delay: WATER_FLOW_DELAY,
         })
     }
 }
@@ -132,7 +133,7 @@ impl FluidBehaviour for FlowingWater {
         _notify: bool,
     ) {
         if old_state_id != state_id {
-            world.schedule_fluid_tick(fluid, *block_pos, WATER_FLOW_SPEED, TickPriority::Normal);
+            world.schedule_fluid_tick(fluid, *block_pos, WATER_FLOW_DELAY, TickPriority::Normal);
         }
     }
 
@@ -149,7 +150,7 @@ impl FluidBehaviour for FlowingWater {
     ) {
         // Avoid rescheduling a fluid tick if one is already queued.
         if !world.is_fluid_tick_scheduled(block_pos, fluid) {
-            world.schedule_fluid_tick(fluid, *block_pos, WATER_FLOW_SPEED, TickPriority::Normal);
+            world.schedule_fluid_tick(fluid, *block_pos, WATER_FLOW_DELAY, TickPriority::Normal);
         }
     }
 
@@ -164,7 +165,7 @@ impl FlowingFluid for FlowingWater {
     }
 
     fn get_flow_speed(&self, _world: &World) -> u8 {
-        WATER_FLOW_SPEED
+        WATER_FLOW_DELAY
     }
 
     fn get_max_flow_distance(&self, _world: &World) -> i32 {
@@ -211,7 +212,7 @@ mod tests {
                     .get_flowing(water, Level::L7, false)
                     .to_state_id(water)
             );
-            assert_eq!(delay, WATER_FLOW_SPEED);
+            assert_eq!(delay, WATER_FLOW_DELAY);
             sides
         };
         assert_eq!(selected(&floor), BlockDirection::horizontal().map(Some));

@@ -249,7 +249,8 @@ the committed properties and timer removals together. The shared lighting
 engine follows changes to light properties, and both editions read the
 authoritative state.
 
-The region also executes built-in water ticks for isolated sources.
+The region also executes built-in water ticks for isolated sources. Water
+descends every five ticks in the Overworld, as measured in Bedrock 1.26.63.1.
 Canonical source and falling water can fill air directly below them. The
 falling block and both follow-up timers commit together, and consecutive
 ready ticks see earlier decisions in that batch. An isolated source uses the same slope search on either owner. A region can
