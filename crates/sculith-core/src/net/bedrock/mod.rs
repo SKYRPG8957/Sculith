@@ -985,7 +985,7 @@ impl BedrockClient {
                         }
                     }
                     Err(error) => {
-                        error!(%error, x=chunk.x, z=chunk.z, "Failed to serialize Bedrock chunk")
+                        error!(%error, x=chunk.x, z=chunk.z, "Failed to serialize Bedrock chunk");
                     }
                 }
             }
