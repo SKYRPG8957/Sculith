@@ -154,7 +154,7 @@ fn export_columns(
     block_states: Option<&DiskBlockStates>,
 ) -> Result<WorldEditsExportStats, Error> {
     let mut preserved = ImportStats::default();
-    let regions = index_chunks(db, &mut preserved, None, Err)?;
+    let regions = index_chunks(db, &mut preserved, None, None, Err)?;
     let mut inventories_updated = 0;
     let mut block_columns_updated = 0;
     for ((dimension, rx, rz), columns) in regions {

@@ -11,6 +11,7 @@ use tracing::warn;
 pub mod anvil;
 pub mod clock;
 pub mod data_files;
+pub mod ticking_areas;
 
 // Constraint: disk biome palette serialization changed in 1.21.5
 pub const MINIMUM_SUPPORTED_WORLD_DATA_VERSION: i32 = 4435; // 1.21.9

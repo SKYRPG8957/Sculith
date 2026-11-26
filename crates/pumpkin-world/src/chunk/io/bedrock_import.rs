@@ -37,7 +37,10 @@ use crate::{
     level::LevelFolder,
     world_info::{
         FlatPresetLayer, FlatPresetSettings, GeneratorSettings, LevelData, StructureOverrides,
-        WorldInfoError, WorldInfoWriter, anvil::AnvilLevelInfo, data_files::WeatherData,
+        WorldInfoError, WorldInfoWriter,
+        anvil::AnvilLevelInfo,
+        data_files::WeatherData,
+        ticking_areas::{self as area_metadata, TickingAreaDimensions},
     },
 };
 
@@ -51,6 +54,7 @@ mod storage_export;
 mod terrain;
 #[cfg(test)]
 mod tests;
+mod ticking_areas;
 mod world_state;
 
 pub use storage_export::{
@@ -136,6 +140,7 @@ pub struct ImportStats {
     pub skipped_block_entity_examples: Vec<SkippedBlockEntity>,
     pub entities_imported: usize,
     pub players_imported: usize,
+    pub ticking_areas_imported: usize,
     pub player_source_examples: Vec<String>,
     pub entity_records_excluded: usize,
     pub skipped_actor_examples: Vec<SkippedActor>,
@@ -237,10 +242,17 @@ pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspec
     };
     let db = input.open_database(staging.path())?;
     let mut actors = actors::References::default();
-    let regions = index_chunks(&db, &mut stats, Some(&mut actors), |error| {
-        inspection.record_blocker(error);
-        Ok(())
-    })?;
+    let mut ticking_areas = TickingAreaDimensions::new();
+    let regions = index_chunks(
+        &db,
+        &mut stats,
+        Some(&mut actors),
+        Some(&mut ticking_areas),
+        |error| {
+            inspection.record_blocker(error);
+            Ok(())
+        },
+    )?;
     if !regions
         .keys()
         .any(|&(dimension, _, _)| dimension == SavedDimension::Overworld)
@@ -322,7 +334,14 @@ pub fn import_world(
         ..ImportStats::default()
     };
     let mut actors = actors::References::default();
-    let regions = index_chunks(&db, &mut stats, Some(&mut actors), Err)?;
+    let mut ticking_areas = TickingAreaDimensions::new();
+    let regions = index_chunks(
+        &db,
+        &mut stats,
+        Some(&mut actors),
+        Some(&mut ticking_areas),
+        Err,
+    )?;
     if !regions
         .keys()
         .any(|&(dimension, _, _)| dimension == SavedDimension::Overworld)
@@ -386,6 +405,9 @@ pub fn import_world(
     }
     AnvilLevelInfo.write_world_info(&info, &output)?;
     storage::write_item_version(&output)?;
+    if !ticking_areas.is_empty() {
+        area_metadata::write(&output, &ticking_areas)?;
+    }
     if crate::world_info::data_files::read_world_gen_settings(&output).is_none() {
         return Err(invalid("failed to save imported world generation settings"));
     }
@@ -658,11 +680,21 @@ fn index_chunks(
     db: &DB,
     stats: &mut ImportStats,
     mut actors: Option<&mut actors::References>,
+    mut ticking_areas: Option<&mut TickingAreaDimensions>,
     mut on_blocker: impl FnMut(Error) -> Result<(), Error>,
 ) -> Result<ChunkIndex, Error> {
     let mut regions = ChunkIndex::new();
     for entry in db.new_iter()?.entries() {
         let (key, bytes) = entry?;
+        if key.starts_with(ticking_areas::PREFIX)
+            && let Some(ticking_areas) = ticking_areas.as_deref_mut()
+        {
+            match ticking_areas::add_record(&bytes, ticking_areas) {
+                Ok(()) => stats.ticking_areas_imported += 1,
+                Err(error) => on_blocker(error)?,
+            }
+            continue;
+        }
         let Some(record) = ChunkKey::read(&key) else {
             if let Some(actors) = actors.as_deref_mut()
                 && let Err(error) = actors.observe(&key, &bytes)

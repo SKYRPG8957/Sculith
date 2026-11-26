@@ -109,6 +109,9 @@ preload areas in enabled dimensions must have their columns ready before the
 listener opens. Dimensions opened later start loading saved areas through
 their usual priority queue. The built-in `/forceload` and `/tickingarea`
 subtrees can run with a player's world owner when unobserved by plugins.
+Bedrock world import preserves named rectangles and circles, their dimensions
+and preload preferences. The importer validates the entries before publishing
+the copied world.
 
 Conditional plugin block edits compare the expected block in its loaded chunk.
 Rust and Wasm plugins can also queue a conditional player inventory edit with

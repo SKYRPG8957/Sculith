@@ -673,6 +673,9 @@ fn print_bedrock_import_stats(stats: &ImportStats, verb: &str) {
     if stats.players_imported > 0 {
         println!("{verb} {} selected players.", stats.players_imported);
     }
+    if stats.ticking_areas_imported > 0 {
+        println!("{verb} {} ticking areas.", stats.ticking_areas_imported);
+    }
     if !stats.player_source_examples.is_empty() {
         println!(
             "Available Bedrock player keys include {}.",
