@@ -1,6 +1,9 @@
+use std::sync::LazyLock;
+
 use crate::command::argument_builder::{ArgumentBuilder, command, literal};
 use crate::command::context::command_context::CommandContext;
 use crate::command::errors::error_types::CommandErrorType;
+use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 
@@ -70,20 +73,22 @@ impl CommandExecutor for DifficultySetExecutor {
     }
 }
 
+pub(super) static DIFFICULTY_COMMAND: LazyLock<CommandDetachedNode> = LazyLock::new(|| {
+    command("difficulty", DESCRIPTION)
+        .requires(PERMISSION)
+        .then(literal("peaceful").executes(DifficultySetExecutor(Difficulty::Peaceful)))
+        .then(literal("easy").executes(DifficultySetExecutor(Difficulty::Easy)))
+        .then(literal("normal").executes(DifficultySetExecutor(Difficulty::Normal)))
+        .then(literal("hard").executes(DifficultySetExecutor(Difficulty::Hard)))
+        .executes(DifficultyQueryExecutor)
+        .build()
+});
+
 pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
     registry.register_permission_or_panic(Permission::new(
         PERMISSION,
         DESCRIPTION,
         PermissionDefault::Op(PermissionLvl::Two),
     ));
-
-    dispatcher.register(
-        command("difficulty", DESCRIPTION)
-            .requires(PERMISSION)
-            .then(literal("peaceful").executes(DifficultySetExecutor(Difficulty::Peaceful)))
-            .then(literal("easy").executes(DifficultySetExecutor(Difficulty::Easy)))
-            .then(literal("normal").executes(DifficultySetExecutor(Difficulty::Normal)))
-            .then(literal("hard").executes(DifficultySetExecutor(Difficulty::Hard)))
-            .executes(DifficultyQueryExecutor),
-    );
+    dispatcher.register(DIFFICULTY_COMMAND.clone());
 }

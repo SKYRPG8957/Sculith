@@ -11,8 +11,14 @@ use crate::command::node::{OwnedNodeData, RedirectModifier, Redirection};
 use crate::command::string_reader::StringReader;
 
 use super::{
-    execute::EXECUTE_COMMAND, seed::SEED_COMMAND, setblock::SETBLOCK_COMMAND,
-    teleport::TELEPORT_COMMAND, time::TIME_COMMAND,
+    difficulty::DIFFICULTY_COMMAND,
+    execute::EXECUTE_COMMAND,
+    gamerule::{GAMERULE_COMMAND, world_owned_rule},
+    seed::SEED_COMMAND,
+    setblock::SETBLOCK_COMMAND,
+    teleport::TELEPORT_COMMAND,
+    time::TIME_COMMAND,
+    weather::WEATHER_COMMAND,
 };
 
 pub(super) static DEFAULT_CONSUMER: LazyLock<Arc<dyn ResultConsumer<CommandSource>>> =
@@ -37,6 +43,9 @@ pub fn is_world_command(dispatcher: &CommandDispatcher, input: &str) -> bool {
     let original = match name {
         "seed" if text == "seed" => &*SEED_COMMAND,
         "time" => &*TIME_COMMAND,
+        "weather" => &*WEATHER_COMMAND,
+        "difficulty" if text == "difficulty" => &*DIFFICULTY_COMMAND,
+        "gamerule" if world_owned_rule(text) => &*GAMERULE_COMMAND,
         "setblock" if strict_block_write(text) => &*SETBLOCK_COMMAND,
         _ => return false,
     };
@@ -276,6 +285,35 @@ mod tests {
             "execute in minecraft:the_nether run tp @s @e[name=\"one two three\"]",
             "execute in minecraft:the_nether run tp @s ~ ~ ~",
             "execute in minecraft:the_nether run tp @s 3.5 72 2.5 10 0",
+        ] {
+            assert!(!is_world_command(&dispatcher, command), "{command}");
+        }
+    }
+
+    #[test]
+    fn only_metadata_rules_and_same_world_weather_run_with_the_owner() {
+        let mut dispatcher = CommandDispatcher::new();
+        dispatcher.consumer = DEFAULT_CONSUMER.clone();
+        let registry = PermissionRegistry::default();
+        super::super::weather::register(&mut dispatcher, &registry);
+        super::super::gamerule::register(&mut dispatcher, &registry);
+        super::super::difficulty::register(&mut dispatcher, &registry);
+        for command in [
+            "weather thunder 600t",
+            "difficulty",
+            "gamerule keepinventory true",
+            "gamerule minecraft:fall_damage false",
+            "gamerule dodaylightcycle",
+            "gamerule spectators_generate_chunks",
+        ] {
+            assert!(is_world_command(&dispatcher, command), "{command}");
+        }
+        for command in [
+            "difficulty hard",
+            "gamerule dodaylightcycle false",
+            "gamerule minecraft:advance_time true",
+            "gamerule spectators_generate_chunks false",
+            "gamerule minecraft:spectators_generate_chunks true",
         ] {
             assert!(!is_world_command(&dispatcher, command), "{command}");
         }

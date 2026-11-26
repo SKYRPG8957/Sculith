@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use pumpkin_data::translation;
 use sculith_util::PermissionLvl;
 use sculith_util::permission::{Permission, PermissionDefault, PermissionRegistry};
@@ -6,6 +8,7 @@ use sculith_util::text::TextComponent;
 use crate::command::argument_builder::{ArgumentBuilder, argument, command, literal};
 use crate::command::argument_types::time::TimeArgumentType;
 use crate::command::context::command_context::CommandContext;
+use crate::command::node::detached::CommandDetachedNode;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
 
@@ -84,54 +87,56 @@ impl CommandExecutor for WeatherExecutor {
     }
 }
 
+pub(super) static WEATHER_COMMAND: LazyLock<CommandDetachedNode> = LazyLock::new(|| {
+    command("weather", DESCRIPTION)
+        .requires(PERMISSION)
+        .then(
+            literal("clear")
+                .executes(WeatherExecutor {
+                    mode: WeatherMode::Clear,
+                    has_duration: false,
+                })
+                .then(
+                    argument("duration", TimeArgumentType::new(1)).executes(WeatherExecutor {
+                        mode: WeatherMode::Clear,
+                        has_duration: true,
+                    }),
+                ),
+        )
+        .then(
+            literal("rain")
+                .executes(WeatherExecutor {
+                    mode: WeatherMode::Rain,
+                    has_duration: false,
+                })
+                .then(
+                    argument("duration", TimeArgumentType::new(1)).executes(WeatherExecutor {
+                        mode: WeatherMode::Rain,
+                        has_duration: true,
+                    }),
+                ),
+        )
+        .then(
+            literal("thunder")
+                .executes(WeatherExecutor {
+                    mode: WeatherMode::Thunder,
+                    has_duration: false,
+                })
+                .then(
+                    argument("duration", TimeArgumentType::new(1)).executes(WeatherExecutor {
+                        mode: WeatherMode::Thunder,
+                        has_duration: true,
+                    }),
+                ),
+        )
+        .build()
+});
+
 pub fn register(dispatcher: &mut CommandDispatcher, registry: &PermissionRegistry) {
     registry.register_permission_or_panic(Permission::new(
         PERMISSION,
         DESCRIPTION,
         PermissionDefault::Op(PermissionLvl::Two),
     ));
-
-    dispatcher.register(
-        command("weather", DESCRIPTION)
-            .requires(PERMISSION)
-            .then(
-                literal("clear")
-                    .executes(WeatherExecutor {
-                        mode: WeatherMode::Clear,
-                        has_duration: false,
-                    })
-                    .then(argument("duration", TimeArgumentType::new(1)).executes(
-                        WeatherExecutor {
-                            mode: WeatherMode::Clear,
-                            has_duration: true,
-                        },
-                    )),
-            )
-            .then(
-                literal("rain")
-                    .executes(WeatherExecutor {
-                        mode: WeatherMode::Rain,
-                        has_duration: false,
-                    })
-                    .then(argument("duration", TimeArgumentType::new(1)).executes(
-                        WeatherExecutor {
-                            mode: WeatherMode::Rain,
-                            has_duration: true,
-                        },
-                    )),
-            )
-            .then(
-                literal("thunder")
-                    .executes(WeatherExecutor {
-                        mode: WeatherMode::Thunder,
-                        has_duration: false,
-                    })
-                    .then(argument("duration", TimeArgumentType::new(1)).executes(
-                        WeatherExecutor {
-                            mode: WeatherMode::Thunder,
-                            has_duration: true,
-                        },
-                    )),
-            ),
-    );
+    dispatcher.register(WEATHER_COMMAND.clone());
 }
