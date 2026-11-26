@@ -44,6 +44,7 @@ use crate::{
 use super::{RegionFile, region_chunk_index, region_of};
 
 mod actors;
+mod archive;
 mod players;
 mod storage;
 mod storage_export;
@@ -219,11 +220,12 @@ pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspec
         &temp
     };
     let staging = tempfile::tempdir_in(scratch)?;
+    let input = archive::WorldInput::prepare(&source, staging.path())?;
     let registry = terrain::TerrainRegistry::load()?;
     let items = storage::item_registry();
     let mut inspection = Inspection::default();
     let mut stats = ImportStats::default();
-    let seed = match read_level(&source, &registry, options.generator) {
+    let seed = match read_level(input.directory(), &registry, options.generator) {
         Ok((info, default_selected)) => {
             stats.default_generator_selected = default_selected;
             info.world_gen_settings.seed
@@ -233,7 +235,7 @@ pub fn inspect_world(source: &Path, options: ImportOptions<'_>) -> Result<Inspec
             0
         }
     };
-    let db = open_database_copy(&source, staging.path())?;
+    let db = input.open_database(staging.path())?;
     let mut actors = actors::References::default();
     let regions = index_chunks(&db, &mut stats, Some(&mut actors), |error| {
         inspection.record_blocker(error);
@@ -304,14 +306,16 @@ pub fn import_world(
     let destination = new_destination(destination, &source)?;
     let registry = terrain::TerrainRegistry::load()?;
     let items = storage::item_registry();
-    let (mut info, default_generator_selected) = read_level(&source, &registry, options.generator)?;
 
     let staging = tempfile::tempdir_in(
         destination
             .parent()
             .ok_or_else(|| invalid("invalid destination"))?,
     )?;
-    let db = open_database_copy(&source, staging.path())?;
+    let input = archive::WorldInput::prepare(&source, staging.path())?;
+    let (mut info, default_generator_selected) =
+        read_level(input.directory(), &registry, options.generator)?;
+    let db = input.open_database(staging.path())?;
 
     let mut stats = ImportStats {
         default_generator_selected,
@@ -482,24 +486,13 @@ fn ensure_absent(path: &Path) -> Result<(), Error> {
 }
 
 fn copy_database(source: &Path, destination: &Path) -> Result<(), Error> {
-    let mut current = String::new();
-    File::open(source.join("CURRENT"))?
-        .take(128)
-        .read_to_string(&mut current)?;
-    if !current.strip_suffix('\n').is_some_and(manifest_name) {
-        return Err(invalid("invalid LevelDB CURRENT file"));
-    }
+    let current = database_current(source)?;
     fs::create_dir(destination)?;
     fs::write(destination.join("CURRENT"), current)?;
     for entry in fs::read_dir(source)? {
         let entry = entry?;
         let name = entry.file_name();
-        let relevant = name.to_str().is_some_and(|name| {
-            manifest_name(name)
-                || name.rsplit_once('.').is_some_and(|(id, extension)| {
-                    numeric_name(id) && matches!(extension, "log" | "ldb" | "sst")
-                })
-        });
+        let relevant = name.to_str().is_some_and(database_entry_name);
         if relevant {
             if !entry.file_type()?.is_file() {
                 return Err(invalid("LevelDB snapshot contains a non-regular file"));
@@ -508,6 +501,24 @@ fn copy_database(source: &Path, destination: &Path) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+fn database_current(source: &Path) -> Result<String, Error> {
+    let mut current = String::new();
+    File::open(source.join("CURRENT"))?
+        .take(128)
+        .read_to_string(&mut current)?;
+    if !current.strip_suffix('\n').is_some_and(manifest_name) {
+        return Err(invalid("invalid LevelDB CURRENT file"));
+    }
+    Ok(current)
+}
+
+fn database_entry_name(name: &str) -> bool {
+    manifest_name(name)
+        || name.rsplit_once('.').is_some_and(|(id, extension)| {
+            numeric_name(id) && matches!(extension, "log" | "ldb" | "sst")
+        })
 }
 
 fn manifest_name(name: &str) -> bool {

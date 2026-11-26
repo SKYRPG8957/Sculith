@@ -797,8 +797,11 @@ records and up to 16 blocking diagnostics. An inspection returns exit code 1
 when the source has blocking issues.
 
 `sculith --import-bedrock-terrain SOURCE DESTINATION` reads a stopped Bedrock
-world through a temporary LevelDB copy. The command accepts storage version 10,
-chunk version 42 and subchunk version 9 in the Overworld, Nether and End.
+world through a temporary LevelDB copy. Both commands accept a world folder
+or a `.mcworld` export with `level.dat` and `db/` at its root. They read only
+the level metadata and database records from the archive. The import accepts
+storage version 10, chunk version 42 and subchunk version 9 in the Overworld,
+Nether and End.
 Columns at the same coordinates go into their respective Anvil dimensions.
 The shared End biome maps to `the_end` and End bedrock with the infiniburn
 flag maps to the shared bedrock block. Fire uses the End's infiniburn tag.
