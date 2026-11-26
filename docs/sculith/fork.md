@@ -426,6 +426,8 @@ Unmodified swords, axes, pickaxes, shovels, hoes, tridents and maces use
 the measured Bedrock 1.26.63.1 base player damage in the shared simulation.
 Main-hand damage uses the same equipment attribute path as other modifiers.
 An explicitly authored stack attribute component takes precedence.
+An ordinary sword strike damages one target on both editions. A strong sword
+strike can sweep when the item explicitly carries Sweeping Edge.
 
 A native Bedrock input can also commit a short level move and its look on
 the region before the world processes the connection. The pose, controls and

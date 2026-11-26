@@ -9,6 +9,7 @@ use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{
+    Enchantment,
     attributes::Attributes,
     particle::Particle,
     sound::{Sound, SoundCategory},
@@ -19,8 +20,6 @@ use crate::{
     entity::{Entity, player::Player},
     world::World,
 };
-
-use crate::net::ClientPlatform;
 
 /// Main-hand modifier above the player's base point of damage, measured on
 /// Bedrock Dedicated Server 1.26.63.1. Stacks can override their own attributes.
@@ -68,30 +67,30 @@ pub enum AttackType {
 
 impl AttackType {
     pub fn new(player: &Player, attack_cooldown_progress: f32) -> Self {
-        let entity = &player.get_entity();
-
-        let sprinting = entity.is_sprinting();
-        let on_ground = entity.on_ground.load(Ordering::Relaxed);
-        let fall_distance = player.living_entity.fall_distance.load();
-        let held_item = player.inventory().held_item();
-
-        let sword = held_item.is_sword();
-        let is_bedrock = matches!(player.client.as_ref(), ClientPlatform::Bedrock(_));
-
         let is_strong = attack_cooldown_progress > 0.9;
-        if sprinting && is_strong {
+        if !is_strong {
+            return Self::Weak;
+        }
+        let entity = &player.get_entity();
+        if entity.is_sprinting() {
             return Self::Knockback;
         }
 
-        if is_strong && !on_ground && fall_distance > 0.0 {
+        if !entity.on_ground.load(Ordering::Relaxed)
+            && player.living_entity.fall_distance.load() > 0.0
+        {
             return Self::Critical;
         }
 
-        if sword && is_strong && !is_bedrock {
+        // Ordinary swords affect one target on Bedrock. Preserve the authored
+        // attack for swords that explicitly carry the Java enchantment.
+        let held_item = player.inventory().held_item();
+        if held_item.is_sword() && held_item.get_enchantment_level(&Enchantment::SWEEPING_EDGE) > 0
+        {
             return Self::Sweeping;
         }
 
-        if is_strong { Self::Strong } else { Self::Weak }
+        Self::Strong
     }
 }
 
