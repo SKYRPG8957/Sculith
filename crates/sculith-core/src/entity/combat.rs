@@ -295,7 +295,7 @@ pub fn player_attack_sound(pos: &Vector3<f64>, world: &World, attack_type: Attac
     }
 }
 
-/// Combat calculation rules mirroring vanilla `net.minecraft.world.damagesource.CombatRules`.
+/// Damage reduction rules for the shared simulation.
 pub struct CombatRules;
 
 impl CombatRules {
@@ -304,7 +304,7 @@ impl CombatRules {
     pub const BASE_ARMOR_TOUGHNESS: f32 = 2.0;
     pub const MIN_ARMOR_RATIO: f32 = 0.2;
 
-    /// Calculates damage after armor reduction, mirroring vanilla `CombatRules.getDamageAfterAbsorb`.
+    /// Calculates damage after armor, armor toughness and Breach.
     #[must_use]
     pub fn get_damage_after_absorb(
         damage: f32,
@@ -319,9 +319,10 @@ impl CombatRules {
 
         if breach_level > 0 {
             let mut effectiveness = 1.0f32;
-            pumpkin_data::Enchantment::BREACH
-                .modify_armor_effectiveness(breach_level as i32, &mut effectiveness);
-            armor_fraction = (armor_fraction * effectiveness.clamp(0.0, 1.0)).clamp(0.0, 1.0);
+            Enchantment::BREACH.modify_armor_effectiveness(breach_level as i32, &mut effectiveness);
+            // Bedrock removes the enchantment's percentage points from the computed reduction.
+            let penetration = 1.0 - effectiveness.clamp(0.0, 1.0);
+            armor_fraction = (armor_fraction - penetration).max(0.0);
         }
 
         let damage_multiplier = 1.0 - armor_fraction;
@@ -810,6 +811,16 @@ mod tests {
         assert_eq!(default_bedrock_melee_modifier(&removed), None);
         let spear = ItemStack::new(1, &Item::IRON_SPEAR);
         assert_eq!(default_bedrock_melee_modifier(&spear), None);
+    }
+
+    #[test]
+    fn breach_subtracts_from_the_calculated_armor_fraction() {
+        let baseline = CombatRules::get_damage_after_absorb(6.0, 20.0, 8.0, 0);
+        let diamond = CombatRules::get_damage_after_absorb(6.0, 20.0, 8.0, 4);
+        let iron = CombatRules::get_damage_after_absorb(6.0, 15.0, 0.0, 4);
+        assert!((baseline - 1.56).abs() < 0.000_01);
+        assert!((diamond - 5.16).abs() < 0.000_01);
+        assert!((iron - 6.0).abs() < 0.000_01);
     }
 
     #[test]

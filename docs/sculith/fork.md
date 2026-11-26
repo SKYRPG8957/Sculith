@@ -441,6 +441,8 @@ The shared player attack adds one damage per Sharpness level. Strength applies
 `damage × 1.3 + 1` per level to the enchanted damage, followed by
 `damage × 0.8 − 0.5` per Weakness level, with a minimum of zero. Bedrock
 1.26.63.1 GameTest measured these rules with bare hands, swords and Sharpness.
+Against armor, each Breach level subtracts 15 percentage points from the
+damage reduction calculated with armor and toughness, down to zero.
 On reconnect the selected hotbar item is restored to the player's equipment
 before its attribute modifiers are applied. Saved effects and permanent custom
 modifiers are then available to both clients through the shared damage rules.
