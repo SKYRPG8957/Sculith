@@ -1317,6 +1317,7 @@ mod tests {
         terrain.set_block_absolute_y(9, 100, 8, dirt);
         let loaded = player.has_client_loaded();
         player.set_client_loaded(true);
+        let was_grounded = player.get_entity().on_ground.swap(true, Relaxed);
         let send = |action: PlayerActionType| {
             let mut payload = Vec::new();
             VarULong(u64::try_from(player.entity_id()).unwrap())
@@ -1343,6 +1344,7 @@ mod tests {
         tick_region(world, chunk, at);
         assert!(player.mining.load(Relaxed));
         assert_eq!(*player.mining_pos.lock().unwrap(), target);
+        assert_eq!(player.current_block_destroy_stage.load(Relaxed), 0);
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
         assert_eq!(
             client.mining_prediction_ticks(server, player, world, target, dirt, 1),
@@ -1353,8 +1355,15 @@ mod tests {
             client.mining_prediction_ticks(server, player, world, target, dirt, 1),
             2
         );
-        send(PlayerActionType::AbortDestroyBlock);
+        assert_eq!(player.current_block_destroy_stage.load(Relaxed), 1);
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(player.current_block_destroy_stage.load(Relaxed), 1);
+        let tool_guard = player.hold_bedrock_inventory_edit();
         tick_region(world, chunk, at + TICK_PERIOD * 2);
+        assert_eq!(player.current_block_destroy_stage.load(Relaxed), 1);
+        drop(tool_guard);
+        send(PlayerActionType::AbortDestroyBlock);
+        tick_region(world, chunk, at + TICK_PERIOD * 3);
         assert!(!player.mining.load(Relaxed));
         assert_eq!(player.current_block_destroy_stage.load(Relaxed), -1);
         assert_eq!(world.get_block_state_id(&target), dirt);
@@ -1377,17 +1386,18 @@ mod tests {
         drop(outgoing);
 
         send(PlayerActionType::StartDestroyBlock);
-        tick_region(world, chunk, at + TICK_PERIOD * 3);
+        tick_region(world, chunk, at + TICK_PERIOD * 4);
         assert!(player.mining.load(Relaxed));
         let tool_guard = player.hold_bedrock_inventory_edit();
         send(PlayerActionType::AbortDestroyBlock);
-        tick_region(world, chunk, at + TICK_PERIOD * 4);
+        tick_region(world, chunk, at + TICK_PERIOD * 5);
         assert!(player.mining.load(Relaxed));
         assert!(client.activity.inbound_head.lock().unwrap().is_some());
         drop(tool_guard);
         client.drain_world_input(player, None, Some(world), 1);
         assert!(!player.mining.load(Relaxed));
         assert_eq!(world.get_block_state_id(&target), dirt);
+        player.get_entity().on_ground.store(was_grounded, Relaxed);
         player.set_client_loaded(loaded);
         terrain.set_block_absolute_y(9, 100, 8, prior);
     }

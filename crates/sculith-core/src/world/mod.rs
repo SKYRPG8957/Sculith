@@ -360,6 +360,12 @@ pub(crate) enum BlockBreakingProgress {
     Stop,
 }
 
+impl BlockBreakingProgress {
+    pub(crate) fn stage_at(progress: f32) -> i32 {
+        ((progress * 10.0) as i32).min(9)
+    }
+}
+
 impl PartialEq for World {
     fn eq(&self, other: &Self) -> bool {
         self.uuid == other.uuid
@@ -5832,10 +5838,13 @@ impl World {
             return None;
         }
         let chunk = location.chunk_position();
+        let (java, bedrock) = Self::block_breaking_packets(from.get_entity(), location, progress);
         let recipients: Vec<_> = players
             .iter()
             .filter(|player| {
                 player.can_simulate_in(self)
+                    && (bedrock.is_some()
+                        || matches!(player.client.as_ref(), ClientPlatform::Java(_)))
                     && (std::ptr::eq(player.as_ref(), from)
                         || player
                             .watched_section
@@ -5843,6 +5852,9 @@ impl World {
                             .is_within_distance(chunk.x, chunk.y))
             })
             .collect();
+        if recipients.is_empty() {
+            return commit();
+        }
         if recipients
             .iter()
             .any(|player| match player.client.as_ref() {
@@ -5852,10 +5864,11 @@ impl World {
         {
             return None;
         }
-        let (java, bedrock) = Self::block_breaking_packets(from.get_entity(), location, progress);
         let java = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?;
         let mut payload = Vec::new();
-        bedrock?.write_packet(&mut payload).ok()?;
+        if let Some(event) = &bedrock {
+            event.write_packet(&mut payload).ok()?;
+        }
         commit()?;
         for player in recipients {
             match player.client.as_ref() {
@@ -5864,9 +5877,10 @@ impl World {
                         client.flush_channel();
                     }
                 }
-                ClientPlatform::Bedrock(client) => {
+                ClientPlatform::Bedrock(client) if bedrock.is_some() => {
                     client.try_enqueue_raw_packet_direct(CLevelEvent::PACKET_ID as u16, &payload);
                 }
+                ClientPlatform::Bedrock(_) => {}
             }
         }
         Some(())

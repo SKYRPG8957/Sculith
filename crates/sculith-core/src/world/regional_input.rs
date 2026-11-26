@@ -140,7 +140,7 @@ impl RegionalInput {
                 pending |= RegionalWork::EXPERIENCE_PICKUP;
             }
             if work.contains(RegionalWork::MINING)
-                && client.advance_regional_mining(world, &player, deadline, owns)
+                && client.advance_regional_mining(world, server, &player, deadline, owns)
             {
                 pending |= RegionalWork::MINING;
             }

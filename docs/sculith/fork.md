@@ -725,10 +725,13 @@ steps share a deadline stamp. The region can start a session from a standalone
 Bedrock mine action for an ordinary block and tool with readable, steady
 mining speed. It can also consume a standalone abort. It checks the loaded
 block, reach and ownership, then publishes the start or stop animation to
-current-protocol viewers. The world uses the same tool guard for progress and
-the break. It checks the live block, speed and permissions before committing
-the removal and running the ordinary callbacks. Replacement targets, an abort,
-and a change of world invalidate the old mining session.
+current-protocol viewers. The region also advances the Java crack stage while
+the target and mining speed stay steady. Bedrock animates at that speed from
+the start event. Pending input, a speed change or the completion threshold
+leaves the progress update to the world. The world uses the same tool guard
+to check the live block, speed and permissions before committing the removal
+and running the ordinary callbacks. Replacement targets, an abort, and a
+change of world invalidate the old mining session.
 The same region can handle a single start or abort carried in a Bedrock
 movement packet after it completes the pose and its movement effects. A
 pending mining action stays at the head of the input queue when the move or

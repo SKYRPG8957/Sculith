@@ -3723,8 +3723,7 @@ impl Player {
     ) -> bool {
         let speed = block::calc_block_breaking(self, state, Block::from_state_id(state.id));
         let total_progress = speed * elapsed_ticks as f32;
-        let stage = (total_progress * 10.0) as i32;
-        let stage = stage.min(9);
+        let stage = BlockBreakingProgress::stage_at(total_progress);
         let old_speed = self
             .current_block_breaking_speed
             .swap(speed.to_bits(), Ordering::Relaxed);
