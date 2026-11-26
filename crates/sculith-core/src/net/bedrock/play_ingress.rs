@@ -2036,6 +2036,7 @@ mod tests {
         assert_eq!(distance() - before, 112);
         assert_eq!(item_at(10), 3);
         verify_inventory_waits_after_chunk_crossing(world, player, client, origin, destination);
+        verify_grounded_move_recenters_view(world, player, client, origin, destination);
         for (index, stack) in [10, 11].into_iter().zip(slots) {
             player.inventory.set_slot(index, stack);
         }
@@ -2096,6 +2097,77 @@ mod tests {
         client.drain_world_input(player, None, Some(world), 1);
         assert_eq!(entity.pos.load().x, 16.125);
         assert_eq!(player.inventory.get_slot(11).item_count, 3);
+        entity.set_pos(before);
+        crate::world::chunker::update_position(player);
+    }
+
+    fn verify_grounded_move_recenters_view(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        origin: Vector2<i32>,
+        destination: Vector2<i32>,
+    ) {
+        use sculith_protocol::bedrock::client::network_chunk_publisher_update::CNetworkChunkPublisherUpdate;
+
+        let entity = player.get_entity();
+        let before = entity.pos.load();
+        let previous_config = player.config.load_full();
+        let mut config = (*previous_config).clone();
+        config.view_distance = std::num::NonZeroU8::new(2).unwrap();
+        player.config.store(Arc::new(config));
+        crate::world::chunker::update_position(player);
+        assert_eq!(player.watched_section.load().center, origin);
+        let departing = origin.add_raw(-3, 0);
+        let entering = destination.add_raw(3, 0);
+        assert!(world.level.is_chunk_watched(&departing));
+        assert!(!world.level.is_chunk_watched(&entering));
+        let mut sender = player.chunk_sender.lock().unwrap();
+        sender.mark_sent_out_of_band(destination);
+        sender.mark_sent_out_of_band(departing);
+        drop(sender);
+        let mut outgoing = client.outgoing_packet_queue_recv.try_lock().unwrap();
+        let outgoing = outgoing.as_mut().unwrap();
+        while outgoing.try_recv().is_ok() {}
+        client.enqueue_play_input(
+            player,
+            inline_inventory_swap(
+                player,
+                player.bedrock_pos().to_f32_lossy().add_raw(0.25, 0.0, 0.0),
+                client.input_tick.load(Relaxed) + 1,
+                entity.yaw.load(),
+                -39,
+            ),
+        );
+        tick_region(world, origin, Instant::now() + TICK_PERIOD * 50);
+        assert_eq!(entity.pos.load().x, 16.125);
+        assert_eq!(player.inventory.get_slot(10).item_count, 3);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        let published = player.watched_section.load();
+        assert_eq!(published.center, destination);
+        assert!(*player.registered_chunk_view.lock().unwrap() == Some(published));
+        assert!(client.chunk_view_published());
+        let tickets = player.held_chunk_tickets.lock().unwrap();
+        assert_eq!(tickets.view.unwrap().0, destination);
+        assert_eq!(tickets.simulation.unwrap().0, destination);
+        drop(tickets);
+        assert!(!world.level.is_chunk_watched(&departing));
+        assert!(world.level.is_chunk_watched(&entering));
+        let sender = player.chunk_sender.lock().unwrap();
+        assert!(!sender.is_chunk_ready(&departing));
+        assert!(sender.is_chunk_ready(&destination));
+        drop(sender);
+
+        let mut updates = Vec::new();
+        while let Ok(packet) = outgoing.try_recv() {
+            let (id, payload) = super::super::split_raw_packet(&packet.data).unwrap();
+            if i32::from(id) == CNetworkChunkPublisherUpdate::PACKET_ID {
+                let update = CNetworkChunkPublisherUpdate::read(&mut payload.as_ref()).unwrap();
+                updates.push((update.pos_for_view, update.new_radius.0));
+            }
+        }
+        assert_eq!(updates, [(BlockPos::new(16, 100, 8), 32)]);
+        player.config.store(previous_config);
         entity.set_pos(before);
         crate::world::chunker::update_position(player);
     }

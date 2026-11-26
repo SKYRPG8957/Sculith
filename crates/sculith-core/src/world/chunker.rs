@@ -3,7 +3,7 @@ use std::{num::NonZero, sync::Arc};
 
 use sculith_protocol::{
     bedrock::client::network_chunk_publisher_update::CNetworkChunkPublisherUpdate,
-    java::client::play::CCenterChunk,
+    java::client::play::CCenterChunk, packet::Packet, serial::PacketWrite,
 };
 use sculith_world::chunk_system::ChunkLoading;
 use sculith_world::cylindrical_chunk_iterator::Cylindrical;
@@ -148,42 +148,123 @@ fn replace_chunk_tickets(
     loading.send_change();
 }
 
-/// Keeps a published view and moves its existing simulation ticket to a ready chunk.
-pub(crate) fn try_keep_bedrock_view(
+pub(crate) struct EntityChunkWatchChanges {
+    load: Vec<Vector2<i32>>,
+    retire: Vec<Vector2<i32>>,
+}
+
+impl EntityChunkWatchChanges {
+    fn register(world: &World, loading: &[Vector2<i32>], unloading: &[Vector2<i32>]) -> Self {
+        Self {
+            load: world.level.mark_chunks_as_newly_watched(loading),
+            retire: world.level.mark_chunks_as_not_watched(unloading),
+        }
+    }
+
+    fn dispatch(self, world: &Arc<World>) {
+        if !self.retire.is_empty() {
+            world.queue_entity_chunk_changes(self.retire);
+        }
+        if !self.load.is_empty() {
+            world.request_entity_chunks(self.load);
+        }
+    }
+}
+
+pub(crate) enum RegionalBedrockViewUpdate {
+    Retained,
+    Recentered(EntityChunkWatchChanges),
+}
+
+impl RegionalBedrockViewUpdate {
+    pub(crate) fn dispatch(self, world: &Arc<World>, player: &Player) {
+        if let Self::Recentered(changes) = self {
+            changes.dispatch(world);
+            if let Some(client) = player.client.bedrock()
+                && let Some(registered) = client.player.load().as_ref().as_ref()
+                && std::ptr::eq(registered.as_ref(), player)
+            {
+                world.offer_regional_terrain(client.id, registered);
+            }
+        }
+    }
+}
+
+/// Advances the interest of a grounded Bedrock player moving within its owner.
+pub(crate) fn try_advance_bedrock_view(
     player: &Player,
     world: &World,
-    origin: Vector2<i32>,
-) -> Option<()> {
-    let registered = player.registered_chunk_view.try_lock().ok()?;
+    from: BlockPos,
+) -> Option<RegionalBedrockViewUpdate> {
+    let mut registered = player.registered_chunk_view.try_lock().ok()?;
     let mut held = player.held_chunk_tickets.try_lock().ok()?;
-    let view = player.watched_section.load();
-    let actual = player.get_entity().chunk_pos.load();
-    if *registered != Some(view) || !bedrock_view_is_current(player, view) {
+    let old = (*registered)?;
+    if player.watched_section.load() != old {
         return None;
     }
+    let pos = player.get_entity().block_pos.load();
+    let actual = pos.chunk_position();
+    let distance = get_view_distance(player);
+    let view = bedrock_view(old, pos, distance);
     let next = desired_chunk_tickets(player, world, view, actual);
-    if *held == next {
-        return world.entity_tracker.try_mark_player_position(player);
+    if old == view && *held == next {
+        world.entity_tracker.try_mark_player_position(player)?;
+        return Some(RegionalBedrockViewUpdate::Retained);
     }
-    let (_, level) = next.simulation?;
-    if held.view != next.view
-        || held.simulation != Some((origin, level))
-        || origin == actual
-        || !player
-            .client
-            .bedrock()
-            .is_some_and(|client| client.chunk_view_published())
+    let client = player.client.bedrock()?;
+    if !client.chunk_view_published()
+        || *held != desired_chunk_tickets(player, world, old, from.chunk_position())
+        || next.simulation.is_none()
+        || !old.is_within_distance(actual.x, actual.y)
+        || (old != view
+            && (!player.has_stable_world_membership()
+                || bedrock_view(old, from, distance) != old
+                || !is_within_chebyshev_distance(old.center, view.center, 1)))
     {
         return None;
     }
-    let sender = player.chunk_sender.try_lock().ok()?;
-    if !view.is_within_distance(actual.x, actual.y) || !sender.is_chunk_ready(&actual) {
+    let mut sender = player.chunk_sender.try_lock().ok()?;
+    if !sender.is_chunk_ready(&actual) {
         return None;
     }
     let mut loading = world.level.chunk_loading.try_lock().ok()?;
     world.entity_tracker.try_mark_player_position(player)?;
+    if old == view {
+        replace_chunk_tickets(&mut loading, &mut held, next);
+        return Some(RegionalBedrockViewUpdate::Retained);
+    }
+
+    let mut publisher = Vec::new();
+    bedrock_view_packet(view, pos, distance)
+        .write(&mut publisher)
+        .ok()?;
+    // Terrain and LOD commit under the sender lock. Keep the old view intact
+    // until the queue accepts the publisher, then install its frontier.
+    if !client.is_current_protocol()
+        || client.observes_play_packets()
+        || !client.try_enqueue_raw_packet_direct(
+            CNetworkChunkPublisherUpdate::PACKET_ID as u16,
+            &publisher,
+        )
+    {
+        return None;
+    }
+    let revision = client.begin_chunk_view();
+    let (entered, departed) = Cylindrical::changed_chunks(old, view);
+    let entered: Vec<_> = entered.collect();
+    let departed: Vec<_> = departed.collect();
+    let changes = EntityChunkWatchChanges::register(world, &entered, &departed);
+    for pos in departed {
+        sender.unload_chunk(&player.client, pos);
+    }
+    for pos in entered {
+        sender.enqueue_chunk(pos);
+    }
     replace_chunk_tickets(&mut loading, &mut held, next);
-    Some(())
+    *registered = Some(view);
+    player.watched_section.store(view);
+    client.publish_chunk_view(revision);
+    Some(RegionalBedrockViewUpdate::Recentered(changes))
 }
 
 pub fn update_position(player: &Arc<Player>) {
@@ -231,8 +312,7 @@ pub fn update_position(player: &Arc<Player>) {
             (loading.collect::<Vec<_>>(), unloading.collect::<Vec<_>>())
         },
     );
-    let new_entity_chunks = world.level.mark_chunks_as_newly_watched(&loading_chunks);
-    let clean = world.level.mark_chunks_as_not_watched(&unloading_chunks);
+    let changes = EntityChunkWatchChanges::register(&world, &loading_chunks, &unloading_chunks);
     // A Bedrock delivery commits under this lock. Retire the old part of the view
     // before queueing the publisher packet, whose plugin callbacks run outside it.
     if publication.is_some() && !unloading_chunks.is_empty() {
@@ -278,10 +358,7 @@ pub fn update_position(player: &Arc<Player>) {
             client.publish_chunk_view(revision);
         }
     }
-    world.queue_entity_chunk_changes(clean);
-    if !new_entity_chunks.is_empty() {
-        world.request_entity_chunks(new_entity_chunks);
-    }
+    changes.dispatch(&world);
 }
 
 fn queue_bedrock_view(
@@ -290,17 +367,22 @@ fn queue_bedrock_view(
     pos: BlockPos,
     distance: NonZero<u8>,
 ) -> bool {
+    client
+        .serialize_packet(&bedrock_view_packet(view, pos, distance))
+        .is_ok_and(|data| client.try_enqueue_packet_data(data))
+}
+
+fn bedrock_view_packet(
+    view: Cylindrical,
+    pos: BlockPos,
+    distance: NonZero<u8>,
+) -> CNetworkChunkPublisherUpdate {
     let origin = if view.view_distance == distance {
         pos
     } else {
         BlockPos::new(view.center.x * 16 + 8, pos.0.y, view.center.y * 16 + 8)
     };
-    client
-        .serialize_packet(&CNetworkChunkPublisherUpdate::new(
-            origin,
-            u32::from(view.view_distance.get()) * 16,
-        ))
-        .is_ok_and(|data| client.try_enqueue_packet_data(data))
+    CNetworkChunkPublisherUpdate::new(origin, u32::from(view.view_distance.get()) * 16)
 }
 
 #[cfg(test)]

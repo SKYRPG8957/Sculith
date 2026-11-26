@@ -689,7 +689,7 @@ impl Player {
     fn try_finish_grounded_move(
         &self,
         server: &Server,
-        world: &World,
+        world: &Arc<World>,
         extent: &RegionChunks,
         from: Vector3<f64>,
         to: Vector3<f64>,
@@ -748,16 +748,16 @@ impl Player {
         {
             return None;
         }
-        chunker::try_keep_bedrock_view(self, world, BlockPos::floored_v(from).chunk_position())?;
-
         let cm = move_distance_cm(from, to);
-        if cm > 0 {
+        let stats = (cm > 0).then(|| self.stats.try_lock()).transpose().ok()?;
+        let view = chunker::try_advance_bedrock_view(self, world, BlockPos::floored_v(from))?;
+        if let Some(mut stats) = stats {
             let stat = if sprinting {
                 CustomStatistic::SprintOneCm
             } else {
                 CustomStatistic::WalkOneCm
             };
-            self.stats.try_lock().ok()?.increment_custom(stat, cm);
+            stats.increment_custom(stat, cm);
         }
         entity.movement.store(movement);
         if active {
@@ -770,6 +770,10 @@ impl Player {
         {
             self.hunger_manager.add_exhaustion(exhaustion);
         }
+        drop(equipment);
+        drop(abilities);
+        drop(bounds);
+        view.dispatch(world, self);
         Some(())
     }
 

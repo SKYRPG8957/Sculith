@@ -514,7 +514,11 @@ If a teleport changes the chunk, those viewers must also have its terrain.
 An ordinary level step, walking or sprinting, can also finish on its region.
 When it crosses a chunk boundary within that region, the player's published
 view and delivered terrain must already cover the destination. The region
-shifts the simulation ticket to the destination chunk and keeps that view.
+shifts the simulation ticket to the destination chunk. If the view center
+needs to shift by one chunk, the region can queue the publisher first, then
+retire the old frontier and register the new view, tickets and chunk requests.
+The sender lock serializes this update with outgoing terrain and LOD packets.
+View distance changes and publisher packet hooks still use the world path.
 All paired viewers must have their packets queued and the movement must
 require only local accounting. The region records the movement statistic,
 delta, and activity, and marks the player's changed position for normal actor
