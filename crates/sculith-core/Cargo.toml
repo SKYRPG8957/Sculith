@@ -107,13 +107,13 @@ bitflags = { workspace = true }
 png = { version = "0.18.1", default-features = false }
 
 indexmap.workspace = true
+tempfile.workspace = true
 xxhash-rust.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 
 [dev-dependencies]
-tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 [lints]

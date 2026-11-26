@@ -30,6 +30,7 @@ mod entity_chunks;
 mod entity_index;
 pub(crate) use entity_index::{EntityIndex, IsolatedMovement};
 pub mod cat_spawner;
+mod custom_data;
 pub mod entity_islands;
 pub mod explosion;
 pub mod game_event;
@@ -332,6 +333,7 @@ pub struct World {
     pending_block_entity_migrations: crossbeam::queue::SegQueue<Vector2<i32>>,
     /// Persistent custom data for the world (matching Bukkit's `PersistentDataHolder`)
     pub custom_data: std::sync::Mutex<NbtCompound>,
+    custom_data_file: custom_data::CustomDataFile,
     /// Persistent custom data for block entities at specific positions
     pub custom_block_entity_data: DashMap<BlockPos, NbtCompound>,
     pub(crate) bedrock_chunk_frames: crate::net::bedrock::level_chunk::InlineChunkCache,
@@ -453,21 +455,8 @@ impl World {
         let dragon_fight = (dimension.minecraft_name == Dimension::THE_END.minecraft_name)
             .then(|| std::sync::Mutex::new(dragon_fight::DragonFight::new()));
 
-        let custom_data_path = level
-            .level_folder
-            .root_folder
-            .join("pumpkin_custom_data.nbt");
-        let custom_data = if custom_data_path.exists()
-            && let Ok(bytes) = std::fs::read(&custom_data_path)
-            && let Ok(nbt) = pumpkin_nbt::Nbt::read_unnamed(
-                &mut pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut std::io::Cursor::new(
-                    bytes,
-                )),
-            ) {
-            nbt.root_tag
-        } else {
-            NbtCompound::new()
-        };
+        let (custom_data_file, custom_data) =
+            custom_data::CustomDataFile::load(&level.level_folder);
 
         if let Some(server_arc) = server.upgrade() {
             let _ = level.rt_handle.set(server_arc.runtime.clone());
@@ -541,6 +530,7 @@ impl World {
             pending_operations: std::sync::atomic::AtomicUsize::new(0),
             pending_block_entity_migrations: crossbeam::queue::SegQueue::new(),
             custom_data: std::sync::Mutex::new(custom_data),
+            custom_data_file,
             custom_block_entity_data: DashMap::new(),
             encoded_chunk_cache: DashMap::new(),
             bedrock_chunk_frames: crate::net::bedrock::level_chunk::InlineChunkCache::default(),
@@ -8047,24 +8037,7 @@ impl World {
             .save_all()
             .map_err(|err| format!("Failed to save portal POI: {err}"));
 
-        let custom_data_result = {
-            let custom_data = self
-                .custom_data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if custom_data.is_empty() {
-                Ok(())
-            } else {
-                let custom_data_path = self
-                    .level
-                    .level_folder
-                    .root_folder
-                    .join("pumpkin_custom_data.nbt");
-                let nbt = pumpkin_nbt::Nbt::from(custom_data.clone());
-                std::fs::write(custom_data_path, nbt.write())
-                    .map_err(|err| format!("Failed to save custom world data: {err}"))
-            }
-        };
+        let custom_data_result = self.custom_data_file.save(&self.custom_data).await;
 
         let save = {
             let time = self
