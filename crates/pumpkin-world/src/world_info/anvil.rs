@@ -474,17 +474,8 @@ impl WorldInfoWriter for AnvilLevelInfo {
 
         // ── Write data/minecraft/*.dat files ─────────────────────────────────
 
-        // game_rules.dat
-        if let Err(e) = write_game_rules(level_folder, &info.game_rules, data_version) {
-            error!("Failed to write game_rules.dat: {e}");
-        }
-
-        // world_gen_settings.dat
-        if let Err(e) =
-            write_world_gen_settings(level_folder, &info.world_gen_settings, data_version)
-        {
-            error!("Failed to write world_gen_settings.dat: {e}");
-        }
+        write_game_rules(level_folder, &info.game_rules, data_version)?;
+        write_world_gen_settings(level_folder, &info.world_gen_settings, data_version)?;
 
         // world_clocks.dat – persist the overworld day_time; preserve other
         let mut clocks = read_world_clocks(level_folder);
@@ -497,17 +488,13 @@ impl WorldInfoWriter for AnvilLevelInfo {
                 total_ticks: info.day_time,
             });
 
-        if let Err(e) = write_world_clocks(level_folder, &clocks) {
-            error!("Failed to write world_clocks.dat: {e}");
-        }
+        write_world_clocks(level_folder, &clocks)?;
 
         // weather.dat
         let mut weather = read_weather(level_folder);
         weather.clear_weather_time = info.clear_weather_time;
         weather.data_version = data_version;
-        if let Err(e) = write_weather(level_folder, &weather) {
-            error!("Failed to write weather.dat: {e}");
-        }
+        write_weather(level_folder, &weather)?;
 
         // wandering_trader.dat
         let mut wandering_trader = read_wandering_trader(level_folder);
@@ -585,6 +572,40 @@ mod test {
     use super::{AnvilLevelInfo, LEVEL_DAT_FILE_NAME, LevelDat, WorldInfoReader, WorldInfoWriter};
 
     const CONVERTED_LEVEL_NAME: &str = "Converted World";
+
+    #[test]
+    fn required_metadata_write_failure_reaches_the_caller_and_can_be_retried() {
+        for file_name in [
+            "game_rules.dat",
+            "world_gen_settings.dat",
+            "world_clocks.dat",
+            "weather.dat",
+        ] {
+            let dir = TempDir::new().unwrap();
+            let world = dir.path();
+            let mut info = LevelData::default(Seed(29));
+            AnvilLevelInfo.write_world_info(&info, world).unwrap();
+
+            let path = minecraft_data_dir(world).join(file_name);
+            let previous = path.with_extension("previous");
+            fs::rename(&path, &previous).unwrap();
+            fs::create_dir(&path).unwrap();
+            info.day_time = 22;
+            info.game_rules.pvp = false;
+
+            let err = AnvilLevelInfo.write_world_info(&info, world).unwrap_err();
+            assert!(err.to_string().contains(file_name), "{err}");
+            assert!(path.is_dir());
+            assert!(previous.is_file());
+
+            fs::remove_dir(&path).unwrap();
+            fs::rename(previous, &path).unwrap();
+            AnvilLevelInfo.write_world_info(&info, world).unwrap();
+            let restored = AnvilLevelInfo.read_world_info(world).unwrap();
+            assert_eq!(restored.day_time, 22);
+            assert!(!restored.game_rules.pvp);
+        }
+    }
 
     fn converted_level_dat(seed: Option<i64>) -> NbtCompound {
         let mut world_version = NbtCompound::new();
