@@ -721,10 +721,14 @@ attributes from a store task through the normal packet callbacks.
 
 Native Bedrock survival mining accrues elapsed ticks on the player's region
 when that extent owns both the player and block. World steps and regional
-steps share a deadline stamp. The world checks the live block, mining
-speed and permissions before it publishes progress or breaks a block.
-Replacement targets, a cancelled action, and a change of world invalidate
-the old mining session.
+steps share a deadline stamp. The region can start a session from a standalone
+Bedrock mine action for an ordinary block and tool with readable, steady
+mining speed. It can also consume a standalone abort. It checks the loaded
+block, reach and ownership, then publishes the start or stop animation to
+current-protocol viewers. The world uses the same tool guard for progress and
+the break. It checks the live block, speed and permissions before committing
+the removal and running the ordinary callbacks. Replacement targets, an abort,
+and a change of world invalidate the old mining session.
 
 When many viewers are spread out, the entity tracker narrows its candidate
 list using horizontal positions in the tick snapshot. It also checks already

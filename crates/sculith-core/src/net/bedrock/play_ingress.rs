@@ -26,7 +26,7 @@ use crate::{
         },
     },
     plugin::server::packet::{PacketReceivedEvent, PacketSentEvent},
-    server::{Server, player_commands::PlayerCommandIngress},
+    server::{Server, TickDeadline, player_commands::PlayerCommandIngress},
     world::{RegionChunks, World},
 };
 
@@ -165,7 +165,8 @@ impl BedrockClient {
             || Self::can_prepare_attack(&packet)
             || Self::can_route_inventory(&packet)
             || Self::can_route_inventory_screen(&packet)
-            || Self::can_route_hotbar(&packet))
+            || Self::can_route_hotbar(&packet)
+            || Self::can_route_mining_action(&packet))
             && self.is_current_protocol();
         player.inbound_packets.push(packet);
         if ready {
@@ -475,13 +476,18 @@ impl BedrockClient {
         RegionalMovePreparation::Deferred
     }
 
-    fn try_regional_inventory_input(
+    fn try_regional_action(
         &self,
-        player: &Player,
+        player: &Arc<Player>,
         server: &Server,
+        deadline: TickDeadline,
         packet: &RawPacket,
-        owns_player: impl FnOnce() -> bool,
+        owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<()> {
+        if Self::can_route_mining_action(packet) {
+            return self.try_regional_mining_action(player, server, deadline, packet, owns);
+        }
+        let owns_player = || owns(player.get_entity().chunk_pos.load());
         if Self::can_route_inventory_screen(packet) {
             self.try_regional_inventory_screen(player, server, packet, owns_player)
         } else if Self::can_route_hotbar(packet) {
@@ -493,9 +499,10 @@ impl BedrockClient {
 
     pub(crate) fn drain_regional_input(
         &self,
-        player: &Player,
+        player: &Arc<Player>,
         server: &Server,
         extent: &RegionChunks,
+        deadline: TickDeadline,
         owns: impl Fn(Vector2<i32>) -> bool,
         mut chunk_entered: impl FnMut(Vector2<i32>),
     ) -> bool {
@@ -524,7 +531,7 @@ impl BedrockClient {
                 let owns_player = || owns(player.get_entity().chunk_pos.load());
                 if !was_waiting
                     && self
-                        .try_regional_inventory_input(player, server, &queued.packet, owns_player)
+                        .try_regional_action(player, server, deadline, &queued.packet, &owns)
                         .is_some()
                 {
                     continue;
@@ -644,7 +651,6 @@ mod tests {
         entity::{Entity, interaction::InteractionEntity, player::PlayerInput},
         net::{ClientPlatform, GameProfile, PlayerConfig, packet_limiter::PacketRateLimiter},
         plugin::{EventHandler, api::events::EventPriority},
-        server::TickDeadline,
     };
 
     const TICK_PERIOD: Duration = Duration::from_millis(50);
@@ -1251,6 +1257,100 @@ mod tests {
             1
         );
         player.reset_mining();
+    }
+
+    fn verify_regional_mining_actions(
+        world: &Arc<World>,
+        server: &Server,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        use sculith_protocol::bedrock::{
+            client::level_event::{CLevelEvent, LevelEvent},
+            server::player_action::{PlayerActionType, SPlayerAction},
+        };
+
+        let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
+        let target = BlockPos::new(9, 100, 8);
+        let prior = world.get_block_state_id(&target);
+        let dirt = Block::DIRT.default_state.id;
+        terrain.set_block_absolute_y(9, 100, 8, dirt);
+        let loaded = player.has_client_loaded();
+        player.set_client_loaded(true);
+        let send = |action: PlayerActionType| {
+            let mut payload = Vec::new();
+            VarULong(u64::try_from(player.entity_id()).unwrap())
+                .write(&mut payload)
+                .unwrap();
+            VarInt(action as i32).write(&mut payload).unwrap();
+            target.write(&mut payload).unwrap();
+            target.write(&mut payload).unwrap();
+            VarInt(1).write(&mut payload).unwrap();
+            client.enqueue_play_input(
+                player,
+                RawPacket {
+                    id: SPlayerAction::PACKET_ID,
+                    payload: payload.into(),
+                },
+            );
+        };
+        let mut outgoing = client.outgoing_packet_queue_recv.try_lock().unwrap();
+        let receiver = outgoing.as_mut().unwrap();
+        while receiver.try_recv().is_ok() {}
+        let at = Instant::now() + TICK_PERIOD;
+        assert_eq!(player.synced_mining_efficiency_level.load(Relaxed), -1);
+        send(PlayerActionType::StartDestroyBlock);
+        tick_region(world, chunk, at);
+        assert!(player.mining.load(Relaxed));
+        assert_eq!(*player.mining_pos.lock().unwrap(), target);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        assert_eq!(
+            client.mining_prediction_ticks(server, player, world, target, dirt, 1),
+            1
+        );
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(
+            client.mining_prediction_ticks(server, player, world, target, dirt, 1),
+            2
+        );
+        send(PlayerActionType::AbortDestroyBlock);
+        tick_region(world, chunk, at + TICK_PERIOD * 2);
+        assert!(!player.mining.load(Relaxed));
+        assert_eq!(player.current_block_destroy_stage.load(Relaxed), -1);
+        assert_eq!(world.get_block_state_id(&target), dirt);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        assert!(client.activity.mining.lock().unwrap().is_none());
+        let events: Vec<_> = std::iter::from_fn(|| receiver.try_recv().ok())
+            .filter_map(|outgoing| {
+                let (id, data) = super::super::split_raw_packet(&outgoing.data)?;
+                (i32::from(id) == CLevelEvent::PACKET_ID)
+                    .then(|| VarInt::read(&mut data.as_ref()).unwrap().0)
+            })
+            .collect();
+        assert_eq!(
+            events,
+            [
+                LevelEvent::BlockStartBreak as i32,
+                LevelEvent::BlockStopBreak as i32
+            ]
+        );
+        drop(outgoing);
+
+        send(PlayerActionType::StartDestroyBlock);
+        tick_region(world, chunk, at + TICK_PERIOD * 3);
+        assert!(player.mining.load(Relaxed));
+        let tool_guard = player.hold_bedrock_inventory_edit();
+        send(PlayerActionType::AbortDestroyBlock);
+        tick_region(world, chunk, at + TICK_PERIOD * 4);
+        assert!(player.mining.load(Relaxed));
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        drop(tool_guard);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(!player.mining.load(Relaxed));
+        assert_eq!(world.get_block_state_id(&target), dirt);
+        player.set_client_loaded(loaded);
+        terrain.set_block_absolute_y(9, 100, 8, prior);
     }
 
     fn verify_chunk_delivery_clock(client: &BedrockClient) {
@@ -2110,6 +2210,10 @@ mod tests {
             player,
             &server,
             extent,
+            TickDeadline {
+                at: Instant::now(),
+                period: TICK_PERIOD
+            },
             |chunk| layout.owner(chunk) == Some(owner),
             |chunk| entered = Some(chunk),
         ));
@@ -2344,6 +2448,7 @@ mod tests {
         verify_pickup_timer_handoff(&world, &player, east, west);
         verify_item_cooldown_handoff(&world, &server, &player, &client, west, east);
         verify_mining_clock(&world, &server, &player, &client, west).await;
+        verify_regional_mining_actions(&world, &server, &player, &client, west);
         verify_attack_preparation(&world, &player, &client, west);
         verify_stationary_inputs(&world, &player, &client, west);
         verify_inline_inventory(&world, &player, &client, west);

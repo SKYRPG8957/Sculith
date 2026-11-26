@@ -592,13 +592,12 @@ pub fn calc_block_breaking(player: &Player, state: &BlockState, block: &'static 
         // unbreakable
         return 0.0;
     }
-    let i = if player.can_harvest(state, block) {
-        30.0
-    } else {
-        100.0
-    };
+    let can_harvest = player.can_harvest(state, block);
+    block_breaking_progress(player.get_mining_speed(block), hardness, can_harvest)
+}
 
-    player.get_mining_speed(block) / hardness / i
+pub(crate) fn block_breaking_progress(speed: f32, hardness: f32, can_harvest: bool) -> f32 {
+    speed / hardness / if can_harvest { 30.0 } else { 100.0 }
 }
 
 #[derive(PartialEq, Eq, Debug)]

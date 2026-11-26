@@ -123,7 +123,7 @@ impl RegionalInput {
             let mut pending = RegionalWork::empty();
             let mut entered = None;
             if work.contains(RegionalWork::INPUT)
-                && client.drain_regional_input(&player, server, extent, owns, |chunk| {
+                && client.drain_regional_input(&player, server, extent, deadline, owns, |chunk| {
                     entered = Some(chunk);
                 })
             {

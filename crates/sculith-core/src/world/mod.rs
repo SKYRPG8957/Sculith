@@ -5790,7 +5790,93 @@ impl World {
         location: BlockPos,
         progress: BlockBreakingProgress,
     ) {
-        let chunk_pos = location.chunk_position(); // pumpkin's BlockPos already has this method
+        let chunk_pos = location.chunk_position();
+        let (je_packet, bedrock_event) = Self::block_breaking_packets(from, location, progress);
+
+        if let Some(be_packet) = bedrock_event {
+            if let Some(player) = self.get_player_by_uuid(from.entity_uuid)
+                && let ClientPlatform::Bedrock(client) = player.client.as_ref()
+                && let Ok(packet_data) = client.serialize_packet(&be_packet)
+            {
+                client.try_enqueue_packet(packet_data);
+            }
+
+            self.broadcast_to_chunk_except_editioned(
+                chunk_pos,
+                &[from.entity_uuid],
+                &je_packet,
+                &be_packet,
+            );
+        } else {
+            self.broadcast_to_chunk_except(chunk_pos, &[from.entity_uuid], &je_packet);
+        }
+    }
+
+    pub(crate) fn try_publish_regional_block_breaking(
+        &self,
+        from: &Player,
+        location: BlockPos,
+        progress: BlockBreakingProgress,
+        commit: impl FnOnce() -> Option<()>,
+    ) -> Option<()> {
+        use crate::plugin::server::packet::PacketSentEvent;
+        use sculith_protocol::packet::Packet;
+
+        let server = self.server.upgrade()?;
+        let players = self.players.load();
+        if server.plugin_manager.has_handlers::<PacketSentEvent>()
+            || !players
+                .iter()
+                .any(|player| std::ptr::eq(player.as_ref(), from))
+        {
+            return None;
+        }
+        let chunk = location.chunk_position();
+        let recipients: Vec<_> = players
+            .iter()
+            .filter(|player| {
+                player.can_simulate_in(self)
+                    && (std::ptr::eq(player.as_ref(), from)
+                        || player
+                            .watched_section
+                            .load()
+                            .is_within_distance(chunk.x, chunk.y))
+            })
+            .collect();
+        if recipients
+            .iter()
+            .any(|player| match player.client.as_ref() {
+                ClientPlatform::Java(client) => client.version.load() != CURRENT_MC_VERSION,
+                ClientPlatform::Bedrock(client) => !client.is_current_protocol(),
+            })
+        {
+            return None;
+        }
+        let (java, bedrock) = Self::block_breaking_packets(from.get_entity(), location, progress);
+        let java = JavaClient::serialize_packet_for_version(&java, CURRENT_MC_VERSION).ok()?;
+        let mut payload = Vec::new();
+        bedrock?.write_packet(&mut payload).ok()?;
+        commit()?;
+        for player in recipients {
+            match player.client.as_ref() {
+                ClientPlatform::Java(client) => {
+                    if client.try_enqueue_current_packet_batch(std::slice::from_ref(&java)) {
+                        client.flush_channel();
+                    }
+                }
+                ClientPlatform::Bedrock(client) => {
+                    client.try_enqueue_raw_packet_direct(CLevelEvent::PACKET_ID as u16, &payload);
+                }
+            }
+        }
+        Some(())
+    }
+
+    fn block_breaking_packets(
+        from: &Entity,
+        location: BlockPos,
+        progress: BlockBreakingProgress,
+    ) -> (CSetBlockDestroyStage, Option<CLevelEvent>) {
         let (stage, bedrock_event) = match progress {
             BlockBreakingProgress::Start { stage, speed } => (
                 stage,
@@ -5810,10 +5896,9 @@ impl World {
             ),
             BlockBreakingProgress::Stop => (-1, Some((LevelEvent::BlockStopBreak, 0))),
         };
-        let je_packet = CSetBlockDestroyStage::new(from.entity_id.into(), location, stage as i8);
-
-        if let Some((event_id, data)) = bedrock_event {
-            let be_packet = CLevelEvent {
+        (
+            CSetBlockDestroyStage::new(from.entity_id.into(), location, stage as i8),
+            bedrock_event.map(|(event_id, data)| CLevelEvent {
                 event_id: VarInt(event_id as i32),
                 position: Vector3::new(
                     location.0.x as f32,
@@ -5821,24 +5906,8 @@ impl World {
                     location.0.z as f32,
                 ),
                 data: VarInt(data),
-            };
-
-            if let Some(player) = self.get_player_by_uuid(from.entity_uuid)
-                && let ClientPlatform::Bedrock(client) = player.client.as_ref()
-                && let Ok(packet_data) = client.serialize_packet(&be_packet)
-            {
-                client.try_enqueue_packet(packet_data);
-            }
-
-            self.broadcast_to_chunk_except_editioned(
-                chunk_pos,
-                &[from.entity_uuid],
-                &je_packet,
-                &be_packet,
-            );
-        } else {
-            self.broadcast_to_chunk_except(chunk_pos, &[from.entity_uuid], &je_packet);
-        }
+            }),
+        )
     }
 
     pub fn set_block_state(

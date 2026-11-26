@@ -3584,7 +3584,11 @@ impl Player {
             .map(|_| self.living_entity.hold_effect_edit());
         if delayed_destroy && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id) {
             p.tick_delayed_destroy();
-        } else if mining && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id) {
+        } else if mining
+            // The region may have cancelled while the world acquired the tool guard.
+            && self.mining.load(Ordering::Relaxed)
+            && let Some(p) = self.world().get_player_by_uuid(self.gameprofile.id)
+        {
             let pos = *p
                 .mining_pos
                 .lock()
@@ -3812,6 +3816,7 @@ impl Player {
 
     /// Clears normal and delayed mining state without sending block updates.
     pub(crate) fn reset_mining(&self) {
+        let _inventory_edit = self.hold_bedrock_inventory_edit();
         self.mining.store(false, Ordering::Relaxed);
         if let Some(client) = self.client.bedrock() {
             client.clear_mining_clock();
@@ -5428,7 +5433,10 @@ impl Player {
     }
 
     pub fn can_interact_with_block_at(&self, position: &BlockPos, additional_range: f64) -> bool {
-        let d = self.block_interaction_range() + additional_range;
+        self.is_within_block_range(position, self.block_interaction_range() + additional_range)
+    }
+
+    fn is_within_block_range(&self, position: &BlockPos, distance: f64) -> bool {
         let box_pos = BoundingBox::from_block(position);
         let entity_pos = self.living_entity.entity.pos.load();
         let eye_height = self.living_entity.entity.get_eye_height();
@@ -5436,7 +5444,7 @@ impl Player {
             x: entity_pos.x,
             y: entity_pos.y + eye_height,
             z: entity_pos.z,
-        }) < d * d
+        }) < distance * distance
     }
 
     #[must_use]
@@ -6408,6 +6416,68 @@ impl Player {
             speed /= 5.0;
         }
         speed
+    }
+
+    /// Reads the speed of steady survival mining while the region holds the tool guard.
+    pub(crate) fn try_bedrock_mining_progress(
+        &self,
+        server: &Server,
+        position: &BlockPos,
+        state: &BlockState,
+        block: &'static Block,
+    ) -> Option<f32> {
+        let attributes = self.living_entity.attributes.try_read().ok()?;
+        let reach =
+            LivingEntity::attribute_value_from(&attributes, &Attributes::BLOCK_INTERACTION_RANGE);
+        if !self.is_within_block_range(position, reach.max(5.0) + 1.0) || state.hardness <= 0.0 {
+            return None;
+        }
+        let effects = self.living_entity.active_effects.try_lock().ok()?;
+        if [
+            &StatusEffect::HASTE,
+            &StatusEffect::CONDUIT_POWER,
+            &StatusEffect::MINING_FATIGUE,
+        ]
+        .into_iter()
+        .any(|effect| effects.contains_key(effect))
+        {
+            return None;
+        }
+        let inventory = self.inventory.main_inventory.try_read().ok()?;
+        let held = inventory.get(usize::from(self.inventory.get_selected_slot()))?;
+        let efficiency = held.get_enchantment_level(&Enchantment::EFFICIENCY);
+        let synced_efficiency = self.synced_mining_efficiency_level.load(Ordering::Relaxed);
+        // On a player's first dig the sync marker is -1. A plain tool already
+        // has the right speed if there is no Efficiency modifier to remove.
+        let initial_plain_tool = synced_efficiency == -1
+            && efficiency == 0
+            && attributes
+                .get(&Attributes::MINING_EFFICIENCY.id)
+                .is_none_or(|attribute| {
+                    attribute
+                        .modifiers
+                        .iter()
+                        .all(|modifier| modifier.id != Self::EFFICIENCY_ATTRIBUTE_MODIFIER_ID)
+                });
+        if server
+            .item_registry
+            .get_pumpkin_item(held.item.id)
+            .is_some()
+            || (synced_efficiency != efficiency && !initial_plain_tool)
+        {
+            return None;
+        }
+        let mut speed = held.get_speed(block);
+        if speed > 1.0 {
+            speed += LivingEntity::attribute_value_from(&attributes, &Attributes::MINING_EFFICIENCY)
+                as f32;
+        }
+        if !self.get_entity().on_ground.load(Ordering::Relaxed) {
+            speed /= 5.0;
+        }
+        let harvest = !state.tool_required() || held.is_correct_for_drops(block);
+        let progress = block::block_breaking_progress(speed, state.hardness, harvest);
+        (progress > 0.0 && progress < 1.0).then_some(progress)
     }
 
     fn get_haste_amplifier(&self) -> u32 {
