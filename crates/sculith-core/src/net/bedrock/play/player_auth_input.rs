@@ -53,7 +53,6 @@ impl BedrockClient {
             InputData::HorizontalCollision,
         ];
         if packet.item_interaction.is_some()
-            || packet.item_stack_request.is_some()
             || packet.block_actions.is_some()
             || needs_world.into_iter().any(|flag| flags.get(flag as usize))
             || ![
@@ -80,7 +79,15 @@ impl BedrockClient {
                 && self.client_delta.load().y < 0.0,
             horizontal_collision: false,
         };
-        let accepted = player.try_accept_regional_client_move(server, extent, movement)?;
+        let inventory = packet.item_stack_request.as_ref().map(|request| {
+            move || {
+                self.try_apply_regional_inventory_request(player, server, request, || {
+                    !self.is_closed()
+                })
+            }
+        });
+        let accepted =
+            player.try_accept_regional_client_move(server, extent, movement, inventory)?;
         self.store_input_state(packet);
         Some(accepted)
     }

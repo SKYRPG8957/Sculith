@@ -555,10 +555,13 @@ mod tests {
     use sculith_protocol::{
         bedrock::{
             client::{CMobEffect, CMovePlayer, update_attributes::CUpdateAttributes},
-            network_item::{NetworkItemDescriptor, NetworkItemStackDescriptor},
+            network_item::{
+                ContainerName, FullContainerName, NetworkItemDescriptor, NetworkItemStackDescriptor,
+            },
             server::{
                 container_close::SContainerClose,
                 interact::{Action, SInteract},
+                item_stack_request::ItemStackRequestSlotInfo,
                 mob_equipment::SMobEquipment,
                 player_auth_input::InputData,
                 player_hotbar::SPlayerHotbar,
@@ -1263,6 +1266,19 @@ mod tests {
         yaw: f32,
         flags: &[InputData],
     ) {
+        client.enqueue_play_input(
+            player,
+            auth_input_packet(position, input_tick, yaw, flags, None),
+        );
+    }
+
+    fn auth_input_packet(
+        position: Vector3<f32>,
+        input_tick: u64,
+        yaw: f32,
+        flags: &[InputData],
+        request: Option<&[u8]>,
+    ) -> RawPacket {
         let mut payload = Vec::new();
         for value in [0.0, yaw, position.x, position.y, position.z, 0.0, 0.0, yaw] {
             value.write(&mut payload).unwrap();
@@ -1283,15 +1299,16 @@ mod tests {
         for delta in [0.0f32, if on_ground { -0.08 } else { 0.0 }, 0.0] {
             delta.write(&mut payload).unwrap();
         }
-        payload.extend([0; 5]);
+        payload.extend([0, u8::from(request.is_some())]);
+        if let Some(request) = request {
+            payload.extend_from_slice(request);
+        }
+        payload.extend([0; 3]);
         payload.extend([0; 28]);
-        client.enqueue_play_input(
-            player,
-            RawPacket {
-                id: SPlayerAuthInput::PACKET_ID,
-                payload: payload.into(),
-            },
-        );
+        RawPacket {
+            id: SPlayerAuthInput::PACKET_ID,
+            payload: payload.into(),
+        }
     }
 
     fn verify_stationary_inputs(
@@ -1364,6 +1381,77 @@ mod tests {
             assert!(!entity.is_sneaking());
         }
         player.abilities.lock().unwrap().flying = false;
+    }
+
+    fn verify_inline_inventory(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        let entity = player.get_entity();
+        let position = player.bedrock_pos().to_f32_lossy();
+        let inventory = &player.inventory;
+        let first = inventory.get_slot(10);
+        let second = inventory.get_slot(11);
+        inventory.set_slot(10, ItemStack::new(3, &Item::DIAMOND));
+        inventory.set_slot(11, ItemStack::EMPTY.clone());
+        let counts = || {
+            [
+                inventory.get_slot(10).item_count,
+                inventory.get_slot(11).item_count,
+            ]
+        };
+        let enqueue = |tick, yaw, request_id| {
+            let mut bytes = Vec::new();
+            VarInt(request_id).write(&mut bytes).unwrap();
+            VarUInt(1).write(&mut bytes).unwrap();
+            bytes.extend([2, 2]); // Swap request and its compatibility action ID.
+            for slot in [10, 11] {
+                let stack = inventory.get_slot(usize::from(slot));
+                ItemStackRequestSlotInfo {
+                    container_name: FullContainerName {
+                        container_name: ContainerName::CombinedHotBarAndInventory,
+                        dynamic_id: None,
+                    },
+                    slot_id: slot,
+                    stack_id: if stack.is_empty() { 0 } else { stack.uid.get() },
+                }
+                .write(&mut bytes)
+                .unwrap();
+            }
+            VarUInt(0).write(&mut bytes).unwrap();
+            0i32.write(&mut bytes).unwrap();
+            let flags = [
+                InputData::VerticalCollision,
+                InputData::PerformItemStackRequest,
+            ];
+            client.enqueue_play_input(
+                player,
+                auth_input_packet(position, tick, yaw, &flags, Some(&bytes)),
+            );
+        };
+
+        let at = Instant::now() + TICK_PERIOD * 20;
+        enqueue(300, 0.0, -31);
+        tick_region(world, chunk, at);
+        assert_eq!(counts(), [0, 3]);
+        assert_eq!(client.input_tick.load(Relaxed), 300);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        enqueue(301, 15.0, -32);
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(counts(), [0, 3]);
+        assert_eq!(client.input_tick.load(Relaxed), 300);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(counts(), [3, 0]);
+        assert_eq!(client.input_tick.load(Relaxed), 301);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        inventory.set_slot(10, first);
+        inventory.set_slot(11, second);
+        entity.set_rotation(0.0, 0.0);
     }
 
     fn verify_stationary_turns(
@@ -1919,6 +2007,7 @@ mod tests {
         verify_mining_clock(&world, &server, &player, &client, west).await;
         verify_attack_preparation(&world, &player, &client, west);
         verify_stationary_inputs(&world, &player, &client, west);
+        verify_inline_inventory(&world, &player, &client, west);
         verify_stationary_turns(&world, &player, &client, west);
         verify_chunk_delivery_clock(&client);
         verify_grounded_walks(&world, &player, &client, west);

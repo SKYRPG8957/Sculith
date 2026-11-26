@@ -1292,10 +1292,6 @@ impl BedrockClient {
             })
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Inventory and equipment guards span preparation, commit and publication"
-    )]
     pub(in crate::net::bedrock) fn try_regional_inventory_request(
         &self,
         player: &Player,
@@ -1311,9 +1307,25 @@ impl BedrockClient {
         let [request] = packet.requests.as_slice() else {
             return None;
         };
+        if !payload.is_empty() {
+            return None;
+        }
+        self.try_apply_regional_inventory_request(player, server, request, owns_player)
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Inventory and equipment guards span preparation, commit and publication"
+    )]
+    pub(super) fn try_apply_regional_inventory_request(
+        &self,
+        player: &Player,
+        server: &Server,
+        request: &ItemStackRequest,
+        owns_player: impl FnOnce() -> bool,
+    ) -> Option<()> {
         let mode = player.gamemode.load();
-        if !payload.is_empty() || !request.filter_strings.is_empty() || mode == GameMode::Spectator
-        {
+        if !request.filter_strings.is_empty() || mode == GameMode::Spectator {
             return None;
         }
         let _inventory_edit = player.try_regional_inventory_edit()?;

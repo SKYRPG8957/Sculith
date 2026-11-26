@@ -467,8 +467,15 @@ impl Player {
         let pos = target.unwrap_or(last_pos);
         let was_on_ground = entity.on_ground.load(Ordering::Relaxed);
         if !extent.is_some_and(|extent| {
-            self.try_update_regional_pose(server, extent, last_pos, pos, None)
-                .is_some()
+            self.try_update_regional_pose(
+                server,
+                extent,
+                last_pos,
+                pos,
+                None,
+                None::<fn() -> Option<()>>,
+            )
+            .is_some()
         }) {
             entity.set_pos(pos);
         }
@@ -564,6 +571,7 @@ impl Player {
         server: &Server,
         extent: &RegionChunks,
         movement: ClientMove,
+        stationary_action: Option<impl FnOnce() -> Option<()>>,
     ) -> Option<RegionalClientMove> {
         let entity = self.get_entity();
         let from = entity.pos.load();
@@ -583,6 +591,7 @@ impl Player {
             || movement.horizontal_collision
             || movement.on_ground != entity.on_ground.load(Ordering::Relaxed)
             || !movement.on_ground && !self.is_flying()
+            || stationary_action.is_some() && from != to
             || difference.y.abs() > 0.000_02
             || difference.horizontal_length_squared() > 1.0
             || to.x != Self::clamp_horizontal(to.x)
@@ -607,7 +616,14 @@ impl Player {
         let chunk = entity.chunk_pos.load();
         let teleport = self.teleport_id_count.load(Ordering::Relaxed);
         let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
-        let pose = self.try_update_regional_pose(server, extent, from, to, Some(movement))?;
+        let pose = self.try_update_regional_pose(
+            server,
+            extent,
+            from,
+            to,
+            Some(movement),
+            stationary_action,
+        )?;
         let rotation_changed = pose.rotation_changed;
         let position_changed = from != to;
         if pose.stationary_settled && !rotation_changed {
@@ -838,6 +854,7 @@ impl Player {
         from: Vector3<f64>,
         to: Vector3<f64>,
         movement: Option<ClientMove>,
+        stationary_action: Option<impl FnOnce() -> Option<()>>,
     ) -> Option<RegionalPose> {
         if ![to.x, to.y, to.z].into_iter().all(f64::is_finite) || from == to && movement.is_none() {
             return None;
@@ -873,9 +890,12 @@ impl Player {
             rotation_changed
         };
         if from == to {
-            return self.try_commit_stationary_pose(&world, movement.filter(|_| owns_player())?);
+            return self.try_commit_stationary_pose(
+                &world,
+                movement.filter(|_| owns_player())?,
+                stationary_action,
+            );
         }
-
         let bounds =
             Entity::make_bounding_box(entity.entity_type, to, &entity.entity_dimension.load());
         let swept = entity.bounding_box.load().minmax(&bounds);
@@ -941,6 +961,7 @@ impl Player {
         &self,
         world: &World,
         movement: ClientMove,
+        action: Option<impl FnOnce() -> Option<()>>,
     ) -> Option<RegionalPose> {
         let rotation_changed = self.look_changed(movement);
         let entity = self.get_entity();
@@ -952,7 +973,14 @@ impl Player {
                 world.level.loaded_chunks.try_get(&entity.chunk_pos.load()),
                 TryResult::Present(_)
             );
-        if !rotation_changed && !stationary_settled {
+        if let Some(commit) = action {
+            // An inventory action can finish here only when no pose packet or
+            // other movement effect needs a second owner to finish the input.
+            if rotation_changed || !stationary_settled {
+                return None;
+            }
+            commit()?;
+        } else if !rotation_changed && !stationary_settled {
             return None;
         }
         self.apply_look(movement);

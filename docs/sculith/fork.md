@@ -440,6 +440,12 @@ paired viewer.
 The region records the client's current prediction and can then process the
 next packet within the same budget. A finishing world step serves any viewers
 whose packets the region could not queue.
+A grounded input can also carry a personal inventory request. When the player
+is stationary, the look and controls are unchanged, and movement effects are
+settled, the region applies the same inventory checks as for a standalone
+request. The connection advances past the input after the inventory commit.
+Movement, a changed look, other embedded actions, and requests that need a
+world handler keep the original packet at the head of the queue.
 At the head of the queue,
 the region can also decode one native Bedrock movement packet within its current
 extent. The world rechecks that extent and the packet after receive hooks before
