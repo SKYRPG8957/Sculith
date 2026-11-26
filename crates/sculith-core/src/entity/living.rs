@@ -53,7 +53,7 @@ use pumpkin_data::data_component_impl::{
     AttributeModifiersImpl, BlocksAttacksImpl, DeathProtectionImpl, EnchantmentsImpl,
     EquipmentSlot, EquippableImpl, FoodImpl, KineticWeaponImpl, UseRemainderImpl,
 };
-use pumpkin_data::effect::StatusEffect;
+use pumpkin_data::effect::{Modifiers, StatusEffect};
 use pumpkin_data::entity::{EntityPose, EntityStatus, EntityType};
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::game_rules::{GameRule, GameRuleValue};
@@ -1746,6 +1746,17 @@ impl LivingEntity {
         }
     }
 
+    fn effect_attribute_modifiers(&self, effect: &StatusEffect) -> &'static [Modifiers] {
+        if self.entity.entity_type == &EntityType::PLAYER
+            && (effect == &StatusEffect::STRENGTH || effect == &StatusEffect::WEAKNESS)
+        {
+            // Player melee applies these effects directly to the complete weapon damage.
+            &[]
+        } else {
+            effect.attribute_modifiers
+        }
+    }
+
     #[expect(clippy::too_many_lines)]
     pub fn add_effect(&self, effect: Effect) {
         if !self.can_be_affected(&effect) {
@@ -1779,9 +1790,10 @@ impl LivingEntity {
 
         // Effects that modify attributes (ex. speed) should also update the
         // entity's attribute instances (server-side) and then notify clients.
-        if !effect.effect_type.attribute_modifiers.is_empty() {
+        let modifiers = self.effect_attribute_modifiers(effect.effect_type);
+        if !modifiers.is_empty() {
             // Apply each attribute modifier into the local AttributeInstance
-            for m in effect.effect_type.attribute_modifiers {
+            for m in modifiers {
                 let id = m.id.to_string();
                 let op = match m.operation {
                     Operation::AddValue => ModifierOperation::Add,
@@ -1802,7 +1814,7 @@ impl LivingEntity {
 
             // Recompute packet modifiers from active effects for each affected attribute
             let mut touched_attrs: Vec<pumpkin_data::attributes::Attributes> = Vec::new();
-            for m in effect.effect_type.attribute_modifiers {
+            for m in modifiers {
                 if !touched_attrs.iter().any(|a| a.id == m.attribute.id) {
                     touched_attrs.push(m.attribute.clone());
                 }
@@ -1973,10 +1985,11 @@ impl LivingEntity {
             .send_remove_mob_effect(&self.entity, effect_type);
 
         // Remove attribute modifiers, if any
-        if !effect_type.attribute_modifiers.is_empty() {
+        let modifiers = self.effect_attribute_modifiers(effect_type);
+        if !modifiers.is_empty() {
             let mut touched_attrs = Vec::new();
 
-            for m in effect_type.attribute_modifiers {
+            for m in modifiers {
                 let id = m.id.to_string();
 
                 // Clean local server state

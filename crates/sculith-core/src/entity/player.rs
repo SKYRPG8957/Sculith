@@ -256,6 +256,7 @@ use crate::net::bedrock::play::{
     bedrock_inventory_slot, bedrock_player_inventory_slot, send_bedrock_cursor_stack,
     send_bedrock_inventory_slot,
 };
+use pumpkin_data::Enchantment;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::damage::DamageScaling;
@@ -1866,6 +1867,26 @@ impl Player {
         self.attack(victim);
     }
 
+    pub(crate) fn apply_melee_potion_effects(&self, mut damage: f64) -> f64 {
+        let effects = self
+            .living_entity
+            .active_effects
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Bedrock applies Strength before Weakness, regardless of effect arrival order.
+        if let Some(strength) = effects.get(&StatusEffect::STRENGTH) {
+            for _ in 0..=strength.amplifier {
+                damage = damage.mul_add(1.3, 1.0);
+            }
+        }
+        if let Some(weakness) = effects.get(&StatusEffect::WEAKNESS) {
+            for _ in 0..=weakness.amplifier {
+                damage = damage.mul_add(0.8, -0.5);
+            }
+        }
+        damage.max(0.0)
+    }
+
     #[expect(clippy::too_many_lines)]
     pub fn attack(&self, victim: &Arc<dyn EntityBase>) {
         let world = self.world();
@@ -1906,53 +1927,47 @@ impl Player {
             self.living_entity
                 .get_attribute_value(&Attributes::ATTACK_DAMAGE)
         };
-        let base_attack_speed = 4.0;
-
         let mut damage_multiplier = 1.0;
-        let mut add_speed = 0.0;
         let mut extra_ench_damage = 0.0;
         let mut knockback_level = 0u32;
 
-        {
-            let stack = &item_stack;
-            if stack.is_empty() {
-                // Vanilla fist: base_attack_speed = -2.4
-                add_speed = -2.4;
-            } else if let Some(modifiers) = stack.get_data_component::<AttributeModifiersImpl>() {
-                // Only attack speed is read from the item here.
-                // Attack damage is already  part of `base_damage` via the held item's live
-                // ATTACK_DAMAGE modifier, re-adding it here would double it.
-                for item_mod in modifiers.attribute_modifiers.iter() {
-                    if item_mod.operation == Operation::AddValue
-                        && item_mod.id == "minecraft:base_attack_speed"
-                    {
-                        add_speed = item_mod.amount;
-                    }
-                }
-            }
-            if let Some(enchantments) = stack.get_data_component::<EnchantmentsImpl>() {
-                for (enchantment, level) in enchantments.enchantment.iter() {
+        if let Some(enchantments) = item_stack.get_data_component::<EnchantmentsImpl>() {
+            for (enchantment, level) in enchantments.enchantment.iter() {
+                if *enchantment == &Enchantment::SHARPNESS {
+                    extra_ench_damage += f64::from(*level);
+                } else {
                     enchantment.modify_damage_against(
                         *level,
                         &mut extra_ench_damage,
                         Some(victim_entity.entity_type),
                     );
-                    let mut kb = 0.0f32;
-                    enchantment.modify_knockback(*level, &mut kb);
-                    knockback_level += kb as u32;
                 }
+                let mut kb = 0.0f32;
+                enchantment.modify_knockback(*level, &mut kb);
+                knockback_level += kb as u32;
             }
         }
-
-        let attack_speed = base_attack_speed + add_speed;
-
         let is_bedrock = matches!(self.client.as_ref(), ClientPlatform::Bedrock(_));
-        if !is_bedrock
+        let attack_cooldown_progress = if !is_bedrock
             && let Some(min_charge) = item_stack
                 .get_data_component::<pumpkin_data::data_component_impl::MinimumAttackChargeImpl>(
             )
             && min_charge.charge > 0.0
         {
+            let attack_speed = if item_stack.is_empty() {
+                4.0 - 2.4
+            } else {
+                let added_speed = item_stack
+                    .get_data_component::<AttributeModifiersImpl>()
+                    .and_then(|modifiers| {
+                        modifiers.attribute_modifiers.iter().rfind(|modifier| {
+                            modifier.operation == Operation::AddValue
+                                && modifier.id == "minecraft:base_attack_speed"
+                        })
+                    })
+                    .map_or(0.0, |modifier| modifier.amount);
+                4.0 + added_speed
+            };
             let charge_progress = self.get_attack_cooldown_progress(
                 f64::from(server.basic_config.tps),
                 5.0,
@@ -1961,11 +1976,10 @@ impl Player {
             if (charge_progress as f32) < min_charge.charge {
                 return;
             }
-        }
-        let attack_cooldown_progress = if is_bedrock {
-            1.0
-        } else {
             self.get_attack_cooldown_progress(f64::from(server.basic_config.tps), 0.5, attack_speed)
+        } else {
+            // Bedrock ordinary hits use the shared weapon damage at any interval.
+            1.0
         };
         self.last_attacked_ticks.store(0, Ordering::Relaxed);
 
@@ -1979,23 +1993,9 @@ impl Player {
             damage_multiplier = attack_cooldown_progress.powi(2).mul_add(0.8, 0.2);
         }
 
-        // Modify the added damage based on the multiplier.
-        let mut damage = base_damage * damage_multiplier;
-        damage += extra_ench_damage * attack_cooldown_progress;
-
-        if let Some(strength) = self
-            .living_entity
-            .get_effect(&pumpkin_data::effect::StatusEffect::STRENGTH)
-        {
-            damage += 3.0 * (f64::from(strength.amplifier) + 1.0);
-        }
-        if let Some(weakness) = self
-            .living_entity
-            .get_effect(&pumpkin_data::effect::StatusEffect::WEAKNESS)
-        {
-            damage -= 4.0 * (f64::from(weakness.amplifier) + 1.0);
-        }
-        damage = damage.max(0.0);
+        let mut damage = self.apply_melee_potion_effects(
+            base_damage * damage_multiplier + extra_ench_damage * attack_cooldown_progress,
+        );
 
         let pos = victim_entity.pos.load();
         let attack_type = AttackType::new(self, attack_cooldown_progress as f32);

@@ -1,5 +1,6 @@
 use crate::entity::living::{LivingEntity, attributes_by_id};
 use pumpkin_data::attributes::Attributes;
+use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
@@ -236,6 +237,17 @@ pub fn apply_attributes(living: &LivingEntity, packed: &[NbtTag]) {
         };
         if let Some(instance) = attributes.get_mut(&attribute.id) {
             instance.apply(packed);
+        }
+    }
+    if living.entity.entity_type == &EntityType::PLAYER
+        && let Some(attack_damage) = attributes.get_mut(&Attributes::ATTACK_DAMAGE.id)
+    {
+        for modifier in StatusEffect::STRENGTH
+            .attribute_modifiers
+            .iter()
+            .chain(StatusEffect::WEAKNESS.attribute_modifiers)
+        {
+            attack_damage.remove_modifier(modifier.id);
         }
     }
 }

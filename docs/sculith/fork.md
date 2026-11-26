@@ -434,6 +434,13 @@ Main-hand damage uses the same equipment attribute path as other modifiers.
 An explicitly authored stack attribute component takes precedence.
 An ordinary sword strike damages one target on both editions. A strong sword
 strike can sweep when the item explicitly carries Sweeping Edge.
+Ordinary hits on both editions use the shared weapon damage. Each target keeps
+its own damage immunity. Java attacks with an explicit
+item charge requirement still use their configured charge path.
+The shared player attack adds one damage per Sharpness level. Strength applies
+`damage × 1.3 + 1` per level to the enchanted damage, followed by
+`damage × 0.8 − 0.5` per Weakness level, with a minimum of zero. Bedrock
+1.26.63.1 GameTest measured these rules with bare hands, swords and Sharpness.
 
 A native Bedrock input can also commit a short level move and its look on
 the region before the world processes the connection. The pose, controls and
