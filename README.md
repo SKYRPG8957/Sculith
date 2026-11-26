@@ -9,6 +9,8 @@ memory use and network cost, measured under the same world and client workload.
 
 This branch is the engine migration. It is not a production release. Java 26.3
 and Bedrock 1.26.63 (protocol 2225) are the initial targets.
+Current behavior and verification coverage are documented in the
+[compatibility matrix](docs/sculith/compatibility.md).
 
 ## Build
 
@@ -45,7 +47,8 @@ Sculith records the generator and seed in the world save for later starts.
 
 Sculith supports Anvil, Linear and Pump storage. To bring in saved Bedrock
 1.26.63 Overworld, Nether and End terrain, stop the source server and choose a
-new destination. Run the import from the Sculith server directory.
+new destination. The import accepts a world folder or an exported `.mcworld`
+file. Run the import from the Sculith server directory.
 
 ```sh
 sculith --import-bedrock-terrain "/path/to/bedrock-world" world
