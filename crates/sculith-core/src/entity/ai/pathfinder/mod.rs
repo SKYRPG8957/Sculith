@@ -874,18 +874,20 @@ impl PathNavigation {
         }
     }
 
-    /// Replans an already selected ground destination against loaded terrain only.
-    fn try_recompute_on_region(
+    /// Resolves a pending destination or replans an affected route using loaded terrain.
+    fn try_update_on_region(
         &mut self,
         entity: &LivingEntity,
         world: &Arc<World>,
         owner: RegionId,
         extent: &RegionChunks,
         world_age: u64,
-    ) -> Option<usize> {
-        let mut target = self.target_pos?;
-        if world_age.saturating_sub(self.time_last_recompute) <= MAX_TIME_RECOMPUTE
-            || !matches!(self.evaluator, EvaluatorKind::Walk(_))
+        route_changed: bool,
+    ) -> Option<(usize, bool)> {
+        let pending = self.has_pending_path;
+        let (mut target, reach_range) =
+            self.regional_route_target(world, world_age, route_changed)?;
+        if !matches!(self.evaluator, EvaluatorKind::Walk(_))
             || !entity.entity.on_ground.load(Ordering::Relaxed)
             || entity.entity.pos.load().y < f64::from(world.get_bottom_y())
         {
@@ -924,6 +926,12 @@ impl PathNavigation {
                     .to_state()
             });
         }
+        if pending
+            && self.target_pos == Some(target)
+            && self.path.as_ref().is_some_and(|path| !path.is_done())
+        {
+            return None;
+        }
         let step_height = LivingEntity::attribute_value_from(&attributes, &Attributes::STEP_HEIGHT);
         let mob_data = MobData::with_step_height(entity, world, step_height as f32);
         let context = PathfindingContext::on_region(
@@ -937,25 +945,59 @@ impl PathNavigation {
             &mut self.evaluator,
             target,
             max_path_length,
-            self.reach_range,
+            reach_range,
             self.max_visited_nodes_multiplier,
         );
         self.evaluator.done();
+        if pending && path.is_none() {
+            return None;
+        }
 
         terrain.try_commit(world, || {
             if let Some(path) = &mut path {
                 path.world_change = Some((world.uuid, sequence));
                 self.target_pos = Some(path.get_target());
+                self.reach_range = reach_range;
                 self.reset_stuck_timeout();
             }
-            let nodes = path.as_ref().map_or(0, Path::get_node_count);
-            self.path = path;
+            if !pending
+                || !path
+                    .as_ref()
+                    .is_some_and(|path| path.same_as(self.path.as_ref()))
+            {
+                self.path = path;
+            }
             self.path_finder = Some(finder);
             self.update_pathfinder_max_visited_nodes = false;
-            self.time_last_recompute = world_age;
-            self.has_delayed_recomputation = false;
-            nodes
+            if pending {
+                self.has_pending_path = false;
+            } else {
+                self.time_last_recompute = world_age;
+                self.has_delayed_recomputation = false;
+            }
+            (self.path.as_ref().map_or(0, Path::get_node_count), pending)
         })
+    }
+
+    fn regional_route_target(
+        &self,
+        world: &World,
+        world_age: u64,
+        route_changed: bool,
+    ) -> Option<(BlockPos, i32)> {
+        if self.has_pending_path {
+            if self.avoid_sun || self.has_delayed_recomputation {
+                return None;
+            }
+            let target = BlockPos::floored_v(self.current_goal?.destination);
+            return world.is_in_build_limit(target).then_some((target, 1));
+        }
+        if route_changed && world_age.saturating_sub(self.time_last_recompute) > MAX_TIME_RECOMPUTE
+        {
+            Some((self.target_pos?, self.reach_range))
+        } else {
+            None
+        }
     }
 
     fn update_path(&mut self, entity: &LivingEntity) {
@@ -2829,17 +2871,23 @@ impl Default for Navigator {
 }
 
 impl Navigator {
-    pub(crate) fn try_recompute_on_region(
+    pub(crate) fn try_update_on_region(
         &mut self,
         entity: &LivingEntity,
         world: &Arc<World>,
         owner: RegionId,
         extent: &RegionChunks,
         world_age: u64,
-    ) -> Option<usize> {
-        self.inner
-            .ground_navigation()?
-            .try_recompute_on_region(entity, world, owner, extent, world_age)
+        route_changed: bool,
+    ) -> Option<(usize, bool)> {
+        self.inner.ground_navigation()?.try_update_on_region(
+            entity,
+            world,
+            owner,
+            extent,
+            world_age,
+            route_changed,
+        )
     }
 
     #[must_use]
@@ -3024,11 +3072,34 @@ mod tests {
         assert!(expected.can_reach() && expected.get_node_count() > 1);
         let nodes = regional
             .inner
-            .try_recompute_on_region(&living, &world, 0, &extent, 42);
-        assert_eq!(nodes, Some(expected.get_node_count()));
+            .try_update_on_region(&living, &world, 0, &extent, 42, true);
+        assert_eq!(nodes, Some((expected.get_node_count(), false)));
         let regional_path = regional.get_path().ok_or("missing regional route")?.clone();
         assert!(regional_path.same_as_path(expected));
         assert_eq!(regional_path.world_change, expected.world_change);
+
+        let position = living.entity.pos.load();
+        let new_target = BlockPos::new(11, 64, 10);
+        for navigator in [&mut ordinary, &mut regional] {
+            navigator.set_progress(NavigatorGoal::new(position, new_target.0.to_f64(), 1.0));
+        }
+        ordinary.inner.update_path(&living);
+        let expected = ordinary
+            .get_path()
+            .ok_or("missing ordinary requested route")?;
+        assert!(expected.can_reach() && expected.get_node_count() > 1);
+        assert_eq!(
+            regional
+                .inner
+                .try_update_on_region(&living, &world, 0, &extent, 42, false),
+            Some((expected.get_node_count(), true))
+        );
+        let regional_path = regional
+            .get_path()
+            .ok_or("missing requested regional route")?
+            .clone();
+        assert!(regional_path.same_as_path(expected));
+        assert!(!regional.inner.has_pending_path);
 
         // Keep the same owner ID but retire the extent used by the dispatched job.
         let new_extent: RegionChunks = Arc::from([pos]);
@@ -3041,11 +3112,20 @@ mod tests {
         assert_eq!(
             regional
                 .inner
-                .try_recompute_on_region(&living, &world, 0, &extent, 80),
+                .try_update_on_region(&living, &world, 0, &extent, 80, true),
             None
         );
         assert!(regional_path.same_as(regional.get_path()));
         assert_eq!(regional.inner.time_last_recompute, 42);
+        regional.set_progress(NavigatorGoal::new(position, target.0.to_f64(), 1.0));
+        assert_eq!(
+            regional
+                .inner
+                .try_update_on_region(&living, &world, 0, &extent, 80, false),
+            None
+        );
+        assert!(regional_path.same_as(regional.get_path()));
+        assert!(regional.inner.has_pending_path);
         world.level.shutdown().await;
         Ok(())
     }

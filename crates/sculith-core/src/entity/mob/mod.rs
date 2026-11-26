@@ -522,7 +522,7 @@ impl MobEntity {
         extent: &crate::world::RegionChunks,
         changes: &[(BlockPos, u64)],
         world_age: u64,
-    ) -> Option<usize> {
+    ) -> Option<(usize, bool)> {
         let base = &self.living_entity.entity;
         base.try_with_unmounted_actor(|| {
             if base.is_removed()
@@ -532,12 +532,17 @@ impl MobEntity {
                 return None;
             }
             let mut navigator = self.try_navigator()?;
-            if !changes.iter().any(|&(position, sequence)| {
+            let route_changed = changes.iter().any(|&(position, sequence)| {
                 self.navigation_needs_update(&navigator, position, world.uuid, sequence)
-            }) {
-                return None;
-            }
-            navigator.try_recompute_on_region(&self.living_entity, world, owner, extent, world_age)
+            });
+            navigator.try_update_on_region(
+                &self.living_entity,
+                world,
+                owner,
+                extent,
+                world_age,
+                route_changed,
+            )
         })?
     }
 

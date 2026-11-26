@@ -619,9 +619,13 @@ surfaces and nearby actors use the ordinary world path. The region can also
 continue an installed ground route across a safe flat surface. It commits
 the next waypoint, steering and movement together under the actor's motion
 deadline. The world commits goal updates submitted after a regional move.
-The next regional deadline can use the resulting route. Bounded path searches
-resume after the last actor considered so each actor can reach the search
-without increasing the work per deadline. Plain footsteps use the ordinary
+An isolated grounded mob can also resolve a pending destination from the Rust
+or Wasm navigation API on its region. The same search budget covers new requests
+and block-triggered replans. It verifies the actor assignment and the loaded
+terrain used by the search before installing the result. A request that needs
+unavailable terrain or ordinary path trimming stays pending for the world.
+Bounded path searches resume after the last actor considered so each actor can
+reach the search without increasing the work per deadline. Plain footsteps use the ordinary
 species sound when the region can commit the step and its movement distance
 together. The
 world handles steps with a game-event listener in range, an event hook or

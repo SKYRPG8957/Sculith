@@ -147,7 +147,7 @@ impl World {
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) {
         let changes = self.regional_navigation_changes(owns);
-        if changes.is_empty() || plugins_observe_entity_ticks(server) {
+        if plugins_observe_entity_ticks(server) {
             return;
         }
         let (Some(_native), Some(_checkpoint)) = (
@@ -195,15 +195,15 @@ impl World {
             .take(REGIONAL_NAVIGATORS_PER_STEP)
         {
             next = (start + index + 1) % actors.len();
-            if let Some(nodes) =
+            if let Some((nodes, pending)) =
                 mob.try_update_regional_navigation(self, owner, extent, &changes, world_age)
             {
-                tracing::trace!(
-                    entity = actor.entity_id,
-                    region = owner,
-                    nodes,
+                let action = if pending {
+                    "Planned a requested ground path on its region"
+                } else {
                     "Replanned a ground path on its region"
-                );
+                };
+                tracing::trace!(entity = actor.entity_id, region = owner, nodes, "{action}");
             }
         }
         cursor.store(next, Relaxed);
