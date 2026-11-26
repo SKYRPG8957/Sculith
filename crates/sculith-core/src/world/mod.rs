@@ -229,6 +229,7 @@ const MAX_LIGHT_LEVEL: u8 = 15;
 const LIGHTNING_ROD_SEARCH_RADIUS: i32 = 128;
 const CHUNK_TICK_BATCH_SIZE: usize = 32;
 pub(crate) const COLLISION_LOOK_BELOW: f64 = 0.50001;
+pub(crate) const BLOCK_ENTITY_CUSTOM_DATA_TAG: &str = "SculithCustomData";
 pub const MOON_BRIGHTNESS_PER_PHASE: [f32; 8] = [1.0, 0.75, 0.5, 0.25, 0.0, 0.25, 0.5, 0.75];
 
 fn bedrock_chest_block_actor(state_id: BlockStateId, position: BlockPos) -> Option<NbtCompound> {
@@ -7275,7 +7276,8 @@ impl World {
             })
             .flatten()?;
         if let Some(custom_data) = nbt
-            .get_compound("PumpkinCustomData")
+            .get_compound(BLOCK_ENTITY_CUSTOM_DATA_TAG)
+            .or_else(|| nbt.get_compound("PumpkinCustomData"))
             .or_else(|| nbt.get_compound("BukkitValues"))
         {
             self.custom_block_entity_data

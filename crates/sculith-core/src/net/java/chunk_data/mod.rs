@@ -45,6 +45,7 @@ impl ClientPacket for CChunkData<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::BLOCK_ENTITY_CUSTOM_DATA_TAG;
     use pumpkin_world::chunk::ChunkData;
 
     #[test]
@@ -81,6 +82,16 @@ mod tests {
 
         let mut nbt = pumpkin_nbt::compound::NbtCompound::new();
         nbt.put_string("id", "minecraft:chest".to_string());
+        let mut custom = pumpkin_nbt::compound::NbtCompound::new();
+        let private_marker = "sculith_private_block_fixture";
+        custom.put_string("unshared", private_marker.to_string());
+        for tag in [
+            BLOCK_ENTITY_CUSTOM_DATA_TAG,
+            "PumpkinCustomData",
+            "BukkitValues",
+        ] {
+            nbt.put_compound(tag, custom.clone());
+        }
         chunk.pending_block_entities.lock().unwrap().insert(
             sculith_util::math::position::BlockPos(sculith_util::math::vector3::Vector3::new(
                 0, 64, 0,
@@ -103,6 +114,11 @@ mod tests {
             assert!(
                 !buf.is_empty(),
                 "Serialized buffer must not be empty for version {version:?}"
+            );
+            assert!(
+                !buf.windows(private_marker.len())
+                    .any(|bytes| bytes == private_marker.as_bytes()),
+                "Block entity plugin data must stay in storage for version {version:?}"
             );
         }
     }

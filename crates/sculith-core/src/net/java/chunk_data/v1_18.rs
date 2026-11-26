@@ -1,4 +1,5 @@
 use super::util::write_compound_nbt;
+use crate::world::BLOCK_ENTITY_CUSTOM_DATA_TAG;
 use pumpkin_world::chunk::ChunkData;
 use pumpkin_world::chunk::format::LightContainer;
 use pumpkin_world::chunk::palette::NetworkPalette;
@@ -207,6 +208,7 @@ pub fn write_chunk_data(
         client_nbt.child_tags.remove("z");
         client_nbt.child_tags.remove("LootTable");
         client_nbt.child_tags.remove("LootTableSeed");
+        client_nbt.child_tags.remove(BLOCK_ENTITY_CUSTOM_DATA_TAG);
         client_nbt.child_tags.remove("PumpkinCustomData");
         client_nbt.child_tags.remove("BukkitValues");
         write_compound_nbt(&mut write, &client_nbt, *version)?;
