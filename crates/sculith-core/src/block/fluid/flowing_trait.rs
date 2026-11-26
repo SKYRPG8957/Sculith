@@ -6,7 +6,7 @@ use crate::{
     world::World,
 };
 use pumpkin_data::{
-    Block, BlockDirection, BlockStateId, HorizontalFacingExt,
+    Block, BlockDirection, BlockStateId,
     fluid::{EnumVariants, Falling, Fluid, FluidProperties, Level},
 };
 use pumpkin_world::{chunk::RegionalFluidTick, tick::TickPriority, world::BlockFlags};
