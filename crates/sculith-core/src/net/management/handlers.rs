@@ -9,6 +9,7 @@ use pumpkin_data::{
     packet::CURRENT_MC_VERSION,
     translation,
 };
+use rustc_hash::FxHashMap;
 use sculith_config::{op::Op, whitelist::WhitelistEntry};
 use sculith_util::permission::PermissionLvl;
 use serde::Deserialize;
@@ -22,6 +23,7 @@ use crate::{
         SaveJSONConfiguration,
         banlist_serializer::{BannedIpEntry, BannedPlayerEntry},
     },
+    entity::player::Player,
     net::{DisconnectReason, GameProfile},
     server::Server,
 };
@@ -640,6 +642,7 @@ async fn execute_method(
         }
         "minecraft:operators/add" => {
             let add_ops: Vec<OperatorDto> = parse_param(params, "add")?;
+            let mut changed = FxHashMap::default();
             {
                 let mut op_guard = server
                     .data
@@ -657,18 +660,16 @@ async fn execute_method(
                     op_guard.ops.push(Op::new(uuid, name, level, bypass));
                     server.management_hub.broadcast_player_oped(op);
 
-                    for player in server.get_all_players() {
-                        if player.gameprofile.id == uuid {
-                            player.permission_lvl.store(level);
-                        }
-                    }
+                    update_operator_level(server, &mut changed, uuid, level);
                 }
                 op_guard.save();
             };
+            publish_operator_levels(server, changed);
             Ok(serde_json::to_value(get_operators(server)).unwrap_or(Value::Null))
         }
         "minecraft:operators/remove" => {
             let to_remove: Vec<PlayerDto> = parse_param(params, "remove")?;
+            let mut changed = FxHashMap::default();
             {
                 let mut op_guard = server
                     .data
@@ -688,19 +689,22 @@ async fn execute_method(
                         };
                         server.management_hub.broadcast_player_deoped(&dto);
 
-                        for player in server.get_all_players() {
-                            if player.gameprofile.id == removed.uuid {
-                                player.permission_lvl.store(PermissionLvl::Zero);
-                            }
-                        }
+                        update_operator_level(
+                            server,
+                            &mut changed,
+                            removed.uuid,
+                            PermissionLvl::Zero,
+                        );
                     }
                 }
                 op_guard.save();
             };
+            publish_operator_levels(server, changed);
             Ok(serde_json::to_value(get_operators(server)).unwrap_or(Value::Null))
         }
         "minecraft:operators/clear" => {
             check_no_params(params)?;
+            let mut changed = FxHashMap::default();
             {
                 let mut op_guard = server
                     .data
@@ -715,18 +719,16 @@ async fn execute_method(
                     };
                     server.management_hub.broadcast_player_deoped(&dto);
 
-                    for player in server.get_all_players() {
-                        if player.gameprofile.id == removed.uuid {
-                            player.permission_lvl.store(PermissionLvl::Zero);
-                        }
-                    }
+                    update_operator_level(server, &mut changed, removed.uuid, PermissionLvl::Zero);
                 }
                 op_guard.save();
             };
+            publish_operator_levels(server, changed);
             Ok(json!([]))
         }
         "minecraft:operators/set" => {
             let new_ops: Vec<OperatorDto> = parse_param(params, "operators")?;
+            let mut changed = FxHashMap::default();
             {
                 let mut op_guard = server
                     .data
@@ -745,11 +747,7 @@ async fn execute_method(
                             bypasses_player_limit: Some(old.bypasses_player_limit),
                         };
                         server.management_hub.broadcast_player_deoped(&dto);
-                        for player in server.get_all_players() {
-                            if player.gameprofile.id == old.uuid {
-                                player.permission_lvl.store(PermissionLvl::Zero);
-                            }
-                        }
+                        update_operator_level(server, &mut changed, old.uuid, PermissionLvl::Zero);
                     }
                 }
 
@@ -766,16 +764,13 @@ async fn execute_method(
                     if !op_guard.ops.iter().any(|o| o.uuid == uuid) {
                         server.management_hub.broadcast_player_oped(op);
                     }
-                    for player in server.get_all_players() {
-                        if player.gameprofile.id == uuid {
-                            player.permission_lvl.store(level);
-                        }
-                    }
+                    update_operator_level(server, &mut changed, uuid, level);
                 }
 
                 op_guard.ops = final_ops;
                 op_guard.save();
             };
+            publish_operator_levels(server, changed);
             Ok(serde_json::to_value(get_operators(server)).unwrap_or(Value::Null))
         }
 
@@ -1347,6 +1342,28 @@ fn get_ip_bans(server: &Server) -> Vec<IpBanDto> {
             }),
         })
         .collect()
+}
+
+fn update_operator_level(
+    server: &Server,
+    changed: &mut FxHashMap<Uuid, Arc<Player>>,
+    uuid: Uuid,
+    level: PermissionLvl,
+) {
+    if let Some(player) = server.get_player_by_uuid(uuid)
+        && player.permission_lvl.swap(level) != level
+    {
+        changed.insert(uuid, player);
+    }
+}
+
+fn publish_operator_levels(server: &Arc<Server>, changed: FxHashMap<Uuid, Arc<Player>>) {
+    // Only publish after saving and releasing the operator list. Packet and
+    // command hooks may read it while building the player's view.
+    let command_dispatcher = server.command_dispatcher.load();
+    for player in changed.into_values() {
+        player.publish_permission_lvl(server, &command_dispatcher);
+    }
 }
 
 fn get_operators(server: &Server) -> Vec<OperatorDto> {
