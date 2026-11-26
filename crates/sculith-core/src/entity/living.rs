@@ -32,7 +32,10 @@ use crate::entity::attributes::Modifier;
 use crate::entity::attributes::ModifierOperation;
 use crate::entity::attributes::{AttributeInstance, apply_attributes, pack_attributes};
 use crate::entity::breath::DROWNING_INTERVAL;
-use crate::entity::combat::{CombatRules, CombatTracker, FallLocation, knockback_after_resistance};
+use crate::entity::combat::{
+    CombatRules, CombatTracker, FallLocation, default_bedrock_melee_modifier,
+    knockback_after_resistance,
+};
 use crate::entity::mob::equipment::{DEFAULT_EQUIPMENT_DROP_CHANCE, is_equippable_in_slot};
 use crate::entity::mob::neutral::find_by_uuid;
 use crate::entity::player::Player;
@@ -783,9 +786,6 @@ impl LivingEntity {
 
         let mut armor_changed = false;
         for (slot, stack) in equipment {
-            if *slot == EquipmentSlot::MAIN_HAND {
-                self.update_weapon_attributes(stack);
-            }
             if *slot == EquipmentSlot::MAIN_HAND || *slot == EquipmentSlot::OFF_HAND {
                 let window_id = if *slot == EquipmentSlot::OFF_HAND {
                     sculith_protocol::bedrock::server::inventory_transaction::WINDOW_ID_OFF_HAND
@@ -921,64 +921,6 @@ impl LivingEntity {
         }
     }
 
-    /// Applies the held item's attack attribute modifiers to this entity's
-    /// attribute map and sends the changed attributes to clients. Without this
-    /// the client never sees the reduced attack speed and does not show the
-    /// crosshair attack indicator.
-    fn update_weapon_attributes(&self, stack: &ItemStack) {
-        let component = stack.get_data_component::<AttributeModifiersImpl>();
-
-        // Single pass over the item's modifiers, split by attribute.
-        let mut speed_modifiers: Vec<Modifier> = Vec::new();
-        let mut damage_modifiers: Vec<Modifier> = Vec::new();
-        for modifier in component
-            .into_iter()
-            .flat_map(|c| c.attribute_modifiers.iter())
-        {
-            let target = if modifier.r#type == &Attributes::ATTACK_SPEED {
-                &mut speed_modifiers
-            } else if modifier.r#type == &Attributes::ATTACK_DAMAGE {
-                &mut damage_modifiers
-            } else {
-                continue;
-            };
-            target.push(Modifier {
-                id: modifier.id.to_string(),
-                amount: modifier.amount,
-                operation: match modifier.operation {
-                    Operation::AddValue => ModifierOperation::Add,
-                    Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
-                    Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
-                },
-            });
-        }
-
-        let mut changed: Vec<Attributes> = Vec::new();
-        {
-            let mut attributes = self
-                .attributes
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for (attribute, modifiers) in [
-                (Attributes::ATTACK_SPEED, speed_modifiers),
-                (Attributes::ATTACK_DAMAGE, damage_modifiers),
-            ] {
-                let instance = attributes
-                    .entry(attribute.id)
-                    .or_insert_with(|| AttributeInstance::new(attribute.default_value));
-                if instance.modifiers == modifiers {
-                    continue;
-                }
-                instance.modifiers = modifiers;
-                instance.mark_dirty();
-                changed.push(attribute);
-            }
-        }
-        if !changed.is_empty() {
-            crate::entity::attributes::send_attribute_updates_for_living(self, changed);
-        }
-    }
-
     /// Applies item `attribute_modifiers` for the given slots and notifies clients.
     ///
     /// The local HUD armor bar is driven by `minecraft:armor` / `minecraft:armor_toughness`
@@ -1049,6 +991,13 @@ impl LivingEntity {
             return;
         };
 
+        let default_damage = if self.entity.entity_type == &EntityType::PLAYER
+            && *slot == EquipmentSlot::MAIN_HAND
+        {
+            default_bedrock_melee_modifier(stack)
+        } else {
+            None
+        };
         let mut applied = Vec::new();
         for item_mod in modifiers.attribute_modifiers.iter() {
             if !attribute_modifier_slot_matches(&item_mod.slot, slot) {
@@ -1059,10 +1008,18 @@ impl LivingEntity {
                 Operation::AddMultipliedBase => ModifierOperation::MultiplyBase,
                 Operation::AddMultipliedTotal => ModifierOperation::MultiplyTotal,
             };
+            let amount = if item_mod.r#type == &Attributes::ATTACK_DAMAGE
+                && item_mod.operation == Operation::AddValue
+                && item_mod.id == "minecraft:base_attack_damage"
+            {
+                default_damage.unwrap_or(item_mod.amount)
+            } else {
+                item_mod.amount
+            };
             self.update_attribute(item_mod.r#type, |inst| {
                 inst.add_or_replace_modifier(Modifier {
                     id: item_mod.id.to_string(),
-                    amount: item_mod.amount,
+                    amount,
                     operation,
                 });
             });

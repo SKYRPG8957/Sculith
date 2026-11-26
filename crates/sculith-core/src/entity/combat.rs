@@ -4,6 +4,8 @@ use std::sync::atomic::Ordering;
 use crate::entity::EntityBase;
 use crate::entity::decoration::armor_stand::ArmorStandEntity;
 use crate::entity::living::LivingEntity;
+use pumpkin_data::data_component::DataComponent;
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{
@@ -19,6 +21,41 @@ use crate::{
 };
 
 use crate::net::ClientPlatform;
+
+/// Main-hand modifier above the player's base point of damage, measured on
+/// Bedrock Dedicated Server 1.26.63.1. Stacks can override their own attributes.
+pub(super) fn default_bedrock_melee_modifier(stack: &ItemStack) -> Option<f64> {
+    if stack
+        .patch
+        .iter()
+        .any(|(component, _)| *component == DataComponent::AttributeModifiers)
+    {
+        return None;
+    }
+    match stack.item.registry_key {
+        "trident" => Some(8.0),
+        "mace" => Some(5.0),
+        name => {
+            let (material, tool) = name.split_once('_')?;
+            let tier = match material {
+                "wooden" | "golden" => 0.0,
+                "stone" | "copper" => 1.0,
+                "iron" => 2.0,
+                "diamond" => 3.0,
+                "netherite" => 4.0,
+                _ => return None,
+            };
+            let modifier = match tool {
+                "sword" => 4.0,
+                "axe" => 3.0,
+                "pickaxe" | "hoe" => 2.0,
+                "shovel" => 1.0,
+                _ => return None,
+            };
+            Some(tier + modifier)
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttackType {
@@ -757,7 +794,24 @@ impl CombatTracker {
 
 #[cfg(test)]
 mod tests {
+    use pumpkin_data::item::Item;
+
     use super::*;
+
+    #[test]
+    fn vanilla_melee_damage_yields_to_explicit_stack_attributes() {
+        let sword = ItemStack::new(1, &Item::IRON_SWORD);
+        assert_eq!(default_bedrock_melee_modifier(&sword), Some(6.0));
+        let axe = ItemStack::new(1, &Item::DIAMOND_AXE);
+        assert_eq!(default_bedrock_melee_modifier(&axe), Some(6.0));
+        let mut removed = sword;
+        removed
+            .patch
+            .push((DataComponent::AttributeModifiers, None));
+        assert_eq!(default_bedrock_melee_modifier(&removed), None);
+        let spear = ItemStack::new(1, &Item::IRON_SPEAR);
+        assert_eq!(default_bedrock_melee_modifier(&spear), None);
+    }
 
     #[test]
     fn zero_resistance_keeps_full_strength() {
