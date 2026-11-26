@@ -727,10 +727,13 @@ mining speed. It can also consume a standalone abort. It checks the loaded
 block, reach and ownership, then publishes the start or stop animation to
 current-protocol viewers. The region also advances the Java crack stage while
 the target and mining speed stay steady. Bedrock animates at that speed from
-the start event. Pending input, a speed change or the completion threshold
-leaves the progress update to the world. The world uses the same tool guard
-to check the live block, speed and permissions before committing the removal
-and running the ordinary callbacks. Replacement targets, an abort, and a
+the start event. At full progress the region can finish a bare-hand break
+with no loot, experience, light changes, local block behavior or event
+listeners. It rechecks the live block, neighbors, reach, input order, spawn
+protection and region ownership before updating the chunk, mining stats and
+exhaustion and publishing the stop, particles and block update. The existing
+world path handles the remaining cases, including datapack loot overrides,
+pending input and plugin callbacks. Replacement targets, an abort, and a
 change of world invalidate the old mining session.
 The same region can handle a single start or abort carried in a Bedrock
 movement packet after it completes the pose and its movement effects. A

@@ -47,6 +47,7 @@ mod regional_campfires;
 use regional_campfires::RegionalEntityUpdates;
 mod regional_actors;
 mod regional_input;
+mod regional_mining;
 use regional_actors::RegionalActors;
 pub(crate) use regional_actors::actor_deadline;
 pub mod stopwatches;
@@ -5823,6 +5824,7 @@ impl World {
         from: &Player,
         location: BlockPos,
         progress: BlockBreakingProgress,
+        destroyed: Option<BlockStateId>,
         commit: impl FnOnce() -> Option<()>,
     ) -> Option<()> {
         use crate::plugin::server::packet::PacketSentEvent;
@@ -5869,16 +5871,32 @@ impl World {
         if let Some(event) = &bedrock {
             event.write_packet(&mut payload).ok()?;
         }
+        let mut particles = Vec::new();
+        let extra_java = if let Some(state) = destroyed {
+            let (event, bedrock) = Self::destroy_block_particles_packets(&location, state);
+            bedrock.write_packet(&mut particles).ok()?;
+            JavaClient::serialize_packet_for_version(&event, CURRENT_MC_VERSION).ok()?
+        } else {
+            bytes::Bytes::new()
+        };
+        let java_packets = [java, extra_java];
+        let java_count = 1 + usize::from(destroyed.is_some());
         commit()?;
         for player in recipients {
             match player.client.as_ref() {
                 ClientPlatform::Java(client) => {
-                    if client.try_enqueue_current_packet_batch(std::slice::from_ref(&java)) {
+                    if client.try_enqueue_current_packet_batch(&java_packets[..java_count]) {
                         client.flush_channel();
                     }
                 }
                 ClientPlatform::Bedrock(client) if bedrock.is_some() => {
                     client.try_enqueue_raw_packet_direct(CLevelEvent::PACKET_ID as u16, &payload);
+                    if destroyed.is_some() {
+                        client.try_enqueue_raw_packet_direct(
+                            CLevelEvent::PACKET_ID as u16,
+                            &particles,
+                        );
+                    }
                 }
                 ClientPlatform::Bedrock(_) => {}
             }
@@ -5921,6 +5939,25 @@ impl World {
                 ),
                 data: VarInt(data),
             }),
+        )
+    }
+
+    fn destroy_block_particles_packets(
+        position: &BlockPos,
+        state: BlockStateId,
+    ) -> (CWorldEvent, CLevelEvent) {
+        (
+            CWorldEvent::new(
+                WorldEvent::ParticlesDestroyBlock as i32,
+                *position,
+                state.as_u16().into(),
+                false,
+            ),
+            CLevelEvent {
+                event_id: VarInt(LevelEvent::ParticlesDestroyBlock as i32),
+                position: position.to_centered_f64().to_f32_lossy(),
+                data: VarInt(BlockState::to_be_network_id(state) as i32),
+            },
         )
     }
 
@@ -6246,17 +6283,8 @@ impl World {
             && broken_block != &Block::FIRE
             && broken_block != &Block::SOUL_FIRE
         {
-            let je_packet = CWorldEvent::new(
-                WorldEvent::ParticlesDestroyBlock as i32,
-                *position,
-                broken_state_id.as_u16().into(),
-                false,
-            );
-            let be_packet = CLevelEvent {
-                event_id: VarInt(LevelEvent::ParticlesDestroyBlock as i32),
-                position: position.to_centered_f64().to_f32_lossy(),
-                data: VarInt(BlockState::to_be_network_id(broken_state_id) as i32),
-            };
+            let (je_packet, be_packet) =
+                Self::destroy_block_particles_packets(position, broken_state_id);
             let chunk_pos = position.chunk_position();
             if let Some(player) = cause {
                 // Java predicts its own break effect; Bedrock needs the server event.

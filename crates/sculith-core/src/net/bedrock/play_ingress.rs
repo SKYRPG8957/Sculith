@@ -1298,6 +1298,31 @@ mod tests {
         player.reset_mining();
     }
 
+    fn queue_mining_action(
+        client: &BedrockClient,
+        player: &Arc<Player>,
+        action: PlayerActionType,
+        target: BlockPos,
+    ) {
+        use sculith_protocol::bedrock::server::player_action::SPlayerAction;
+
+        let mut payload = Vec::new();
+        VarULong(u64::try_from(player.entity_id()).unwrap())
+            .write(&mut payload)
+            .unwrap();
+        VarInt(action as i32).write(&mut payload).unwrap();
+        target.write(&mut payload).unwrap();
+        target.write(&mut payload).unwrap();
+        VarInt(1).write(&mut payload).unwrap();
+        client.enqueue_play_input(
+            player,
+            RawPacket {
+                id: SPlayerAction::PACKET_ID,
+                payload: payload.into(),
+            },
+        );
+    }
+
     fn verify_regional_mining_actions(
         world: &Arc<World>,
         server: &Server,
@@ -1305,10 +1330,7 @@ mod tests {
         client: &Arc<BedrockClient>,
         chunk: Vector2<i32>,
     ) {
-        use sculith_protocol::bedrock::{
-            client::level_event::{CLevelEvent, LevelEvent},
-            server::player_action::SPlayerAction,
-        };
+        use sculith_protocol::bedrock::client::level_event::{CLevelEvent, LevelEvent};
 
         let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
         let target = BlockPos::new(9, 100, 8);
@@ -1318,23 +1340,7 @@ mod tests {
         let loaded = player.has_client_loaded();
         player.set_client_loaded(true);
         let was_grounded = player.get_entity().on_ground.swap(true, Relaxed);
-        let send = |action: PlayerActionType| {
-            let mut payload = Vec::new();
-            VarULong(u64::try_from(player.entity_id()).unwrap())
-                .write(&mut payload)
-                .unwrap();
-            VarInt(action as i32).write(&mut payload).unwrap();
-            target.write(&mut payload).unwrap();
-            target.write(&mut payload).unwrap();
-            VarInt(1).write(&mut payload).unwrap();
-            client.enqueue_play_input(
-                player,
-                RawPacket {
-                    id: SPlayerAction::PACKET_ID,
-                    payload: payload.into(),
-                },
-            );
-        };
+        let send = |action| queue_mining_action(client, player, action, target);
         let mut outgoing = client.outgoing_packet_queue_recv.try_lock().unwrap();
         let receiver = outgoing.as_mut().unwrap();
         while receiver.try_recv().is_ok() {}
@@ -1398,6 +1404,58 @@ mod tests {
         assert!(!player.mining.load(Relaxed));
         assert_eq!(world.get_block_state_id(&target), dirt);
         player.get_entity().on_ground.store(was_grounded, Relaxed);
+        player.set_client_loaded(loaded);
+        terrain.set_block_absolute_y(9, 100, 8, prior);
+    }
+
+    fn verify_regional_mining_completion(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        chunk: Vector2<i32>,
+    ) {
+        use pumpkin_data::{BlockStateId, statistic::StatisticCategory};
+        use sculith_util::permission::PermissionLvl;
+
+        let target = BlockPos::new(9, 100, 8);
+        let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
+        let glass = Block::GLASS.default_state.id;
+        let prior = terrain.set_block_absolute_y(9, 100, 8, glass);
+        let loaded = player.has_client_loaded();
+        player.set_client_loaded(true);
+        let permission = player.permission_lvl.load();
+        player.permission_lvl.store(PermissionLvl::Four);
+        let grounded = player.get_entity().on_ground.swap(true, Relaxed);
+        let slot = usize::from(player.inventory.get_selected_slot());
+        let take_tool = |replacement| {
+            let mut inventory = player.inventory.main_inventory.write().unwrap();
+            std::mem::replace(inventory.get_mut(slot).unwrap(), replacement)
+        };
+        let tool = take_tool(ItemStack::EMPTY.clone());
+        let mined = || {
+            player.stats.lock().unwrap().get(
+                StatisticCategory::Mined,
+                i32::from(Block::GLASS.id.as_u16()),
+            )
+        };
+        let before = mined();
+        let at = Instant::now() + TICK_PERIOD;
+        queue_mining_action(client, player, PlayerActionType::StartDestroyBlock, target);
+        for tick in 0..8 {
+            tick_region(world, chunk, at + TICK_PERIOD * tick);
+        }
+        assert!(player.mining.load(Relaxed));
+        assert_eq!(world.get_block_state_id(&target), glass);
+        for tick in 8..12 {
+            tick_region(world, chunk, at + TICK_PERIOD * tick);
+        }
+        assert_eq!(world.get_block_state_id(&target), BlockStateId::AIR);
+        assert!(!player.mining.load(Relaxed));
+        assert!(client.activity.mining.lock().unwrap().is_none());
+        assert_eq!(mined(), before + 1);
+        take_tool(tool);
+        player.get_entity().on_ground.store(grounded, Relaxed);
+        player.permission_lvl.store(permission);
         player.set_client_loaded(loaded);
         terrain.set_block_absolute_y(9, 100, 8, prior);
     }
@@ -2607,6 +2665,7 @@ mod tests {
         verify_item_cooldown_handoff(&world, &server, &player, &client, west, east);
         verify_mining_clock(&world, &server, &player, &client, west).await;
         verify_regional_mining_actions(&world, &server, &player, &client, west);
+        verify_regional_mining_completion(&world, &player, &client, west);
         verify_attack_preparation(&world, &player, &client, west);
         verify_stationary_inputs(&world, &player, &client, west);
         verify_inline_inventory(&world, &player, &client, west);

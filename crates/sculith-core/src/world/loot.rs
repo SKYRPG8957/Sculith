@@ -17,6 +17,26 @@ use sculith_util::random::{RandomImpl, xoroshiro128::Xoroshiro};
 mod generation;
 mod predicates;
 
+/// Checks deterministic conditions against the same empty stack used by block loot.
+pub(super) fn has_no_bare_hand_drops(table: &LootTable) -> bool {
+    let impossible = |condition| match condition {
+        LootCondition::Never
+        | LootCondition::SilkTouch
+        | LootCondition::Shears
+        | LootCondition::SilkTouchOrShears => true,
+        LootCondition::MatchTool(predicate) => {
+            !predicates::item_matches(ItemStack::EMPTY, predicate)
+        }
+        _ => false,
+    };
+    table.pools.iter().all(|pool| {
+        impossible(pool.condition)
+            || pool.entries.iter().all(|entry| {
+                impossible(entry.condition) || matches!(entry.kind, LootEntryKind::Empty)
+            })
+    })
+}
+
 #[derive(Default, Clone)]
 pub struct LootContextParameters<'a> {
     pub world: Option<&'a World>,

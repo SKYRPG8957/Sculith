@@ -534,6 +534,28 @@ impl DatapackManager {
             .map(LootTableHandle::Static)
     }
 
+    /// Keeps the absence of a datapack override valid through a regional write.
+    pub(crate) fn try_with_builtin_loot_table<R>(
+        &self,
+        key: &str,
+        apply: impl FnOnce(Option<&'static sculith_util::loot_table::LootTable>) -> Option<R>,
+    ) -> Option<R> {
+        let overrides = self.loot_tables.try_read().ok()?;
+        let full_key = (!key.contains(':')).then(|| format!("minecraft:{key}"));
+        if overrides.contains_key(key)
+            || full_key
+                .as_ref()
+                .is_some_and(|key| overrides.contains_key(key))
+        {
+            return None;
+        }
+        apply(pumpkin_data::loot_table::get_loot_table(key).or_else(|| {
+            full_key
+                .as_deref()
+                .and_then(pumpkin_data::loot_table::get_loot_table)
+        }))
+    }
+
     #[must_use]
     pub fn get_loot_table_names(&self) -> Vec<String> {
         let guard = self

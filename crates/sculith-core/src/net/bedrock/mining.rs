@@ -223,6 +223,7 @@ impl BedrockClient {
                         player,
                         target,
                         BlockBreakingProgress::Start { stage, speed },
+                        None,
                         || {
                             if !eligible() || !world.offer_regional_mining(self.id, player, target)
                             {
@@ -247,6 +248,7 @@ impl BedrockClient {
                 player,
                 target,
                 BlockBreakingProgress::Stop,
+                None,
                 || {
                     eligible().then(|| {
                         player.mining.store(false, Relaxed);
@@ -350,7 +352,7 @@ impl BedrockClient {
             .map_or(baseline, |clock| clock.elapsed.max(baseline))
     }
 
-    /// Advances the shared mining clock and publishes steady progress within the region.
+    /// Advances the shared clock and handles a steady break within the region when possible.
     pub(crate) fn advance_regional_mining(
         &self,
         world: &World,
@@ -384,6 +386,7 @@ impl BedrockClient {
             return false;
         }
 
+        let mut ready = false;
         let current = world.level.try_with_block_state(position, |_, state| {
             if clock.target.state != state {
                 return false;
@@ -398,12 +401,33 @@ impl BedrockClient {
                     elapsed = clock.elapsed,
                     "Advanced regional Bedrock mining"
                 );
-                let _ = self.try_publish_regional_mining_stage(world, server, player, clock, &owns);
+                let speed = f32::from_bits(player.current_block_breaking_speed.load(Relaxed));
+                let progress = speed * clock.elapsed as f32;
+                ready = progress >= 1.0;
+                if !ready
+                    && BlockBreakingProgress::stage_at(progress)
+                        > player.current_block_destroy_stage.load(Relaxed)
+                {
+                    let _ =
+                        self.try_publish_regional_mining_stage(world, server, player, clock, &owns);
+                }
             }
             true
         });
         if current == Some(false) {
             *work = None;
+            return false;
+        }
+        if ready
+            && self
+                .try_finish_regional_mining(world, server, player, clock, &owns)
+                .is_some()
+        {
+            let state = clock.target.state;
+            *work = None;
+            drop(work);
+            world.queue_regional_edit_update(position, state, BlockStateId::AIR);
+            tracing::trace!(player = %player.gameprofile.name, ?position, "Finished Bedrock mining on its region");
             return false;
         }
         true
@@ -417,16 +441,89 @@ impl BedrockClient {
         clock: &MiningClock,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<()> {
-        let speed = player.current_block_breaking_speed.load(Relaxed);
-        let progress = f32::from_bits(speed) * clock.elapsed as f32;
-        let stage = BlockBreakingProgress::stage_at(progress);
-        let previous = player.current_block_destroy_stage.load(Relaxed);
-        if progress >= 1.0 || previous < 0 || stage <= previous {
+        self.try_with_current_regional_mining(
+            world,
+            server,
+            player,
+            clock,
+            owns,
+            |speed, previous, eligible| {
+                let progress = speed * clock.elapsed as f32;
+                let stage = BlockBreakingProgress::stage_at(progress);
+                if progress >= 1.0 || stage <= previous {
+                    return None;
+                }
+                // Bedrock viewers already animate steady speed from the start event.
+                world.try_publish_regional_block_breaking(
+                    player,
+                    clock.target.position,
+                    BlockBreakingProgress::Update { stage, speed: None },
+                    None,
+                    || eligible().then(|| player.current_block_destroy_stage.store(stage, Relaxed)),
+                )
+            },
+        )
+    }
+
+    fn try_finish_regional_mining(
+        &self,
+        world: &World,
+        server: &Server,
+        player: &Player,
+        clock: &MiningClock,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<()> {
+        if sculith_world::lighting::LightEngine::has_different_light_properties(
+            clock.target.state.to_state(),
+            BlockStateId::AIR.to_state(),
+        ) {
             return None;
         }
+        self.try_with_current_regional_mining(
+            world,
+            server,
+            player,
+            clock,
+            owns,
+            |speed, _, eligible| {
+                if speed * (clock.elapsed as f32) < 1.0 {
+                    return None;
+                }
+                let position = clock.target.position;
+                let state = clock.target.state;
+                world.try_publish_regional_block_breaking(
+                    player,
+                    position,
+                    BlockBreakingProgress::Stop,
+                    Some(state),
+                    || {
+                        world.try_remove_regional_mining_block(
+                            server,
+                            player,
+                            position,
+                            state,
+                            &|chunk| owns(chunk) && eligible(),
+                        )?;
+                        player.mining.store(false, Relaxed);
+                        player.current_block_destroy_stage.store(-1, Relaxed);
+                        player.current_block_breaking_speed.store(0, Relaxed);
+                        Some(())
+                    },
+                )
+            },
+        )
+    }
 
-        // The clock and terrain are pinned by the caller. All additional locks
-        // here must be try-locks because world mining holds the tool first.
+    fn try_with_current_regional_mining<R>(
+        &self,
+        world: &World,
+        server: &Server,
+        player: &Player,
+        clock: &MiningClock,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+        apply: impl FnOnce(f32, i32, &dyn Fn() -> bool) -> Option<R>,
+    ) -> Option<R> {
+        // World mining takes the tool before checking the clock.
         let _tool = player.try_regional_inventory_edit()?;
         let teleport = player.awaiting_teleport.try_lock().ok()?;
         let head = self.activity.inbound_head.try_lock().ok()?;
@@ -443,6 +540,11 @@ impl BedrockClient {
         let entity = player.get_entity();
         entity.bounding_box.try_with_current_world(world, || {
             let position = clock.target.position;
+            let speed = player.current_block_breaking_speed.load(Relaxed);
+            let previous = player.current_block_destroy_stage.load(Relaxed);
+            if previous < 0 {
+                return None;
+            }
             let eligible = || {
                 player.has_stable_world_membership()
                     && player.mining.load(Relaxed)
@@ -458,22 +560,13 @@ impl BedrockClient {
             };
             let state = clock.target.state.to_state();
             let block = Block::from_state_id(state.id);
-            if !eligible()
-                || server.block_registry.get_pumpkin_block(block.id).is_some()
-                || player
-                    .try_bedrock_mining_progress(server, &position, state, block)
-                    .map(f32::to_bits)
-                    != Some(speed)
-            {
+            if !eligible() || server.block_registry.get_pumpkin_block(block.id).is_some() {
                 return None;
             }
-            // Bedrock viewers already animate steady speed from the start event.
-            world.try_publish_regional_block_breaking(
-                player,
-                position,
-                BlockBreakingProgress::Update { stage, speed: None },
-                || eligible().then(|| player.current_block_destroy_stage.store(stage, Relaxed)),
-            )
+            let actual = player.try_bedrock_mining_progress(server, &position, state, block)?;
+            (actual.to_bits() == speed)
+                .then(|| apply(actual, previous, &eligible))
+                .flatten()
         })?
     }
 }
