@@ -1318,79 +1318,106 @@ impl Server {
         self.level_info.load().difficulty
     }
 
-    /// Sets the difficulty of the server.
-    ///
-    /// This function updates the difficulty level of the server and broadcasts the change to all players.
-    /// It also iterates through all worlds to ensure the difficulty is applied consistently.
-    /// If `force_update` is `Some(true)`, the difficulty will be set regardless of the current state.
-    /// If `force_update` is `Some(false)` or `None`, the difficulty will only be updated if it is not locked.
-    ///
-    /// # Arguments
-    ///
-    /// * `difficulty`: The new difficulty level to set. This should be one of the variants of the `Difficulty` enum.
-    /// * `force_update`: An optional boolean that, if set to `Some(true)`, forces the difficulty to be updated even if it is currently locked.
-    ///
-    /// # Note
-    ///
-    /// This function does not handle the actual mob spawn options update, which is a TODO item for future implementation.
+    /// Sets the server-wide difficulty and publishes it to the loaded worlds.
     pub fn set_difficulty(&self, difficulty: Difficulty, force_update: bool) {
-        let new_difficulty = if self.basic_config.hardcore {
+        let difficulty = self.effective_difficulty(difficulty);
+        if !Self::update_difficulty(&self.level_info, difficulty, force_update) {
+            return;
+        }
+        let worlds = self.worlds.load();
+        for world in world_metadata::metadata_owners(&worlds) {
+            if !Arc::ptr_eq(&world.level_info, &self.level_info) {
+                world.set_difficulty(difficulty);
+            }
+        }
+        for world in worlds.iter() {
+            Self::publish_world_difficulty(world);
+        }
+    }
+
+    /// Sets the server-wide difficulty lock and publishes it to the loaded worlds.
+    pub fn set_difficulty_locked(&self, locked: bool) {
+        Self::update_difficulty_lock(&self.level_info, locked);
+        let worlds = self.worlds.load();
+        for world in world_metadata::metadata_owners(&worlds) {
+            if !Arc::ptr_eq(&world.level_info, &self.level_info) {
+                Self::update_difficulty_lock(&world.level_info, locked);
+            }
+        }
+        for world in worlds.iter() {
+            Self::publish_world_difficulty(world);
+        }
+    }
+
+    pub(crate) fn set_scoped_difficulty(
+        &self,
+        world: &World,
+        difficulty: Difficulty,
+        force_update: bool,
+    ) -> bool {
+        let difficulty = self.effective_difficulty(difficulty);
+        if !Self::update_difficulty(&world.level_info, difficulty, force_update) {
+            return false;
+        }
+        self.publish_difficulty_scope(world);
+        true
+    }
+
+    pub(crate) fn set_scoped_difficulty_locked(&self, world: &World, locked: bool) {
+        Self::update_difficulty_lock(&world.level_info, locked);
+        self.publish_difficulty_scope(world);
+    }
+
+    const fn effective_difficulty(&self, difficulty: Difficulty) -> Difficulty {
+        if self.basic_config.hardcore {
             Difficulty::Hard
         } else {
             difficulty
-        };
+        }
+    }
 
-        let previous = self.level_info.rcu(|current| {
+    fn update_difficulty(
+        info: &ArcSwap<LevelData>,
+        difficulty: Difficulty,
+        force_update: bool,
+    ) -> bool {
+        let previous = info.rcu(|current| {
             if current.difficulty_locked && !force_update {
                 return Arc::clone(current);
             }
             let mut updated = (**current).clone();
-            updated.difficulty = new_difficulty;
+            updated.difficulty = difficulty;
             Arc::new(updated)
         });
-        let locked = previous.difficulty_locked;
-        if locked && !force_update {
-            return;
-        }
+        force_update || !previous.difficulty_locked
+    }
 
-        for world in self.worlds.load().iter() {
-            if !Arc::ptr_eq(&world.level_info, &self.level_info) {
-                world.set_difficulty(new_difficulty);
+    fn update_difficulty_lock(info: &ArcSwap<LevelData>, locked: bool) {
+        info.rcu(|current| {
+            let mut updated = (**current).clone();
+            updated.difficulty_locked = locked;
+            updated
+        });
+    }
+
+    fn publish_difficulty_scope(&self, source: &World) {
+        let worlds = self.worlds.load();
+        for world in worlds.iter() {
+            if Arc::ptr_eq(&world.level_info, &source.level_info) {
+                Self::publish_world_difficulty(world);
             }
-            world.broadcast_editioned(
-                &CChangeDifficulty::new(new_difficulty as u8, locked),
-                &sculith_protocol::bedrock::client::CSetDifficulty {
-                    difficulty: (new_difficulty as u32).into(),
-                },
-            );
         }
     }
 
-    /// Sets the difficulty lock status of the server and broadcasts the update to all players.
-    pub fn set_difficulty_locked(&self, locked: bool) {
-        let set_locked = |info: &ArcSwap<LevelData>| {
-            info.rcu(|current| {
-                let mut updated = (**current).clone();
-                updated.difficulty_locked = locked;
-                updated
-            });
-        };
-        set_locked(&self.level_info);
-        let worlds = self.worlds.load();
-        for world in world_metadata::metadata_owners(&worlds) {
-            if !Arc::ptr_eq(&world.level_info, &self.level_info) {
-                set_locked(&world.level_info);
-            }
-        }
-        for world in worlds.iter() {
-            let difficulty = world.level_info.load().difficulty;
-            world.broadcast_editioned(
-                &CChangeDifficulty::new(difficulty as u8, locked),
-                &sculith_protocol::bedrock::client::CSetDifficulty {
-                    difficulty: (difficulty as u32).into(),
-                },
-            );
-        }
+    fn publish_world_difficulty(world: &World) {
+        let info = world.level_info.load();
+        let difficulty = info.difficulty;
+        world.broadcast_editioned(
+            &CChangeDifficulty::new(difficulty as u8, info.difficulty_locked),
+            &sculith_protocol::bedrock::client::CSetDifficulty {
+                difficulty: (difficulty as u32).into(),
+            },
+        );
     }
 
     /// Searches for a player by their username across all worlds.

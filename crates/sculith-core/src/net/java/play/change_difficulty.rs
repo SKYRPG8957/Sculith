@@ -17,16 +17,13 @@ impl JavaClient {
             return;
         }
 
-        let current_info = server.level_info.load();
-        if current_info.difficulty_locked {
+        if !server.set_scoped_difficulty(&player.world(), packet.difficulty, false) {
             warn!(
                 "Player {} tried to change difficulty while difficulty is locked",
                 player.gameprofile.name
             );
             return;
         }
-
-        server.set_difficulty(packet.difficulty, false);
 
         info!(
             "Player {} changed difficulty to {:?}",

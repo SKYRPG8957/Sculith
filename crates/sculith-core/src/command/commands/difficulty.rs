@@ -18,7 +18,7 @@ struct DifficultyQueryExecutor;
 
 impl CommandExecutor for DifficultyQueryExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        let difficulty = context.server().get_difficulty();
+        let difficulty = context.source.world().level_info.load().difficulty;
 
         context.source.send_feedback(
             TextComponent::translate_cross(
@@ -42,20 +42,16 @@ struct DifficultySetExecutor(Difficulty);
 impl CommandExecutor for DifficultySetExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let difficulty = self.0;
-        let server = context.server();
-
-        {
-            let level_info = server.level_info.load();
-
-            if level_info.difficulty == difficulty {
-                return Err(FAILURE_ERROR_TYPE
-                    .create_without_context(TextComponent::text(difficulty.name())));
-            }
+        let world = context.source.world();
+        if world.level_info.load().difficulty == difficulty {
+            return Err(
+                FAILURE_ERROR_TYPE.create_without_context(TextComponent::text(difficulty.name()))
+            );
         }
-
-        server.set_difficulty(difficulty, true);
-
-        let effective = server.get_difficulty();
+        context
+            .server()
+            .set_scoped_difficulty(world, difficulty, true);
+        let effective = world.level_info.load().difficulty;
 
         context.source.send_feedback(
             TextComponent::translate_cross(
