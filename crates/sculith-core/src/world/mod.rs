@@ -899,7 +899,7 @@ impl World {
             .get(&block_entity.get_position())
             && !custom_data.is_empty()
         {
-            nbt.put_compound("PumpkinCustomData", custom_data.clone());
+            nbt.put_compound(BLOCK_ENTITY_CUSTOM_DATA_TAG, custom_data.clone());
         }
         nbt
     }
