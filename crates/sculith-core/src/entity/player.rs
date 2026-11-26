@@ -2387,7 +2387,8 @@ impl Player {
         if amount <= 0 {
             return false;
         }
-        if !self.inventory.get_slot(slot_index).are_equal(expected) {
+        let current = self.inventory.get_slot(slot_index);
+        if current.uid != expected.uid || !current.are_equal(expected) {
             return false;
         }
         let world = self.world();
@@ -2395,9 +2396,11 @@ impl Player {
         let result = self.damage_item_stack_internal(&mut damaged, amount, true, |replacement| {
             let _inventory_edit = self.hold_bedrock_inventory_edit();
             Arc::ptr_eq(&world, &self.world())
-                && self
-                    .inventory
-                    .replace_slot_if_equal(slot_index, expected, replacement.clone())
+                && self.inventory.replace_slot_if_unchanged(
+                    slot_index,
+                    expected,
+                    replacement.clone(),
+                )
         });
         if result == DamageResult::Untouched {
             return false;

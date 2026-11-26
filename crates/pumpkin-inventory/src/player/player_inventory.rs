@@ -611,13 +611,34 @@ impl PlayerInventory {
         expected: &ItemStack,
         replacement: ItemStack,
     ) -> bool {
-        let matches = |current: &ItemStack| {
+        self.replace_matching_slot(slot, replacement, |current| {
             if expected.is_empty() {
                 current.is_empty()
             } else {
                 current.are_equal(expected)
             }
-        };
+        })
+    }
+
+    /// Replaces a slot if it still contains the same stack with the same contents.
+    #[must_use]
+    pub fn replace_slot_if_unchanged(
+        &self,
+        slot: usize,
+        expected: &ItemStack,
+        replacement: ItemStack,
+    ) -> bool {
+        self.replace_matching_slot(slot, replacement, |current| {
+            current.uid == expected.uid && current.are_equal(expected)
+        })
+    }
+
+    fn replace_matching_slot(
+        &self,
+        slot: usize,
+        replacement: ItemStack,
+        matches: impl FnOnce(&ItemStack) -> bool,
+    ) -> bool {
         if slot < Self::MAIN_SIZE {
             let mut inventory = self
                 .main_inventory
