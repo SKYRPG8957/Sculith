@@ -50,9 +50,11 @@ mod storage_export;
 mod terrain;
 #[cfg(test)]
 mod tests;
+mod world_state;
 
 pub use storage_export::{
-    StorageExportStats, WorldEditsExportStats, export_storage, export_world_edits,
+    StorageExportOptions, StorageExportStats, WorldEditsExportStats, export_storage, export_world,
+    export_world_edits,
 };
 
 const OVERWORLD: Dimension = Dimension::OVERWORLD;
@@ -819,11 +821,7 @@ fn read_chunk(
     Ok(chunk)
 }
 
-fn read_level(
-    source: &Path,
-    registry: &terrain::TerrainRegistry,
-    policy: GeneratorPolicy,
-) -> Result<(LevelData, bool), Error> {
+fn read_level_nbt(source: &Path) -> Result<Nbt, Error> {
     let mut file = File::open(source.join("level.dat"))?;
     let mut header = [0; 8];
     file.read_exact(&mut header)?;
@@ -843,6 +841,15 @@ fn read_level(
     if reader.reader().position() != length {
         return Err(invalid("trailing data in Bedrock level.dat"));
     }
+    Ok(data)
+}
+
+fn read_level(
+    source: &Path,
+    registry: &terrain::TerrainRegistry,
+    policy: GeneratorPolicy,
+) -> Result<(LevelData, bool), Error> {
+    let data = read_level_nbt(source)?;
     let seed = Seed(
         data.get_long("RandomSeed")
             .ok_or_else(|| invalid("world seed is missing"))?

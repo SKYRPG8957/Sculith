@@ -877,6 +877,11 @@ surface heights for the affected cells. Edits involving block entities,
 fluids, partial opacity or pending ticks require a broader conversion and
 stop this export before the destination is published.
 
+Append `--include-world-state` to also write the shared game rules, Overworld
+time of day and weather to the Bedrock copy. This works with or without
+`--include-block-edits` and with templates that contain no supported storage.
+Timed clear weather maps to both native precipitation timers.
+
 ## Region header recovery
 
 Anvil and Pump write new inline chunk payloads into free sectors before

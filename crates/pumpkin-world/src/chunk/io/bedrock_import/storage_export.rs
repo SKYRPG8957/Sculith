@@ -20,6 +20,7 @@ use super::{
     index_chunks, invalid, new_destination, read_chunk, read_level, region_chunk_index,
     storage::{self, SLOTS, StorageItemRegistry},
     terrain::{DiskBlockStates, TerrainRegistry, export_column_blocks},
+    world_state,
 };
 use crate::{
     chunk::{
@@ -30,6 +31,13 @@ use crate::{
     level::LevelFolder,
     world_info::WorldInfoReader,
 };
+
+/// Selects additional shared world state to write into the new Bedrock copy.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StorageExportOptions {
+    pub include_block_edits: bool,
+    pub include_world_state: bool,
+}
 
 #[derive(Debug)]
 pub struct StorageExportStats {
@@ -51,7 +59,13 @@ pub fn export_storage(
     sculith_source: &Path,
     destination: &Path,
 ) -> Result<StorageExportStats, Error> {
-    export_world(bedrock_source, sculith_source, destination, false).map(|report| report.storage)
+    export_world(
+        bedrock_source,
+        sculith_source,
+        destination,
+        StorageExportOptions::default(),
+    )
+    .map(|report| report.storage)
 }
 
 /// Also copies supported block edits within existing native columns. Preserves the source
@@ -61,14 +75,23 @@ pub fn export_world_edits(
     sculith_source: &Path,
     destination: &Path,
 ) -> Result<WorldEditsExportStats, Error> {
-    export_world(bedrock_source, sculith_source, destination, true)
+    export_world(
+        bedrock_source,
+        sculith_source,
+        destination,
+        StorageExportOptions {
+            include_block_edits: true,
+            ..StorageExportOptions::default()
+        },
+    )
 }
 
-fn export_world(
+/// Copies a stopped Bedrock template and applies the selected Sculith changes.
+pub fn export_world(
     bedrock_source: &Path,
     sculith_source: &Path,
     destination: &Path,
-    include_block_edits: bool,
+    options: StorageExportOptions,
 ) -> Result<WorldEditsExportStats, Error> {
     let template = bedrock_source.canonicalize()?;
     let sculith = sculith_source.canonicalize()?;
@@ -78,7 +101,8 @@ fn export_world(
         return Err(invalid("destination must be outside the Sculith world"));
     }
     let terrain = TerrainRegistry::load()?;
-    let block_states = include_block_edits
+    let block_states = options
+        .include_block_edits
         .then(|| DiskBlockStates::load(&terrain))
         .transpose()?;
     let items = storage::read_import_registry(&sculith)?;
@@ -101,11 +125,17 @@ fn export_world(
             copy_world_entry(&entry, &output)?;
         }
     }
+    if options.include_world_state {
+        world_state::export(&output, &sculith_info)?;
+    }
     let database = output.join("db");
     copy_database(&template.join("db"), &database)?;
     let db = DB::open(database, bedrock_db_options())?;
     let report = export_columns(&db, &sculith, &terrain, &items, block_states.as_ref())?;
-    if !include_block_edits && report.storage.containers_checked == 0 {
+    if !options.include_block_edits
+        && !options.include_world_state
+        && report.storage.containers_checked == 0
+    {
         return Err(invalid(
             "the Bedrock world contains no supported storage containers",
         ));

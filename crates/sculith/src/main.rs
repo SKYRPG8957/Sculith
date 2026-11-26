@@ -10,7 +10,7 @@ use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_world::{
     CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION,
     chunk::io::bedrock_import::{
-        GeneratorPolicy, ImportOptions, ImportStats, export_storage, export_world_edits,
+        GeneratorPolicy, ImportOptions, ImportStats, StorageExportOptions, export_world,
         import_world, inspect_world,
     },
 };
@@ -604,38 +604,36 @@ fn export_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
     let template = args.next();
     let shared = args.next();
     let destination = args.next();
-    let include_block_edits = match (args.next(), args.next()) {
-        (None, None) => Some(false),
-        (Some(flag), None) if flag == "--include-block-edits" => Some(true),
-        _ => None,
-    };
-    let (Some(template), Some(shared), Some(destination), Some(include_block_edits)) =
-        (template, shared, destination, include_block_edits)
+    let options = parse_bedrock_export_options(args);
+    let (Some(template), Some(shared), Some(destination), Some(options)) =
+        (template, shared, destination, options)
     else {
         eprintln!(
-            "Run sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION [--include-block-edits]"
+            "Run sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION \
+             [--include-block-edits] [--include-world-state]"
         );
         return 2;
     };
     let destination = Path::new(&destination);
     let template = Path::new(&template);
     let shared = Path::new(&shared);
-    let result = if include_block_edits {
-        export_world_edits(template, shared, destination)
-            .map(|report| (report.storage, Some(report.block_columns_updated)))
-    } else {
-        export_storage(template, shared, destination).map(|report| (report, None))
-    };
-    match result {
-        Ok((stats, edited_columns)) => {
+    match export_world(template, shared, destination, options) {
+        Ok(report) => {
+            let stats = report.storage;
             println!(
                 "Updated {} of {} supported storage inventories in {}.",
                 stats.inventories_updated,
                 stats.containers_checked,
                 destination.display()
             );
-            if let Some(edited_columns) = edited_columns {
-                println!("Updated block edits in {edited_columns} Bedrock columns.");
+            if options.include_block_edits {
+                println!(
+                    "Updated block edits in {} Bedrock columns.",
+                    report.block_columns_updated
+                );
+            }
+            if options.include_world_state {
+                println!("Updated shared game rules, Overworld time and weather.");
             }
             print_block_entity_examples(&stats.preserved, "Preserved");
             0
@@ -645,6 +643,24 @@ fn export_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
             1
         }
     }
+}
+
+fn parse_bedrock_export_options(
+    args: impl Iterator<Item = OsString>,
+) -> Option<StorageExportOptions> {
+    let mut options = StorageExportOptions::default();
+    for flag in args {
+        match flag.to_str() {
+            Some("--include-block-edits") if !options.include_block_edits => {
+                options.include_block_edits = true;
+            }
+            Some("--include-world-state") if !options.include_world_state => {
+                options.include_world_state = true;
+            }
+            _ => return None,
+        }
+    }
+    Some(options)
 }
 
 #[expect(
