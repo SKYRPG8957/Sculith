@@ -42,8 +42,7 @@ impl CommandExecutor for SetWorldSpawnExecutor {
         };
 
         let world = context.source.world();
-        let server = context.source.server();
-        let current_info = server.level_info.load();
+        let current_info = world.level_info.load();
         let previous_position = BlockPos::new(
             current_info.spawn_x,
             current_info.spawn_y,
@@ -69,7 +68,7 @@ impl CommandExecutor for SetWorldSpawnExecutor {
                 .fire_blocking(&server_arc, &mut event);
         }
 
-        server.level_info.rcu(|current| {
+        world.level_info.rcu(|current| {
             let mut updated = (**current).clone();
             updated.spawn_x = new_position.0.x;
             updated.spawn_y = new_position.0.y;

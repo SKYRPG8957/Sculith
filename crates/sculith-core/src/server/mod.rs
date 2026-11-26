@@ -51,6 +51,7 @@ use sculith_protocol::{ClientPacket, java::client::config::CPluginMessage};
 use sculith_util::Difficulty;
 use sculith_util::text::TextComponent;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32};
 use std::{fs, io};
@@ -79,6 +80,7 @@ pub mod tick_rate_manager;
 pub mod ticker;
 mod transfer_checkpoint;
 mod world_membership;
+mod world_metadata;
 mod world_openings;
 mod world_scheduler;
 
@@ -217,7 +219,8 @@ pub struct Server {
     /// Dedicated Rayon thread pool for background CPU computation (RSA, Bedrock crypto, compression).
     pub compute_pool: Arc<rayon::ThreadPool>,
     pub management_hub: Arc<crate::net::management::hub::ManagementHub>,
-    save_metadata_lock: tokio::sync::Mutex<()>,
+    storage_root: PathBuf,
+    save_metadata_lock: Arc<tokio::sync::Mutex<()>>,
     storage_checkpoint: storage_checkpoint::StorageCheckpoint,
     /// Cancelled when this server should stop. A child of [`crate::STOP_INTERRUPT`], so a
     /// process-wide stop reaches it, while an integrated server can stop without ending the
@@ -378,6 +381,7 @@ impl Server {
             }
         };
 
+        let world_path = world_path.canonicalize()?;
         let players_dir = world_path.join("players");
         let player_data_storage = ServerPlayerData::new(
             players_dir.join("data"),
@@ -520,7 +524,8 @@ impl Server {
             world_openings: world_openings::WorldOpenings::default(),
             level_info,
             management_hub,
-            save_metadata_lock: tokio::sync::Mutex::new(()),
+            storage_root: world_path.clone(),
+            save_metadata_lock: Arc::new(tokio::sync::Mutex::new(())),
             storage_checkpoint: storage_checkpoint::StorageCheckpoint::default(),
             available_update: std::sync::OnceLock::new(),
         };
@@ -593,7 +598,12 @@ impl Server {
                     ..WorldClockSnapshot::default()
                 }
             });
-            worlds_vec.push(server.open_world(world_path.clone(), dim.clone(), clock));
+            worlds_vec.push(server.open_world(
+                world_path.clone(),
+                server.level_info.clone(),
+                dim.clone(),
+                clock,
+            ));
         }
 
         for world in &worlds_vec {
@@ -652,6 +662,22 @@ impl Server {
             })
     }
 
+    pub(crate) fn find_sibling_dimension(
+        &self,
+        source: &World,
+        dimension: &Dimension,
+    ) -> Option<Arc<World>> {
+        self.worlds
+            .load()
+            .iter()
+            .find(|world| {
+                world.dimension.minecraft_name == dimension.minecraft_name
+                    && Arc::ptr_eq(&world.level_info, &source.level_info)
+                    && world.is_open()
+            })
+            .cloned()
+    }
+
     /// Opens a plugin world.
     ///
     /// # Panics
@@ -668,32 +694,30 @@ impl Server {
         name: String,
         dimension: Dimension,
     ) -> Result<Arc<World>, WorldInfoError> {
-        let root = self.basic_config.get_world_path();
+        let root = &self.storage_root;
         // The primary world's existing name still addresses its root directly.
         let uses_primary_root = self.worlds.load().iter().any(|world| {
-            world.dimension == dimension
-                && world.level.level_folder.root_folder == root
-                && world.get_world_name() == name
+            world.level.level_folder.root_folder == *root && world.get_world_name() == name
         });
         let world_path = if uses_primary_root {
-            root
+            root.clone()
         } else {
             root.join(name)
         };
         fs::create_dir_all(&world_path)?;
         let world_path = world_path.canonicalize()?;
-        let location = (world_path.clone(), dimension.minecraft_name);
-        let opening = self.world_openings.reserve(&location)?;
-        if let Some(world) = self.worlds.load().iter().find(|world| {
-            if world.dimension != dimension {
-                return false;
-            }
-            let loaded = &world.level.level_folder.root_folder;
-            *loaded == world_path
-                || loaded
-                    .canonicalize()
-                    .is_ok_and(|loaded| loaded == world_path)
-        }) {
+        // A directory can admit several dimensions, with one metadata owner.
+        let opening = self.world_openings.reserve(&world_path)?;
+        let loaded = self.worlds.load_full();
+        let mut siblings = loaded
+            .iter()
+            .filter(|world| world.level.level_folder.root_folder == world_path);
+        let sibling = siblings.next();
+        if let Some(world) = sibling
+            .into_iter()
+            .chain(siblings)
+            .find(|world| world.dimension == dimension)
+        {
             return if world.is_open() {
                 Ok(world.clone())
             } else {
@@ -712,7 +736,11 @@ impl Server {
                 ..WorldClockSnapshot::default()
             }
         });
-        let world = self.open_world(world_path, dimension, clock);
+        let level_info = match sibling {
+            Some(world) => world.level_info.clone(),
+            None => self.load_independent_world_info(&world_path)?,
+        };
+        let world = self.open_world(world_path.clone(), level_info, dimension, clock);
         let _initializing = world.try_simulation();
         self.worlds.rcu(|worlds| {
             let mut new_worlds = (**worlds).clone();
@@ -730,20 +758,21 @@ impl Server {
 
     fn open_world(
         self: &Arc<Self>,
-        world_path: std::path::PathBuf,
+        world_path: PathBuf,
+        level_info: Arc<ArcSwap<LevelData>>,
         dimension: Dimension,
         clock: WorldClockSnapshot,
     ) -> Arc<World> {
         let level = Level::with_checkpoint_fence(
             &self.advanced_config.world,
             world_path,
-            self.level_info.load().world_gen_settings.seed,
+            level_info.load().world_gen_settings.seed,
             dimension.clone(),
             self.player_data_storage.checkpoint.clone(),
         );
         let mut world = World::load(
             level.clone(),
-            self.level_info.clone(),
+            level_info,
             dimension,
             self.block_registry.clone(),
             Arc::downgrade(self),
@@ -772,6 +801,10 @@ impl Server {
         let _reservation = world_to_unload
             .try_simulation()
             .ok_or_else(|| format!("World '{name}' is processing simulation work"))?;
+        world_to_unload.check_player_admission_for_unload(name)?;
+        self.save_independent_world_info(&world_to_unload)
+            .await
+            .map_err(|error| format!("Failed to save world '{name}': {error}"))?;
         world_to_unload.close_player_admission(name)?;
         world_to_unload.shutdown().await;
         world_to_unload.unload().await;
@@ -785,20 +818,10 @@ impl Server {
         Ok(())
     }
 
-    pub fn save_world_info(&self) -> Result<(), WorldInfoError> {
-        let mut level_data = (**self.level_info.load()).clone();
-        if let Some(world) = self.worlds.load().first() {
-            level_data.day_time = world.get_time_of_day();
-        }
-        self.world_info_writer
-            .write_world_info(&level_data, &self.basic_config.get_world_path())
-    }
-
     pub fn reload_datapacks(&self, server: &Arc<Self>) {
         let enabled_packs = self.level_info.load().data_packs.enabled.clone();
-        let world_path = self.basic_config.get_world_path();
         self.datapack_manager
-            .load_all(&world_path, &enabled_packs, &self.recipe_manager);
+            .load_all(&self.storage_root, &enabled_packs, &self.recipe_manager);
 
         let source = crate::command::CommandSender::Console.into_source(server);
         let _ = self
@@ -840,11 +863,14 @@ impl Server {
     }
 
     async fn save_metadata(&self, save_players: bool) -> Result<(), String> {
-        let _save = self.save_metadata_lock.lock().await;
-        if let Err(err) = self.save_world_info() {
-            error!("Failed to save world info: {err}");
-            return Err(format!("Failed to save world info: {err}"));
-        }
+        let save = self.save_metadata_lock.clone().lock_owned().await;
+        let _save = self
+            .save_world_info_in_background(save)
+            .await
+            .map_err(|err| {
+                error!("Failed to save world info: {err}");
+                format!("Failed to save world info: {err}")
+            })?;
 
         if save_players && let Err(err) = self.player_data_storage.save_all_players(self).await {
             error!("Failed to save player data: {err}");
@@ -1190,7 +1216,8 @@ impl Server {
         for world in self.worlds.load().iter() {
             world.shutdown().await;
         }
-        if let Err(err) = self.save_world_info() {
+        let save = self.save_metadata_lock.clone().lock_owned().await;
+        if let Err(err) = self.save_world_info_in_background(save).await {
             error!("Failed to save level.dat: {err}");
         }
         info!("Completed worlds");
@@ -1324,14 +1351,22 @@ impl Server {
 
     /// Sets the difficulty lock status of the server and broadcasts the update to all players.
     pub fn set_difficulty_locked(&self, locked: bool) {
-        let previous = self.level_info.rcu(|current| {
-            let mut updated = (**current).clone();
-            updated.difficulty_locked = locked;
-            updated
-        });
-        let difficulty = previous.difficulty;
-
-        for world in self.worlds.load().iter() {
+        let set_locked = |info: &ArcSwap<LevelData>| {
+            info.rcu(|current| {
+                let mut updated = (**current).clone();
+                updated.difficulty_locked = locked;
+                updated
+            });
+        };
+        set_locked(&self.level_info);
+        let worlds = self.worlds.load();
+        for world in world_metadata::metadata_owners(&worlds) {
+            if !Arc::ptr_eq(&world.level_info, &self.level_info) {
+                set_locked(&world.level_info);
+            }
+        }
+        for world in worlds.iter() {
+            let difficulty = world.level_info.load().difficulty;
             world.broadcast_editioned(
                 &CChangeDifficulty::new(difficulty as u8, locked),
                 &sculith_protocol::bedrock::client::CSetDifficulty {

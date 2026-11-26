@@ -19,15 +19,14 @@ impl BlockBehaviour for EndPortalBlock {
     }
 
     fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
-        let target_world =
-            if args.world.dimension.minecraft_name == Dimension::THE_END.minecraft_name {
-                args.server.get_world_from_dimension(&Dimension::OVERWORLD)
-            } else {
-                args.server.get_world_from_dimension(&Dimension::THE_END)
-            };
-        if Arc::ptr_eq(&target_world, args.world) {
+        let dimension = if args.world.dimension == Dimension::THE_END {
+            Dimension::OVERWORLD
+        } else {
+            Dimension::THE_END
+        };
+        let Some(target_world) = args.server.find_sibling_dimension(args.world, &dimension) else {
             return;
-        }
+        };
         args.entity
             .get_entity()
             .try_use_portal(target_world, *args.position);

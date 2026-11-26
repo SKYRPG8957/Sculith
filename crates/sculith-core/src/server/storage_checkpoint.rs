@@ -88,7 +88,7 @@ impl StorageCheckpoint {
     }
 
     pub(super) async fn save(&self, server: &Server) -> Result<Option<SavedChunks>, String> {
-        let root = server.basic_config.get_world_path();
+        let root = &server.storage_root;
         let config = &server.advanced_config.world.chunk;
         let format = RegionFormat::from_config(config);
         let players = server.player_data_storage.checkpoint_storage();
@@ -144,9 +144,8 @@ pub(super) async fn persist(
     server: &Server,
     checkpoint: Arc<SaveCheckpoint>,
 ) -> Result<(), String> {
-    let root = server.basic_config.get_world_path();
     let config = &server.advanced_config.world.chunk;
-    let publication_root = root.clone();
+    let publication_root = server.storage_root.clone();
     let format = RegionFormat::from_config(config);
     let data = checkpoint.clone();
     blocking(move || {
@@ -162,7 +161,7 @@ async fn apply_live(server: &Server, checkpoint: Arc<SaveCheckpoint>) -> Result<
     let _access = fence.materialize_terrain().await;
     let result = apply(
         checkpoint,
-        &server.basic_config.get_world_path(),
+        &server.storage_root,
         &server.advanced_config.world.chunk,
         &server.worlds.load_full(),
         server.player_data_storage.checkpoint_storage(),
@@ -175,7 +174,7 @@ async fn apply_live(server: &Server, checkpoint: Arc<SaveCheckpoint>) -> Result<
 }
 
 fn capture(server: &Server) -> Result<Option<SaveCheckpoint>, String> {
-    let root = server.basic_config.get_world_path();
+    let root = &server.storage_root;
     let mut checkpoint = SaveCheckpoint {
         players: ServerPlayerData::capture_online(server),
         ..SaveCheckpoint::default()
@@ -191,7 +190,7 @@ fn capture(server: &Server) -> Result<Option<SaveCheckpoint>, String> {
             .level
             .level_folder
             .dim_folder
-            .strip_prefix(&root)
+            .strip_prefix(root)
             .map_err(|err| err.to_string())?;
         let chunks = world.capture_storage_chunks();
         if !chunks.is_empty() {

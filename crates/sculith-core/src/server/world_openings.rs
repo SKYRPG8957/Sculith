@@ -1,13 +1,11 @@
 use std::{
     io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Condvar, Mutex, PoisonError},
 };
 
 use rustc_hash::FxHashSet;
 use tokio::sync::Notify;
-
-pub(super) type WorldLocation = (PathBuf, &'static str);
 
 #[derive(Default)]
 pub(super) struct WorldOpenings {
@@ -18,17 +16,17 @@ pub(super) struct WorldOpenings {
 
 #[derive(Default)]
 struct State {
-    opening: FxHashSet<WorldLocation>,
+    opening: FxHashSet<PathBuf>,
     closed: bool,
 }
 
 pub(super) struct Opening<'a> {
     registry: &'a WorldOpenings,
-    location: &'a WorldLocation,
+    location: &'a Path,
 }
 
 impl WorldOpenings {
-    pub(super) fn reserve<'a>(&'a self, location: &'a WorldLocation) -> io::Result<Opening<'a>> {
+    pub(super) fn reserve<'a>(&'a self, location: &'a Path) -> io::Result<Opening<'a>> {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let mut state = self
             .changed
@@ -42,7 +40,7 @@ impl WorldOpenings {
                 "Server is stopping",
             ));
         }
-        state.opening.insert(location.clone());
+        state.opening.insert(location.to_path_buf());
         Ok(Opening {
             registry: self,
             location,
@@ -117,29 +115,51 @@ mod tests {
         .await
         .unwrap();
 
-        let requests = Barrier::new(3);
-        let worlds = std::thread::scope(|threads| {
-            let handles = ["copy", "./copy", "copy/"].map(|name| {
+        let requests = Barrier::new(4);
+        let [world, alias, trailing_slash, nether] = std::thread::scope(|threads| {
+            let handles = [
+                ("copy", Dimension::OVERWORLD),
+                ("./copy", Dimension::OVERWORLD),
+                ("copy/", Dimension::OVERWORLD),
+                ("./copy", Dimension::THE_NETHER),
+            ]
+            .map(|(name, dimension)| {
                 let requests = &requests;
                 let server = &server;
                 threads.spawn(move || {
                     let _runtime = server.runtime.enter();
                     requests.wait();
-                    server
-                        .try_create_world(name.into(), Dimension::OVERWORLD)
-                        .unwrap()
+                    server.try_create_world(name.into(), dimension).unwrap()
                 })
             });
             handles.map(|handle| handle.join().unwrap())
         });
-        let nether = server
-            .try_create_world("copy".into(), Dimension::THE_NETHER)
-            .unwrap();
+        let overworld = server.worlds.load().first().unwrap().clone();
+        assert!(
+            server
+                .find_sibling_dimension(&overworld, &Dimension::THE_NETHER)
+                .is_none()
+        );
+        assert!(Arc::ptr_eq(
+            &server
+                .find_sibling_dimension(&world, &Dimension::THE_NETHER)
+                .unwrap(),
+            &nether,
+        ));
+        assert!(Arc::ptr_eq(
+            &server
+                .find_sibling_dimension(&nether, &Dimension::OVERWORLD)
+                .unwrap(),
+            &world,
+        ));
         let primary_count = server.worlds.load().len();
         server.shutdown().await;
 
-        assert!(worlds.iter().all(|other| Arc::ptr_eq(other, &worlds[0])));
-        assert!(!Arc::ptr_eq(&worlds[0], &nether));
+        assert!(Arc::ptr_eq(&world, &alias));
+        assert!(Arc::ptr_eq(&world, &trailing_slash));
+        assert!(!Arc::ptr_eq(&world, &nether));
+        assert!(Arc::ptr_eq(&world.level_info, &nether.level_info));
+        assert!(!Arc::ptr_eq(&world.level_info, &server.level_info));
         assert_eq!(primary_count, 3);
         let stopped = server.try_create_world("copy".into(), Dimension::OVERWORLD);
         assert!(
@@ -151,8 +171,8 @@ mod tests {
     #[tokio::test]
     async fn shutdown_waits_for_a_world_opening_without_blocking_other_directories() {
         let registry = WorldOpenings::default();
-        let a = (PathBuf::from("first"), "minecraft:overworld");
-        let b = (PathBuf::from("second"), "minecraft:overworld");
+        let a = PathBuf::from("first");
+        let b = PathBuf::from("second");
         let first = registry.reserve(&a).unwrap();
         let second = registry.reserve(&b).unwrap();
         let shutdown = registry.close();

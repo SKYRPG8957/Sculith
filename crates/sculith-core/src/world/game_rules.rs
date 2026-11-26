@@ -127,7 +127,7 @@ impl World {
         pack_bedrock_rules(registry, BEDROCK_RULES, config)
     }
 
-    pub(crate) fn sync_bedrock_game_rules_after_spawn(&self, client: &BedrockClient) {
+    pub(crate) fn sync_bedrock_game_rules(&self, client: &BedrockClient) {
         if let Some(server) = self.server.upgrade() {
             self.publish_bedrock_rules(&server.advanced_config.pvp, BEDROCK_RULES, |packet| {
                 client.try_enqueue_client_packet(packet);

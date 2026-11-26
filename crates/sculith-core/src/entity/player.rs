@@ -4088,7 +4088,7 @@ impl Player {
         self.client_loaded_timeout.store(0, Ordering::Relaxed);
         drop(sender);
         let world = self.world();
-        world.sync_bedrock_game_rules_after_spawn(bedrock_client);
+        world.sync_bedrock_game_rules(bedrock_client);
         world
             .weather
             .lock()

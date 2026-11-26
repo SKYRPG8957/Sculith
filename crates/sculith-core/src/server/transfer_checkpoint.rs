@@ -229,12 +229,11 @@ impl Server {
         primary: Arc<dyn BlockEntity>,
         [second, third]: [Option<Arc<dyn BlockEntity>>; 2],
     ) -> Result<StorageTransfer, StorageTransferError> {
-        let root = self.basic_config.get_world_path();
         let relative = world
             .level
             .level_folder
             .dim_folder
-            .strip_prefix(root)
+            .strip_prefix(&self.storage_root)
             .map_err(|_| StorageTransferError::Busy)?
             .to_path_buf();
         let transfer = StorageTransfer {

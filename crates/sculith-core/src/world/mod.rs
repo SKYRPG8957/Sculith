@@ -3557,8 +3557,9 @@ impl World {
     }
 
     pub fn set_raining(&self, raining: bool) {
-        if let Some(server) = self.server.upgrade() {
-            let world_arc = server.get_world_from_dimension(&self.dimension);
+        if let Some(server) = self.server.upgrade()
+            && let Some(world_arc) = self.weak_self().and_then(|world| world.upgrade())
+        {
             let mut event =
                 crate::plugin::api::events::world::weather_change::WeatherChangeEvent::new(
                     world_arc, raining,
@@ -3586,8 +3587,9 @@ impl World {
     }
 
     pub fn set_thundering(&self, thundering: bool) {
-        if let Some(server) = self.server.upgrade() {
-            let world_arc = server.get_world_from_dimension(&self.dimension);
+        if let Some(server) = self.server.upgrade()
+            && let Some(world_arc) = self.weak_self().and_then(|world| world.upgrade())
+        {
             let mut event =
                 crate::plugin::api::events::world::weather_change::ThunderChangeEvent::new(
                     world_arc, thundering,
@@ -4554,12 +4556,23 @@ impl World {
     }
 
     pub fn send_world_info(&self, player: &Arc<Player>) {
-        if let ClientPlatform::Java(client) = player.client.as_ref() {
-            self.worldborder
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .init_client(client);
+        match player.client.as_ref() {
+            ClientPlatform::Java(client) => {
+                self.worldborder
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .init_client(client);
+            }
+            ClientPlatform::Bedrock(client) => {
+                self.sync_bedrock_game_rules(client);
+                self.weather
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .sync_bedrock(client);
+            }
         }
+        player.send_difficulty_update();
+        player.send_time(self);
 
         // TODO: World spawn (compass stuff)
 
@@ -5185,12 +5198,26 @@ impl World {
         true
     }
 
+    pub(crate) fn check_player_admission_for_unload(&self, name: &str) -> Result<(), String> {
+        let admission = self
+            .player_admission
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.check_unload_admission(*admission, name)
+    }
+
     pub(crate) fn close_player_admission(&self, name: &str) -> Result<(), String> {
         let mut admission = self
             .player_admission
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !*admission {
+        self.check_unload_admission(*admission, name)?;
+        *admission = false;
+        Ok(())
+    }
+
+    fn check_unload_admission(&self, admission: bool, name: &str) -> Result<(), String> {
+        if !admission {
             return Err(format!("World '{name}' is already unloading"));
         }
         let player_count = self.players.load().len();
@@ -5202,7 +5229,6 @@ impl World {
         if self.pending_operations.load(Ordering::Acquire) != 0 {
             return Err(format!("World '{name}' still has pending simulation work"));
         }
-        *admission = false;
         Ok(())
     }
 

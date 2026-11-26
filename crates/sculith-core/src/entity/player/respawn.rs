@@ -73,11 +73,7 @@ impl SavedRespawn {
             source
                 .server
                 .upgrade()?
-                .worlds
-                .load()
-                .iter()
-                .find(|world| world.dimension == point.dimension)?
-                .clone()
+                .find_sibling_dimension(source, &point.dimension)?
         };
 
         let min_chunk_x = point.position.0.x.saturating_sub(2) >> 4;
@@ -303,8 +299,10 @@ impl Player {
         request: RespawnRequest,
     ) {
         let source = &change.source;
-        let default_world = server.get_world_from_dimension(&Dimension::OVERWORLD);
-        let keep_inventory = default_world.level_info.load().game_rules.keep_inventory;
+        let default_world = server
+            .find_sibling_dimension(source, &Dimension::OVERWORLD)
+            .unwrap_or_else(|| source.clone());
+        let keep_inventory = source.level_info.load().game_rules.keep_inventory;
         let stored = self
             .respawn_point
             .lock()
