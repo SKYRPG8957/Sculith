@@ -8756,10 +8756,21 @@ impl EntityBase for Player {
         nbt.put_int("AirSupply", air_supply);
         nbt.put_int("DrowningTick", drowning_tick);
 
-        nbt.put_string(
-            "Dimension",
-            self.world().dimension.minecraft_name.to_string(),
-        );
+        let world = self.world();
+        nbt.put_string("Dimension", world.dimension.minecraft_name.to_string());
+        let world_root_tag = crate::data::player_server::SAVED_WORLD_ROOT;
+        if let Some(server) = world.server.upgrade()
+            && let Some(relative) = server
+                .named_world_path(&world)
+                .and_then(std::path::Path::to_str)
+        {
+            nbt.put_string(
+                world_root_tag,
+                relative.replace(std::path::MAIN_SEPARATOR, "/"),
+            );
+        } else {
+            nbt.child_tags.remove(world_root_tag);
+        }
 
         if let Some(respawn) = self
             .respawn_point

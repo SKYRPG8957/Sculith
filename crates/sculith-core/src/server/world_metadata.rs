@@ -24,6 +24,16 @@ use crate::world::World;
 use super::Server;
 
 impl Server {
+    pub(crate) fn named_world_path<'a>(&self, world: &'a World) -> Option<&'a Path> {
+        world
+            .level
+            .level_folder
+            .root_folder
+            .strip_prefix(&self.storage_root)
+            .ok()
+            .filter(|relative| !relative.as_os_str().is_empty())
+    }
+
     pub(super) fn load_independent_world_info(
         &self,
         root: &Path,

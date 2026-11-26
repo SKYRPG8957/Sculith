@@ -48,11 +48,17 @@ pub(super) enum PlayerAdmission {
     LoadSpawnChunk(Vector2<i32>),
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct InitialSpawn {
+    pub position: Vector3<f64>,
+    pub returned_from_unavailable_world: bool,
+}
+
 pub(super) enum WorldOperation {
     Join {
         world: Arc<World>,
         player: Arc<Player>,
-        initial_position: Option<Vector3<f64>>,
+        initial_position: Option<InitialSpawn>,
         completion: oneshot::Sender<Result<PlayerAdmission, JoinRejection>>,
     },
     PublishInitial {
@@ -200,7 +206,7 @@ impl Server {
         &self,
         world: &Arc<World>,
         player: &Arc<Player>,
-        initial_position: Option<Vector3<f64>>,
+        initial_position: Option<InitialSpawn>,
     ) -> Result<(), JoinRejection> {
         loop {
             let (completion, committed) = oneshot::channel();
@@ -225,7 +231,7 @@ impl Server {
         &self,
         world: &Arc<World>,
         player: &Arc<Player>,
-        initial_position: Option<Vector3<f64>>,
+        initial_position: Option<InitialSpawn>,
     ) -> Result<PlayerAdmission, JoinRejection> {
         let closed = self
             .admission_closed
@@ -256,10 +262,11 @@ impl Server {
         // A login listener can position the new player before admission. Keep
         // that decision as well as positions restored from a player file.
         if let Some(initial_position) = initial_position
-            && !player
-                .has_played_before
-                .load(std::sync::atomic::Ordering::Relaxed)
-            && initial_position == player.position()
+            && (initial_position.returned_from_unavailable_world
+                || !player
+                    .has_played_before
+                    .load(std::sync::atomic::Ordering::Relaxed))
+            && initial_position.position == player.position()
         {
             match world.initial_player_spawn() {
                 Ok(spawn) => spawn.apply(player),

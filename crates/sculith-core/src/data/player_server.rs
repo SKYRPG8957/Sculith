@@ -23,6 +23,8 @@ use tokio::{
 use tracing::{debug, error};
 use uuid::Uuid;
 
+pub(crate) const SAVED_WORLD_ROOT: &str = "sculith:world";
+
 /// Helper for managing player data in the server context.
 ///
 /// This struct provides server-wide access to the `PlayerDataStorage` and

@@ -2,7 +2,7 @@ use crate::block::registry::BlockRegistry;
 use crate::command::commands::default_dispatcher;
 use crate::command::commands::defaultgamemode::DefaultGamemode;
 use crate::data::VanillaData;
-use crate::data::player_server::ServerPlayerData;
+use crate::data::player_server::{SAVED_WORLD_ROOT, ServerPlayerData};
 use crate::entity::NBTStorage;
 use crate::entity::player::world_transfer::{WorldTransfer, WorldTransferReservation};
 use crate::item::registry::ItemRegistry;
@@ -51,7 +51,7 @@ use sculith_protocol::{ClientPacket, java::client::config::CPluginMessage};
 use sculith_util::Difficulty;
 use sculith_util::text::TextComponent;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32};
 use std::{fs, io};
@@ -83,6 +83,11 @@ mod world_membership;
 mod world_metadata;
 mod world_openings;
 mod world_scheduler;
+
+struct SavedPlayer {
+    data: pumpkin_nbt::compound::NbtCompound,
+    restore_position: bool,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WorldStep {
@@ -944,36 +949,12 @@ impl Server {
         Ok(())
     }
 
-    /// Adds a new player to the server.
-    ///
-    /// This function takes an `Arc<Client>` representing the connected client and performs the following actions:
-    ///
-    /// 1. Generates a new entity ID for the player.
-    /// 2. Determines the player's gamemode (defaulting to Survival if not specified in configuration).
-    /// 3. **(TODO: Select default from config)** Selects the world for the player (currently uses the first world).
-    /// 4. Creates a new `Player` instance using the provided information.
-    /// 5. Adds the player to the chosen world.
-    /// 6. **(TODO: Config if we want increase online)** Optionally updates server listing information based on the player's configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `client`: An `Arc<Client>` representing the connected client.
-    ///
-    /// # Returns
-    ///
-    /// A tuple containing:
-    ///
-    /// - `Arc<Player>`: A reference to the newly created player object.
-    /// - `Arc<World>`: A reference to the world the player was added to.
-    ///
-    /// # Note
-    ///
-    /// You still have to spawn the `Player` in a `World` to let them join and make them visible.
+    /// Loads a saved player and resolves its world among the open world owners.
     async fn load_player_world(
         &self,
         client: &ClientPlatform,
         id: &uuid::Uuid,
-    ) -> Option<(Arc<World>, Option<pumpkin_nbt::compound::NbtCompound>)> {
+    ) -> Option<(Arc<World>, Option<SavedPlayer>)> {
         let Some(access) = self.player_data_storage.checkpoint.read_ready().await else {
             client.try_kick(
                 DisconnectReason::Unknown,
@@ -994,18 +975,48 @@ impl Server {
                 return None;
             }
         };
-        let first_world = self.worlds.load().first().cloned()?;
-        let Some(data) = data else {
+        let worlds = self.worlds.load();
+        let first_world = worlds.first().cloned()?;
+        let Some(mut data) = data else {
             return Some((first_world, None));
         };
-        let Some(dimension_key) = data.get_string("Dimension") else {
-            return Some((first_world, Some(data)));
+        let dimension = data.get_string("Dimension").and_then(|key| {
+            let dimension = Dimension::from_name(key);
+            if dimension.is_none() {
+                warn!("Invalid dimension key in player data: {key}");
+            }
+            dimension
+        });
+        let destination = match (data.get_string(SAVED_WORLD_ROOT), dimension) {
+            (Some(root), Some(dimension)) => {
+                let path = Path::new(root);
+                worlds
+                    .iter()
+                    .find(|world| {
+                        world.is_open()
+                            && world.dimension == *dimension
+                            && self.named_world_path(world) == Some(path)
+                    })
+                    .cloned()
+            }
+            (Some(_), None) => None,
+            (None, Some(dimension)) => self.find_sibling_dimension(&first_world, dimension),
+            (None, None) => Some(first_world.clone()),
         };
-        let Some(dimension) = Dimension::from_name(dimension_key) else {
-            warn!("Invalid dimension key in player data: {dimension_key}");
-            return Some((first_world, Some(data)));
-        };
-        Some((self.get_world_from_dimension(dimension), Some(data)))
+        let restore_position = destination.is_some();
+        if !restore_position {
+            warn!(player = %id, "Saved player world is unavailable, using the main world spawn");
+            for field in ["Pos", "Motion", "Rotation", "RootVehicle"] {
+                data.child_tags.remove(field);
+            }
+        }
+        Some((
+            destination.unwrap_or(first_world),
+            Some(SavedPlayer {
+                data,
+                restore_position,
+            }),
+        ))
     }
 
     pub async fn add_player(
@@ -1030,14 +1041,20 @@ impl Server {
             gamemode,
         );
 
-        let initial_position = if let Some(mut nbt_data) = nbt {
-            player.read_nbt(&mut nbt_data);
+        let initial_position = if let Some(mut saved) = nbt {
+            player.read_nbt(&mut saved.data);
             // The data file itself proves this is a returning player. Older Bedrock
             // sessions could persist HasPlayedBefore as false and mask a valid Pos.
             player.has_played_before.store(true, Ordering::Relaxed);
-            None
+            (!saved.restore_position).then(|| world_membership::InitialSpawn {
+                position: player.position(),
+                returned_from_unavailable_world: true,
+            })
         } else {
-            Some(player.position())
+            Some(world_membership::InitialSpawn {
+                position: player.position(),
+                returned_from_unavailable_world: false,
+            })
         };
 
         // Wrap in Arc after data is loaded
