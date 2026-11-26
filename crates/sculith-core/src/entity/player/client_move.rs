@@ -608,11 +608,7 @@ impl Player {
             || movement.horizontal_collision
             || movement.on_ground != entity.on_ground.load(Ordering::Relaxed)
             || !movement.on_ground && !self.is_flying()
-            || stationary_action.is_some()
-                && from != to
-                && (!movement.on_ground
-                    || from.y != to.y
-                    || BlockPos::floored_v(to).chunk_position() != chunk)
+            || stationary_action.is_some() && from != to && (!movement.on_ground || from.y != to.y)
             || difference.y.abs() > 0.000_02
             || difference.horizontal_length_squared() > 1.0
             || to.x != Self::clamp_horizontal(to.x)

@@ -85,6 +85,7 @@ enum RegionalInputContinuation {
 enum RegionalMovePreparation {
     Consumed,
     Deferred,
+    DeferredInventory,
     Unprepared,
 }
 
@@ -434,7 +435,7 @@ impl BedrockClient {
                             prepared.continuation =
                                 Some(RegionalInputContinuation::ApplyInventory(stamp));
                             queued.movement = Some(prepared);
-                            return RegionalMovePreparation::Deferred;
+                            return RegionalMovePreparation::DeferredInventory;
                         }
                     }
                     let message = if position_changed {
@@ -543,21 +544,25 @@ impl BedrockClient {
                     continue;
                 }
                 if movement && !was_waiting {
+                    use RegionalMovePreparation::{
+                        Consumed, Deferred, DeferredInventory, Unprepared,
+                    };
+
                     let entity = player.get_entity();
                     let previous = entity.chunk_pos.load();
-                    match self.prepare_regional_move(player, server, extent, &mut queued, &owns) {
-                        RegionalMovePreparation::Consumed => {
-                            let current = entity.chunk_pos.load();
-                            if previous != current {
-                                chunk_entered(current);
-                            }
-                            continue;
-                        }
-                        RegionalMovePreparation::Deferred => {
+                    let result =
+                        self.prepare_regional_move(player, server, extent, &mut queued, &owns);
+                    let current = entity.chunk_pos.load();
+                    if previous != current && matches!(result, Consumed | DeferredInventory) {
+                        chunk_entered(current);
+                    }
+                    match result {
+                        Consumed => continue,
+                        Deferred | DeferredInventory => {
                             *head = Some(queued);
                             return false;
                         }
-                        RegionalMovePreparation::Unprepared => {}
+                        Unprepared => {}
                     }
                 }
                 if !was_waiting
@@ -1677,6 +1682,18 @@ mod tests {
         assert!(player.has_client_loaded());
     }
 
+    fn seed_walk_floor(world: &Arc<World>, xs: std::ops::RangeInclusive<i32>) {
+        for x in xs {
+            for z in 7..=9 {
+                world.set_block_state(
+                    &BlockPos::new(x, 99, z),
+                    Block::STONE.default_state.id,
+                    BlockFlags::FORCE_STATE,
+                );
+            }
+        }
+    }
+
     fn verify_grounded_walks(
         world: &Arc<World>,
         player: &Arc<Player>,
@@ -1688,15 +1705,7 @@ mod tests {
 
         let entity = player.get_entity();
         let position = player.bedrock_pos().to_f32_lossy();
-        for x in 7..=9 {
-            for z in 7..=9 {
-                world.set_block_state(
-                    &BlockPos::new(x, 99, z),
-                    Block::STONE.default_state.id,
-                    BlockFlags::FORCE_STATE,
-                );
-            }
-        }
+        seed_walk_floor(world, 7..=9);
         world.set_block_state(
             &BlockPos::new(9, 100, 8),
             Block::AIR.default_state.id,
@@ -1948,15 +1957,7 @@ mod tests {
             world.region_layout.load().owner(origin),
             world.region_layout.load().owner(destination)
         );
-        for x in 14..=17 {
-            for z in 7..=9 {
-                world.set_block_state(
-                    &BlockPos::new(x, 99, z),
-                    Block::STONE.default_state.id,
-                    BlockFlags::FORCE_STATE,
-                );
-            }
-        }
+        seed_walk_floor(world, 14..=17);
         let entity = player.get_entity();
         entity.set_pos(Vector3::new(15.75, 100.0, 8.0));
         let position = player.bedrock_pos().to_f32_lossy();
@@ -1986,42 +1987,117 @@ mod tests {
             .unwrap()
             .mark_sent_out_of_band(destination);
 
-        let enqueue = |x, tick| {
-            queue_auth_input(
-                client,
+        let slots = [player.inventory.get_slot(10), player.inventory.get_slot(11)];
+        player
+            .inventory
+            .set_slot(10, ItemStack::new(3, &Item::DIAMOND));
+        player.inventory.set_slot(11, ItemStack::EMPTY.clone());
+        let item_at = |slot| player.inventory.get_slot(slot).item_count;
+        let inventory_move = |x, tick, request_id| {
+            let position = Vector3::new(x, position.y, position.z);
+            client.enqueue_play_input(
                 player,
-                Vector3::new(x, position.y, position.z),
-                tick,
-                entity.yaw.load(),
-                &[InputData::VerticalCollision],
+                inline_inventory_swap(player, position, tick, entity.yaw.load(), request_id),
             );
         };
         let at = Instant::now() + TICK_PERIOD * 45;
         let start = client.input_tick.load(Relaxed) + 1;
         let distance = || player.get_custom_stat(CustomStatistic::WalkOneCm);
         let before = distance();
-        enqueue(16.125, start);
-        enqueue(16.375, start + 1);
+        inventory_move(16.125, start, -36);
+        queue_auth_input(
+            client,
+            player,
+            Vector3::new(16.375, position.y, position.z),
+            start + 1,
+            entity.yaw.load(),
+            &[InputData::VerticalCollision],
+        );
         tick_region(world, origin, at);
         assert_eq!(entity.pos.load().x, 16.375);
         assert!(player.watched_section.load() == view);
         assert_eq!(simulation_chunk(), destination);
         assert_eq!(distance() - before, 62);
+        assert_eq!(item_at(11), 3);
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
 
         // When the client still needs the destination chunk, the world keeps
         // finalizing the move and shifting its terrain interests in FIFO.
         assert!(!player.chunk_sender.lock().unwrap().is_chunk_ready(&origin));
-        enqueue(15.875, start + 2);
+        inventory_move(15.875, start + 2, -37);
         tick_region(world, destination, at + TICK_PERIOD);
         assert_eq!(entity.pos.load().x, 15.875);
         assert_eq!(simulation_chunk(), destination);
         assert_eq!(distance() - before, 62);
+        assert_eq!(item_at(11), 3);
         assert!(client.activity.inbound_head.lock().unwrap().is_some());
         client.drain_world_input(player, None, Some(world), 1);
         assert_eq!(simulation_chunk(), origin);
         assert_eq!(distance() - before, 112);
+        assert_eq!(item_at(10), 3);
+        verify_inventory_waits_after_chunk_crossing(world, player, client, origin, destination);
+        for (index, stack) in [10, 11].into_iter().zip(slots) {
+            player.inventory.set_slot(index, stack);
+        }
         world.entity_tracker.remove_entity(player.as_ref(), world);
+    }
+
+    fn verify_inventory_waits_after_chunk_crossing(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        origin: Vector2<i32>,
+        destination: Vector2<i32>,
+    ) {
+        let server = world.server.upgrade().unwrap();
+        let layout = world.region_layout.load_full();
+        let owner = layout.owner(origin).unwrap();
+        let extent = layout.chunks(owner).unwrap();
+        let entity = player.get_entity();
+        let before = entity.pos.load();
+        client.enqueue_play_input(
+            player,
+            inline_inventory_swap(
+                player,
+                player.bedrock_pos().to_f32_lossy().add_raw(0.25, 0.0, 0.0),
+                client.input_tick.load(Relaxed) + 1,
+                entity.yaw.load(),
+                -38,
+            ),
+        );
+        player
+            .chunk_sender
+            .lock()
+            .unwrap()
+            .mark_sent_out_of_band(destination);
+        let edit = player.try_regional_inventory_edit().unwrap();
+        let mut entered = None;
+        assert!(!client.drain_regional_input(
+            player,
+            &server,
+            extent,
+            |chunk| layout.owner(chunk) == Some(owner),
+            |chunk| entered = Some(chunk),
+        ));
+        assert_eq!(entered, Some(destination));
+        assert_eq!(entity.pos.load().x, 16.125);
+        assert_eq!(player.inventory.get_slot(10).item_count, 3);
+        assert_eq!(
+            player
+                .held_chunk_tickets
+                .lock()
+                .unwrap()
+                .simulation
+                .unwrap()
+                .0,
+            destination
+        );
+        drop(edit);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(entity.pos.load().x, 16.125);
+        assert_eq!(player.inventory.get_slot(11).item_count, 3);
+        entity.set_pos(before);
+        crate::world::chunker::update_position(player);
     }
 
     #[tokio::test]
