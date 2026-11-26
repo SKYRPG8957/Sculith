@@ -440,6 +440,10 @@ fn named_storage_preserves_legacy_export_scope_and_checks_java_name_length() {
     chunk
         .section
         .set_block_absolute_y(15, -60, 0, Block::BARREL.default_state.id);
+    let shared = ChunkData::empty(-1, 0);
+    shared
+        .section
+        .set_block_absolute_y(15, -60, 0, Block::BARREL.default_state.id);
     let mut unnamed = Vec::new();
     container(&mut unnamed, "Barrel", -1, &[]);
     assert_eq!(unnamed.pop(), Some(pumpkin_nbt::END_ID));
@@ -463,7 +467,7 @@ fn named_storage_preserves_legacy_export_scope_and_checks_java_name_length() {
         assert!(!storage::import_record(&raw, &mut chunk, &terrain, items, &mut stats).unwrap());
         assert_eq!(stats.skipped_block_entity_examples[0].reason, expected);
         let (exported, edited) =
-            storage_export::export_record(&raw, &chunk, &chunk, &terrain, items).unwrap();
+            storage_export::export_record(&raw, &chunk, &shared, &terrain, items).unwrap();
         assert_eq!((exported, edited), (raw, 0));
     }
 }
