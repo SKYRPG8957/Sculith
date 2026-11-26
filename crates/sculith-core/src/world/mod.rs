@@ -3542,6 +3542,16 @@ impl World {
             .raining
     }
 
+    pub(crate) fn sync_bedrock_weather(&self, client: &BedrockClient) {
+        let weather = self
+            .weather
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        // Packet callbacks can read this world's weather.
+        weather.sync_bedrock(client);
+    }
+
     pub fn is_raining_at(&self, pos: &BlockPos) -> bool {
         if !self.is_raining() {
             return false;
@@ -4565,10 +4575,7 @@ impl World {
             }
             ClientPlatform::Bedrock(client) => {
                 self.sync_bedrock_game_rules(client);
-                self.weather
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .sync_bedrock(client);
+                self.sync_bedrock_weather(client);
             }
         }
         player.send_difficulty_update();

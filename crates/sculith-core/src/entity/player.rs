@@ -4089,11 +4089,7 @@ impl Player {
         drop(sender);
         let world = self.world();
         world.sync_bedrock_game_rules(bedrock_client);
-        world
-            .weather
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .sync_bedrock(bedrock_client);
+        world.sync_bedrock_weather(bedrock_client);
         self.send_health();
         if self.living_entity.health.load() <= 0.0 {
             self.send_bedrock_respawn_state(RespawnState::SearchingForSpawn);
