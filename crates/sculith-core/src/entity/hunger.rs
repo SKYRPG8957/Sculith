@@ -1,6 +1,12 @@
-use super::{NBTStorage, NBTStorageInit, player::Player};
+use super::{
+    NBTStorage, NBTStorageInit,
+    living::{LivingEntity, RegionalEffectData, RegionalEffectHealth},
+    player::Player,
+};
 use crossbeam::atomic::AtomicCell;
+use pumpkin_data::attributes::Attributes;
 use pumpkin_data::damage::DamageType;
+use pumpkin_data::tracked_data::living_entity::DATA_HEALTH_ID;
 use pumpkin_nbt::compound::NbtCompound;
 use sculith_util::Difficulty;
 
@@ -39,6 +45,11 @@ impl HungerManager {
         let level_info = player.world().level_info.load();
         let difficulty = level_info.difficulty;
         let natural_regen = level_info.game_rules.natural_health_regeneration;
+        let client = player
+            .client
+            .bedrock()
+            .filter(|client| client.is_current_protocol());
+        let effect_edit = client.map(|_| player.living_entity.hold_effect_edit());
         let health = player.living_entity.health.load();
         let can_heal = player.can_food_heal();
 
@@ -52,10 +63,6 @@ impl HungerManager {
         let mut heal_amount = 0.0;
         let mut damage_amount = 0.0;
 
-        let client = player
-            .client
-            .bedrock()
-            .filter(|client| client.is_current_protocol());
         let has_excess = exhaustion > EXHAUSTION_COST;
         let owns_drain = (has_excess || deadline.is_none())
             && client.is_none_or(|client| client.claim_food_drain(deadline));
@@ -64,9 +71,11 @@ impl HungerManager {
             needs_sync = true;
         }
 
-        if natural_regen && level >= 18 && can_heal {
-            timer += 1;
-            if timer >= FOOD_HEAL_TICKS {
+        let regenerating = natural_regen && level >= 18 && can_heal;
+        let owns_regeneration = (regenerating || deadline.is_none())
+            && client.is_none_or(|client| client.claim_food_regeneration(deadline));
+        if regenerating {
+            if owns_regeneration && Self::advance_regeneration_timer(&mut timer) {
                 heal_amount = 1.0;
                 exhaustion = (exhaustion + FOOD_HEAL_EXHAUSTION).min(MAX_EXHAUSTION);
                 // Bedrock spends the healing cost in the same tick. Respect the
@@ -82,7 +91,6 @@ impl HungerManager {
                         difficulty,
                     );
                 }
-                timer = 0;
                 needs_sync = true;
             }
         } else if level == 0 {
@@ -109,6 +117,7 @@ impl HungerManager {
             self.tick_timer.store(timer);
         }
         drop(abilities);
+        drop(effect_edit);
 
         if heal_amount > 0.0 {
             player.heal(heal_amount);
@@ -121,8 +130,20 @@ impl HungerManager {
                 .damage(player, damage_amount, DamageType::STARVE);
         }
         if deadline.is_some() {
-            self.offer_regional_drain(player);
+            self.offer_regional_processing(
+                player,
+                regenerating && difficulty != Difficulty::Peaceful,
+            );
         }
+    }
+
+    const fn advance_regeneration_timer(timer: &mut u32) -> bool {
+        *timer = timer.saturating_add(1);
+        if *timer < FOOD_HEAL_TICKS {
+            return false;
+        }
+        *timer = 0;
+        true
     }
 
     fn spend_exhaustion(
@@ -144,7 +165,12 @@ impl HungerManager {
     }
 
     pub(super) fn offer_regional_drain(&self, player: &Player) {
-        if !self.has_exhaustion_to_drain() {
+        self.offer_regional_processing(player, false);
+    }
+
+    fn offer_regional_processing(&self, player: &Player, regeneration: bool) {
+        let drain = self.has_exhaustion_to_drain();
+        if !drain && !regeneration {
             return;
         }
         let Some(client) = player
@@ -158,8 +184,87 @@ impl HungerManager {
         if let Some(registered) = world.get_player_by_uuid(player.gameprofile.id)
             && std::ptr::eq(registered.as_ref(), player)
         {
-            world.offer_regional_food_drain(client.id, &registered);
+            world.offer_regional_food_work(client.id, &registered, drain, regeneration);
         }
+    }
+
+    pub(crate) fn regenerate_on_region(
+        &self,
+        player: &Player,
+        client: &BedrockClient,
+        deadline: TickDeadline,
+        owns: impl FnOnce() -> bool,
+        publish: impl FnOnce(RegionalEffectData) -> Option<bool>,
+    ) -> bool {
+        let info = player.world().level_info.load_full();
+        if info.difficulty == Difficulty::Peaceful || !info.game_rules.natural_health_regeneration {
+            return false;
+        }
+        let living = &player.living_entity;
+        let Ok(effects) = living.active_effects.try_lock() else {
+            return true;
+        };
+        if !effects.is_empty() {
+            return false;
+        }
+        let Some(_edit) = living.try_hold_effect_edit() else {
+            return true;
+        };
+        let Ok(attributes) = living.attributes.try_read() else {
+            return true;
+        };
+        let Ok(abilities) = player.abilities.try_lock() else {
+            return true;
+        };
+        let health = living.health.load();
+        let max_health =
+            LivingEntity::attribute_value_from(&attributes, &Attributes::MAX_HEALTH) as f32;
+        let mut level = self.level.load();
+        let mut saturation = self.saturation.load();
+        let mut exhaustion = self.exhaustion.load();
+        if abilities.invulnerable
+            || player.is_spectator()
+            || living.is_dead_or_dying()
+            || !(health > 0.0 && health < max_health && level >= 18)
+            || !(0.0..=EXHAUSTION_COST).contains(&exhaustion)
+        {
+            return false;
+        }
+        if !owns() {
+            return true;
+        }
+        let mut timer = self.tick_timer.load();
+        let heal = Self::advance_regeneration_timer(&mut timer);
+        let mut next_health = health;
+        let committed = client.commit_regional_regeneration(deadline, heal, || {
+            if heal {
+                next_health = (health + 1.0).min(max_health);
+                exhaustion = (exhaustion + FOOD_HEAL_EXHAUSTION).min(MAX_EXHAUSTION);
+                Self::spend_exhaustion(&mut level, &mut saturation, &mut exhaustion, info.difficulty);
+                if !living.entity.synched_data.try_publish_value(DATA_HEALTH_ID, next_health, |java| {
+                    publish(RegionalEffectData {
+                        java,
+                        bedrock_particles: None,
+                        health: Some(RegionalEffectHealth {
+                            health: next_health,
+                            max_health,
+                            food: Some((level, saturation)),
+                        }),
+                    })
+                }) {
+                    return false;
+                }
+                living.health.store(next_health);
+                self.level.store(level);
+                self.saturation.store(saturation);
+                self.exhaustion.store(exhaustion);
+                tracing::trace!(player = %player.gameprofile.name, health = next_health, food = level,
+                    saturation, exhaustion, "Applied natural regeneration on the player region");
+            }
+            self.tick_timer.store(timer);
+            true
+        });
+        !committed || next_health < max_health && level >= 18
     }
 
     /// Consume the same exhaustion step as the world while the region owns the player.

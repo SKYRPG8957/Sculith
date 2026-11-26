@@ -2054,10 +2054,13 @@ impl EntityTracker {
         let owner_health = match owner.zip(data.health) {
             Some((player, health)) => {
                 let client = player.client.bedrock()?;
-                let packet =
-                    bedrock_health_update(entity.entity_id, health.health, health.max_health);
+                let packet = if let Some((food, saturation)) = health.food {
+                    player.bedrock_health_packet(health.health, food, saturation, health.max_health)
+                } else {
+                    bedrock_health_update(entity.entity_id, health.health, health.max_health)
+                };
                 let bytes = client.serialize_packet(&packet).ok()?;
-                Some((player, client, bytes, health.health))
+                Some((player, client, bytes, health))
             }
             None => None,
         };
@@ -2074,7 +2077,17 @@ impl EntityTracker {
             // the old and new health round to the same value.
             player
                 .last_sent_health
-                .store(if queued { health as i32 } else { -1 }, Relaxed);
+                .store(if queued { health.health as i32 } else { -1 }, Relaxed);
+            if let Some((food, saturation)) = health.food {
+                if queued {
+                    player.last_sent_food.store(food, Relaxed);
+                    player
+                        .last_food_saturation
+                        .store(saturation == 0.0, Relaxed);
+                } else {
+                    client.mark_regional_food_dirty();
+                }
+            }
             delivery.bedrock_queued &= queued;
         }
         Some(delivery)

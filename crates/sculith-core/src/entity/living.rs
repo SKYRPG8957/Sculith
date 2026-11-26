@@ -197,6 +197,7 @@ struct EffectParticles(Vec<EffectParticle>);
 pub(crate) struct RegionalEffectHealth {
     pub health: f32,
     pub max_health: f32,
+    pub food: Option<(u8, f32)>,
 }
 
 pub(crate) struct RegionalEffectData {
@@ -3598,6 +3599,7 @@ impl LivingEntity {
                 .then_some(RegionalEffectHealth {
                     health: (health + RegenerationMobEffect::HEAL_AMOUNT).min(max_health),
                     max_health,
+                    food: None,
                 })
         });
         let expired: Vec<_> = effects

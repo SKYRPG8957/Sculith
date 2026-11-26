@@ -110,7 +110,12 @@ impl LivingEntity {
         let flags = self.livings_flags.load(Relaxed) & !Self::USING_ITEM_FLAG;
         let (Some(slot_packet), Ok(hud_packet)) = (
             client.encode_player_inventory_slot(usize::from(slot), &replacement),
-            client.serialize_packet(&player.bedrock_health_packet(level, saturation, max_health)),
+            client.serialize_packet(&player.bedrock_health_packet(
+                self.health.load(),
+                level,
+                saturation,
+                max_health,
+            )),
         ) else {
             return World;
         };

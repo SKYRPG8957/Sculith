@@ -5648,14 +5648,16 @@ impl Player {
                 self.hunger_manager.saturation.load(),
             )
         };
+        let health = self.living_entity.health.load();
         self.try_enqueue_packet_editioned(
-            &CSetHealth::new(self.living_entity.health.load(), food.into(), saturation),
-            &self.bedrock_health_packet(food, saturation, max_health),
+            &CSetHealth::new(health, food.into(), saturation),
+            &self.bedrock_health_packet(health, food, saturation, max_health),
         );
     }
 
-    pub(super) fn bedrock_health_packet(
+    pub(crate) fn bedrock_health_packet(
         &self,
+        health: f32,
         food: u8,
         saturation: f32,
         max_health: f32,
@@ -5674,12 +5676,7 @@ impl Player {
         CBedrockAttributes {
             target_runtime_id: VarULong(self.entity_id() as u64),
             attribute_list: vec![
-                attribute(
-                    "minecraft:health",
-                    self.living_entity.health.load(),
-                    max_health,
-                    max_health,
-                ),
+                attribute("minecraft:health", health, max_health, max_health),
                 attribute("minecraft:player.hunger", food.into(), 20.0, 20.0),
                 attribute("minecraft:player.saturation", saturation, 20.0, 5.0),
             ],
@@ -8692,12 +8689,6 @@ impl EntityBase for Player {
     fn write_custom_nbt(&self, nbt: &mut NbtCompound) {
         self.write_shoulders(nbt);
         nbt.put_int("DataVersion", DATA_VERSION);
-        // A regional meal commits its held stack and hunger under the writer.
-        let food_edit = self
-            .client
-            .bedrock()
-            .filter(|client| client.is_current_protocol())
-            .map(|_| self.living_entity.hold_effect_edit());
         // Regional edits take these locks in the same order.
         let cursor = self
             .inventory_cursor
@@ -8725,7 +8716,6 @@ impl EntityBase for Player {
         abilities.write_nbt(nbt);
         self.hunger_manager.write_nbt(nbt);
         drop(abilities);
-        drop(food_edit);
         self.ender_chest_inventory.write_nbt(nbt);
 
         let total_exp = experience::points_to_level(self.experience_level.load(Ordering::Relaxed))

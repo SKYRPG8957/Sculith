@@ -255,6 +255,7 @@ struct ClientActivity {
     published_chunk_view: AtomicU64,
     last_chunk_step: AtomicCell<Option<Instant>>,
     last_food_drain: AtomicCell<Option<Instant>>,
+    last_food_regeneration: AtomicCell<Option<Instant>>,
     regional_food_dirty: AtomicBool,
     last_breath_step: AtomicCell<Option<Instant>>,
     regional_air_dirty: AtomicBool,
@@ -404,6 +405,7 @@ impl BedrockClient {
                 published_chunk_view: AtomicU64::new(0),
                 last_chunk_step: AtomicCell::new(None),
                 last_food_drain: AtomicCell::new(None),
+                last_food_regeneration: AtomicCell::new(None),
                 regional_food_dirty: AtomicBool::new(false),
                 last_breath_step: AtomicCell::new(None),
                 regional_air_dirty: AtomicBool::new(false),
@@ -1053,6 +1055,40 @@ impl BedrockClient {
     /// Serialized by the player's abilities and hunger lock.
     pub(crate) fn claim_food_drain(&self, deadline: Option<crate::server::TickDeadline>) -> bool {
         crate::server::TickDeadline::claim(&self.activity.last_food_drain, deadline)
+    }
+
+    pub(crate) fn claim_food_regeneration(
+        &self,
+        deadline: Option<crate::server::TickDeadline>,
+    ) -> bool {
+        crate::server::TickDeadline::claim(&self.activity.last_food_regeneration, deadline)
+    }
+
+    /// The caller holds the player's abilities lock for the entire food edit.
+    pub(crate) fn commit_regional_regeneration(
+        &self,
+        deadline: crate::server::TickDeadline,
+        spends_exhaustion: bool,
+        apply: impl FnOnce() -> bool,
+    ) -> bool {
+        let available = |clock: &AtomicCell<Option<Instant>>| {
+            clock
+                .load()
+                .is_none_or(|previous| deadline.follows(previous))
+        };
+        if !available(&self.activity.last_food_regeneration)
+            || spends_exhaustion && !available(&self.activity.last_food_drain)
+            || !apply()
+        {
+            return false;
+        }
+        self.activity
+            .last_food_regeneration
+            .store(Some(deadline.at));
+        if spends_exhaustion {
+            self.activity.last_food_drain.store(Some(deadline.at));
+        }
+        true
     }
 
     pub(crate) fn mark_regional_food_dirty(&self) {
@@ -1958,7 +1994,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn food_drain_shares_one_deadline_across_owners() {
+    async fn food_healing_and_drain_share_deadlines_across_owners() {
         use crate::server::TickDeadline;
 
         let address = "127.0.0.1:0".parse().unwrap();
@@ -1985,6 +2021,24 @@ mod tests {
         })));
         assert!(client.claim_food_drain(None));
         assert!(client.claim_food_drain(Some(first)));
+        assert!(!client.commit_regional_regeneration(first, true, || {
+            panic!("An earlier drain has already claimed this deadline");
+        }));
+        let second = TickDeadline {
+            at: at + period,
+            period,
+        };
+        assert!(!client.commit_regional_regeneration(second, true, || false));
+        assert!(client.commit_regional_regeneration(second, true, || true));
+        assert!(!client.claim_food_drain(Some(second)));
+        assert!(!client.claim_food_regeneration(Some(second)));
+        let third = TickDeadline {
+            at: at + period * 2,
+            period,
+        };
+        assert!(client.commit_regional_regeneration(third, false, || true));
+        assert!(client.claim_food_drain(Some(third)));
+        assert!(!client.claim_food_regeneration(Some(third)));
         client.close().await;
     }
 

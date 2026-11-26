@@ -10,6 +10,7 @@ use crate::{
     },
     net::{ClientPlatform, bedrock::BedrockClient},
     plugin::api::events::entity::entity_air_change::EntityAirChangeEvent,
+    plugin::api::events::entity::entity_regain_health::EntityRegainHealthEvent,
     plugin::api::events::world::generic_game::GenericGameEvent,
     plugin::server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
     server::{Server, TickDeadline},
@@ -33,6 +34,7 @@ bitflags::bitflags! {
         const STATUS_EFFECTS = 128;
         const BREATH = 256;
         const FOOD_USE = 512;
+        const FOOD_REGENERATION = 1024;
     }
 }
 
@@ -189,6 +191,18 @@ impl RegionalInput {
             {
                 pending |= RegionalWork::BREATH;
             }
+            if work.contains(RegionalWork::FOOD_REGENERATION)
+                && world.advance_regional_food_regeneration(
+                    server,
+                    &player,
+                    client,
+                    deadline,
+                    owns_player,
+                    &mut java_recipients,
+                )
+            {
+                pending |= RegionalWork::FOOD_REGENERATION;
+            }
             if work.contains(RegionalWork::INVENTORY_EDITS)
                 && client.inventory_edits().drain_region(
                     server,
@@ -326,6 +340,55 @@ impl World {
             && self.regional_actors.try_read().map_or(true, |_layout| {
                 player.hunger_manager.drain_on_region(player, client, deadline, owns)
             })
+    }
+
+    fn advance_regional_food_regeneration(
+        &self,
+        server: &Server,
+        player: &Player,
+        client: &BedrockClient,
+        deadline: TickDeadline,
+        owns: impl FnOnce() -> bool,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) -> bool {
+        if !client.is_current_protocol()
+            || !player.has_client_loaded()
+            || !player.has_stable_world_membership()
+            || server.tick_rate_manager.is_frozen()
+            || server
+                .plugin_manager
+                .has_handlers::<EntityRegainHealthEvent>()
+            || server.plugin_manager.has_handlers::<PacketSentEvent>()
+            || server
+                .plugin_manager
+                .has_handlers::<BedrockConnectionPacketSentEvent>()
+        {
+            return false;
+        }
+        let Ok(_layout) = self.regional_actors.try_read() else {
+            return true;
+        };
+        let Some(_checkpoint) = server.try_entity_save_guard() else {
+            return true;
+        };
+        client
+            .with_idle_play_ingress(player, || {
+                player
+                    .hunger_manager
+                    .regenerate_on_region(player, client, deadline, owns, |data| {
+                        self.entity_tracker
+                            .try_publish_regional_effect_changes(
+                                self,
+                                server,
+                                player,
+                                &[],
+                                data,
+                                java_recipients,
+                            )
+                            .map(|delivery| delivery.java_queued)
+                    })
+            })
+            .unwrap_or(true)
     }
 
     fn advance_regional_food_use(
@@ -614,8 +677,17 @@ impl World {
         self.offer_regional_work(id, player, RegionalWork::ITEM_COOLDOWNS)
     }
 
-    pub(crate) fn offer_regional_food_drain(&self, id: u64, player: &Arc<Player>) {
-        self.offer_regional_work(id, player, RegionalWork::FOOD_DRAIN);
+    pub(crate) fn offer_regional_food_work(
+        &self,
+        id: u64,
+        player: &Arc<Player>,
+        drain: bool,
+        regeneration: bool,
+    ) {
+        let mut work = RegionalWork::empty();
+        work.set(RegionalWork::FOOD_DRAIN, drain);
+        work.set(RegionalWork::FOOD_REGENERATION, regeneration);
+        self.offer_regional_work(id, player, work);
     }
 
     pub(crate) fn offer_regional_status_effects(&self, id: u64, player: &Arc<Player>) {

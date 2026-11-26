@@ -313,6 +313,14 @@ pub trait EntityBase: Send + Sync + std::any::Any {
     }
     fn write_nbt(&self, nbt: &mut NbtCompound) {
         let _motion = self.get_entity().hold_actor_motion();
+        // Hold health, hunger and the held stack together during a player snapshot.
+        let _player_vitals = self.get_player().and_then(|player| {
+            player
+                .client
+                .bedrock()
+                .filter(|client| client.is_current_protocol())
+                .map(|_| player.living_entity.hold_effect_edit())
+        });
         self.get_entity().write_nbt(nbt);
         if let Some(living) = self.get_living_entity() {
             living.write_living_nbt(nbt);

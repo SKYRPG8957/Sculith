@@ -500,9 +500,14 @@ A current-protocol Bedrock player's region can spend accumulated exhaustion
 to reduce saturation or food. The connection retains the same deadline stamp
 across movement, and both world and regional drains use the same food rule.
 Food writes and player save snapshots share the abilities lock. The world
-advances healing and starvation, and publishes the latest food attributes
-after a regional change. Peaceful regeneration, healing or starvation in
-progress, packet observers and coordinated ticks use the world processing path.
+publishes food attributes after a regional exhaustion step. The region can
+also advance hunger-based healing for a loaded current-protocol Bedrock player
+with a stable owner, no active effects and an idle input queue. The healing step
+commits health and its food cost together for player saves. It queues the new
+food and health attributes to the player and updates health metadata for Java
+viewers. World and region share a healing deadline and the existing exhaustion
+deadline. Peaceful, starvation, heal-event or packet observers, and coordinated
+ticks use the world processing path.
 Food heals one health point every 80 ticks while hunger is at least 18 and
 natural regeneration is enabled. The healing step spends exhaustion that
 crosses the drain threshold on the same deadline. Peaceful also restores one
