@@ -8869,6 +8869,12 @@ impl EntityBase for Player {
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         );
         self.ender_chest_inventory.read_nbt_non_mut(nbt);
+        let held_item = self.inventory.held_item();
+        self.living_entity
+            .entity_equipment
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .put(&EquipmentSlot::MAIN_HAND, held_item);
         self.living_entity
             .apply_current_equipment_attribute_modifiers();
 
