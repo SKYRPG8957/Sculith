@@ -884,6 +884,12 @@ with other unsupported metadata are also skipped. The command reports excluded
 database records and shows the first 16 skipped block entities with their
 coordinates and reasons.
 
+Furnaces, blast furnaces and smokers import mapped slots and resume their
+saved fuel and cooking time. The shared cook timer uses the Bedrock rate for
+each appliance. A blast furnace or smoker takes 100 ticks for the tested
+recipes, and a regular furnace takes 200. Cooking experience conversion
+and appliance export are pending.
+
 A direct splash hit applies the full effect. An eligible contact with a
 lingering potion cloud uses the same effect strength across the cloud. The
 shared rules follow the observed Bedrock result for Decay and Harming.

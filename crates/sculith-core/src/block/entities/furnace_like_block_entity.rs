@@ -329,7 +329,10 @@ macro_rules! impl_inventory_for_cooking {
                         stack.item,
                         $recipe_kind,
                     ) {
-                        self.set_cooking_total_time(recipe.cookingtime as u16);
+                        self.set_cooking_total_time(sculith_world::cooking::recipe_ticks(
+                            recipe,
+                            &$recipe_kind,
+                        ) as u16);
                     } else {
                         self.set_cooking_total_time(0);
                     }
@@ -492,6 +495,11 @@ macro_rules! impl_block_entity_for_cooking {
                     if self.is_burning() && can_accept_output {
                         let mut start_cancelled = false;
                         if self.get_cooking_time_spent() == 0 {
+                            if self.get_cooking_total_time() == 0 && let Some(recipe) = furnace_recipe {
+                                self.set_cooking_total_time(
+                                    sculith_world::cooking::recipe_ticks(recipe, &$recipe_kind) as u16
+                                );
+                            }
                             if let Some(server) = world.server.upgrade() {
                                 let mut start_event = $crate::plugin::api::events::inventory::furnace_start_smelt::FurnaceStartSmeltEvent::new(
                                     self.position,
@@ -512,7 +520,9 @@ macro_rules! impl_block_entity_for_cooking {
                             if self.get_cooking_time_spent() == self.get_cooking_total_time() {
                                 self.set_cooking_time_spent(0);
                                 if let Some(cooking_recipe) = furnace_recipe {
-                                    let cooking_total_time = cooking_recipe.cookingtime;
+                                    let cooking_total_time = sculith_world::cooking::recipe_ticks(
+                                        cooking_recipe, &$recipe_kind
+                                    );
                                     self.set_cooking_total_time(cooking_total_time as u16);
 
                                     let mut smelt_cancelled = false;

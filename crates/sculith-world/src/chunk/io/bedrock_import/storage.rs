@@ -3,6 +3,7 @@ use std::{collections::HashSet, io::Cursor};
 use pumpkin_data::{
     Block,
     block_properties::{ChestLikeProperties, ChestType},
+    recipes::CookingRecipeKind,
 };
 use pumpkin_nbt::{
     Nbt,
@@ -15,6 +16,7 @@ use sculith_util::math::position::BlockPos;
 use super::{Error, ImportStats, MAX_TABLE_BLOCK_BYTES, invalid, terrain::TerrainRegistry};
 use crate::chunk::ChunkData;
 
+mod cooking;
 mod items;
 pub(super) use items::{
     StorageItemRegistry, convert_stack, item_registry, new_bedrock_stack, read_import_registry,
@@ -22,6 +24,45 @@ pub(super) use items::{
 };
 
 pub(super) const SLOTS: usize = 27;
+
+struct SavedContainer {
+    block: &'static Block,
+    id: &'static str,
+    slots: usize,
+    cooking: Option<CookingRecipeKind>,
+}
+
+impl SavedContainer {
+    fn from_bedrock_name(name: &str) -> Option<Self> {
+        let (block, id, cooking) = match name {
+            "Chest" => (&Block::CHEST, "minecraft:chest", None),
+            "Barrel" => (&Block::BARREL, "minecraft:barrel", None),
+            "Furnace" => (
+                &Block::FURNACE,
+                "minecraft:furnace",
+                Some(CookingRecipeKind::Smelting),
+            ),
+            "BlastFurnace" => (
+                &Block::BLAST_FURNACE,
+                "minecraft:blast_furnace",
+                Some(CookingRecipeKind::Blasting),
+            ),
+            "Smoker" => (
+                &Block::SMOKER,
+                "minecraft:smoker",
+                Some(CookingRecipeKind::Smoking),
+            ),
+            _ => return None,
+        };
+        let slots = if cooking.is_some() { 3 } else { SLOTS };
+        Some(Self {
+            block,
+            id,
+            slots,
+            cooking,
+        })
+    }
+}
 
 pub(super) fn import_record(
     bytes: &[u8],
@@ -45,12 +86,14 @@ pub(super) fn import_record(
         {
             return Err(invalid(format!("duplicate block entity at {position}")));
         }
-        let converted = match (kind, position) {
-            ("Chest" | "Barrel", Some(position)) => {
-                convert_container(&saved, kind, position, chunk, terrain, items)
+        let container = SavedContainer::from_bedrock_name(kind)
+            .filter(|container| container.cooking.is_none() || items.import_cooking_appliances);
+        let converted = match (container, position) {
+            (Some(container), Some(position)) => {
+                convert_container(&saved, &container, position, chunk, terrain, items)
                     .map(|entity| (position, entity))
             }
-            ("Chest" | "Barrel", None) => Err("invalid container coordinates".into()),
+            (Some(_), None) => Err("invalid container coordinates".into()),
             _ => Err("unsupported block entity type".into()),
         };
         match converted {
@@ -84,6 +127,16 @@ pub(super) fn check_container_at(
     kind: &str,
     position: BlockPos,
 ) -> Result<(), String> {
+    let container =
+        SavedContainer::from_bedrock_name(kind).ok_or("unsupported block entity type")?;
+    check_container_block(chunk, container.block, position)
+}
+
+fn check_container_block(
+    chunk: &ChunkData,
+    expected: &'static Block,
+    position: BlockPos,
+) -> Result<(), String> {
     let BlockPos(pos) = position;
     if (pos.x.div_euclid(16), pos.z.div_euclid(16)) != (chunk.x, chunk.z) {
         return Err("container coordinates are outside its chunk".into());
@@ -101,15 +154,12 @@ pub(super) fn check_container_at(
             pos.z.rem_euclid(16) as usize,
         )
         .ok_or("container height is outside the world")?;
-    let expected = if kind == "Chest" {
-        &Block::CHEST
-    } else {
-        &Block::BARREL
-    };
     if Block::from_state_id(state).id != expected.id {
         return Err("block state does not match the container type".into());
     }
-    if kind == "Chest" && ChestLikeProperties::from_state_id(state).r#type != ChestType::Single {
+    if expected.id == Block::CHEST.id
+        && ChestLikeProperties::from_state_id(state).r#type != ChestType::Single
+    {
         return Err("only single chests are supported".into());
     }
     Ok(())
@@ -117,13 +167,13 @@ pub(super) fn check_container_at(
 
 fn convert_container(
     saved: &NbtCompound,
-    kind: &str,
+    container: &SavedContainer,
     position: BlockPos,
     chunk: &ChunkData,
     terrain: &TerrainRegistry,
     items: &StorageItemRegistry,
 ) -> Result<NbtCompound, String> {
-    check_container_at(chunk, kind, position)?;
+    check_container_block(chunk, container.block, position)?;
     let BlockPos(pos) = position;
     if let Some(field) = saved
         .child_tags
@@ -133,6 +183,7 @@ fn convert_container(
                 false
             }
             "CustomName" => !items.supports_named_containers(),
+            "BurnDuration" | "BurnTime" | "CookTime" | "StoredXPInt" => container.cooking.is_none(),
             _ => true,
         })
         .min()
@@ -151,7 +202,8 @@ fn convert_container(
         Some(_) => return Err("invalid Items list".into()),
     };
     let mut used = [false; SLOTS];
-    let mut converted = Vec::with_capacity(source_items.len().min(SLOTS));
+    let mut converted = Vec::with_capacity(source_items.len().min(container.slots));
+    let mut cooking_input = None;
     for item in source_items {
         let source = item
             .extract_compound()
@@ -159,28 +211,23 @@ fn convert_container(
         let slot = source
             .get_byte("Slot")
             .and_then(|slot| usize::try_from(slot).ok())
-            .filter(|&slot| slot < SLOTS)
+            .filter(|&slot| slot < container.slots)
             .ok_or("invalid item slot")?;
         if std::mem::replace(&mut used[slot], true) {
             return Err(format!("duplicate slot {slot}"));
         }
         let stack = convert_stack(source, terrain, items)
             .map_err(|error| format!("slot {slot}: {error}"))?;
+        if slot == 0 {
+            cooking_input = Some(stack.item);
+        }
         let mut entry = NbtCompound::new();
         entry.put_byte("Slot", slot as i8);
         stack.write_item_stack(&mut entry);
         converted.push(NbtTag::Compound(entry));
     }
     let mut entity = NbtCompound::new();
-    entity.put_string(
-        "id",
-        (if kind == "Chest" {
-            "minecraft:chest"
-        } else {
-            "minecraft:barrel"
-        })
-        .to_owned(),
-    );
+    entity.put_string("id", container.id.to_owned());
     entity.put_int("x", pos.x);
     entity.put_int("y", pos.y);
     entity.put_int("z", pos.z);
@@ -193,6 +240,9 @@ fn convert_container(
     }
     if !converted.is_empty() {
         entity.put_list("Items", converted);
+    }
+    if let Some(kind) = &container.cooking {
+        cooking::write_metadata(saved, &mut entity, kind, cooking_input)?;
     }
     Ok(entity)
 }

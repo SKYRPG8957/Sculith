@@ -36,6 +36,7 @@ enum StorageVersion {
 pub(in crate::chunk::io::bedrock_import) struct StorageItemRegistry {
     by_name: HashMap<&'static str, i16>,
     version: StorageVersion,
+    pub(super) import_cooking_appliances: bool,
 }
 
 impl StorageItemRegistry {
@@ -70,6 +71,7 @@ pub(in crate::chunk::io::bedrock_import) fn item_registry() -> StorageItemRegist
             .map(|item| (item.registry_key, item.id))
             .collect(),
         version: StorageVersion::NamedContainers,
+        import_cooking_appliances: true,
     }
 }
 
@@ -81,6 +83,8 @@ pub(in crate::chunk::io::bedrock_import) fn read_import_registry(
     world: &Path,
 ) -> Result<StorageItemRegistry, Error> {
     let mut registry = item_registry();
+    // Template exports still preserve native cooking records.
+    registry.import_cooking_appliances = false;
     registry.version = match File::open(world.join(VERSION_FILE)) {
         Ok(file) => {
             let mut version = Vec::new();
