@@ -1627,7 +1627,7 @@ impl Player {
                 player_permissions: PlayerPermissionLevel::Visitor,
                 command_permissions: CommandPermissionLevel::Any,
                 layers: vec![SerializedAbilitiesDataSerializedLayer {
-                    serialized_layer: 0,
+                    serialized_layer: SerializedAbilitiesDataSerializedLayer::BASE,
                     abilities_set: 0,
                     ability_value: 0,
                     fly_speed: 0.05,
@@ -4286,8 +4286,7 @@ impl Player {
 
                 // 3. Construct the Layers
                 let mut layers = vec![SerializedAbilitiesDataSerializedLayer {
-                    serialized_layer: 0, // LAYER_BASE
-                    // 0x3FFFF defines the first 18 bits as "provided" by this packet
+                    serialized_layer: SerializedAbilitiesDataSerializedLayer::BASE,
                     abilities_set: (1 << Ability::AbilityCount as u32) - 1,
                     ability_value,
                     fly_speed: 0.05,
@@ -4297,7 +4296,7 @@ impl Player {
 
                 if is_spectator {
                     layers.push(SerializedAbilitiesDataSerializedLayer {
-                        serialized_layer: 1,
+                        serialized_layer: SerializedAbilitiesDataSerializedLayer::SPECTATOR,
                         abilities_set: 1 << (Ability::Flying as u32),
                         ability_value: 1 << (Ability::Flying as u32),
                         fly_speed: 0.05,
@@ -4550,11 +4549,19 @@ impl Player {
         command_dispatcher: &CommandDispatcher,
     ) {
         self.permission_lvl.store(lvl);
-        self.send_permission_lvl_update();
+        self.publish_permission_lvl(server, command_dispatcher);
+    }
 
+    pub(crate) fn publish_permission_lvl(
+        self: &Arc<Self>,
+        server: &Arc<Server>,
+        command_dispatcher: &CommandDispatcher,
+    ) {
         if let ClientPlatform::Bedrock(_) = self.client.as_ref() {
+            self.send_abilities_update();
             client_suggestions::send_bedrock_commands_packet(self, server, command_dispatcher);
         } else {
+            self.send_permission_lvl_update();
             client_suggestions::send_c_commands_packet(self, server, command_dispatcher);
         }
     }

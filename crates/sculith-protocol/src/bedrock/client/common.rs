@@ -148,6 +148,11 @@ pub struct SerializedAbilitiesDataSerializedLayer {
     pub walk_speed: f32,
 }
 
+impl SerializedAbilitiesDataSerializedLayer {
+    pub const BASE: u16 = 1;
+    pub const SPECTATOR: u16 = 2;
+}
+
 /// Describes an attachment link between two entities, such as a player riding a vehicle.
 #[derive(Default, Clone, PacketRead, PacketWrite)]
 pub struct ActorLink {

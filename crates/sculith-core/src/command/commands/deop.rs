@@ -26,44 +26,41 @@ impl CommandExecutor for DeopExecutor {
     fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
         let targets = GameProfileArgumentType::get(context, "targets")?;
         let server = context.source.server();
-        let mut config = server.data.operator_config.write().unwrap();
-
-        let mut succeeded_deops: i32 = 0;
-        for profile in &targets {
-            if let Some(op_index) = config.ops.iter().position(|o| o.uuid == profile.id) {
+        let changed = {
+            let mut config = server.data.operator_config.write().unwrap();
+            let mut changed = Vec::new();
+            for profile in targets {
+                let Some(op_index) = config.ops.iter().position(|o| o.uuid == profile.id) else {
+                    continue;
+                };
                 config.ops.remove(op_index);
-                succeeded_deops += 1;
-
-                if let Some(player) = server.get_player_by_uuid(profile.id)
-                    && let Some(server_arc) = player.world().server.upgrade()
-                {
-                    let command_dispatcher = server_arc.command_dispatcher.load();
-                    player.set_permission_lvl(
-                        &server_arc,
-                        PermissionLvl::Zero,
-                        &command_dispatcher,
-                    );
+                let player = server.get_player_by_uuid(profile.id);
+                if let Some(player) = &player {
+                    player.permission_lvl.store(PermissionLvl::Zero);
                 }
-
-                let msg = TextComponent::translate_cross(
-                    pumpkin_data::translation::java::COMMANDS_DEOP_SUCCESS,
-                    pumpkin_data::translation::bedrock::COMMANDS_DEOP_SUCCESS,
-                    [TextComponent::text(profile.name.clone())],
-                );
-                context.source.send_feedback(msg, true);
+                changed.push((profile, player));
             }
-        }
-
-        if succeeded_deops == 0 {
-            Err(ERROR_DEOP_FAILED.create_without_context())
-        } else {
+            if changed.is_empty() {
+                return Err(ERROR_DEOP_FAILED.create_without_context());
+            }
             config.save();
-            drop(config);
+            changed
+        };
 
-            crate::command::commands::whitelist::kick_non_whitelisted_players(server);
-
-            Ok(succeeded_deops)
+        let command_dispatcher = server.command_dispatcher.load();
+        for (profile, player) in &changed {
+            if let Some(player) = player {
+                player.publish_permission_lvl(server, &command_dispatcher);
+            }
+            let msg = TextComponent::translate_cross(
+                pumpkin_data::translation::java::COMMANDS_DEOP_SUCCESS,
+                pumpkin_data::translation::bedrock::COMMANDS_DEOP_SUCCESS,
+                [TextComponent::text(profile.name.clone())],
+            );
+            context.source.send_feedback(msg, true);
         }
+        crate::command::commands::whitelist::kick_non_whitelisted_players(server);
+        Ok(changed.len() as i32)
     }
 }
 

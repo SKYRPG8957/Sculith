@@ -29,30 +29,43 @@ impl CommandExecutor for OpCommandExecutor {
         let server = context.server();
         let profiles = GameProfileArgumentType::get(context, ARG_TARGETS)?;
 
-        let mut config = server.data.operator_config.write().unwrap();
-        let mut successes: i32 = 0;
         let new_level = server.basic_config.op_permission_level;
-
-        for profile in profiles {
-            let maybe_existing_entry = config.ops.iter_mut().find(|o| o.uuid == profile.id);
-
-            if let Some(op) = maybe_existing_entry {
-                if op.level == new_level {
-                    continue;
+        let changed = {
+            let mut config = server.data.operator_config.write().unwrap();
+            let mut changed = Vec::new();
+            for profile in profiles {
+                if let Some(op) = config.ops.iter_mut().find(|o| o.uuid == profile.id) {
+                    if op.level == new_level {
+                        continue;
+                    }
+                    op.level = new_level;
+                    op.name.clone_from(&profile.name);
+                } else {
+                    config
+                        .ops
+                        .push(Op::new(profile.id, profile.name.clone(), new_level, false));
                 }
 
-                op.level = new_level;
-                op.name.clone_from(&profile.name);
-            } else {
-                let op_entry = Op::new(profile.id, profile.name.clone(), new_level, false);
-                config.ops.push(op_entry);
+                let player = server.get_player_by_uuid(profile.id);
+                if let Some(player) = &player {
+                    player.permission_lvl.store(new_level);
+                }
+                changed.push((profile, player));
             }
 
-            if let Some(player) = server.get_player_by_uuid(profile.id) {
-                let command_dispatcher = server.command_dispatcher.load();
-                player.set_permission_lvl(server, new_level, &command_dispatcher);
+            if changed.is_empty() {
+                return Err(ALREADY_OP_ERROR_TYPE.create_without_context());
             }
+            config.save();
+            changed
+        };
 
+        // Packet and permission hooks can read the operator list.
+        let command_dispatcher = server.command_dispatcher.load();
+        for (profile, player) in &changed {
+            if let Some(player) = player {
+                player.publish_permission_lvl(server, &command_dispatcher);
+            }
             context.source.send_feedback(
                 TextComponent::translate_cross(
                     translation::java::COMMANDS_OP_SUCCESS,
@@ -61,19 +74,8 @@ impl CommandExecutor for OpCommandExecutor {
                 ),
                 true,
             );
-
-            successes += 1;
         }
-
-        if successes > 0 {
-            config.save();
-        }
-
-        if successes == 0 {
-            Err(ALREADY_OP_ERROR_TYPE.create_without_context())
-        } else {
-            Ok(successes)
-        }
+        Ok(changed.len() as i32)
     }
 }
 
