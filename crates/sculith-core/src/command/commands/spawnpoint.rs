@@ -61,11 +61,10 @@ impl CommandExecutor for SpawnpointExecutor {
         };
 
         let world = context.source.world();
-        let dimension = world.dimension.clone();
-        let dimension_name = dimension.minecraft_name.to_string();
+        let dimension_name = world.dimension.minecraft_name.to_string();
 
         for target in &targets {
-            target.set_respawn_point(dimension.clone(), pos, yaw, pitch, true);
+            target.set_respawn_point_in_world(world, pos, yaw, pitch, true);
         }
 
         if targets.len() == 1 {

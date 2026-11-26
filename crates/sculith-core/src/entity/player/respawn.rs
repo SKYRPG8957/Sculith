@@ -66,16 +66,23 @@ struct SavedRespawn {
 }
 
 impl SavedRespawn {
-    async fn load(source: &Arc<World>, point: RespawnPoint) -> Option<Self> {
-        let world = if source.dimension == point.dimension {
-            source.clone()
+    fn owner(source: &Arc<World>, point: &RespawnPoint) -> Option<Arc<World>> {
+        if let Some(root) = &point.world_root {
+            source
+                .server
+                .upgrade()?
+                .find_world_by_storage_key(root, &point.dimension)
+        } else if source.dimension == point.dimension {
+            Some(source.clone())
         } else {
             source
                 .server
                 .upgrade()?
-                .find_sibling_dimension(source, &point.dimension)?
-        };
+                .find_sibling_dimension(source, &point.dimension)
+        }
+    }
 
+    async fn load(world: &Arc<World>, point: RespawnPoint) -> Option<Self> {
         let min_chunk_x = point.position.0.x.saturating_sub(2) >> 4;
         let max_chunk_x = point.position.0.x.saturating_add(2) >> 4;
         let min_chunk_z = point.position.0.z.saturating_sub(2) >> 4;
@@ -89,9 +96,9 @@ impl SavedRespawn {
             }
         }
 
-        let (position, _) = Self::resolve(&world, &point)?;
+        let (position, _) = Self::resolve(world, &point)?;
         let location = WorldPosition {
-            world,
+            world: world.clone(),
             position,
             yaw: point.yaw,
             pitch: 0.0,
@@ -234,14 +241,33 @@ async fn world_spawn(world: &Arc<World>) -> WorldPosition {
 }
 
 impl Player {
-    /// Calculates the saved spawn without consuming an anchor charge.
-    pub async fn calculate_respawn_point(&self) -> Option<CalculatedRespawnPoint> {
-        let point = self
+    async fn load_saved_respawn(
+        &self,
+        source: &Arc<World>,
+    ) -> (Option<SavedRespawn>, Option<RespawnPoint>) {
+        let stored = self
             .respawn_point
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()?;
-        let saved = SavedRespawn::load(&self.world(), point).await?;
+            .clone();
+        let owner = stored
+            .as_ref()
+            .and_then(|point| SavedRespawn::owner(source, point));
+        let saved = match (stored.as_ref(), owner.as_ref()) {
+            (Some(point), Some(owner)) => SavedRespawn::load(owner, point.clone()).await,
+            _ => None,
+        };
+        let invalid = stored.filter(|point| {
+            saved.is_none()
+                && (point.world_root.is_none()
+                    || owner.as_ref().is_some_and(|world| world.is_open()))
+        });
+        (saved, invalid)
+    }
+
+    /// Calculates the saved spawn without consuming an anchor charge.
+    pub async fn calculate_respawn_point(&self) -> Option<CalculatedRespawnPoint> {
+        let saved = self.load_saved_respawn(&self.world()).await.0?;
         Some(CalculatedRespawnPoint {
             position: saved.location.position,
             yaw: saved.location.yaw,
@@ -303,16 +329,7 @@ impl Player {
             .find_sibling_dimension(source, &Dimension::OVERWORLD)
             .unwrap_or_else(|| source.clone());
         let keep_inventory = source.level_info.load().game_rules.keep_inventory;
-        let stored = self
-            .respawn_point
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        let mut saved = match stored.clone() {
-            Some(point) => SavedRespawn::load(source, point).await,
-            None => None,
-        };
-        let invalid = if saved.is_none() { stored } else { None };
+        let (mut saved, invalid) = self.load_saved_respawn(source).await;
         let mut destination = match &saved {
             Some(saved) => saved.location.clone(),
             None => world_spawn(&default_world).await,
@@ -446,7 +463,7 @@ impl Player {
             u8::from(request.keeps_data()),
         ))
         .await;
-        if source.dimension != world.dimension {
+        if !Arc::ptr_eq(source, world) {
             self.send_bedrock_dimension_change(world, position, true)
                 .await;
         }

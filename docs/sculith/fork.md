@@ -162,6 +162,12 @@ Pending transfers are discarded if the connection closes.
 Closed connections detach and clean up their inventory on the owning world. Leave
 callbacks run between those steps. Saving uses the resulting player snapshot, and
 the account can load again when the disconnect save finishes.
+A bed, respawn anchor or `/spawnpoint` records its world directory and dimension.
+After a restart, respawning uses that owner even if the player died in a different
+world with the same dimension. An unavailable owner sends the player to the current
+world family's spawn and retains the stored point. Older player files resolve
+points within the current world family. Native plugins use ABI 53 for the
+additional field on `RespawnPoint`.
 Automatic inventory checkpoints capture the worlds that contributed to the
 batch. Shutdown drains world jobs before kicking players and saving.
 

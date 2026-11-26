@@ -82,7 +82,7 @@ impl BlockBehaviour for RespawnAnchorBlock {
         let player = args.player;
         let world = args.world;
         let pos = *args.position;
-        if player.set_respawn_point(world.dimension.clone(), pos, 0.0, 0.0, false) {
+        if player.set_respawn_point_in_world(world, pos, 0.0, 0.0, false) {
             world.play_sound(
                 Sound::BlockRespawnAnchorSetSpawn,
                 SoundCategory::Blocks,

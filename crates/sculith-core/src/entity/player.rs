@@ -21,6 +21,7 @@ use core::f32;
 use std::collections::{HashMap, VecDeque};
 use std::f64::consts::TAU;
 use std::num::NonZero;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicI8, AtomicI32, AtomicU8, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -2469,27 +2470,49 @@ impl Player {
         pitch: f32,
         forced: bool,
     ) -> bool {
-        if !forced
+        self.record_respawn_point(
+            RespawnPoint::new(&self.world(), dimension, block_pos, yaw, forced),
+            pitch,
+        )
+    }
+
+    /// Sets a respawn point in a particular world and dimension.
+    pub fn set_respawn_point_in_world(
+        &self,
+        world: &World,
+        block_pos: BlockPos,
+        yaw: f32,
+        pitch: f32,
+        forced: bool,
+    ) -> bool {
+        self.record_respawn_point(
+            RespawnPoint::new(world, world.dimension.clone(), block_pos, yaw, forced),
+            pitch,
+        )
+    }
+
+    fn record_respawn_point(&self, mut point: RespawnPoint, pitch: f32) -> bool {
+        if !point.force
             && let Some(respawn_point) = self
                 .respawn_point
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_ref()
-            && dimension == respawn_point.dimension
-            && block_pos == respawn_point.position
+            && point.world_root == respawn_point.world_root
+            && point.dimension == respawn_point.dimension
+            && point.position == respawn_point.position
         {
             return false;
         }
 
-        let mut final_block_pos = block_pos;
         if let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
             && let Some(server) = self.world().server.upgrade()
         {
             let mut event =
                 crate::plugin::api::events::player::player_spawn_change::PlayerSpawnChangeEvent {
                     player: player_arc,
-                    new_spawn: Some(block_pos),
-                    forced,
+                    new_spawn: Some(point.position),
+                    forced: point.force,
                     cancelled: false,
                 };
             server.plugin_manager.fire_blocking(&server, &mut event);
@@ -2497,40 +2520,29 @@ impl Player {
                 return false;
             }
             if let Some(pos) = event.new_spawn {
-                final_block_pos = pos;
+                point.position = pos;
             }
         }
 
-        let bedrock_dimension = match dimension.minecraft_name {
-            "minecraft:the_nether" => 1,
-            "minecraft:the_end" => 2,
-            _ => 0,
-        };
-        self.client.try_enqueue_packet_editioned(
-            &CPlayerSpawnPosition::new(
-                final_block_pos,
-                yaw,
-                pitch,
-                dimension.minecraft_name.to_owned(),
-            ),
-            &sculith_protocol::bedrock::client::CSetSpawnPosition {
-                spawn_position_type:
-                    sculith_protocol::bedrock::client::SpawnPositionType::PlayerRespawn,
-                block_position: final_block_pos,
-                dimension_type: bedrock_dimension.into(),
-                spawn_block_pos: final_block_pos,
-            },
+        let java_spawn = CPlayerSpawnPosition::new(
+            point.position,
+            point.yaw,
+            pitch,
+            point.dimension.minecraft_name.to_owned(),
         );
-
+        let bedrock_spawn = sculith_protocol::bedrock::client::CSetSpawnPosition {
+            spawn_position_type:
+                sculith_protocol::bedrock::client::SpawnPositionType::PlayerRespawn,
+            block_position: point.position,
+            dimension_type: respawn::bedrock_dimension_id(&point.dimension).into(),
+            spawn_block_pos: point.position,
+        };
         *self
             .respawn_point
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RespawnPoint {
-            dimension,
-            position: final_block_pos,
-            yaw,
-            force: forced,
-        });
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(point);
+        self.client
+            .try_enqueue_packet_editioned(&java_spawn, &bedrock_spawn);
         true
     }
 
@@ -8797,6 +8809,14 @@ impl EntityBase for Player {
 
             let mut respawn_compound = NbtCompound::new();
             respawn_compound.put_string("dimension", respawn.dimension.minecraft_name.to_string());
+            if let Some(root) = respawn
+                .world_root
+                .as_deref()
+                .and_then(std::path::Path::to_str)
+            {
+                respawn_compound
+                    .put_string(world_root_tag, root.replace(std::path::MAIN_SEPARATOR, "/"));
+            }
             respawn_compound.put(
                 "pos",
                 NbtTag::IntArray(vec![
@@ -8996,11 +9016,15 @@ impl EntityBase for Player {
             };
             let yaw = respawn_compound.get_float("angle").unwrap_or(0.0);
             let force = respawn_compound.get_bool("forced").unwrap_or(false);
+            let world_root = respawn_compound
+                .get_string(crate::data::player_server::SAVED_WORLD_ROOT)
+                .map(PathBuf::from);
             *self
                 .respawn_point
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RespawnPoint {
                 dimension: dim,
+                world_root,
                 position: pos,
                 yaw,
                 force,
@@ -9020,6 +9044,7 @@ impl EntityBase for Player {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(RespawnPoint {
                 dimension: dim,
+                world_root: None,
                 position: BlockPos(Vector3::new(x, y, z)),
                 yaw: 0.0,
                 force,
@@ -9161,9 +9186,27 @@ impl Abilities {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RespawnPoint {
     pub dimension: Dimension,
+    /// An empty path identifies the main world, and absent paths use the current world family.
+    pub world_root: Option<PathBuf>,
     pub position: BlockPos,
     pub yaw: f32,
     pub force: bool,
+}
+
+impl RespawnPoint {
+    fn new(world: &World, dimension: Dimension, position: BlockPos, yaw: f32, force: bool) -> Self {
+        let world_root = world
+            .server
+            .upgrade()
+            .map(|server| server.world_storage_key(world).to_path_buf());
+        Self {
+            dimension,
+            world_root,
+            position,
+            yaw,
+            force,
+        }
+    }
 }
 
 pub struct CalculatedRespawnPoint {

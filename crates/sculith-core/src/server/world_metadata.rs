@@ -24,14 +24,30 @@ use crate::world::World;
 use super::Server;
 
 impl Server {
+    pub(crate) fn world_storage_key<'a>(&self, world: &'a World) -> &'a Path {
+        let root = &world.level.level_folder.root_folder;
+        root.strip_prefix(&self.storage_root).unwrap_or(root)
+    }
+
     pub(crate) fn named_world_path<'a>(&self, world: &'a World) -> Option<&'a Path> {
-        world
-            .level
-            .level_folder
-            .root_folder
-            .strip_prefix(&self.storage_root)
-            .ok()
-            .filter(|relative| !relative.as_os_str().is_empty())
+        let key = self.world_storage_key(world);
+        (key.is_relative() && !key.as_os_str().is_empty()).then_some(key)
+    }
+
+    pub(crate) fn find_world_by_storage_key(
+        &self,
+        key: &Path,
+        dimension: &Dimension,
+    ) -> Option<Arc<World>> {
+        self.worlds
+            .load()
+            .iter()
+            .find(|world| {
+                world.is_open()
+                    && &world.dimension == dimension
+                    && self.world_storage_key(world) == key
+            })
+            .cloned()
     }
 
     pub(super) fn load_independent_world_info(

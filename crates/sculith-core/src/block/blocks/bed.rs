@@ -298,8 +298,8 @@ impl BedBlock {
 
         // Set respawn point
         if can_set_spawn
-            && player.set_respawn_point(
-                world.dimension.clone(),
+            && player.set_respawn_point_in_world(
+                world,
                 bed_head_pos,
                 player.get_entity().yaw.load(),
                 player.get_entity().pitch.load(),
