@@ -8,6 +8,7 @@ use sculith_protocol::{
         server::{
             client_cache_blob_status::SClientCacheBlobStatus,
             inventory_transaction::{HandSlot, SInventoryTransaction, TransactionData},
+            item_stack_request::ItemStackRequest,
             player_auth_input::SPlayerAuthInput,
         },
     },
@@ -79,13 +80,13 @@ struct PreparedMovement {
 
 enum RegionalInputContinuation {
     FinishMovement(CommittedPlayerMove),
-    ApplyInventory(RegionalMoveStamp),
+    ApplyActions(RegionalMoveStamp),
 }
 
 enum RegionalMovePreparation {
     Consumed,
     Deferred,
-    DeferredInventory,
+    DeferredAction,
     Unprepared,
 }
 
@@ -214,10 +215,14 @@ impl BedrockClient {
             if self.is_closed() {
                 break;
             }
-            if movement
-                .as_mut()
-                .is_some_and(|movement| self.finish_regional_move_input(&player, movement))
-            {
+            if movement.as_mut().is_some_and(|movement| {
+                self.finish_regional_move_input(
+                    &player,
+                    &server,
+                    movement,
+                    &mut spin_attack_prediction,
+                )
+            }) {
                 continue;
             }
             let original = (movement.is_some() || attack.is_some()).then(|| packet.payload.clone());
@@ -274,7 +279,9 @@ impl BedrockClient {
     fn finish_regional_move_input(
         &self,
         player: &Arc<Player>,
+        server: &Arc<Server>,
         prepared: &mut PreparedMovement,
+        spin_attack_prediction: &mut Option<bool>,
     ) -> bool {
         let Some(continuation) = prepared.continuation.take() else {
             return false;
@@ -284,12 +291,18 @@ impl BedrockClient {
                 committed.stamp,
                 player.finish_regional_client_move(&committed),
             ),
-            RegionalInputContinuation::ApplyInventory(stamp) => (stamp, true),
+            RegionalInputContinuation::ApplyActions(stamp) => (stamp, true),
         };
+        let mining = Self::inline_mining_action(&prepared.input);
+        // A corrected or superseded pose cannot authorize its remaining input.
+        let current = || movement_finished && stamp.is_current(player, &player.world());
         if let Some(request) = prepared.input.item_stack_request.take() {
-            // A corrected or superseded pose cannot authorize its remaining input.
-            let current = movement_finished && stamp.is_current(player, &player.world());
-            self.finish_inline_inventory(player, request, current);
+            self.finish_inline_inventory(player, request, current());
+        }
+        if let Some((action, position)) = mining
+            && current()
+        {
+            self.apply_player_action(player, server, action, position, spin_attack_prediction);
         }
         true
     }
@@ -388,11 +401,12 @@ impl BedrockClient {
         })
     }
 
-    fn prepare_regional_move(
+    fn route_move(
         &self,
-        player: &Player,
+        player: &Arc<Player>,
         server: &Server,
         extent: &RegionChunks,
+        deadline: TickDeadline,
         queued: &mut QueuedPlayInput,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> RegionalMovePreparation {
@@ -411,33 +425,40 @@ impl BedrockClient {
                     rotation_changed,
                     stamp,
                 }) => {
-                    if position_changed
-                        && let Some(request) = prepared.input.item_stack_request.as_ref()
-                    {
-                        let checkpoint = server.try_entity_save_guard();
-                        let world = player.world();
-                        if checkpoint.is_none()
-                            || player
-                                .try_edit_at_regional_move(stamp, &world, || {
-                                    self.try_apply_regional_inventory_request(
-                                        player,
-                                        server,
-                                        request,
-                                        || {
-                                            !self.is_closed()
-                                                && owns(player.get_entity().chunk_pos.load())
-                                                && stamp.is_current(player, &world)
-                                        },
-                                    )
-                                })
-                                .is_none()
-                        {
-                            tracing::trace!(player = %player.gameprofile.name, input_tick = prepared.input.tick.0, "Deferred inventory after regional movement");
-                            prepared.continuation =
-                                Some(RegionalInputContinuation::ApplyInventory(stamp));
-                            queued.movement = Some(prepared);
-                            return RegionalMovePreparation::DeferredInventory;
-                        }
+                    let mining = Self::inline_mining_action(&prepared.input);
+                    let deferred =
+                        if let Some(action) = mining {
+                            let world = player.world();
+                            self.try_apply_regional_mining_action(
+                                player,
+                                server,
+                                deadline,
+                                action,
+                                &|chunk| owns(chunk) && stamp.is_current(player, &world),
+                            )
+                            .is_none()
+                        } else {
+                            position_changed
+                                && prepared.input.item_stack_request.as_ref().is_some_and(
+                                    |request| {
+                                        self.try_complete_moving_inventory(
+                                            player, server, request, stamp, owns,
+                                        )
+                                        .is_none()
+                                    },
+                                )
+                        };
+                    if deferred {
+                        let action = if mining.is_some() {
+                            "mining"
+                        } else {
+                            "inventory"
+                        };
+                        tracing::trace!(player = %player.gameprofile.name, input_tick = prepared.input.tick.0, "Deferred {action} after regional movement");
+                        prepared.continuation =
+                            Some(RegionalInputContinuation::ApplyActions(stamp));
+                        queued.movement = Some(prepared);
+                        return RegionalMovePreparation::DeferredAction;
                     }
                     let message = if position_changed {
                         "Completed grounded Bedrock movement on its region"
@@ -474,6 +495,25 @@ impl BedrockClient {
         }
         queued.movement = Some(prepared);
         RegionalMovePreparation::Deferred
+    }
+
+    fn try_complete_moving_inventory(
+        &self,
+        player: &Player,
+        server: &Server,
+        request: &ItemStackRequest,
+        stamp: RegionalMoveStamp,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<()> {
+        let _checkpoint = server.try_entity_save_guard()?;
+        let world = player.world();
+        player.try_edit_at_regional_move(stamp, &world, || {
+            self.try_apply_regional_inventory_request(player, server, request, || {
+                !self.is_closed()
+                    && owns(player.get_entity().chunk_pos.load())
+                    && stamp.is_current(player, &world)
+            })
+        })
     }
 
     fn try_regional_action(
@@ -551,21 +591,19 @@ impl BedrockClient {
                     continue;
                 }
                 if movement && !was_waiting {
-                    use RegionalMovePreparation::{
-                        Consumed, Deferred, DeferredInventory, Unprepared,
-                    };
+                    use RegionalMovePreparation::{Consumed, Deferred, DeferredAction, Unprepared};
 
                     let entity = player.get_entity();
                     let previous = entity.chunk_pos.load();
                     let result =
-                        self.prepare_regional_move(player, server, extent, &mut queued, &owns);
+                        self.route_move(player, server, extent, deadline, &mut queued, &owns);
                     let current = entity.chunk_pos.load();
-                    if previous != current && matches!(result, Consumed | DeferredInventory) {
+                    if previous != current && matches!(result, Consumed | DeferredAction) {
                         chunk_entered(current);
                     }
                     match result {
                         Consumed => continue,
-                        Deferred | DeferredInventory => {
+                        Deferred | DeferredAction => {
                             *head = Some(queued);
                             return false;
                         }
@@ -632,6 +670,7 @@ mod tests {
                 interact::{Action, SInteract},
                 item_stack_request::ItemStackRequestSlotInfo,
                 mob_equipment::SMobEquipment,
+                player_action::PlayerActionType,
                 player_auth_input::InputData,
                 player_hotbar::SPlayerHotbar,
             },
@@ -1268,7 +1307,7 @@ mod tests {
     ) {
         use sculith_protocol::bedrock::{
             client::level_event::{CLevelEvent, LevelEvent},
-            server::player_action::{PlayerActionType, SPlayerAction},
+            server::player_action::SPlayerAction,
         };
 
         let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
@@ -1430,7 +1469,7 @@ mod tests {
     ) {
         client.enqueue_play_input(
             player,
-            auth_input_packet(position, input_tick, yaw, flags, None),
+            auth_input_packet(position, input_tick, yaw, flags, None, &[]),
         );
     }
 
@@ -1440,6 +1479,7 @@ mod tests {
         yaw: f32,
         flags: &[InputData],
         request: Option<&[u8]>,
+        block_actions: &[(PlayerActionType, BlockPos)],
     ) -> RawPacket {
         use sculith_protocol::bedrock::server::player_auth_input::InputMode;
 
@@ -1467,7 +1507,18 @@ mod tests {
         if let Some(request) = request {
             payload.extend_from_slice(request);
         }
-        payload.extend([0; 3]);
+        payload.push(u8::from(!block_actions.is_empty()));
+        if !block_actions.is_empty() {
+            VarUInt(u32::try_from(block_actions.len()).unwrap())
+                .write(&mut payload)
+                .unwrap();
+            for &(action, position) in block_actions {
+                VarInt(action as i32).write(&mut payload).unwrap();
+                position.write(&mut payload).unwrap();
+                VarInt(1).write(&mut payload).unwrap();
+            }
+        }
+        payload.extend([0; 2]);
         payload.extend([0; 28]);
         RawPacket {
             id: SPlayerAuthInput::PACKET_ID,
@@ -1602,7 +1653,7 @@ mod tests {
             InputData::VerticalCollision,
             InputData::PerformItemStackRequest,
         ];
-        auth_input_packet(position, tick, yaw, &flags, Some(&bytes))
+        auth_input_packet(position, tick, yaw, &flags, Some(&bytes), &[])
     }
 
     fn verify_inline_inventory(
@@ -1891,7 +1942,104 @@ mod tests {
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
         verify_grounded_sprints(world, player, client, chunk);
         verify_walking_inventory(world, player, client, chunk);
+        verify_inline_mining_after_movement(world, player, client, chunk);
         world.entity_tracker.remove_entity(player.as_ref(), world);
+    }
+
+    fn verify_inline_mining_after_movement(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        use crate::entity::player::statistics::CustomStatistic;
+        use PlayerActionType::{AbortDestroyBlock, StartDestroyBlock};
+
+        let entity = player.get_entity();
+        let wire = player.bedrock_pos().to_f32_lossy();
+        let target = BlockPos::new(9, 100, 10);
+        let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
+        let previous = world.get_block_state_id(&target);
+        let dirt = Block::DIRT.default_state.id;
+        terrain.set_block_absolute_y(9, 100, 10, dirt);
+        let step = entity.next_step.swap(100.0);
+        let tick = client.input_tick.load(Relaxed) + 1;
+        let at = Instant::now() + TICK_PERIOD * 50;
+        let queue = |x, offset, action, block| {
+            client.enqueue_play_input(
+                player,
+                auth_input_packet(
+                    Vector3::new(x, wire.y, wire.z),
+                    tick + offset,
+                    entity.yaw.load(),
+                    &[InputData::VerticalCollision, InputData::PerformBlockActions],
+                    None,
+                    &[(action, block)],
+                ),
+            );
+        };
+        let moved = wire.x + 0.25;
+        queue(moved, 0, StartDestroyBlock, target);
+        tick_region(world, chunk, at);
+        assert_eq!(entity.pos.load().x, f64::from(moved));
+        assert!(player.mining.load(Relaxed));
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        tick_region(world, chunk, at + TICK_PERIOD);
+        let server = world.server.upgrade().unwrap();
+        // The clock can advance only from the pose that started the dig.
+        assert_eq!(
+            client.mining_prediction_ticks(&server, player, world, target, dirt, 1),
+            2
+        );
+
+        let cancelled = moved + 0.125;
+        queue(cancelled, 1, AbortDestroyBlock, BlockPos::new(0, 0, 0));
+        tick_region(world, chunk, at + TICK_PERIOD * 2);
+        assert!(!player.mining.load(Relaxed));
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        assert_eq!(world.get_block_state_id(&target), dirt);
+
+        let distance = || player.get_custom_stat(CustomStatistic::WalkOneCm);
+        let previous_distance = distance();
+        let tool = player.hold_bedrock_inventory_edit();
+        let deferred = cancelled + 0.25;
+        queue(deferred, 2, StartDestroyBlock, target);
+        tick_region(world, chunk, at + TICK_PERIOD * 3);
+        assert_eq!(entity.pos.load().x, f64::from(deferred));
+        assert_eq!(distance() - previous_distance, 25);
+        assert!(!player.mining.load(Relaxed));
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        drop(tool);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(player.mining.load(Relaxed));
+        assert_eq!(*player.mining_pos.lock().unwrap(), target);
+        assert_eq!(distance() - previous_distance, 25);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        // The first stationary frame after a walk still needs to settle its movement.
+        queue(deferred, 3, AbortDestroyBlock, target);
+        tick_region(world, chunk, at + TICK_PERIOD * 4);
+        assert!(player.mining.load(Relaxed));
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(!player.mining.load(Relaxed));
+
+        let tool = player.hold_bedrock_inventory_edit();
+        queue(deferred + 0.125, 4, StartDestroyBlock, target);
+        tick_region(world, chunk, at + TICK_PERIOD * 5);
+        let pose = entity.pos.load();
+        assert_eq!(pose.x, f64::from(deferred) + 0.125);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        drop(tool);
+        let updated = pose.add_raw(0.0, 0.0, 0.25);
+        entity.set_pos(updated);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(entity.pos.load(), updated);
+        assert!(!player.mining.load(Relaxed));
+        entity.set_pos(pose);
+
+        entity.next_step.store(step);
+        terrain.set_block_absolute_y(9, 100, 10, previous);
     }
 
     fn verify_grounded_sprints(

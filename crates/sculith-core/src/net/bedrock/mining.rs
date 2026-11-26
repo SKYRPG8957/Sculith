@@ -6,7 +6,10 @@ use std::{
 use pumpkin_data::{Block, BlockStateId};
 use sculith_protocol::{
     RawPacket,
-    bedrock::server::player_action::{PlayerActionType, SPlayerAction},
+    bedrock::server::{
+        player_action::{PlayerActionType, SPlayerAction},
+        player_auth_input::{InputData, SPlayerAuthInput},
+    },
     codec::var_ulong::VarULong,
     packet::Packet,
     serial::PacketRead,
@@ -86,16 +89,35 @@ impl MiningClock {
 }
 
 impl BedrockClient {
+    const fn is_regional_mining_action(action: PlayerActionType) -> bool {
+        matches!(
+            action,
+            PlayerActionType::StartDestroyBlock | PlayerActionType::AbortDestroyBlock
+        )
+    }
+
+    pub(super) fn inline_mining_action(
+        packet: &SPlayerAuthInput,
+    ) -> Option<(PlayerActionType, BlockPos)> {
+        let [action] = packet.block_actions.as_deref()? else {
+            return None;
+        };
+        (packet.item_interaction.is_none()
+            && packet.item_stack_request.is_none()
+            && packet
+                .input_data
+                .get(InputData::PerformBlockActions as usize)
+            && Self::is_regional_mining_action(action.action))
+        .then_some((action.action, action.block_pos))
+    }
+
     pub(super) fn can_route_mining_action(packet: &RawPacket) -> bool {
         if packet.id != SPlayerAction::PACKET_ID || packet.payload.len() > 64 {
             return false;
         }
         let payload = &mut packet.payload.as_ref();
         VarULong::read(payload).is_ok()
-            && matches!(
-                PlayerActionType::read(payload),
-                Ok(PlayerActionType::StartDestroyBlock | PlayerActionType::AbortDestroyBlock)
-            )
+            && PlayerActionType::read(payload).is_ok_and(Self::is_regional_mining_action)
     }
 
     pub(super) fn try_regional_mining_action(
@@ -108,12 +130,29 @@ impl BedrockClient {
     ) -> Option<()> {
         let mut payload = packet.payload.as_ref();
         let action = SPlayerAction::read(&mut payload).ok()?;
-        let entity = player.get_entity();
         if !payload.is_empty()
-            || action.player_runtime_id.0 != u64::try_from(entity.entity_id).ok()?
-            || !player.has_client_loaded()
-            || player.has_delayed_destroy.load(Relaxed)
+            || action.player_runtime_id.0 != u64::try_from(player.get_entity().entity_id).ok()?
         {
+            return None;
+        }
+        self.try_apply_regional_mining_action(
+            player,
+            server,
+            deadline,
+            (action.action, action.block_position),
+            owns,
+        )
+    }
+
+    pub(super) fn try_apply_regional_mining_action(
+        &self,
+        player: &Arc<Player>,
+        server: &Server,
+        deadline: TickDeadline,
+        action: (PlayerActionType, BlockPos),
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<()> {
+        if !player.has_client_loaded() || player.has_delayed_destroy.load(Relaxed) {
             return None;
         }
         // World mining already holds the reader while checking tools, applying
@@ -124,10 +163,11 @@ impl BedrockClient {
             return None;
         }
         let world = player.world();
-        entity
+        player
+            .get_entity()
             .bounding_box
             .try_with_current_world(&world, || {
-                self.apply_regional_mining_action(player, &world, server, deadline, &action, owns)
+                self.apply_regional_mining_action(player, &world, server, deadline, action, owns)
             })
             .flatten()
     }
@@ -138,13 +178,13 @@ impl BedrockClient {
         world: &World,
         server: &Server,
         deadline: TickDeadline,
-        action: &SPlayerAction,
+        (action, location): (PlayerActionType, BlockPos),
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<()> {
         let mut position = player.mining_pos.try_lock().ok()?;
         let mut clock = self.activity.mining.try_lock().ok()?;
-        let (starting, target) = match action.action {
-            PlayerActionType::StartDestroyBlock => (true, action.block_position),
+        let (starting, target) = match action {
+            PlayerActionType::StartDestroyBlock => (true, location),
             PlayerActionType::AbortDestroyBlock => (false, *position),
             _ => return None,
         };
@@ -218,7 +258,7 @@ impl BedrockClient {
             )?;
         }
         player.update_last_action_time();
-        tracing::trace!(player = %player.gameprofile.name, ?target, action = ?action.action,
+        tracing::trace!(player = %player.gameprofile.name, ?target, ?action,
             "Applied Bedrock mining action on its region");
         Some(())
     }

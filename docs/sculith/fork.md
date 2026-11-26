@@ -729,6 +729,12 @@ current-protocol viewers. The world uses the same tool guard for progress and
 the break. It checks the live block, speed and permissions before committing
 the removal and running the ordinary callbacks. Replacement targets, an abort,
 and a change of world invalidate the old mining session.
+The same region can handle a single start or abort carried in a Bedrock
+movement packet after it completes the pose and its movement effects. A
+pending mining action stays at the head of the input queue when the move or
+action still needs the world. The world checks the committed pose before
+applying it. A packet with several block actions or with both mining and item
+operations goes through the full world handler in the original order.
 
 When many viewers are spread out, the entity tracker narrows its candidate
 list using horizontal positions in the tick snapshot. It also checks already
