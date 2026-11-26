@@ -1,6 +1,9 @@
 use super::{BlockPalette, ChunkData, has_random_ticking_fluid, has_random_ticks};
 use crate::tick::{ScheduledTick, TickPriority};
-use pumpkin_data::{Block, BlockDirection, BlockStateId, fluid::Fluid};
+use pumpkin_data::{
+    Block, BlockDirection, BlockStateId, HorizontalFacingExt, block_properties::HorizontalFacing,
+    fluid::Fluid,
+};
 use sculith_util::math::{position::BlockPos, vector3::Vector3};
 use std::sync::{TryLockError, atomic::Ordering};
 
@@ -13,8 +16,19 @@ pub enum DownwardWaterTick {
 /// A water step whose changes and scheduled successors fit in one chunk.
 pub enum RegionalWaterTick {
     Settled,
-    SpreadDown { state: BlockStateId, delay: u8 },
-    SpreadHorizontally { state: BlockStateId, delay: u8 },
+    SpreadDown {
+        state: BlockStateId,
+        delay: u8,
+    },
+    SpreadHorizontally {
+        state: BlockStateId,
+        delay: u8,
+    },
+    SpreadToSides {
+        sides: [Option<HorizontalFacing>; 4],
+        state: BlockStateId,
+        delay: u8,
+    },
 }
 
 impl From<DownwardWaterTick> for RegionalWaterTick {
@@ -70,15 +84,22 @@ impl ChunkData {
                     let (directions, state, delay) = match evaluate(at, read(at)?, &read)? {
                         RegionalWaterTick::Settled => continue,
                         RegionalWaterTick::SpreadDown { state, delay } => {
-                            (&[BlockDirection::Down][..], state, delay)
+                            ([Some(BlockDirection::Down), None, None, None], state, delay)
                         }
                         RegionalWaterTick::SpreadHorizontally { state, delay } => (
-                            &[
-                                BlockDirection::North,
-                                BlockDirection::South,
-                                BlockDirection::West,
-                                BlockDirection::East,
-                            ][..],
+                            BlockDirection::horizontal()
+                                .map(|side| Some(side.to_block_direction())),
+                            state,
+                            delay,
+                        ),
+                        RegionalWaterTick::SpreadToSides {
+                            sides,
+                            state,
+                            delay,
+                        } => (
+                            sides.map(|side| {
+                                side.as_ref().map(HorizontalFacingExt::to_block_direction)
+                            }),
                             state,
                             delay,
                         ),
@@ -98,7 +119,8 @@ impl ChunkData {
                         priority: TickPriority::Normal,
                     };
                     let targets = directions
-                        .iter()
+                        .into_iter()
+                        .flatten()
                         .map(|direction| at.offset(direction.to_offset()));
                     if targets.clone().any(|target| {
                         target.chunk_position() != at.chunk_position()

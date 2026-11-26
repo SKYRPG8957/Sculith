@@ -242,13 +242,11 @@ authoritative state.
 The region also executes built-in water ticks for isolated sources.
 Canonical source and falling water can fill air directly below them. The
 falling block and both follow-up timers commit together, and consecutive
-ready ticks see earlier decisions in that batch. An isolated source with
-four open sides can spread over an uninterrupted floor. The owner checks
-the floor through the normal search reach and commits the four placements
-with their follow-up timers. Each placement remains in the current chunk.
-The same ownership guard applies to neighboring reads. Flow around holes,
-other fluid interactions and observable flow or physics events use the world
-callbacks.
+ready ticks see earlier decisions in that batch. An isolated source uses the same slope search on either owner. A region can
+spread down a dry slope or around solid side walls when it owns the loaded
+search area and the placements fit in its current chunk. The owner commits the
+chosen placements with their follow-up timers. Fluid interactions and
+observable flow or physics events use the world callbacks.
 
 On a regional deadline the owner can also apply queued Rust plugin block
 edits. The owner checks the expected state and its current extent under the

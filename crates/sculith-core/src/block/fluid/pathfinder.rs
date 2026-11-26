@@ -9,6 +9,8 @@ use pumpkin_data::{
 use sculith_util::math::position::BlockPos;
 use std::sync::Arc;
 
+pub(super) const NO_REACHABLE_HOLE: i32 = 1000;
+
 /// Represents a node in the BFS pathfinding queue for fluid flow calculation.
 #[derive(Clone, Copy)]
 pub struct PathNode {
@@ -36,7 +38,7 @@ pub fn get_spread<T: FlowingFluid + Sync + ?Sized>(
     fluid: &Fluid,
     block_pos: &BlockPos,
 ) -> ([(BlockDirection, BlockStateId); 4], usize) {
-    let mut min_dist = 1000;
+    let mut min_dist = NO_REACHABLE_HOLE;
     let mut result = [(BlockDirection::North, BlockStateId::default()); 4];
     let mut result_count = 0;
 
@@ -122,6 +124,38 @@ pub fn get_in_flow_down_distance_iterative<T: FlowingFluid + Sync + ?Sized>(
     start_pos: BlockPos,
     initial_exclude_dir: BlockDirection,
 ) -> i32 {
+    slope_distance(
+        fluid_impl.get_max_flow_distance(world),
+        start_pos,
+        initial_exclude_dir,
+        |position| Some(is_hole(world, fluid, &position)),
+        |position| {
+            let state = world.get_block_state(&position);
+            if !physics::can_be_replaced(state, Block::from_state_id(state.id), fluid) {
+                return Some(false);
+            }
+            let id = world.get_block_state_id(&position);
+            Some(
+                !fluid_impl
+                    .get_effective_props(fluid, id)
+                    .is_some_and(|props| {
+                        props.level == Level::L8 && props.falling == Falling::False
+                    }),
+            )
+        },
+    )
+    .unwrap_or(NO_REACHABLE_HOLE)
+}
+
+/// The same bounded search can use pinned terrain. An unavailable read defers
+/// the entire decision to the world phase.
+pub(super) fn slope_distance(
+    slope_find_distance: i32,
+    start_pos: BlockPos,
+    initial_exclude_dir: BlockDirection,
+    is_hole: impl Fn(BlockPos) -> Option<bool>,
+    can_pass: impl Fn(BlockPos) -> Option<bool>,
+) -> Option<i32> {
     const MAX_QUEUE_SIZE: usize = 64;
 
     let mut queue: [PathNode; MAX_QUEUE_SIZE] = [PathNode {
@@ -141,7 +175,6 @@ pub fn get_in_flow_down_distance_iterative<T: FlowingFluid + Sync + ?Sized>(
     queue_end = 1;
 
     let mut visited_bitset = [0u64; 4];
-    let slope_find_distance = fluid_impl.get_max_flow_distance(world);
 
     let get_bit_index = |pos: BlockPos| -> Option<usize> {
         let dx = pos.0.x - start_pos.0.x + slope_find_distance;
@@ -168,12 +201,8 @@ pub fn get_in_flow_down_distance_iterative<T: FlowingFluid + Sync + ?Sized>(
             visited_bitset[word_idx] |= 1u64 << bit_pos;
         }
 
-        // Check for hole (downward flow opportunity)
-        let below_pos = node.pos.down();
-        let below_state = world.get_block_state(&below_pos);
-        let below_block = Block::from_state_id(below_state.id);
-        if physics::can_be_replaced(below_state, below_block, fluid) {
-            return node.distance;
+        if is_hole(node.pos)? {
+            return Some(node.distance);
         }
 
         for direction in [
@@ -188,18 +217,7 @@ pub fn get_in_flow_down_distance_iterative<T: FlowingFluid + Sync + ?Sized>(
 
             let next_pos = node.pos.offset(direction.to_offset());
 
-            let next_state = world.get_block_state(&next_pos);
-            let next_block = Block::from_state_id(next_state.id);
-            if !physics::can_be_replaced(next_state, next_block, fluid) {
-                continue;
-            }
-
-            // Source blocks (including waterlogged) block horizontal pathfinding
-            let next_state_id = world.get_block_state_id(&next_pos);
-            if fluid_impl
-                .get_effective_props(fluid, next_state_id)
-                .is_some_and(|p| p.level == Level::L8 && p.falling == Falling::False)
-            {
+            if !can_pass(next_pos)? {
                 continue;
             }
 
@@ -214,5 +232,5 @@ pub fn get_in_flow_down_distance_iterative<T: FlowingFluid + Sync + ?Sized>(
         }
     }
 
-    1000
+    Some(NO_REACHABLE_HOLE)
 }
