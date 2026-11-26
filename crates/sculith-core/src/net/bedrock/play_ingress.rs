@@ -584,8 +584,8 @@ mod tests {
 
     const TICK_PERIOD: Duration = Duration::from_millis(50);
 
-    #[test]
-    fn prepared_bedrock_attack_requires_the_current_target_and_region() {
+    #[tokio::test]
+    async fn prepared_bedrock_attack_requires_the_current_target_and_region() {
         use crate::world::RegionLayout;
 
         let folder = tempfile::tempdir().unwrap();
