@@ -7,7 +7,7 @@ use std::{
     thread::{self, Thread},
 };
 
-use pumpkin_world::CURRENT_MC_VERSION;
+use pumpkin_world::{CURRENT_BEDROCK_MC_VERSION, CURRENT_MC_VERSION};
 use rustc_hash::FxHashMap;
 use sculith_util::text::{
     TextComponent,
@@ -108,7 +108,7 @@ impl CrashReport {
 
         error!(
             "{}",
-            TextComponent::text("Pumpkin has encountered a panic!")
+            TextComponent::text("Sculith has encountered a panic!")
                 .color(RED)
                 .bold()
                 .to_pretty_console()
@@ -170,7 +170,7 @@ impl CrashReport {
     pub fn generate_file_content(&self) -> String {
         let mut output = String::new();
 
-        writeln_output!(&mut output, "====== Pumpkin Crash Report ======");
+        writeln_output!(&mut output, "====== Sculith Crash Report ======");
         writeln_output!(&mut output);
         writeln_output!(&mut output, "Time: {}", self.utc_time);
         writeln_output!(
@@ -196,10 +196,15 @@ impl CrashReport {
 
         writeln_output!(
             &mut output,
-            "Pumpkin Version: {}",
+            "Sculith Version: {}",
             Self::get_pumpkin_version()
         );
-        writeln_output!(&mut output, "Minecraft Version: {}", CURRENT_MC_VERSION);
+        writeln_output!(
+            &mut output,
+            "Bedrock Version: {}",
+            CURRENT_BEDROCK_MC_VERSION
+        );
+        writeln_output!(&mut output, "Java Version: {}", CURRENT_MC_VERSION);
         writeln_output!(
             &mut output,
             "Server compiled with Rust {}",
