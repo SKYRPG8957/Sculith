@@ -39,8 +39,8 @@ impl World {
         if !unobserved()
             || self.is_in_spawn_protection(player, &position)
             || !self.is_in_build_limit(position)
-            || !self.has_no_mining_behavior(state)
-            || !self.has_no_mining_behavior(BlockStateId::AIR)
+            || !self.is_plain_regional_block(state)
+            || !self.is_plain_regional_block(BlockStateId::AIR)
         {
             return None;
         }
@@ -80,7 +80,7 @@ impl World {
                             let neighbor = position.offset(direction.to_offset());
                             self.is_in_build_limit(neighbor)
                                 && read(neighbor)
-                                    .is_some_and(|state| self.has_no_mining_behavior(state))
+                                    .is_some_and(|state| self.is_plain_regional_block(state))
                         })
                 },
             )?;
@@ -107,7 +107,7 @@ impl World {
         }
     }
 
-    fn has_no_mining_behavior(&self, state: BlockStateId) -> bool {
+    pub(super) fn is_plain_regional_block(&self, state: BlockStateId) -> bool {
         self.block_registry
             .get_pumpkin_block(state.to_block_id())
             .is_none()

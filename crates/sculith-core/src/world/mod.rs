@@ -48,6 +48,7 @@ use regional_campfires::RegionalEntityUpdates;
 mod regional_actors;
 mod regional_input;
 mod regional_mining;
+mod regional_placement;
 use regional_actors::RegionalActors;
 pub(crate) use regional_actors::actor_deadline;
 pub mod stopwatches;

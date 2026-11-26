@@ -1274,7 +1274,11 @@ impl BedrockClient {
             && packet.payload.len() <= REGIONAL_INVENTORY_BYTES
     }
 
-    fn inventory_request_can_run_on_region(&self, player: &Player, server: &Server) -> bool {
+    pub(super) fn inventory_request_can_run_on_region(
+        &self,
+        player: &Player,
+        server: &Server,
+    ) -> bool {
         let plugins = &server.plugin_manager;
         player.has_client_loaded()
             && !player.living_entity.is_dead_or_dying()

@@ -746,6 +746,17 @@ handles plugin callbacks, loot overrides and other block effects. A packet
 with several block actions or with both mining and item operations goes
 through the world handler in the original order.
 
+The region can also place a plain full block from a current-protocol
+Bedrock click-block transaction with an already selected hotbar slot. It
+checks reach, the server's item count, spawn protection, the clicked face
+and an empty target. It keeps the placing player and the surrounding
+actor cells stable while committing the terrain edit and consuming one
+item in Survival. Creative keeps its stack. The owner sends the revised
+inventory and publishes the block to both editions. The world handles
+transactions that need slot selection, placement callbacks, advancements,
+replacing a block, collision decisions around nearby actors, complex item
+behavior or lighting updates.
+
 When many viewers are spread out, the entity tracker narrows its candidate
 list using horizontal positions in the tick snapshot. It also checks already
 paired viewers that may need a removal. The tracker checks delivered terrain

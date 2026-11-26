@@ -167,6 +167,7 @@ impl BedrockClient {
             || Self::can_route_inventory(&packet)
             || Self::can_route_inventory_screen(&packet)
             || Self::can_route_hotbar(&packet)
+            || Self::can_route_block_placement(&packet)
             || Self::can_route_mining_action(&packet))
             && self.is_current_protocol();
         player.inbound_packets.push(packet);
@@ -526,6 +527,9 @@ impl BedrockClient {
     ) -> Option<()> {
         if Self::can_route_mining_action(packet) {
             return self.try_regional_mining_action(player, server, deadline, packet, owns);
+        }
+        if Self::can_route_block_placement(packet) {
+            return self.try_regional_block_placement(player, server, packet, owns);
         }
         let owns_player = || owns(player.get_entity().chunk_pos.load());
         if Self::can_route_inventory_screen(packet) {
@@ -1602,6 +1606,129 @@ mod tests {
         assert!(!player.mining.load(Relaxed));
         client.client_delta.store(previous_delta);
         entity.set_pos(previous_position);
+    }
+
+    fn queue_block_placement(
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        clicked: BlockPos,
+        reported: &ItemStack,
+    ) {
+        use sculith_protocol::bedrock::server::inventory_transaction::{
+            HandSlot, SInventoryTransaction,
+        };
+
+        let mut payload = vec![0, 0, 2, 0, 0, 1];
+        clicked.write(&mut payload).unwrap();
+        1u8.write(&mut payload).unwrap(); // Up
+        VarInt(i32::from(player.inventory.get_selected_slot()))
+            .write(&mut payload)
+            .unwrap();
+        (HandSlot::Mainhand as u8).write(&mut payload).unwrap();
+        NetworkItemDescriptor::from(reported)
+            .write(&mut payload)
+            .unwrap();
+        player
+            .bedrock_pos()
+            .to_f32_lossy()
+            .write(&mut payload)
+            .unwrap();
+        Vector3::new(0.5f32, 1.0, 0.5).write(&mut payload).unwrap();
+        VarUInt(pumpkin_data::BlockState::to_be_network_id(
+            Block::STONE.default_state.id,
+        ))
+        .write(&mut payload)
+        .unwrap();
+        payload.extend([0, 0]);
+        client.enqueue_play_input(
+            player,
+            RawPacket {
+                id: SInventoryTransaction::PACKET_ID,
+                payload: payload.into(),
+            },
+        );
+    }
+
+    fn verify_regional_block_placement(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        use pumpkin_data::{BlockStateId, entity::EntityType, statistic::StatisticCategory};
+        use sculith_util::permission::PermissionLvl;
+
+        let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
+        let targets = [BlockPos::new(10, 100, 8), BlockPos::new(11, 100, 8)];
+        let stone = Block::STONE.default_state.id;
+        let glass = Block::GLASS.default_state.id;
+        let saved = targets.map(|pos| {
+            let x = usize::try_from(pos.chunk_relative_position().x).unwrap();
+            (
+                terrain.set_block_absolute_y(x, 99, 8, stone),
+                terrain.set_block_absolute_y(x, 100, 8, BlockStateId::AIR),
+            )
+        });
+        let loaded = player.has_client_loaded();
+        player.set_client_loaded(true);
+        let permission = player.permission_lvl.load();
+        player.permission_lvl.store(PermissionLvl::Four);
+        let old_hand = player.inventory.held_item();
+        let stack = ItemStack::new(2, &Item::GLASS);
+        player.inventory.set_held_item(stack.clone());
+        let count = || player.inventory.held_item().item_count;
+        let used = || player.get_stat(StatisticCategory::Used, i32::from(Item::GLASS.id));
+        let before = used();
+        let air = || world.get_block_state_id(&targets[1]) == BlockStateId::AIR;
+        let at = Instant::now() + TICK_PERIOD * 32;
+        let send = |target: BlockPos, reported: &ItemStack, tick| {
+            queue_block_placement(player, client, BlockPos::new(target.0.x, 99, 8), reported);
+            tick_region(world, chunk, at + TICK_PERIOD * tick);
+        };
+        send(targets[0], &stack, 0);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        assert_eq!(world.get_block_state_id(&targets[0]), glass);
+        assert_eq!(count(), 1);
+        assert_eq!(used(), before + 1);
+
+        send(targets[1], &stack, 1);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(air());
+        assert_eq!(count(), 1);
+        assert_eq!(used(), before + 1);
+
+        let pig = crate::entity::r#type::from_type(
+            &EntityType::PIG,
+            Vector3::new(11.5, 100.0, 8.5),
+            world,
+            uuid::Uuid::new_v4(),
+        );
+        world.add_entity_silent(pig.clone());
+        let held = player.inventory.held_item();
+        send(targets[1], &held, 2);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(air());
+        assert_eq!(count(), 1);
+        world.remove_entity(pig.as_ref());
+
+        let mode = player.gamemode.load();
+        player.gamemode.store(GameMode::Creative);
+        send(targets[1], &held, 3);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+        assert_eq!(world.get_block_state_id(&targets[1]), glass);
+        assert_eq!(count(), 1);
+
+        player.gamemode.store(mode);
+        player.inventory.set_held_item(old_hand);
+        player.permission_lvl.store(permission);
+        player.set_client_loaded(loaded);
+        for (position, (support, previous)) in targets.into_iter().zip(saved) {
+            let x = usize::try_from(position.chunk_relative_position().x).unwrap();
+            terrain.set_block_absolute_y(x, 99, 8, support);
+            terrain.set_block_absolute_y(x, 100, 8, previous);
+        }
     }
 
     fn verify_chunk_delivery_clock(client: &BedrockClient) {
@@ -2810,6 +2937,7 @@ mod tests {
         verify_mining_clock(&world, &server, &player, &client, west).await;
         verify_regional_mining_actions(&world, &server, &player, &client, west);
         verify_regional_mining_completion(&world, &player, &client, west);
+        verify_regional_block_placement(&world, &player, &client, west);
         verify_attack_preparation(&world, &player, &client, west);
         verify_stationary_inputs(&world, &player, &client, west);
         verify_inline_inventory(&world, &player, &client, west);

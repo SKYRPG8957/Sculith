@@ -5440,6 +5440,22 @@ impl Player {
         self.is_within_block_range(position, self.block_interaction_range() + additional_range)
     }
 
+    pub(crate) fn try_bedrock_block_reach(
+        &self,
+        position: &BlockPos,
+        mode: GameMode,
+        additional_range: f64,
+    ) -> Option<bool> {
+        let reach = if mode == GameMode::Creative {
+            5.0
+        } else {
+            let attributes = self.living_entity.attributes.try_read().ok()?;
+            LivingEntity::attribute_value_from(&attributes, &Attributes::BLOCK_INTERACTION_RANGE)
+                .max(5.0)
+        };
+        Some(self.is_within_block_range(position, reach + additional_range))
+    }
+
     fn is_within_block_range(&self, position: &BlockPos, distance: f64) -> bool {
         let box_pos = BoundingBox::from_block(position);
         let entity_pos = self.living_entity.entity.pos.load();

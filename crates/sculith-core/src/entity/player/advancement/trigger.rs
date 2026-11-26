@@ -8,6 +8,7 @@ const CONSUME_ITEM_TRIGGER: &str = "minecraft:consume_item";
 const RECIPE_CRAFTED_TRIGGER: &str = "minecraft:recipe_crafted";
 const RECIPE_UNLOCKED_TRIGGER: &str = "minecraft:recipe_unlocked";
 const INVENTORY_CHANGED_TRIGGER: &str = "minecraft:inventory_changed";
+const PLACED_BLOCK_TRIGGER: &str = "minecraft:placed_block";
 
 fn matches_consumed_item(condition: &CriterionConditions, item_id: &str) -> bool {
     match condition {
@@ -28,6 +29,14 @@ fn matches_crafted_recipe(condition: &CriterionConditions, recipe_id: &str) -> b
 fn matches_unlocked_recipe(condition: &CriterionConditions, recipe_id: &str) -> bool {
     match condition {
         CriterionConditions::RecipeUnlocked(predicate) => predicate.matches(recipe_id),
+        CriterionConditions::Custom { .. } => true,
+        _ => false,
+    }
+}
+
+fn matches_placed_block(condition: &CriterionConditions, block_id: &str) -> bool {
+    match condition {
+        CriterionConditions::PlacedBlock(predicate) => predicate.matches(block_id, None),
         CriterionConditions::Custom { .. } => true,
         _ => false,
     }
@@ -77,6 +86,18 @@ impl InventoryCriteriaSnapshot {
 }
 
 impl PlayerAdvancement {
+    pub(crate) fn has_placement_listener(&self, block_name: &str) -> bool {
+        self.active_listeners
+            .get(PLACED_BLOCK_TRIGGER)
+            .filter(|listeners| !listeners.is_empty())
+            .is_some_and(|listeners| {
+                let block_id = format!("minecraft:{block_name}");
+                listeners
+                    .iter()
+                    .any(|listener| matches_placed_block(&listener.conditions, &block_id))
+            })
+    }
+
     pub(in crate::entity) fn has_consumption_listener(&self, registry_key: &str) -> bool {
         self.active_listeners
             .get(CONSUME_ITEM_TRIGGER)
@@ -455,10 +476,8 @@ impl Player {
             }
 
             AdvancementTrigger::PlacedBlock { block_id } => {
-                self.trigger_criterion_event("minecraft:placed_block", |cond| match cond {
-                    CriterionConditions::PlacedBlock(pred) => pred.matches(&block_id, None),
-                    CriterionConditions::Custom { .. } => true,
-                    _ => false,
+                self.trigger_criterion_event(PLACED_BLOCK_TRIGGER, |condition| {
+                    matches_placed_block(condition, &block_id)
                 });
             }
 

@@ -680,6 +680,48 @@ impl EntityIndex {
         Some(result)
     }
 
+    /// Keeps neighboring cells free of actors while the player places a full block.
+    /// The caller already holds the placing player's bounds guard.
+    pub(super) fn try_with_placement_space<R>(
+        &self,
+        world: &World,
+        player: &Player,
+        area: &BoundingBox,
+        apply: impl FnOnce(&dyn Fn() -> bool) -> Option<R>,
+    ) -> Option<R> {
+        let entity = player.get_entity();
+        if entity.bounding_box.load().intersects(area) {
+            return None;
+        }
+        let range = Index::entity_range(area)?;
+        let (players, player_index) = Self::try_read_current(
+            &self.players,
+            &world.players,
+            PlayerIndex::matches,
+            PlayerIndex::rebuild,
+        )?;
+        let &owner = player_index.slots.get(&entity.entity_id)?;
+        let (entities, index) =
+            Self::try_read_current(&self.inner, &world.entities, Index::matches, Index::rebuild)?;
+        // Same-cell movement can update bounds under a read guard. Exclude
+        // other members of the cells as well as those intersecting the block.
+        if !std::ptr::eq(players[owner].as_ref(), player)
+            || !player_index.oversized.is_empty()
+            || !index.oversized.is_empty()
+            || range
+                .indexed_members(&player_index.cells)
+                .any(|slot| slot != owner)
+            || range.indexed_members(&index.cells).next().is_some()
+        {
+            return None;
+        }
+        let same_members = || {
+            Arc::ptr_eq(&players, &world.players.load())
+                && Arc::ptr_eq(&entities, &world.entities.load())
+        };
+        same_members().then(|| apply(&same_members)).flatten()
+    }
+
     /// Pins the cell memberships of an isolated drop and its only possible collector.
     pub(super) fn try_with_pickup_contact<R>(
         &self,
