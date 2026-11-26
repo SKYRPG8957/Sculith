@@ -1908,9 +1908,10 @@ impl Player {
         };
 
         let inventory = self.inventory();
+        let held_slot = usize::from(inventory.get_selected_slot());
         let (item_stack, spin_slot) = match spin_weapon {
             Some((stack, slot)) => (stack, slot),
-            None => (inventory.held_item(), None),
+            None => (inventory.get_slot(held_slot), None),
         };
         if !item_stack.is_empty() && !is_spin_attack {
             self.increment_stat(
@@ -2166,16 +2167,6 @@ impl Player {
 
         combat::sync_hit_player_velocity(victim.as_ref(), old_movement);
 
-        // NOTE: TOCTOU race condition in single-player context.
-        // The weapon cost is computed (cost = 1 or 2) with item_stack locked, then damage_held_item
-        // re-acquires the lock. In async multi-task scenarios, another task could theoretically
-        // swap the held item between these operations, causing the cost to apply to the wrong item.
-        // Mitigation options (in priority order):
-        // 1. Create damage_held_item_with_lock(&self, item_stack: MutexGuard, amount) variant
-        //    to hold the lock across both computation and application.
-        // 2. Refactor compute cost as a closure: damage_held_item(self, |stack| -> i32 { ... })
-        // 3. In practice, single-player scenarios are safe (this is not multiplayer). Document
-        //    as a known limitation if refactoring is deemed too invasive.
         let durability_cost = Self::combat_weapon_durability_cost(&item_stack);
         if let Some(slot) = spin_slot {
             if self
@@ -2185,8 +2176,15 @@ impl Player {
             {
                 self.damage_item_in_slot(&slot, durability_cost);
             }
-        } else {
+        } else if is_spin_attack {
             self.damage_held_item(durability_cost);
+        } else {
+            self.damage_inventory_slot(
+                &EquipmentSlot::MAIN_HAND,
+                held_slot,
+                &item_stack,
+                durability_cost,
+            );
         }
 
         // Vanilla `Player#attack` ends the successful-hit branch with
@@ -2282,7 +2280,7 @@ impl Player {
 
     /// Damages a stack through the player's item events; the caller handles inventory and break updates.
     pub fn damage_item_stack(&self, stack: &mut ItemStack, amount: i32) -> DamageResult {
-        self.damage_item_stack_internal(stack, amount, true)
+        self.damage_item_stack_internal(stack, amount, true, |_| true)
     }
 
     /// Vanilla `ItemStack.hurtWithoutBreaking`: applies durability damage clamped at `max_damage - 1`.
@@ -2291,7 +2289,7 @@ impl Player {
         stack: &mut ItemStack,
         amount: i32,
     ) -> DamageResult {
-        self.damage_item_stack_internal(stack, amount, false)
+        self.damage_item_stack_internal(stack, amount, false, |_| true)
     }
 
     fn damage_item_stack_internal(
@@ -2299,6 +2297,7 @@ impl Player {
         stack: &mut ItemStack,
         amount: i32,
         allow_break: bool,
+        commit: impl FnOnce(&ItemStack) -> bool,
     ) -> DamageResult {
         if matches!(
             self.gamemode.load(),
@@ -2337,19 +2336,20 @@ impl Player {
         } else {
             stack.damage_item_without_breaking(amount)
         };
-        if result != DamageResult::Untouched {
-            let vehicle_type = self
-                .living_entity
-                .entity
-                .get_vehicle()
-                .map(|v| format!("minecraft:{}", v.get_entity().entity_type.resource_name));
-            self.trigger_advancement(
-                crate::entity::player::advancement::trigger::AdvancementTrigger::ItemDurabilityChanged {
-                    item_id: original_item.registry_key.to_string(),
-                    vehicle_type,
-                },
-            );
+        if result == DamageResult::Untouched || !commit(stack) {
+            return DamageResult::Untouched;
         }
+        let vehicle_type = self
+            .living_entity
+            .entity
+            .get_vehicle()
+            .map(|v| format!("minecraft:{}", v.get_entity().entity_type.resource_name));
+        self.trigger_advancement(
+            crate::entity::player::advancement::trigger::AdvancementTrigger::ItemDurabilityChanged {
+                item_id: original_item.registry_key.to_string(),
+                vehicle_type,
+            },
+        );
         if result == DamageResult::Broken
             && let Some((server, player)) = player_context
         {
@@ -2366,57 +2366,82 @@ impl Player {
     /// Applies `amount` durability damage to the item in `slot`.
     /// Broadcasts an [`EntityStatus`] break event and syncs the slot if the item is destroyed.
     pub fn damage_item_in_slot(&self, slot: &EquipmentSlot, amount: i32) -> bool {
-        let _inventory_edit = self.hold_bedrock_inventory_edit();
         let Some(slot_index) = self.inventory.equipment_slot_index(slot) else {
             return false;
         };
+        self.damage_inventory_slot(
+            slot,
+            slot_index,
+            &self.inventory.get_slot(slot_index),
+            amount,
+        )
+    }
 
-        let mut stack = self.inventory.get_slot(slot_index);
-        let original_item = stack.item;
-        let break_sound = stack
+    fn damage_inventory_slot(
+        &self,
+        slot: &EquipmentSlot,
+        slot_index: usize,
+        expected: &ItemStack,
+        amount: i32,
+    ) -> bool {
+        if amount <= 0 {
+            return false;
+        }
+        if !self.inventory.get_slot(slot_index).are_equal(expected) {
+            return false;
+        }
+        let world = self.world();
+        let mut damaged = expected.clone();
+        let result = self.damage_item_stack_internal(&mut damaged, amount, true, |replacement| {
+            let _inventory_edit = self.hold_bedrock_inventory_edit();
+            Arc::ptr_eq(&world, &self.world())
+                && self
+                    .inventory
+                    .replace_slot_if_equal(slot_index, expected, replacement.clone())
+        });
+        if result == DamageResult::Untouched {
+            return false;
+        }
+
+        let break_sound = expected
             .get_data_component::<pumpkin_data::data_component_impl::BreakSoundImpl>()
             .and_then(|bs| match bs.sound {
                 pumpkin_data::data_component_impl::IdOr::Id(s) => Some(s),
                 pumpkin_data::data_component_impl::IdOr::Value(_) => None,
             });
-        let result = self.damage_item_stack(&mut stack, amount);
-        let updated = (result != DamageResult::Untouched).then_some((result, stack.clone()));
-
-        if let Some((result, updated_stack)) = updated {
-            self.inventory.set_slot(slot_index, updated_stack.clone());
-            if result == DamageResult::Broken {
-                self.increment_stat(
-                    statistics::StatisticCategory::Broken,
-                    original_item.id as i32,
-                    1,
+        if result == DamageResult::Broken {
+            self.increment_stat(
+                statistics::StatisticCategory::Broken,
+                expected.item.id as i32,
+                1,
+            );
+            if let Some(sound) = break_sound {
+                self.world().play_sound(
+                    sound,
+                    pumpkin_data::sound::SoundCategory::Players,
+                    &self.living_entity.entity.pos.load(),
                 );
-                if let Some(sound) = break_sound {
-                    self.world().play_sound(
-                        sound,
-                        pumpkin_data::sound::SoundCategory::Players,
-                        &self.living_entity.entity.pos.load(),
-                    );
-                }
+            }
+            if self.inventory.equipment_slot_index(slot) == Some(slot_index) {
                 self.world().send_entity_status(
                     &self.living_entity.entity,
                     super::equipment_break_status(slot),
                     ActorEventID::None,
                 );
             }
-
-            self.try_send_slot_set_packet(&CSetPlayerInventory::new(
-                (slot_index as i32).into(),
-                &ItemStackSerializer::from(updated_stack.clone()),
-            ));
-            self.sync_inventory_to_client();
-
-            self.living_entity
-                .send_equipment_changes(&[(slot.clone(), updated_stack)]);
-
-            return true;
         }
-
-        false
+        let _inventory_edit = self.hold_bedrock_inventory_edit();
+        let current = self.inventory.get_slot(slot_index);
+        self.try_send_slot_set_packet(&CSetPlayerInventory::new(
+            (slot_index as i32).into(),
+            &ItemStackSerializer::from(current.clone()),
+        ));
+        self.sync_inventory_to_client();
+        if self.inventory.equipment_slot_index(slot) == Some(slot_index) {
+            self.living_entity
+                .send_equipment_changes(&[(slot.clone(), current)]);
+        }
+        true
     }
 
     /// Checks and triggers location-based enchantments (e.g. Frost Walker) on the player's equipped armor.

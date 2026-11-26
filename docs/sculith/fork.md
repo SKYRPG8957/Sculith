@@ -458,6 +458,10 @@ strike can sweep when the item explicitly carries Sweeping Edge.
 Ordinary hits on both editions use the shared weapon damage. Each target keeps
 its own damage immunity. Java attacks with an explicit
 item charge requirement still use their configured charge path.
+An ordinary attack records its hotbar slot and item before calling plugins.
+Durability updates apply when the slot still contains the recorded item.
+Break events follow the slot update, and the client receives the current
+inventory after those callbacks.
 The shared player attack adds one damage per Sharpness level. Strength applies
 `damage × 1.3 + 1` per level to the enchanted damage, followed by
 `damage × 0.8 − 0.5` per Weakness level, with a minimum of zero. Bedrock
