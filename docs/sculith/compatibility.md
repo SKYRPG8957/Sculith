@@ -15,7 +15,7 @@ The tested targets are unmodified Java 26.3 and Bedrock 1.26.63 (protocol
 | Raw Bedrock UI JSON | Unavailable | Native | Existing Bedrock UI files travel in the resource pack. Java dialogs support the shared form API. |
 | Distant terrain | Unavailable | Limited | The optional pack shows 8-, 16- and 32-block terrain summaries beyond the sent chunk view on supported Bedrock connections. |
 | Bedrock world import | Shared | Shared | A world folder or `.mcworld` export can create a separate Anvil world with ticking areas and supported terrain and block, entity and player data. |
-| Bedrock world export | Limited | Limited | A Bedrock world template can receive selected inventory edits, dry block edits and supported world state. Standalone export remains open. |
+| Bedrock world export | Limited | Limited | A Bedrock world template can receive selected inventory edits, dry block edits, supported world state and ticking areas. Standalone export remains open. |
 
 An unmodified Java 26.3 client on Linux displayed the shared dialogs and
 converted assets. Independent Bedrock protocol clients checked packet delivery,

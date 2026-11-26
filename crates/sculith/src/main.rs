@@ -610,7 +610,7 @@ fn export_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
     else {
         eprintln!(
             "Run sculith --export-bedrock-storage BEDROCK_TEMPLATE SCULITH_WORLD DESTINATION \
-             [--include-block-edits] [--include-world-state]"
+             [--include-block-edits] [--include-world-state] [--include-ticking-areas]"
         );
         return 2;
     };
@@ -635,6 +635,9 @@ fn export_bedrock_command(mut args: impl Iterator<Item = OsString>) -> i32 {
             if options.include_world_state {
                 println!("Updated shared game rules, Overworld time and weather.");
             }
+            if let Some(areas) = report.ticking_areas_written {
+                println!("Wrote {areas} ticking areas.");
+            }
             print_block_entity_examples(&stats.preserved, "Preserved");
             0
         }
@@ -656,6 +659,9 @@ fn parse_bedrock_export_options(
             }
             Some("--include-world-state") if !options.include_world_state => {
                 options.include_world_state = true;
+            }
+            Some("--include-ticking-areas") if !options.include_ticking_areas => {
+                options.include_ticking_areas = true;
             }
             _ => return None,
         }

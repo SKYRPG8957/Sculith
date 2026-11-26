@@ -20,7 +20,7 @@ use super::{
     index_chunks, invalid, new_destination, read_chunk, read_level, region_chunk_index,
     storage::{self, SLOTS, StorageItemRegistry},
     terrain::{DiskBlockStates, TerrainRegistry, export_column_blocks},
-    world_state,
+    ticking_areas, world_state,
 };
 use crate::{
     chunk::{
@@ -37,6 +37,7 @@ use crate::{
 pub struct StorageExportOptions {
     pub include_block_edits: bool,
     pub include_world_state: bool,
+    pub include_ticking_areas: bool,
 }
 
 #[derive(Debug)]
@@ -50,6 +51,7 @@ pub struct StorageExportStats {
 pub struct WorldEditsExportStats {
     pub storage: StorageExportStats,
     pub block_columns_updated: usize,
+    pub ticking_areas_written: Option<usize>,
 }
 
 /// Copies a stopped Bedrock world and updates the inventories of its supported containers
@@ -131,9 +133,13 @@ pub fn export_world(
     let database = output.join("db");
     copy_database(&template.join("db"), &database)?;
     let db = DB::open(database, bedrock_db_options())?;
-    let report = export_columns(&db, &sculith, &terrain, &items, block_states.as_ref())?;
+    let mut report = export_columns(&db, &sculith, &terrain, &items, block_states.as_ref())?;
+    if options.include_ticking_areas {
+        report.ticking_areas_written = Some(ticking_areas::export(&db, &sculith)?);
+    }
     if !options.include_block_edits
         && !options.include_world_state
+        && !options.include_ticking_areas
         && report.storage.containers_checked == 0
     {
         return Err(invalid(
@@ -200,6 +206,7 @@ fn export_columns(
     }
     Ok(WorldEditsExportStats {
         block_columns_updated,
+        ticking_areas_written: None,
         storage: StorageExportStats {
             containers_checked: preserved.containers_imported,
             inventories_updated,

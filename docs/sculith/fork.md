@@ -964,6 +964,12 @@ time of day and weather to the Bedrock copy. This works with or without
 `--include-block-edits` and with templates that contain no supported storage.
 Timed clear weather maps to both native precipitation timers.
 
+Append `--include-ticking-areas` to replace the areas in the new Bedrock copy
+with the saved Sculith areas from all three standard dimensions. Names,
+shapes, preload settings and removals carry over. A Sculith world without
+saved areas produces an empty area list. Without this flag, exports keep the
+template's areas.
+
 ## Region header recovery
 
 Anvil and Pump write new inline chunk payloads into free sectors before
