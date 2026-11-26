@@ -9,6 +9,8 @@ use crate::{net::bedrock::BedrockClient, server::TickDeadline};
 const MAX_FOOD: u8 = 20;
 const EXHAUSTION_COST: f32 = 4.0;
 const MAX_EXHAUSTION: f32 = 40.0;
+const FOOD_HEAL_TICKS: u32 = 80;
+const FOOD_HEAL_EXHAUSTION: f32 = 6.0;
 
 pub struct HungerManager {
     pub level: AtomicCell<u8>,
@@ -62,20 +64,24 @@ impl HungerManager {
             needs_sync = true;
         }
 
-        if natural_regen && saturation > 0.0 && can_heal && level >= 20 {
+        if natural_regen && level >= 18 && can_heal {
             timer += 1;
-            if timer >= 10 {
-                let cost = saturation.min(6.0);
-                heal_amount = cost / 6.0;
-                exhaustion = (exhaustion + cost).min(MAX_EXHAUSTION);
-                timer = 0;
-                needs_sync = true;
-            }
-        } else if natural_regen && level >= 18 && can_heal {
-            timer += 1;
-            if timer >= 80 {
+            if timer >= FOOD_HEAL_TICKS {
                 heal_amount = 1.0;
-                exhaustion = (exhaustion + 6.0).min(MAX_EXHAUSTION);
+                exhaustion = (exhaustion + FOOD_HEAL_EXHAUSTION).min(MAX_EXHAUSTION);
+                // Bedrock spends the healing cost in the same tick. Respect the
+                // existing drain deadline if either owner spent exhaustion already.
+                if !has_excess
+                    && exhaustion > EXHAUSTION_COST
+                    && (owns_drain || client.is_none_or(|client| client.claim_food_drain(deadline)))
+                {
+                    Self::spend_exhaustion(
+                        &mut level,
+                        &mut saturation,
+                        &mut exhaustion,
+                        difficulty,
+                    );
+                }
                 timer = 0;
                 needs_sync = true;
             }
@@ -104,11 +110,10 @@ impl HungerManager {
         }
         drop(abilities);
 
-        if needs_sync {
-            player.send_health();
-        }
         if heal_amount > 0.0 {
             player.heal(heal_amount);
+        } else if needs_sync {
+            player.send_health();
         }
         if damage_amount > 0.0 {
             player

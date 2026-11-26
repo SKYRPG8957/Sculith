@@ -498,6 +498,12 @@ Food writes and player save snapshots share the abilities lock. The world
 advances healing and starvation, and publishes the latest food attributes
 after a regional change. Peaceful regeneration, healing or starvation in
 progress, packet observers and coordinated ticks use the world processing path.
+Food heals one health point every 80 ticks while hunger is at least 18 and
+natural regeneration is enabled. The healing step spends exhaustion that
+crosses the drain threshold on the same deadline. Peaceful also restores one
+health point every 20 ticks when natural regeneration is enabled. It restores
+one food point every 10 ticks regardless of that rule. Both client editions
+use these shared rules.
 
 The Bedrock player's region can count down an active main-hand food use.
 With an idle input queue and personal inventory, the region can also finish

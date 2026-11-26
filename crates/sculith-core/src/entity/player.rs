@@ -3594,23 +3594,23 @@ impl Player {
         self.breath_manager.tick_with_deadline(self, deadline);
 
         let level_info = self.world().level_info.load();
-        if level_info.difficulty == Difficulty::Peaceful
-            && level_info.game_rules.natural_health_regeneration
-        {
+        if level_info.difficulty == Difficulty::Peaceful {
             let tick_count = self.tick_counter.load(Ordering::Relaxed);
-            if tick_count % 20 == 0 && self.can_food_heal() {
-                self.heal(1.0);
-            }
-            let _abilities = self.lock_abilities_and_hunger();
-            if tick_count % 20 == 0 {
-                let saturation = self.hunger_manager.saturation.load();
-                if saturation < 20.0 {
-                    self.hunger_manager.set_saturation(saturation + 1.0);
+            let recovered_food = tick_count % 10 == 0 && {
+                let _abilities = self.lock_abilities_and_hunger();
+                let needs_food = self.hunger_manager.level.load() < 20;
+                if needs_food {
+                    self.hunger_manager.add_hunger(1);
                 }
-            }
-
-            if tick_count % 10 == 0 && self.hunger_manager.level.load() < 20 {
-                self.hunger_manager.add_hunger(1);
+                needs_food
+            };
+            if level_info.game_rules.natural_health_regeneration
+                && tick_count % 20 == 0
+                && self.can_food_heal()
+            {
+                self.heal(1.0);
+            } else if recovered_food {
+                self.send_health();
             }
         }
 
