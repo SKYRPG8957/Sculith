@@ -2,7 +2,7 @@ use std::sync::atomic::{
     AtomicBool, AtomicU32,
     Ordering::{self, Relaxed},
 };
-use std::sync::{Arc, MutexGuard, RwLock, RwLockReadGuard};
+use std::sync::{Arc, MutexGuard, OnceLock, RwLock, RwLockReadGuard};
 
 use bytes::{BufMut, Bytes};
 use crossbeam::atomic::AtomicCell;
@@ -58,6 +58,7 @@ use crate::world::World;
 use crate::world::chunker::get_view_distance;
 
 const MIN_MOVE_DISTANCE_SQUARED: f32 = 7.629_394_5e-6;
+const MIN_INDEXED_PLAYER_VIEWS: usize = 16;
 const BEDROCK_POSITION_FIELDS: u16 =
     MOVE_ACTOR_DELTA_FLAG_HAS_X | MOVE_ACTOR_DELTA_FLAG_HAS_Y | MOVE_ACTOR_DELTA_FLAG_HAS_Z;
 const BEDROCK_ROTATION_FIELDS: u16 = MOVE_ACTOR_DELTA_FLAG_HAS_PITCH
@@ -97,6 +98,99 @@ struct PlayerViewSnapshot<'a> {
     view_distance: i32,
 }
 
+struct PlayerViews<'a> {
+    players: Vec<PlayerViewSnapshot<'a>>,
+    index: OnceLock<Option<PlayerViewIndex>>,
+}
+
+impl<'a> PlayerViews<'a> {
+    const fn new(players: Vec<PlayerViewSnapshot<'a>>) -> Self {
+        Self {
+            players,
+            index: OnceLock::new(),
+        }
+    }
+
+    fn index(&self) -> Option<&PlayerViewIndex> {
+        self.index
+            .get_or_init(|| {
+                PlayerViewIndex::new(
+                    self.players
+                        .iter()
+                        .map(|view| (view.player.gameprofile.id, view.pos, view.view_distance)),
+                )
+            })
+            .as_ref()
+    }
+}
+
+/// Candidate views are indexed by horizontal position in this tick's snapshot.
+struct PlayerViewIndex {
+    by_x: Vec<(f64, usize)>,
+    by_z: Vec<(f64, usize)>,
+    by_uuid: FxHashMap<Uuid, usize>,
+    max_view_distance: i32,
+}
+
+impl PlayerViewIndex {
+    fn new(views: impl ExactSizeIterator<Item = (Uuid, Vector3<f64>, i32)>) -> Option<Self> {
+        let mut by_x = Vec::with_capacity(views.len());
+        let mut by_z = Vec::with_capacity(views.len());
+        let mut by_uuid = FxHashMap::default();
+        let mut max_view_distance = 0;
+        for (index, (id, position, view_distance)) in views.enumerate() {
+            if !position.x.is_finite() || !position.z.is_finite() {
+                return None;
+            }
+            by_x.push((position.x, index));
+            by_z.push((position.z, index));
+            by_uuid.insert(id, index);
+            max_view_distance = max_view_distance.max(view_distance);
+        }
+        by_x.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        by_z.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        Some(Self {
+            by_x,
+            by_z,
+            by_uuid,
+            max_view_distance,
+        })
+    }
+
+    fn nearby(&self, position: Vector3<f64>, tracking_range: u32) -> Option<&[(f64, usize)]> {
+        fn window(entries: &[(f64, usize)], center: f64, radius: f64) -> &[(f64, usize)] {
+            let start = entries.partition_point(|&(coordinate, _)| coordinate < center - radius);
+            let end = entries.partition_point(|&(coordinate, _)| coordinate <= center + radius);
+            &entries[start..end]
+        }
+        if !position.x.is_finite() || !position.z.is_finite() {
+            return None;
+        }
+        // A conservative boundary leaves exact range and view checks to the tracker.
+        let view = i32::try_from(tracking_range)
+            .ok()?
+            .min(self.max_view_distance);
+        let radius = f64::from(view) * 16.0 + 1.0;
+        let x = window(&self.by_x, position.x, radius);
+        let z = window(&self.by_z, position.z, radius);
+        let nearby = if x.len() <= z.len() { x } else { z };
+        (nearby.len() < self.by_x.len() / 2).then_some(nearby)
+    }
+
+    fn ordered_candidates(
+        &self,
+        nearby: &[(f64, usize)],
+        paired: impl Iterator<Item = Uuid>,
+    ) -> Vec<usize> {
+        let mut candidates: Vec<_> = nearby.iter().map(|&(_, index)| index).collect();
+        // Paired viewers outside the search window still need their removal check.
+        candidates.extend(paired.filter_map(|id| self.by_uuid.get(&id).copied()));
+        candidates.sort_unstable();
+        candidates.dedup();
+        candidates
+    }
+}
+
 struct RegionalActorPackets {
     java: Vec<Bytes>,
     bedrock: Vec<Bytes>,
@@ -106,7 +200,7 @@ struct RegionalActorPackets {
 #[derive(Default)]
 struct Viewers {
     players: FxHashMap<Uuid, Arc<Player>>,
-    snapshot: std::sync::OnceLock<Arc<[Arc<Player>]>>,
+    snapshot: OnceLock<Arc<[Arc<Player>]>>,
 }
 
 impl Viewers {
@@ -761,26 +855,38 @@ impl TrackedEntity {
         }
     }
 
-    fn update_players_from_snapshots(
-        &self,
-        snapshots: &[PlayerViewSnapshot<'_>],
-        chunk_changed: bool,
-    ) {
-        if snapshots.is_empty() {
+    fn update_players_from_snapshots(&self, snapshots: &PlayerViews<'_>, chunk_changed: bool) {
+        if snapshots.players.is_empty() {
             return;
         }
-        let entity_chunk = self.entity.get_entity().chunk_pos.load();
+        let base = self.entity.get_entity();
+        let entity_chunk = base.chunk_pos.load();
         let mut lazy_state: Option<(Vector3<f64>, u32)> = None;
-        for snap in snapshots {
+        let candidates = if snapshots.players.len() >= MIN_INDEXED_PLAYER_VIEWS
+            && let Some(index) = snapshots.index()
+        {
+            let position = base.pos.load();
+            let range = self.get_effective_range();
+            lazy_state = Some((position, range));
+            index.nearby(position, range).map(|nearby| {
+                index.ordered_candidates(
+                    nearby,
+                    self.viewers().iter().map(|viewer| viewer.gameprofile.id),
+                )
+            })
+        } else {
+            None
+        };
+        let mut check = |snap: &PlayerViewSnapshot<'_>| {
             if snap.entity_id == self.entity_id {
-                continue;
+                return;
             }
             if !snap
                 .watched
                 .is_within_distance(entity_chunk.x, entity_chunk.y)
             {
                 self.remove_player(snap.player);
-                continue;
+                return;
             }
             let (entity_pos, effective_range) = *lazy_state.get_or_insert_with(|| {
                 (
@@ -797,6 +903,22 @@ impl TrackedEntity {
                 effective_range,
                 chunk_changed,
             );
+        };
+        if let Some(candidates) = candidates {
+            tracing::trace!(
+                target: "sculith::entity_tracking",
+                entity = self.entity_id,
+                roster = snapshots.players.len(),
+                candidates = candidates.len(),
+                "Narrowed entity visibility candidates"
+            );
+            for index in candidates {
+                check(&snapshots.players[index]);
+            }
+        } else {
+            for snap in &snapshots.players {
+                check(snap);
+            }
         }
     }
 
@@ -2498,19 +2620,21 @@ impl EntityTracker {
 
     pub fn update_all(&self, world: &World) {
         let players = world.players.load();
-        let all_snapshots: Vec<PlayerViewSnapshot<'_>> = players
-            .iter()
-            .map(|player| {
-                let entity = player.get_entity();
-                PlayerViewSnapshot {
-                    player,
-                    entity_id: entity.entity_id,
-                    pos: entity.pos.load(),
-                    watched: player.watched_section.load(),
-                    view_distance: get_view_distance(player).get() as i32,
-                }
-            })
-            .collect();
+        let all_snapshots = PlayerViews::new(
+            players
+                .iter()
+                .map(|player| {
+                    let entity = player.get_entity();
+                    PlayerViewSnapshot {
+                        player,
+                        entity_id: entity.entity_id,
+                        pos: entity.pos.load(),
+                        watched: player.watched_section.load(),
+                        view_distance: get_view_distance(player).get() as i32,
+                    }
+                })
+                .collect(),
+        );
 
         let tracked_entities = self.tracked_entities();
 
@@ -2538,11 +2662,14 @@ impl EntityTracker {
             .collect();
 
         if !moved_player_ids.is_empty() {
-            let moved_snapshots: Vec<PlayerViewSnapshot<'_>> = all_snapshots
-                .iter()
-                .copied()
-                .filter(|snap| moved_player_ids.contains(&snap.entity_id))
-                .collect();
+            let moved_snapshots = PlayerViews::new(
+                all_snapshots
+                    .players
+                    .iter()
+                    .copied()
+                    .filter(|snap| moved_player_ids.contains(&snap.entity_id))
+                    .collect(),
+            );
             tracked_entities
                 .par_iter()
                 .zip(entity_moved.par_iter())
@@ -2566,6 +2693,37 @@ impl EntityTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn separated_views_keep_outgoing_viewers_in_roster_order() {
+        let index = PlayerViewIndex::new((0..20).map(|offset| {
+            (
+                Uuid::from_u128(offset as u128 + 1),
+                Vector3::new(16.0, 0.0, f64::from(offset - 8) * 128.0),
+                8,
+            )
+        }))
+        .unwrap();
+        let nearby = index.nearby(Vector3::new(16.0, 64.0, 0.0), 16).unwrap();
+        let paired = [Uuid::from_u128(20), Uuid::from_u128(9), Uuid::from_u128(1)];
+        assert_eq!(
+            index.ordered_candidates(nearby, paired.into_iter()),
+            [0, 7, 8, 9, 19]
+        );
+    }
+
+    #[test]
+    fn dense_player_views_use_the_full_roster() {
+        let index = PlayerViewIndex::new((0..20).map(|offset| {
+            (
+                Uuid::from_u128(offset as u128 + 1),
+                Vector3::new(f64::from(offset), 0.0, 0.0),
+                4,
+            )
+        }))
+        .unwrap();
+        assert!(index.nearby(Vector3::new(10.0, 64.0, 0.0), 8).is_none());
+    }
 
     #[tokio::test]
     async fn world_pairing_reuses_a_tracker_created_by_a_region() {

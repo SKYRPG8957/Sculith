@@ -670,6 +670,11 @@ speed and permissions before it publishes progress or breaks a block.
 Replacement targets, a cancelled action, and a change of world invalidate
 the old mining session.
 
+When many viewers are spread out, the entity tracker narrows its candidate
+list using horizontal positions in the tick snapshot. It also checks already
+paired viewers that may need a removal. The tracker checks delivered terrain
+and exact visibility before sending a spawn.
+
 Player movement registers the new view before entity chunk readers run.
 Readers share one disk request for a chunk and route its ready position to the
 current active extent. Each region claims up to four positions per deadline.
