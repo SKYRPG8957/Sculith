@@ -444,8 +444,13 @@ A grounded input can also carry a personal inventory request. When the player
 is stationary, the look and controls are unchanged, and movement effects are
 settled, the region applies the same inventory checks as for a standalone
 request. The connection advances past the input after the inventory commit.
-Movement, a changed look, other embedded actions, and requests that need a
-world handler keep the original packet at the head of the queue.
+The region can also complete a short level step within one loaded chunk and
+then apply the inventory request. When the pose is committed and world
+movement effects or inventory handling are pending, the input stays at the
+head of the connection queue. The world finishes the pending work in order
+and rechecks the pose and teleport before using its inventory request.
+Cross-chunk moves paired with inventory and other embedded actions use the
+ordinary world input path.
 At the head of the queue,
 the region can also decode one native Bedrock movement packet within its current
 extent. The world rechecks that extent and the packet after receive hooks before

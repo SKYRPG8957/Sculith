@@ -62,12 +62,27 @@ pub enum ClientMoveOutcome {
     Ignored,
 }
 
-pub(crate) struct CommittedPlayerMove {
+#[derive(Clone, Copy)]
+pub(crate) struct RegionalMoveStamp {
     world: uuid::Uuid,
     teleport: i32,
     epoch: u32,
+    position: Vector3<f64>,
+}
+
+impl RegionalMoveStamp {
+    pub(crate) fn is_current(self, player: &Player, world: &World) -> bool {
+        world.uuid == self.world
+            && player.can_simulate_in(world)
+            && player.teleport_id_count.load(Ordering::Relaxed) == self.teleport
+            && player.chunk_send_epoch.load(Ordering::Relaxed) == self.epoch
+            && player.get_entity().pos.load() == self.position
+    }
+}
+
+pub(crate) struct CommittedPlayerMove {
+    pub(crate) stamp: RegionalMoveStamp,
     from: Vector3<f64>,
-    to: Vector3<f64>,
     movement: ClientMove,
     rotation_changed: bool,
     received: FxHashSet<i32>,
@@ -77,6 +92,7 @@ pub(crate) enum RegionalClientMove {
     Complete {
         position_changed: bool,
         rotation_changed: bool,
+        stamp: RegionalMoveStamp,
     },
     Committed(CommittedPlayerMove),
 }
@@ -577,6 +593,7 @@ impl Player {
         let from = entity.pos.load();
         let to = movement.position?;
         let difference = to - from;
+        let chunk = entity.chunk_pos.load();
         if !self.has_client_loaded()
             || self.is_movement_locked.load(Ordering::Relaxed)
             || self.camera_target_id.load().is_some()
@@ -591,7 +608,11 @@ impl Player {
             || movement.horizontal_collision
             || movement.on_ground != entity.on_ground.load(Ordering::Relaxed)
             || !movement.on_ground && !self.is_flying()
-            || stationary_action.is_some() && from != to
+            || stationary_action.is_some()
+                && from != to
+                && (!movement.on_ground
+                    || from.y != to.y
+                    || BlockPos::floored_v(to).chunk_position() != chunk)
             || difference.y.abs() > 0.000_02
             || difference.horizontal_length_squared() > 1.0
             || to.x != Self::clamp_horizontal(to.x)
@@ -613,9 +634,12 @@ impl Player {
         }
         let _checkpoint = server.try_entity_save_guard()?;
         let world = self.world();
-        let chunk = entity.chunk_pos.load();
-        let teleport = self.teleport_id_count.load(Ordering::Relaxed);
-        let epoch = self.chunk_send_epoch.load(Ordering::Relaxed);
+        let stamp = RegionalMoveStamp {
+            world: world.uuid,
+            teleport: self.teleport_id_count.load(Ordering::Relaxed),
+            epoch: self.chunk_send_epoch.load(Ordering::Relaxed),
+            position: to,
+        };
         let pose = self.try_update_regional_pose(
             server,
             extent,
@@ -630,14 +654,12 @@ impl Player {
             return Some(RegionalClientMove::Complete {
                 position_changed,
                 rotation_changed,
+                stamp,
             });
         }
         let (received, all_viewers_queued) = if (position_changed || pose.stationary_settled)
             && (entity.chunk_pos.load() == chunk || pose.grounded_move)
-            && entity.pos.load() == to
-            && self.can_simulate_in(&world)
-            && self.teleport_id_count.load(Ordering::Relaxed) == teleport
-            && self.chunk_send_epoch.load(Ordering::Relaxed) == epoch
+            && stamp.is_current(self, &world)
             && !server.plugin_manager.has_handlers::<PacketSentEvent>()
         {
             self.try_publish_regional_pose(&world, to, movement.on_ground, pose)
@@ -655,14 +677,12 @@ impl Player {
             return Some(RegionalClientMove::Complete {
                 position_changed,
                 rotation_changed,
+                stamp,
             });
         }
         Some(RegionalClientMove::Committed(CommittedPlayerMove {
-            world: world.uuid,
-            teleport,
-            epoch,
+            stamp,
             from,
-            to,
             movement,
             rotation_changed,
             received,
@@ -787,37 +807,59 @@ impl Player {
         }
     }
 
-    pub(crate) fn finish_regional_client_move(&self, committed: &CommittedPlayerMove) {
+    pub(crate) fn finish_regional_client_move(&self, committed: &CommittedPlayerMove) -> bool {
         let world = self.world();
-        if world.uuid != committed.world || !self.can_simulate_in(&world) {
-            return;
+        if world.uuid != committed.stamp.world || !self.can_simulate_in(&world) {
+            return false;
         }
-        if self.teleport_id_count.load(Ordering::Relaxed) == committed.teleport
-            && self.chunk_send_epoch.load(Ordering::Relaxed) == committed.epoch
-            && self.get_entity().pos.load() == committed.to
-        {
+        if committed.stamp.is_current(self, &world) {
             self.finish_client_move(
                 committed.from,
-                committed.to,
+                committed.stamp.position,
                 committed.movement,
                 committed.movement.on_ground,
                 MovePublication::Committed(committed),
             );
-        } else if !committed.received.is_empty() {
+            return true;
+        }
+        if !committed.received.is_empty() {
             self.reconcile_regional_move(&world, committed);
         }
+        false
+    }
+
+    /// Holds the pose against a new teleport while completing an unobserved edit.
+    pub(crate) fn try_edit_at_regional_move(
+        &self,
+        stamp: RegionalMoveStamp,
+        world: &World,
+        apply: impl FnOnce() -> Option<()>,
+    ) -> Option<()> {
+        let awaiting = self.awaiting_teleport.try_lock().ok()?;
+        let entity = self.get_entity();
+        let bounds = entity.bounding_box.index.try_write().ok()?;
+        if awaiting.is_some()
+            || entity.is_removed()
+            || !std::ptr::eq(bounds.as_ptr(), Arc::as_ptr(&world.entity_index))
+            || !stamp.is_current(self, world)
+        {
+            return None;
+        }
+        apply()
     }
 
     fn reconcile_regional_move(&self, world: &World, committed: &CommittedPlayerMove) {
         let entity = self.get_entity();
         let pos = entity.pos.load();
-        if entity.is_removed() || pos == committed.to && !self.look_changed(committed.movement) {
+        if entity.is_removed()
+            || pos == committed.stamp.position && !self.look_changed(committed.movement)
+        {
             return;
         }
         // A teleport can supersede an already sent pose. Across chunks, only
         // correct an existing pairing once its new terrain has been queued.
         let chunk = entity.chunk_pos.load();
-        let same_chunk = chunk == BlockPos::floored_v(committed.to).chunk_position();
+        let same_chunk = chunk == BlockPos::floored_v(committed.stamp.position).chunk_position();
         let on_ground = entity.on_ground.load(Ordering::Relaxed);
         let already_received = |viewer: &Self| {
             committed.received.contains(&viewer.entity_id())

@@ -22,7 +22,7 @@ use crate::{
         EntityBase,
         player::{
             Player,
-            client_move::{CommittedPlayerMove, RegionalClientMove},
+            client_move::{CommittedPlayerMove, RegionalClientMove, RegionalMoveStamp},
         },
     },
     plugin::server::packet::{PacketReceivedEvent, PacketSentEvent},
@@ -74,7 +74,12 @@ struct PreparedMovement {
     extent: Weak<[Vector2<i32>]>,
     input: SPlayerAuthInput,
     fully_read: bool,
-    committed: Option<CommittedPlayerMove>,
+    continuation: Option<RegionalInputContinuation>,
+}
+
+enum RegionalInputContinuation {
+    FinishMovement(CommittedPlayerMove),
+    ApplyInventory(RegionalMoveStamp),
 }
 
 enum RegionalMovePreparation {
@@ -207,11 +212,10 @@ impl BedrockClient {
             if self.is_closed() {
                 break;
             }
-            if let Some(committed) = movement
+            if movement
                 .as_mut()
-                .and_then(|movement| movement.committed.take())
+                .is_some_and(|movement| self.finish_regional_move_input(&player, movement))
             {
-                player.finish_regional_client_move(&committed);
                 continue;
             }
             let original = (movement.is_some() || attack.is_some()).then(|| packet.payload.clone());
@@ -263,6 +267,29 @@ impl BedrockClient {
         if owned && !player.inbound_packets.is_empty() {
             player.world().offer_regional_input(self.id, &player);
         }
+    }
+
+    fn finish_regional_move_input(
+        &self,
+        player: &Arc<Player>,
+        prepared: &mut PreparedMovement,
+    ) -> bool {
+        let Some(continuation) = prepared.continuation.take() else {
+            return false;
+        };
+        let (stamp, movement_finished) = match continuation {
+            RegionalInputContinuation::FinishMovement(committed) => (
+                committed.stamp,
+                player.finish_regional_client_move(&committed),
+            ),
+            RegionalInputContinuation::ApplyInventory(stamp) => (stamp, true),
+        };
+        if let Some(request) = prepared.input.item_stack_request.take() {
+            // A corrected or superseded pose cannot authorize its remaining input.
+            let current = movement_finished && stamp.is_current(player, &player.world());
+            self.finish_inline_inventory(player, request, current);
+        }
+        true
     }
 
     const fn is_regional_reply(id: i32) -> bool {
@@ -355,7 +382,7 @@ impl BedrockClient {
             extent: Arc::downgrade(extent),
             input,
             fully_read: payload.is_empty(),
-            committed: None,
+            continuation: None,
         })
     }
 
@@ -380,7 +407,36 @@ impl BedrockClient {
                 Some(RegionalClientMove::Complete {
                     position_changed,
                     rotation_changed,
+                    stamp,
                 }) => {
+                    if position_changed
+                        && let Some(request) = prepared.input.item_stack_request.as_ref()
+                    {
+                        let checkpoint = server.try_entity_save_guard();
+                        let world = player.world();
+                        if checkpoint.is_none()
+                            || player
+                                .try_edit_at_regional_move(stamp, &world, || {
+                                    self.try_apply_regional_inventory_request(
+                                        player,
+                                        server,
+                                        request,
+                                        || {
+                                            !self.is_closed()
+                                                && owns(player.get_entity().chunk_pos.load())
+                                                && stamp.is_current(player, &world)
+                                        },
+                                    )
+                                })
+                                .is_none()
+                        {
+                            tracing::trace!(player = %player.gameprofile.name, input_tick = prepared.input.tick.0, "Deferred inventory after regional movement");
+                            prepared.continuation =
+                                Some(RegionalInputContinuation::ApplyInventory(stamp));
+                            queued.movement = Some(prepared);
+                            return RegionalMovePreparation::Deferred;
+                        }
+                    }
                     let message = if position_changed {
                         "Completed grounded Bedrock movement on its region"
                     } else {
@@ -395,12 +451,13 @@ impl BedrockClient {
                     return RegionalMovePreparation::Consumed;
                 }
                 Some(RegionalClientMove::Committed(committed)) => {
-                    prepared.committed = Some(committed);
+                    prepared.continuation =
+                        Some(RegionalInputContinuation::FinishMovement(committed));
                 }
                 None => {}
             }
         }
-        if prepared.committed.is_some() {
+        if prepared.continuation.is_some() {
             tracing::trace!(
                 player = %player.gameprofile.name,
                 input_tick = prepared.input.tick.0,
@@ -474,7 +531,7 @@ impl BedrockClient {
                 if queued
                     .movement
                     .as_ref()
-                    .is_some_and(|movement| movement.committed.is_some())
+                    .is_some_and(|movement| movement.continuation.is_some())
                 {
                     *head = Some(queued);
                     return false;
@@ -1383,6 +1440,39 @@ mod tests {
         player.abilities.lock().unwrap().flying = false;
     }
 
+    fn inline_inventory_swap(
+        player: &Player,
+        position: Vector3<f32>,
+        tick: u64,
+        yaw: f32,
+        request_id: i32,
+    ) -> RawPacket {
+        let mut bytes = Vec::new();
+        VarInt(request_id).write(&mut bytes).unwrap();
+        VarUInt(1).write(&mut bytes).unwrap();
+        bytes.extend([2, 2]); // Swap request and its compatibility action ID.
+        for slot in [10, 11] {
+            let stack = player.inventory.get_slot(usize::from(slot));
+            ItemStackRequestSlotInfo {
+                container_name: FullContainerName {
+                    container_name: ContainerName::CombinedHotBarAndInventory,
+                    dynamic_id: None,
+                },
+                slot_id: slot,
+                stack_id: if stack.is_empty() { 0 } else { stack.uid.get() },
+            }
+            .write(&mut bytes)
+            .unwrap();
+        }
+        VarUInt(0).write(&mut bytes).unwrap();
+        0i32.write(&mut bytes).unwrap();
+        let flags = [
+            InputData::VerticalCollision,
+            InputData::PerformItemStackRequest,
+        ];
+        auth_input_packet(position, tick, yaw, &flags, Some(&bytes))
+    }
+
     fn verify_inline_inventory(
         world: &Arc<World>,
         player: &Arc<Player>,
@@ -1403,32 +1493,9 @@ mod tests {
             ]
         };
         let enqueue = |tick, yaw, request_id| {
-            let mut bytes = Vec::new();
-            VarInt(request_id).write(&mut bytes).unwrap();
-            VarUInt(1).write(&mut bytes).unwrap();
-            bytes.extend([2, 2]); // Swap request and its compatibility action ID.
-            for slot in [10, 11] {
-                let stack = inventory.get_slot(usize::from(slot));
-                ItemStackRequestSlotInfo {
-                    container_name: FullContainerName {
-                        container_name: ContainerName::CombinedHotBarAndInventory,
-                        dynamic_id: None,
-                    },
-                    slot_id: slot,
-                    stack_id: if stack.is_empty() { 0 } else { stack.uid.get() },
-                }
-                .write(&mut bytes)
-                .unwrap();
-            }
-            VarUInt(0).write(&mut bytes).unwrap();
-            0i32.write(&mut bytes).unwrap();
-            let flags = [
-                InputData::VerticalCollision,
-                InputData::PerformItemStackRequest,
-            ];
             client.enqueue_play_input(
                 player,
-                auth_input_packet(position, tick, yaw, &flags, Some(&bytes)),
+                inline_inventory_swap(player, position, tick, yaw, request_id),
             );
         };
 
@@ -1681,6 +1748,7 @@ mod tests {
         assert!(player.inbound_packets.is_empty());
         assert!(client.activity.inbound_head.lock().unwrap().is_none());
         verify_grounded_sprints(world, player, client, chunk);
+        verify_walking_inventory(world, player, client, chunk);
         world.entity_tracker.remove_entity(player.as_ref(), world);
     }
 
@@ -1766,6 +1834,96 @@ mod tests {
         );
         client.drain_world_input(player, None, Some(world), 1);
         assert!(!entity.is_sprinting());
+    }
+
+    fn verify_walking_inventory(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        use crate::entity::player::statistics::CustomStatistic;
+
+        let entity = player.get_entity();
+        let position = player.bedrock_pos().to_f32_lossy();
+        let inventory = &player.inventory;
+        let first = inventory.get_slot(10);
+        let second = inventory.get_slot(11);
+        inventory.set_slot(10, ItemStack::new(3, &Item::DIAMOND));
+        inventory.set_slot(11, ItemStack::EMPTY.clone());
+        let distance = || player.get_custom_stat(CustomStatistic::WalkOneCm);
+        let previous_distance = distance();
+        let counts = || {
+            [
+                inventory.get_slot(10).item_count,
+                inventory.get_slot(11).item_count,
+            ]
+        };
+        let step = entity.next_step.swap(100.0);
+        let next = |x, tick, request| {
+            client.enqueue_play_input(
+                player,
+                inline_inventory_swap(
+                    player,
+                    Vector3::new(x, position.y, position.z),
+                    tick,
+                    entity.yaw.load(),
+                    request,
+                ),
+            );
+        };
+        let at = Instant::now() + TICK_PERIOD * 44;
+        let start = client.input_tick.load(Relaxed) + 1;
+        next(9.25, start, -33);
+        tick_region(world, chunk, at);
+        assert_eq!(entity.pos.load().x, 9.25);
+        assert_eq!(counts(), [0, 3]);
+        assert_eq!(distance() - previous_distance, 25);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        // The pose is committed while the footstep and inventory still wait.
+        entity.next_step.store(0.0);
+        next(9.0, start + 1, -34);
+        tick_region(world, chunk, at + TICK_PERIOD);
+        assert_eq!(entity.pos.load().x, 9.0);
+        assert_eq!(counts(), [0, 3]);
+        assert_eq!(distance() - previous_distance, 25);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(counts(), [3, 0]);
+        assert_eq!(distance() - previous_distance, 50);
+
+        // An inventory conflict can outlive a completed step. A newer
+        // teleport invalidates that pending request without replaying movement.
+        entity.next_step.store(100.0);
+        let edit = player.try_regional_inventory_edit().unwrap();
+        next(8.75, start + 2, -35);
+        tick_region(world, chunk, at + TICK_PERIOD * 2);
+        assert_eq!(entity.pos.load().x, 8.75);
+        assert_eq!(distance() - previous_distance, 75);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        assert_eq!(counts(), [3, 0]);
+        drop(edit);
+        let teleport = entity.pos.load().add_raw(-0.5, 0.0, 0.0);
+        player.request_teleport(teleport, 0.0, 0.0);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(entity.pos.load(), teleport);
+        assert_eq!(distance() - previous_distance, 75);
+        assert_eq!(counts(), [3, 0]);
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        queue_auth_input(
+            client,
+            player,
+            player.bedrock_pos().to_f32_lossy(),
+            start + 3,
+            0.0,
+            &[InputData::VerticalCollision, InputData::HandledTeleport],
+        );
+        client.drain_world_input(player, None, Some(world), 1);
+        assert!(player.awaiting_teleport.lock().unwrap().is_none());
+        inventory.set_slot(10, first);
+        inventory.set_slot(11, second);
+        entity.next_step.store(step);
     }
 
     fn verify_grounded_chunk_crossings(

@@ -1317,7 +1317,7 @@ impl BedrockClient {
         clippy::too_many_lines,
         reason = "Inventory and equipment guards span preparation, commit and publication"
     )]
-    pub(super) fn try_apply_regional_inventory_request(
+    pub(in crate::net::bedrock) fn try_apply_regional_inventory_request(
         &self,
         player: &Player,
         server: &Server,

@@ -19,6 +19,33 @@ use sculith_protocol::bedrock::{
 };
 
 impl BedrockClient {
+    pub(in crate::net::bedrock) fn finish_inline_inventory(
+        &self,
+        player: &Arc<Player>,
+        request: ItemStackRequest,
+        position_is_current: bool,
+    ) {
+        if position_is_current
+            && player.has_client_loaded()
+            && !player.living_entity.is_dead_or_dying()
+            && player.has_stable_world_membership()
+        {
+            self.handle_item_stack_request(
+                player,
+                SItemStackRequest {
+                    requests: vec![request],
+                },
+            );
+        } else {
+            self.try_enqueue_client_packet(&CItemStackResponse {
+                responses: vec![build_stack_response(request.request_id, 1, Vec::new())],
+            });
+            if player.has_client_loaded() && player.has_stable_world_membership() {
+                self.resend_player_inventory(player);
+            }
+        }
+    }
+
     pub fn handle_item_stack_request(&self, player: &Arc<Player>, packet: SItemStackRequest) {
         use sculith_protocol::bedrock::server::item_stack_request::ItemStackRequestAction;
         let storage = super::player_inventory::StorageContext::capture(player);
