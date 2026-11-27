@@ -6542,6 +6542,11 @@ impl Entity {
 impl Entity {
     pub fn write_nbt(&self, nbt: &mut NbtCompound) {
         let _motion = self.hold_actor_motion();
+        self.write_nbt_with_motion_pinned(nbt);
+    }
+
+    /// Writes an actor snapshot while the caller protects the actor's motion.
+    fn write_nbt_with_motion_pinned(&self, nbt: &mut NbtCompound) {
         let position = self.pos.load();
         nbt.put_string(
             "id",

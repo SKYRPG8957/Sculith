@@ -8,7 +8,7 @@ use rustc_hash::FxHashMap;
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
 use uuid::Uuid;
 
-use crate::{entity::Entity, world::World};
+use crate::{entity::Entity, server::StorageTransferError, world::World};
 
 use super::ItemEntity;
 
@@ -88,29 +88,36 @@ impl SavedItemRecord {
 
 impl ItemEntity {
     /// Construct the future ground record while the item owner pins its pose and stack.
-    pub(super) fn checkpoint_remainder(
+    pub(crate) fn try_checkpoint_remainder(
         &self,
         world: &World,
         stack: &ItemStack,
         count: u8,
-    ) -> Option<ItemPickupRemainder> {
-        if self.saved_records.try_lock().ok()?.records.is_empty()
-            || self.entity.has_vehicle()
-            || self.entity.has_passengers()
+    ) -> Result<Option<ItemPickupRemainder>, StorageTransferError> {
+        use StorageTransferError::Busy;
+        if self
+            .saved_records
+            .try_lock()
+            .map_err(|_| Busy)?
+            .records
+            .is_empty()
         {
-            return None;
+            return Ok(None);
+        }
+        if self.entity.has_vehicle() || self.entity.has_passengers() {
+            return Err(Busy);
         }
         let mut actor = NbtCompound::new();
-        self.entity.write_nbt(&mut actor);
+        self.entity.write_nbt_with_motion_pinned(&mut actor);
         self.write_item_nbt(&mut actor, stack);
-        let pos = BlockPos::floored_v(Entity::saved_position(&actor)?).chunk_position();
-        let site = self.storage_record(world.entity_storage_path()?, pos);
-        let NbtTag::Compound(item) = actor.child_tags.get_mut("Item")? else {
-            return None;
+        let pos = BlockPos::floored_v(Entity::saved_position(&actor).ok_or(Busy)?).chunk_position();
+        let site = self.storage_record(world.entity_storage_path().ok_or(Busy)?, pos);
+        let Some(NbtTag::Compound(item)) = actor.child_tags.get_mut("Item") else {
+            return Err(Busy);
         };
         item.put_int("count", i32::from(count));
         actor.put_list(RECORDS_TAG, vec![site.to_nbt()]);
-        Some(ItemPickupRemainder { site, actor, count })
+        Ok(Some(ItemPickupRemainder { site, actor, count }))
     }
 
     pub(crate) fn remember_pickup_remainder(&self, site: SavedItemRecord, count: u8) {
@@ -227,7 +234,7 @@ impl ItemEntity {
         }
     }
 
-    pub(super) fn mark_partial_item_transfer(&self) {
+    pub(crate) fn mark_partial_item_transfer(&self) {
         self.saved_records
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

@@ -84,11 +84,21 @@ impl PlayerPickup {
     pub fn full_storage_updates(
         &self,
     ) -> Option<impl ExactSizeIterator<Item = (usize, &ItemStack)>> {
-        (self.count == self.source.item_count
-            && self.slots.iter().all(|slot| {
+        if self.count != self.source.item_count {
+            return None;
+        }
+        self.storage_updates()
+    }
+
+    /// Destination slots for a transfer that leaves held equipment unchanged.
+    #[must_use]
+    pub fn storage_updates(&self) -> Option<impl ExactSizeIterator<Item = (usize, &ItemStack)>> {
+        self.slots
+            .iter()
+            .all(|slot| {
                 slot.index < PlayerInventory::MAIN_SIZE && slot.index != usize::from(self.selected)
-            }))
-        .then(|| self.slots.iter().map(|slot| (slot.index, &slot.after)))
+            })
+            .then(|| self.slots.iter().map(|slot| (slot.index, &slot.after)))
     }
 }
 
@@ -1191,6 +1201,29 @@ mod tests {
         let held = inventory.plan_pickup(&source).unwrap();
         assert_eq!(held.count(), 2);
         assert!(held.full_storage_updates().is_none());
+        assert!(held.storage_updates().is_none());
+    }
+
+    #[test]
+    fn storage_pickup_exposes_the_remainder_and_regular_slots() {
+        let inventory = create_test_inventory();
+        for index in 0..PlayerInventory::MAIN_SIZE {
+            inventory.set_slot(index, ItemStack::new(64, &Item::DIRT));
+        }
+        inventory.set_slot(9, ItemStack::new(63, &Item::STONE));
+        inventory.set_slot(10, ItemStack::new(62, &Item::STONE));
+        let mut source = ItemStack::new(5, &Item::STONE);
+        let pickup = inventory.plan_pickup(&source).unwrap();
+        assert_eq!(pickup.count(), 3);
+        assert!(pickup.full_storage_updates().is_none());
+        let updates: Vec<_> = pickup
+            .storage_updates()
+            .unwrap()
+            .map(|(slot, after)| (slot, after.item_count))
+            .collect();
+        assert_eq!(updates, [(9, 64), (10, 64)]);
+        assert!(inventory.commit_pickup(pickup, &mut source, || true));
+        assert_eq!(source.item_count, 2);
     }
 
     /// When the main inventory is completely full and only the off-hand has

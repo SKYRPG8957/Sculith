@@ -35,6 +35,7 @@ pub(super) enum RegionalEntityUpdate {
     },
     Removed(Arc<dyn EntityBase>),
     Matured(Arc<dyn EntityBase>),
+    ItemCountChanged(Arc<dyn EntityBase>),
 }
 
 #[derive(Default)]
@@ -200,6 +201,16 @@ impl World {
                         && let Some(mob) = entity.get_mob()
                     {
                         crate::entity::ageable::publish_bedrock_age(mob, None);
+                    }
+                }
+                RegionalEntityUpdate::ItemCountChanged(entity) => {
+                    let base = entity.get_entity();
+                    let _motion = base.hold_actor_motion();
+                    if !base.is_removed()
+                        && std::ptr::eq(base.world.load().as_ref(), self)
+                        && let Some(item) = entity.cast_any().downcast_ref::<ItemEntity>()
+                    {
+                        item.send_current_bedrock_stack_size();
                     }
                 }
             }

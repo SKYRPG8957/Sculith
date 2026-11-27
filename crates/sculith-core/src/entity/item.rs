@@ -35,7 +35,7 @@ use std::sync::{
 use super::{
     Entity, EntityBase,
     drop_motion::{ActorClock, ActorTickOwner},
-    living::LivingEntity,
+    living::{LivingEntity, RegionalActorDelivery},
     player::Player,
 };
 use crate::block::blocks::bubble_column::SURFACE_UPWARD_ACCELERATION;
@@ -466,22 +466,48 @@ impl ItemEntity {
     /// metadata, so they get the count as `UpdateStackSize`
     fn on_count_changed(&self) {
         self.init_data_tracker();
+        self.send_current_bedrock_stack_size();
+    }
 
+    pub(crate) fn send_current_bedrock_stack_size(&self) {
         let count = self
             .item_stack
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .item_count;
-        let packet = SActorEvent {
-            target_runtime_id: VarULong(self.entity.entity_id as u64),
+        self.entity.world.load().send_to_tracking_players_bedrock(
+            &self.entity,
+            &Self::bedrock_stack_size_update(self.entity.entity_id, count),
+        );
+    }
+
+    pub(crate) fn bedrock_stack_size_update(entity_id: i32, count: u8) -> SActorEvent {
+        SActorEvent {
+            target_runtime_id: VarULong(entity_id as u64),
             event_id: ActorEventID::UpdateStackSize,
             data: VarInt(i32::from(count)),
             fire_at_position: None,
-        };
-        self.entity
-            .world
-            .load()
-            .send_to_tracking_players_bedrock(&self.entity, &packet);
+        }
+    }
+
+    /// Updates the remainder metadata under the same publication lock as the packet batch.
+    pub(crate) fn try_publish_pickup_remainder(
+        &self,
+        stack: ItemStack,
+        publish: impl FnOnce(Option<Box<[u8]>>) -> Option<RegionalActorDelivery>,
+    ) -> Option<RegionalActorDelivery> {
+        let mut sent = None;
+        self.entity.synched_data.try_publish_value(
+            pumpkin_data::tracked_data::item::ITEM,
+            ItemStackSerializer::from(stack),
+            |metadata| {
+                let delivery = publish(metadata)?;
+                let java_queued = delivery.java_queued;
+                sent = Some(delivery);
+                Some(java_queued)
+            },
+        );
+        sent
     }
 
     fn collect_for_player(&self, player: &Arc<Player>) -> Option<(&'static Item, u8, bool)> {
@@ -537,7 +563,9 @@ impl ItemEntity {
         let remainder = if remainder_count == 0 {
             None
         } else {
-            self.checkpoint_remainder(&world, &stack, remainder_count)
+            self.try_checkpoint_remainder(&world, &stack, remainder_count)
+                .ok()
+                .flatten()
         };
         let mut checkpoint = None;
         if !player.inventory.commit_pickup(pickup, &mut stack, || {

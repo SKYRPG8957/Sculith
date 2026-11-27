@@ -27,6 +27,7 @@ use crate::{
 use super::{
     RegionChunks, RegionId, RegionLayout, World, entity_islands::plugins_observe_entity_ticks,
     entity_tracker::EntityTracker, regional_campfires::RegionalEntityUpdate,
+    regional_pickup::GroundPickup,
 };
 
 const REGIONAL_NAVIGATORS_PER_STEP: usize = 4;
@@ -478,15 +479,13 @@ impl World {
                 match step {
                     RegionalItemStep::Advanced if native.is_some() => {
                         if pickups
-                            && self
-                                .try_collect_regional_drop(
-                                    server,
-                                    actor,
-                                    item,
-                                    owns,
-                                    &mut java_recipients,
-                                )
-                                .is_some()
+                            && self.try_collect_regional_drop(
+                                server,
+                                actor,
+                                item,
+                                owns,
+                                &mut java_recipients,
+                            ) == Some(GroundPickup::Full)
                         {
                             collected.insert(base.entity_id);
                         } else {

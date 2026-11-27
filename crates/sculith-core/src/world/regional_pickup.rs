@@ -23,7 +23,13 @@ use crate::{
     server::Server,
 };
 
-use super::{World, regional_campfires::RegionalEntityUpdate};
+use super::{World, entity_tracker::RegionalPickup, regional_campfires::RegionalEntityUpdate};
+
+#[derive(PartialEq, Eq)]
+pub(super) enum GroundPickup {
+    Full,
+    Partial,
+}
 
 impl World {
     fn regional_pickup_unobserved(server: &Server) -> bool {
@@ -58,7 +64,7 @@ impl World {
         item: &ItemEntity,
         owns: &impl Fn(Vector2<i32>) -> bool,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
-    ) -> Option<()> {
+    ) -> Option<GroundPickup> {
         if !item.can_be_picked_up_on_region() {
             return None;
         }
@@ -150,7 +156,7 @@ impl World {
         item: &ItemEntity,
         local: impl FnOnce() -> bool,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
-    ) -> Option<()> {
+    ) -> Option<GroundPickup> {
         let client = player.client.bedrock()?;
         client.with_idle_player_inventory(player, |handler| {
             let mut updates = self.regional_entity_updates.0.try_lock().ok()?;
@@ -158,8 +164,10 @@ impl World {
             let pickup = player.inventory.plan_pickup(&stack)?;
             let count = pickup.count();
             let item_type = pickup.item();
+            let original_count = stack.item_count;
+            let remaining = original_count - count;
             let inventory: Arc<dyn Inventory> = player.inventory.clone();
-            let mut slot_updates = pickup.full_storage_updates()?.map(|(slot, after)| {
+            let mut slot_updates = pickup.storage_updates()?.map(|(slot, after)| {
                 let screen_slot = handler.get_slot_index(&inventory, slot)?;
                 let packet = client.encode_player_inventory_slot(slot, after)?;
                 Some((screen_slot, after.clone(), packet))
@@ -168,37 +176,52 @@ impl World {
             let later_updates = slot_updates.collect::<Option<Vec<_>>>()?;
             let mut stats = player.stats.try_lock().ok()?;
             let source = item.get_entity();
-            self.entity_tracker.try_publish_regional_pickup(
+            let remainder = if remaining == 0 {
+                None
+            } else {
+                item.try_checkpoint_remainder(self, &stack, remaining)
+                    .ok()?
+            };
+            let needs_checkpoint = remainder.is_some();
+            let ground_stack = (remaining != 0).then(|| stack.copy_with_count(remaining));
+            let commit = || {
+                let mut checkpoint = None;
+                if !player.inventory.commit_pickup(pickup, &mut stack, || {
+                    if !local() || !Self::regional_pickups_unobserved(server) {
+                        return false;
+                    }
+                    let Ok(permit) =
+                        server.prepare_item_pickup(player, item, original_count, remainder)
+                    else {
+                        return false;
+                    };
+                    if needs_checkpoint && permit.is_none() {
+                        return false;
+                    }
+                    checkpoint = permit;
+                    remaining != 0 || source.mark_discarded()
+                }) {
+                    return None;
+                }
+                stats.increment(
+                    StatisticCategory::PickedUp,
+                    i32::from(item_type.id),
+                    i32::from(count),
+                );
+                if let Some(checkpoint) = checkpoint {
+                    checkpoint.record(item);
+                } else if remaining != 0 {
+                    item.mark_partial_item_transfer();
+                }
+                Some(())
+            };
+            let delivery = self.entity_tracker.try_publish_regional_item_pickup(
                 self,
-                source,
+                item,
                 player,
-                count,
+                (count, ground_stack),
                 java_recipients,
-                || {
-                    let mut checkpoint = None;
-                    if !player.inventory.commit_pickup(pickup, &mut stack, || {
-                        if !local() {
-                            return false;
-                        }
-                        let Ok(permit) = server.prepare_item_pickup(player, item, count, None)
-                        else {
-                            return false;
-                        };
-                        checkpoint = permit;
-                        source.mark_discarded()
-                    }) {
-                        return None;
-                    }
-                    stats.increment(
-                        StatisticCategory::PickedUp,
-                        i32::from(item_type.id),
-                        i32::from(count),
-                    );
-                    if let Some(checkpoint) = checkpoint {
-                        checkpoint.record(item);
-                    }
-                    Some(())
-                },
+                commit,
             )?;
             player.inventory_changed.store(true, Relaxed);
             let slots = 1 + later_updates.len();
@@ -208,15 +231,24 @@ impl World {
                 }
                 handler.set_received_stack(screen_slot, after);
             }
-            updates.push(RegionalEntityUpdate::Removed(actor.clone()));
+            let outcome = if remaining == 0 {
+                updates.push(RegionalEntityUpdate::Removed(actor.clone()));
+                GroundPickup::Full
+            } else {
+                if !delivery.bedrock_queued {
+                    updates.push(RegionalEntityUpdate::ItemCountChanged(actor.clone()));
+                }
+                GroundPickup::Partial
+            };
             tracing::trace!(
                 entity = source.entity_id,
                 collector = player.entity_id(),
                 count,
                 slots,
+                remaining,
                 "Collected a dropped stack on its region"
             );
-            Some(())
+            Some(outcome)
         })?
     }
 
@@ -281,7 +313,7 @@ impl World {
                                 self,
                                 source,
                                 player,
-                                1,
+                                RegionalPickup::Full(1),
                                 java_recipients,
                                 || {
                                     player.try_collect_regional_experience(client, amount, || {

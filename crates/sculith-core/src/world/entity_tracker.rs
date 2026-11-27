@@ -197,6 +197,15 @@ struct RegionalActorPackets {
     bedrock_viewer_equipment: Option<Bytes>,
 }
 
+pub(super) enum RegionalPickup {
+    Full(u8),
+    Partial {
+        taken: u8,
+        remaining: u8,
+        java_metadata: Option<Box<[u8]>>,
+    },
+}
+
 #[derive(Default)]
 struct Viewers {
     players: FxHashMap<Uuid, Arc<Player>>,
@@ -2098,15 +2107,47 @@ impl EntityTracker {
         Self::flush_regional_java_packets(java_recipients);
     }
 
+    pub(super) fn try_publish_regional_item_pickup(
+        &self,
+        world: &World,
+        item: &ItemEntity,
+        collector: &Player,
+        (taken, remainder): (u8, Option<ItemStack>),
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+        commit: impl FnOnce() -> Option<()>,
+    ) -> Option<RegionalActorDelivery> {
+        let publish = |pickup| {
+            self.try_publish_regional_pickup(
+                world,
+                item.get_entity(),
+                collector,
+                pickup,
+                java_recipients,
+                commit,
+            )
+        };
+        let Some(remainder) = remainder else {
+            return publish(RegionalPickup::Full(taken));
+        };
+        let remaining = remainder.item_count;
+        item.try_publish_pickup_remainder(remainder, |java_metadata| {
+            publish(RegionalPickup::Partial {
+                taken,
+                remaining,
+                java_metadata,
+            })
+        })
+    }
+
     pub(super) fn try_publish_regional_pickup(
         &self,
         world: &World,
         item: &Entity,
         collector: &Player,
-        count: u8,
+        pickup: RegionalPickup,
         java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
         commit: impl FnOnce() -> Option<()>,
-    ) -> Option<()> {
+    ) -> Option<RegionalActorDelivery> {
         let tracking = |entity: &Entity| match self.entity_map.try_get(&entity.entity_id) {
             TryResult::Present(entry)
                 if std::ptr::eq(entry.value().entity.get_entity(), entity) =>
@@ -2142,31 +2183,55 @@ impl EntityTracker {
             Some(&viewers),
             java_recipients,
             || {
+                let (taken, remaining, metadata) = match pickup {
+                    RegionalPickup::Full(count) => (count, None, None),
+                    RegionalPickup::Partial {
+                        taken,
+                        remaining,
+                        java_metadata,
+                    } => (taken, Some(remaining), java_metadata),
+                };
                 let take = CTakeItemEntity::new(
                     item.entity_id.into(),
                     collector.entity_id().into(),
-                    VarInt(i32::from(count)),
+                    VarInt(i32::from(taken)),
                 );
-                let java =
-                    JavaClient::serialize_packet_for_version(&take, CURRENT_MC_VERSION).ok()?;
+                let mut java = Vec::with_capacity(1 + usize::from(metadata.is_some()));
+                java.push(
+                    JavaClient::serialize_packet_for_version(&take, CURRENT_MC_VERSION).ok()?,
+                );
+                if let Some(metadata) = metadata {
+                    let packet = CSetEntityMetadata::new(item.entity_id.into(), metadata);
+                    java.push(
+                        JavaClient::serialize_packet_for_version(&packet, CURRENT_MC_VERSION)
+                            .ok()?,
+                    );
+                }
                 let mut bedrock = Vec::new();
-                BedrockClient::write_raw_packet(
-                    &CTakeItemActor {
-                        item_runtime_id: VarULong(item.entity_id as u64),
-                        actor_runtime_id: VarULong(collector.entity_id() as u64),
-                    },
-                    &mut bedrock,
-                )
-                .ok()?;
+                if let Some(remaining) = remaining {
+                    BedrockClient::write_raw_packet(
+                        &ItemEntity::bedrock_stack_size_update(item.entity_id, remaining),
+                        &mut bedrock,
+                    )
+                    .ok()?;
+                } else {
+                    BedrockClient::write_raw_packet(
+                        &CTakeItemActor {
+                            item_runtime_id: VarULong(item.entity_id as u64),
+                            actor_runtime_id: VarULong(collector.entity_id() as u64),
+                        },
+                        &mut bedrock,
+                    )
+                    .ok()?;
+                }
                 Some(RegionalActorPackets {
-                    java: vec![java],
+                    java,
                     bedrock: vec![Bytes::from(bedrock)],
                     bedrock_viewer_equipment: None,
                 })
             },
             commit,
-        )?;
-        Some(())
+        )
     }
 
     pub(super) fn try_publish_regional_effect_changes(
