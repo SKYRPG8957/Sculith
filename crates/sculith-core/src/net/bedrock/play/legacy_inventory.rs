@@ -209,7 +209,7 @@ impl BedrockClient {
             && before.are_equal(&current)
     }
 
-    fn correct_transaction_block_prediction(player: &Player, data: &TransactionData) {
+    pub(super) fn correct_transaction_block_prediction(player: &Player, data: &TransactionData) {
         let TransactionData::UseItem(data) = data else {
             return;
         };

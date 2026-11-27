@@ -55,7 +55,7 @@ impl BedrockClient {
             InputData::StopSpinAttack,
             InputData::HorizontalCollision,
         ];
-        if packet.item_interaction.is_some()
+        if packet.item_interaction.is_some() && Self::inline_block_placement(packet).is_none()
             || packet.block_actions.is_some() && Self::inline_mining_action(packet).is_none()
             || needs_world.into_iter().any(|flag| flags.get(flag as usize))
             || ![

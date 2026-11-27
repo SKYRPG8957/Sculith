@@ -3,13 +3,17 @@ use std::sync::{Arc, atomic::Ordering::Relaxed};
 use pumpkin_data::{
     Block, BlockDirection, BlockStateId,
     data_component_impl::{BlockStateImpl, BlockTransformerImpl},
+    item::JavaToBedrockItemMapping,
     statistic::StatisticCategory,
 };
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use sculith_protocol::{
     RawPacket,
-    bedrock::server::inventory_transaction::{
-        HandSlot, SInventoryTransaction, TransactionData, UseItemTransactionData,
+    bedrock::server::{
+        inventory_transaction::{
+            HandSlot, SInventoryTransaction, TransactionData, UseItemTransactionData,
+        },
+        player_auth_input::{InputData, PlayerInventoryAction, SPlayerAuthInput},
     },
     packet::Packet,
     serial::PacketRead,
@@ -17,7 +21,10 @@ use sculith_protocol::{
 use sculith_util::{GameMode, math::vector2::Vector2};
 
 use crate::{
-    entity::{EntityBase, player::Player},
+    entity::{
+        EntityBase,
+        player::{Player, client_move::RegionalMoveStamp},
+    },
     net::bedrock::BedrockClient,
     server::Server,
 };
@@ -27,6 +34,60 @@ use super::player_inventory::matches_item_type_and_count;
 const REGIONAL_PLACEMENT_BYTES: usize = 512;
 
 impl BedrockClient {
+    pub(in crate::net::bedrock) fn inline_block_placement(
+        input: &SPlayerAuthInput,
+    ) -> Option<&UseItemTransactionData> {
+        let interaction = input.item_interaction.as_ref()?;
+        let click = &interaction.transaction;
+        if !input
+            .input_data
+            .get(InputData::PerformItemInteraction as usize)
+            || input.item_stack_request.is_some()
+            || input.block_actions.is_some()
+            || interaction.legacy_request_id.0 != 0
+            || !interaction.legacy_slots.is_empty()
+            || !interaction.actions.is_empty()
+            || click.action_type.0 != 0
+            || click.hand != HandSlot::Mainhand
+        {
+            return None;
+        }
+        // The held item on the wire only identifies a placement candidate.
+        // The commit checks the server's selected stack and owns the edit.
+        let item = &click.item_in_hand;
+        let mapping = JavaToBedrockItemMapping::from_bedrock(
+            i16::try_from(item.id.0).ok()?,
+            item.aux_value.0,
+        )?;
+        Block::from_item_id(mapping.java_item.id)?;
+        Some(click)
+    }
+
+    pub(in crate::net::bedrock) fn finish_inline_placement(
+        &self,
+        player: &Arc<Player>,
+        interaction: PlayerInventoryAction,
+        stamp: RegionalMoveStamp,
+        movement_finished: bool,
+    ) {
+        if !player.has_client_loaded() || !player.has_stable_world_membership() {
+            return;
+        }
+        let world = player.world();
+        let packet = SInventoryTransaction::from(interaction);
+        if movement_finished
+            && stamp.is_current(player, &world)
+            && !player.living_entity.is_dead_or_dying()
+        {
+            self.handle_inventory_action(player, packet);
+        } else {
+            if stamp.matches_world(player, &world) {
+                Self::correct_transaction_block_prediction(player, &packet.transaction_data);
+            }
+            self.resend_player_inventory(player);
+        }
+    }
+
     pub(in crate::net::bedrock) fn can_route_block_placement(packet: &RawPacket) -> bool {
         packet.id == SInventoryTransaction::PACKET_ID
             && packet.payload.len() <= REGIONAL_PLACEMENT_BYTES
@@ -53,7 +114,7 @@ impl BedrockClient {
         self.try_apply_regional_placement(player, server, &data, owns)
     }
 
-    fn try_apply_regional_placement(
+    pub(in crate::net::bedrock) fn try_apply_regional_placement(
         &self,
         player: &Player,
         server: &Server,

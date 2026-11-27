@@ -297,6 +297,9 @@ impl BedrockClient {
         let mining = Self::inline_mining_action(&prepared.input);
         // A corrected or superseded pose cannot authorize its remaining input.
         let current = || movement_finished && stamp.is_current(player, &player.world());
+        if let Some(interaction) = prepared.input.item_interaction.take() {
+            self.finish_inline_placement(player, interaction, stamp, movement_finished);
+        }
         if let Some(request) = prepared.input.item_stack_request.take() {
             self.finish_inline_inventory(player, request, current());
         }
@@ -426,35 +429,14 @@ impl BedrockClient {
                     rotation_changed,
                     stamp,
                 }) => {
-                    let mining = Self::inline_mining_action(&prepared.input);
-                    let deferred =
-                        if let Some(action) = mining {
-                            let world = player.world();
-                            self.try_apply_regional_mining_action(
-                                player,
-                                server,
-                                deadline,
-                                action,
-                                &|chunk| owns(chunk) && stamp.is_current(player, &world),
-                            )
-                            .is_none()
-                        } else {
-                            position_changed
-                                && prepared.input.item_stack_request.as_ref().is_some_and(
-                                    |request| {
-                                        self.try_complete_moving_inventory(
-                                            player, server, request, stamp, owns,
-                                        )
-                                        .is_none()
-                                    },
-                                )
-                        };
-                    if deferred {
-                        let action = if mining.is_some() {
-                            "mining"
-                        } else {
-                            "inventory"
-                        };
+                    if let Some(action) = self.deferred_inline_action(
+                        player,
+                        server,
+                        &prepared.input,
+                        deadline,
+                        (stamp, position_changed),
+                        owns,
+                    ) {
                         tracing::trace!(player = %player.gameprofile.name, input_tick = prepared.input.tick.0, "Deferred {action} after regional movement");
                         prepared.continuation =
                             Some(RegionalInputContinuation::ApplyActions(stamp));
@@ -496,6 +478,41 @@ impl BedrockClient {
         }
         queued.movement = Some(prepared);
         RegionalMovePreparation::Deferred
+    }
+
+    fn deferred_inline_action(
+        &self,
+        player: &Arc<Player>,
+        server: &Server,
+        input: &SPlayerAuthInput,
+        deadline: TickDeadline,
+        (stamp, position_changed): (RegionalMoveStamp, bool),
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<&'static str> {
+        if let Some(action) = Self::inline_mining_action(input) {
+            let world = player.world();
+            return self
+                .try_apply_regional_mining_action(player, server, deadline, action, &|chunk| {
+                    owns(chunk) && stamp.is_current(player, &world)
+                })
+                .is_none()
+                .then_some("mining");
+        }
+        if let Some(click) = Self::inline_block_placement(input) {
+            let world = player.world();
+            return self
+                .try_apply_regional_placement(player, server, click, &|chunk| {
+                    owns(chunk) && stamp.is_current(player, &world)
+                })
+                .is_none()
+                .then_some("placement");
+        }
+        (position_changed
+            && input.item_stack_request.as_ref().is_some_and(|request| {
+                self.try_complete_moving_inventory(player, server, request, stamp, owns)
+                    .is_none()
+            }))
+        .then_some("inventory")
     }
 
     fn try_complete_moving_inventory(
@@ -1597,6 +1614,7 @@ mod tests {
                 entity.yaw.load(),
                 &[InputData::VerticalCollision, InputData::PerformBlockActions],
                 None,
+                None,
                 &[(PlayerActionType::PredictDestroyBlock, target)],
             ),
         );
@@ -1608,17 +1626,8 @@ mod tests {
         entity.set_pos(previous_position);
     }
 
-    fn queue_block_placement(
-        player: &Arc<Player>,
-        client: &BedrockClient,
-        clicked: BlockPos,
-        reported: &ItemStack,
-    ) {
-        use sculith_protocol::bedrock::server::inventory_transaction::{
-            HandSlot, SInventoryTransaction,
-        };
-
-        let mut payload = vec![0, 0, 2, 0, 0, 1];
+    fn placement_use_data(player: &Player, clicked: BlockPos, reported: &ItemStack) -> Vec<u8> {
+        let mut payload = vec![0, 1]; // Click block, triggered by player input.
         clicked.write(&mut payload).unwrap();
         1u8.write(&mut payload).unwrap(); // Up
         VarInt(i32::from(player.inventory.get_selected_slot()))
@@ -1640,6 +1649,17 @@ mod tests {
         .write(&mut payload)
         .unwrap();
         payload.extend([0, 0]);
+        payload
+    }
+
+    fn queue_block_placement(
+        player: &Arc<Player>,
+        client: &BedrockClient,
+        clicked: BlockPos,
+        reported: &ItemStack,
+    ) {
+        let mut payload = vec![0, 0, 2, 0];
+        payload.extend(placement_use_data(player, clicked, reported));
         client.enqueue_play_input(
             player,
             RawPacket {
@@ -1808,7 +1828,7 @@ mod tests {
     ) {
         client.enqueue_play_input(
             player,
-            auth_input_packet(position, input_tick, yaw, flags, None, &[]),
+            auth_input_packet(position, input_tick, yaw, flags, None, None, &[]),
         );
     }
 
@@ -1817,6 +1837,7 @@ mod tests {
         input_tick: u64,
         yaw: f32,
         flags: &[InputData],
+        item_interaction: Option<&[u8]>,
         request: Option<&[u8]>,
         block_actions: &[(PlayerActionType, BlockPos)],
     ) -> RawPacket {
@@ -1842,7 +1863,11 @@ mod tests {
         for delta in [0.0f32, if on_ground { -0.08 } else { 0.0 }, 0.0] {
             delta.write(&mut payload).unwrap();
         }
-        payload.extend([0, u8::from(request.is_some())]);
+        payload.push(u8::from(item_interaction.is_some()));
+        if let Some(interaction) = item_interaction {
+            payload.extend_from_slice(interaction);
+        }
+        payload.push(u8::from(request.is_some()));
         if let Some(request) = request {
             payload.extend_from_slice(request);
         }
@@ -1992,7 +2017,7 @@ mod tests {
             InputData::VerticalCollision,
             InputData::PerformItemStackRequest,
         ];
-        auth_input_packet(position, tick, yaw, &flags, Some(&bytes), &[])
+        auth_input_packet(position, tick, yaw, &flags, None, Some(&bytes), &[])
     }
 
     fn verify_inline_inventory(
@@ -2282,7 +2307,133 @@ mod tests {
         verify_grounded_sprints(world, player, client, chunk);
         verify_walking_inventory(world, player, client, chunk);
         verify_inline_mining_after_movement(world, player, client, chunk);
+        verify_inline_placement_after_movement(world, player, client, chunk);
         world.entity_tracker.remove_entity(player.as_ref(), world);
+    }
+
+    fn inline_placement_input(
+        player: &Player,
+        clicked: BlockPos,
+        position: Vector3<f32>,
+        tick: u64,
+    ) -> RawPacket {
+        let mut use_item = vec![0, 0, 0]; // No legacy request, legacy slots or actions.
+        use_item.extend(placement_use_data(
+            player,
+            clicked,
+            &player.inventory.held_item(),
+        ));
+        auth_input_packet(
+            position,
+            tick,
+            player.get_entity().yaw.load(),
+            &[
+                InputData::VerticalCollision,
+                InputData::PerformItemInteraction,
+            ],
+            Some(&use_item),
+            None,
+            &[],
+        )
+    }
+
+    fn verify_inline_placement_after_movement(
+        world: &Arc<World>,
+        player: &Arc<Player>,
+        client: &Arc<BedrockClient>,
+        chunk: Vector2<i32>,
+    ) {
+        use crate::entity::player::statistics::CustomStatistic;
+        use pumpkin_data::{BlockStateId, statistic::StatisticCategory};
+        use sculith_util::permission::PermissionLvl;
+
+        let entity = player.get_entity();
+        let previous = entity.pos.load();
+        let position = Vector3::new(8.0, player.bedrock_pos().y as f32, 8.0);
+        entity.set_pos(player.feet_from_bedrock_pos(position.to_f64()));
+        let step = entity.next_step.swap(100.0);
+        let permission = player.permission_lvl.load();
+        player.permission_lvl.store(PermissionLvl::Four);
+        let old_item = player.inventory.held_item();
+        player
+            .inventory
+            .set_held_item(ItemStack::new(3, &Item::GLASS));
+        let terrain = world.level.read_chunk_sync(&chunk, Arc::clone).unwrap();
+        let put = |position: BlockPos, state| {
+            let relative = position.chunk_relative_position();
+            terrain.set_block_absolute_y(
+                usize::try_from(relative.x).unwrap(),
+                position.0.y,
+                usize::try_from(relative.z).unwrap(),
+                state,
+            )
+        };
+        let clicks = [8, 9, 10].map(|z| BlockPos::new(14, 99, z));
+        let above = |position: BlockPos| BlockPos::new(position.0.x, 100, position.0.z);
+        let original = clicks.map(|pos| {
+            (
+                put(pos, Block::STONE.default_state.id),
+                put(above(pos), BlockStateId::AIR),
+            )
+        });
+        let state = |index: usize| world.get_block_state_id(&above(clicks[index]));
+        let glass = Block::GLASS.default_state.id;
+        let at = Instant::now() + TICK_PERIOD * 60;
+        let tick = client.input_tick.load(Relaxed) + 1;
+        let queue = |index: usize, x| {
+            let wire = Vector3::new(x, position.y, position.z);
+            let packet = inline_placement_input(player, clicks[index], wire, tick + index as u64);
+            client.enqueue_play_input(player, packet);
+            tick_region(world, chunk, at + TICK_PERIOD * index as u32);
+        };
+        let distance = || player.get_custom_stat(CustomStatistic::WalkOneCm);
+        let used = || player.get_stat(StatisticCategory::Used, i32::from(Item::GLASS.id));
+        let (before_used, before_walk) = (used(), distance());
+        let totals = || {
+            (
+                player.inventory.held_item().item_count,
+                used() - before_used,
+                distance() - before_walk,
+            )
+        };
+
+        assert!(!player.can_interact_with_block_at(&clicks[0], 1.0));
+        queue(0, 8.75);
+        assert_eq!(entity.pos.load().x, 8.75);
+        assert_eq!(state(0), glass);
+        assert_eq!(totals(), (2, 1, 75));
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        let edit = player.hold_bedrock_inventory_edit();
+        queue(1, 9.0);
+        assert_eq!(entity.pos.load().x, 9.0);
+        assert_eq!(state(1), BlockStateId::AIR);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        drop(edit);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(state(1), glass);
+        assert_eq!(totals(), (1, 2, 100));
+
+        let edit = player.hold_bedrock_inventory_edit();
+        queue(2, 9.125);
+        assert!(client.activity.inbound_head.lock().unwrap().is_some());
+        drop(edit);
+        let changed = entity.pos.load().add_raw(0.0, 0.0, 0.25);
+        entity.set_pos(changed);
+        client.drain_world_input(player, None, Some(world), 1);
+        assert_eq!(entity.pos.load(), changed);
+        assert_eq!(state(2), BlockStateId::AIR);
+        assert_eq!(totals(), (1, 2, 112));
+        assert!(client.activity.inbound_head.lock().unwrap().is_none());
+
+        for (pos, (support, target)) in clicks.into_iter().zip(original) {
+            put(pos, support);
+            put(above(pos), target);
+        }
+        player.permission_lvl.store(permission);
+        player.inventory.set_held_item(old_item);
+        entity.next_step.store(step);
+        entity.set_pos(previous);
     }
 
     fn verify_inline_mining_after_movement(
@@ -2312,6 +2463,7 @@ mod tests {
                     tick + offset,
                     entity.yaw.load(),
                     &[InputData::VerticalCollision, InputData::PerformBlockActions],
+                    None,
                     None,
                     &[(action, block)],
                 ),

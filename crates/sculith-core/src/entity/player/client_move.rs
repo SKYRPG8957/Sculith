@@ -71,9 +71,12 @@ pub(crate) struct RegionalMoveStamp {
 }
 
 impl RegionalMoveStamp {
+    pub(crate) fn matches_world(self, player: &Player, world: &World) -> bool {
+        world.uuid == self.world && player.can_simulate_in(world)
+    }
+
     pub(crate) fn is_current(self, player: &Player, world: &World) -> bool {
-        world.uuid == self.world
-            && player.can_simulate_in(world)
+        self.matches_world(player, world)
             && player.teleport_id_count.load(Ordering::Relaxed) == self.teleport
             && player.chunk_send_epoch.load(Ordering::Relaxed) == self.epoch
             && player.get_entity().pos.load() == self.position
@@ -813,7 +816,7 @@ impl Player {
 
     pub(crate) fn finish_regional_client_move(&self, committed: &CommittedPlayerMove) -> bool {
         let world = self.world();
-        if world.uuid != committed.stamp.world || !self.can_simulate_in(&world) {
+        if !committed.stamp.matches_world(self, &world) {
             return false;
         }
         if committed.stamp.is_current(self, &world) {
