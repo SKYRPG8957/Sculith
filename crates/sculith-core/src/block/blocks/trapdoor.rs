@@ -5,8 +5,6 @@ use crate::block::{
     OnPlaceArgs, PathComputationType,
 };
 use crate::entity::EntityBase;
-use crate::entity::player::Player;
-use crate::world::World;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::Half;
 use pumpkin_data::fluid::Fluid;
@@ -14,41 +12,26 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, BlockState, BlockStateId, tag};
 use pumpkin_macros::pumpkin_block_from_tag;
-use sculith_util::math::position::BlockPos;
 use sculith_world::tick::TickPriority;
 use sculith_world::world::BlockFlags;
-use std::sync::Arc;
+
+use super::BlockToggle;
 
 type TrapDoorProperties = pumpkin_data::block_properties::OakTrapdoorLikeProperties;
 
-fn toggle_trapdoor(player: &Player, world: &Arc<World>, block_pos: &BlockPos) {
-    let (block, block_state) = world.get_block_and_state_id(block_pos);
-    let mut trapdoor_props = TrapDoorProperties::from_state_id(block_state);
-    trapdoor_props.open = !trapdoor_props.open;
-
-    world.play_block_sound_expect(
-        player,
-        get_sound(block, trapdoor_props.open),
-        SoundCategory::Blocks,
-        *block_pos,
-    );
-
-    let game_event = if trapdoor_props.open {
-        pumpkin_data::game_event::GameEvent::BlockOpen
-    } else {
-        pumpkin_data::game_event::GameEvent::BlockClose
-    };
-    world.emit_game_event(game_event.name(), block_pos.to_centered_f64());
-
-    world.set_block_state(
-        block_pos,
-        trapdoor_props.to_state_id(block),
-        BlockFlags::NOTIFY_LISTENERS,
-    );
-}
-
-fn can_open_trapdoor(block: &Block) -> bool {
-    block != &Block::IRON_TRAPDOOR
+pub(crate) fn manual_trapdoor_toggle(state: BlockStateId) -> Option<BlockToggle> {
+    let block = state.to_block();
+    if !block.has_tag(&tag::Block::MINECRAFT_TRAPDOORS) || block == &Block::IRON_TRAPDOOR {
+        return None;
+    }
+    let mut properties = TrapDoorProperties::from_state_id(state);
+    properties.open = !properties.open;
+    Some(BlockToggle::new(
+        properties.to_state_id(block),
+        properties.open,
+        get_sound(block, properties.open),
+        ("trapdoor.open", "trapdoor.close"),
+    ))
 }
 
 fn get_sound(block: &Block, open: bool) -> Sound {
@@ -74,15 +57,17 @@ pub struct TrapDoorBlock;
 
 impl BlockBehaviour for TrapDoorBlock {
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
+        if BlockToggle::apply_in_world(
+            args.player,
+            args.world,
+            *args.position,
+            manual_trapdoor_toggle,
+        )
+        .is_none()
         {
-            if !can_open_trapdoor(args.block) {
-                return BlockActionResult::Pass;
-            }
-
-            toggle_trapdoor(args.player, args.world, args.position);
-
-            BlockActionResult::Success
+            return BlockActionResult::Pass;
         }
+        BlockActionResult::Success
     }
 
     fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {

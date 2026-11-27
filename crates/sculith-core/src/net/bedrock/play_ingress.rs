@@ -167,7 +167,7 @@ impl BedrockClient {
             || Self::can_route_inventory(&packet)
             || Self::can_route_inventory_screen(&packet)
             || Self::can_route_hotbar(&packet)
-            || Self::can_route_block_placement(&packet)
+            || Self::can_route_block_use(&packet)
             || Self::can_route_mining_action(&packet))
             && self.is_current_protocol();
         player.inbound_packets.push(packet);
@@ -298,7 +298,7 @@ impl BedrockClient {
         // A corrected or superseded pose cannot authorize its remaining input.
         let current = || movement_finished && stamp.is_current(player, &player.world());
         if let Some(interaction) = prepared.input.item_interaction.take() {
-            self.finish_inline_placement(player, interaction, stamp, movement_finished);
+            self.finish_inline_block_use(player, interaction, stamp, movement_finished);
         }
         if let Some(request) = prepared.input.item_stack_request.take() {
             self.finish_inline_inventory(player, request, current());
@@ -498,14 +498,14 @@ impl BedrockClient {
                 .is_none()
                 .then_some("mining");
         }
-        if let Some(click) = Self::inline_block_placement(input) {
+        if let Some(click) = Self::inline_block_use(input) {
             let world = player.world();
             return self
-                .try_apply_regional_placement(player, server, click, &|chunk| {
+                .try_apply_regional_block_use(player, server, click, &|chunk| {
                     owns(chunk) && stamp.is_current(player, &world)
                 })
                 .is_none()
-                .then_some("placement");
+                .then_some("block interaction");
         }
         (position_changed
             && input.item_stack_request.as_ref().is_some_and(|request| {
@@ -545,8 +545,8 @@ impl BedrockClient {
         if Self::can_route_mining_action(packet) {
             return self.try_regional_mining_action(player, server, deadline, packet, owns);
         }
-        if Self::can_route_block_placement(packet) {
-            return self.try_regional_block_placement(player, server, packet, owns);
+        if Self::can_route_block_use(packet) {
+            return self.try_regional_block_use(player, server, packet, owns);
         }
         let owns_player = || owns(player.get_entity().chunk_pos.load());
         if Self::can_route_inventory_screen(packet) {

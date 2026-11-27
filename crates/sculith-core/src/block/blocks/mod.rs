@@ -144,3 +144,112 @@ pub mod structure_block;
 pub mod trial_spawner;
 pub mod turtle_egg;
 pub mod vault;
+
+use std::{cell::Cell, sync::Arc};
+
+use pumpkin_data::{
+    BlockState, BlockStateId,
+    game_event::GameEvent,
+    sound::{Sound, SoundCategory},
+};
+use sculith_util::math::position::BlockPos;
+use sculith_world::world::BlockFlags;
+
+use crate::{
+    entity::player::Player,
+    plugin::{
+        server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
+        world::generic_game::GenericGameEvent,
+    },
+    server::Server,
+    world::World,
+};
+
+/// Shared result of manually toggling a one-block opening.
+pub(crate) struct BlockToggle {
+    pub state: BlockStateId,
+    pub java_sound: Sound,
+    pub bedrock_sound: &'static str,
+    pub event: GameEvent,
+}
+
+impl BlockToggle {
+    const fn new(
+        state: BlockStateId,
+        open: bool,
+        java_sound: Sound,
+        (opening, closing): (&'static str, &'static str),
+    ) -> Self {
+        Self {
+            state,
+            java_sound,
+            bedrock_sound: if open { opening } else { closing },
+            event: if open {
+                GameEvent::BlockOpen
+            } else {
+                GameEvent::BlockClose
+            },
+        }
+    }
+
+    pub(crate) fn effects_observed(server: &Server) -> bool {
+        let plugins = &server.plugin_manager;
+        plugins.has_handlers::<GenericGameEvent>()
+            || plugins.has_handlers::<PacketSentEvent>()
+            || plugins.has_handlers::<BedrockConnectionPacketSentEvent>()
+    }
+
+    fn apply_in_world(
+        player: &Player,
+        world: &Arc<World>,
+        position: BlockPos,
+        plan: impl Fn(BlockStateId) -> Option<Self>,
+    ) -> Option<BlockStateId> {
+        if !world.is_in_build_limit(position) {
+            return None;
+        }
+        let mut expected = world.get_block_state_id(&position);
+        let flags = BlockFlags::NOTIFY_LISTENERS;
+        loop {
+            let toggle = plan(expected)?;
+            if world
+                .server
+                .upgrade()
+                .is_some_and(|server| Self::effects_observed(&server))
+                || world.block_toggle_has_listeners(position, toggle.event)
+            {
+                // Keep the callback order for observers that can inspect the old state.
+                toggle.publish_world_effects(player, world, position);
+                world
+                    .set_block_state_if(&position, toggle.state, flags, |live| live == expected)?;
+                return Some(toggle.state);
+            }
+
+            // A region may already have handled another activation. Plan this
+            // click against the state held under the palette's write lock.
+            let seen = Cell::new(None);
+            if let Some(replaced) =
+                world.write_block_state_if(&position, toggle.state, |_, live| {
+                    seen.set(Some(live));
+                    live == expected
+                })
+            {
+                toggle.publish_world_effects(player, world, position);
+                world.on_block_state_set(&position, replaced, toggle.state, flags);
+                return Some(toggle.state);
+            }
+            expected = seen.get()?;
+        }
+    }
+
+    fn publish_world_effects(&self, player: &Player, world: &World, position: BlockPos) {
+        world.play_block_sound_expect(player, self.java_sound, SoundCategory::Blocks, position);
+        let center = position.to_centered_f64();
+        world.play_bedrock_level_sound(
+            self.bedrock_sound,
+            &center,
+            BlockState::to_be_network_id(self.state) as i32,
+        );
+        world.emit_game_event(self.event.name(), center);
+    }
+}

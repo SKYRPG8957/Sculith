@@ -245,7 +245,7 @@ pub mod player_auth_input;
 pub mod player_block_action;
 pub mod player_hotbar;
 mod player_inventory;
-mod regional_placement;
+mod regional_block_use;
 pub mod request_ability;
 pub mod request_chunk_radius;
 pub mod respawn;

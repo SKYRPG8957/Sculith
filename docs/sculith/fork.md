@@ -791,13 +791,22 @@ heightmaps and any skylight at the source position together. Propagation through
 neighbors, absent light data, contended lighting and alternate lighting modes
 use the world path.
 
-A Bedrock movement packet with a single block placement can use the same
-path after the owner completes movement. Reach and block ownership are
-checked from that pose. The world can finish a deferred placement once
-the pose is confirmed. If the pose is superseded, the world sends the
-authoritative inventory and corrects reachable blocks in the same world.
-Combined item requests and other compound inputs are handled in the
-world's input order.
+The owner can also open or close a dry wooden or copper trapdoor or a fence
+gate on the region. The world and region use the same state transition and
+opening direction, and both check the expected state as they write it. The
+region also rechecks ownership, lighting and the neighboring blocks. Dry
+fences can stay alongside the gate when recomputing their connections produces
+the existing state. Both editions
+receive the resulting block and sound. Interactions that need a game-event
+listener, a plugin callback, a different owner or other neighbor changes use
+the world path.
+
+A Bedrock movement packet with a single block use can use the same path after
+the owner completes movement. Reach and block ownership are checked from
+that pose. The world can finish a deferred interaction once the pose is
+confirmed. If the pose is superseded, the world sends the authoritative
+inventory and corrects reachable blocks in the same world. Combined item
+requests and other compound inputs are handled in the world's input order.
 
 When many viewers are spread out, the entity tracker narrows its candidate
 list using horizontal positions in the tick snapshot. It also checks already

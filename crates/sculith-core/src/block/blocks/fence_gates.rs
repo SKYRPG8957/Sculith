@@ -18,6 +18,8 @@ use pumpkin_macros::pumpkin_block_from_tag;
 use sculith_util::math::position::BlockPos;
 use sculith_world::world::BlockFlags;
 
+use super::BlockToggle;
+
 type FenceGateProperties = pumpkin_data::block_properties::OakFenceGateLikeProperties;
 
 fn get_sound(block: &Block, open: bool) -> Sound {
@@ -42,44 +44,32 @@ pub fn toggle_fence_gate(
     block_pos: &BlockPos,
     player: &Player,
 ) -> BlockStateId {
-    let (block, state) = world.get_block_and_state_id(block_pos);
+    let facing = player.get_entity().get_horizontal_facing();
+    BlockToggle::apply_in_world(player, world, *block_pos, |state| {
+        manual_fence_gate_toggle(state, facing)
+    })
+    .unwrap_or_else(|| world.get_block_state_id(block_pos))
+}
 
-    let mut fence_gate_props = FenceGateProperties::from_state_id(state);
-    if fence_gate_props.open {
-        fence_gate_props.open = false;
-    } else {
-        if fence_gate_props.facing
-            == player
-                .living_entity
-                .entity
-                .get_horizontal_facing()
-                .opposite()
-        {
-            fence_gate_props.facing = player.get_entity().get_horizontal_facing();
-        }
-        fence_gate_props.open = true;
+pub(crate) fn manual_fence_gate_toggle(
+    state: BlockStateId,
+    facing: HorizontalFacing,
+) -> Option<BlockToggle> {
+    let block = state.to_block();
+    if !block.has_tag(&tag::Block::MINECRAFT_FENCE_GATES) {
+        return None;
     }
-
-    world.play_block_sound_expect(
-        player,
-        get_sound(block, fence_gate_props.open),
-        SoundCategory::Blocks,
-        *block_pos,
-    );
-
-    let game_event = if fence_gate_props.open {
-        pumpkin_data::game_event::GameEvent::BlockOpen
-    } else {
-        pumpkin_data::game_event::GameEvent::BlockClose
-    };
-    world.emit_game_event(game_event.name(), block_pos.to_centered_f64());
-
-    world.set_block_state(
-        block_pos,
-        fence_gate_props.to_state_id(block),
-        BlockFlags::NOTIFY_LISTENERS,
-    );
-    fence_gate_props.to_state_id(block)
+    let mut properties = FenceGateProperties::from_state_id(state);
+    properties.open = !properties.open;
+    if properties.open && properties.facing == facing.opposite() {
+        properties.facing = facing;
+    }
+    Some(BlockToggle::new(
+        properties.to_state_id(block),
+        properties.open,
+        get_sound(block, properties.open),
+        ("fence_gate.open", "fence_gate.close"),
+    ))
 }
 
 #[pumpkin_block_from_tag("minecraft:fence_gates")]

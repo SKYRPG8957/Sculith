@@ -5,7 +5,7 @@ use crate::{entity::player::ItemUseSnapshot, item::registry::should_try_block_pl
 use pumpkin_data::item::Item;
 use sculith_protocol::bedrock::server::inventory_transaction::HandSlot;
 
-const SIMULATION_TICK_TRIGGER: u8 = 2;
+pub(super) const SIMULATION_TICK_TRIGGER: u8 = 2;
 
 impl BedrockClient {
     fn correct_rejected_food_use(&self, player: &Player) {

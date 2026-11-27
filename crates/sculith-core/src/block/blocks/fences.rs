@@ -47,19 +47,46 @@ impl BlockBehaviour for FenceBlock {
 }
 
 pub fn compute_fence_state(
-    mut fence_props: FenceProperties,
+    fence_props: FenceProperties,
     world: &World,
     block: &Block,
     block_pos: &BlockPos,
 ) -> BlockStateId {
+    let current = fence_props.to_state_id(block);
+    connected_fence_state(fence_props, block, *block_pos, |pos| {
+        Some(world.get_block_state_id(&pos))
+    })
+    .unwrap_or(current)
+}
+
+pub(crate) fn dry_fence_keeps_state(
+    state: BlockStateId,
+    position: BlockPos,
+    read: impl Fn(BlockPos) -> Option<BlockStateId>,
+) -> bool {
+    let block = state.to_block();
+    if !block.has_tag(&tag::Block::MINECRAFT_FENCES) {
+        return false;
+    }
+    let properties = FenceProperties::from_state_id(state);
+    !properties.waterlogged
+        && connected_fence_state(properties, block, position, read) == Some(state)
+}
+
+fn connected_fence_state(
+    mut fence_props: FenceProperties,
+    block: &Block,
+    block_pos: BlockPos,
+    read: impl Fn(BlockPos) -> Option<BlockStateId>,
+) -> Option<BlockStateId> {
     for direction in BlockDirection::horizontal() {
         let other_block_pos = block_pos.offset(direction.to_offset());
-        let (other_block, other_block_state) = world.get_block_and_state(&other_block_pos);
+        let other = read(other_block_pos)?;
 
         let connected = connects_to(
             block,
-            other_block,
-            other_block_state,
+            other.to_block(),
+            other.to_state(),
             direction.to_block_direction(),
         );
         match direction {
@@ -70,7 +97,7 @@ pub fn compute_fence_state(
         }
     }
 
-    fence_props.to_state_id(block)
+    Some(fence_props.to_state_id(block))
 }
 
 fn is_same_fence(from: &Block, to: &Block) -> bool {
@@ -89,4 +116,47 @@ fn connects_to(from: &Block, to: &Block, to_state: &BlockState, direction: Block
     (!is_exception_for_connection(to) && to_state.is_side_solid(direction.opposite()))
         || same_fence
         || gate
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::blocks::fence_gates::manual_fence_gate_toggle;
+
+    #[test]
+    fn regional_gate_toggle_preserves_current_dry_fence_connections() {
+        let pos = BlockPos::new(0, 64, 0);
+        let gate_pos = BlockPos::new(1, 64, 0);
+        let mut gate = FenceGateProperties::default(&Block::OAK_FENCE_GATE);
+        gate.facing = HorizontalFacing::North;
+        let closed = gate.to_state_id(&Block::OAK_FENCE_GATE);
+        let open =
+            manual_fence_gate_toggle(closed, HorizontalFacing::South).map(|toggle| toggle.state);
+        assert!(open.is_some());
+        let after = |neighbor| {
+            if neighbor == gate_pos {
+                open
+            } else {
+                Some(BlockStateId::AIR)
+            }
+        };
+        let mut fence = FenceProperties::default(&Block::OAK_FENCE);
+        assert!(!dry_fence_keeps_state(
+            fence.to_state_id(&Block::OAK_FENCE),
+            pos,
+            after
+        ));
+        fence.east = true;
+        assert!(dry_fence_keeps_state(
+            fence.to_state_id(&Block::OAK_FENCE),
+            pos,
+            after
+        ));
+        fence.waterlogged = true;
+        assert!(!dry_fence_keeps_state(
+            fence.to_state_id(&Block::OAK_FENCE),
+            pos,
+            after
+        ));
+    }
 }
