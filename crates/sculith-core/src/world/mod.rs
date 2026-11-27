@@ -5680,9 +5680,16 @@ impl World {
     }
 
     fn append_live_entity(&self, entity: &Arc<dyn EntityBase>) {
+        self.append_live_entities(std::slice::from_ref(entity));
+    }
+
+    fn append_live_entities(&self, entities: &[Arc<dyn EntityBase>]) {
+        if entities.is_empty() {
+            return;
+        }
         self.entities.rcu(|current_entities| {
             let mut new_entities = (**current_entities).clone();
-            new_entities.push(entity.clone());
+            new_entities.extend_from_slice(entities);
             new_entities
         });
     }

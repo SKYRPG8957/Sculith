@@ -2,7 +2,7 @@ use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::{Block, BlockId, BlockState};
 
 use pumpkin_data::BlockStateId;
-use sculith_util::math::position::BlockPos;
+use sculith_util::math::{int_provider::IntProvider, position::BlockPos};
 use sculith_util::random::{RandomGenerator, get_seed, xoroshiro128::Xoroshiro};
 
 use crate::entity::experience_orb::ExperienceOrbEntity;
@@ -558,17 +558,8 @@ pub fn drop_loot(
         }
     }
 
-    let has_silk_touch = params.tool.as_ref().is_some_and(|tool| {
-        pumpkin_data::Enchantment::from_name("silk_touch")
-            .is_some_and(|e| tool.get_enchantment_level(e) > 0)
-    });
-
-    if experience
-        && !has_silk_touch
-        && let Some(experience) = &block.experience
-    {
-        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(get_seed()));
-        let amount = experience.experience.get(&mut random);
+    if experience && let Some(experience) = block_experience_source(block, params.tool.as_ref()) {
+        let amount = roll_block_experience(experience);
         if amount > 0 {
             let mut event = crate::plugin::block::block_exp::BlockExpEvent {
                 block_pos: *pos,
@@ -579,10 +570,30 @@ pub fn drop_loot(
                 server.plugin_manager.fire_blocking(&server, &mut event);
             }
             if event.exp > 0 {
-                ExperienceOrbEntity::spawn(world, pos.to_f64(), event.exp as u32);
+                let spawn = if params.killed_by_player == Some(true) {
+                    pos.to_centered_f64()
+                } else {
+                    pos.to_f64()
+                };
+                ExperienceOrbEntity::spawn(world, spawn, event.exp as u32);
             }
         }
     }
+}
+
+pub(crate) fn block_experience_source<'a>(
+    block: &'a Block,
+    tool: Option<&ItemStack>,
+) -> Option<&'a IntProvider> {
+    let source = &block.experience.as_ref()?.experience;
+    let silk_touch = tool
+        .is_some_and(|tool| tool.get_enchantment_level(&pumpkin_data::Enchantment::SILK_TOUCH) > 0);
+    (!silk_touch).then_some(source)
+}
+
+pub(crate) fn roll_block_experience(source: &IntProvider) -> i32 {
+    let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(get_seed()));
+    source.get(&mut random)
 }
 
 pub fn calc_block_breaking(player: &Player, state: &BlockState, block: &'static Block) -> f32 {

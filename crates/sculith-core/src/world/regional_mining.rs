@@ -6,18 +6,24 @@ use pumpkin_data::{
 };
 use pumpkin_inventory::Inventory;
 use rustc_hash::FxHashMap;
-use sculith_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_util::math::{int_provider::IntProvider, position::BlockPos, vector2::Vector2};
 use sculith_world::level::SyncChunk;
+use uuid::Uuid;
 
 use crate::{
+    block::{block_experience_source, roll_block_experience},
     entity::{
         Entity, EntityBase,
+        experience_orb::ExperienceOrbEntity,
         item::ItemEntity,
         player::{BedrockMiningTool, MINE_BLOCK_EXHAUSTION, Player},
     },
     plugin::{
         api::events::{
-            block::{block_drop_item::BlockDropItemEvent, block_physics::BlockPhysicsEvent},
+            block::{
+                block_drop_item::BlockDropItemEvent, block_exp::BlockExpEvent,
+                block_physics::BlockPhysicsEvent,
+            },
             entity::{
                 entity_exhaustion::EntityExhaustionEvent, entity_spawn::EntitySpawnEvent,
                 item_spawn::ItemSpawnEvent,
@@ -34,11 +40,48 @@ use crate::{
 };
 
 use super::{
-    World,
+    RegionId, World,
     entity_tracker::EntityTracker,
     loot::{RegionalMiningLoot, try_regional_mining_loot},
     regional_campfires::RegionalEntityUpdate,
 };
+
+struct MiningRewards {
+    loot: RegionalMiningLoot,
+    experience: Option<&'static IntProvider>,
+    tool: ItemStack,
+}
+
+impl MiningRewards {
+    fn new(
+        loot: RegionalMiningLoot,
+        experience: Option<&'static IntProvider>,
+        tool: &ItemStack,
+    ) -> Option<Self> {
+        (experience.is_some() || matches!(loot, RegionalMiningLoot::OneStack(_))).then(|| Self {
+            loot,
+            experience,
+            tool: if tool.is_empty() {
+                ItemStack::EMPTY.clone()
+            } else {
+                tool.clone()
+            },
+        })
+    }
+
+    fn actor_bound(&self) -> Option<usize> {
+        let maximum = self.experience.map_or(0, IntProvider::get_max);
+        // Covers the largest ordinary ore result. Larger providers use world processing.
+        if maximum > 7 {
+            return None;
+        }
+        let orbs = (1..=maximum)
+            .map(|amount| ExperienceOrbEntity::split_amount(amount as u32).count())
+            .max()
+            .unwrap_or(0);
+        Some(orbs + usize::from(matches!(self.loot, RegionalMiningLoot::OneStack(_))))
+    }
+}
 
 fn mining_break_unobserved(server: &Server) -> bool {
     let plugins = &server.plugin_manager;
@@ -49,7 +92,7 @@ fn mining_break_unobserved(server: &Server) -> bool {
 }
 
 impl World {
-    /// Finishes a plain break with zero or one deterministic drop in one extent.
+    /// Finishes a plain break with bounded loot and experience in one extent.
     /// The caller holds the player's regional tool and movement guards.
     pub(crate) fn try_remove_regional_mining_block(
         self: &Arc<Self>,
@@ -83,9 +126,9 @@ impl World {
             return None;
         }
         let harvest = !state.to_state().tool_required() || tool.is_correct_for_drops(block);
-        if harvest && block.experience.is_some() {
-            return None;
-        }
+        let experience = harvest
+            .then(|| block_experience_source(block, (!tool.is_empty()).then_some(&*tool)))
+            .flatten();
         let abilities = player.abilities.try_lock().ok()?;
         let chunk = self
             .level
@@ -97,6 +140,7 @@ impl World {
         let commit = |tool: &mut ItemStack, loot| {
             let item_id = tool.item.id;
             let damage = Player::mining_tool_damage(tool, state.to_state());
+            let rewards = MiningRewards::new(loot, experience, tool);
             let remove = || {
                 let mut stats = player.stats.try_lock().ok()?;
                 let applied = self.level.try_remove_regional_block(
@@ -126,22 +170,22 @@ impl World {
             };
             let mut wear =
                 || self.try_commit_regional_tool_wear(server, player, (slot, tool), damage, remove);
-            match loot {
-                RegionalMiningLoot::NoDrop => wear(),
-                RegionalMiningLoot::Drop(stack) => self.try_commit_regional_mining_drop(
+            if let Some(rewards) = rewards {
+                self.try_commit_regional_mining_rewards(
                     server,
-                    (position, stack, &chunk),
+                    (position, &chunk, rewards),
                     deadline,
                     owns,
                     wear,
-                ),
+                )
+            } else {
+                wear()
             }
         };
         if harvest && let Some(table) = block.loot_table {
             server
                 .datapack_manager
                 .try_with_builtin_loot_table(table, |table| {
-                    // A random roll here followed by a world reroll would change the loot odds.
                     let loot_tool: &ItemStack = if tool.is_empty() {
                         ItemStack::EMPTY
                     } else {
@@ -158,87 +202,147 @@ impl World {
         }
     }
 
-    fn try_commit_regional_mining_drop(
+    fn try_commit_regional_mining_rewards(
         self: &Arc<Self>,
         server: &Server,
-        (position, stack, terrain): (BlockPos, ItemStack, &SyncChunk),
+        (position, terrain, rewards): (BlockPos, &SyncChunk, MiningRewards),
         deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
         commit: impl FnOnce() -> Option<()>,
     ) -> Option<()> {
         let plugins = &server.plugin_manager;
+        let item_drop = matches!(rewards.loot, RegionalMiningLoot::OneStack(_));
+        let experience = rewards.experience.is_some();
         let unobserved = || {
-            !plugins.has_handlers::<BlockDropItemEvent>()
-                && !plugins.has_handlers::<ItemSpawnEvent>()
+            (!item_drop
+                || !plugins.has_handlers::<BlockDropItemEvent>()
+                    && !plugins.has_handlers::<ItemSpawnEvent>())
+                && (!experience || !plugins.has_handlers::<BlockExpEvent>())
                 && !plugins.has_handlers::<EntitySpawnEvent>()
                 && !plugins.has_handlers::<PacketSentEvent>()
                 && !plugins.has_handlers::<BedrockConnectionPacketSentEvent>()
         };
-        if !unobserved() || stack.is_empty() {
+        if !unobserved() {
             return None;
         }
-        let pos = position.chunk_position();
-        let spawn = Self::block_drop_position(&position);
-        let (spawn_chunk, relative) =
-            BlockPos::floored_v(spawn).chunk_and_chunk_relative_position();
-        if pos != spawn_chunk {
-            return None;
-        }
+        let (pos, relative) = position.chunk_and_chunk_relative_position();
         let biome = Biome::from_id(terrain.section.try_get_rough_biome(relative)?)?;
-        let entity = Entity::new_in_biome(self.clone(), spawn, &EntityType::ITEM, biome);
-        let item = Arc::new(ItemEntity::new(entity, stack));
-        item.init_data_tracker();
-        let actor: Arc<dyn EntityBase> = item.clone();
+        let capacity = rewards.actor_bound()?;
 
         // A saved or retiring entity chunk cannot observe half of the edit.
         let snapshot = self.entity_chunk_changes.snapshot.try_read().ok()?;
         let mut actors = self.regional_actors.try_write().ok()?;
         let owner = self.region_layout.load().active_owner(pos)?;
         let registering = self.entity_index.registering.try_lock().ok()?;
-        let uuid = actor.get_entity().entity_uuid;
-        if registering.contains(&uuid)
-            || self
-                .entities
-                .load()
-                .iter()
-                .any(|entity| entity.get_entity().entity_uuid == uuid)
-        {
-            return None;
-        }
+        let live = self.entities.load();
+        let mut assigned = Vec::with_capacity(capacity);
+        let reserve_identity = || {
+            let mut uuid = Uuid::new_v4();
+            while assigned.contains(&uuid)
+                || registering.contains(&uuid)
+                || live
+                    .iter()
+                    .any(|entity| entity.get_entity().entity_uuid == uuid)
+            {
+                uuid = Uuid::new_v4();
+            }
+            assigned.push(uuid);
+            uuid
+        };
         let mut updates = self.regional_entity_updates.0.try_lock().ok()?;
-        self.level.try_with_watched_entity_chunk(pos, |chunk| {
+        let spawned = self.level.try_with_watched_entity_chunk(pos, |chunk| {
             if !chunk.live.load(Relaxed) || !owns(pos) || !unobserved() {
                 return None;
             }
             commit()?;
-            if ItemEntity::timers_unobserved(server) {
-                item.start_regional_timer(owner, deadline);
-                Arc::make_mut(&mut actors).assign(owner, actor.clone());
+            // No fallible game decisions follow either reward roll. A failed
+            // preflight therefore cannot bias a later roll or spawn twice.
+            let item_timers = ItemEntity::timers_unobserved(server);
+            let spawned = self.create_mining_reward_actors(
+                (position, biome),
+                rewards,
+                (capacity, reserve_identity),
+                (owner, deadline),
+                item_timers,
+            );
+            for actor in &spawned {
+                if item_timers || actor.get_entity().entity_type == &EntityType::EXPERIENCE_ORB {
+                    Arc::make_mut(&mut actors).assign(owner, actor.clone());
+                }
+                updates.push(RegionalEntityUpdate::Spawned(actor.clone()));
             }
-            self.append_live_entity(&actor);
-            updates.push(RegionalEntityUpdate::Spawned(actor.clone()));
-            Some(())
+            self.append_live_entities(&spawned);
+            Some(spawned)
         })??;
         drop(updates);
         drop(registering);
         drop(actors);
         drop(snapshot);
 
-        tracing::trace!(
-            ?position,
-            entity = actor.get_entity().entity_id,
-            "Spawned mining drop on its region"
-        );
         if unobserved()
             && let Ok(_layout) = self.regional_actors.try_read()
             && owns(pos)
         {
             let mut java_recipients = FxHashMap::default();
-            self.entity_tracker
-                .try_publish_new_drop(self, &actor, pos, &mut java_recipients);
+            for actor in spawned {
+                self.entity_tracker
+                    .try_publish_new_drop(self, &actor, pos, &mut java_recipients);
+            }
             EntityTracker::flush_regional_java_packets(java_recipients);
         }
         Some(())
+    }
+
+    fn create_mining_reward_actors(
+        self: &Arc<Self>,
+        (position, biome): (BlockPos, &'static Biome),
+        rewards: MiningRewards,
+        (capacity, mut reserve_identity): (usize, impl FnMut() -> Uuid),
+        (owner, deadline): (RegionId, TickDeadline),
+        item_timers: bool,
+    ) -> Vec<Arc<dyn EntityBase>> {
+        let mut spawned = Vec::<Arc<dyn EntityBase>>::with_capacity(capacity);
+        let mut entity = |entity_type, spawn| {
+            Entity::from_identity_in_biome(
+                (Entity::reserve_ids(1), reserve_identity()),
+                self.clone(),
+                spawn,
+                entity_type,
+                biome,
+            )
+        };
+        if let Some(stack) = rewards.loot.roll(rewards.tool, rand::random) {
+            let item = Arc::new(ItemEntity::new(
+                entity(&EntityType::ITEM, Self::block_drop_position(&position)),
+                stack,
+            ));
+            item.init_data_tracker();
+            if item_timers {
+                item.start_regional_timer(owner, deadline);
+            }
+            tracing::trace!(
+                ?position,
+                entity = item.get_entity().entity_id,
+                "Spawned mining drop on its region"
+            );
+            spawned.push(item);
+        }
+        let experience = rewards.experience.map_or(0, roll_block_experience).max(0) as u32;
+        let center = position.to_centered_f64();
+        for value in ExperienceOrbEntity::split_amount(experience) {
+            let base = entity(&EntityType::EXPERIENCE_ORB, center);
+            let orb = Arc::new(ExperienceOrbEntity::new_mining_drop(base, value));
+            orb.init_data_tracker();
+            orb.get_entity().start_regional_drop_motion(owner, deadline);
+            tracing::trace!(
+                ?position,
+                entity = orb.get_entity().entity_id,
+                value,
+                "Spawned mining experience on its region"
+            );
+            spawned.push(orb);
+        }
+        spawned
     }
 
     fn try_commit_regional_tool_wear(

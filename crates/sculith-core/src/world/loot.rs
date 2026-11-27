@@ -1,11 +1,12 @@
 use crate::{entity::EntityBase, world::World};
-use pumpkin_data::BlockState;
 use pumpkin_data::damage::DamageType;
-use pumpkin_data::data_component_impl::EnchantmentsImpl;
+use pumpkin_data::data_component::DataComponent;
+use pumpkin_data::data_component_impl::{EnchantmentsImpl, MaxStackSizeImpl, get};
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::recipes::{CookingRecipeKind, get_cooking_recipe_with_ingredient};
 use pumpkin_data::tag::Taggable;
+use pumpkin_data::{BlockState, Enchantment};
 pub use sculith_util::loot_table::{
     DynamicLootCondition, DynamicLootEntry, DynamicLootEntryKind, DynamicLootFunction,
     DynamicLootPool, DynamicLootTable, LootBonusFormula, LootCondition, LootEntityTarget,
@@ -39,13 +40,32 @@ fn has_no_drops_for_tool(table: &LootTable, tool: &ItemStack) -> bool {
 
 pub(super) enum RegionalMiningLoot {
     NoDrop,
-    Drop(ItemStack),
+    OneStack(&'static LootTable),
 }
 
-/// Resolves at most one deterministic stack for a plain player-mined block.
+impl RegionalMiningLoot {
+    pub(super) fn roll(self, tool: ItemStack, seed: impl FnOnce() -> i64) -> Option<ItemStack> {
+        let Self::OneStack(table) = self else {
+            return None;
+        };
+        let mut drops = generate_loot_with_context(
+            table,
+            seed(),
+            &LootContextParameters {
+                tool: Some(tool),
+                killed_by_player: Some(true),
+                ..Default::default()
+            },
+        );
+        debug_assert!(drops.len() <= 1);
+        drops.pop()
+    }
+}
+
+/// Preflights a built-in table whose rolls can produce at most one stack.
 /// `None` leaves the whole break to the world owner.
 pub(super) fn try_regional_mining_loot(
-    table: &LootTable,
+    table: &'static LootTable,
     tool: &ItemStack,
 ) -> Option<RegionalMiningLoot> {
     if has_no_drops_for_tool(table, tool) {
@@ -62,25 +82,14 @@ pub(super) fn try_regional_mining_loot(
         || !table.functions.is_empty()
         || !pool.functions.is_empty()
         || !is_regional_mining_loot_condition(pool.condition)
-        || !is_single_regional_mining_entry(entry)
+        || !is_single_regional_mining_entry(
+            entry,
+            tool.get_enchantment_level(&Enchantment::FORTUNE),
+        )
     {
         return None;
     }
-    // The admitted tree has a single roll, at most one candidate, and no
-    // functions or conditions with random draws or mutable world reads.
-    Some(
-        generate_loot_with_context(
-            table,
-            0,
-            &LootContextParameters {
-                tool: Some(tool.clone()),
-                killed_by_player: Some(true),
-                ..Default::default()
-            },
-        )
-        .pop()
-        .map_or(RegionalMiningLoot::NoDrop, RegionalMiningLoot::Drop),
-    )
+    Some(RegionalMiningLoot::OneStack(table))
 }
 
 const fn is_regional_mining_loot_condition(condition: LootCondition) -> bool {
@@ -99,16 +108,67 @@ const fn is_regional_mining_loot_condition(condition: LootCondition) -> bool {
     )
 }
 
-fn is_single_regional_mining_entry(entry: &LootEntry) -> bool {
-    entry.functions.is_empty()
-        && is_regional_mining_loot_condition(entry.condition)
+fn is_single_regional_mining_entry(entry: &LootEntry, fortune: i32) -> bool {
+    is_regional_mining_loot_condition(entry.condition)
         && match entry.kind {
-            LootEntryKind::Item(_) | LootEntryKind::Empty => true,
+            LootEntryKind::Empty => true,
+            LootEntryKind::Item(name) => {
+                regional_mining_stack_bound(name, entry.functions, fortune)
+            }
             LootEntryKind::Alternatives(entries) => {
-                entries.iter().all(is_single_regional_mining_entry)
+                entry.functions.is_empty()
+                    && entries
+                        .iter()
+                        .all(|entry| is_single_regional_mining_entry(entry, fortune))
             }
             _ => false,
         }
+}
+
+fn regional_mining_stack_bound(name: &str, functions: &[LootFunction], fortune: i32) -> bool {
+    if functions.is_empty() {
+        return true;
+    }
+    let Some(item) = Item::from_registry_key(name.trim_start_matches("minecraft:")) else {
+        return false;
+    };
+    let limit = item
+        .components
+        .iter()
+        .find_map(|(kind, value)| {
+            (*kind == DataComponent::MaxStackSize)
+                .then(|| i32::from(get::<MaxStackSizeImpl>(*value).size))
+        })
+        .unwrap_or(1);
+    let mut upper = 1i32;
+    for function in functions {
+        if !is_regional_mining_loot_condition(function.condition) {
+            return false;
+        }
+        match function.kind {
+            LootFunctionKind::SetCount { count, add: false } => {
+                let maximum = match count {
+                    LootNumberProvider::Constant(value) => value,
+                    LootNumberProvider::Uniform { min, max } if min >= 0.0 && min <= max => max,
+                    _ => return false,
+                };
+                if !(0.0..=f64::from(limit)).contains(&maximum) {
+                    return false;
+                }
+                // A condition can skip the assignment and keep the preceding count.
+                upper = upper.max(maximum.floor() as i32);
+            }
+            LootFunctionKind::ApplyBonus(LootBonusFormula::OreDrops)
+                if function.enchantment == Some("minecraft:fortune")
+                    && (0..=3).contains(&fortune) =>
+            {
+                upper = upper.saturating_mul(fortune + 1);
+            }
+            LootFunctionKind::ExplosionDecay => {} // No explosion in the mining context.
+            _ => return false,
+        }
+    }
+    upper <= limit
 }
 
 #[derive(Default, Clone)]

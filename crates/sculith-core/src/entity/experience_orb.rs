@@ -75,11 +75,7 @@ impl ExperienceOrbEntity {
     ) -> Self {
         let entity = Entity::new(world.clone(), position, &EntityType::EXPERIENCE_ORB);
         let orb = Self::new(entity, amount);
-        let mut velocity = Vector3::new(
-            (rand::random::<f64>() * 0.2 - 0.1) * 2.0,
-            rand::random::<f64>() * 0.2 * 2.0,
-            (rand::random::<f64>() * 0.2 - 0.1) * 2.0,
-        );
+        let mut velocity = Self::random_spawn_velocity();
         if direction.length_squared() > 0.0 && direction.dot(&velocity) < 0.0 {
             velocity = velocity.multiply(-1.0, -1.0, -1.0);
         }
@@ -90,6 +86,21 @@ impl ExperienceOrbEntity {
         if !world.is_space_empty(orb.entity.bounding_box.load()) {
             orb.unstuck_if_possible(size);
         }
+        orb
+    }
+
+    fn random_spawn_velocity() -> Vector3<f64> {
+        Vector3::new(
+            (rand::random::<f64>() * 0.2 - 0.1) * 2.0,
+            rand::random::<f64>() * 0.2 * 2.0,
+            (rand::random::<f64>() * 0.2 - 0.1) * 2.0,
+        )
+    }
+
+    /// The mining owner supplies a fresh entity centered in the just-cleared cell.
+    pub(crate) fn new_mining_drop(entity: Entity, amount: u32) -> Self {
+        let orb = Self::new(entity, amount);
+        orb.entity.velocity.store(Self::random_spawn_velocity());
         orb
     }
 
@@ -134,13 +145,21 @@ impl ExperienceOrbEntity {
         direction: Vector3<f64>,
         amount: u32,
     ) {
-        let mut amount = amount;
-        while amount > 0 {
-            let i = Self::round_to_orb_size(amount);
-            amount -= i;
-            let orb = Arc::new(Self::new_with_direction(world, position, direction, i));
+        for size in Self::split_amount(amount) {
+            let orb = Arc::new(Self::new_with_direction(world, position, direction, size));
             world.spawn_entity(orb);
         }
+    }
+
+    pub(crate) fn split_amount(mut amount: u32) -> impl Iterator<Item = u32> {
+        std::iter::from_fn(move || {
+            if amount == 0 {
+                return None;
+            }
+            let size = Self::round_to_orb_size(amount);
+            amount -= size;
+            Some(size)
+        })
     }
 
     /// Vanilla `ExperienceOrb.followNearbyPlayer`

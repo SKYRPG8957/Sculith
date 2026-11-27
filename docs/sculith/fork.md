@@ -738,16 +738,20 @@ and cancels the session on an early stop. Both owners compare the live
 block state with the state recorded at the beginning of the session.
 Observing a replacement invalidates the previous progress for that session.
 When the player holds a tool, the owner verifies the selected stack used to
-read the mining speed and resolves the built-in loot table with that tool.
-A break with zero or one deterministic stack can commit the block write,
-tool wear, statistics and the drop while holding the entity save guard.
-The owner registers the drop in its live entity chunk and starts its item
-timer on the next regional deadline. It uses the normal item spawn position
-and velocity and pairs ready Java and Bedrock clients. World tracking serves
-clients missed by the regional send. The revised hotbar slot and equipment
-show the same tool wear. Bedrock encodes wear as the integer `Damage` tag in
-the item NBT. Random loot, datapack overrides, tool breakage, Unbreaking and
-applicable drop, spawn or durability callbacks use world processing.
+read the mining speed and preflights the built-in loot table with that tool.
+A break that can produce at most one stack and at most seven experience
+points can commit the block write, tool wear, statistics and reward actors
+while holding the entity save guard. The owner checks the upper bounds
+before removal. It draws the loot and experience only after removal succeeds.
+Ordinary ore tables use the shared Fortune and Silk Touch rules. Items use
+the normal drop motion. Mining experience uses the shared orb split sizes
+and starts at the center of the broken block.
+The region registers the actors while the live entity chunk is pinned and
+pairs ready Java and Bedrock clients. World tracking serves clients missed
+by the regional send. Bedrock encodes tool wear as the integer `Damage` tag
+in the item NBT. Unsupported loot, datapack overrides, tool breakage,
+Unbreaking and applicable drop, spawn or durability callbacks use world
+processing.
 With default lighting, the region can also remove a fully opaque,
 non-emitting block when removing it changes only the source cell's light.
 The owner checks the six surrounding light samples in the same chunk and

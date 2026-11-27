@@ -18,9 +18,10 @@ fn regional_mining_resolves_single_drops_and_defers_random_loot() {
     let stone = loot("blocks/stone");
     let glass = loot("blocks/glass");
     let drop = |table, tool: &ItemStack| {
-        let Some(RegionalMiningLoot::Drop(stack)) = try_regional_mining_loot(table, tool) else {
-            panic!("expected deterministic mining drop");
-        };
+        let stack = try_regional_mining_loot(table, tool)
+            .unwrap()
+            .roll(tool.clone(), || 0)
+            .unwrap();
         (stack.item, stack.item_count)
     };
     assert_eq!(drop(stone, &pickaxe), (&Item::COBBLESTONE, 1));
@@ -33,6 +34,54 @@ fn regional_mining_resolves_single_drops_and_defers_random_loot() {
     pickaxe.add_enchantment(&pumpkin_data::Enchantment::SILK_TOUCH, 1);
     assert_eq!(drop(stone, &pickaxe), (&Item::STONE, 1));
     assert_eq!(drop(glass, &pickaxe), (&Item::GLASS, 1));
+}
+
+#[test]
+fn ore_loot_uses_the_world_roll_and_preserves_silk_touch() {
+    let coal = pumpkin_data::loot_table::get_loot_table("blocks/coal_ore").unwrap();
+    let lapis = pumpkin_data::loot_table::get_loot_table("blocks/lapis_ore").unwrap();
+    let mut pickaxe = ItemStack::new(1, &Item::IRON_PICKAXE);
+    pickaxe.add_enchantment(&Enchantment::FORTUNE, 3);
+    for (table, item, range) in [
+        (coal, &Item::COAL, 1..=4),
+        (lapis, &Item::LAPIS_LAZULI, 4..=36),
+    ] {
+        let mut counts = std::collections::BTreeSet::new();
+        for seed in 0..64 {
+            let expected = generate_loot_with_context(
+                table,
+                seed,
+                &LootContextParameters {
+                    tool: Some(pickaxe.clone()),
+                    killed_by_player: Some(true),
+                    ..Default::default()
+                },
+            );
+            let stack = try_regional_mining_loot(table, &pickaxe)
+                .unwrap()
+                .roll(pickaxe.clone(), || seed)
+                .unwrap();
+            assert_eq!(expected.len(), 1);
+            assert_eq!(
+                (stack.item, stack.item_count),
+                (expected[0].item, expected[0].item_count)
+            );
+            assert_eq!(stack.item, item);
+            assert!(range.contains(&stack.item_count));
+            counts.insert(stack.item_count);
+        }
+        assert!(counts.len() > 1);
+    }
+    pickaxe.add_enchantment(&Enchantment::SILK_TOUCH, 1);
+    let drops = try_regional_mining_loot(coal, &pickaxe)
+        .unwrap()
+        .roll(pickaxe.clone(), || 0)
+        .unwrap();
+    assert_eq!((drops.item, drops.item_count), (&Item::COAL_ORE, 1));
+    assert!(
+        crate::block::block_experience_source(&pumpkin_data::Block::COAL_ORE, Some(&pickaxe))
+            .is_none()
+    );
 }
 
 #[test]

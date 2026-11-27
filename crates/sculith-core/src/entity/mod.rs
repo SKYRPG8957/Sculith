@@ -1949,26 +1949,11 @@ impl Entity {
         )
     }
 
-    pub(crate) fn new_in_biome(
-        world: Arc<World>,
-        position: Vector3<f64>,
-        entity_type: &'static EntityType,
-        biome: &'static Biome,
-    ) -> Self {
-        Self::from_identity_in_biome(
-            (CURRENT_ID.fetch_add(1, Relaxed), Uuid::new_v4()),
-            world,
-            position,
-            entity_type,
-            biome,
-        )
-    }
-
     #[expect(
         clippy::too_many_lines,
         reason = "one line per field of the struct literal"
     )]
-    fn from_identity_in_biome(
+    pub(crate) fn from_identity_in_biome(
         (entity_id, entity_uuid): (i32, Uuid),
         world: Arc<World>,
         position: Vector3<f64>,
