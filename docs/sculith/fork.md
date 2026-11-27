@@ -21,9 +21,9 @@ protocol, world and utility packages are `sculith-core`, `sculith-config`,
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
 Native Rust plugins must be rebuilt for the `sculith-world` crate identity.
-The native plugin macro exports `SCULITH_API_VERSION`. The loader expects
-ABI 54 and recognizes the earlier marker name. Wasm plugins load by WIT API
-version.
+The native plugin macro exports `SCULITH_API_VERSION`. The runtime lighting
+layout requires ABI 55, and the loader recognizes the earlier marker name.
+Wasm plugins load by WIT API version.
 Telemetry and update notifications default to off. The optional update checker
 queries Sculith releases. CI builds and tests source;
 it has no release, artifact-upload, container-push or automatic publication job.
@@ -754,8 +754,14 @@ actor cells stable while committing the terrain edit and consuming one
 item in Survival. Creative keeps its stack. The owner sends the revised
 inventory and publishes the block to both editions. The world handles
 transactions that need slot selection, placement callbacks, advancements,
-replacing a block, collision decisions around nearby actors, complex item
-behavior or lighting updates.
+replacing a block, collision decisions around nearby actors or complex item
+behavior. With default lighting, a non-emitting opaque block can also be placed
+on the region when the six existing light samples fit in the same chunk and
+the light change is confined to the placed block. The commit checks stored block
+light and skylight while runtime propagation is idle. It updates the palette,
+heightmaps and any skylight at the source position together. Propagation through
+neighbors, absent light data, contended lighting and alternate lighting modes
+use the world path.
 
 A Bedrock movement packet with a single block placement can use the same
 path after the owner completes movement. Reach and block ownership are

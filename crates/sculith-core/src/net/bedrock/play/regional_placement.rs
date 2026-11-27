@@ -219,12 +219,6 @@ impl BedrockClient {
         }
         let block = Block::from_item_id(held.item.id)?;
         let state = block.default_state.id;
-        if sculith_world::lighting::LightEngine::has_different_light_properties(
-            BlockStateId::AIR.to_state(),
-            block.default_state,
-        ) {
-            return None;
-        }
         let advancements = player.advancements.try_lock().ok()?;
         if advancements.has_placement_listener(block.name) {
             return None;

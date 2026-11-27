@@ -5,11 +5,12 @@ use crossbeam::queue::SegQueue;
 use pumpkin_data::BlockDirection;
 use sculith_config::lighting::LightingEngineConfig;
 use sculith_util::math::position::BlockPos;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock, RwLockWriteGuard};
 
 pub struct DynamicLightEngine {
     min_y: i32,
     max_y: i32,
+    runtime_updates: RwLock<()>,
     block_decrease: SegQueue<(BlockPos, u8)>,
     block_increase: SegQueue<(BlockPos, u8)>,
     sky_decrease: SegQueue<(BlockPos, u8)>,
@@ -22,6 +23,7 @@ impl DynamicLightEngine {
         Self {
             min_y,
             max_y,
+            runtime_updates: RwLock::new(()),
             block_decrease: SegQueue::new(),
             block_increase: SegQueue::new(),
             sky_decrease: SegQueue::new(),
@@ -52,6 +54,10 @@ impl DynamicLightEngine {
     /// Handles all lighting updates triggered by a block change (placement/break).
     /// This updates Block Light, Sky Light, and ensures the source block is valid.
     pub fn update_lighting_at(&self, level: &Arc<Level>, pos: BlockPos) {
+        let _runtime = self
+            .runtime_updates
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         // Block Light
         self.check_block_light_updates(level, pos);
         self.perform_block_light_updates(level);
@@ -59,6 +65,16 @@ impl DynamicLightEngine {
         // Sky Light
         self.check_sky_light_updates(level, pos);
         self.perform_sky_light_updates(level);
+    }
+
+    /// A regional edit can change the source cell when no propagation is in flight.
+    pub(crate) fn try_pin_local_update(&self) -> Option<RwLockWriteGuard<'_, ()>> {
+        let guard = self.runtime_updates.try_write().ok()?;
+        (self.block_increase.is_empty()
+            && self.block_decrease.is_empty()
+            && self.sky_increase.is_empty()
+            && self.sky_decrease.is_empty())
+        .then_some(guard)
     }
 
     pub fn queue_block_light_decrease(&self, pos: BlockPos, level: u8) {

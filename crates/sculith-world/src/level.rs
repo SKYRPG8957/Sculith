@@ -1,10 +1,10 @@
 use crate::chunk_system::{ChunkListener, ChunkLoading, GenerationSchedule, LevelChannel};
 use crate::generation::generator::WorldGenerator;
-use crate::lighting::DynamicLightEngine;
+use crate::lighting::{DynamicLightEngine, LightEngine};
 use crate::{
     chunk::{
-        ChunkData, ChunkEntityData, DownwardWaterTick, RegionalFluid, RegionalFluidTick,
-        RegionalWaterTick,
+        ChunkData, ChunkEntityData, DownwardWaterTick, RegionalBlockLighting, RegionalFluid,
+        RegionalFluidTick, RegionalWaterTick,
         io::{Dirtiable, FileIO, LoadedData, file_manager::LevelFileIO},
         palette::has_random_ticking_fluid,
     },
@@ -1608,6 +1608,61 @@ impl Level {
         owns: impl Fn(Vector2<i32>) -> bool,
         validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
     ) -> Option<bool> {
+        self.try_apply_regional_edit(
+            expected_chunk,
+            position,
+            (expected, replacement),
+            owns,
+            validate,
+            RegionalBlockLighting::Preserve,
+        )
+    }
+
+    /// Places a full block into air. An opaque placement may darken its source
+    /// cell when the stored light shows that propagation can stay local.
+    pub fn try_place_regional_full_block(
+        &self,
+        expected_chunk: &SyncChunk,
+        position: BlockPos,
+        replacement: BlockStateId,
+        owns: impl Fn(Vector2<i32>) -> bool,
+        validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<bool> {
+        let air = BlockStateId::AIR;
+        if !LightEngine::has_different_light_properties(air.to_state(), replacement.to_state()) {
+            return self.try_apply_regional_block_edit(
+                expected_chunk,
+                position,
+                air,
+                replacement,
+                owns,
+                validate,
+            );
+        }
+        if self.lighting_config != LightingEngineConfig::Default {
+            return None;
+        }
+        let _runtime = self.light_engine.try_pin_local_update()?;
+        let has_skylight = self.world_gen.load().dimension().has_skylight;
+        self.try_apply_regional_edit(
+            expected_chunk,
+            position,
+            (air, replacement),
+            owns,
+            validate,
+            RegionalBlockLighting::OpaquePlacement { has_skylight },
+        )
+    }
+
+    fn try_apply_regional_edit(
+        &self,
+        expected_chunk: &SyncChunk,
+        position: BlockPos,
+        change: (BlockStateId, BlockStateId),
+        owns: impl Fn(Vector2<i32>) -> bool,
+        validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+        lighting: RegionalBlockLighting,
+    ) -> Option<bool> {
         let pos = position.chunk_position();
         if !owns(pos) {
             return None;
@@ -1622,7 +1677,7 @@ impl Level {
             expected_chunk,
             owns,
             |chunk, read, commit| {
-                chunk.try_apply_block_edit(position, expected, replacement, read, commit, &validate)
+                chunk.try_apply_block_edit(position, change, read, commit, &validate, lighting)
             },
         )
     }

@@ -5,14 +5,14 @@ use pumpkin_data::block_properties::{blocks_movement, has_random_ticks, is_air};
 use pumpkin_data::chunk::ChunkStatus;
 use pumpkin_data::fluid::Fluid;
 use pumpkin_data::tag::Block::MINECRAFT_LEAVES;
-use pumpkin_data::{Block, BlockState, BlockStateId};
+use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
 use rustc_hash::{FxHashMap, FxHashSet};
 use sculith_util::math::{position::BlockPos, vector3::Vector3};
 
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError};
+use std::sync::{MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 use thiserror::Error;
 
 pub mod format;
@@ -241,6 +241,12 @@ impl ChunkSections {
 pub struct ChunkLight {
     pub sky_light: Box<[LightContainer]>,
     pub block_light: Box<[LightContainer]>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum RegionalBlockLighting {
+    Preserve,
+    OpaquePlacement { has_skylight: bool },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -888,11 +894,11 @@ impl ChunkData {
     pub(crate) fn try_apply_block_edit(
         &self,
         position: BlockPos,
-        expected: BlockStateId,
-        replacement: BlockStateId,
+        (expected, replacement): (BlockStateId, BlockStateId),
         read_neighbor: &dyn Fn(BlockPos) -> Option<BlockStateId>,
         can_commit: &dyn Fn() -> bool,
         validate: &impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+        lighting: RegionalBlockLighting,
     ) -> Option<bool> {
         let mut sections = self.section.block_sections.try_write_unmarked()?;
         let read = |pos: BlockPos| {
@@ -912,10 +918,23 @@ impl ChunkData {
         }
         let old_state = old.to_state();
         let new_state = replacement.to_state();
-        if !retains_block_indexes(old, replacement)
-            || crate::lighting::LightEngine::has_different_light_properties(old_state, new_state)
-            || !validate(&read)
-        {
+        if !retains_block_indexes(old, replacement) {
+            return None;
+        }
+        let relative = position.chunk_relative_position();
+        let mut light =
+            if crate::lighting::LightEngine::has_different_light_properties(old_state, new_state) {
+                let RegionalBlockLighting::OpaquePlacement { has_skylight } = lighting else {
+                    return None;
+                };
+                if old != BlockStateId::AIR || new_state.opacity != 15 || new_state.luminance != 0 {
+                    return None;
+                }
+                Some(self.try_opaque_placement_light(relative, has_skylight)?)
+            } else {
+                None
+            };
+        if !validate(&read) {
             return None;
         }
         let heightmap = if retains_heightmaps(old_state, new_state) {
@@ -929,8 +948,16 @@ impl ChunkData {
         }
         self.section.block_sections.mark_changed();
         self.write_regional_block(&mut sections, position, replacement);
+        if let Some((lighting, true)) = &mut light {
+            let y = (relative.y - self.section.min_y) as usize;
+            lighting.sky_light[y / CHUNK_WIDTH].set(
+                relative.x as usize,
+                y % CHUNK_WIDTH,
+                relative.z as usize,
+                0,
+            );
+        }
         if let Some(mut heightmap) = heightmap {
-            let relative = position.chunk_relative_position();
             heightmap.update_for_block(relative, new_state, self.section.min_y, |y| {
                 self.section
                     .read_block_from_palettes(&sections, Vector3::new(relative.x, y, relative.z))
@@ -940,6 +967,56 @@ impl ChunkData {
         }
         self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
         Some(true)
+    }
+
+    /// The caller pins runtime propagation. Only a dark or directly lit cell
+    /// with no light to withdraw from its neighbors can use this edit.
+    fn try_opaque_placement_light(
+        &self,
+        mut local: Vector3<i32>,
+        has_skylight: bool,
+    ) -> Option<(MutexGuard<'_, ChunkLight>, bool)> {
+        if !self
+            .light_populated
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return None;
+        }
+        let light = self.light_engine.try_lock().ok()?;
+        local.y -= self.section.min_y;
+        let read = |sections: &[LightContainer], cell: Vector3<i32>| {
+            let (x, y, z) = (
+                usize::try_from(cell.x).ok()?,
+                usize::try_from(cell.y).ok()?,
+                usize::try_from(cell.z).ok()?,
+            );
+            if x >= CHUNK_WIDTH || z >= CHUNK_WIDTH {
+                return None;
+            }
+            Some(sections.get(y / CHUNK_WIDTH)?.get(x, y % CHUNK_WIDTH, z))
+        };
+        let sky = if has_skylight {
+            read(&light.sky_light, local)?
+        } else {
+            0
+        };
+        if read(&light.block_light, local)? != 0 || !matches!(sky, 0 | 15) {
+            return None;
+        }
+        for direction in BlockDirection::all() {
+            let neighbor = local + direction.to_offset();
+            if read(&light.block_light, neighbor)? != 0 {
+                return None;
+            }
+            if sky == 15 {
+                let nearby = read(&light.sky_light, neighbor)?;
+                // Direct sunlight can continue below through a transparent cell.
+                if nearby != 0 && (direction == BlockDirection::Down || nearby != 15) {
+                    return None;
+                }
+            }
+        }
+        Some((light, sky == 15))
     }
 
     // The decision already read these coordinates from the locked palettes.
@@ -1296,10 +1373,11 @@ pub enum ChunkSerializingError {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChunkData, ChunkHeightmapType, ChunkSections};
-    use crate::chunk::palette::BlockPalette;
-    use pumpkin_data::{Block, block_properties::has_random_ticks};
-    use sculith_util::math::position::BlockPos;
+    use super::{ChunkData, ChunkHeightmapType, ChunkLight, ChunkSections, RegionalBlockLighting};
+    use crate::chunk::{format::LightContainer, io::Dirtiable, palette::BlockPalette};
+    use pumpkin_data::{Block, BlockStateId, block_properties::has_random_ticks};
+    use sculith_util::math::{position::BlockPos, vector2::Vector2};
+    use std::sync::atomic::Ordering::Relaxed;
 
     #[test]
     fn a_published_block_actor_change_defers_an_older_terrain_snapshot() {
@@ -1338,7 +1416,14 @@ mod tests {
         let air = Block::AIR.default_state.id;
         chunk.set_block_absolute_y(3, 64, 3, stone);
         let apply = |expected, replacement, owns| {
-            chunk.try_apply_block_edit(pos, expected, replacement, &|_| None, &|| owns, &|_| true)
+            chunk.try_apply_block_edit(
+                pos,
+                (expected, replacement),
+                &|_| None,
+                &|| owns,
+                &|_| true,
+                RegionalBlockLighting::Preserve,
+            )
         };
 
         assert_eq!(apply(stone, gold, false), None);
@@ -1359,7 +1444,14 @@ mod tests {
         let glass = Block::GLASS.default_state.id;
         chunk.set_block_absolute_y(3, 63, 3, stone);
         let apply = |old, new| {
-            chunk.try_apply_block_edit(position, old, new, &|_| None, &|| true, &|_| true)
+            chunk.try_apply_block_edit(
+                position,
+                (old, new),
+                &|_| None,
+                &|| true,
+                &|_| true,
+                RegionalBlockLighting::Preserve,
+            )
         };
         let original_revision = chunk.section.terrain_revision();
         let heightmap = chunk.heightmap.lock().unwrap();
@@ -1394,6 +1486,96 @@ mod tests {
                 .unwrap()
                 .get(ChunkHeightmapType::WorldSurface, 3, 3, min_y),
             63,
+        );
+    }
+
+    fn lit_chunk_for_placement() -> ChunkData {
+        let chunk = ChunkData::empty(0, 0);
+        let sections = chunk.section.block_sections.read().unwrap().len();
+        *chunk.light_engine.lock().unwrap() = ChunkLight {
+            sky_light: vec![LightContainer::new_empty(15); sections].into_boxed_slice(),
+            block_light: vec![LightContainer::new_empty(0); sections].into_boxed_slice(),
+        };
+        chunk.light_populated.store(true, Relaxed);
+        chunk
+    }
+
+    fn place_opaque(chunk: &ChunkData, position: BlockPos, owns: bool) -> Option<bool> {
+        chunk.try_apply_block_edit(
+            position,
+            (BlockStateId::AIR, Block::STONE.default_state.id),
+            &|_| None,
+            &|| owns,
+            &|_| true,
+            RegionalBlockLighting::OpaquePlacement { has_skylight: true },
+        )
+    }
+
+    #[test]
+    fn regional_opaque_placement_saves_terrain_height_and_light_together() {
+        let chunk = lit_chunk_for_placement();
+        let target = BlockPos::new(3, -48, 3);
+        chunk.set_block_absolute_y(3, -49, 3, Block::STONE.default_state.id);
+        let initial_revision = chunk.section.terrain_revision();
+        let mut light = chunk.light_engine.lock().unwrap();
+        light.sky_light[0].set(3, 15, 3, 0);
+        assert_eq!(place_opaque(&chunk, target, true), None);
+        drop(light);
+        assert_eq!(place_opaque(&chunk, target, false), None);
+        assert!(!chunk.is_dirty());
+        assert_eq!(chunk.section.terrain_revision(), initial_revision);
+        assert_eq!(
+            chunk.light_engine.lock().unwrap().sky_light[1].get(3, 0, 3),
+            15
+        );
+
+        assert_eq!(place_opaque(&chunk, target, true), Some(true));
+        assert!(chunk.is_dirty());
+        assert_ne!(chunk.section.terrain_revision(), initial_revision);
+        for bytes in [chunk.internal_to_bytes(), chunk.internal_to_pump_bytes()] {
+            let saved = ChunkData::internal_from_bytes(&bytes, Vector2::new(0, 0)).unwrap();
+            assert_eq!(
+                saved.section.get_block_absolute_y(3, -48, 3),
+                Some(Block::STONE.default_state.id)
+            );
+            assert_eq!(
+                saved
+                    .heightmap
+                    .lock()
+                    .unwrap()
+                    .get(ChunkHeightmapType::WorldSurface, 3, 3, -64),
+                -48,
+            );
+            let saved_light = saved.light_engine.lock().unwrap();
+            assert_eq!(saved_light.sky_light[1].get(3, 0, 3), 0);
+            assert_eq!(saved_light.sky_light[1].get(4, 0, 3), 15);
+            assert_eq!(saved_light.sky_light[1].get(3, 1, 3), 15);
+        }
+    }
+
+    #[test]
+    fn regional_opaque_placement_defers_when_light_can_propagate() {
+        let chunk = lit_chunk_for_placement();
+        let target = BlockPos::new(3, -48, 3);
+        let initial_revision = chunk.section.terrain_revision();
+        // A shaft extends through the lit cell into the section below it.
+        assert_eq!(place_opaque(&chunk, target, true), None);
+        let mut light = chunk.light_engine.lock().unwrap();
+        light.sky_light[0].set(3, 15, 3, 0);
+        light.sky_light[1].set(4, 0, 3, 14);
+        drop(light);
+        assert_eq!(place_opaque(&chunk, target, true), None);
+        let mut light = chunk.light_engine.lock().unwrap();
+        light.sky_light[1].set(4, 0, 3, 15);
+        light.block_light[1].set(4, 0, 3, 12);
+        drop(light);
+        assert_eq!(place_opaque(&chunk, target, true), None);
+        assert_eq!(place_opaque(&chunk, BlockPos::new(0, -48, 3), true), None);
+        assert_eq!(chunk.section.terrain_revision(), initial_revision);
+        assert!(!chunk.is_dirty());
+        assert_eq!(
+            chunk.section.get_block_absolute_y(3, -48, 3),
+            Some(BlockStateId::AIR)
         );
     }
 

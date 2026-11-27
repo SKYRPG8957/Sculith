@@ -78,10 +78,9 @@ impl World {
         self.entity_index
             .try_with_placement_space(self, player, &area, |same_members| {
                 self.level
-                    .try_apply_regional_block_edit(
+                    .try_place_regional_full_block(
                         &expected,
                         target,
-                        BlockStateId::AIR,
                         state,
                         |chunk| owns(chunk) && same_members(),
                         |read| {
