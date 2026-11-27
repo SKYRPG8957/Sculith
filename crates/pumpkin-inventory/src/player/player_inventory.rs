@@ -72,13 +72,23 @@ impl PlayerPickup {
     /// Complete transfer into one slot that does not change the held equipment.
     #[must_use]
     pub fn single_storage_update(&self) -> Option<(usize, &ItemStack)> {
-        let [slot] = self.slots.as_slice() else {
+        let mut updates = self.full_storage_updates()?;
+        if updates.len() != 1 {
             return None;
-        };
+        }
+        updates.next()
+    }
+
+    /// All destination slots of a complete transfer that leaves held equipment unchanged.
+    #[must_use]
+    pub fn full_storage_updates(
+        &self,
+    ) -> Option<impl ExactSizeIterator<Item = (usize, &ItemStack)>> {
         (self.count == self.source.item_count
-            && slot.index < PlayerInventory::MAIN_SIZE
-            && slot.index != usize::from(self.selected))
-        .then_some((slot.index, &slot.after))
+            && self.slots.iter().all(|slot| {
+                slot.index < PlayerInventory::MAIN_SIZE && slot.index != usize::from(self.selected)
+            }))
+        .then(|| self.slots.iter().map(|slot| (slot.index, &slot.after)))
     }
 }
 
@@ -1116,6 +1126,7 @@ mod tests {
         let mut source = ItemStack::new(6, &Item::ARROW);
         let plan = inventory.plan_pickup(&source).unwrap();
         assert_eq!(plan.count(), 4);
+        assert!(plan.full_storage_updates().is_none());
         assert_eq!(
             plan.slots.iter().map(|slot| slot.index).collect::<Vec<_>>(),
             [0, PlayerInventory::OFF_HAND_SLOT, 9]
@@ -1147,6 +1158,39 @@ mod tests {
         assert_eq!(counts(), [64, 64, 64]);
         assert_eq!(source.item_count, 2);
         assert!(inventory.plan_pickup(&source).is_none());
+    }
+
+    #[test]
+    fn full_pickup_exposes_every_non_held_slot() {
+        let inventory = create_test_inventory();
+        inventory.set_slot(9, ItemStack::new(62, &Item::STONE));
+        inventory.set_slot(10, ItemStack::new(61, &Item::STONE));
+        let mut source = ItemStack::new(5, &Item::STONE);
+        let plan = inventory.plan_pickup(&source).unwrap();
+        let updates: Vec<_> = plan
+            .full_storage_updates()
+            .unwrap()
+            .map(|(slot, after)| (slot, after.item_count))
+            .collect();
+        assert_eq!(updates, [(9, 64), (10, 64)]);
+        assert!(plan.single_storage_update().is_none());
+
+        inventory.set_slot(10, ItemStack::new(60, &Item::STONE));
+        assert!(!inventory.commit_pickup(plan, &mut source, || true));
+        assert_eq!(inventory.get_slot(9).item_count, 62);
+        assert_eq!(source.item_count, 5);
+
+        let fresh = inventory.plan_pickup(&source).unwrap();
+        assert!(inventory.commit_pickup(fresh, &mut source, || true));
+        assert_eq!(inventory.get_slot(9).item_count, 64);
+        assert_eq!(inventory.get_slot(10).item_count, 63);
+        assert!(source.is_empty());
+
+        inventory.set_held_item(ItemStack::new(63, &Item::STONE));
+        let source = ItemStack::new(2, &Item::STONE);
+        let held = inventory.plan_pickup(&source).unwrap();
+        assert_eq!(held.count(), 2);
+        assert!(held.full_storage_updates().is_none());
     }
 
     /// When the main inventory is completely full and only the off-hand has

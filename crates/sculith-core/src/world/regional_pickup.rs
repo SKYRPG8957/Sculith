@@ -158,11 +158,14 @@ impl World {
             let pickup = player.inventory.plan_pickup(&stack)?;
             let count = pickup.count();
             let item_type = pickup.item();
-            let (slot, after) = pickup.single_storage_update()?;
             let inventory: Arc<dyn Inventory> = player.inventory.clone();
-            let screen_slot = handler.get_slot_index(&inventory, slot)?;
-            let packet = client.encode_player_inventory_slot(slot, after)?;
-            let after = after.clone();
+            let mut slot_updates = pickup.full_storage_updates()?.map(|(slot, after)| {
+                let screen_slot = handler.get_slot_index(&inventory, slot)?;
+                let packet = client.encode_player_inventory_slot(slot, after)?;
+                Some((screen_slot, after.clone(), packet))
+            });
+            let first_update = slot_updates.next()??;
+            let later_updates = slot_updates.collect::<Option<Vec<_>>>()?;
             let mut stats = player.stats.try_lock().ok()?;
             let source = item.get_entity();
             self.entity_tracker.try_publish_regional_pickup(
@@ -198,7 +201,11 @@ impl World {
                 },
             )?;
             player.inventory_changed.store(true, Relaxed);
-            if client.try_enqueue_packet_data_unobserved(packet) {
+            let slots = 1 + later_updates.len();
+            for (screen_slot, after, packet) in std::iter::once(first_update).chain(later_updates) {
+                if !client.try_enqueue_packet_data_unobserved(packet) {
+                    break;
+                }
                 handler.set_received_stack(screen_slot, after);
             }
             updates.push(RegionalEntityUpdate::Removed(actor.clone()));
@@ -206,6 +213,7 @@ impl World {
                 entity = source.entity_id,
                 collector = player.entity_id(),
                 count,
+                slots,
                 "Collected a dropped stack on its region"
             );
             Some(())

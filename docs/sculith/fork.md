@@ -391,11 +391,13 @@ updates pickup statistics. For a partial pickup Java receives the collected
 count and Bedrock receives the new size on the same item actor. A full pickup
 sends the take animation and removes the actor on both editions.
 
-A region can complete a full pickup into one regular inventory slot for an
+A region can complete a full pickup across regular inventory slots for an
 unmounted current-protocol Bedrock player. The collector and drop must share
 the chunk and region, with no competing collector, merge or hopper in the
 contact area. It pins the live actor assignment, collector bounds, inventory
 and save access while transferring the stack and recording the statistic.
+The region prepares each changed slot before committing and sends the slot
+updates in the same inventory order.
 Current Java and Bedrock viewers receive the take packet with both actor IDs
 already paired, then the removal packet. The world finalizes tracker cleanup.
 Observed, partial or equipment-changing pickups and contacts that cross
