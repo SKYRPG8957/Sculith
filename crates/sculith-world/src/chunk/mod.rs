@@ -903,6 +903,101 @@ impl ChunkData {
         Some(old)
     }
 
+    /// Compares and writes two vertically adjacent block states under one palette lock.
+    /// The changes must preserve lighting, heightmaps and the chunk's block indexes.
+    pub fn set_vertical_block_pair_if(
+        &self,
+        lower: BlockPos,
+        changes: [(BlockStateId, BlockStateId); 2],
+    ) -> Option<bool> {
+        let mut sections = self
+            .section
+            .block_sections
+            .palettes
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.apply_vertical_block_pair(&mut sections, lower, changes, &|_| None, &|| true, &|_| {
+            true
+        })
+    }
+
+    pub(crate) fn try_apply_vertical_block_pair(
+        &self,
+        lower: BlockPos,
+        changes: [(BlockStateId, BlockStateId); 2],
+        read_neighbor: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        can_commit: &dyn Fn() -> bool,
+        validate: &impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<bool> {
+        let mut sections = self.section.block_sections.try_write_unmarked()?;
+        self.apply_vertical_block_pair(
+            &mut sections,
+            lower,
+            changes,
+            read_neighbor,
+            can_commit,
+            validate,
+        )
+    }
+
+    fn apply_vertical_block_pair(
+        &self,
+        sections: &mut [BlockPalette],
+        lower: BlockPos,
+        changes: [(BlockStateId, BlockStateId); 2],
+        read_neighbor: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        can_commit: &dyn Fn() -> bool,
+        validate: &impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<bool> {
+        let chunk = lower.chunk_position();
+        if (chunk.x, chunk.y) != (self.x, self.z) {
+            return None;
+        }
+        let upper = BlockPos::new(lower.0.x, lower.0.y.checked_add(1)?, lower.0.z);
+        let positions = [lower, upper];
+        let read = |pos| self.read_block_during_edit(sections, pos, read_neighbor);
+        for (pos, (expected, replacement)) in positions.into_iter().zip(changes) {
+            if read(pos)? != expected {
+                return can_commit().then_some(false);
+            }
+            let (old, new) = (expected.to_state(), replacement.to_state());
+            if !retains_block_indexes(expected, replacement)
+                || !retains_heightmaps(old, new)
+                || crate::lighting::LightEngine::has_different_light_properties(old, new)
+            {
+                return None;
+            }
+        }
+        if !validate(&read) || !can_commit() {
+            return None;
+        }
+        if changes
+            .iter()
+            .any(|(expected, replacement)| expected != replacement)
+        {
+            self.section.block_sections.mark_changed();
+            for (position, (_, state)) in positions.into_iter().zip(changes) {
+                self.write_regional_block(sections, position, state);
+            }
+            self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        Some(true)
+    }
+
+    fn read_block_during_edit(
+        &self,
+        sections: &[BlockPalette],
+        pos: BlockPos,
+        read_neighbor: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> Option<BlockStateId> {
+        let (chunk, relative) = pos.chunk_and_chunk_relative_position();
+        if (chunk.x, chunk.y) == (self.x, self.z) {
+            self.section.read_block_from_palettes(sections, relative)
+        } else {
+            read_neighbor(pos)
+        }
+    }
+
     pub(crate) fn try_apply_block_edit(
         &self,
         position: BlockPos,
@@ -913,14 +1008,7 @@ impl ChunkData {
         lighting: RegionalBlockLighting,
     ) -> Option<bool> {
         let mut sections = self.section.block_sections.try_write_unmarked()?;
-        let read = |pos: BlockPos| {
-            let (chunk, relative) = pos.chunk_and_chunk_relative_position();
-            if (chunk.x, chunk.y) == (self.x, self.z) {
-                self.section.read_block_from_palettes(&sections, relative)
-            } else {
-                read_neighbor(pos)
-            }
-        };
+        let read = |pos| self.read_block_during_edit(&sections, pos, read_neighbor);
         let old = read(position)?;
         if old != expected {
             return can_commit().then_some(false);
@@ -1440,9 +1528,55 @@ pub enum ChunkSerializingError {
 mod tests {
     use super::{ChunkData, ChunkHeightmapType, ChunkLight, ChunkSections, RegionalBlockLighting};
     use crate::chunk::{format::LightContainer, io::Dirtiable, palette::BlockPalette};
-    use pumpkin_data::{Block, BlockStateId, block_properties::has_random_ticks};
+    use pumpkin_data::{
+        Block, BlockStateId,
+        block_properties::{DoubleBlockHalf, OakDoorLikeProperties, has_random_ticks},
+    };
     use sculith_util::math::{position::BlockPos, vector2::Vector2};
     use std::sync::atomic::Ordering::Relaxed;
+
+    #[test]
+    fn vertical_pair_rejects_a_stale_companion_across_sections() {
+        let chunk = ChunkData::empty(0, 0);
+        let lower = BlockPos::new(3, -49, 7);
+        let mut properties = OakDoorLikeProperties::default(&Block::OAK_DOOR);
+        properties.open = false;
+        properties.half = DoubleBlockHalf::Lower;
+        let lower_closed = properties.to_state_id(&Block::OAK_DOOR);
+        properties.open = true;
+        let lower_open = properties.to_state_id(&Block::OAK_DOOR);
+        properties.half = DoubleBlockHalf::Upper;
+        let upper_open = properties.to_state_id(&Block::OAK_DOOR);
+        properties.open = false;
+        let upper_closed = properties.to_state_id(&Block::OAK_DOOR);
+
+        chunk.set_block_absolute_y(3, -49, 7, lower_closed);
+        chunk.set_block_absolute_y(3, -48, 7, upper_closed);
+        let revision = chunk.section.terrain_revision();
+        let changes = [(lower_closed, lower_open), (upper_closed, upper_open)];
+        let stale = [changes[0], (upper_open, upper_closed)];
+        assert_eq!(chunk.set_vertical_block_pair_if(lower, stale), Some(false));
+        assert_eq!(
+            chunk.section.get_block_absolute_y(3, -49, 7),
+            Some(lower_closed)
+        );
+        assert_eq!(
+            chunk.section.get_block_absolute_y(3, -48, 7),
+            Some(upper_closed)
+        );
+        assert_eq!(chunk.section.terrain_revision(), revision);
+
+        assert_eq!(chunk.set_vertical_block_pair_if(lower, changes), Some(true));
+        assert_eq!(
+            chunk.section.get_block_absolute_y(3, -49, 7),
+            Some(lower_open)
+        );
+        assert_eq!(
+            chunk.section.get_block_absolute_y(3, -48, 7),
+            Some(upper_open)
+        );
+        assert_ne!(chunk.section.terrain_revision(), revision);
+    }
 
     #[test]
     fn a_published_block_actor_change_defers_an_older_terrain_snapshot() {

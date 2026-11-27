@@ -118,18 +118,23 @@ impl BlockUpdates {
         }
     }
 
-    fn queue_regional_edit(&self, pos: BlockPos, state: BlockStateId, sequence: Option<u64>) {
+    fn queue_regional_edits(
+        &self,
+        changes: impl IntoIterator<Item = (BlockPos, BlockStateId, Option<u64>)>,
+    ) {
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        pending.regional.insert(
-            pos,
-            RegionalBlockUpdate {
-                state,
-                sent: SentViewers::default(),
-            },
-        );
-        if let Some(sequence) = sequence {
-            let last = pending.navigation.entry(pos).or_default();
-            *last = (*last).max(sequence);
+        for (pos, state, sequence) in changes {
+            pending.regional.insert(
+                pos,
+                RegionalBlockUpdate {
+                    state,
+                    sent: SentViewers::default(),
+                },
+            );
+            if let Some(sequence) = sequence {
+                let last = pending.navigation.entry(pos).or_default();
+                *last = (*last).max(sequence);
+            }
         }
     }
 
@@ -204,8 +209,25 @@ impl World {
         previous: BlockStateId,
         state: BlockStateId,
     ) {
-        let sequence = self.navigation_change_sequence_for(&pos, previous, state);
-        self.block_updates.queue_regional_edit(pos, state, sequence);
+        self.queue_regional_edit_updates((pos, previous, state), None);
+    }
+
+    pub(super) fn queue_regional_edit_updates(
+        &self,
+        primary: (BlockPos, BlockStateId, BlockStateId),
+        companion: Option<(BlockPos, BlockStateId, BlockStateId)>,
+    ) {
+        let prepare = |(pos, previous, state)| {
+            (
+                pos,
+                state,
+                self.navigation_change_sequence_for(&pos, previous, state),
+            )
+        };
+        let primary = prepare(primary);
+        let companion = companion.map(prepare);
+        self.block_updates
+            .queue_regional_edits(std::iter::once(primary).chain(companion));
     }
 
     pub(super) fn flush_regional_navigation_updates(&self) {
@@ -439,10 +461,9 @@ mod tests {
         let second = BlockPos::new(4, 64, 1);
         let glass = Block::GLASS.default_state.id;
         let air = BlockStateId::AIR;
-        queue.queue_regional_edit(first, glass, Some(10));
-        queue.queue_regional_edit(second, glass, Some(11));
-        queue.queue_regional_edit(first, air, Some(12));
-        queue.queue_regional_edit(first, air, None);
+        queue.queue_regional_edits([(first, glass, Some(10)), (second, glass, Some(11))]);
+        queue.queue_regional_edits([(first, air, Some(12))]);
+        queue.queue_regional_edits([(first, air, None)]);
         queue.queue_world([(second, air)]);
         let sections = queue.take_world_sections(|_| None);
         assert_eq!(sections.values().map(Vec::len).sum::<usize>(), 2);

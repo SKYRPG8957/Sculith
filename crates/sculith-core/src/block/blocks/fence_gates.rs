@@ -45,7 +45,7 @@ pub fn toggle_fence_gate(
     player: &Player,
 ) -> BlockStateId {
     let facing = player.get_entity().get_horizontal_facing();
-    BlockToggle::apply_in_world(player, world, *block_pos, |state| {
+    BlockToggle::apply_in_world(Some(player), world, *block_pos, |state| {
         manual_fence_gate_toggle(state, facing)
     })
     .unwrap_or_else(|| world.get_block_state_id(block_pos))

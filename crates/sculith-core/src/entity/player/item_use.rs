@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
-use pumpkin_data::{Block, data_component_impl::EquipmentSlot, item_stack::ItemStack};
+use pumpkin_data::{
+    Block, BlockStateId, data_component_impl::EquipmentSlot, item_stack::ItemStack,
+};
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use sculith_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer, java::client::play::CSetPlayerInventory,
 };
-use sculith_util::{GameMode, Hand};
+use sculith_util::{GameMode, Hand, math::position::BlockPos};
 
 use crate::{
-    block::BlockPlacement,
+    block::{BlockPlacement, blocks::doors::door_companion},
     plugin::player::player_interact_event::{InteractAction, PlayerInteractEvent},
     server::Server,
     world::World,
@@ -51,6 +53,9 @@ impl ItemUseSnapshot {
         let (block, state) = self.world.get_block_and_state_id(&position);
         let accepted = if server.plugin_manager.has_handlers::<PlayerInteractEvent>() {
             let adjacent_state = self.world.get_block_state_id(&adjacent);
+            let companion = door_companion(position, state)
+                .filter(|&pos| pos != adjacent)
+                .map(|pos| (pos, self.world.get_block_state_id(&pos)));
             let mut event = PlayerInteractEvent::new(
                 player,
                 InteractAction::RightClickBlock,
@@ -61,6 +66,7 @@ impl ItemUseSnapshot {
             !event.cancelled
                 && self.world.get_block_state_id(&position) == state
                 && self.world.get_block_state_id(&adjacent) == adjacent_state
+                && companion.is_none_or(|(pos, old)| self.world.get_block_state_id(&pos) == old)
         } else {
             true
         };
@@ -71,8 +77,7 @@ impl ItemUseSnapshot {
         }
 
         if in_reach && Arc::ptr_eq(&self.world, &player.world()) {
-            player.reset_block_change(position);
-            player.reset_block_change(adjacent);
+            player.correct_clicked_blocks(position, adjacent, Some(state));
         }
         self.correct(player);
         None
@@ -104,5 +109,26 @@ impl ItemUseSnapshot {
         }
         // Correct predicted consumption without clearing use state written by a callback.
         player.send_health();
+    }
+}
+
+impl Player {
+    pub(crate) fn correct_clicked_blocks(
+        &self,
+        position: BlockPos,
+        adjacent: BlockPos,
+        predicted: Option<BlockStateId>,
+    ) {
+        let world = self.world();
+        let state = world.get_block_state_id(&position);
+        self.send_block_change(position, state.as_u16());
+        self.send_block_change(adjacent, world.get_block_state_id(&adjacent).as_u16());
+        if self.client.bedrock().is_some()
+            && let Some(other) = door_companion(position, predicted.unwrap_or(state))
+            && other != adjacent
+            && world.is_in_build_limit(other)
+        {
+            self.send_block_change(other, world.get_block_state_id(&other).as_u16());
+        }
     }
 }

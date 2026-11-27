@@ -53,11 +53,13 @@ impl World {
                 && !plugins.has_handlers::<BlockPhysicsEvent>()
                 && !BlockToggle::effects_observed(server)
         };
+        let pair = toggle.vertical_pair(position, expected);
         let at = position.chunk_position();
         if !unobserved()
             || !owns(at)
-            || !self.is_in_build_limit(position)
-            || Self::get_fluid_from_state_id(expected) != &Fluid::EMPTY
+            || toggle.changes(position, expected).any(|(pos, old, _)| {
+                !self.is_in_build_limit(pos) || Self::get_fluid_from_state_id(old) != &Fluid::EMPTY
+            })
             || self.players.load().iter().any(|viewer| {
                 super::is_within_chebyshev_distance(at, viewer.get_entity().chunk_pos.load(), 1)
                     && match viewer.client.as_ref() {
@@ -74,32 +76,50 @@ impl World {
         };
         let expected_chunk = chunk.value().clone();
         drop(chunk);
-        let changed = self.level.try_apply_regional_block_edit(
-            &expected_chunk,
-            position,
-            expected,
-            toggle.state,
-            owns,
-            |read| {
-                let after = |pos| {
-                    if pos == position {
-                        Some(toggle.state)
-                    } else {
-                        read(pos)
-                    }
-                };
-                unobserved()
-                    && !self.block_toggle_has_listeners(position, toggle.event)
-                    && BlockDirection::all().into_iter().all(|direction| {
-                        let neighbor = position.offset(direction.to_offset());
-                        read(neighbor).is_some_and(|state| {
-                            self.is_plain_regional_block(state)
-                                || dry_fence_keeps_state(state, neighbor, after)
-                        })
+        let validate = |read: &dyn Fn(BlockPos) -> Option<BlockStateId>| {
+            let changed = |pos| {
+                toggle
+                    .changes(position, expected)
+                    .find_map(|(edited, _, new)| (edited == pos).then_some(new))
+            };
+            let after = |pos| changed(pos).or_else(|| read(pos));
+            unobserved()
+                && !self.block_toggle_has_listeners(position, toggle.event)
+                && pair.is_none_or(|(lower, _)| {
+                    read(lower.down())
+                        .is_some_and(|support| support.to_state().is_side_solid(BlockDirection::Up))
+                })
+                && toggle.changes(position, expected).all(|(pos, _, _)| {
+                    BlockDirection::all().into_iter().all(|direction| {
+                        let neighbor = pos.offset(direction.to_offset());
+                        changed(neighbor).is_some()
+                            || read(neighbor).is_some_and(|state| {
+                                self.is_plain_regional_block(state)
+                                    || (pair.is_none()
+                                        && dry_fence_keeps_state(state, neighbor, after))
+                            })
                     })
-            },
-        )?;
-        changed.then_some(())
+                })
+        };
+        if let Some((lower, changes)) = pair {
+            self.level.try_apply_regional_vertical_block_pair(
+                &expected_chunk,
+                lower,
+                changes,
+                owns,
+                validate,
+            )?
+        } else {
+            self.level.try_apply_regional_block_edit(
+                &expected_chunk,
+                position,
+                expected,
+                toggle.state,
+                owns,
+                validate,
+            )?
+        }
+        .then_some(())
     }
 
     pub(crate) fn publish_regional_toggle(
@@ -109,7 +129,7 @@ impl World {
         expected: BlockStateId,
         toggle: &BlockToggle,
     ) {
-        self.queue_regional_edit_update(position, expected, toggle.state);
+        self.queue_regional_edit_updates((position, expected, toggle.state), toggle.other_half);
         let center = position.to_centered_f64();
         let java_sound = CSoundEffect::new(
             IdOr::Id(toggle.java_sound as u16),

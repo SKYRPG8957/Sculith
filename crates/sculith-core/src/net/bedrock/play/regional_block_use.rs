@@ -25,7 +25,10 @@ use sculith_util::{
 
 use crate::{
     block::blocks::{
-        BlockToggle, fence_gates::manual_fence_gate_toggle, trapdoor::manual_trapdoor_toggle,
+        BlockToggle,
+        doors::{can_toggle_door, regional_door_toggle},
+        fence_gates::manual_fence_gate_toggle,
+        trapdoor::manual_trapdoor_toggle,
     },
     entity::{
         EntityBase,
@@ -33,6 +36,7 @@ use crate::{
     },
     net::bedrock::BedrockClient,
     server::Server,
+    world::World,
 };
 
 use super::{
@@ -44,6 +48,21 @@ const REGIONAL_BLOCK_USE_BYTES: usize = 512;
 enum RegionalBlockUse {
     Placed(BlockPos, BlockStateId),
     Toggled(BlockPos, BlockStateId, BlockToggle),
+}
+
+impl RegionalBlockUse {
+    fn publish(self, world: &World, player: &Player) {
+        match self {
+            Self::Placed(position, state) => {
+                world.publish_regional_placement(position, state);
+                tracing::trace!(player = %player.gameprofile.name, ?position, "Placed Bedrock block on its region");
+            }
+            Self::Toggled(position, expected, toggle) => {
+                world.publish_regional_toggle(player, position, expected, &toggle);
+                tracing::trace!(player = %player.gameprofile.name, ?position, paired = toggle.other_half.is_some(), "Toggled Bedrock block on its region");
+            }
+        }
+    }
 }
 
 fn manual_toggle(player: &Player, state: BlockStateId) -> Option<BlockToggle> {
@@ -92,7 +111,9 @@ impl BedrockClient {
             .world()
             .level
             .try_read_block_state(data.block_position)
-            .is_some_and(|state| manual_toggle(player, state).is_some())
+            .is_some_and(|state| {
+                can_toggle_door(state.to_block()) || manual_toggle(player, state).is_some()
+            })
     }
 
     pub(in crate::net::bedrock) fn finish_inline_block_use(
@@ -194,7 +215,14 @@ impl BedrockClient {
                     return None;
                 }
                 let state = world.level.try_read_block_state(clicked)?;
-                if let Some(toggle) = manual_toggle(player, state) {
+                let toggle = if can_toggle_door(state.to_block()) {
+                    Some(regional_door_toggle(clicked, state, |pos| {
+                        world.level.try_read_block_state(pos)
+                    })?)
+                } else {
+                    manual_toggle(player, state)
+                };
+                if let Some(toggle) = toggle {
                     let main = player.inventory.main_inventory.try_read().ok()?;
                     let held = main.get(slot)?;
                     if (entity.is_sneaking() && !held.is_empty())
@@ -240,16 +268,7 @@ impl BedrockClient {
                 Some(RegionalBlockUse::Placed(position, state))
             })??
         };
-        match action {
-            RegionalBlockUse::Placed(position, state) => {
-                world.publish_regional_placement(position, state);
-                tracing::trace!(player = %player.gameprofile.name, ?position, "Placed Bedrock block on its region");
-            }
-            RegionalBlockUse::Toggled(position, expected, toggle) => {
-                world.publish_regional_toggle(player, position, expected, &toggle);
-                tracing::trace!(player = %player.gameprofile.name, ?position, "Toggled Bedrock block on its region");
-            }
-        }
+        action.publish(&world, player);
         Some(())
     }
 

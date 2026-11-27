@@ -165,12 +165,13 @@ use crate::{
     world::World,
 };
 
-/// Shared result of manually toggling a one-block opening.
+/// A block opening's state change and the effects at the clicked position.
 pub(crate) struct BlockToggle {
     pub state: BlockStateId,
     pub java_sound: Sound,
     pub bedrock_sound: &'static str,
     pub event: GameEvent,
+    pub other_half: Option<(BlockPos, BlockStateId, BlockStateId)>,
 }
 
 impl BlockToggle {
@@ -189,7 +190,41 @@ impl BlockToggle {
             } else {
                 GameEvent::BlockClose
             },
+            other_half: None,
         }
+    }
+
+    const fn with_other_half(
+        mut self,
+        position: BlockPos,
+        old: BlockStateId,
+        new: BlockStateId,
+    ) -> Self {
+        self.other_half = Some((position, old, new));
+        self
+    }
+
+    pub(crate) fn changes(
+        &self,
+        position: BlockPos,
+        expected: BlockStateId,
+    ) -> impl Iterator<Item = (BlockPos, BlockStateId, BlockStateId)> + use<> {
+        std::iter::once((position, expected, self.state)).chain(self.other_half)
+    }
+
+    pub(crate) fn vertical_pair(
+        &self,
+        position: BlockPos,
+        expected: BlockStateId,
+    ) -> Option<(BlockPos, [(BlockStateId, BlockStateId); 2])> {
+        let (other, before, next) = self.other_half?;
+        let clicked = (expected, self.state);
+        let companion = (before, next);
+        Some(if other.0.y < position.0.y {
+            (other, [companion, clicked])
+        } else {
+            (position, [clicked, companion])
+        })
     }
 
     pub(crate) fn effects_observed(server: &Server) -> bool {
@@ -200,50 +235,89 @@ impl BlockToggle {
     }
 
     fn apply_in_world(
-        player: &Player,
+        player: Option<&Player>,
         world: &Arc<World>,
         position: BlockPos,
         plan: impl Fn(BlockStateId) -> Option<Self>,
     ) -> Option<BlockStateId> {
+        Self::apply_world_update(
+            player,
+            world,
+            position,
+            BlockFlags::NOTIFY_LISTENERS,
+            |state| plan(state).map(|toggle| (toggle, true)),
+        )
+    }
+
+    fn apply_world_update(
+        player: Option<&Player>,
+        world: &Arc<World>,
+        position: BlockPos,
+        flags: BlockFlags,
+        plan: impl Fn(BlockStateId) -> Option<(Self, bool)>,
+    ) -> Option<BlockStateId> {
         if !world.is_in_build_limit(position) {
             return None;
         }
-        let mut expected = world.get_block_state_id(&position);
-        let flags = BlockFlags::NOTIFY_LISTENERS;
         loop {
-            let toggle = plan(expected)?;
-            if world
-                .server
-                .upgrade()
-                .is_some_and(|server| Self::effects_observed(&server))
-                || world.block_toggle_has_listeners(position, toggle.event)
-            {
+            let expected = world.get_block_state_id(&position);
+            let (toggle, play_effects) = plan(expected)?;
+            let observed = play_effects
+                && (world
+                    .server
+                    .upgrade()
+                    .is_some_and(|server| Self::effects_observed(&server))
+                    || world.block_toggle_has_listeners(position, toggle.event));
+            if observed {
                 // Keep the callback order for observers that can inspect the old state.
                 toggle.publish_world_effects(player, world, position);
-                world
-                    .set_block_state_if(&position, toggle.state, flags, |live| live == expected)?;
-                return Some(toggle.state);
             }
-
-            // A region may already have handled another activation. Plan this
-            // click against the state held under the palette's write lock.
-            let seen = Cell::new(None);
-            if let Some(replaced) =
-                world.write_block_state_if(&position, toggle.state, |_, live| {
-                    seen.set(Some(live));
-                    live == expected
-                })
-            {
+            if !toggle.write_in_world(world, position, expected)? {
+                if observed {
+                    return None;
+                }
+                continue;
+            }
+            if play_effects && !observed {
                 toggle.publish_world_effects(player, world, position);
-                world.on_block_state_set(&position, replaced, toggle.state, flags);
-                return Some(toggle.state);
             }
-            expected = seen.get()?;
+            for (position, old, new) in toggle.changes(position, expected) {
+                world.on_block_state_set(&position, old, new, flags);
+            }
+            return Some(toggle.state);
         }
     }
 
-    fn publish_world_effects(&self, player: &Player, world: &World, position: BlockPos) {
-        world.play_block_sound_expect(player, self.java_sound, SoundCategory::Blocks, position);
+    fn write_in_world(
+        &self,
+        world: &World,
+        position: BlockPos,
+        expected: BlockStateId,
+    ) -> Option<bool> {
+        if let Some((lower, changes)) = self.vertical_pair(position, expected) {
+            if !world.is_in_build_limit(lower) || !world.is_in_build_limit(lower.up()) {
+                return None;
+            }
+            return world
+                .level
+                .read_chunk_sync(&lower.chunk_position(), |chunk| {
+                    chunk.set_vertical_block_pair_if(lower, changes)
+                })?;
+        }
+        let compared = Cell::new(false);
+        let replaced = world.write_block_state_if(&position, self.state, |_, live| {
+            compared.set(true);
+            live == expected
+        });
+        compared.get().then_some(replaced.is_some())
+    }
+
+    fn publish_world_effects(&self, player: Option<&Player>, world: &World, position: BlockPos) {
+        if let Some(player) = player {
+            world.play_block_sound_expect(player, self.java_sound, SoundCategory::Blocks, position);
+        } else {
+            world.play_block_sound(self.java_sound, SoundCategory::Blocks, position);
+        }
         let center = position.to_centered_f64();
         world.play_bedrock_level_sound(
             self.bedrock_sound,

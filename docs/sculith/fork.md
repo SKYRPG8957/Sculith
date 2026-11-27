@@ -796,10 +796,13 @@ gate on the region. The world and region use the same state transition and
 opening direction, and both check the expected state as they write it. The
 region also rechecks ownership, lighting and the neighboring blocks. Dry
 fences can stay alongside the gate when recomputing their connections produces
-the existing state. Both editions
-receive the resulting block and sound. Interactions that need a game-event
-listener, a plugin callback, a different owner or other neighbor changes use
-the world path.
+the existing state. A supported wooden or copper door with matching halves
+and an intact support can also toggle on its region. Both halves are compared
+and written under one chunk palette lock, including across a section
+boundary. Manual, redstone and mob-driven world updates to a door pair use the
+same conditional commit. Both editions receive the resulting block states
+and a sound at the activated half. The world handles powered door
+interactions, plugin callbacks, game-event listeners and other neighbor edits.
 
 A Bedrock movement packet with a single block use can use the same path after
 the owner completes movement. Reach and block ownership are checked from

@@ -1618,6 +1618,25 @@ impl Level {
         )
     }
 
+    /// Conditionally writes two contiguous block states in the same owned column.
+    pub fn try_apply_regional_vertical_block_pair(
+        &self,
+        expected_chunk: &SyncChunk,
+        lower: BlockPos,
+        changes: [(BlockStateId, BlockStateId); 2],
+        owns: impl Fn(Vector2<i32>) -> bool,
+        validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<bool> {
+        apply_regional_chunk_tick(
+            &self.loaded_chunks,
+            expected_chunk,
+            owns,
+            |chunk, read, commit| {
+                chunk.try_apply_vertical_block_pair(lower, changes, read, commit, &validate)
+            },
+        )
+    }
+
     /// Places a full block into air. An opaque placement may darken its source
     /// cell when the stored light shows that propagation can stay local.
     pub fn try_place_regional_full_block(

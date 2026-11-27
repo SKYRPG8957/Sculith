@@ -228,7 +228,10 @@ impl BedrockClient {
         let Some(face) = directions.get(usize::from(data.block_face)) else {
             return;
         };
-        player.reset_block_change(data.block_position);
-        player.reset_block_change(data.block_position.offset(face.to_offset()));
+        player.correct_clicked_blocks(
+            data.block_position,
+            data.block_position.offset(face.to_offset()),
+            None,
+        );
     }
 }

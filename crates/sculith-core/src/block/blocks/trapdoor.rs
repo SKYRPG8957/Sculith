@@ -58,7 +58,7 @@ pub struct TrapDoorBlock;
 impl BlockBehaviour for TrapDoorBlock {
     fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         if BlockToggle::apply_in_world(
-            args.player,
+            Some(args.player),
             args.world,
             *args.position,
             manual_trapdoor_toggle,
