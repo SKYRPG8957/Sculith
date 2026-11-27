@@ -265,9 +265,11 @@ inspect adjacent blocks and possible strong power through solid neighbours.
 Target resets require that adjacent block and fluid callbacks have no work
 and that no plugin observes block physics. Reads can reach adjacent chunks
 in the region's dispatched extent. Their loaded entries and block palettes
-stay pinned through the commit, which rechecks the published extent. A batch
-requiring an unavailable chunk, a callback on the world owner or more than
-32 ready ticks stays queued for the world phase. Both save formats capture
+stay pinned through the commit, which rechecks the published extent. Up to
+32 ready callbacks are eligible for a regional batch. The region can commit
+the leading callbacks before it reaches one that needs the world owner or
+an unavailable chunk. That callback and the rest of the batch stay queued
+for the world phase, as do batches over the limit. Both save formats capture
 the committed properties and timer removals together. The shared lighting
 engine follows changes to light properties, and both editions read the
 authoritative state.

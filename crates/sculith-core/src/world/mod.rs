@@ -2693,7 +2693,7 @@ impl World {
                 if inhabited {
                     chunk.inhabited_time.fetch_add(1, Relaxed);
                 }
-                let block = chunk.block_ticks.advance();
+                let block = chunk.block_ticks.advance_for_batch(CHUNK_TICK_BATCH_SIZE);
                 let fluid = chunk.fluid_ticks.advance();
                 chunk.mark_dirty(true);
                 if !inhabited {

@@ -50,10 +50,11 @@ use tokio_util::task::TaskTracker;
 pub type SyncChunk = Arc<ChunkData>;
 pub type SyncEntityChunk = Arc<ChunkEntityData>;
 
-/// Commits ready property changes to the loaded source chunk.
+/// Commits ready property changes in callback order to the loaded source chunk.
 ///
 /// The caller's region permit must cover every chunk accepted by `owns` until this returns.
-/// State reads may extend one chunk in either horizontal direction.
+/// State reads may extend one chunk in either horizontal direction. The first
+/// callback that needs the world and all callbacks behind it stay queued.
 pub fn apply_regional_block_properties(
     loaded: &DashMap<Vector2<i32>, SyncChunk, FxBuildHasher>,
     expected: &SyncChunk,
@@ -66,9 +67,12 @@ pub fn apply_regional_block_properties(
         &dyn Fn(BlockPos) -> Option<BlockStateId>,
     ) -> Option<BlockStateId>,
 ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
-    apply_regional_chunk_tick(loaded, expected, owns, |chunk, read, can_commit| {
-        chunk.try_apply_ready_block_properties(limit, read, can_commit, &update)
-    })
+    let attempt = |allow_prefix| {
+        apply_regional_chunk_tick(loaded, expected, &owns, |chunk, read, can_commit| {
+            chunk.try_apply_ready_block_properties(limit, read, can_commit, &update, allow_prefix)
+        })
+    };
+    attempt(false).or_else(|| attempt(true))
 }
 
 fn apply_regional_chunk_tick<R>(
@@ -2082,6 +2086,86 @@ mod tests {
         assert!(!source.block_ticks.is_scheduled(at, lamp));
         source.section.block_sections.bedrock_blobs(encode).unwrap();
         assert_eq!(encodes.get(), 2);
+    }
+
+    #[test]
+    fn regional_batch_preserves_the_first_deferred_callback_and_its_suffix() {
+        let loaded = DashMap::with_hasher(FxBuildHasher);
+        let chunk = ChunkData::empty_sync(0, 0);
+        let lamp = &Block::REDSTONE_LAMP;
+        let button = &Block::OAK_BUTTON;
+        let lit = RedstoneOreLikeProperties { lit: true }.to_state_id(lamp);
+        let dark = RedstoneOreLikeProperties { lit: false }.to_state_id(lamp);
+        let early = BlockPos::new(2, 64, 3);
+        let deferred = BlockPos::new(7, 64, 3);
+        let late = BlockPos::new(12, 64, 3);
+        for (sub_order, (position, block, state, priority)) in [
+            (
+                deferred,
+                button,
+                button.default_state.id,
+                TickPriority::Normal,
+            ),
+            (early, lamp, lit, TickPriority::High),
+            (late, lamp, lit, TickPriority::Low),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            chunk.set_block_absolute_y(
+                position.0.x as usize,
+                position.0.y,
+                position.0.z as usize,
+                state,
+            );
+            chunk.block_ticks.schedule_tick(
+                &ScheduledTick {
+                    delay: 0,
+                    priority,
+                    position,
+                    value: block,
+                },
+                sub_order as u64,
+            );
+        }
+        assert_eq!(chunk.block_ticks.advance_for_batch(4), Some(lamp));
+        loaded.insert(early.chunk_position(), chunk.clone());
+
+        let commit = |limit, retain| {
+            let owned = Cell::new(true);
+            apply_regional_block_properties(
+                &loaded,
+                &chunk,
+                limit,
+                |_| owned.get(),
+                |block, _, _, _| {
+                    if block != lamp {
+                        return None;
+                    }
+                    owned.set(retain);
+                    Some(dark)
+                },
+            )
+        };
+        assert_eq!(commit(2, true), None);
+        assert_eq!(commit(4, false), None);
+        assert_eq!(chunk.section.get_block_absolute_y(2, 64, 3), Some(lit));
+        assert_eq!(commit(4, true), Some(vec![(early, lit, dark)]));
+        assert_eq!(commit(4, true), None);
+        assert!(!chunk.block_ticks.is_scheduled(early, lamp));
+        assert!(chunk.block_ticks.is_scheduled(deferred, button));
+        assert!(chunk.block_ticks.is_scheduled(late, lamp));
+
+        for bytes in [chunk.internal_to_bytes(), chunk.internal_to_pump_bytes()] {
+            let saved = ChunkData::internal_from_bytes(&bytes, early.chunk_position()).unwrap();
+            assert_eq!(saved.section.get_block_absolute_y(2, 64, 3), Some(dark));
+            assert_eq!(saved.section.get_block_absolute_y(12, 64, 3), Some(lit));
+            let ready = saved.block_ticks.step_tick();
+            assert_eq!(ready.len(), 2);
+            assert_eq!(ready[0].position, deferred);
+            assert_eq!(ready[1].position, late);
+            assert!(!saved.block_ticks.has_ticks());
+        }
     }
 
     #[tokio::test]

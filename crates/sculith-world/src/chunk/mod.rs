@@ -1,6 +1,6 @@
 use crate::chunk::format::LightContainer;
 use crate::lighting::runtime::sky_light_to_neighbor;
-use crate::tick::{ScheduledTick, scheduler::ChunkTickScheduler};
+use crate::tick::{OrderedTick, ScheduledTick, scheduler::ChunkTickScheduler};
 use palette::{BiomePalette, BlockPalette, has_random_ticking_fluid};
 use pumpkin_data::block_properties::{blocks_movement, has_random_ticks, is_air};
 use pumpkin_data::chunk::ChunkStatus;
@@ -1247,7 +1247,7 @@ impl ChunkData {
             .palettes
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.commit_ready_block_properties(&mut sections, limit, |_| None, || true, update)
+        self.commit_ready_block_properties(&mut sections, limit, |_| None, || true, update, false)
     }
 
     pub(crate) fn try_apply_ready_block_properties(
@@ -1261,9 +1261,17 @@ impl ChunkData {
             BlockStateId,
             &dyn Fn(BlockPos) -> Option<BlockStateId>,
         ) -> Option<BlockStateId>,
+        allow_prefix: bool,
     ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
         let mut sections = self.section.block_sections.try_write_unmarked()?;
-        self.commit_ready_block_properties(&mut sections, limit, read_neighbor, can_commit, update)
+        self.commit_ready_block_properties(
+            &mut sections,
+            limit,
+            read_neighbor,
+            can_commit,
+            update,
+            allow_prefix,
+        )
     }
 
     fn commit_ready_block_properties(
@@ -1278,20 +1286,13 @@ impl ChunkData {
             BlockStateId,
             &dyn Fn(BlockPos) -> Option<BlockStateId>,
         ) -> Option<BlockStateId>,
+        allow_prefix: bool,
     ) -> Option<Vec<(BlockPos, BlockStateId, BlockStateId)>> {
         // Save readers take the palette before the timer ring. This order keeps
         // the state change and timer removal in the same stored snapshot.
-        self.block_ticks.apply_ready_batch(limit, |ready| {
-            let read = |pos: BlockPos| {
-                let (chunk, relative) = pos.chunk_and_chunk_relative_position();
-                if (chunk.x, chunk.y) == (self.x, self.z) {
-                    self.section.read_block_from_palettes(sections, relative)
-                } else {
-                    read_neighbor(pos)
-                }
-            };
-            let mut changes = Vec::with_capacity(ready.len());
-            for tick in ready {
+        let mut commit = |ready: &[OrderedTick<&'static Block>]| {
+            let read = |pos| self.read_block_during_edit(sections, pos, &read_neighbor);
+            let plan = |tick: &OrderedTick<&'static Block>| {
                 let position = tick.position;
                 let block = tick.value;
                 let (chunk, relative) = position.chunk_and_chunk_relative_position();
@@ -1303,15 +1304,25 @@ impl ChunkData {
                     return None;
                 }
                 let new = update(block, position, old, &read)?;
-                if old == new {
-                    continue;
+                (old == new
+                    || (Block::from_state_id(new) == block && retains_block_bookkeeping(old, new)))
+                .then_some((position, old, new))
+            };
+            let mut changes = Vec::with_capacity(ready.len());
+            let mut completed = 0;
+            for tick in ready {
+                let Some((position, old, new)) = plan(tick) else {
+                    if !allow_prefix {
+                        return None;
+                    }
+                    break;
+                };
+                completed += 1;
+                if old != new {
+                    changes.push((position, old, new));
                 }
-                if Block::from_state_id(new) != block || !retains_block_bookkeeping(old, new) {
-                    return None;
-                }
-                changes.push((position, old, new));
             }
-            if !can_commit() {
+            if completed == 0 || !can_commit() {
                 return None;
             }
             if !changes.is_empty() {
@@ -1321,8 +1332,14 @@ impl ChunkData {
                 self.write_regional_block(sections, position, new);
             }
             self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
-            Some(changes)
-        })
+            Some((completed, changes))
+        };
+        if allow_prefix {
+            self.block_ticks.apply_ready_prefix(limit, commit)
+        } else {
+            self.block_ticks
+                .apply_ready_batch(limit, |ready| commit(ready).map(|(_, changes)| changes))
+        }
     }
 
     /// Sets multiple blocks in the chunk at absolute Y coordinates in a single batch.

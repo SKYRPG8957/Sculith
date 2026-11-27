@@ -46,12 +46,23 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
 
     /// Advances the timer ring and returns the first ready value, if any.
     pub fn advance(&self) -> Option<&'a T> {
+        self.advance_for_batch(0)
+    }
+
+    /// Uses callback priority for a ready batch small enough to run regionally.
+    pub fn advance_for_batch(&self, limit: usize) -> Option<&'a T> {
         let mut inner_guard = self
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.advance_locked(&mut inner_guard, None);
-        inner_guard.as_ref()?.ready.first().map(|tick| tick.value)
+        let ready = &inner_guard.as_ref()?.ready;
+        let next = if ready.len() <= limit {
+            ready.iter().min()
+        } else {
+            ready.first()
+        };
+        next.map(|tick| tick.value)
     }
 
     pub(crate) fn apply_ready_batch<R>(
@@ -60,6 +71,28 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         apply: impl FnOnce(&[OrderedTick<&'a T>]) -> Option<R>,
     ) -> Option<R> {
         self.apply_and_schedule_ready_batch(limit, |ready| Some((apply(ready)?, Vec::new())))
+    }
+
+    /// Applies and consumes the completed prefix of a bounded ready batch.
+    pub(crate) fn apply_ready_prefix<R>(
+        &self,
+        limit: usize,
+        apply: impl FnOnce(&[OrderedTick<&'a T>]) -> Option<(usize, R)>,
+    ) -> Option<R> {
+        let mut inner_guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let ready = Self::ordered_ready(&mut inner_guard, limit)?;
+        let (completed, result) = apply(ready)?;
+        let inner = inner_guard.as_mut()?;
+        for tick in inner.ready.drain(..completed) {
+            inner.queued_ticks.remove(&(tick.position, tick.value));
+        }
+        if inner.queued_ticks.is_empty() {
+            *inner_guard = None;
+        }
+        Some(result)
     }
 
     pub(crate) fn apply_and_schedule_ready_batch<R>(
@@ -71,11 +104,7 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let ready = &mut inner_guard.as_mut()?.ready;
-        if ready.is_empty() || ready.len() > limit {
-            return None;
-        }
-        ready.sort();
+        let ready = Self::ordered_ready(&mut inner_guard, limit)?;
         let (result, scheduled) = apply(ready)?;
         Self::take_ready_locked(&mut inner_guard);
         let offset = self.offset.load(Ordering::Relaxed);
@@ -83,6 +112,18 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
             Self::schedule_locked(&mut inner_guard, &tick, order, offset);
         }
         Some(result)
+    }
+
+    fn ordered_ready<'queue>(
+        inner: &'queue mut Option<Box<ChunkTickSchedulerInner<&'a T>>>,
+        limit: usize,
+    ) -> Option<&'queue [OrderedTick<&'a T>]> {
+        let ready = &mut inner.as_mut()?.ready;
+        if ready.is_empty() || ready.len() > limit {
+            return None;
+        }
+        ready.sort();
+        Some(ready)
     }
 
     /// Takes ready work at the simulation boundary that will execute it.
