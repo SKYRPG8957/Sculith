@@ -17,16 +17,16 @@ use sculith_util::random::{RandomImpl, xoroshiro128::Xoroshiro};
 mod generation;
 mod predicates;
 
-/// Checks deterministic conditions against the same empty stack used by block loot.
-pub(super) fn has_no_bare_hand_drops(table: &LootTable) -> bool {
+/// Checks whether the original tool excludes every possible drop without rolling loot.
+pub(super) fn has_no_drops_for_tool(table: &LootTable, tool: &ItemStack) -> bool {
+    let has_silk_touch = tool.get_enchantment_level(&pumpkin_data::Enchantment::SILK_TOUCH) > 0;
+    let has_shears = tool.item == &Item::SHEARS;
     let impossible = |condition| match condition {
-        LootCondition::Never
-        | LootCondition::SilkTouch
-        | LootCondition::Shears
-        | LootCondition::SilkTouchOrShears => true,
-        LootCondition::MatchTool(predicate) => {
-            !predicates::item_matches(ItemStack::EMPTY, predicate)
-        }
+        LootCondition::Never => true,
+        LootCondition::SilkTouch => !has_silk_touch,
+        LootCondition::Shears => !has_shears,
+        LootCondition::SilkTouchOrShears => !(has_silk_touch || has_shears),
+        LootCondition::MatchTool(predicate) => !predicates::item_matches(tool, predicate),
         _ => false,
     };
     table.pools.iter().all(|pool| {

@@ -1,6 +1,17 @@
 use super::*;
 
 #[test]
+fn no_drop_proof_checks_the_actual_mining_tool() {
+    let glass = pumpkin_data::loot_table::get_loot_table("blocks/glass").unwrap();
+    let stone = pumpkin_data::loot_table::get_loot_table("blocks/stone").unwrap();
+    let mut pickaxe = ItemStack::new(1, &Item::WOODEN_PICKAXE);
+    assert!(has_no_drops_for_tool(glass, &pickaxe));
+    assert!(!has_no_drops_for_tool(stone, &pickaxe));
+    pickaxe.add_enchantment(&pumpkin_data::Enchantment::SILK_TOUCH, 1);
+    assert!(!has_no_drops_for_tool(glass, &pickaxe));
+}
+
+#[test]
 fn alternatives_use_the_first_matching_child() {
     let table = crate::data::datapack::loot_table_loader::parse_loot_table(
             r#"{"pools":[{"rolls":4,"entries":[{"type":"minecraft:alternatives","children":[{"type":"minecraft:item","name":"minecraft:stone"},{"type":"minecraft:item","name":"minecraft:diamond"}]}]}]}"#,

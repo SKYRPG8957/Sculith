@@ -9,6 +9,7 @@ const RECIPE_CRAFTED_TRIGGER: &str = "minecraft:recipe_crafted";
 const RECIPE_UNLOCKED_TRIGGER: &str = "minecraft:recipe_unlocked";
 const INVENTORY_CHANGED_TRIGGER: &str = "minecraft:inventory_changed";
 const PLACED_BLOCK_TRIGGER: &str = "minecraft:placed_block";
+const ITEM_DURABILITY_CHANGED_TRIGGER: &str = "minecraft:item_durability_changed";
 
 fn matches_consumed_item(condition: &CriterionConditions, item_id: &str) -> bool {
     match condition {
@@ -37,6 +38,25 @@ fn matches_unlocked_recipe(condition: &CriterionConditions, recipe_id: &str) -> 
 fn matches_placed_block(condition: &CriterionConditions, block_id: &str) -> bool {
     match condition {
         CriterionConditions::PlacedBlock(predicate) => predicate.matches(block_id, None),
+        CriterionConditions::Custom { .. } => true,
+        _ => false,
+    }
+}
+
+fn matches_durability_change(
+    condition: &CriterionConditions,
+    item_id: &str,
+    vehicle: Option<&str>,
+) -> bool {
+    match condition {
+        CriterionConditions::ItemDurabilityChanged { item, vehicle_type } => {
+            item.matches(item_id, 1, &[])
+                && vehicle_type.as_ref().is_none_or(|expected| {
+                    vehicle.is_some_and(|actual| {
+                        expected.matches(pumpkin_data::tag::RegistryKey::EntityType, actual)
+                    })
+                })
+        }
         CriterionConditions::Custom { .. } => true,
         _ => false,
     }
@@ -86,6 +106,16 @@ impl InventoryCriteriaSnapshot {
 }
 
 impl PlayerAdvancement {
+    pub(crate) fn has_on_foot_durability_listener(&self, item_id: &str) -> bool {
+        self.active_listeners
+            .get(ITEM_DURABILITY_CHANGED_TRIGGER)
+            .is_some_and(|listeners| {
+                listeners
+                    .iter()
+                    .any(|listener| matches_durability_change(&listener.conditions, item_id, None))
+            })
+    }
+
     pub(crate) fn has_placement_listener(&self, block_name: &str) -> bool {
         self.active_listeners
             .get(PLACED_BLOCK_TRIGGER)
@@ -720,32 +750,9 @@ impl Player {
                 item_id,
                 vehicle_type,
             } => {
-                self.trigger_criterion_event(
-                    "minecraft:item_durability_changed",
-                    |cond| match cond {
-                        CriterionConditions::ItemDurabilityChanged {
-                            item,
-                            vehicle_type: exp_vt,
-                        } => {
-                            if !item.matches(&item_id, 1, &[]) {
-                                return false;
-                            }
-                            if let Some(expected) = exp_vt {
-                                let Some(actual) = vehicle_type.as_deref() else {
-                                    return false;
-                                };
-                                if !expected
-                                    .matches(pumpkin_data::tag::RegistryKey::EntityType, actual)
-                                {
-                                    return false;
-                                }
-                            }
-                            true
-                        }
-                        CriterionConditions::Custom { .. } => true,
-                        _ => false,
-                    },
-                );
+                self.trigger_criterion_event(ITEM_DURABILITY_CHANGED_TRIGGER, |cond| {
+                    matches_durability_change(cond, &item_id, vehicle_type.as_deref())
+                });
             }
 
             AdvancementTrigger::Levitation { distance_y } => {

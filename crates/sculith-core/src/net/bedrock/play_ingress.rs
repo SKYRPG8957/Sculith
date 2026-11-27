@@ -1502,6 +1502,21 @@ mod tests {
         assert_eq!(world.get_block_state_id(&target), replacement);
         assert!(!player.mining.load(Relaxed));
 
+        let pickaxe = ItemStack::new(1, &Item::WOODEN_PICKAXE);
+        let uid = pickaxe.uid;
+        take_tool(pickaxe);
+        placed(glass);
+        queue_mining_action(client, player, PlayerActionType::StartDestroyBlock, target);
+        for tick in 30..42 {
+            tick_region(world, chunk, at + TICK_PERIOD * tick);
+        }
+        assert_eq!(world.get_block_state_id(&target), BlockStateId::AIR);
+        assert!(!player.mining.load(Relaxed));
+        assert_eq!(mined(), before + 4);
+        let worn = player.inventory.held_item();
+        assert_eq!(worn.uid, uid);
+        assert_eq!(worn.get_damage(), 1);
+
         take_tool(tool);
         player.get_entity().on_ground.store(grounded, Relaxed);
         player.permission_lvl.store(permission);

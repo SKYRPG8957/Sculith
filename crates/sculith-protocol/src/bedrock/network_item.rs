@@ -195,7 +195,7 @@ impl From<&ItemStack> for NetworkItemDescriptor {
                             .unwrap_or(mapping.bedrock_data),
                     ),
                     block_runtime_id: VarInt::from(mapping.bedrock_block_state),
-                    nbt_data: components::enchantment_nbt(stack),
+                    nbt_data: components::item_nbt(stack),
                     ..Self::default()
                 },
             )
@@ -876,6 +876,7 @@ mod tests {
     #[test]
     fn writes_bedrock_enchantments_to_equipment_and_inventory() {
         let mut stack = ItemStack::new(1, &Item::DIAMOND_CHESTPLATE);
+        stack.set_damage(17);
         stack.add_enchantment(&Enchantment::PROTECTION, 4);
         stack.add_enchantment(&Enchantment::UNBREAKING, 3);
         let mut bytes = Vec::new();
@@ -893,6 +894,7 @@ mod tests {
             .unwrap();
         let inventory = NetworkItemDescriptor::read(&mut bytes.as_slice()).unwrap();
         for nbt in [&equipment.nbt_data, &wrapped.nbt_data, &inventory.nbt_data] {
+            assert_eq!(nbt.get_int("Damage"), Some(17));
             let entries: Vec<_> = nbt
                 .get_list("ench")
                 .unwrap()
@@ -904,6 +906,22 @@ mod tests {
                 .collect();
             assert_eq!(entries, [(0, 4), (17, 3)]);
         }
+    }
+
+    #[test]
+    fn writes_worn_tools_without_changing_the_bedrock_variant() {
+        let mut stack = ItemStack::new(1, &Item::WOODEN_PICKAXE);
+        let fresh = NetworkItemDescriptor::from(&stack);
+        assert!(fresh.nbt_data.is_empty());
+        stack.set_damage(17);
+        let mut bytes = Vec::new();
+        NetworkItemStackDescriptor::from(&stack)
+            .write(&mut bytes)
+            .unwrap();
+        let worn = NetworkItemDescriptor::read(&mut bytes.as_slice()).unwrap();
+        assert_eq!(worn.nbt_data.get_int("Damage"), Some(17));
+        assert_eq!(worn.id, fresh.id);
+        assert_eq!(worn.aux_value, fresh.aux_value);
     }
 
     #[test]

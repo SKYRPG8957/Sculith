@@ -727,7 +727,7 @@ mining speed. It can also consume a standalone abort. It checks the loaded
 block, reach and ownership, then publishes the start or stop animation to
 current-protocol viewers. The region also advances the Java crack stage while
 the target and mining speed stay steady. Bedrock animates at that speed from
-the start event. The region can finish a bare-hand break with no loot,
+the start event. The region can finish a break with no loot,
 experience, local block behavior or event listeners. It
 commits at full progress or on a prediction or stop input that meets the
 server's existing 65% progress threshold. It rechecks the live block,
@@ -737,6 +737,16 @@ particles and block update. It corrects the client after an early prediction
 and cancels the session on an early stop. Both owners compare the live
 block state with the state recorded at the beginning of the session.
 Observing a replacement invalidates the previous progress for that session.
+When the player holds a tool, the same owner verifies the selected stack
+used to read the mining speed. It evaluates deterministic loot conditions
+with the original tool. A break with no drops can charge that tool's
+deterministic durability cost and record the mining statistics together
+with the block write. The owner sends the revised hotbar slot and held
+item to the relevant clients. Bedrock equipment and inventory packets
+encode wear as the integer `Damage` tag in the item NBT. Tool breakage,
+Unbreaking rolls, loot table
+overrides, and applicable item damage callbacks or advancements run through
+the world.
 With default lighting, the region can also remove a fully opaque,
 non-emitting block when removing it changes only the source cell's light.
 The owner checks the six surrounding light samples in the same chunk and

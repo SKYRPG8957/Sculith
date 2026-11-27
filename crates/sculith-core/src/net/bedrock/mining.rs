@@ -23,7 +23,10 @@ use sculith_util::{
 };
 
 use crate::{
-    entity::{EntityBase, player::Player},
+    entity::{
+        EntityBase,
+        player::{BedrockMiningTool, Player},
+    },
     server::{Server, TickDeadline},
     world::{BlockBreakingProgress, World},
 };
@@ -234,7 +237,7 @@ impl BedrockClient {
                         {
                             return None;
                         }
-                        let speed = player.try_bedrock_mining_progress(
+                        let (speed, _) = player.try_bedrock_mining_progress(
                             server,
                             &target,
                             state.to_state(),
@@ -327,13 +330,14 @@ impl BedrockClient {
             player,
             clock,
             can_publish,
-            |speed, stage, eligible| {
+            |speed, stage, tool, eligible| {
                 if !stale && speed * clock.elapsed as f32 >= MIN_PREDICTED_BREAK_PROGRESS {
                     Self::try_commit_regional_mining_break(
                         world,
                         server,
                         player,
                         &clock.target,
+                        tool,
                         owns,
                         eligible,
                     )?;
@@ -602,7 +606,7 @@ impl BedrockClient {
             player,
             clock,
             owns,
-            |speed, previous, eligible| {
+            |speed, previous, _, eligible| {
                 let progress = speed * clock.elapsed as f32;
                 let stage = BlockBreakingProgress::stage_at(progress);
                 if progress >= 1.0 || stage <= previous {
@@ -634,7 +638,7 @@ impl BedrockClient {
             player,
             clock,
             owns,
-            |speed, _, eligible| {
+            |speed, _, tool, eligible| {
                 if speed * (clock.elapsed as f32) < 1.0 {
                     return None;
                 }
@@ -643,6 +647,7 @@ impl BedrockClient {
                     server,
                     player,
                     &clock.target,
+                    tool,
                     owns,
                     eligible,
                 )
@@ -655,6 +660,7 @@ impl BedrockClient {
         server: &Server,
         player: &Player,
         target: &MiningTarget,
+        tool: BedrockMiningTool,
         owns: &impl Fn(Vector2<i32>) -> bool,
         eligible: &dyn Fn() -> bool,
     ) -> Option<()> {
@@ -671,6 +677,7 @@ impl BedrockClient {
                     player,
                     position,
                     state,
+                    tool,
                     &|chunk| owns(chunk) && eligible(),
                 )?;
                 Self::clear_regional_mining_progress(player);
@@ -686,7 +693,7 @@ impl BedrockClient {
         player: &Player,
         clock: &MiningClock,
         owns: &impl Fn(Vector2<i32>) -> bool,
-        apply: impl FnOnce(f32, i32, &dyn Fn() -> bool) -> Option<R>,
+        apply: impl FnOnce(f32, i32, BedrockMiningTool, &dyn Fn() -> bool) -> Option<R>,
     ) -> Option<R> {
         // World mining takes the tool before checking the clock.
         let _tool = player.try_regional_inventory_edit()?;
@@ -725,7 +732,7 @@ impl BedrockClient {
         player: &Player,
         clock: &MiningClock,
         can_publish: impl Fn() -> bool,
-        apply: impl FnOnce(f32, i32, &dyn Fn() -> bool) -> Option<R>,
+        apply: impl FnOnce(f32, i32, BedrockMiningTool, &dyn Fn() -> bool) -> Option<R>,
     ) -> Option<R> {
         let entity = player.get_entity();
         let position = clock.target.position;
@@ -751,9 +758,9 @@ impl BedrockClient {
         if !eligible() || server.block_registry.get_pumpkin_block(block.id).is_some() {
             return None;
         }
-        let actual = player.try_bedrock_mining_progress(server, &position, state, block)?;
+        let (actual, tool) = player.try_bedrock_mining_progress(server, &position, state, block)?;
         (actual.to_bits() == speed)
-            .then(|| apply(actual, previous, &eligible))
+            .then(|| apply(actual, previous, tool, &eligible))
             .flatten()
     }
 }

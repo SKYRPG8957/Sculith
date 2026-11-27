@@ -476,6 +476,12 @@ pub const DATA_VERSION: i32 = 5023; // 26.3
 /// must apply the same gating.
 pub const MINE_BLOCK_EXHAUSTION: f32 = 0.005; // Vanilla: 0.005F
 
+#[derive(Clone, Copy)]
+pub(crate) struct BedrockMiningTool {
+    pub(crate) slot: usize,
+    pub(crate) stack_uid: NonZero<i32>,
+}
+
 const fn bedrock_container_slot(
     window_type: Option<WindowType>,
     slot_idx: usize,
@@ -2474,19 +2480,19 @@ impl Player {
             return;
         }
 
-        if state.hardness <= 0.0 {
-            return;
-        }
-
-        let damage = self
-            .inventory()
-            .held_item()
-            .get_data_component::<ToolImpl>()
-            .map_or(0, |tool| tool.damage_per_block as i32);
-
+        let damage = Self::mining_tool_damage(&self.inventory().held_item(), state);
         if damage > 0 {
             self.damage_held_item(damage);
         }
+    }
+
+    pub(crate) fn mining_tool_damage(stack: &ItemStack, state: &BlockState) -> i32 {
+        if state.hardness <= 0.0 {
+            return 0;
+        }
+        stack
+            .get_data_component::<ToolImpl>()
+            .map_or(0, |tool| tool.damage_per_block as i32)
     }
 
     pub fn set_respawn_point(
@@ -6445,7 +6451,7 @@ impl Player {
         position: &BlockPos,
         state: &BlockState,
         block: &'static Block,
-    ) -> Option<f32> {
+    ) -> Option<(f32, BedrockMiningTool)> {
         let attributes = self.living_entity.attributes.try_read().ok()?;
         let reach =
             LivingEntity::attribute_value_from(&attributes, &Attributes::BLOCK_INTERACTION_RANGE);
@@ -6464,7 +6470,8 @@ impl Player {
             return None;
         }
         let inventory = self.inventory.main_inventory.try_read().ok()?;
-        let held = inventory.get(usize::from(self.inventory.get_selected_slot()))?;
+        let slot = usize::from(self.inventory.get_selected_slot());
+        let held = inventory.get(slot)?;
         let efficiency = held.get_enchantment_level(&Enchantment::EFFICIENCY);
         let synced_efficiency = self.synced_mining_efficiency_level.load(Ordering::Relaxed);
         // On a player's first dig the sync marker is -1. A plain tool already
@@ -6497,7 +6504,13 @@ impl Player {
         }
         let harvest = !state.tool_required() || held.is_correct_for_drops(block);
         let progress = block::block_breaking_progress(speed, state.hardness, harvest);
-        (progress > 0.0 && progress < 1.0).then_some(progress)
+        (progress > 0.0 && progress < 1.0).then_some((
+            progress,
+            BedrockMiningTool {
+                slot,
+                stack_uid: held.uid,
+            },
+        ))
     }
 
     fn get_haste_amplifier(&self) -> u32 {
