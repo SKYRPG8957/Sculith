@@ -199,7 +199,7 @@ impl BedrockClient {
     fn apply_regional_mining_action(
         &self,
         player: &Arc<Player>,
-        world: &World,
+        world: &Arc<World>,
         server: &Server,
         deadline: TickDeadline,
         (action, location): (PlayerActionType, BlockPos),
@@ -294,7 +294,7 @@ impl BedrockClient {
                     server,
                     player,
                     &mut clock,
-                    (action, location),
+                    (action, location, deadline),
                     &|chunk| eligible() && owns(chunk),
                 )?
             }
@@ -308,11 +308,11 @@ impl BedrockClient {
 
     fn try_regional_mining_prediction(
         &self,
-        world: &World,
+        world: &Arc<World>,
         server: &Server,
         player: &Player,
         session: &mut Option<MiningClock>,
-        (action, position): (PlayerActionType, BlockPos),
+        (action, position, deadline): (PlayerActionType, BlockPos, TickDeadline),
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<RegionalMiningAction> {
         let clock = session.as_mut().filter(|clock| {
@@ -338,8 +338,8 @@ impl BedrockClient {
                         player,
                         &clock.target,
                         tool,
-                        owns,
-                        eligible,
+                        deadline,
+                        &|chunk| owns(chunk) && eligible(),
                     )?;
                     return Some(RegionalMiningAction::Removed(live));
                 }
@@ -513,7 +513,7 @@ impl BedrockClient {
     /// Advances the shared clock and handles a steady break within the region when possible.
     pub(crate) fn advance_regional_mining(
         &self,
-        world: &World,
+        world: &Arc<World>,
         server: &Server,
         player: &Player,
         deadline: TickDeadline,
@@ -579,7 +579,7 @@ impl BedrockClient {
         }
         if ready
             && self
-                .try_finish_regional_mining(world, server, player, clock, &owns)
+                .try_finish_regional_mining(world, server, player, clock, deadline, &owns)
                 .is_some()
         {
             let state = clock.target.state;
@@ -626,10 +626,11 @@ impl BedrockClient {
 
     fn try_finish_regional_mining(
         &self,
-        world: &World,
+        world: &Arc<World>,
         server: &Server,
         player: &Player,
         clock: &MiningClock,
+        deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<()> {
         self.try_with_current_regional_mining(
@@ -648,21 +649,21 @@ impl BedrockClient {
                     player,
                     &clock.target,
                     tool,
-                    owns,
-                    eligible,
+                    deadline,
+                    &|chunk| owns(chunk) && eligible(),
                 )
             },
         )
     }
 
     fn try_commit_regional_mining_break(
-        world: &World,
+        world: &Arc<World>,
         server: &Server,
         player: &Player,
         target: &MiningTarget,
         tool: BedrockMiningTool,
+        deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
-        eligible: &dyn Fn() -> bool,
     ) -> Option<()> {
         let position = target.position;
         let state = target.state;
@@ -675,10 +676,10 @@ impl BedrockClient {
                 world.try_remove_regional_mining_block(
                     server,
                     player,
-                    position,
-                    state,
+                    (position, state),
                     tool,
-                    &|chunk| owns(chunk) && eligible(),
+                    deadline,
+                    owns,
                 )?;
                 Self::clear_regional_mining_progress(player);
                 Some(())

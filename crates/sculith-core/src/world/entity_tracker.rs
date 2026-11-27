@@ -1929,8 +1929,23 @@ impl EntityTracker {
     ) {
         let base = entity.get_entity();
         base.try_with_unmounted_actor(|| {
-            if !base.is_leashed() {
-                self.try_track_restored_actor(world, entity, chunk, None, java_recipients);
+            if !base.is_leashed() && base.velocity.load().length_squared() <= 1e-4 {
+                self.try_track_regional_actor(world, entity, chunk, None, java_recipients);
+            }
+        });
+    }
+
+    pub(super) fn try_publish_new_drop(
+        &self,
+        world: &World,
+        entity: &Arc<dyn EntityBase>,
+        chunk: Vector2<i32>,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) {
+        let base = entity.get_entity();
+        base.try_with_unmounted_actor(|| {
+            if !base.is_leashed() && base.first_tick.load(Relaxed) {
+                self.try_track_regional_actor(world, entity, chunk, None, java_recipients);
             }
         });
     }
@@ -1965,14 +1980,15 @@ impl EntityTracker {
             || leash.is_some()
             || !effects.is_empty()
             || equipment.equipment.values().any(|stack| !stack.is_empty())
+            || base.velocity.load().length_squared() > 1e-4
             || !spawn.is_fresh(base, living.health.load())
         {
             return;
         }
-        self.try_track_restored_actor(world, entity, chunk, Some(spawn), java_recipients);
+        self.try_track_regional_actor(world, entity, chunk, Some(spawn), java_recipients);
     }
 
-    fn try_track_restored_actor(
+    fn try_track_regional_actor(
         &self,
         world: &World,
         entity: &Arc<dyn EntityBase>,
@@ -1984,7 +2000,6 @@ impl EntityTracker {
         if base.is_removed()
             || base.chunk_pos.load() != chunk
             || !std::ptr::eq(base.world.load().as_ref(), world)
-            || base.velocity.load().length_squared() > 1e-4
         {
             return;
         }

@@ -1,22 +1,27 @@
 use std::sync::{Arc, atomic::Ordering::Relaxed};
 
-use dashmap::try_result::TryResult;
 use pumpkin_data::{
-    BlockDirection, BlockStateId, Enchantment, fluid::Fluid, item_stack::ItemStack,
-    statistic::StatisticCategory,
+    BlockDirection, BlockStateId, Enchantment, biome::Biome, entity::EntityType, fluid::Fluid,
+    item_stack::ItemStack, statistic::StatisticCategory,
 };
 use pumpkin_inventory::Inventory;
+use rustc_hash::FxHashMap;
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
+use sculith_world::level::SyncChunk;
 
 use crate::{
     entity::{
-        EntityBase,
+        Entity, EntityBase,
+        item::ItemEntity,
         player::{BedrockMiningTool, MINE_BLOCK_EXHAUSTION, Player},
     },
     plugin::{
         api::events::{
-            block::block_physics::BlockPhysicsEvent,
-            entity::entity_exhaustion::EntityExhaustionEvent,
+            block::{block_drop_item::BlockDropItemEvent, block_physics::BlockPhysicsEvent},
+            entity::{
+                entity_exhaustion::EntityExhaustionEvent, entity_spawn::EntitySpawnEvent,
+                item_spawn::ItemSpawnEvent,
+            },
             player::{
                 player_item_damage::PlayerItemDamageEvent,
                 player_statistic_increment::PlayerStatisticIncrementEvent,
@@ -25,32 +30,38 @@ use crate::{
         block::block_break::BlockBreakEvent,
         server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
     },
-    server::Server,
+    server::{Server, TickDeadline},
 };
 
-use super::{World, loot::has_no_drops_for_tool};
+use super::{
+    World,
+    entity_tracker::EntityTracker,
+    loot::{RegionalMiningLoot, try_regional_mining_loot},
+    regional_campfires::RegionalEntityUpdate,
+};
+
+fn mining_break_unobserved(server: &Server) -> bool {
+    let plugins = &server.plugin_manager;
+    !plugins.has_handlers::<BlockBreakEvent>()
+        && !plugins.has_handlers::<BlockPhysicsEvent>()
+        && !plugins.has_handlers::<EntityExhaustionEvent>()
+        && !plugins.has_handlers::<PlayerStatisticIncrementEvent>()
+}
 
 impl World {
-    /// Finishes a no-drop break that can be committed entirely within one extent.
+    /// Finishes a plain break with zero or one deterministic drop in one extent.
     /// The caller holds the player's regional tool and movement guards.
     pub(crate) fn try_remove_regional_mining_block(
-        &self,
+        self: &Arc<Self>,
         server: &Server,
         player: &Player,
-        position: BlockPos,
-        state: BlockStateId,
+        (position, state): (BlockPos, BlockStateId),
         expected: BedrockMiningTool,
+        deadline: TickDeadline,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<()> {
         let block = state.to_block();
-        let plugins = &server.plugin_manager;
-        let unobserved = || {
-            !plugins.has_handlers::<BlockBreakEvent>()
-                && !plugins.has_handlers::<BlockPhysicsEvent>()
-                && !plugins.has_handlers::<EntityExhaustionEvent>()
-                && !plugins.has_handlers::<PlayerStatisticIncrementEvent>()
-        };
-        if !unobserved()
+        if !mining_break_unobserved(server)
             || self.is_in_spawn_protection(player, &position)
             || !self.is_in_build_limit(position)
             || !self.is_plain_regional_block(state)
@@ -76,20 +87,17 @@ impl World {
             return None;
         }
         let abilities = player.abilities.try_lock().ok()?;
-        let TryResult::Present(chunk) =
-            self.level.loaded_chunks.try_get(&position.chunk_position())
-        else {
-            return None;
-        };
-        let chunk = {
-            let expected = chunk.value().clone();
-            drop(chunk);
-            expected
-        };
-        let commit = |tool: &mut ItemStack| {
+        let chunk = self
+            .level
+            .loaded_chunks
+            .try_get(&position.chunk_position())
+            .try_unwrap()?
+            .value()
+            .clone();
+        let commit = |tool: &mut ItemStack, loot| {
             let item_id = tool.item.id;
             let damage = Player::mining_tool_damage(tool, state.to_state());
-            self.try_commit_regional_tool_wear(server, player, (slot, tool), damage, || {
+            let remove = || {
                 let mut stats = player.stats.try_lock().ok()?;
                 let applied = self.level.try_remove_regional_block(
                     &chunk,
@@ -99,7 +107,7 @@ impl World {
                         owns(chunk) && usize::from(player.inventory.get_selected_slot()) == slot
                     },
                     |read| {
-                        unobserved()
+                        mining_break_unobserved(server)
                             && BlockDirection::all().into_iter().all(|direction| {
                                 let neighbor = position.offset(direction.to_offset());
                                 self.is_in_build_limit(neighbor)
@@ -115,7 +123,19 @@ impl World {
                     stats.increment(StatisticCategory::Used, i32::from(item_id), 1);
                     stats.increment(StatisticCategory::Mined, i32::from(block.id.as_u16()), 1);
                 })
-            })
+            };
+            let mut wear =
+                || self.try_commit_regional_tool_wear(server, player, (slot, tool), damage, remove);
+            match loot {
+                RegionalMiningLoot::NoDrop => wear(),
+                RegionalMiningLoot::Drop(stack) => self.try_commit_regional_mining_drop(
+                    server,
+                    (position, stack, &chunk),
+                    deadline,
+                    owns,
+                    wear,
+                ),
+            }
         };
         if harvest && let Some(table) = block.loot_table {
             server
@@ -127,14 +147,98 @@ impl World {
                     } else {
                         tool
                     };
-                    if !table.is_none_or(|table| has_no_drops_for_tool(table, loot_tool)) {
-                        return None;
-                    }
-                    commit(tool)
+                    let loot = match table {
+                        Some(table) => try_regional_mining_loot(table, loot_tool)?,
+                        None => RegionalMiningLoot::NoDrop,
+                    };
+                    commit(tool, loot)
                 })
         } else {
-            commit(tool)
+            commit(tool, RegionalMiningLoot::NoDrop)
         }
+    }
+
+    fn try_commit_regional_mining_drop(
+        self: &Arc<Self>,
+        server: &Server,
+        (position, stack, terrain): (BlockPos, ItemStack, &SyncChunk),
+        deadline: TickDeadline,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+        commit: impl FnOnce() -> Option<()>,
+    ) -> Option<()> {
+        let plugins = &server.plugin_manager;
+        let unobserved = || {
+            !plugins.has_handlers::<BlockDropItemEvent>()
+                && !plugins.has_handlers::<ItemSpawnEvent>()
+                && !plugins.has_handlers::<EntitySpawnEvent>()
+                && !plugins.has_handlers::<PacketSentEvent>()
+                && !plugins.has_handlers::<BedrockConnectionPacketSentEvent>()
+        };
+        if !unobserved() || stack.is_empty() {
+            return None;
+        }
+        let pos = position.chunk_position();
+        let spawn = Self::block_drop_position(&position);
+        let (spawn_chunk, relative) =
+            BlockPos::floored_v(spawn).chunk_and_chunk_relative_position();
+        if pos != spawn_chunk {
+            return None;
+        }
+        let biome = Biome::from_id(terrain.section.try_get_rough_biome(relative)?)?;
+        let entity = Entity::new_in_biome(self.clone(), spawn, &EntityType::ITEM, biome);
+        let item = Arc::new(ItemEntity::new(entity, stack));
+        item.init_data_tracker();
+        let actor: Arc<dyn EntityBase> = item.clone();
+
+        // A saved or retiring entity chunk cannot observe half of the edit.
+        let snapshot = self.entity_chunk_changes.snapshot.try_read().ok()?;
+        let mut actors = self.regional_actors.try_write().ok()?;
+        let owner = self.region_layout.load().active_owner(pos)?;
+        let registering = self.entity_index.registering.try_lock().ok()?;
+        let uuid = actor.get_entity().entity_uuid;
+        if registering.contains(&uuid)
+            || self
+                .entities
+                .load()
+                .iter()
+                .any(|entity| entity.get_entity().entity_uuid == uuid)
+        {
+            return None;
+        }
+        let mut updates = self.regional_entity_updates.0.try_lock().ok()?;
+        self.level.try_with_watched_entity_chunk(pos, |chunk| {
+            if !chunk.live.load(Relaxed) || !owns(pos) || !unobserved() {
+                return None;
+            }
+            commit()?;
+            if ItemEntity::timers_unobserved(server) {
+                item.start_regional_timer(owner, deadline);
+                Arc::make_mut(&mut actors).assign(owner, actor.clone());
+            }
+            self.append_live_entity(&actor);
+            updates.push(RegionalEntityUpdate::Spawned(actor.clone()));
+            Some(())
+        })??;
+        drop(updates);
+        drop(registering);
+        drop(actors);
+        drop(snapshot);
+
+        tracing::trace!(
+            ?position,
+            entity = actor.get_entity().entity_id,
+            "Spawned mining drop on its region"
+        );
+        if unobserved()
+            && let Ok(_layout) = self.regional_actors.try_read()
+            && owns(pos)
+        {
+            let mut java_recipients = FxHashMap::default();
+            self.entity_tracker
+                .try_publish_new_drop(self, &actor, pos, &mut java_recipients);
+            EntityTracker::flush_regional_java_packets(java_recipients);
+        }
+        Some(())
     }
 
     fn try_commit_regional_tool_wear(

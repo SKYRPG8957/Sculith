@@ -18,7 +18,7 @@ mod generation;
 mod predicates;
 
 /// Checks whether the original tool excludes every possible drop without rolling loot.
-pub(super) fn has_no_drops_for_tool(table: &LootTable, tool: &ItemStack) -> bool {
+fn has_no_drops_for_tool(table: &LootTable, tool: &ItemStack) -> bool {
     let has_silk_touch = tool.get_enchantment_level(&pumpkin_data::Enchantment::SILK_TOUCH) > 0;
     let has_shears = tool.item == &Item::SHEARS;
     let impossible = |condition| match condition {
@@ -35,6 +35,80 @@ pub(super) fn has_no_drops_for_tool(table: &LootTable, tool: &ItemStack) -> bool
                 impossible(entry.condition) || matches!(entry.kind, LootEntryKind::Empty)
             })
     })
+}
+
+pub(super) enum RegionalMiningLoot {
+    NoDrop,
+    Drop(ItemStack),
+}
+
+/// Resolves at most one deterministic stack for a plain player-mined block.
+/// `None` leaves the whole break to the world owner.
+pub(super) fn try_regional_mining_loot(
+    table: &LootTable,
+    tool: &ItemStack,
+) -> Option<RegionalMiningLoot> {
+    if has_no_drops_for_tool(table, tool) {
+        return Some(RegionalMiningLoot::NoDrop);
+    }
+    let [pool] = table.pools else {
+        return None;
+    };
+    let [entry] = pool.entries else {
+        return None;
+    };
+    if !matches!(pool.rolls, LootNumberProvider::Constant(1.0))
+        || !matches!(pool.bonus_rolls, LootNumberProvider::Constant(0.0))
+        || !table.functions.is_empty()
+        || !pool.functions.is_empty()
+        || !is_regional_mining_loot_condition(pool.condition)
+        || !is_single_regional_mining_entry(entry)
+    {
+        return None;
+    }
+    // The admitted tree has a single roll, at most one candidate, and no
+    // functions or conditions with random draws or mutable world reads.
+    Some(
+        generate_loot_with_context(
+            table,
+            0,
+            &LootContextParameters {
+                tool: Some(tool.clone()),
+                killed_by_player: Some(true),
+                ..Default::default()
+            },
+        )
+        .pop()
+        .map_or(RegionalMiningLoot::NoDrop, RegionalMiningLoot::Drop),
+    )
+}
+
+const fn is_regional_mining_loot_condition(condition: LootCondition) -> bool {
+    matches!(
+        condition,
+        LootCondition::None
+            | LootCondition::Never
+            | LootCondition::MatchTool(_)
+            | LootCondition::SilkTouch
+            | LootCondition::NoSilkTouch
+            | LootCondition::Shears
+            | LootCondition::SilkTouchOrShears
+            | LootCondition::NoSilkTouchOrShears
+            | LootCondition::SurvivesExplosion
+            | LootCondition::KilledByPlayer
+    )
+}
+
+fn is_single_regional_mining_entry(entry: &LootEntry) -> bool {
+    entry.functions.is_empty()
+        && is_regional_mining_loot_condition(entry.condition)
+        && match entry.kind {
+            LootEntryKind::Item(_) | LootEntryKind::Empty => true,
+            LootEntryKind::Alternatives(entries) => {
+                entries.iter().all(is_single_regional_mining_entry)
+            }
+            _ => false,
+        }
 }
 
 #[derive(Default, Clone)]

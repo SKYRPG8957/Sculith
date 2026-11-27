@@ -573,6 +573,17 @@ impl ChunkSections {
         self.read_rough_biome_from_palettes(&palettes, relative_x, y, relative_z)
     }
 
+    /// Samples an already loaded chunk without waiting for a biome write.
+    pub fn try_get_rough_biome(&self, relative: Vector3<i32>) -> Option<u8> {
+        let palettes = self.biome_sections.try_read()?;
+        self.read_rough_biome_from_palettes(
+            &palettes,
+            relative.x as usize,
+            relative.y,
+            relative.z as usize,
+        )
+    }
+
     pub(crate) fn read_rough_biome_from_palettes(
         &self,
         palettes: &[BiomePalette],

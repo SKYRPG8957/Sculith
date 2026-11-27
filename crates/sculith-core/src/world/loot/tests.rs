@@ -12,6 +12,30 @@ fn no_drop_proof_checks_the_actual_mining_tool() {
 }
 
 #[test]
+fn regional_mining_resolves_single_drops_and_defers_random_loot() {
+    let loot = |block| pumpkin_data::loot_table::get_loot_table(block).unwrap();
+    let mut pickaxe = ItemStack::new(1, &Item::WOODEN_PICKAXE);
+    let stone = loot("blocks/stone");
+    let glass = loot("blocks/glass");
+    let drop = |table, tool: &ItemStack| {
+        let Some(RegionalMiningLoot::Drop(stack)) = try_regional_mining_loot(table, tool) else {
+            panic!("expected deterministic mining drop");
+        };
+        (stack.item, stack.item_count)
+    };
+    assert_eq!(drop(stone, &pickaxe), (&Item::COBBLESTONE, 1));
+    assert!(matches!(
+        try_regional_mining_loot(glass, &pickaxe),
+        Some(RegionalMiningLoot::NoDrop)
+    ));
+    assert!(try_regional_mining_loot(loot("blocks/gravel"), &pickaxe).is_none());
+
+    pickaxe.add_enchantment(&pumpkin_data::Enchantment::SILK_TOUCH, 1);
+    assert_eq!(drop(stone, &pickaxe), (&Item::STONE, 1));
+    assert_eq!(drop(glass, &pickaxe), (&Item::GLASS, 1));
+}
+
+#[test]
 fn alternatives_use_the_first_matching_child() {
     let table = crate::data::datapack::loot_table_loader::parse_loot_table(
             r#"{"pools":[{"rolls":4,"entries":[{"type":"minecraft:alternatives","children":[{"type":"minecraft:item","name":"minecraft:stone"},{"type":"minecraft:item","name":"minecraft:diamond"}]}]}]}"#,

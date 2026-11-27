@@ -1932,10 +1932,6 @@ impl Entity {
         )
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one line per field of the struct literal"
-    )]
     pub fn from_uuid_with_id(
         entity_id: i32,
         entity_uuid: uuid::Uuid,
@@ -1943,15 +1939,47 @@ impl Entity {
         position: Vector3<f64>,
         entity_type: &'static EntityType,
     ) -> Self {
+        let biome = world.level.get_rough_biome(&BlockPos::floored_v(position));
+        Self::from_identity_in_biome(
+            (entity_id, entity_uuid),
+            world,
+            position,
+            entity_type,
+            biome,
+        )
+    }
+
+    pub(crate) fn new_in_biome(
+        world: Arc<World>,
+        position: Vector3<f64>,
+        entity_type: &'static EntityType,
+        biome: &'static Biome,
+    ) -> Self {
+        Self::from_identity_in_biome(
+            (CURRENT_ID.fetch_add(1, Relaxed), Uuid::new_v4()),
+            world,
+            position,
+            entity_type,
+            biome,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one line per field of the struct literal"
+    )]
+    fn from_identity_in_biome(
+        (entity_id, entity_uuid): (i32, Uuid),
+        world: Arc<World>,
+        position: Vector3<f64>,
+        entity_type: &'static EntityType,
+        current_biome: &'static Biome,
+    ) -> Self {
         let floor_x = position.x.floor() as i32;
         let floor_y = position.y.floor() as i32;
         let floor_z = position.z.floor() as i32;
 
         let bounding_box_size = Self::type_dimensions(entity_type);
-
-        let current_biome = world
-            .level
-            .get_rough_biome(&BlockPos::new(floor_x, floor_y, floor_z));
 
         let bounding_box = EntityBoundingBox::new(
             &world,

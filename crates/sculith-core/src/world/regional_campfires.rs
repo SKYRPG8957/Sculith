@@ -27,6 +27,7 @@ struct ReadyRecipe {
 
 pub(super) enum RegionalEntityUpdate {
     Loaded(Vec<super::entity_chunks::ChunkActor>),
+    Spawned(Arc<dyn EntityBase>),
     Cooked {
         position: BlockPos,
         fire: Arc<dyn BlockEntity>,
@@ -179,15 +180,13 @@ impl World {
         for update in pending {
             match update {
                 RegionalEntityUpdate::Loaded(actors) => self.publish_chunk_actors(actors),
+                RegionalEntityUpdate::Spawned(entity) => self.finish_regional_spawn(&entity),
                 RegionalEntityUpdate::Cooked {
                     position,
                     fire,
                     item,
                 } => {
-                    if !item.get_entity().is_removed() {
-                        self.track_new_entity(&item);
-                        self.finish_entity_registration(&item);
-                    }
+                    self.finish_regional_spawn(&item);
                     changed_fires.insert(position, fire);
                 }
                 RegionalEntityUpdate::Removed(entity) => {
@@ -215,6 +214,14 @@ impl World {
             if active.is_some_and(|current| Arc::ptr_eq(&current, &fire)) {
                 self.update_block_entity(&fire);
             }
+        }
+    }
+
+    fn finish_regional_spawn(&self, entity: &Arc<dyn EntityBase>) {
+        let base = entity.get_entity();
+        if !base.is_removed() && std::ptr::eq(base.world.load().as_ref(), self) {
+            self.track_new_entity(entity);
+            self.finish_entity_registration(entity);
         }
     }
 }

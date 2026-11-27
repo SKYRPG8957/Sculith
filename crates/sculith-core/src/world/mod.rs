@@ -6646,21 +6646,22 @@ impl World {
         }
     }
 
+    fn block_drop_position(pos: &BlockPos) -> Vector3<f64> {
+        let half_height = f64::from(EntityType::ITEM.dimension[1]) / 2.0;
+        let mut random = rand::rng();
+        Vector3::new(
+            f64::from(pos.0.x) + 0.5 + random.random_range(-0.25..0.25),
+            f64::from(pos.0.y) + 0.5 + random.random_range(-0.25..0.25) - half_height,
+            f64::from(pos.0.z) + 0.5 + random.random_range(-0.25..0.25),
+        )
+    }
+
     pub fn drop_stack(self: &Arc<Self>, pos: &BlockPos, stack: ItemStack) {
         if stack.is_empty() {
             return;
         }
 
-        let half_height = f64::from(EntityType::ITEM.dimension[1]) / 2.0;
-        let spawn_pos = {
-            let mut r = rand::rng();
-            Vector3::new(
-                f64::from(pos.0.x) + 0.5 + r.random_range(-0.25..0.25),
-                f64::from(pos.0.y) + 0.5 + r.random_range(-0.25..0.25) - half_height,
-                f64::from(pos.0.z) + 0.5 + r.random_range(-0.25..0.25),
-            )
-        };
-
+        let spawn_pos = Self::block_drop_position(pos);
         let entity = Entity::new(self.clone(), spawn_pos, &EntityType::ITEM);
         let mut item_event = crate::plugin::api::events::entity::item_spawn::ItemSpawnEvent::new(
             entity.entity_id,
