@@ -14,7 +14,11 @@ use sculith_world::level::SyncChunk;
 
 use crate::{
     block::{
-        blocks::{BlockToggle, fences::dry_fence_keeps_state, redstone::lever::LeverToggle},
+        blocks::{
+            BlockToggle,
+            fences::dry_fence_keeps_state,
+            redstone::{buttons::StoneButtonChange, lever::LeverToggle},
+        },
         registry::can_replace_with_other_block,
     },
     entity::{EntityBase, player::Player},
@@ -32,11 +36,14 @@ use crate::{
 
 use super::World;
 
-fn regional_activation_unobserved(server: &Server) -> bool {
-    let plugins = &server.plugin_manager;
-    !plugins.has_handlers::<PlayerInteractEvent>()
-        && !plugins.has_handlers::<BlockPhysicsEvent>()
+fn regional_block_effects_unobserved(server: &Server) -> bool {
+    !server.plugin_manager.has_handlers::<BlockPhysicsEvent>()
         && !BlockToggle::effects_observed(server)
+}
+
+fn regional_activation_unobserved(server: &Server) -> bool {
+    !server.plugin_manager.has_handlers::<PlayerInteractEvent>()
+        && regional_block_effects_unobserved(server)
 }
 
 impl World {
@@ -60,13 +67,7 @@ impl World {
         if !regional_activation_unobserved(server)
             || !owns(at)
             || !self.is_in_build_limit(position)
-            || self.players.load().iter().any(|viewer| {
-                super::is_within_chebyshev_distance(at, viewer.get_entity().chunk_pos.load(), 1)
-                    && match viewer.client.as_ref() {
-                        ClientPlatform::Java(client) => client.version.load() != CURRENT_MC_VERSION,
-                        ClientPlatform::Bedrock(client) => !client.is_current_protocol(),
-                    }
-            })
+            || !self.regional_effects_clients_supported(at)
         {
             return None;
         }
@@ -74,6 +75,16 @@ impl World {
             return None;
         };
         Some(chunk.value().clone())
+    }
+
+    fn regional_effects_clients_supported(&self, chunk: Vector2<i32>) -> bool {
+        !self.players.load().iter().any(|viewer| {
+            super::is_within_chebyshev_distance(chunk, viewer.get_entity().chunk_pos.load(), 1)
+                && match viewer.client.as_ref() {
+                    ClientPlatform::Java(client) => client.version.load() != CURRENT_MC_VERSION,
+                    ClientPlatform::Bedrock(client) => !client.is_current_protocol(),
+                }
+        })
     }
 
     pub(crate) fn try_toggle_regional_block(
@@ -184,6 +195,90 @@ impl World {
             toggle.bedrock_sound(),
             &position.to_centered_f64(),
             LeverToggle::BEDROCK_SOUND_DATA,
+            false,
+        );
+    }
+
+    pub(crate) fn try_press_regional_button(
+        &self,
+        server: &Server,
+        position: BlockPos,
+        expected: BlockStateId,
+        press: &StoneButtonChange,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<()> {
+        self.block_registry.regional_tick(expected.to_block_id())?;
+        let chunk = self.regional_activation_chunk(server, position, owns)?;
+        if expected == press.state {
+            // Consume the click at the time it was seen. If deferred, it could
+            // reach the world after the button releases and start a second pulse.
+            return (self.level.try_read_block_state(position) == Some(expected)
+                && owns(position.chunk_position())
+                && regional_activation_unobserved(server))
+            .then_some(());
+        }
+        let _checkpoint = server.try_entity_save_guard()?;
+        self.level.try_apply_regional_timed_block_property(
+            &chunk,
+            &press.release_timer(position),
+            (expected, press.state),
+            owns,
+            |read| {
+                !server.plugin_manager.has_handlers::<PlayerInteractEvent>()
+                    && self.regional_button_change_allowed(server, position, press, read)
+            },
+        )
+    }
+
+    fn regional_button_change_allowed(
+        &self,
+        server: &Server,
+        position: BlockPos,
+        change: &StoneButtonChange,
+        read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> bool {
+        regional_block_effects_unobserved(server)
+            && self.regional_effects_clients_supported(position.chunk_position())
+            && !self.block_toggle_has_listeners(position, change.event())
+            && change
+                .neighbors_are_inert(position, read, |state| self.is_plain_regional_block(state))
+    }
+
+    pub(super) fn regional_button_release(
+        &self,
+        position: BlockPos,
+        state: BlockStateId,
+        read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> Option<BlockStateId> {
+        let release = StoneButtonChange::prepare(state, false)?;
+        if release.state == state {
+            return Some(state);
+        }
+        let server = self.server.upgrade()?;
+        self.regional_button_change_allowed(&server, position, &release, read)
+            .then_some(release.state)
+    }
+
+    pub(crate) fn publish_regional_button_press(
+        &self,
+        position: BlockPos,
+        expected: BlockStateId,
+        press: &StoneButtonChange,
+    ) {
+        self.queue_regional_edit_update(position, expected, press.state);
+        self.play_regional_button_effects(position, press);
+    }
+
+    pub(super) fn play_regional_button_effects(
+        &self,
+        position: BlockPos,
+        change: &StoneButtonChange,
+    ) {
+        self.play_regional_java_sound(position, change.java_sound(), 1.0, 1.0, None);
+        self.send_bedrock_level_sound(
+            change.bedrock_sound(),
+            &position.to_centered_f64(),
+            StoneButtonChange::BEDROCK_SOUND_DATA,
             false,
         );
     }

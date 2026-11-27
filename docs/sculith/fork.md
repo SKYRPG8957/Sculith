@@ -809,6 +809,13 @@ lever, its support and their neighbors can be checked by the owner. A redstone
 receiver beside the lever or behind its support keeps the action on the world
 path. Both paths keep the Java click pitch and send Bedrock's power sound.
 
+An isolated stone or polished blackstone button can be pressed by its region.
+The palette write and its 20-tick release timer are stored together. The
+region also releases a button when it can read the support and its neighbors
+and there are no game events or callbacks to deliver. The world handles
+circuit updates and callbacks when they are needed. Java receives the stone
+button clicks and Bedrock receives power-on and power-off sounds.
+
 A Bedrock movement packet with a single block use can use the same path after
 the owner completes movement. Reach and block ownership are checked from
 that pose. The world can finish a deferred interaction once the pose is

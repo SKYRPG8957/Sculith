@@ -28,7 +28,10 @@ use crate::{
         BlockToggle,
         doors::{can_toggle_door, regional_door_toggle},
         fence_gates::manual_fence_gate_toggle,
-        redstone::lever::LeverToggle,
+        redstone::{
+            buttons::{StoneButtonChange, is_stone_button},
+            lever::LeverToggle,
+        },
         trapdoor::manual_trapdoor_toggle,
     },
     entity::{
@@ -54,6 +57,7 @@ enum RegionalBlockUse {
 enum RegionalActivation {
     Opening(BlockToggle),
     Lever(LeverToggle),
+    Button(StoneButtonChange),
 }
 
 impl RegionalActivation {
@@ -71,6 +75,9 @@ impl RegionalActivation {
             }
             Self::Lever(toggle) => {
                 world.try_pull_regional_lever(server, position, expected, toggle, owns)
+            }
+            Self::Button(press) => {
+                world.try_press_regional_button(server, position, expected, press, owns)
             }
         }
     }
@@ -90,6 +97,14 @@ impl RegionalBlockUse {
             Self::Activated(position, expected, RegionalActivation::Lever(toggle)) => {
                 world.publish_regional_lever(position, expected, &toggle);
                 tracing::trace!(player = %player.gameprofile.name, ?position, "Pulled Bedrock lever on its region");
+            }
+            Self::Activated(position, expected, RegionalActivation::Button(press)) => {
+                if expected == press.state {
+                    tracing::trace!(player = %player.gameprofile.name, ?position, "Ignored repeated Bedrock stone button press on its region");
+                } else {
+                    world.publish_regional_button_press(position, expected, &press);
+                    tracing::trace!(player = %player.gameprofile.name, ?position, "Pressed Bedrock stone button on its region");
+                }
             }
         }
     }
@@ -144,6 +159,7 @@ impl BedrockClient {
             .is_some_and(|state| {
                 state.to_block() == &Block::LEVER
                     || can_toggle_door(state.to_block())
+                    || is_stone_button(state.to_block())
                     || manual_toggle(player, state).is_some()
             })
     }
@@ -207,21 +223,8 @@ impl BedrockClient {
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<()> {
         let face = BlockDirection::from_index(data.block_face)?;
-        let slot = usize::try_from(data.hot_bar_slot.0).ok()?;
         let mode = player.gamemode.load();
-        if data.action_type.0 != 0
-            || data.hand != HandSlot::Mainhand
-            || slot >= PlayerInventory::HOTBAR_SIZE
-            || !matches!(
-                mode,
-                GameMode::Survival | GameMode::Creative | GameMode::Adventure
-            )
-            || self.inventory_opened.load(Relaxed)
-            || server.stop_token.is_cancelled()
-            || server.tick_rate_manager.is_frozen()
-        {
-            return None;
-        }
+        let slot = self.regional_block_use_slot(server, data, mode)?;
         let world = player.world();
         let entity = player.get_entity();
         let action = {
@@ -252,6 +255,10 @@ impl BedrockClient {
                         clicked,
                         state,
                         |pos| world.level.try_read_block_state(pos),
+                    )?))
+                } else if is_stone_button(state.to_block()) {
+                    Some(RegionalActivation::Button(StoneButtonChange::prepare(
+                        state, true,
                     )?))
                 } else {
                     LeverToggle::from_state(state)
@@ -306,6 +313,26 @@ impl BedrockClient {
         };
         action.publish(&world, player);
         Some(())
+    }
+
+    fn regional_block_use_slot(
+        &self,
+        server: &Server,
+        data: &UseItemTransactionData,
+        mode: GameMode,
+    ) -> Option<usize> {
+        let slot = usize::try_from(data.hot_bar_slot.0).ok()?;
+        (data.action_type.0 == 0
+            && data.hand == HandSlot::Mainhand
+            && slot < PlayerInventory::HOTBAR_SIZE
+            && matches!(
+                mode,
+                GameMode::Survival | GameMode::Creative | GameMode::Adventure
+            )
+            && !self.inventory_opened.load(Relaxed)
+            && !server.stop_token.is_cancelled()
+            && !server.tick_rate_manager.is_frozen())
+        .then_some(slot)
     }
 
     fn try_commit_regional_placement(

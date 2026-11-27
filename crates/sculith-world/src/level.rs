@@ -1618,6 +1618,31 @@ impl Level {
         )
     }
 
+    /// Changes a block property and schedules its follow-up in the same saved snapshot.
+    pub fn try_apply_regional_timed_block_property(
+        &self,
+        expected_chunk: &SyncChunk,
+        tick: &ScheduledTick<&'static Block>,
+        change: (BlockStateId, BlockStateId),
+        owns: impl Fn(Vector2<i32>) -> bool,
+        validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<()> {
+        let order = self.next_scheduled_tick_order();
+        apply_regional_chunk_tick(
+            &self.loaded_chunks,
+            expected_chunk,
+            owns,
+            |chunk, read, can_commit| {
+                chunk.try_apply_timed_block_property(
+                    tick, order, change, read, can_commit, &validate,
+                )
+            },
+        )?;
+        self.chunks_with_scheduled_ticks
+            .insert(tick.position.chunk_position());
+        Some(())
+    }
+
     /// Conditionally writes two contiguous block states in the same owned column.
     pub fn try_apply_regional_vertical_block_pair(
         &self,

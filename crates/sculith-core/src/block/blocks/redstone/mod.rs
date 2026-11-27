@@ -1,5 +1,5 @@
 use pumpkin_data::{
-    Block, BlockDirection, BlockState, block_properties::RedstoneWireLikeProperties,
+    Block, BlockDirection, BlockState, BlockStateId, block_properties::RedstoneWireLikeProperties,
 };
 use sculith_util::math::position::BlockPos;
 
@@ -34,6 +34,32 @@ pub mod dispenser;
 
 /// Strongest redstone signal (`Redstone.SIGNAL_MAX`).
 pub const SIGNAL_MAX: u8 = 15;
+
+const POWER_SOUND_DATA: i32 = -1;
+
+const fn power_sound(powered: bool) -> &'static str {
+    if powered { "power.on" } else { "power.off" }
+}
+
+fn mounted_neighbors_are_inert(
+    position: BlockPos,
+    face: BlockDirection,
+    read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    inert: impl Fn(BlockStateId) -> bool,
+) -> bool {
+    let support = position.offset(face.opposite().to_offset());
+    if !read(support).is_some_and(|state| inert(state) && state.to_state().is_side_solid(face)) {
+        return false;
+    }
+
+    // Strong power at the support also notifies the blocks around it.
+    [position, support].into_iter().all(|source| {
+        BlockDirection::all().into_iter().all(|direction| {
+            let neighbor = source.offset(direction.to_offset());
+            neighbor == position || read(neighbor).is_some_and(&inert)
+        })
+    })
+}
 
 pub fn is_emitting_redstone_power(
     block: &Block,

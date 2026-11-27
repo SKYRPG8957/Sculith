@@ -14,6 +14,8 @@ use pumpkin_macros::pumpkin_block;
 use sculith_util::math::position::BlockPos;
 use sculith_world::world::BlockFlags;
 
+use super::{POWER_SOUND_DATA, mounted_neighbors_are_inert, power_sound};
+
 use crate::{
     block::{
         registry::BlockActionResult,
@@ -29,7 +31,7 @@ pub(crate) struct LeverToggle {
 
 impl LeverToggle {
     pub const JAVA_VOLUME: f32 = 0.3;
-    pub const BEDROCK_SOUND_DATA: i32 = -1;
+    pub const BEDROCK_SOUND_DATA: i32 = POWER_SOUND_DATA;
 
     pub(crate) fn from_state(state: BlockStateId) -> Option<Self> {
         if state.to_block() != &Block::LEVER {
@@ -48,11 +50,7 @@ impl LeverToggle {
     }
 
     pub(crate) const fn bedrock_sound(&self) -> &'static str {
-        if self.properties.powered {
-            "power.on"
-        } else {
-            "power.off"
-        }
+        power_sound(self.properties.powered)
     }
 
     pub(crate) const fn event(&self) -> GameEvent {
@@ -69,20 +67,7 @@ impl LeverToggle {
         read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
         inert: impl Fn(BlockStateId) -> bool,
     ) -> bool {
-        let face = self.properties.get_direction();
-        let support = position.offset(face.opposite().to_offset());
-        if !read(support).is_some_and(|state| inert(state) && state.to_state().is_side_solid(face))
-        {
-            return false;
-        }
-
-        // Strong power at the support also notifies the blocks around it.
-        [position, support].into_iter().all(|source| {
-            BlockDirection::all().into_iter().all(|direction| {
-                let neighbor = source.offset(direction.to_offset());
-                neighbor == position || read(neighbor).is_some_and(&inert)
-            })
-        })
+        mounted_neighbors_are_inert(position, self.properties.get_direction(), read, inert)
     }
 }
 

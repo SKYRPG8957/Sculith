@@ -522,6 +522,8 @@ const REGIONAL_LAVA: u8 = 16;
 pub(crate) enum RegionalBlockTick {
     Lamp = 1,
     Target = 2,
+    StoneButton = 32,
+    PolishedBlackstoneButton = 64,
 }
 
 impl RegionalBlockTick {
@@ -529,6 +531,8 @@ impl RegionalBlockTick {
         match id {
             BlockId::REDSTONE_LAMP => Some(Self::Lamp),
             BlockId::TARGET => Some(Self::Target),
+            BlockId::STONE_BUTTON => Some(Self::StoneButton),
+            BlockId::POLISHED_BLACKSTONE_BUTTON => Some(Self::PolishedBlackstoneButton),
             _ => None,
         }
     }
@@ -537,6 +541,9 @@ impl RegionalBlockTick {
         match self {
             Self::Lamp => std::any::TypeId::of::<RedstoneLamp>(),
             Self::Target => std::any::TypeId::of::<TargetBlock>(),
+            Self::StoneButton | Self::PolishedBlackstoneButton => {
+                std::any::TypeId::of::<ButtonBlock>()
+            }
         }
     }
 }

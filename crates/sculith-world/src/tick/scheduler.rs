@@ -147,6 +147,25 @@ impl<'a, T: std::hash::Hash + Eq> ChunkTickScheduler<&'a T> {
         Self::schedule_locked(&mut inner_guard, tick, sub_tick_order, offset);
     }
 
+    pub(crate) fn try_schedule_new_with(
+        &self,
+        tick: &ScheduledTick<&'a T>,
+        order: u64,
+        commit: impl FnOnce() -> Option<()>,
+    ) -> Option<()> {
+        let mut inner = self.inner.try_lock().ok()?;
+        if inner
+            .as_ref()
+            .is_some_and(|inner| inner.queued_ticks.contains(&(tick.position, tick.value)))
+        {
+            return None;
+        }
+        commit()?;
+        let offset = self.offset.load(Ordering::Relaxed);
+        Self::schedule_locked(&mut inner, tick, order, offset);
+        Some(())
+    }
+
     fn schedule_locked(
         inner: &mut Option<Box<ChunkTickSchedulerInner<&'a T>>>,
         tick: &ScheduledTick<&'a T>,

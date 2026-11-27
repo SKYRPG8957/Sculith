@@ -60,7 +60,9 @@ pub mod village_siege;
 pub mod wandering_trader_spawner;
 
 use crate::block::RandomTickArgs;
-use crate::block::blocks::redstone::{redstone_lamp::RedstoneLamp, target_block::TargetBlock};
+use crate::block::blocks::redstone::{
+    buttons::StoneButtonChange, redstone_lamp::RedstoneLamp, target_block::TargetBlock,
+};
 use crate::block::fluid::{
     flowing_trait::regional_flow_events_unobserved, lava::FlowingLava, water::FlowingWater,
 };
@@ -2750,6 +2752,13 @@ impl World {
                     );
                 }
                 for (position, old, new) in changes {
+                    if regional_block
+                        && let Some(release) = StoneButtonChange::prepare(old, false)
+                        && release.state == new
+                    {
+                        self.play_regional_button_effects(position, &release);
+                        tracing::trace!(?position, "Released stone button on its region");
+                    }
                     if sculith_world::lighting::LightEngine::has_different_light_properties(
                         old.to_state(),
                         new.to_state(),
@@ -2793,6 +2802,9 @@ impl World {
         match self.block_registry.regional_tick(block)? {
             RegionalBlockTick::Lamp => {
                 RedstoneLamp::regional_replacement(&self.block_registry, position, state, &read)
+            }
+            RegionalBlockTick::StoneButton | RegionalBlockTick::PolishedBlackstoneButton => {
+                self.regional_button_release(position, state, &read)
             }
             RegionalBlockTick::Target => {
                 let replacement = TargetBlock::scheduled_replacement(state);

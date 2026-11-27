@@ -10,7 +10,7 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_macros::pumpkin_block_from_tag;
 use sculith_util::math::boundingbox::BoundingBox;
 use sculith_util::math::position::BlockPos;
-use sculith_world::tick::TickPriority;
+use sculith_world::tick::{ScheduledTick, TickPriority};
 use sculith_world::world::BlockFlags;
 
 type ButtonLikeProperties = pumpkin_data::block_properties::LeverLikeProperties;
@@ -26,8 +26,72 @@ use crate::block::{
 use crate::entity::projectile::abstract_arrow::is_abstract_arrow;
 use crate::world::World;
 
-fn is_stone_button(block: &Block) -> bool {
+use super::{POWER_SOUND_DATA, mounted_neighbors_are_inert, power_sound};
+
+const STONE_PRESS_TICKS: u8 = 20;
+
+pub(crate) fn is_stone_button(block: &Block) -> bool {
     block == &Block::STONE_BUTTON || block == &Block::POLISHED_BLACKSTONE_BUTTON
+}
+
+pub(crate) struct StoneButtonChange {
+    pub state: BlockStateId,
+    properties: ButtonLikeProperties,
+}
+
+impl StoneButtonChange {
+    pub const BEDROCK_SOUND_DATA: i32 = POWER_SOUND_DATA;
+
+    pub(crate) fn prepare(state: BlockStateId, powered: bool) -> Option<Self> {
+        let block = state.to_block();
+        if !is_stone_button(block) {
+            return None;
+        }
+        let mut properties = ButtonLikeProperties::from_state_id(state);
+        properties.powered = powered;
+        Some(Self {
+            state: properties.to_state_id(block),
+            properties,
+        })
+    }
+
+    pub(crate) const fn release_timer(&self, position: BlockPos) -> ScheduledTick<&'static Block> {
+        ScheduledTick {
+            delay: STONE_PRESS_TICKS,
+            priority: TickPriority::Normal,
+            position,
+            value: self.state.to_block(),
+        }
+    }
+
+    pub(crate) fn java_sound(&self) -> Sound {
+        get_sound(self.state.to_block(), self.properties.powered)
+    }
+
+    pub(crate) const fn bedrock_sound(&self) -> &'static str {
+        power_sound(self.properties.powered)
+    }
+
+    pub(crate) const fn event(&self) -> GameEvent {
+        button_event(self.properties.powered)
+    }
+
+    pub(crate) fn neighbors_are_inert(
+        &self,
+        position: BlockPos,
+        read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        inert: impl Fn(BlockStateId) -> bool,
+    ) -> bool {
+        mounted_neighbors_are_inert(position, self.properties.get_direction(), read, inert)
+    }
+}
+
+const fn button_event(powered: bool) -> GameEvent {
+    if powered {
+        GameEvent::BlockActivate
+    } else {
+        GameEvent::BlockDeactivate
+    }
 }
 
 fn get_sound(block: &Block, on: bool) -> Sound {
@@ -67,6 +131,9 @@ impl BlockBehaviour for ButtonBlock {
 
     fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         let state = args.world.get_block_state(args.position);
+        if state.id.to_block() != args.block {
+            return;
+        }
         let mut props = ButtonLikeProperties::from_state_id(state.id);
         if props.powered {
             let stay_pressed = if is_stone_button(args.block) {
@@ -88,21 +155,19 @@ impl BlockBehaviour for ButtonBlock {
                 );
             } else {
                 props.powered = false;
-                args.world.set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_ALL,
-                );
-                Self::update_neighbors(args.world, args.position, props);
-                args.world.play_block_sound(
-                    get_sound(args.block, false),
-                    SoundCategory::Blocks,
-                    *args.position,
-                );
-                args.world.emit_game_event(
-                    GameEvent::BlockDeactivate.name(),
-                    args.position.to_centered_f64(),
-                );
+                if args
+                    .world
+                    .set_block_state_if(
+                        args.position,
+                        props.to_state_id(args.block),
+                        BlockFlags::NOTIFY_ALL,
+                        |live| live == state.id,
+                    )
+                    .is_some()
+                {
+                    Self::update_neighbors(args.world, args.position, props);
+                    Self::play_effects(args.world, *args.position, args.block, false);
+                }
             }
         }
     }
@@ -177,18 +242,36 @@ impl ButtonBlock {
         }
 
         button_props.powered = true;
-        world.set_block_state(
-            block_pos,
-            button_props.to_state_id(block),
-            BlockFlags::NOTIFY_ALL,
-        );
-        let delay = if is_stone_button(block) { 20 } else { 30 };
+        if world
+            .set_block_state_if(
+                block_pos,
+                button_props.to_state_id(block),
+                BlockFlags::NOTIFY_ALL,
+                |live| live == state,
+            )
+            .is_none()
+        {
+            return false;
+        }
+        let delay = if is_stone_button(block) {
+            STONE_PRESS_TICKS
+        } else {
+            30
+        };
         world.schedule_block_tick(block, *block_pos, delay, TickPriority::Normal);
         Self::update_neighbors(world, block_pos, button_props);
-        world.play_block_sound(get_sound(block, true), SoundCategory::Blocks, *block_pos);
-        world.emit_game_event(GameEvent::BlockActivate.name(), block_pos.to_centered_f64());
+        Self::play_effects(world, *block_pos, block, true);
 
         true
+    }
+
+    fn play_effects(world: &World, pos: BlockPos, block: &Block, powered: bool) {
+        world.play_block_sound(get_sound(block, powered), SoundCategory::Blocks, pos);
+        let center = pos.to_centered_f64();
+        if is_stone_button(block) {
+            world.play_bedrock_level_sound(power_sound(powered), &center, POWER_SOUND_DATA);
+        }
+        world.emit_game_event(button_event(powered).name(), center);
     }
 
     fn update_neighbors(world: &Arc<World>, block_pos: &BlockPos, props: ButtonLikeProperties) {

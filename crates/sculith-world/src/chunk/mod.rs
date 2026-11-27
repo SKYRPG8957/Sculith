@@ -1,6 +1,6 @@
 use crate::chunk::format::LightContainer;
 use crate::lighting::runtime::sky_light_to_neighbor;
-use crate::tick::scheduler::ChunkTickScheduler;
+use crate::tick::{ScheduledTick, scheduler::ChunkTickScheduler};
 use palette::{BiomePalette, BlockPalette, has_random_ticking_fluid};
 use pumpkin_data::block_properties::{blocks_movement, has_random_ticks, is_air};
 use pumpkin_data::chunk::ChunkStatus;
@@ -1077,6 +1077,46 @@ impl ChunkData {
         Some(true)
     }
 
+    pub(crate) fn try_apply_timed_block_property(
+        &self,
+        tick: &ScheduledTick<&'static Block>,
+        order: u64,
+        (old, new): (BlockStateId, BlockStateId),
+        read_neighbor: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        can_commit: &dyn Fn() -> bool,
+        validate: &impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<()> {
+        let position = tick.position;
+        let column = position.chunk_position();
+        if (column.x, column.y) != (self.x, self.z)
+            || old == new
+            || old.to_block() != tick.value
+            || new.to_block() != tick.value
+            || !retains_block_bookkeeping(old, new)
+            || crate::lighting::LightEngine::has_different_light_properties(
+                old.to_state(),
+                new.to_state(),
+            )
+        {
+            return None;
+        }
+        let mut sections = self.section.block_sections.try_write_unmarked()?;
+        let read = |pos| self.read_block_during_edit(&sections, pos, read_neighbor);
+        if read(position) != Some(old) || !validate(&read) {
+            return None;
+        }
+        // Save readers acquire the palette before the timer. Hold both through the commit.
+        self.block_ticks.try_schedule_new_with(tick, order, || {
+            if !can_commit() {
+                return None;
+            }
+            self.section.block_sections.mark_changed();
+            self.write_regional_block(&mut sections, position, new);
+            self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+            Some(())
+        })
+    }
+
     /// The caller pins runtime propagation while the neighborhood is checked.
     fn try_opaque_edit_light(
         &self,
@@ -1528,12 +1568,48 @@ pub enum ChunkSerializingError {
 mod tests {
     use super::{ChunkData, ChunkHeightmapType, ChunkLight, ChunkSections, RegionalBlockLighting};
     use crate::chunk::{format::LightContainer, io::Dirtiable, palette::BlockPalette};
+    use crate::tick::{ScheduledTick, TickPriority};
     use pumpkin_data::{
         Block, BlockStateId,
-        block_properties::{DoubleBlockHalf, OakDoorLikeProperties, has_random_ticks},
+        block_properties::{
+            DoubleBlockHalf, LeverLikeProperties, OakDoorLikeProperties, has_random_ticks,
+        },
     };
     use sculith_util::math::{position::BlockPos, vector2::Vector2};
     use std::sync::atomic::Ordering::Relaxed;
+
+    #[test]
+    fn timed_property_edit_keeps_state_and_timer_together() {
+        let chunk = ChunkData::empty(0, 0);
+        let block = &Block::STONE_BUTTON;
+        let mut properties = LeverLikeProperties::default(block);
+        properties.powered = false;
+        let unpressed = properties.to_state_id(block);
+        properties.powered = true;
+        let pressed = properties.to_state_id(block);
+        let position = BlockPos::new(3, 80, 7);
+        chunk.set_block_absolute_y(3, 80, 7, unpressed);
+        let tick = ScheduledTick {
+            delay: 20,
+            priority: TickPriority::Normal,
+            position,
+            value: block,
+        };
+        let read = || chunk.section.get_block_absolute_y(3, 80, 7);
+        let edit = |change, owns: bool| {
+            chunk.try_apply_timed_block_property(&tick, 1, change, &|_| None, &|| owns, &|_| true)
+        };
+        assert_eq!(edit((unpressed, pressed), false), None);
+        assert_eq!(read(), Some(unpressed));
+        assert!(!chunk.block_ticks.is_scheduled(position, block));
+        assert_eq!(edit((unpressed, pressed), true), Some(()));
+        assert_eq!(read(), Some(pressed));
+        assert_eq!(edit((pressed, unpressed), true), None);
+        assert_eq!(read(), Some(pressed));
+        let ticks = chunk.block_ticks.to_vec();
+        assert_eq!(ticks.len(), 1);
+        assert_eq!(ticks[0].delay, 20);
+    }
 
     #[test]
     fn vertical_pair_rejects_a_stale_companion_across_sections() {
