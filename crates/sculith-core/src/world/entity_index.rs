@@ -728,7 +728,7 @@ impl EntityIndex {
         world: &World,
         item: i32,
         area: &BoundingBox,
-        collect: impl FnOnce(&Arc<Player>, &dyn Fn() -> bool) -> Option<R>,
+        collect: impl FnOnce(&Arc<Player>, &dyn Fn(&BoundingBox) -> bool) -> Option<R>,
     ) -> Option<R> {
         let range = Index::entity_range(area)?;
         let (players, player_index) = Self::try_read_current(
@@ -750,17 +750,20 @@ impl EntityIndex {
         let &source = index.slots.get(&item)?;
         // A same-cell bounds change can introduce a contact under the read guard.
         // Reserve the whole cells, including possible vehicles, merges and mob collectors.
-        if !index.oversized.is_empty()
-            || range
-                .indexed_members(&index.cells)
-                .any(|slot| slot != source && !entities[slot].get_entity().is_removed())
-        {
+        if !index.oversized.is_empty() {
             return None;
         }
-        collect(&players[collector], &|| {
-            Arc::ptr_eq(&players, &world.players.load())
+        let uncontested = |bounds: &BoundingBox| {
+            Index::entity_range(bounds).is_some_and(|covered| {
+                !covered
+                    .indexed_members(&index.cells)
+                    .any(|slot| slot != source && !entities[slot].get_entity().is_removed())
+            }) && Arc::ptr_eq(&players, &world.players.load())
                 && Arc::ptr_eq(&entities, &world.entities.load())
-        })
+        };
+        uncontested(area)
+            .then(|| collect(&players[collector], &uncontested))
+            .flatten()
     }
 
     pub fn set_player_bounds(

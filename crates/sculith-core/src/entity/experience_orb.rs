@@ -210,6 +210,12 @@ impl ExperienceOrbEntity {
         self.orb_age.load(Ordering::Relaxed) > Self::LIFETIME
     }
 
+    pub(crate) fn regional_pickup_amount(&self) -> Option<i32> {
+        i32::try_from(self.amount.load(Ordering::Relaxed))
+            .ok()
+            .filter(|amount| *amount > 0)
+    }
+
     pub(super) fn advance_age(&self) -> u32 {
         self.orb_age.fetch_add(1, Ordering::Relaxed) + 1
     }

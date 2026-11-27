@@ -2098,7 +2098,7 @@ impl EntityTracker {
         Self::flush_regional_java_packets(java_recipients);
     }
 
-    pub(super) fn try_publish_regional_item_pickup(
+    pub(super) fn try_publish_regional_pickup(
         &self,
         world: &World,
         item: &Entity,

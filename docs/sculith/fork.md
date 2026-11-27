@@ -20,9 +20,10 @@ protocol, world and utility packages are `sculith-core`, `sculith-config`,
 `sculith-protocol`, `sculith-world` and `sculith-util`. Embedders start `sculith_core::SculithServer`
 with settings from `sculith_config`. Both fresh and migrated settings are saved
 as `sculith.toml`. If only `pumpkin.toml` exists, Sculith reads it for migration.
-Native Rust plugins must be rebuilt for the `sculith-world` crate identity.
-The native plugin macro exports `SCULITH_API_VERSION`. The runtime lighting
-layout requires ABI 55, and the loader recognizes the earlier marker name.
+Native Rust plugins must be rebuilt against ABI 56 for the player experience
+layout. Use the player's experience getters and setters. The native plugin
+macro exports `SCULITH_API_VERSION`, and the loader recognizes the earlier
+marker name.
 Wasm plugins load by WIT API version.
 Telemetry and update notifications default to off. The optional update checker
 queries Sculith releases. CI builds and tests source;
@@ -566,9 +567,14 @@ world dispatch.
 After a native Bedrock player gathers an experience orb, the current region
 can advance that player's pickup delay. Pending work follows the player across
 region changes. Deadlines prevent an overlapping world or region step from
-advancing the same delay again. Orb contact, mending, and awarding experience
-run in the world phase. Coordinated steps and players without an eligible
-region use world processing.
+advancing the same delay again. An unmounted current-protocol Bedrock player
+can also collect an uncontested orb when both are in the same owned chunk.
+The region pins the actor, collector, equipment and save access while removing
+the orb and setting the player's points, progress and level together. Paired
+Java and Bedrock viewers receive the pickup and removal. The Bedrock owner
+receives the updated experience attributes. World commands, saved player data
+and both Wasm hosts use the same experience state. Mending, contested contact,
+plugin observers and coordinated steps use world processing.
 
 A current-protocol Bedrock player's region can spend accumulated exhaustion
 to reduce saturation or food. The connection retains the same deadline stamp

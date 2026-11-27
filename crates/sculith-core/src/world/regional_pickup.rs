@@ -8,10 +8,16 @@ use rustc_hash::FxHashMap;
 use sculith_util::math::{position::BlockPos, vector2::Vector2};
 
 use crate::{
-    entity::{EntityBase, item::ItemEntity, player::Player},
+    entity::{EntityBase, experience_orb::ExperienceOrbEntity, item::ItemEntity, player::Player},
     net::ClientPlatform,
     plugin::{
-        api::events::{entity::EntityPickupItemEvent, player::PlayerStatisticIncrementEvent},
+        api::events::{
+            entity::EntityPickupItemEvent,
+            player::{
+                PlayerStatisticIncrementEvent, exp_change::PlayerExpChangeEvent,
+                player_level_change::PlayerLevelChangeEvent,
+            },
+        },
         server::packet::{BedrockConnectionPacketSentEvent, PacketSentEvent},
     },
     server::Server,
@@ -20,14 +26,28 @@ use crate::{
 use super::{World, regional_campfires::RegionalEntityUpdate};
 
 impl World {
-    pub(super) fn regional_pickups_unobserved(server: &Server) -> bool {
+    fn regional_pickup_unobserved(server: &Server) -> bool {
         let plugins = &server.plugin_manager;
         !server.stop_token.is_cancelled()
             && !server.tick_rate_manager.is_frozen()
             && !plugins.has_handlers::<EntityPickupItemEvent>()
-            && !plugins.has_handlers::<PlayerStatisticIncrementEvent>()
             && !plugins.has_handlers::<PacketSentEvent>()
             && !plugins.has_handlers::<BedrockConnectionPacketSentEvent>()
+    }
+
+    pub(super) fn regional_pickups_unobserved(server: &Server) -> bool {
+        Self::regional_pickup_unobserved(server)
+            && !server
+                .plugin_manager
+                .has_handlers::<PlayerStatisticIncrementEvent>()
+    }
+
+    pub(super) fn regional_experience_pickups_unobserved(server: &Server) -> bool {
+        Self::regional_pickup_unobserved(server)
+            && !server.plugin_manager.has_handlers::<PlayerExpChangeEvent>()
+            && !server
+                .plugin_manager
+                .has_handlers::<PlayerLevelChangeEvent>()
     }
 
     /// The actor step pins the drop's assignment and the live entity snapshot.
@@ -86,7 +106,7 @@ impl World {
                             && !player.living_entity.is_dead_or_dying()
                             && !player.is_spectator()
                             && item.can_be_picked_up_on_region()
-                            && registered()
+                            && registered(&contact)
                     };
                     source.try_with_unmounted_actor(|| {
                         if !local() {
@@ -145,7 +165,7 @@ impl World {
             let after = after.clone();
             let mut stats = player.stats.try_lock().ok()?;
             let source = item.get_entity();
-            self.entity_tracker.try_publish_regional_item_pickup(
+            self.entity_tracker.try_publish_regional_pickup(
                 self,
                 source,
                 player,
@@ -190,5 +210,92 @@ impl World {
             );
             Some(())
         })?
+    }
+
+    /// Completes one uncontested orb pickup while the actor step pins its assignment.
+    pub(super) fn try_collect_regional_orb(
+        &self,
+        server: &Server,
+        actor: &Arc<dyn EntityBase>,
+        orb: &ExperienceOrbEntity,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+        java_recipients: &mut FxHashMap<u64, Arc<ClientPlatform>>,
+    ) -> Option<()> {
+        let source = orb.get_entity();
+        let bounds = source.bounding_box.load();
+        let area = bounds.expand(1.0, 0.5, 1.0);
+        let chunk = source.chunk_pos.load();
+        let dashmap::try_result::TryResult::Present(_loaded) =
+            self.level.loaded_chunks.try_get(&chunk)
+        else {
+            return None;
+        };
+        self.entity_index.try_with_pickup_contact(
+            self,
+            source.entity_id,
+            &area,
+            |player, uncontested| {
+                let client = player
+                    .client
+                    .bedrock()
+                    .filter(|client| client.is_current_protocol())?;
+                let _position = client.regional_work().try_lock().ok()?;
+                let collector = player.get_entity();
+                let vehicle = collector.vehicle.try_lock().ok()?;
+                if vehicle.is_some() {
+                    return None;
+                }
+                let _inventory = player.try_regional_inventory_edit()?;
+                collector.bounding_box.try_with_current_world(self, || {
+                    source.try_with_unmounted_actor(|| {
+                        let valid = || {
+                            let current = source.bounding_box.load();
+                            let reach = collector.bounding_box.load().expand(1.0, 0.5, 1.0);
+                            owns(chunk)
+                                && source.chunk_pos.load() == chunk
+                                && collector.chunk_pos.load() == chunk
+                                && std::ptr::eq(source.world.load().as_ref(), self)
+                                && reach.intersects(&current)
+                                && uncontested(&reach)
+                                && player.can_simulate_in(self)
+                                && player.has_stable_world_membership()
+                                && !player.living_entity.is_dead_or_dying()
+                                && !player.is_spectator()
+                                && !orb.has_expired()
+                        };
+                        if !valid() {
+                            return None;
+                        }
+                        let amount = orb.regional_pickup_amount()?;
+                        client.with_idle_player_inventory(player, |_| {
+                            let mut updates = self.regional_entity_updates.0.try_lock().ok()?;
+                            self.entity_tracker.try_publish_regional_pickup(
+                                self,
+                                source,
+                                player,
+                                1,
+                                java_recipients,
+                                || {
+                                    player.try_collect_regional_experience(client, amount, || {
+                                        valid()
+                                            && Self::regional_experience_pickups_unobserved(server)
+                                            && source.mark_discarded()
+                                    })
+                                },
+                            )?;
+                            updates.push(RegionalEntityUpdate::Removed(actor.clone()));
+                            player.try_send_regional_experience(client);
+                            tracing::trace!(
+                                entity = source.entity_id,
+                                collector = player.entity_id(),
+                                amount,
+                                "Collected an experience orb on its region"
+                            );
+                            Some(())
+                        })?
+                    })?
+                })?
+            },
+        )
     }
 }

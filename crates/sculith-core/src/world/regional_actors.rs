@@ -426,6 +426,7 @@ impl World {
         let item_timers = ItemEntity::timers_unobserved(server);
         let native = server.plugin_manager.try_without_native_code();
         let pickups = native.is_some() && Self::regional_pickups_unobserved(server);
+        let orb_pickups = native.is_some() && Self::regional_experience_pickups_unobserved(server);
         let mob_growth = native.is_some() && !plugins_observe_entity_ticks(server);
         let actor_packets = native.is_some()
             && !server.plugin_manager.has_handlers::<PacketSentEvent>()
@@ -501,6 +502,14 @@ impl World {
                 && let Some(orb) = actor_data.downcast_ref::<ExperienceOrbEntity>()
                 && let Some(_checkpoint) = server.try_entity_save_guard()
             {
+                if orb_pickups
+                    && self
+                        .try_collect_regional_orb(server, actor, orb, owns, &mut java_recipients)
+                        .is_some()
+                {
+                    collected.insert(base.entity_id);
+                    continue;
+                }
                 orb.try_regional_orb_tick(self, chunk, owner, deadline, owns, || {
                     publish(&mut java_recipients);
                 });

@@ -280,9 +280,9 @@ fn match_type_specific(
                 .is_none_or(|gm| {
                     player.gamemode.load().name() == gm.strip_prefix("minecraft:").unwrap_or(gm)
                 });
-            let lvl_ok = obj.get("level").is_none_or(|lvl| {
-                integer_matches(player.experience_level.load(Ordering::Relaxed), lvl)
-            });
+            let lvl_ok = obj
+                .get("level")
+                .is_none_or(|lvl| integer_matches(player.get_experience_level(), lvl));
             let look_ok = obj.get("looking_at").is_none_or(|look_pred| {
                 let target = player.get_target_entity(&player.world(), 64.0);
                 target.is_some_and(|t| entity_matches(t.as_ref(), look_pred, params))

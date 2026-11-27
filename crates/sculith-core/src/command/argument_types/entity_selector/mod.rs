@@ -21,7 +21,6 @@ use sculith_util::math::vector3::Vector3;
 use sculith_util::math::wrap_degrees;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
 /// Represents a structure that can target entities.
@@ -485,7 +484,7 @@ impl EntitySelectorPredicate {
                 .is_some_and(|p| (p.gamemode.load() == *mode) ^ invert),
             Self::ExperienceLevel(bounds) => entity
                 .get_player()
-                .is_some_and(|p| bounds.matches(p.experience_level.load(Ordering::Relaxed))),
+                .is_some_and(|p| bounds.matches(p.get_experience_level())),
             Self::Rotation(bounds, f) => {
                 let min = wrap_degrees(bounds.min().unwrap_or(0.0f32));
                 let max = wrap_degrees(bounds.max().unwrap_or(360.0f32));
