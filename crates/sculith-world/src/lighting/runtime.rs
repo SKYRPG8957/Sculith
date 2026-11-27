@@ -2,10 +2,27 @@ use crate::chunk::io::Dirtiable;
 use crate::chunk::palette::BlockPalette;
 use crate::level::Level;
 use crossbeam::queue::SegQueue;
-use pumpkin_data::BlockDirection;
+use pumpkin_data::{BlockDirection, BlockState};
 use sculith_config::lighting::LightingEngineConfig;
 use sculith_util::math::position::BlockPos;
 use std::sync::{Arc, PoisonError, RwLock, RwLockWriteGuard};
+
+pub(crate) fn sky_light_to_neighbor(
+    light: u8,
+    direction: BlockDirection,
+    state: &BlockState,
+) -> u8 {
+    let opacity = if state.can_occlude() {
+        state.opacity.max(1)
+    } else {
+        state.opacity
+    };
+    if light == 15 && direction == BlockDirection::Down && opacity == 0 {
+        15 // Direct sunlight through transparent blocks.
+    } else {
+        light.saturating_sub(1).saturating_sub(opacity)
+    }
+}
 
 pub struct DynamicLightEngine {
     min_y: i32,
@@ -321,24 +338,7 @@ impl DynamicLightEngine {
 
             let neighbor_light = self.get_sky_light_level(level, &neighbor_pos);
             let neighbor_state = level.get_block_state(&neighbor_pos).to_state();
-            let opacity = if neighbor_state.can_occlude() {
-                neighbor_state.opacity.max(1)
-            } else {
-                neighbor_state.opacity
-            };
-
-            // Calculate new light level for neighbor
-            let new_light = if light_level == 15
-                && dir == BlockDirection::Down
-                && opacity == 0
-                && !neighbor_state.can_occlude()
-            {
-                // Special case: Sky light at 15 propagates down as 15 through transparent blocks
-                15
-            } else {
-                // Normal propagation: reduce by 1 for distance, then by opacity
-                light_level.saturating_sub(1).saturating_sub(opacity)
-            };
+            let new_light = sky_light_to_neighbor(light_level, dir, neighbor_state);
 
             // Only propagate if new light is brighter than current light
             if new_light > neighbor_light {
@@ -373,22 +373,7 @@ impl DynamicLightEngine {
             }
 
             let neighbor_state = level.get_block_state(&neighbor_pos).to_state();
-            let opacity = if neighbor_state.can_occlude() {
-                neighbor_state.opacity.max(1)
-            } else {
-                neighbor_state.opacity
-            };
-
-            // Calculate what we would have given this neighbor
-            let expected = if removed_light == 15
-                && dir == BlockDirection::Down
-                && opacity == 0
-                && !neighbor_state.can_occlude()
-            {
-                15
-            } else {
-                removed_light.saturating_sub(1).saturating_sub(opacity)
-            };
+            let expected = sky_light_to_neighbor(removed_light, dir, neighbor_state);
 
             if neighbor_light == expected || neighbor_light < removed_light {
                 // This neighbor was lit by us, darken it

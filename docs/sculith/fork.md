@@ -728,7 +728,7 @@ block, reach and ownership, then publishes the start or stop animation to
 current-protocol viewers. The region also advances the Java crack stage while
 the target and mining speed stay steady. Bedrock animates at that speed from
 the start event. The region can finish a bare-hand break with no loot,
-experience, light changes, local block behavior or event listeners. It
+experience, local block behavior or event listeners. It
 commits at full progress or on a prediction or stop input that meets the
 server's existing 65% progress threshold. It rechecks the live block,
 neighbors, reach, input order, spawn protection and region ownership before
@@ -737,6 +737,13 @@ particles and block update. It corrects the client after an early prediction
 and cancels the session on an early stop. Both owners compare the live
 block state with the state recorded at the beginning of the session.
 Observing a replacement invalidates the previous progress for that session.
+With default lighting, the region can also remove a fully opaque,
+non-emitting block when removing it changes only the source cell's light.
+The owner checks the six surrounding light samples in the same chunk and
+uses the shared propagation rule to detect any neighbor that would brighten.
+The terrain, heightmaps and local skylight commit together. A removal that
+opens a shaft to light, changes block light or needs more terrain data uses
+world processing.
 
 The same region can handle a single start, abort, prediction or stop
 carried in a Bedrock movement packet after it completes the pose and its

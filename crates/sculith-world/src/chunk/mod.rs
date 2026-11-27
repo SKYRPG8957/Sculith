@@ -1,4 +1,5 @@
 use crate::chunk::format::LightContainer;
+use crate::lighting::runtime::sky_light_to_neighbor;
 use crate::tick::scheduler::ChunkTickScheduler;
 use palette::{BiomePalette, BlockPalette, has_random_ticking_fluid};
 use pumpkin_data::block_properties::{blocks_movement, has_random_ticks, is_air};
@@ -246,7 +247,7 @@ pub struct ChunkLight {
 #[derive(Clone, Copy)]
 pub(crate) enum RegionalBlockLighting {
     Preserve,
-    OpaquePlacement { has_skylight: bool },
+    LocalOpaque { has_skylight: bool },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -924,13 +925,21 @@ impl ChunkData {
         let relative = position.chunk_relative_position();
         let mut light =
             if crate::lighting::LightEngine::has_different_light_properties(old_state, new_state) {
-                let RegionalBlockLighting::OpaquePlacement { has_skylight } = lighting else {
+                let RegionalBlockLighting::LocalOpaque { has_skylight } = lighting else {
                     return None;
                 };
-                if old != BlockStateId::AIR || new_state.opacity != 15 || new_state.luminance != 0 {
+                let placing = old == BlockStateId::AIR;
+                let opaque = if placing {
+                    new_state
+                } else if replacement == BlockStateId::AIR {
+                    old_state
+                } else {
+                    return None;
+                };
+                if opaque.opacity != 15 || opaque.luminance != 0 {
                     return None;
                 }
-                Some(self.try_opaque_placement_light(relative, has_skylight)?)
+                Some(self.try_opaque_edit_light(position, placing, has_skylight, &read)?)
             } else {
                 None
             };
@@ -948,13 +957,13 @@ impl ChunkData {
         }
         self.section.block_sections.mark_changed();
         self.write_regional_block(&mut sections, position, replacement);
-        if let Some((lighting, true)) = &mut light {
+        if let Some((lighting, Some(sky))) = &mut light {
             let y = (relative.y - self.section.min_y) as usize;
             lighting.sky_light[y / CHUNK_WIDTH].set(
                 relative.x as usize,
                 y % CHUNK_WIDTH,
                 relative.z as usize,
-                0,
+                *sky,
             );
         }
         if let Some(mut heightmap) = heightmap {
@@ -969,13 +978,14 @@ impl ChunkData {
         Some(true)
     }
 
-    /// The caller pins runtime propagation. Only a dark or directly lit cell
-    /// with no light to withdraw from its neighbors can use this edit.
-    fn try_opaque_placement_light(
+    /// The caller pins runtime propagation while the neighborhood is checked.
+    fn try_opaque_edit_light(
         &self,
-        mut local: Vector3<i32>,
+        position: BlockPos,
+        placing: bool,
         has_skylight: bool,
-    ) -> Option<(MutexGuard<'_, ChunkLight>, bool)> {
+        block: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> Option<(MutexGuard<'_, ChunkLight>, Option<u8>)> {
         if !self
             .light_populated
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -983,6 +993,7 @@ impl ChunkData {
             return None;
         }
         let light = self.light_engine.try_lock().ok()?;
+        let mut local = position.chunk_relative_position();
         local.y -= self.section.min_y;
         let read = |sections: &[LightContainer], cell: Vector3<i32>| {
             let (x, y, z) = (
@@ -1000,23 +1011,66 @@ impl ChunkData {
         } else {
             0
         };
-        if read(&light.block_light, local)? != 0 || !matches!(sky, 0 | 15) {
+        if read(&light.block_light, local)? != 0 || (sky != 0 && (!placing || sky != 15)) {
             return None;
         }
-        for direction in BlockDirection::all() {
+        let mut adjacent_sky = [0; 6];
+        for (direction, stored) in BlockDirection::all().into_iter().zip(&mut adjacent_sky) {
             let neighbor = local + direction.to_offset();
             if read(&light.block_light, neighbor)? != 0 {
                 return None;
             }
-            if sky == 15 {
-                let nearby = read(&light.sky_light, neighbor)?;
-                // Direct sunlight can continue below through a transparent cell.
-                if nearby != 0 && (direction == BlockDirection::Down || nearby != 15) {
-                    return None;
-                }
+            if has_skylight && (!placing || sky != 0) {
+                *stored = read(&light.sky_light, neighbor)?;
             }
         }
-        Some((light, sky == 15))
+        let after = if placing {
+            // A skylight decrease would follow any darker lit neighbor and the column below.
+            if BlockDirection::all()
+                .into_iter()
+                .zip(adjacent_sky)
+                .any(|(direction, nearby)| {
+                    nearby != 0 && (direction == BlockDirection::Down || nearby != 15)
+                })
+            {
+                return None;
+            }
+            0
+        } else if has_skylight {
+            Self::sky_after_local_removal(position, adjacent_sky, block)?
+        } else {
+            0
+        };
+        Some((light, (after != sky).then_some(after)))
+    }
+
+    fn sky_after_local_removal(
+        position: BlockPos,
+        adjacent_sky: [u8; 6],
+        block: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+    ) -> Option<u8> {
+        let above_light = adjacent_sky[usize::from(BlockDirection::Up.to_index())];
+        let neighbor = |direction: BlockDirection| {
+            block(position.offset(direction.to_offset())).map(BlockStateId::to_state)
+        };
+        let sky = if above_light == 15 {
+            15
+        } else {
+            // A closed cell above rules out direct sun without scanning the column.
+            let above = neighbor(BlockDirection::Up)?;
+            if !above.can_occlude() && above.opacity == 0 {
+                return None;
+            }
+            adjacent_sky.into_iter().max()?.saturating_sub(1)
+        };
+        for (direction, existing) in BlockDirection::all().into_iter().zip(adjacent_sky) {
+            if sky > existing
+                && sky_light_to_neighbor(sky, direction, neighbor(direction)?) > existing
+            {
+                return None;
+            }
+        }
+        Some(sky)
     }
 
     // The decision already read these coordinates from the locked palettes.
@@ -1489,7 +1543,7 @@ mod tests {
         );
     }
 
-    fn lit_chunk_for_placement() -> ChunkData {
+    fn lit_chunk() -> ChunkData {
         let chunk = ChunkData::empty(0, 0);
         let sections = chunk.section.block_sections.read().unwrap().len();
         *chunk.light_engine.lock().unwrap() = ChunkLight {
@@ -1507,13 +1561,13 @@ mod tests {
             &|_| None,
             &|| owns,
             &|_| true,
-            RegionalBlockLighting::OpaquePlacement { has_skylight: true },
+            RegionalBlockLighting::LocalOpaque { has_skylight: true },
         )
     }
 
     #[test]
     fn regional_opaque_placement_saves_terrain_height_and_light_together() {
-        let chunk = lit_chunk_for_placement();
+        let chunk = lit_chunk();
         let target = BlockPos::new(3, -48, 3);
         chunk.set_block_absolute_y(3, -49, 3, Block::STONE.default_state.id);
         let initial_revision = chunk.section.terrain_revision();
@@ -1555,7 +1609,7 @@ mod tests {
 
     #[test]
     fn regional_opaque_placement_defers_when_light_can_propagate() {
-        let chunk = lit_chunk_for_placement();
+        let chunk = lit_chunk();
         let target = BlockPos::new(3, -48, 3);
         let initial_revision = chunk.section.terrain_revision();
         // A shaft extends through the lit cell into the section below it.
@@ -1576,6 +1630,86 @@ mod tests {
         assert_eq!(
             chunk.section.get_block_absolute_y(3, -48, 3),
             Some(BlockStateId::AIR)
+        );
+    }
+
+    #[test]
+    fn regional_opaque_removal_opens_the_cell_to_sunlight_and_saves_it() {
+        let chunk = lit_chunk();
+        let target = BlockPos::new(3, -48, 3);
+        let stone = Block::STONE.default_state.id;
+        chunk.set_block_absolute_y(3, -49, 3, stone);
+        chunk.set_block_absolute_y(3, -48, 3, stone);
+        let mut light = chunk.light_engine.lock().unwrap();
+        light.sky_light[0].set(3, 15, 3, 0);
+        light.sky_light[1].set(3, 0, 3, 0);
+        drop(light);
+        let apply = |owns| {
+            chunk.try_apply_block_edit(
+                target,
+                (stone, BlockStateId::AIR),
+                &|_| None,
+                &|| owns,
+                &|_| true,
+                RegionalBlockLighting::LocalOpaque { has_skylight: true },
+            )
+        };
+        let revision = chunk.section.terrain_revision();
+        assert_eq!(apply(false), None);
+        assert_eq!(chunk.section.terrain_revision(), revision);
+        assert_eq!(apply(true), Some(true));
+        assert!(chunk.is_dirty());
+        assert_ne!(chunk.section.terrain_revision(), revision);
+        assert_eq!(apply(true), Some(false));
+        for bytes in [chunk.internal_to_bytes(), chunk.internal_to_pump_bytes()] {
+            let saved = ChunkData::internal_from_bytes(&bytes, Vector2::new(0, 0)).unwrap();
+            assert_eq!(
+                saved.section.get_block_absolute_y(3, -48, 3),
+                Some(BlockStateId::AIR)
+            );
+            assert_eq!(
+                saved
+                    .heightmap
+                    .lock()
+                    .unwrap()
+                    .get(ChunkHeightmapType::WorldSurface, 3, 3, -64),
+                -49,
+            );
+            let light = saved.light_engine.lock().unwrap();
+            assert_eq!(light.sky_light[1].get(3, 0, 3), 15);
+            assert_eq!(light.sky_light[1].get(4, 0, 3), 15);
+            assert_eq!(light.sky_light[0].get(3, 15, 3), 0);
+        }
+    }
+
+    #[test]
+    fn regional_opaque_removal_defers_when_it_would_relight_a_shaft() {
+        let chunk = lit_chunk();
+        let target = BlockPos::new(3, -48, 3);
+        let stone = Block::STONE.default_state.id;
+        chunk.set_block_absolute_y(3, -48, 3, stone);
+        let mut light = chunk.light_engine.lock().unwrap();
+        light.sky_light[0].set(3, 15, 3, 0);
+        light.sky_light[1].set(3, 0, 3, 0);
+        drop(light);
+        let revision = chunk.section.terrain_revision();
+        assert_eq!(
+            chunk.try_apply_block_edit(
+                target,
+                (stone, BlockStateId::AIR),
+                &|_| None,
+                &|| true,
+                &|_| true,
+                RegionalBlockLighting::LocalOpaque { has_skylight: true },
+            ),
+            None
+        );
+        assert_eq!(chunk.section.terrain_revision(), revision);
+        assert!(!chunk.is_dirty());
+        assert_eq!(chunk.section.get_block_absolute_y(3, -48, 3), Some(stone));
+        assert_eq!(
+            chunk.light_engine.lock().unwrap().sky_light[1].get(3, 0, 3),
+            0
         );
     }
 

@@ -68,22 +68,17 @@ impl World {
         };
         let commit = || {
             let mut stats = player.stats.try_lock().ok()?;
-            let applied = self.level.try_apply_regional_block_edit(
-                &chunk,
-                position,
-                state,
-                BlockStateId::AIR,
-                owns,
-                |read| {
-                    unobserved()
-                        && BlockDirection::all().into_iter().all(|direction| {
-                            let neighbor = position.offset(direction.to_offset());
-                            self.is_in_build_limit(neighbor)
-                                && read(neighbor)
-                                    .is_some_and(|state| self.is_plain_regional_block(state))
-                        })
-                },
-            )?;
+            let applied =
+                self.level
+                    .try_remove_regional_block(&chunk, position, state, owns, |read| {
+                        unobserved()
+                            && BlockDirection::all().into_iter().all(|direction| {
+                                let neighbor = position.offset(direction.to_offset());
+                                self.is_in_build_limit(neighbor)
+                                    && read(neighbor)
+                                        .is_some_and(|state| self.is_plain_regional_block(state))
+                            })
+                    })?;
             applied.then(|| {
                 if harvest && !abilities.invulnerable {
                     player.hunger_manager.add_exhaustion(MINE_BLOCK_EXHAUSTION);

@@ -628,12 +628,6 @@ impl BedrockClient {
         clock: &MiningClock,
         owns: &impl Fn(Vector2<i32>) -> bool,
     ) -> Option<()> {
-        if sculith_world::lighting::LightEngine::has_different_light_properties(
-            clock.target.state.to_state(),
-            BlockStateId::AIR.to_state(),
-        ) {
-            return None;
-        }
         self.try_with_current_regional_mining(
             world,
             server,

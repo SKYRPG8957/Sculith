@@ -1628,12 +1628,47 @@ impl Level {
         owns: impl Fn(Vector2<i32>) -> bool,
         validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
     ) -> Option<bool> {
-        let air = BlockStateId::AIR;
-        if !LightEngine::has_different_light_properties(air.to_state(), replacement.to_state()) {
+        self.try_edit_regional_air(
+            expected_chunk,
+            position,
+            (BlockStateId::AIR, replacement),
+            owns,
+            validate,
+        )
+    }
+
+    /// Removes a block when any lighting change is confined to its source cell.
+    pub fn try_remove_regional_block(
+        &self,
+        expected_chunk: &SyncChunk,
+        position: BlockPos,
+        expected: BlockStateId,
+        owns: impl Fn(Vector2<i32>) -> bool,
+        validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<bool> {
+        self.try_edit_regional_air(
+            expected_chunk,
+            position,
+            (expected, BlockStateId::AIR),
+            owns,
+            validate,
+        )
+    }
+
+    fn try_edit_regional_air(
+        &self,
+        expected_chunk: &SyncChunk,
+        position: BlockPos,
+        (expected, replacement): (BlockStateId, BlockStateId),
+        owns: impl Fn(Vector2<i32>) -> bool,
+        validate: impl Fn(&dyn Fn(BlockPos) -> Option<BlockStateId>) -> bool,
+    ) -> Option<bool> {
+        if !LightEngine::has_different_light_properties(expected.to_state(), replacement.to_state())
+        {
             return self.try_apply_regional_block_edit(
                 expected_chunk,
                 position,
-                air,
+                expected,
                 replacement,
                 owns,
                 validate,
@@ -1647,10 +1682,10 @@ impl Level {
         self.try_apply_regional_edit(
             expected_chunk,
             position,
-            (air, replacement),
+            (expected, replacement),
             owns,
             validate,
-            RegionalBlockLighting::OpaquePlacement { has_skylight },
+            RegionalBlockLighting::LocalOpaque { has_skylight },
         )
     }
 
