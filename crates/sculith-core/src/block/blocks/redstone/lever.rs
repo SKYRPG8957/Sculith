@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cell::Cell, sync::Arc};
 
 use crate::block::{
     CanPlaceAtArgs, EmitsRedstonePowerArgs, GetRedstonePowerArgs, GetStateForNeighborUpdateArgs,
@@ -22,14 +22,68 @@ use crate::{
     world::World,
 };
 
-fn play_lever_sound(world: &Arc<World>, block_pos: &BlockPos, powered: bool) {
-    world.play_sound_fine(
-        Sound::BlockLeverClick,
-        SoundCategory::Blocks,
-        &block_pos.to_centered_f64(),
-        0.3,
-        if powered { 0.6 } else { 0.5 },
-    );
+pub(crate) struct LeverToggle {
+    pub state: BlockStateId,
+    properties: LeverLikeProperties,
+}
+
+impl LeverToggle {
+    pub const JAVA_VOLUME: f32 = 0.3;
+    pub const BEDROCK_SOUND_DATA: i32 = -1;
+
+    pub(crate) fn from_state(state: BlockStateId) -> Option<Self> {
+        if state.to_block() != &Block::LEVER {
+            return None;
+        }
+        let mut properties = LeverLikeProperties::from_state_id(state);
+        properties.powered = !properties.powered;
+        Some(Self {
+            state: properties.to_state_id(&Block::LEVER),
+            properties,
+        })
+    }
+
+    pub(crate) const fn java_pitch(&self) -> f32 {
+        if self.properties.powered { 0.6 } else { 0.5 }
+    }
+
+    pub(crate) const fn bedrock_sound(&self) -> &'static str {
+        if self.properties.powered {
+            "power.on"
+        } else {
+            "power.off"
+        }
+    }
+
+    pub(crate) const fn event(&self) -> GameEvent {
+        if self.properties.powered {
+            GameEvent::BlockActivate
+        } else {
+            GameEvent::BlockDeactivate
+        }
+    }
+
+    pub(crate) fn neighbors_are_inert(
+        &self,
+        position: BlockPos,
+        read: &dyn Fn(BlockPos) -> Option<BlockStateId>,
+        inert: impl Fn(BlockStateId) -> bool,
+    ) -> bool {
+        let face = self.properties.get_direction();
+        let support = position.offset(face.opposite().to_offset());
+        if !read(support).is_some_and(|state| inert(state) && state.to_state().is_side_solid(face))
+        {
+            return false;
+        }
+
+        // Strong power at the support also notifies the blocks around it.
+        [position, support].into_iter().all(|source| {
+            BlockDirection::all().into_iter().all(|direction| {
+                let neighbor = source.offset(direction.to_offset());
+                neighbor == position || read(neighbor).is_some_and(&inert)
+            })
+        })
+    }
 }
 
 #[pumpkin_block("minecraft:lever")]
@@ -101,26 +155,39 @@ impl WallMountedBlock for LeverBlock {
 
 impl LeverBlock {
     pub(crate) fn pull(world: &Arc<World>, block_pos: &BlockPos) {
-        let (block, state) = world.get_block_and_state_id(block_pos);
-
-        let mut lever_props = LeverLikeProperties::from_state_id(state);
-        lever_props.powered = !lever_props.powered;
-        world.set_block_state(
-            block_pos,
-            lever_props.to_state_id(block),
-            BlockFlags::NOTIFY_ALL,
-        );
-
-        Self::update_neighbors(world, block_pos, lever_props);
-
-        play_lever_sound(world, block_pos, lever_props.powered);
-
-        let game_event = if lever_props.powered {
-            GameEvent::BlockActivate
-        } else {
-            GameEvent::BlockDeactivate
-        };
-        world.emit_game_event(game_event.name(), block_pos.to_centered_f64());
+        if !world.is_in_build_limit(*block_pos) {
+            return;
+        }
+        let mut expected = world.get_block_state_id(block_pos);
+        while let Some(toggle) = LeverToggle::from_state(expected) {
+            let compared = Cell::new(None);
+            if let Some(old) = world.write_block_state_if(block_pos, toggle.state, |_, live| {
+                compared.set(Some(live));
+                live == expected
+            }) {
+                world.on_block_state_set(block_pos, old, toggle.state, BlockFlags::NOTIFY_ALL);
+                Self::update_neighbors(world, block_pos, toggle.properties);
+                let center = block_pos.to_centered_f64();
+                world.play_sound_fine(
+                    Sound::BlockLeverClick,
+                    SoundCategory::Blocks,
+                    &center,
+                    LeverToggle::JAVA_VOLUME,
+                    toggle.java_pitch(),
+                );
+                world.play_bedrock_level_sound(
+                    toggle.bedrock_sound(),
+                    &center,
+                    LeverToggle::BEDROCK_SOUND_DATA,
+                );
+                world.emit_game_event(toggle.event().name(), center);
+                return;
+            }
+            let Some(live) = compared.get() else {
+                return;
+            };
+            expected = live;
+        }
     }
 
     fn update_neighbors(
@@ -145,5 +212,48 @@ impl LeverLikePropertiesExt for LeverLikeProperties {
             AttachFace::Floor => BlockDirection::Up,
             AttachFace::Wall => self.facing.to_block_direction(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_data::block_properties::HorizontalFacing;
+
+    #[test]
+    fn regional_lever_checks_neighbors_on_the_far_side_of_its_support() {
+        let position = BlockPos::new(4, 80, 4);
+        let support = position.offset(BlockDirection::West.to_offset());
+        let far_side = support.offset(BlockDirection::West.to_offset());
+        let properties = LeverLikeProperties {
+            face: AttachFace::Wall,
+            facing: HorizontalFacing::East,
+            powered: false,
+        };
+        let Some(toggle) = LeverToggle::from_state(properties.to_state_id(&Block::LEVER)) else {
+            panic!("valid lever did not produce a toggle");
+        };
+        let stone = Block::STONE.default_state.id;
+        let lamp = Block::REDSTONE_LAMP.default_state.id;
+        let inert = |state| state == stone || state == BlockStateId::AIR;
+        let snapshot = |pos| {
+            Some(if pos == support {
+                stone
+            } else {
+                BlockStateId::AIR
+            })
+        };
+        assert!(toggle.neighbors_are_inert(position, &snapshot, inert));
+
+        let receiving = |pos| {
+            if pos == far_side {
+                Some(lamp)
+            } else {
+                snapshot(pos)
+            }
+        };
+        assert!(!toggle.neighbors_are_inert(position, &receiving, inert));
+        let unloaded = |pos| if pos == far_side { None } else { snapshot(pos) };
+        assert!(!toggle.neighbors_are_inert(position, &unloaded, inert));
     }
 }

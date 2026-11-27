@@ -28,6 +28,7 @@ use crate::{
         BlockToggle,
         doors::{can_toggle_door, regional_door_toggle},
         fence_gates::manual_fence_gate_toggle,
+        redstone::lever::LeverToggle,
         trapdoor::manual_trapdoor_toggle,
     },
     entity::{
@@ -47,7 +48,32 @@ const REGIONAL_BLOCK_USE_BYTES: usize = 512;
 
 enum RegionalBlockUse {
     Placed(BlockPos, BlockStateId),
-    Toggled(BlockPos, BlockStateId, BlockToggle),
+    Activated(BlockPos, BlockStateId, RegionalActivation),
+}
+
+enum RegionalActivation {
+    Opening(BlockToggle),
+    Lever(LeverToggle),
+}
+
+impl RegionalActivation {
+    fn commit(
+        &self,
+        world: &World,
+        server: &Server,
+        position: BlockPos,
+        expected: BlockStateId,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<()> {
+        match self {
+            Self::Opening(toggle) => {
+                world.try_toggle_regional_block(server, position, expected, toggle, owns)
+            }
+            Self::Lever(toggle) => {
+                world.try_pull_regional_lever(server, position, expected, toggle, owns)
+            }
+        }
+    }
 }
 
 impl RegionalBlockUse {
@@ -57,9 +83,13 @@ impl RegionalBlockUse {
                 world.publish_regional_placement(position, state);
                 tracing::trace!(player = %player.gameprofile.name, ?position, "Placed Bedrock block on its region");
             }
-            Self::Toggled(position, expected, toggle) => {
+            Self::Activated(position, expected, RegionalActivation::Opening(toggle)) => {
                 world.publish_regional_toggle(player, position, expected, &toggle);
                 tracing::trace!(player = %player.gameprofile.name, ?position, paired = toggle.other_half.is_some(), "Toggled Bedrock block on its region");
+            }
+            Self::Activated(position, expected, RegionalActivation::Lever(toggle)) => {
+                world.publish_regional_lever(position, expected, &toggle);
+                tracing::trace!(player = %player.gameprofile.name, ?position, "Pulled Bedrock lever on its region");
             }
         }
     }
@@ -96,7 +126,7 @@ impl BedrockClient {
         player: &Player,
         data: &UseItemTransactionData,
     ) -> bool {
-        // Admit existing placement candidates and known openings. The commit
+        // Admit existing placement candidates and known activations. The commit
         // checks the block and the server's selected stack after movement.
         let item = &data.item_in_hand;
         if i16::try_from(item.id.0)
@@ -112,7 +142,9 @@ impl BedrockClient {
             .level
             .try_read_block_state(data.block_position)
             .is_some_and(|state| {
-                can_toggle_door(state.to_block()) || manual_toggle(player, state).is_some()
+                state.to_block() == &Block::LEVER
+                    || can_toggle_door(state.to_block())
+                    || manual_toggle(player, state).is_some()
             })
     }
 
@@ -215,14 +247,18 @@ impl BedrockClient {
                     return None;
                 }
                 let state = world.level.try_read_block_state(clicked)?;
-                let toggle = if can_toggle_door(state.to_block()) {
-                    Some(regional_door_toggle(clicked, state, |pos| {
-                        world.level.try_read_block_state(pos)
-                    })?)
+                let activation = if can_toggle_door(state.to_block()) {
+                    Some(RegionalActivation::Opening(regional_door_toggle(
+                        clicked,
+                        state,
+                        |pos| world.level.try_read_block_state(pos),
+                    )?))
                 } else {
-                    manual_toggle(player, state)
+                    LeverToggle::from_state(state)
+                        .map(RegionalActivation::Lever)
+                        .or_else(|| manual_toggle(player, state).map(RegionalActivation::Opening))
                 };
-                if let Some(toggle) = toggle {
+                if let Some(activation) = activation {
                     let main = player.inventory.main_inventory.try_read().ok()?;
                     let held = main.get(slot)?;
                     if (entity.is_sneaking() && !held.is_empty())
@@ -232,10 +268,10 @@ impl BedrockClient {
                     {
                         return None;
                     }
-                    world.try_toggle_regional_block(server, clicked, state, &toggle, &|chunk| {
+                    activation.commit(&world, server, clicked, state, &|chunk| {
                         owns(chunk) && eligible()
                     })?;
-                    return Some(RegionalBlockUse::Toggled(clicked, state, toggle));
+                    return Some(RegionalBlockUse::Activated(clicked, state, activation));
                 }
                 if !matches!(mode, GameMode::Survival | GameMode::Creative)
                     || !self.inventory_request_can_run_on_region(player, server)

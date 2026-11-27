@@ -1,16 +1,20 @@
 use dashmap::try_result::TryResult;
 use pumpkin_data::{
-    BlockDirection, BlockState, BlockStateId, fluid::Fluid, game_event::GameEvent,
-    packet::CURRENT_MC_VERSION, sound::SoundCategory,
+    BlockDirection, BlockState, BlockStateId,
+    fluid::Fluid,
+    game_event::GameEvent,
+    packet::CURRENT_MC_VERSION,
+    sound::{Sound, SoundCategory},
 };
 use sculith_protocol::{IdOr, java::client::play::CSoundEffect};
 use sculith_util::math::{
     boundingbox::BoundingBox, position::BlockPos, vector2::Vector2, vector3::Vector3,
 };
+use sculith_world::level::SyncChunk;
 
 use crate::{
     block::{
-        blocks::{BlockToggle, fences::dry_fence_keeps_state},
+        blocks::{BlockToggle, fences::dry_fence_keeps_state, redstone::lever::LeverToggle},
         registry::can_replace_with_other_block,
     },
     entity::{EntityBase, player::Player},
@@ -28,6 +32,13 @@ use crate::{
 
 use super::World;
 
+fn regional_activation_unobserved(server: &Server) -> bool {
+    let plugins = &server.plugin_manager;
+    !plugins.has_handlers::<PlayerInteractEvent>()
+        && !plugins.has_handlers::<BlockPhysicsEvent>()
+        && !BlockToggle::effects_observed(server)
+}
+
 impl World {
     pub(crate) fn block_toggle_has_listeners(&self, position: BlockPos, event: GameEvent) -> bool {
         let area = super::game_event::notified_area(
@@ -39,27 +50,16 @@ impl World {
             != Some(false)
     }
 
-    pub(crate) fn try_toggle_regional_block(
+    fn regional_activation_chunk(
         &self,
         server: &Server,
         position: BlockPos,
-        expected: BlockStateId,
-        toggle: &BlockToggle,
         owns: &impl Fn(Vector2<i32>) -> bool,
-    ) -> Option<()> {
-        let plugins = &server.plugin_manager;
-        let unobserved = || {
-            !plugins.has_handlers::<PlayerInteractEvent>()
-                && !plugins.has_handlers::<BlockPhysicsEvent>()
-                && !BlockToggle::effects_observed(server)
-        };
-        let pair = toggle.vertical_pair(position, expected);
+    ) -> Option<SyncChunk> {
         let at = position.chunk_position();
-        if !unobserved()
+        if !regional_activation_unobserved(server)
             || !owns(at)
-            || toggle.changes(position, expected).any(|(pos, old, _)| {
-                !self.is_in_build_limit(pos) || Self::get_fluid_from_state_id(old) != &Fluid::EMPTY
-            })
+            || !self.is_in_build_limit(position)
             || self.players.load().iter().any(|viewer| {
                 super::is_within_chebyshev_distance(at, viewer.get_entity().chunk_pos.load(), 1)
                     && match viewer.client.as_ref() {
@@ -70,12 +70,28 @@ impl World {
         {
             return None;
         }
-        let _checkpoint = server.try_entity_save_guard()?;
         let TryResult::Present(chunk) = self.level.loaded_chunks.try_get(&at) else {
             return None;
         };
-        let expected_chunk = chunk.value().clone();
-        drop(chunk);
+        Some(chunk.value().clone())
+    }
+
+    pub(crate) fn try_toggle_regional_block(
+        &self,
+        server: &Server,
+        position: BlockPos,
+        expected: BlockStateId,
+        toggle: &BlockToggle,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<()> {
+        let pair = toggle.vertical_pair(position, expected);
+        if toggle.changes(position, expected).any(|(pos, old, _)| {
+            !self.is_in_build_limit(pos) || Self::get_fluid_from_state_id(old) != &Fluid::EMPTY
+        }) {
+            return None;
+        }
+        let expected_chunk = self.regional_activation_chunk(server, position, owns)?;
+        let _checkpoint = server.try_entity_save_guard()?;
         let validate = |read: &dyn Fn(BlockPos) -> Option<BlockStateId>| {
             let changed = |pos| {
                 toggle
@@ -83,7 +99,7 @@ impl World {
                     .find_map(|(edited, _, new)| (edited == pos).then_some(new))
             };
             let after = |pos| changed(pos).or_else(|| read(pos));
-            unobserved()
+            regional_activation_unobserved(server)
                 && !self.block_toggle_has_listeners(position, toggle.event)
                 && pair.is_none_or(|(lower, _)| {
                     read(lower.down())
@@ -122,6 +138,56 @@ impl World {
         .then_some(())
     }
 
+    pub(crate) fn try_pull_regional_lever(
+        &self,
+        server: &Server,
+        position: BlockPos,
+        expected: BlockStateId,
+        toggle: &LeverToggle,
+        owns: &impl Fn(Vector2<i32>) -> bool,
+    ) -> Option<()> {
+        let chunk = self.regional_activation_chunk(server, position, owns)?;
+        let _checkpoint = server.try_entity_save_guard()?;
+        self.level
+            .try_apply_regional_block_edit(
+                &chunk,
+                position,
+                expected,
+                toggle.state,
+                owns,
+                |read| {
+                    regional_activation_unobserved(server)
+                        && !self.block_toggle_has_listeners(position, toggle.event())
+                        && toggle.neighbors_are_inert(position, read, |state| {
+                            self.is_plain_regional_block(state)
+                        })
+                },
+            )?
+            .then_some(())
+    }
+
+    pub(crate) fn publish_regional_lever(
+        &self,
+        position: BlockPos,
+        expected: BlockStateId,
+        toggle: &LeverToggle,
+    ) {
+        self.queue_regional_edit_update(position, expected, toggle.state);
+        self.play_regional_java_sound(
+            position,
+            Sound::BlockLeverClick,
+            LeverToggle::JAVA_VOLUME,
+            toggle.java_pitch(),
+            None,
+        );
+        self.send_bedrock_level_sound(
+            toggle.bedrock_sound(),
+            &position.to_centered_f64(),
+            LeverToggle::BEDROCK_SOUND_DATA,
+            false,
+        );
+    }
+
     pub(crate) fn publish_regional_toggle(
         &self,
         player: &Player,
@@ -130,23 +196,36 @@ impl World {
         toggle: &BlockToggle,
     ) {
         self.queue_regional_edit_updates((position, expected, toggle.state), toggle.other_half);
-        let center = position.to_centered_f64();
+        self.play_regional_java_sound(position, toggle.java_sound, 1.0, 1.0, Some(player));
+        self.send_bedrock_level_sound(
+            toggle.bedrock_sound,
+            &position.to_centered_f64(),
+            BlockState::to_be_network_id(toggle.state) as i32,
+            false,
+        );
+    }
+
+    fn play_regional_java_sound(
+        &self,
+        position: BlockPos,
+        sound: Sound,
+        volume: f32,
+        pitch: f32,
+        except: Option<&Player>,
+    ) {
         let java_sound = CSoundEffect::new(
-            IdOr::Id(toggle.java_sound as u16),
+            IdOr::Id(sound as u16),
             SoundCategory::Blocks,
-            &center,
-            1.0,
-            1.0,
+            &position.to_centered_f64(),
+            volume,
+            pitch,
             rand::random(),
         );
         if let Ok(data) = JavaClient::serialize_packet_for_version(&java_sound, CURRENT_MC_VERSION)
         {
-            for viewer in self
-                .players
-                .load()
-                .iter()
-                .filter(|viewer| viewer.gameprofile.id != player.gameprofile.id)
-            {
+            for viewer in self.players.load().iter().filter(|viewer| {
+                except.is_none_or(|player| viewer.gameprofile.id != player.gameprofile.id)
+            }) {
                 if super::is_within_chebyshev_distance(
                     position.chunk_position(),
                     viewer.get_entity().chunk_pos.load(),
@@ -158,12 +237,6 @@ impl World {
                 }
             }
         }
-        self.send_bedrock_level_sound(
-            toggle.bedrock_sound,
-            &center,
-            BlockState::to_be_network_id(toggle.state) as i32,
-            false,
-        );
     }
 
     /// Writes a plain full block into air. The player and inventory stay pinned

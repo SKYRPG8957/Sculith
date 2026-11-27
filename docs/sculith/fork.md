@@ -804,6 +804,11 @@ same conditional commit. Both editions receive the resulting block states
 and a sound at the activated half. The world handles powered door
 interactions, plugin callbacks, game-event listeners and other neighbor edits.
 
+A manual lever pull can use the same Bedrock region input route when the
+lever, its support and their neighbors can be checked by the owner. A redstone
+receiver beside the lever or behind its support keeps the action on the world
+path. Both paths keep the Java click pitch and send Bedrock's power sound.
+
 A Bedrock movement packet with a single block use can use the same path after
 the owner completes movement. Reach and block ownership are checked from
 that pose. The world can finish a deferred interaction once the pose is
